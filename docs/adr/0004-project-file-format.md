@@ -1,6 +1,6 @@
 # ADR-0004: Project file format
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
 
 ## Context
@@ -12,7 +12,7 @@ Projects can be very large (hundreds of km, many revisions), must open fast with
 3. Zip container of JSON — single file, but whole-file rewrite on save.
 4. **SQLite database** — transactional, incremental, spatially indexed, single file, universally readable.
 
-## Decision (proposed)
+## Decision
 - **`.ols` = SQLite database** with a documented, versioned schema.
   - Objects as rows with stable **UUIDv7** IDs (needed for collaboration and diffs).
   - R*Tree index on chunks for partial loading/streaming.

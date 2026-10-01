@@ -1,6 +1,6 @@
 # ADR-0005: Collaboration / session model
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
 
 ## Context
@@ -11,7 +11,7 @@ Several users must be able to work on one project at the same time, like players
 2. CRDTs (automatic merge) — good for text, but can produce merges that are valid data yet invalid engineering (e.g. a span referencing a deleted structure, broken constraints).
 3. **Authoritative server with a validated, ordered command log.**
 
-## Decision (proposed)
+## Decision
 - **Authoritative server** (`ols-session`) owns the model; clients send commands, the server validates, applies atomically, appends to the log and broadcasts change sets. Single-user = in-process server.
 - **Optimistic client prediction**: edits apply instantly locally, are confirmed by the server, rolled back on rejection.
 - **Conflicts**: per-object versions; stale destructive edits are rejected with a clear message; soft locks on a section while being dragged; presence indicators.

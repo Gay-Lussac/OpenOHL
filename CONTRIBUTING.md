@@ -19,6 +19,26 @@ Every calculation PR must include:
 2. Unit tests, and at least one validation case in `benchmarks/` with the expected result and tolerance.
 3. A short theory note in `docs/theory/`.
 
+## Development setup
+
+1. Install Rust with [rustup](https://rustup.rs) (the repository pins the `stable` channel in `rust-toolchain.toml`; minimum supported version 1.85).
+2. Build and test:
+
+   ```bash
+   cargo build --workspace
+   cargo test --workspace
+   cargo run -p ols-cli -- info
+   ```
+
+3. Before pushing, run the same checks as CI:
+
+   ```bash
+   cargo fmt --all
+   cargo clippy --workspace --all-targets -- -D warnings
+   ```
+
+Every source file starts with the MPL-2.0 header (copy it from an existing file).
+
 ## Workflow
 
 - Open an issue first for anything non-trivial.

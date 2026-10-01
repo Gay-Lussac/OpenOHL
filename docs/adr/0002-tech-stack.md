@@ -1,6 +1,6 @@
 # ADR-0002: Tech stack
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
 
 ## Context
@@ -11,7 +11,7 @@ Goal: faster and more user-friendly than existing tools (DESIGN_GOALS §1). Core
 2. C++ — fast, but memory-unsafe and harder for contributors.
 3. **Rust** — C++-level speed, memory/thread safety, modern tooling (Cargo), good WASM and Python interop.
 
-## Decision (proposed)
+## Decision
 - **Rust** (stable, edition 2024), single Cargo workspace, one crate per module.
 - Geometry: `glam` / `nalgebra`; large dense & sparse linear algebra (FE): `faer`.
 - Parallelism: `rayon` in engines; engines are synchronous. `tokio` only for networking.

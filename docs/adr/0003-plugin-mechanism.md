@@ -1,6 +1,6 @@
 # ADR-0003: Plugin mechanism
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
 
 ## Context
@@ -11,7 +11,7 @@ Anyone must be able to add calculations, design codes, checks, formats, reports 
 2. Python only — easy but slow in hot paths, no sandbox.
 3. **WASM Component Model + Python + in-tree Rust.**
 
-## Decision (proposed)
+## Decision
 | Tier | Use | Notes |
 |---|---|---|
 | WASM components | Third-party calculations, design codes, checks, solvers, formats | **Stable public ABI** defined in versioned WIT packages (e.g. `ols:cable-model@1.0`); any language (Rust, C/C++, Zig, Go…); sandboxed |

@@ -14,12 +14,23 @@
 - **Extensibility** — anyone can write a plugin: a new design code, a conductor model, a report, an import format, a custom check — without forking the core.
 - **Validation first** — a public benchmark suite compares results against hand calculations, published examples (CIGRE, IEEE, IEC) and reference software.
 
-## Project layout (planned)
+## Quick start
+
+```bash
+cargo test --workspace
+cargo run -p ols-cli -- info
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
+
+## Project layout
 
 ```
 OLS-CAD/
 ├── docs/              Architecture, ADRs, theory manual, validation reports
 ├── crates/            One Rust crate per module (see docs/ARCHITECTURE.md)
+│   ├── ols-core/      Data model, units, geometry (started: units)
+│   └── ols-cli/       `ols` command-line tool
 ├── plugins/           First-party plugins (design codes, formats, reports)
 ├── benchmarks/        Validation cases with reference results
 └── examples/          Sample projects

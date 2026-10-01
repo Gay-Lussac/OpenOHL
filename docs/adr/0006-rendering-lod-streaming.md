@@ -1,12 +1,12 @@
 # ADR-0006: Rendering, LOD & streaming
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
 
 ## Context
 Large projects (hundreds of km, billions of LiDAR points) must open fast and render smoothly (DESIGN_GOALS §1, §5). LOD must never alter the engineering model.
 
-## Decision (proposed)
+## Decision
 - **Renderer**: `wgpu` (Vulkan / Metal / DX12, WebGPU for a future web client); one renderer for plan, profile (with vertical exaggeration) and 3D views.
 - **Precision**: camera-relative rendering — `f64` on the CPU, positions relative to the camera sent as `f32` to the GPU (avoids jitter with UTM-scale coordinates).
 - **Chunks**: fixed quadtree grid of map tiles in the project CRS (e.g. 256 m base tiles), independent of the alignment.

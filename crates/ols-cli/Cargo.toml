@@ -1,0 +1,20 @@
+[package]
+name = "ols-cli"
+description = "OLS CAD command-line interface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ols"
+path = "src/main.rs"
+
+[dependencies]
+ols-core.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true
