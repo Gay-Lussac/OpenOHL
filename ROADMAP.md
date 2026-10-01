@@ -2,7 +2,10 @@
 
 The roadmap is organised in **phases**. Each phase ends with a usable, tested deliverable. Phases map 1:1 to GitHub **milestones**, and each bullet becomes one or more **issues** labelled by module (`module:*`).
 
-Guiding principle: **headless engine first, GUI second.** Every calculation must be usable from Python/CLI and covered by validation cases before it gets a user interface.
+Guiding principles:
+- **Headless engine first, GUI second.** Every calculation must be usable from CLI/scripts and covered by validation cases before it gets a user interface.
+- **Faster and friendlier than existing tools** — native Rust core, GPU rendering, measurable performance targets ([docs/DESIGN_GOALS.md](docs/DESIGN_GOALS.md)).
+- **Multi-user from day one** — every edit is a command applied by a session, so collaboration is built in, not bolted on.
 
 ---
 
@@ -13,7 +16,11 @@ Guiding principle: **headless engine first, GUI second.** Every calculation must
 - [ ] Choose tech stack: language, GUI toolkit, 3D engine (ADR-0002)
 - [ ] Define the plugin / extension mechanism (ADR-0003)
 - [ ] Define the open project file format (ADR-0004)
-- [ ] Monorepo layout, packaging, CI (lint, type-check, tests), pre-commit
+- [ ] Define the collaboration / session model (ADR-0005)
+- [ ] Define the rendering, LOD & streaming strategy (ADR-0006)
+- [ ] Cargo workspace layout, CI (clippy, tests, benchmarks) on Linux/macOS/Windows
+- [ ] Python bindings skeleton (`ols-py`, PyO3) and WASM plugin host skeleton
+- [ ] Performance benchmark harness (criterion) with regression gate in CI
 - [ ] Units system (SI internally, US customary + SI at the I/O boundary)
 - [ ] Documentation site skeleton (theory manual + API reference)
 - [ ] Validation/benchmark framework (case format + reference results + tolerance reporting)
@@ -31,16 +38,21 @@ Guiding principle: **headless engine first, GUI second.** Every calculation must
 - [ ] Change-of-state equation; initial / final-after-creep / final-after-load conditions
 - [ ] Ruling-span (equivalent span) method for tension sections
 - [ ] Weather cases (temperature, wind, ice, combined) and tension limit criteria (% RTS, catenary constant, H/w)
+- [ ] `ols-wireloads`: additional loads on wires — point loads (N, 3D vector) and distributed loads (N/m, full span or sub-interval), permanent or per load case
+- [ ] Segmented-catenary solution for spans with point loads / partial distributed loads
 - [ ] Stringing charts output (CSV / PDF)
 - [ ] CLI: `ols sagtension project.json`
+- [ ] Performance: single section re-solve < 10 ms
 - [ ] Validation: CIGRE TB 324 examples, textbook cases, hand calcs
 
-**Deliverable:** `pip install ols-cad`, reproducible sag-tension tables validated against published references.
+**Deliverable:** `ols` CLI + Rust library + Python bindings, reproducible sag-tension tables validated against published references.
 
 ## Phase 2 — Line model & terrain
 *Goal: a real line described in data, with a ground profile.*
 
 - [ ] `ols-core`: project data model — alignment, PIs, stations, structures, attachment sets, wire sections, spans
+- [ ] `ols-session`: command system, operation log, undo/redo, incremental recalculation (dirty tracking)
+- [ ] Spatial chunk index along the alignment (basis for streaming and LOD)
 - [ ] Alignment: PIs, line angles, stationing, offsets, coordinate systems (EPSG via PROJ)
 - [ ] `ols-terrain`: survey point import (CSV/XYZ), feature codes, breaklines, TIN generation, profile extraction (centreline + side profiles)
 - [ ] Structure library v1: simple framing with attachment points (x, y, z), insulator definitions (suspension, strain, post)
@@ -54,16 +66,19 @@ Guiding principle: **headless engine first, GUI second.** Every calculation must
 ## Phase 3 — Desktop application MVP
 *Goal: engineers can build and inspect a line interactively.*
 
-- [ ] Application shell, document model, undo/redo, command system
-- [ ] Plan view, profile view, 3D view (synchronised selection)
+- [ ] Application shell on top of the in-process `ols-session`
+- [ ] `ols-render`: wgpu renderer with chunk streaming, render distance per layer, LOD (terrain quadtree, structure mesh LODs, adaptive wires), culling, instancing
+- [ ] Plan view, profile view, 3D view (synchronised selection), live update while dragging
+- [ ] Command palette, keyboard workflows, explainable results (click value → inputs & references)
 - [ ] Interactive structure spotting (add/move/delete structures on profile)
 - [ ] Wire stringing UI (sections, tension criteria, weather cases)
 - [ ] Clearance violation display and reports
 - [ ] Library editors (cables, insulators, structures, weather cases)
 - [ ] Plugin manager UI
 - [ ] Python scripting console inside the application
+- [ ] **Server mode (alpha)**: host a project, multiple users connect over LAN/Internet, live change broadcast, presence, soft locks, roles
 
-**Deliverable:** alpha release of the desktop app.
+**Deliverable:** alpha release of the desktop app, including shared multi-user sessions.
 
 ## Phase 4 — Loading & structural checks
 *Goal: design-code compliant loading.*
@@ -83,12 +98,15 @@ Guiding principle: **headless engine first, GUI second.** Every calculation must
 
 - [ ] `ols-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module
 - [ ] Wood/steel/concrete pole libraries and checks
-- [ ] LiDAR: LAS/LAZ import, classification, vegetation & encroachment analysis, as-built wire extraction/fitting
+- [ ] LiDAR: LAS/LAZ/COPC import with octree streaming and point budget (billions of points at 60 fps)
+- [ ] LiDAR: classification, vegetation & encroachment analysis, as-built wire extraction/fitting
 - [ ] Thermal rating: IEEE 738, CIGRE TB 601 / TB 207, max operating temperature from clearance
 - [ ] Optimum (automatic) structure spotting — cost-based optimisation
 - [ ] Galloping ellipses, blowout, phase-to-phase / circuit-to-circuit clearances
 - [ ] Drafting: plan & profile sheets, title blocks, DXF/DWG-compatible output, PDF
 - [ ] Bill of materials & cost estimation
+- [ ] Collaboration: permissions per area/object, review & approval workflow, history browser, offline work with sync (stretch)
+- [ ] Web client (WebGPU) joining server sessions
 - [ ] Interop: LandXML, IFC, Shapefile/GeoJSON/GeoPackage, KML, CSV; import of common neutral formats from other tools
 
 **Deliverable:** beta release usable on real projects (with independent verification).
@@ -105,5 +123,6 @@ Guiding principle: **headless engine first, GUI second.** Every calculation must
 ## Cross-cutting (every phase)
 - Validation cases for every calculation, with references
 - Theory documentation written alongside the code
-- Performance benchmarks (large lines: 500+ structures, LiDAR with 10⁸ points)
+- Performance benchmarks against the targets in DESIGN_GOALS.md (large lines: 500+ structures, LiDAR with 10⁹ points); regressions fail CI
+- UX reviews with practising line engineers
 - Backwards compatibility of the project file format (versioned schema + migrations)
