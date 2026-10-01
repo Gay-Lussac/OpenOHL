@@ -1,0 +1,27 @@
+# Contributing to OLS CAD
+
+Thanks for your interest! The project is in its foundation phase — the most valuable contributions right now are reviews of the [roadmap](ROADMAP.md) and [architecture](docs/ARCHITECTURE.md), and validation cases with known reference results.
+
+## Clean-room policy (important)
+
+OLS CAD is an independent implementation. To protect the project:
+
+- **Do not** decompile, disassemble or reverse-engineer any commercial software, or copy its code, file layouts, documentation text or UI assets.
+- **Do not** contribute material covered by an NDA or a license agreement you are bound by.
+- **Do** base implementations on public sources: standards, peer-reviewed papers, CIGRE/IEEE brochures, textbooks, and your own engineering knowledge. Cite them in the code docstring and the theory manual.
+- Comparing *results* with other software for validation is fine; report the inputs and outputs, not the software internals.
+
+## Engineering contributions
+
+Every calculation PR must include:
+
+1. A reference (standard clause, paper, textbook page).
+2. Unit tests, and at least one validation case in `benchmarks/` with the expected result and tolerance.
+3. A short theory note in `docs/theory/`.
+
+## Workflow
+
+- Open an issue first for anything non-trivial.
+- Branch from `main`, keep PRs focused on one module.
+- Labels: `module:*` for the area, `phase:*` for the roadmap phase, `type:*` for the kind of work.
+- Architecture changes go through an ADR in `docs/adr/`.
