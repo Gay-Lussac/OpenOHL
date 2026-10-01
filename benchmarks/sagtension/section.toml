@@ -1,0 +1,31 @@
+# Tension section: equal horizontal tension in all spans, conserved total
+# unstressed length. Reference values computed independently by
+# reference_section.py. Cable: EA = 34.64 MN, alpha = 18.9e-6 /K.
+# For this inclined section the classic ruling-span approximation gives
+# 21343.36 N (+0.116 %), which the exact solution avoids.
+
+[[case]]
+id = "section-001"
+title = "4 inclined spans: 28 kN at 15 °C bare -> 75 °C bare"
+calculation = "sagtension.section"
+reference = "Independent evaluation (benchmarks/sagtension/reference_section.py)"
+max_seconds = 1.0
+
+[case.inputs]
+axial_stiffness = "34.64e6 N"
+thermal_expansion = 18.9e-6
+known_tension = "28 kN"
+known_load = "15.97 N/m"
+known_temperature = "15 °C"
+load = "15.97 N/m"
+temperature = "75 °C"
+spans = [
+    { span = "220 m", rise = "15 m" },
+    { span = "310 m", rise = "-25 m" },
+    { span = "380 m", rise = "40 m" },
+    { span = "260 m", rise = "-10 m" },
+]
+
+[case.expected]
+horizontal_tension_n = { value = 21318.6775, rel_tol = 1e-7 }
+ruling_span_m = { value = 310.6197279, rel_tol = 1e-9 }

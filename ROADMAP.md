@@ -37,7 +37,7 @@ Guiding principles:
 - [ ] Creep models: equivalent temperature, time-based (IEC/CIGRE TB 324 approaches)
 - [x] `ols-sagtension`: exact catenary, parabola approximation, inclined spans, sag/tension/length/slack
 - [ ] Change-of-state equation; initial / final-after-creep / final-after-load conditions *(linear elastic + thermal done; creep / final conditions pending)*
-- [ ] Ruling-span (equivalent span) method for tension sections
+- [x] Ruling-span (equivalent span) method for tension sections, plus exact equal-H section solution
 - [x] Weather cases (temperature, wind, ice, combined) and tension limit criteria (% RTS, catenary constant, H/w)
 - [ ] `ols-wireloads`: additional loads on wires — point loads (N, 3D vector) and distributed loads (N/m, full span or sub-interval), permanent or per load case
 - [ ] Segmented-catenary solution for spans with point loads / partial distributed loads

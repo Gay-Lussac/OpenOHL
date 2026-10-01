@@ -11,7 +11,7 @@ use ols_sagtension::catenary::{SpanGeometry, default_solver_budget, tension_for_
 use ols_sagtension::criteria::default_criteria_budget;
 use ols_sagtension::{
     Catenary, ElasticCable, InstalledSpan, LoadState, TensionCriterion, TensionLimit,
-    governing_tension,
+    TensionSection, governing_tension, ruling_span,
 };
 use ols_weather::WeatherCase;
 
@@ -24,6 +24,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(ChangeOfState));
     registry.register(Box::new(GoverningTension));
     registry.register(Box::new(WeatherWireLoad));
+    registry.register(Box::new(Section));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -301,6 +302,64 @@ impl Calculation for WeatherWireLoad {
             ("horizontal_n_per_m", load.horizontal.newtons_per_meter()),
             ("resultant_n_per_m", load.resultant().newtons_per_meter()),
             ("swing_angle_deg", load.swing_angle().degrees()),
+        ]))
+    }
+}
+
+/// `sagtension.section`: tension section, exact equal horizontal tension.
+struct Section;
+
+impl Calculation for Section {
+    fn id(&self) -> &'static str {
+        "sagtension.section"
+    }
+
+    fn description(&self) -> &'static str {
+        "Tension section (inputs: spans[{span, rise}], axial_stiffness, thermal_expansion, \
+         known_tension, known_load, known_temperature, load, temperature)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let spans = inputs
+            .get("spans")
+            .and_then(|v| v.as_array())
+            .ok_or("input \"spans\" must be an array of tables")?
+            .iter()
+            .map(|v| {
+                let t = v.as_table().ok_or("each span must be a table")?;
+                Ok(SpanGeometry::inclined(
+                    quantity_input::<Length>(t, "span")?,
+                    quantity_input::<Length>(t, "rise")?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let cable = ElasticCable {
+            axial_stiffness: quantity_input::<Force>(inputs, "axial_stiffness")?,
+            thermal_expansion: float_input(inputs, "thermal_expansion")?,
+        };
+        let known = LoadState {
+            load: quantity_input::<ForcePerLength>(inputs, "known_load")?,
+            temperature: quantity_input::<Temperature>(inputs, "known_temperature")?,
+        };
+        let state = LoadState {
+            load: quantity_input::<ForcePerLength>(inputs, "load")?,
+            temperature: quantity_input::<Temperature>(inputs, "temperature")?,
+        };
+        let rs = ruling_span(&spans).map_err(|e| e.to_string())?;
+        let solution = TensionSection::from_known_state(
+            spans,
+            cable,
+            known,
+            quantity_input::<Force>(inputs, "known_tension")?,
+        )
+        .and_then(|section| section.solve(state, &default_solver_budget()))
+        .map_err(|e| e.to_string())?;
+        Ok(outputs([
+            (
+                "horizontal_tension_n",
+                solution.horizontal_tension.newtons(),
+            ),
+            ("ruling_span_m", rs.meters()),
         ]))
     }
 }
