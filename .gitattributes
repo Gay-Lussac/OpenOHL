@@ -1,0 +1,4 @@
+# Same bytes on every OS: LF line endings for all text files. Windows
+# checkouts otherwise get CRLF, which broke a text-matching test on CI.
+* text=auto eol=lf
+*.wasm binary

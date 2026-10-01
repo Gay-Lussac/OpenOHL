@@ -378,7 +378,8 @@ mod tests {
     fn unknown_weather_case_is_reported() {
         let text = std::fs::read_to_string(example())
             .unwrap()
-            .replace("weather = \"everyday\"\n", "weather = \"nope\"\n");
+            // No line ending in the pattern: Windows checkouts may use CRLF.
+            .replace("weather = \"everyday\"", "weather = \"nope\"");
         let path = std::env::temp_dir().join("ols-cli-bad-job.toml");
         // Absolute library path as a TOML literal string ('…'): Windows paths
         // contain backslashes, which are escape characters in "…" strings
