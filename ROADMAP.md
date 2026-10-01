@@ -52,7 +52,7 @@ Guiding principles:
 
 - [ ] `ols-core`: project data model — alignment, PIs, stations, structures, attachment sets, wire sections, spans
 - [ ] `ols-session`: command system, operation log, undo/redo, incremental recalculation (dirty tracking)
-- [ ] Spatial chunk index along the alignment (basis for streaming and LOD)
+- [ ] Spatial chunk index (quadtree tile grid) (basis for streaming and LOD)
 - [ ] Alignment: PIs, line angles, stationing, offsets, coordinate systems (EPSG via PROJ)
 - [ ] `ols-terrain`: survey point import (CSV/XYZ), feature codes, breaklines, TIN generation, profile extraction (centreline + side profiles)
 - [ ] Structure library v1: simple framing with attachment points (x, y, z)
@@ -78,7 +78,7 @@ Guiding principles:
 - [ ] Library editors (cables, insulators, structures, weather cases)
 - [ ] Plugin manager UI
 - [ ] Python scripting console inside the application
-- [ ] **Server mode (alpha)**: host a project, multiple users connect over LAN/Internet, live change broadcast, presence, soft locks, roles
+- [ ] **Server mode (alpha)**: host a project, multiple users connect over LAN/Internet, live change broadcast, presence, soft locks, per-user undo, roles & permissions, admin rollback
 
 **Deliverable:** alpha release of the desktop app, including shared multi-user sessions.
 

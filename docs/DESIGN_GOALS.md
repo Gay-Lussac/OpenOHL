@@ -57,7 +57,14 @@ This is a **core** requirement, not a GUI feature, because it dictates how the d
 - **Single-user mode is the same thing**: the desktop app runs an embedded in-process server. There is only one code path.
 - **Command / operation log**: every edit is a serialisable command → gives undo/redo, full history, audit trail ("who changed this tension, when"), and replay for free.
 - **Conflict handling**: fine-grained object versioning; optional soft locks on objects/sections being edited; presence (see where others are working).
-- **Permissions**: roles (viewer, designer, approver), per-object or per-area editing rights.
+- **Undo is per user**: each person undoes/redoes only their own changes (applied as inverse commands on top of the current state).
+- **Admin rollback**: users with the admin right can roll back other users' changes — a single command, a revision, or everything after a point in time — like an admin on a game server.
+- **Roles & permissions** (server-defined, like a Minecraft server's ops/permission levels):
+  - Default roles, e.g. *viewer* (read-only), *designer* (edit), *checker/approver* (comment, approve, tag revisions), *admin* (rollback, manage users/roles, lock areas, change project settings, install plugins on the server).
+  - Custom roles built from fine-grained permissions (per action type: edit structures, edit libraries, change design criteria, run exports, delete…).
+  - Scope: per project, per area/chunk, per object type (e.g. only the lead engineer edits weather cases and design criteria).
+  - Some actions are admin-only by default (rollback of others' work, deleting sections, changing project-wide criteria, kicking/banning users).
+  - All permission changes and admin actions are recorded in the history.
 - **Compute placement**: calculations can run on the server (shared results, thin clients) or locally on clients.
 - **Transport**: binary protocol over WebSocket/QUIC, encrypted; works on LAN and Internet. A future web client can join the same session.
 - Offline work with later sync is a stretch goal.
@@ -66,7 +73,7 @@ This is a **core** requirement, not a GUI feature, because it dictates how the d
 
 Large projects (hundreds of km, billions of LiDAR points) must open fast and stay smooth:
 
-- **Spatial chunking**: the project world is divided into tiles/chunks along the line (like Minecraft chunks). Only chunks near the viewpoint are loaded in memory and on the GPU.
+- **Spatial chunking**: the project world is divided into a fixed grid of map tiles/chunks (quadtree, like Minecraft chunks) — independent of the alignment, so branching lines, parallel circuits and substations work too. Only chunks near the viewpoint are loaded in memory and on the GPU.
 - **Render distance** setting (user-adjustable), separately for terrain, point cloud, structures, wires and labels.
 - **Level of Detail (LOD)**:
   - Terrain: quadtree tiles with progressively simplified meshes.

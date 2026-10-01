@@ -2,11 +2,11 @@
 
 | # | Title | Status |
 |---|---|---|
-| 0001 | License (MPL-2.0) | Accepted |
-| 0002 | Tech stack | To write (see ARCHITECTURE.md) — GUI toolkit deferred to Phase 3 |
-| 0003 | Plugin mechanism | To write (see ARCHITECTURE.md) |
-| 0004 | Project file format | To write |
-| 0005 | Collaboration / session model | To write (see DESIGN_GOALS.md §4) |
-| 0006 | Rendering, LOD & streaming | To write (see DESIGN_GOALS.md §5) |
+| [0001](0001-license.md) | License (MPL-2.0) | Accepted |
+| [0002](0002-tech-stack.md) | Tech stack (Rust) | Proposed |
+| [0003](0003-plugin-mechanism.md) | Plugin mechanism (WASM + Python + in-tree Rust) | Proposed |
+| [0004](0004-project-file-format.md) | Project file format (SQLite + JSON export) | Proposed |
+| [0005](0005-collaboration-session-model.md) | Collaboration / session model | Proposed |
+| [0006](0006-rendering-lod-streaming.md) | Rendering, LOD & streaming | Proposed |
 
 Template: copy `0000-template.md`, give it the next number, open a PR.

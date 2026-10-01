@@ -76,7 +76,7 @@
 
 ## Rendering, LOD & streaming
 
-- World split into spatial chunks along the alignment; render distance per layer.
+- World split into a fixed quadtree grid of spatial chunks (project CRS); render distance per layer.
 - Terrain quadtree, point-cloud octree (COPC), structure mesh LODs, adaptive wire tessellation, GPU instancing.
 - Background loading threads; the UI thread never waits on I/O or computation.
 - See ADR-0006.
