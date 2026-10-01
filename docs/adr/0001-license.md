@@ -1,6 +1,6 @@
 # ADR-0001: License
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
 
 ## Context
@@ -16,4 +16,4 @@ OLS CAD wants (a) the core to stay open and improvements to flow back, and (b) u
 **MPL-2.0** for the core packages (improvements to the core come back, plugins stay free to choose), optionally Apache-2.0 for `ols-sdk` and plugin templates.
 
 ## Decision
-_Pending owner decision._
+**MPL-2.0** for the whole repository (accepted 2026-10-01). The core stays open — modifications to OLS CAD files must be shared — while plugins in separate files may use any license, including proprietary. Revisiting Apache-2.0 for `ols-sdk`/plugin templates remains possible later.

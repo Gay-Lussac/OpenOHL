@@ -97,7 +97,7 @@ Extension points: `cable_models`, `wire_loads`, `design_codes`, `importers`/`exp
 
 - **Core & engines**: Rust (speed, memory safety, fearless multithreading via `rayon`), `nalgebra`/`faer` for linear algebra, sparse solvers for FE.
 - **Renderer**: `wgpu` (Vulkan / Metal / DirectX 12, and WebGPU for a future browser client).
-- **GUI toolkit**: to decide in ADR-0002 — candidates: Slint, egui, Qt via cxx-qt. Criteria: polish, docking panels, accessibility, performance.
+- **GUI toolkit**: deferred to the start of Phase 3 (prototype-based choice) — candidates: Slint, egui, Qt via cxx-qt. Criteria: polish, docking panels, accessibility, performance.
 - **Networking**: QUIC (`quinn`) / WebSocket, binary serialisation.
 - **Geospatial**: PROJ, GDAL bindings where needed, COPC/LAZ for point clouds.
 - **Scripting**: Python via PyO3 (`ols-py`), WASM runtime (`wasmtime`) for plugins.

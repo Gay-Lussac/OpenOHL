@@ -33,6 +33,10 @@ OLS-CAD/
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute, clean-room rules
 - [docs/adr/](docs/adr/) — architecture decision records
 
+## License
+
+[Mozilla Public License 2.0](LICENSE). Plugins distributed as separate files may use any license.
+
 ## Disclaimer
 
 OLS CAD is an independent project and is not affiliated with, endorsed by, or derived from any commercial software. All product names are trademarks of their respective owners. Engineering results must always be verified by a qualified engineer.
