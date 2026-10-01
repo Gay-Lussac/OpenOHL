@@ -297,8 +297,17 @@ impl Default for Limits {
 const EPOCH_TICK: Duration = Duration::from_millis(10);
 
 impl Limits {
+    /// Epoch ticks until a call is interrupted.
+    ///
+    /// The ticker runs independently of calls, so its first tick can come
+    /// right after a call starts. One extra tick guarantees the plugin gets
+    /// at least `call_timeout` (the remaining ticks are each ≥ one
+    /// [`EPOCH_TICK`] apart); it is interrupted at most about one tick later.
     fn deadline_ticks(&self) -> u64 {
-        (self.call_timeout.as_millis() / EPOCH_TICK.as_millis()).max(1) as u64
+        self.call_timeout
+            .as_millis()
+            .div_ceil(EPOCH_TICK.as_millis()) as u64
+            + 1
     }
 }
 
@@ -536,6 +545,22 @@ mod tests {
     }
 
     #[test]
+    fn deadline_never_shorter_than_limit() {
+        for ms in [1, 10, 15, 200, 5000] {
+            let limits = Limits {
+                call_timeout: Duration::from_millis(ms),
+                ..Limits::default()
+            };
+            let guaranteed = (limits.deadline_ticks() - 1) * EPOCH_TICK.as_millis() as u64;
+            assert!(
+                guaranteed >= ms,
+                "{ms} ms -> {} ticks",
+                limits.deadline_ticks()
+            );
+        }
+    }
+
+    #[test]
     fn host_is_created() {
         assert!(WasmHost::new().is_ok());
     }
@@ -599,6 +624,7 @@ mod tests {
             ),
             "{error}"
         );
+        // Never interrupted before the limit (regression: CI saw 193.9 ms).
         assert!(elapsed >= Duration::from_millis(200), "{elapsed:?}");
         assert!(elapsed < Duration::from_secs(3), "{elapsed:?}");
 
