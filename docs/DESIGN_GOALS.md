@@ -103,3 +103,37 @@ The core must support all common string types, and strings must be **linkable** 
 - Simple cases (I-string swing, V-string legs) are solved analytically for speed.
 - The general linked case is solved by the FE wire system (`ols-wirefe`), which treats the assembly as part of the wire model.
 - Assemblies are reusable library items, and plugin-extensible.
+
+## 7. Version control of projects (git-like)
+
+Project changes must be tracked like source code in git, built on the command log of §4:
+
+- **Commits / revisions**: group commands into named revisions with author, date and message ("Raised T-12 by 3 m for road crossing").
+- **History**: browse every revision; see who changed what, when and why; open the project as it was at any revision.
+- **Diff**: compare two revisions or two projects — added/removed/modified objects, changed parameters, and *engineering impact* (changed tensions, clearances, structure loads). Visual diff in plan/profile/3D.
+- **Branches**: design alternatives and what-if scenarios as branches; compare branches; merge back with conflict resolution.
+- **Tags**: mark issued revisions (e.g. "IFC Rev B — issued for construction").
+- **Revert / cherry-pick** individual changes.
+- **Export/import of history** for archiving and audit (regulatory traceability).
+- Libraries stored as text files remain compatible with plain git.
+
+Foundation (command log, stable object IDs) is in the core from Phase 2; the user-facing version control comes later, partly as plugins.
+
+## 8. Exports and interoperability
+
+Exports and imports are **plugins** (`ols.importers` / `ols.exporters`), so new formats can be added without touching the core. Formats that must eventually be covered:
+
+| Area | Formats |
+|---|---|
+| Geospatial / GIS | KML, **KMZ**, Shapefile, GeoJSON, GeoPackage |
+| Engineering exchange | **XML** (LandXML and an open OLS XML schema), IFC, CSV |
+| CAD / drafting | DXF, DWG-compatible output, SVG, PDF |
+| Point clouds | LAS/LAZ/COPC (import and export of classified/as-built points) |
+| Reports & tables | CSV, XLSX, PDF, HTML |
+
+### Profile exports
+
+Profiles must be exportable on their own, not only as part of drawing sheets:
+- Ground profile (centreline and side profiles), wire profiles per weather case, clearance lines, structures and labels.
+- Configurable horizontal/vertical scales and exaggeration, station ranges, sheet splitting.
+- Formats: DXF, PDF, SVG, CSV/XML (numeric data), and images.

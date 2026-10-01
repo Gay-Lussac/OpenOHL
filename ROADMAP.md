@@ -60,7 +60,8 @@ Guiding principles:
 - [ ] Multi-span sections: wire placed between attachment points over terrain
 - [ ] Analytic insulator behaviour: I-string swing, V-string leg forces & slack detection, strain string geometry
 - [ ] `ols-clearance` v1: ground clearance, feature clearance, clearance envelopes per weather case
-- [ ] Plan & profile data output (SVG/DXF) — no GUI yet
+- [ ] Plan & profile data output (SVG/DXF/CSV) — no GUI yet
+- [ ] Exporter/importer plugin interface (first formats: CSV, KML/KMZ)
 
 **Deliverable:** load a survey + structure positions, compute wire positions and ground clearance violations from CLI.
 
@@ -105,10 +106,12 @@ Guiding principles:
 - [ ] Optimum (automatic) structure spotting — cost-based optimisation
 - [ ] Galloping ellipses, blowout, phase-to-phase / circuit-to-circuit clearances
 - [ ] Drafting: plan & profile sheets, title blocks, DXF/DWG-compatible output, PDF
+- [ ] Profile exports: ground/wire/clearance profiles with configurable scales and station ranges — DXF, PDF, SVG, CSV/XML, images (DESIGN_GOALS §8)
 - [ ] Bill of materials & cost estimation
-- [ ] Collaboration: permissions per area/object, review & approval workflow, history browser, offline work with sync (stretch)
+- [ ] Collaboration: permissions per area/object, review & approval workflow, offline work with sync (stretch)
+- [ ] **Git-like version control** of projects: revisions, history browser, diff (incl. engineering impact), branches for design alternatives, merge, tags for issued revisions, revert (DESIGN_GOALS §7)
 - [ ] Web client (WebGPU) joining server sessions
-- [ ] Interop: LandXML, IFC, Shapefile/GeoJSON/GeoPackage, KML, CSV; import of common neutral formats from other tools
+- [ ] Interop plugins: XML (LandXML + open OLS XML schema), KML/KMZ, IFC, Shapefile/GeoJSON/GeoPackage, CSV, XLSX; import of common neutral formats from other tools (DESIGN_GOALS §8)
 
 **Deliverable:** beta release usable on real projects (with independent verification).
 
