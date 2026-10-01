@@ -1144,6 +1144,16 @@ version = "0.0.1"
 dependencies = [
  "ols-core",
  "ols-sagtension",
+ "ols-weather",
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "ols-weather"
+version = "0.0.1"
+dependencies = [
+ "ols-core",
  "serde",
  "toml",
 ]

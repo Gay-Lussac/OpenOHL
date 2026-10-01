@@ -6,9 +6,12 @@
 //!
 //! - [`catenary`]: exact catenary of a single (inclined) span.
 //! - [`change_of_state`]: tension at another load and temperature (linear elastic).
+//! - [`criteria`]: tension limits and the governing stringing tension.
 
 pub mod catenary;
 pub mod change_of_state;
+pub mod criteria;
 
 pub use catenary::{Catenary, SagTensionError, SpanGeometry, SpanSolution};
 pub use change_of_state::{ElasticCable, InstalledSpan, LoadState};
+pub use criteria::{Governing, TensionCriterion, TensionLimit, governing_tension};

@@ -32,13 +32,13 @@ Guiding principles:
 ## Phase 1 — Calculation core (headless)
 *Goal: trustworthy single-section sag-tension engine.*
 
-- [ ] `ols-cables`: conductor/cable library — area, diameter, weight, RTS, modulus, thermal coefficients, bimetallic (core/outer) properties
+- [x] `ols-cables`: conductor/cable library — area, diameter, weight, RTS, modulus, thermal coefficients, bimetallic (core/outer) properties
 - [ ] Stress-strain models: linear elastic, polynomial (initial / final / creep curves, per CIGRE/Aluminum Association practice), bimetallic split
 - [ ] Creep models: equivalent temperature, time-based (IEC/CIGRE TB 324 approaches)
-- [ ] `ols-sagtension`: exact catenary, parabola approximation, inclined spans, sag/tension/length/slack
-- [ ] Change-of-state equation; initial / final-after-creep / final-after-load conditions
+- [x] `ols-sagtension`: exact catenary, parabola approximation, inclined spans, sag/tension/length/slack
+- [ ] Change-of-state equation; initial / final-after-creep / final-after-load conditions *(linear elastic + thermal done; creep / final conditions pending)*
 - [ ] Ruling-span (equivalent span) method for tension sections
-- [ ] Weather cases (temperature, wind, ice, combined) and tension limit criteria (% RTS, catenary constant, H/w)
+- [x] Weather cases (temperature, wind, ice, combined) and tension limit criteria (% RTS, catenary constant, H/w)
 - [ ] `ols-wireloads`: additional loads on wires — point loads (N, 3D vector) and distributed loads (N/m, full span or sub-interval), permanent or per load case
 - [ ] Segmented-catenary solution for spans with point loads / partial distributed loads
 - [ ] Stringing charts output (CSV / PDF)

@@ -15,6 +15,7 @@ authors = ["OLS CAD contributors"]
 ols-core = { path = "crates/ols-core" }
 ols-cables = { path = "crates/ols-cables" }
 ols-sagtension = { path = "crates/ols-sagtension" }
+ols-weather = { path = "crates/ols-weather" }
 ols-validation = { path = "crates/ols-validation" }
 ols-plugins = { path = "crates/ols-plugins" }
 clap = { version = "4", features = ["derive"] }

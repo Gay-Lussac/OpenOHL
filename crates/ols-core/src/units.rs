@@ -524,6 +524,25 @@ quantity!(
     ]
 );
 
+quantity!(
+    /// Density (mass per unit volume), stored in kilograms per cubic metre.
+    /// Used for ice and snow.
+    Density, kind = "density", si = "kg/m³", display = ("kg/m³", "lbm/ft³"),
+    units = [
+        from_kilograms_per_cubic_meter, kilograms_per_cubic_meter, 1.0, "kilograms per cubic metre", ["kg/m³", "kg/m3"];
+        from_pounds_per_cubic_foot, pounds_per_cubic_foot, POUND_MASS / (FOOT * FOOT * FOOT), "pounds (mass) per cubic foot", ["lbm/ft³", "lbm/ft3"];
+    ]
+);
+
+impl Density {
+    /// Weight per unit length of a cross-section `area` of this material,
+    /// under standard gravity.
+    #[inline]
+    pub fn weight_per_length(self, area: Area) -> ForcePerLength {
+        ForcePerLength(self.0 * area.0 * STANDARD_GRAVITY)
+    }
+}
+
 impl MassPerLength {
     /// Weight per unit length under standard gravity.
     #[inline]
@@ -674,6 +693,7 @@ pub const QUANTITY_KINDS: &[&str] = &[
     ForcePerLength::KIND,
     Stress::KIND,
     MassPerLength::KIND,
+    Density::KIND,
     Angle::KIND,
     Speed::KIND,
     Temperature::KIND,
@@ -704,6 +724,7 @@ pub fn convert(quantity: &str, value: &str, to: &str) -> Result<f64, ParseQuanti
         ForcePerLength::KIND => run::<ForcePerLength>(value, to),
         Stress::KIND => run::<Stress>(value, to),
         MassPerLength::KIND => run::<MassPerLength>(value, to),
+        Density::KIND => run::<Density>(value, to),
         Angle::KIND => run::<Angle>(value, to),
         Speed::KIND => run::<Speed>(value, to),
         Temperature::KIND => run::<Temperature>(value, to),
@@ -857,6 +878,19 @@ mod tests {
     }
 
     #[test]
+    fn density_and_ice_weight() {
+        // 1 lbm/ft³ = 16.018 463 kg/m³ (NIST SP 811).
+        assert_close(
+            Density::from_pounds_per_cubic_foot(1.0).kilograms_per_cubic_meter(),
+            16.018_463,
+            1e-7,
+        );
+        let ice = Density::from_kilograms_per_cubic_meter(913.0);
+        let w = ice.weight_per_length(Area::from_square_millimeters(1000.0));
+        assert_close(w.newtons_per_meter(), 0.913 * STANDARD_GRAVITY, 1e-12);
+    }
+
+    #[test]
     fn angles_and_speeds() {
         assert_close(
             Angle::from_degrees(180.0).radians(),
@@ -1001,6 +1035,7 @@ mod tests {
         check::<ForcePerLength>();
         check::<Stress>();
         check::<MassPerLength>();
+        check::<Density>();
         check::<Angle>();
         check::<Speed>();
         check::<Temperature>();

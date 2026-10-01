@@ -1,0 +1,19 @@
+[package]
+name = "ols-weather"
+description = "OLS CAD weather cases and loads on wires (code-agnostic)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-core.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+toml.workspace = true
+
+[lints]
+workspace = true

@@ -4,9 +4,16 @@
 
 //! Calculations shipped with OLS CAD, exposed to the validation runner.
 
-use ols_core::units::{Force, ForcePerLength, Length, Quantity, Temperature};
+use ols_core::units::{
+    Density, Force, ForcePerLength, Length, MassPerLength, Quantity, Stress, Temperature,
+};
 use ols_sagtension::catenary::{SpanGeometry, default_solver_budget, tension_for_sag};
-use ols_sagtension::{Catenary, ElasticCable, InstalledSpan, LoadState};
+use ols_sagtension::criteria::default_criteria_budget;
+use ols_sagtension::{
+    Catenary, ElasticCable, InstalledSpan, LoadState, TensionCriterion, TensionLimit,
+    governing_tension,
+};
+use ols_weather::WeatherCase;
 
 use crate::{Calculation, Inputs, Outputs, Registry};
 
@@ -15,6 +22,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(CatenarySpan));
     registry.register(Box::new(CatenaryTensionForSag));
     registry.register(Box::new(ChangeOfState));
+    registry.register(Box::new(GoverningTension));
+    registry.register(Box::new(WeatherWireLoad));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -181,6 +190,117 @@ impl Calculation for ChangeOfState {
             ("length_m", solution.length().meters()),
             ("tension_left_n", solution.tension_left().newtons()),
             ("tension_right_n", solution.tension_right().newtons()),
+        ]))
+    }
+}
+
+/// `sagtension.governing_tension`: stringing tension from tension criteria.
+struct GoverningTension;
+
+fn criterion_input(table: &Inputs) -> Result<TensionCriterion, String> {
+    let label = string_input(table, "label")?.to_owned();
+    let state = LoadState {
+        load: quantity_input::<ForcePerLength>(table, "load")?,
+        temperature: quantity_input::<Temperature>(table, "temperature")?,
+    };
+    let limit = match string_input(table, "limit")? {
+        "support_ratio" => TensionLimit::SupportTensionRatio(float_input(table, "value")?),
+        "horizontal_ratio" => TensionLimit::HorizontalTensionRatio(float_input(table, "value")?),
+        "horizontal" => TensionLimit::HorizontalTension(quantity_input::<Force>(table, "value")?),
+        "catenary_constant" => {
+            TensionLimit::CatenaryConstant(quantity_input::<Length>(table, "value")?)
+        }
+        other => return Err(format!("unknown limit \"{other}\"")),
+    };
+    Ok(TensionCriterion {
+        label,
+        state,
+        limit,
+    })
+}
+
+impl Calculation for GoverningTension {
+    fn id(&self) -> &'static str {
+        "sagtension.governing_tension"
+    }
+
+    fn description(&self) -> &'static str {
+        "Governing stringing tension (inputs: span, rise, axial_stiffness, thermal_expansion, \
+         rated_tensile_strength, reference_load, reference_temperature, criteria[])"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let geometry = SpanGeometry::inclined(
+            quantity_input::<Length>(inputs, "span")?,
+            quantity_input::<Length>(inputs, "rise")?,
+        );
+        let cable = ElasticCable {
+            axial_stiffness: quantity_input::<Force>(inputs, "axial_stiffness")?,
+            thermal_expansion: float_input(inputs, "thermal_expansion")?,
+        };
+        let reference = LoadState {
+            load: quantity_input::<ForcePerLength>(inputs, "reference_load")?,
+            temperature: quantity_input::<Temperature>(inputs, "reference_temperature")?,
+        };
+        let criteria = inputs
+            .get("criteria")
+            .and_then(|v| v.as_array())
+            .ok_or("input \"criteria\" must be an array of tables")?
+            .iter()
+            .map(|v| {
+                v.as_table()
+                    .ok_or("each criterion must be a table".to_owned())
+                    .and_then(criterion_input)
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let result = governing_tension(
+            geometry,
+            cable,
+            quantity_input::<Force>(inputs, "rated_tensile_strength")?,
+            reference,
+            &criteria,
+            &default_criteria_budget(),
+        )
+        .map_err(|e| e.to_string())?;
+        let mut out = outputs([
+            ("reference_tension_n", result.reference_tension.newtons()),
+            ("governing_index", result.governing as f64),
+        ]);
+        for (i, c) in result.criteria.iter().enumerate() {
+            out.insert(format!("utilisation_{i}"), c.utilisation);
+        }
+        Ok(out)
+    }
+}
+
+/// `weather.wire_load`: ice and wind loads on a wire.
+struct WeatherWireLoad;
+
+impl Calculation for WeatherWireLoad {
+    fn id(&self) -> &'static str {
+        "weather.wire_load"
+    }
+
+    fn description(&self) -> &'static str {
+        "Ice and wind load on a wire (inputs: diameter, weight, temperature, ice_thickness, \
+         ice_density, wind_pressure)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let case = WeatherCase {
+            name: "validation".into(),
+            temperature: quantity_input::<Temperature>(inputs, "temperature")?,
+            ice_thickness: quantity_input::<Length>(inputs, "ice_thickness")?,
+            ice_density: quantity_input::<Density>(inputs, "ice_density")?,
+            wind_pressure: quantity_input::<Stress>(inputs, "wind_pressure")?,
+        };
+        let weight = quantity_input::<MassPerLength>(inputs, "weight")?.weight();
+        let load = case.wire_load(quantity_input::<Length>(inputs, "diameter")?, weight);
+        Ok(outputs([
+            ("vertical_n_per_m", load.vertical.newtons_per_meter()),
+            ("horizontal_n_per_m", load.horizontal.newtons_per_meter()),
+            ("resultant_n_per_m", load.resultant().newtons_per_meter()),
+            ("swing_angle_deg", load.swing_angle().degrees()),
         ]))
     }
 }

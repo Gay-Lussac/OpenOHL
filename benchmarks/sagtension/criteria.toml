@@ -1,0 +1,29 @@
+# Governing stringing tension from tension criteria. Reference values computed
+# independently by reference_criteria.py (independent change-of-state model with
+# an outer bisection). Cable: EA = 34.64 MN, alpha = 18.9e-6 /K, RTS 138.8 kN.
+
+[[case]]
+id = "criteria-001"
+title = "Level 300 m: everyday 20 % RTS vs ice 30 % RTS — ice governs"
+calculation = "sagtension.governing_tension"
+reference = "Independent evaluation (benchmarks/sagtension/reference_criteria.py)"
+max_seconds = 2.0
+
+[case.inputs]
+span = "300 m"
+rise = "0 m"
+axial_stiffness = "34.64e6 N"
+thermal_expansion = 18.9e-6
+rated_tensile_strength = "138.8 kN"
+reference_load = "15.97 N/m"
+reference_temperature = "15 °C"
+criteria = [
+    { label = "everyday", load = "15.97 N/m", temperature = "15 °C", limit = "horizontal_ratio", value = 0.20 },
+    { label = "ice + wind", load = "32 N/m", temperature = "-20 °C", limit = "support_ratio", value = 0.30 },
+]
+
+[case.expected]
+reference_tension_n = { value = 20391.66353, rel_tol = 1e-7 }
+governing_index = { value = 1.0, abs_tol = 0.0 }
+utilisation_0 = { value = 0.7345700119, rel_tol = 1e-7 }
+utilisation_1 = { value = 1.0, rel_tol = 1e-7 }
