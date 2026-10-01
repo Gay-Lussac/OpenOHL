@@ -45,7 +45,7 @@
 | `ols-wireloads` | Additional loads on wires: point loads (N) and distributed loads (N/m), permanent or per load case |
 | `ols-sagtension` | Catenary (incl. segmented catenary with point loads), change of state, ruling span, stringing charts |
 | `ols-terrain` | Survey points, feature codes, TIN, profiles, LiDAR, chunked tiles |
-| `ols-structures` | Structure/framing/insulator libraries, attachment geometry |
+| `ols-structures` | Structure/framing libraries, attachment geometry, insulator assemblies (I, V, tension, post; linkable graph) |
 | `ols-wirefe` | Non-linear FE of wire systems (general loads, broken wire, unbalanced ice) |
 | `ols-structures-fe` | 3D frame/truss FE of towers and poles |
 | `ols-loads` | Load-case engine; design codes are **plugins** |

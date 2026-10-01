@@ -28,7 +28,7 @@ OLS-CAD/
 ## Documents
 
 - [ROADMAP.md](ROADMAP.md) — phases, milestones and scope
-- [docs/DESIGN_GOALS.md](docs/DESIGN_GOALS.md) — performance targets, UX, wire loads, multi-user server, LOD
+- [docs/DESIGN_GOALS.md](docs/DESIGN_GOALS.md) — performance targets, UX, wire loads, multi-user server, LOD, insulator strings
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — modules, data model, plugin system
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute, clean-room rules
 - [docs/adr/](docs/adr/) — architecture decision records

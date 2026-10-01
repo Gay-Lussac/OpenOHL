@@ -79,3 +79,27 @@ Large projects (hundreds of km, billions of LiDAR points) must open fast and sta
 - The same chunking is used by the server to send clients only what they need.
 
 The **engineering model is never simplified** by LOD: calculations always use full-fidelity data. LOD affects display and loading only.
+
+## 6. Insulator strings and linked assemblies
+
+The core must support all common string types, and strings must be **linkable** to each other to form assemblies:
+
+| Type | Behaviour |
+|---|---|
+| **Suspension (I-string)** | Single pinned string, free to swing transversely and longitudinally |
+| **V-string** | Two legs from separate structure points to one yoke; restrains transverse swing; legs can go slack in compression |
+| **Tension / strain (dead-end)** | In-line with the conductor, carries full tension; single or multiple (double/triple) strings |
+| **Post insulator** | Rigid/cantilever, line post (fixed or braced) |
+| Others via plugins | Y-strings, horizontal V, braced post, 2-part strings, etc. |
+
+**Linking**: strings connect through shared nodes (yoke plates, clamps, attachment points), e.g.:
+- Double / quad strings through a yoke plate
+- Jumper on a dead-end structure, supported by a jumper suspension string, connecting the two tension strings
+- Tension strings and suspension strings acting together on angle/terminal structures
+- Weights, counterweights, or spacers hung from a string node (uses the point loads of §3)
+
+**Model**: an insulator assembly is a small **graph** of nodes (structure attachment points, yoke plates, wire attachment) and elements (insulator links, rigid links, pinned links, cable/jumper segments, tension-only elements). Each element has length, weight, wind area, strength and properties: rigid/pinned/tension-only.
+
+- Simple cases (I-string swing, V-string legs) are solved analytically for speed.
+- The general linked case is solved by the FE wire system (`ols-wirefe`), which treats the assembly as part of the wire model.
+- Assemblies are reusable library items, and plugin-extensible.

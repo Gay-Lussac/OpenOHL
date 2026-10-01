@@ -55,9 +55,10 @@ Guiding principles:
 - [ ] Spatial chunk index along the alignment (basis for streaming and LOD)
 - [ ] Alignment: PIs, line angles, stationing, offsets, coordinate systems (EPSG via PROJ)
 - [ ] `ols-terrain`: survey point import (CSV/XYZ), feature codes, breaklines, TIN generation, profile extraction (centreline + side profiles)
-- [ ] Structure library v1: simple framing with attachment points (x, y, z), insulator definitions (suspension, strain, post)
+- [ ] Structure library v1: simple framing with attachment points (x, y, z)
+- [ ] Insulator assembly model (graph of nodes and elements): suspension (I), V-string, tension/strain (single & multiple), post; **linked strings** via shared nodes (yokes, jumpers, jumper support strings) — see DESIGN_GOALS §6
 - [ ] Multi-span sections: wire placed between attachment points over terrain
-- [ ] Suspension insulator swing (rigid-body) for level/inclined spans
+- [ ] Analytic insulator behaviour: I-string swing, V-string leg forces & slack detection, strain string geometry
 - [ ] `ols-clearance` v1: ground clearance, feature clearance, clearance envelopes per weather case
 - [ ] Plan & profile data output (SVG/DXF) — no GUI yet
 
@@ -87,7 +88,7 @@ Guiding principles:
 - [ ] Design code plugins: NESC (ANSI C2), CSA C22.3, IEC 60826, EN 50341 (+ national NNAs), ASCE MOP 74, GO 95 — each as a separate plugin
 - [ ] Structure capacity Method 1: allowable spans (wind/weight span, line angle)
 - [ ] Method 2: interaction diagrams / allowable load trees
-- [ ] Finite-element wire system: full tension section with non-linear cables, insulator strings, unbalanced ice, broken wire, longitudinal loads
+- [ ] Finite-element wire system: full tension section with non-linear cables, general linked insulator assemblies and jumpers, unbalanced ice, broken wire, longitudinal loads
 - [ ] Structure loads output (attachment point loads per load case)
 - [ ] Usage / utilisation reports
 
