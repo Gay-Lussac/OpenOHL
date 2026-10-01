@@ -9,6 +9,7 @@
 # Theory manual
 
 - [Conventions and units](theory/conventions.md)
+- [Sag-tension](theory/sagtension.md)
 
 # Design
 

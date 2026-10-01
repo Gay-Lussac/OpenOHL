@@ -1,0 +1,58 @@
+# Example sag-tension job: Drake ACSR over a 4-span tension section.
+# Run:  cargo run -p ols-cli -- sagtension examples/sagtension/drake-section.toml
+#
+# Weather cases and limits are illustrative, not taken from any design code.
+
+cable = "acsr-drake-26-7"
+library = "../../libraries/cables"
+
+spans = [
+    { span = "220 m", rise = "15 m" },
+    { span = "310 m", rise = "-25 m" },
+    { span = "380 m", rise = "40 m" },
+    { span = "260 m", rise = "-10 m" },
+]
+
+[reference]
+weather = "everyday"
+
+[[weather]]
+name = "everyday"
+temperature = "15 °C"
+
+[[weather]]
+name = "cold"
+temperature = "-20 °C"
+
+[[weather]]
+name = "ice + wind"
+temperature = "-5 °C"
+ice_thickness = "12.7 mm"
+wind_pressure = "190 Pa"
+
+[[weather]]
+name = "high wind"
+temperature = "15 °C"
+wind_pressure = "700 Pa"
+
+[[weather]]
+name = "max operating 75 °C"
+temperature = "75 °C"
+
+[[criterion]]
+weather = "everyday"
+limit = "horizontal_ratio"
+value = 0.18
+
+[[criterion]]
+weather = "ice + wind"
+limit = "support_ratio"
+value = 0.50
+
+[[criterion]]
+weather = "high wind"
+limit = "support_ratio"
+value = 0.50
+
+[chart]
+temperatures = ["-20 °C", "-10 °C", "0 °C", "10 °C", "20 °C", "30 °C", "40 °C", "50 °C", "75 °C"]

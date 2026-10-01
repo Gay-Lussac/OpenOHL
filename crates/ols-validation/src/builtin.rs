@@ -260,7 +260,7 @@ impl Calculation for GoverningTension {
             })
             .collect::<Result<Vec<_>, String>>()?;
         let result = governing_tension(
-            geometry,
+            &[geometry],
             cable,
             quantity_input::<Force>(inputs, "rated_tensile_strength")?,
             reference,

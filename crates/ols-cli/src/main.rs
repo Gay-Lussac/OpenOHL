@@ -7,7 +7,10 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use ols_core::units::UnitSystem;
+
+mod sagtension_job;
 
 #[derive(Parser)]
 #[command(
@@ -36,11 +39,28 @@ enum Command {
         #[arg(long)]
         list: bool,
     },
+    /// Sag-tension of a tension section from a TOML job file.
+    Sagtension {
+        /// Job file (see examples/sagtension/).
+        job: PathBuf,
+        /// Units used in the report.
+        #[arg(long, value_enum, default_value = "metric")]
+        units: Units,
+        /// Write the stringing chart as CSV (SI units) to this file.
+        #[arg(long)]
+        csv: Option<PathBuf>,
+    },
     /// Inspect plugins.
     Plugin {
         #[command(subcommand)]
         command: PluginCommand,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Units {
+    Metric,
+    Us,
 }
 
 #[derive(Subcommand)]
@@ -60,6 +80,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some(Command::Validate { path, report, list }) => validate(&path, report.as_deref(), list),
+        Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
@@ -70,6 +91,33 @@ fn print_info() {
     println!("OLS CAD {}", env!("CARGO_PKG_VERSION"));
     println!("core    {}", ols_core::VERSION);
     println!("license MPL-2.0");
+}
+
+fn sagtension(job: &std::path::Path, units: Units, csv: Option<&std::path::Path>) -> ExitCode {
+    let units = match units {
+        Units::Metric => UnitSystem::Metric,
+        Units::Us => UnitSystem::UsCustomary,
+    };
+    match sagtension_job::run(job, units) {
+        Ok(output) => {
+            print!("{}", output.report);
+            if let Some(path) = csv {
+                let Some(chart) = output.chart_csv else {
+                    eprintln!("error: --csv given but the job has no [chart] section");
+                    return ExitCode::FAILURE;
+                };
+                if let Err(error) = std::fs::write(path, chart) {
+                    eprintln!("error: cannot write {}: {error}", path.display());
+                    return ExitCode::FAILURE;
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn plugin_info(dir: &std::path::Path) -> ExitCode {

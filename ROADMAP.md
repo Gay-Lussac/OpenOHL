@@ -41,9 +41,9 @@ Guiding principles:
 - [x] Weather cases (temperature, wind, ice, combined) and tension limit criteria (% RTS, catenary constant, H/w)
 - [x] `ols-wireloads`: additional loads on wires — point loads (N, 3D vector) and distributed loads (N/m, full span or sub-interval), permanent or per load case
 - [x] Segmented-catenary solution for spans with point loads / partial distributed loads *(vertical plane; transverse components → FE wire model, Phase 4)*
-- [ ] Stringing charts output (CSV / PDF)
-- [ ] CLI: `ols sagtension project.json`
-- [ ] Performance: single section re-solve < 10 ms
+- [x] Stringing charts output (CSV; PDF later with drafting)
+- [x] CLI: `ols sagtension job.toml` (report in metric or US units, CSV chart)
+- [x] Performance: single section re-solve < 10 ms *(~60 µs for 20 spans; loaded span change of state ~1 ms)*
 - [ ] Validation: CIGRE TB 324 examples, textbook cases, hand calcs
 
 **Deliverable:** `ols` CLI + Rust library + Python bindings, reproducible sag-tension tables validated against published references.

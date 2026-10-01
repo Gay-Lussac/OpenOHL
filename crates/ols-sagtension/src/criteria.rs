@@ -21,8 +21,9 @@ use std::time::Duration;
 use ols_core::budget::{Budget, Stop};
 use ols_core::units::{Force, Length};
 
-use crate::catenary::{SagTensionError, SpanGeometry, SpanSolution, default_solver_budget};
-use crate::change_of_state::{ElasticCable, InstalledSpan, LoadState};
+use crate::catenary::{SagTensionError, SpanGeometry, default_solver_budget};
+use crate::change_of_state::{ElasticCable, LoadState};
+use crate::section::{SectionSolution, TensionSection};
 
 /// What a criterion limits.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,14 +66,18 @@ pub struct TensionCriterion {
 
 impl TensionCriterion {
     /// Value of the limited quantity and the limit, in the same unit.
-    fn measure(&self, solution: &SpanSolution, rts: Force) -> (f64, f64) {
-        let support = solution.tension_left().max(solution.tension_right());
-        let h = solution.catenary.horizontal_tension;
+    fn measure(&self, solution: &SectionSolution, rts: Force) -> (f64, f64) {
+        let support = solution
+            .spans
+            .iter()
+            .map(|s| s.tension_left().max(s.tension_right()))
+            .fold(Force::ZERO, Force::max);
+        let h = solution.horizontal_tension;
         match self.limit {
             TensionLimit::SupportTensionRatio(r) => (support.si(), r * rts.si()),
             TensionLimit::HorizontalTensionRatio(r) => (h.si(), r * rts.si()),
             TensionLimit::HorizontalTension(max) => (h.si(), max.si()),
-            TensionLimit::CatenaryConstant(c) => (solution.catenary.parameter().si(), c.si()),
+            TensionLimit::CatenaryConstant(c) => ((h / self.state.load).si(), c.si()),
         }
     }
 }
@@ -85,7 +90,7 @@ pub struct CriterionResult {
     /// Limited value / limit (1.0 for the governing criterion).
     pub utilisation: f64,
     /// Solution of the span in the criterion's state.
-    pub solution: SpanSolution,
+    pub solution: SectionSolution,
 }
 
 /// Result of the governing-tension search.
@@ -107,10 +112,12 @@ pub fn default_criteria_budget() -> Budget {
         .time_limit(Duration::from_secs(2))
 }
 
-/// Finds the stringing tension at `reference` that satisfies every criterion
-/// with at least one exactly at its limit.
+/// Finds the stringing tension at `reference` for a tension section (one or
+/// more spans) that satisfies every criterion, with at least one exactly at
+/// its limit. Support tension limits apply to the most loaded support of the
+/// section.
 pub fn governing_tension(
-    geometry: SpanGeometry,
+    spans: &[SpanGeometry],
     cable: ElasticCable,
     rated_tensile_strength: Force,
     reference: LoadState,
@@ -123,8 +130,8 @@ pub fn governing_tension(
         ));
     }
     let inner = default_solver_budget();
-    let solve_at = |h_ref: f64, state: LoadState| -> Result<SpanSolution, SagTensionError> {
-        InstalledSpan::from_known_state(geometry, cable, reference, Force::from_si(h_ref))?
+    let solve_at = |h_ref: f64, state: LoadState| -> Result<SectionSolution, SagTensionError> {
+        TensionSection::from_known_state(spans.to_vec(), cable, reference, Force::from_si(h_ref))?
             .solve(state, &inner)
     };
     // > 0 when the criterion is violated. Too slack to compute = far below limits.
@@ -230,7 +237,7 @@ mod tests {
 
     fn run(geometry: SpanGeometry, ice_limit: f64) -> Governing {
         governing_tension(
-            geometry,
+            &[geometry],
             drake(),
             Force::from_kilonewtons(138.8),
             state(15.97, 15.0),
@@ -270,9 +277,29 @@ mod tests {
     }
 
     #[test]
+    fn section_limits_use_the_most_loaded_support() {
+        let spans = [
+            SpanGeometry::inclined(Length::from_meters(250.0), Length::from_meters(10.0)),
+            SpanGeometry::inclined(Length::from_meters(420.0), Length::from_meters(60.0)),
+        ];
+        let g = governing_tension(
+            &spans,
+            drake(),
+            Force::from_kilonewtons(138.8),
+            state(15.97, 15.0),
+            &criteria(0.30),
+            &default_criteria_budget(),
+        )
+        .unwrap();
+        let ice = &g.criteria[1].solution;
+        let highest = ice.spans[1].tension_right();
+        assert!((highest.kilonewtons() / (0.30 * 138.8) - g.criteria[1].utilisation).abs() < 1e-9);
+    }
+
+    #[test]
     fn exit_clause_names_the_criterion() {
         let error = governing_tension(
-            SpanGeometry::level(Length::from_meters(300.0)),
+            &[SpanGeometry::level(Length::from_meters(300.0))],
             drake(),
             Force::from_kilonewtons(138.8),
             state(15.97, 15.0),

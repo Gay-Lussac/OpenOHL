@@ -1098,9 +1098,14 @@ name = "ols-cli"
 version = "0.0.1"
 dependencies = [
  "clap",
+ "ols-cables",
  "ols-core",
  "ols-plugins",
+ "ols-sagtension",
  "ols-validation",
+ "ols-weather",
+ "serde",
+ "toml",
 ]
 
 [[package]]

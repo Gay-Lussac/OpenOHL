@@ -18,6 +18,11 @@ doc = false
 ols-core.workspace = true
 ols-validation.workspace = true
 ols-plugins.workspace = true
+ols-cables.workspace = true
+ols-sagtension.workspace = true
+ols-weather.workspace = true
+serde.workspace = true
+toml.workspace = true
 clap.workspace = true
 
 [lints]
