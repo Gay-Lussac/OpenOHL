@@ -1085,6 +1085,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-cables"
+version = "0.0.1"
+dependencies = [
+ "ols-core",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "ols-cli"
 version = "0.0.1"
 dependencies = [
@@ -1122,10 +1131,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-sagtension"
+version = "0.0.1"
+dependencies = [
+ "criterion",
+ "ols-core",
+]
+
+[[package]]
 name = "ols-validation"
 version = "0.0.1"
 dependencies = [
  "ols-core",
+ "ols-sagtension",
  "serde",
  "toml",
 ]

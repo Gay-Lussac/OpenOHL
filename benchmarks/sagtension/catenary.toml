@@ -1,0 +1,52 @@
+# Exact catenary of a single span. Reference values are computed independently
+# by reference_catenary.py (textbook formulas, brute-force sag search, numerical
+# length integration) — see that script. Weight 15.97 N/m ≈ Drake ACSR bare
+# conductor. Outputs are in SI: metres and newtons.
+
+[[case]]
+id = "catenary-001"
+title = "Level span 300 m, H = 28 kN"
+calculation = "catenary.span"
+reference = "Closed-form catenary, independent evaluation (benchmarks/sagtension/reference_catenary.py)"
+inputs = { span = "300 m", rise = "0 m", horizontal_tension = "28 kN", weight = "15.97 N/m" }
+expected.sag_m = { value = 6.420432574, rel_tol = 1e-7 }
+expected.midspan_sag_m = { value = 6.420432574, rel_tol = 1e-7 }
+expected.length_m = { value = 300.3661046, rel_tol = 1e-8 }
+expected.tension_left_n = { value = 28102.53431, rel_tol = 1e-8 }
+expected.tension_right_n = { value = 28102.53431, rel_tol = 1e-8 }
+expected.low_point_x_m = { value = 150.0, abs_tol = 1e-9 }
+
+[[case]]
+id = "catenary-002"
+title = "Inclined span 450 m, rise 35 m, H = 22 kN"
+calculation = "catenary.span"
+reference = "Closed-form catenary, independent evaluation (benchmarks/sagtension/reference_catenary.py)"
+inputs = { span = "450 m", rise = "35 m", horizontal_tension = "22 kN", weight = "15.97 N/m" }
+expected.sag_m = { value = 18.47066522, rel_tol = 1e-7 }
+expected.midspan_sag_m = { value = 18.4705836, rel_tol = 1e-7 }
+expected.length_m = { value = 453.356464, rel_tol = 1e-8 }
+expected.tension_left_n = { value = 22081.35629, rel_tol = 1e-8 }
+expected.tension_right_n = { value = 22640.30629, rel_tol = 1e-8 }
+expected.low_point_x_m = { value = 118.435868, rel_tol = 1e-7 }
+
+[[case]]
+id = "catenary-003"
+title = "Steep span 200 m, rise 120 m, H = 10 kN (low point outside the span)"
+calculation = "catenary.span"
+reference = "Closed-form catenary, independent evaluation (benchmarks/sagtension/reference_catenary.py)"
+inputs = { span = "200 m", rise = "120 m", horizontal_tension = "10 kN", weight = "15.97 N/m" }
+expected.sag_m = { value = 9.323122969, rel_tol = 1e-7 }
+expected.midspan_sag_m = { value = 9.321385734, rel_tol = 1e-7 }
+expected.length_m = { value = 233.9684017, rel_tol = 1e-8 }
+expected.tension_left_n = { value = 10839.50392, rel_tol = 1e-8 }
+expected.tension_right_n = { value = 12755.90392, rel_tol = 1e-8 }
+expected.low_point_x_m = { value = -254.8172875, rel_tol = 1e-7 }
+
+[[case]]
+id = "catenary-004"
+title = "Tension for a given sag (inverse of catenary-002)"
+calculation = "catenary.tension_for_sag"
+reference = "Inverse of catenary-002: the sag of an H = 22 kN catenary must give back 22 kN"
+max_seconds = 1.0
+inputs = { span = "450 m", rise = "35 m", weight = "15.97 N/m", sag = "18.47066522 m" }
+expected.horizontal_tension_n = { value = 22000.0, rel_tol = 1e-6 }

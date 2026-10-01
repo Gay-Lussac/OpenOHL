@@ -13,6 +13,8 @@ authors = ["OLS CAD contributors"]
 
 [workspace.dependencies]
 ols-core = { path = "crates/ols-core" }
+ols-cables = { path = "crates/ols-cables" }
+ols-sagtension = { path = "crates/ols-sagtension" }
 ols-validation = { path = "crates/ols-validation" }
 ols-plugins = { path = "crates/ols-plugins" }
 clap = { version = "4", features = ["derive"] }

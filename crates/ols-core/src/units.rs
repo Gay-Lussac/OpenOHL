@@ -180,7 +180,7 @@ macro_rules! quantity {
         units = [ $( $from:ident, $to:ident, $factor:expr, $label:literal, [$($sym:literal),+] );+ $(;)? ]
     ) => {
         $(#[$doc])*
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize)]
         #[serde(transparent)]
         #[repr(transparent)]
         pub struct $name(f64);
@@ -284,6 +284,7 @@ macro_rules! quantity {
         }
 
         arithmetic!($name);
+        deserialize_quantity!($name);
 
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -291,6 +292,44 @@ macro_rules! quantity {
                     Some(p) => write!(f, "{:.*} {}", p, self.0, $si_unit),
                     None => write!(f, "{} {}", self.0, $si_unit),
                 }
+            }
+        }
+    };
+}
+
+/// Accepts either a plain number (SI units, as written by OLS CAD) or text
+/// with a unit (`"28.14 mm"`, as written by people in library files).
+struct QuantityVisitor<Q>(std::marker::PhantomData<Q>);
+
+impl<Q: Quantity> serde::de::Visitor<'_> for QuantityVisitor<Q> {
+    type Value = Q;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "a {} as an SI number or as text with a unit", Q::KIND)
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Q, E> {
+        Ok(Q::from_si(value))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Q, E> {
+        Ok(Q::from_si(value as f64))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Q, E> {
+        Ok(Q::from_si(value as f64))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<Q, E> {
+        text.parse().map_err(E::custom)
+    }
+}
+
+macro_rules! deserialize_quantity {
+    ($name:ident) => {
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                deserializer.deserialize_any(QuantityVisitor(std::marker::PhantomData))
             }
         }
     };
@@ -516,7 +555,7 @@ quantity!(
 ///
 /// Differences between two temperatures are also expressed as a `Temperature`
 /// (a difference of 1 K equals a difference of 1 °C).
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize)]
 #[serde(transparent)]
 #[repr(transparent)]
 pub struct Temperature(f64);
@@ -616,6 +655,7 @@ impl FromStr for Temperature {
 }
 
 arithmetic!(Temperature);
+deserialize_quantity!(Temperature);
 
 impl fmt::Display for Temperature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1000,5 +1040,17 @@ mod tests {
             serde_json::to_string(&UnitSystem::UsCustomary).unwrap(),
             "\"us_customary\""
         );
+    }
+
+    #[test]
+    fn deserializes_text_with_unit() {
+        let d: Length = serde_json::from_str("\"28.14 mm\"").unwrap();
+        assert_close(d.millimeters(), 28.14, 1e-15);
+        let t: Temperature = serde_json::from_str("\"-20 °C\"").unwrap();
+        assert_close(t.celsius(), -20.0, 1e-12);
+        let n: Force = serde_json::from_str("1000").unwrap();
+        assert_close(n.newtons(), 1000.0, 1e-15);
+        let error = serde_json::from_str::<Length>("\"12\"").unwrap_err();
+        assert!(error.to_string().contains("missing unit"), "{error}");
     }
 }

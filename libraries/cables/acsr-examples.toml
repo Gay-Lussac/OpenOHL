@@ -1,0 +1,18 @@
+# Example ACSR conductors.
+#
+# Dimensions, mass and rated strength are the usual published values for these
+# standard ASTM B232 sizes. The component moduli and thermal expansion
+# coefficients are typical textbook values for aluminium (EC-H19) and steel
+# wires, not manufacturer data. Verify every value against the data sheet of
+# the conductor actually used before relying on results.
+
+[[cable]]
+id = "acsr-drake-26-7"
+name = "Drake 795 kcmil 26/7 ACSR"
+kind = "acsr"
+source = "Typical published values for ASTM B232 795 kcmil 26/7 ACSR; moduli and expansion are typical values — verify against the manufacturer data sheet"
+diameter = "1.108 in"
+mass_per_length = "1.094 lbm/ft"
+rated_tensile_strength = "31200 lbf"
+outer = { area = "0.6245 in²", modulus = "55 GPa", thermal_expansion = 23.0e-6 }
+core = { area = "0.1017 in²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }

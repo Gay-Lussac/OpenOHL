@@ -1,0 +1,22 @@
+[package]
+name = "ols-sagtension"
+description = "OLS CAD sag-tension: catenary, change of state, ruling span"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-core.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "catenary"
+harness = false
+
+[lints]
+workspace = true
