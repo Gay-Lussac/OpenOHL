@@ -148,6 +148,10 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          # The build cache can restore target/criterion with empty baseline
+          # folders, which makes criterion print errors into its output and
+          # breaks parsing. Regression comparison uses bench-cache instead.
+          rm -rf target/criterion
           cargo bench --locked --workspace --bench '*' -- --output-format bencher | tee bench-output.txt
       - name: Restore previous results
         uses: actions/cache/restore@v4
