@@ -380,11 +380,15 @@ mod tests {
             .unwrap()
             .replace("weather = \"everyday\"\n", "weather = \"nope\"\n");
         let path = std::env::temp_dir().join("ols-cli-bad-job.toml");
+        // Absolute library path as a TOML literal string ('…'): Windows paths
+        // contain backslashes, which are escape characters in "…" strings
+        // (this broke the test on Windows CI).
+        let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables");
         std::fs::write(
             &path,
             text.replace(
-                "../../libraries/cables",
-                &format!("{}/../../libraries/cables", env!("CARGO_MANIFEST_DIR")),
+                "\"../../libraries/cables\"",
+                &format!("'{}'", library.display()),
             ),
         )
         .unwrap();

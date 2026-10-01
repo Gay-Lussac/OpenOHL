@@ -4,6 +4,8 @@
 # Weather cases and limits are illustrative, not taken from any design code.
 
 cable = "acsr-drake-26-7"
+# Relative to this file. On Windows use forward slashes or single quotes
+# ('C:\libs\cables'): backslashes are escape characters in "…" strings.
 library = "../../libraries/cables"
 
 spans = [
