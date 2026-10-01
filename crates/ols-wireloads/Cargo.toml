@@ -1,0 +1,19 @@
+[package]
+name = "ols-wireloads"
+description = "OLS CAD additional loads on wires: point loads (N) and distributed loads (N/m)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-core.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+toml.workspace = true
+
+[lints]
+workspace = true

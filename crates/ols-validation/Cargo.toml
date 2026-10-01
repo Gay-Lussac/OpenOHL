@@ -12,6 +12,7 @@ authors.workspace = true
 ols-core.workspace = true
 ols-sagtension.workspace = true
 ols-weather.workspace = true
+ols-wireloads.workspace = true
 serde.workspace = true
 toml.workspace = true
 

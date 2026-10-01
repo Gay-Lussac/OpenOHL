@@ -1,0 +1,51 @@
+# Spans with additional vertical loads (segmented catenary). Reference values
+# from reference_loaded.py, which solves the cable ODE with RK4 and shooting
+# (independent of the closed-form segments in Rust). Tolerances reflect the
+# RK4 step (30 000 steps per span).
+
+[[case]]
+id = "loaded-001"
+title = "Level 300 m, H = 28 kN, 2 kN point load at 100 m"
+calculation = "sagtension.loaded_span"
+reference = "ODE integration, independent (benchmarks/sagtension/reference_loaded.py)"
+max_seconds = 1.0
+
+[case.inputs]
+span = "300 m"
+rise = "0 m"
+horizontal_tension = "28 kN"
+base_load = "15.97 N/m"
+points = [{ x = "100 m", load = "2 kN" }]
+distributed = []
+
+[case.expected]
+length_m = { value = 300.9434715, rel_tol = 1e-8 }
+sag_m = { value = 10.49709312, rel_tol = 1e-7 }
+tension_left_n = { value = 28248.34864, rel_tol = 1e-8 }
+tension_right_n = { value = 28167.63858, rel_tol = 1e-8 }
+
+[[case]]
+id = "loaded-002"
+title = "Inclined 350 m: markers and partial ice at -5 °C, strung bare at 28 kN / 15 °C"
+calculation = "sagtension.loaded_change_of_state"
+reference = "ODE integration + secant, independent (benchmarks/sagtension/reference_loaded.py)"
+max_seconds = 2.0
+
+[case.inputs]
+span = "350 m"
+rise = "20 m"
+axial_stiffness = "34.64e6 N"
+thermal_expansion = 18.9e-6
+known_tension = "28 kN"
+known_temperature = "15 °C"
+base_load = "15.97 N/m"
+temperature = "-5 °C"
+points = [
+    { x = "87.5 m", load = "70 N" },
+    { x = "175 m", load = "70 N" },
+    { x = "262.5 m", load = "70 N" },
+]
+distributed = [{ from = "0 m", to = "150 m", load = "10 N/m" }]
+
+[case.expected]
+horizontal_tension_n = { value = 37614.42711, rel_tol = 1e-6 }

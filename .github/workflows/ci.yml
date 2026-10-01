@@ -139,38 +139,34 @@ jobs:
     name: Benchmarks
     needs: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 20 # expected ~5 min; each benchmark is bounded to ~3 s
+    timeout-minutes: 25 # expected ~8 min: two benchmark runs; each benchmark ~3 s
+    env:
+      # Base commit: the PR base, or the previous head of the pushed branch.
+      PARENT: ${{ github.event.pull_request.base.sha || github.event.before }}
+      CRITERION_HOME: ${{ github.workspace }}/target/criterion-compare
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run benchmarks
+      # Timings from different runners are not comparable (different CPUs),
+      # so the parent commit is benchmarked on this same machine first.
+      - name: Benchmark parent commit
+        shell: bash
+        run: |
+          rm -rf "$CRITERION_HOME"
+          if [ -n "$PARENT" ] && git cat-file -e "$PARENT^{commit}" 2>/dev/null; then
+            git worktree add -f "$RUNNER_TEMP/parent" "$PARENT"
+            (cd "$RUNNER_TEMP/parent" && CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" \
+              cargo bench --workspace --bench '*' -- --save-baseline parent) \
+              || echo "::warning::parent commit benchmarks could not run; no comparison"
+          else
+            echo "::notice::no parent commit to compare with"
+          fi
+      - name: Benchmark this commit and compare (fail if > 1.5x slower)
         shell: bash
         run: |
           set -o pipefail
-          # The build cache can restore target/criterion with empty baseline
-          # folders, which makes criterion print errors into its output and
-          # breaks parsing. Regression comparison uses bench-cache instead.
-          rm -rf target/criterion
-          cargo bench --locked --workspace --bench '*' -- --output-format bencher | tee bench-output.txt
-      - name: Restore previous results
-        uses: actions/cache/restore@v4
-        with:
-          path: bench-cache
-          key: bench-${{ runner.os }}-${{ github.sha }}
-          restore-keys: bench-${{ runner.os }}-
-      - name: Compare with previous results (fail if > 1.5x slower)
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          tool: cargo
-          output-file-path: bench-output.txt
-          external-data-json-path: bench-cache/benchmark-data.json
-          alert-threshold: "150%"
-          fail-on-alert: true
-          summary-always: true
-      - name: Save results as the new baseline (main only)
-        if: github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
-        with:
-          path: bench-cache
-          key: bench-${{ runner.os }}-${{ github.sha }}
+          cargo bench --locked --workspace --bench '*' -- --baseline-lenient parent
+          python3 .github/scripts/check_bench.py "$CRITERION_HOME" 1.5

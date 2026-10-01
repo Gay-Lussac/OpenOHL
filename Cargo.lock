@@ -1136,6 +1136,7 @@ version = "0.0.1"
 dependencies = [
  "criterion",
  "ols-core",
+ "ols-wireloads",
 ]
 
 [[package]]
@@ -1145,12 +1146,22 @@ dependencies = [
  "ols-core",
  "ols-sagtension",
  "ols-weather",
+ "ols-wireloads",
  "serde",
  "toml",
 ]
 
 [[package]]
 name = "ols-weather"
+version = "0.0.1"
+dependencies = [
+ "ols-core",
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "ols-wireloads"
 version = "0.0.1"
 dependencies = [
  "ols-core",

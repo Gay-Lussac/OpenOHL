@@ -7,13 +7,16 @@
 use ols_core::units::{
     Density, Force, ForcePerLength, Length, MassPerLength, Quantity, Stress, Temperature,
 };
+use ols_sagtension::LoadedSpan;
 use ols_sagtension::catenary::{SpanGeometry, default_solver_budget, tension_for_sag};
 use ols_sagtension::criteria::default_criteria_budget;
+use ols_sagtension::loaded::default_loaded_budget;
 use ols_sagtension::{
     Catenary, ElasticCable, InstalledSpan, LoadState, TensionCriterion, TensionLimit,
     TensionSection, governing_tension, ruling_span,
 };
 use ols_weather::WeatherCase;
+use ols_wireloads::VerticalLoads;
 
 use crate::{Calculation, Inputs, Outputs, Registry};
 
@@ -25,6 +28,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(GoverningTension));
     registry.register(Box::new(WeatherWireLoad));
     registry.register(Box::new(Section));
+    registry.register(Box::new(LoadedShape));
+    registry.register(Box::new(LoadedChangeOfState));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -361,5 +366,124 @@ impl Calculation for Section {
             ),
             ("ruling_span_m", rs.meters()),
         ]))
+    }
+}
+
+fn table_array<'a>(inputs: &'a Inputs, name: &str) -> Result<Vec<&'a Inputs>, String> {
+    inputs
+        .get(name)
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| format!("input \"{name}\" must be an array of tables"))?
+        .iter()
+        .map(|v| {
+            v.as_table()
+                .ok_or_else(|| format!("each entry of \"{name}\" must be a table"))
+        })
+        .collect()
+}
+
+fn loaded_span_input(inputs: &Inputs) -> Result<LoadedSpan, String> {
+    let point = table_array(inputs, "points")?
+        .into_iter()
+        .map(|t| {
+            Ok((
+                quantity_input::<Length>(t, "x")?,
+                quantity_input::<Force>(t, "load")?,
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let distributed = table_array(inputs, "distributed")?
+        .into_iter()
+        .map(|t| {
+            Ok((
+                quantity_input::<Length>(t, "from")?,
+                quantity_input::<Length>(t, "to")?,
+                quantity_input::<ForcePerLength>(t, "load")?,
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(LoadedSpan {
+        geometry: SpanGeometry::inclined(
+            quantity_input::<Length>(inputs, "span")?,
+            quantity_input::<Length>(inputs, "rise")?,
+        ),
+        base_load: quantity_input::<ForcePerLength>(inputs, "base_load")?,
+        loads: VerticalLoads { point, distributed },
+    })
+}
+
+/// `sagtension.loaded_span`: shape of a span with point/distributed loads.
+struct LoadedShape;
+
+impl Calculation for LoadedShape {
+    fn id(&self) -> &'static str {
+        "sagtension.loaded_span"
+    }
+
+    fn description(&self) -> &'static str {
+        "Span with vertical point/distributed loads at a given H (inputs: span, rise, \
+         horizontal_tension, base_load, points[{x, load}], distributed[{from, to, load}])"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let span = loaded_span_input(inputs)?;
+        let solution = span
+            .shape(
+                quantity_input::<Force>(inputs, "horizontal_tension")?,
+                &default_solver_budget(),
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(outputs([
+            ("length_m", solution.length().meters()),
+            ("sag_m", solution.max_sag().1.meters()),
+            ("tension_left_n", solution.tension_left().newtons()),
+            ("tension_right_n", solution.tension_right().newtons()),
+        ]))
+    }
+}
+
+/// `sagtension.loaded_change_of_state`: strung bare, solved with loads.
+struct LoadedChangeOfState;
+
+impl Calculation for LoadedChangeOfState {
+    fn id(&self) -> &'static str {
+        "sagtension.loaded_change_of_state"
+    }
+
+    fn description(&self) -> &'static str {
+        "Cable strung bare (known_tension, known_temperature), solved with loads at temperature"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let loaded = loaded_span_input(inputs)?;
+        let cable = ElasticCable {
+            axial_stiffness: quantity_input::<Force>(inputs, "axial_stiffness")?,
+            thermal_expansion: float_input(inputs, "thermal_expansion")?,
+        };
+        let inner = default_solver_budget();
+        let bare = LoadedSpan::unloaded(loaded.geometry, loaded.base_load);
+        let reference_temperature = quantity_input::<Temperature>(inputs, "known_temperature")?;
+        let temperature = quantity_input::<Temperature>(inputs, "temperature")?;
+        let solution = bare
+            .unstrained_length(
+                quantity_input::<Force>(inputs, "known_tension")?,
+                cable,
+                &inner,
+            )
+            .and_then(|l0| {
+                loaded.solve_state(
+                    cable,
+                    l0,
+                    reference_temperature,
+                    temperature,
+                    &default_loaded_budget(),
+                    &inner,
+                )
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(outputs([(
+            "horizontal_tension_n",
+            solution.horizontal_tension.newtons(),
+        )]))
     }
 }

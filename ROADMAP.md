@@ -39,8 +39,8 @@ Guiding principles:
 - [ ] Change-of-state equation; initial / final-after-creep / final-after-load conditions *(linear elastic + thermal done; creep / final conditions pending)*
 - [x] Ruling-span (equivalent span) method for tension sections, plus exact equal-H section solution
 - [x] Weather cases (temperature, wind, ice, combined) and tension limit criteria (% RTS, catenary constant, H/w)
-- [ ] `ols-wireloads`: additional loads on wires — point loads (N, 3D vector) and distributed loads (N/m, full span or sub-interval), permanent or per load case
-- [ ] Segmented-catenary solution for spans with point loads / partial distributed loads
+- [x] `ols-wireloads`: additional loads on wires — point loads (N, 3D vector) and distributed loads (N/m, full span or sub-interval), permanent or per load case
+- [x] Segmented-catenary solution for spans with point loads / partial distributed loads *(vertical plane; transverse components → FE wire model, Phase 4)*
 - [ ] Stringing charts output (CSV / PDF)
 - [ ] CLI: `ols sagtension project.json`
 - [ ] Performance: single section re-solve < 10 ms
