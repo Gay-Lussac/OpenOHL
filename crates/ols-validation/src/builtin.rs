@@ -4,9 +4,9 @@
 
 //! Calculations shipped with OLS CAD, exposed to the validation runner.
 
-use ols_core::units::{Force, ForcePerLength, Length, Quantity};
-use ols_sagtension::Catenary;
+use ols_core::units::{Force, ForcePerLength, Length, Quantity, Temperature};
 use ols_sagtension::catenary::{SpanGeometry, default_solver_budget, tension_for_sag};
+use ols_sagtension::{Catenary, ElasticCable, InstalledSpan, LoadState};
 
 use crate::{Calculation, Inputs, Outputs, Registry};
 
@@ -14,6 +14,17 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(UnitsConvert));
     registry.register(Box::new(CatenarySpan));
     registry.register(Box::new(CatenaryTensionForSag));
+    registry.register(Box::new(ChangeOfState));
+}
+
+fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
+    let value = inputs
+        .get(name)
+        .ok_or_else(|| format!("missing input \"{name}\""))?;
+    value
+        .as_float()
+        .or_else(|| value.as_integer().map(|i| i as f64))
+        .ok_or_else(|| format!("input \"{name}\" must be a number"))
 }
 
 /// Reads an input given as text with a unit, e.g. `span = "300 m"`.
@@ -120,5 +131,56 @@ impl Calculation for CatenaryTensionForSag {
             "horizontal_tension_n",
             catenary.horizontal_tension.newtons(),
         )]))
+    }
+}
+
+/// `sagtension.change_of_state`: single span, linear elastic + thermal.
+struct ChangeOfState;
+
+impl Calculation for ChangeOfState {
+    fn id(&self) -> &'static str {
+        "sagtension.change_of_state"
+    }
+
+    fn description(&self) -> &'static str {
+        "Single-span change of state (inputs: span, rise, axial_stiffness, thermal_expansion, \
+         known_tension, known_load, known_temperature, load, temperature)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let geometry = SpanGeometry::inclined(
+            quantity_input::<Length>(inputs, "span")?,
+            quantity_input::<Length>(inputs, "rise")?,
+        );
+        let cable = ElasticCable {
+            axial_stiffness: quantity_input::<Force>(inputs, "axial_stiffness")?,
+            thermal_expansion: float_input(inputs, "thermal_expansion")?,
+        };
+        let known = LoadState {
+            load: quantity_input::<ForcePerLength>(inputs, "known_load")?,
+            temperature: quantity_input::<Temperature>(inputs, "known_temperature")?,
+        };
+        let state = LoadState {
+            load: quantity_input::<ForcePerLength>(inputs, "load")?,
+            temperature: quantity_input::<Temperature>(inputs, "temperature")?,
+        };
+        let solution = InstalledSpan::from_known_state(
+            geometry,
+            cable,
+            known,
+            quantity_input::<Force>(inputs, "known_tension")?,
+        )
+        .and_then(|span| span.solve(state, &default_solver_budget()))
+        .map_err(|e| e.to_string())?;
+        Ok(outputs([
+            (
+                "horizontal_tension_n",
+                solution.catenary.horizontal_tension.newtons(),
+            ),
+            ("sag_m", solution.sag().meters()),
+            ("length_m", solution.length().meters()),
+            ("tension_left_n", solution.tension_left().newtons()),
+            ("tension_right_n", solution.tension_right().newtons()),
+        ]))
     }
 }

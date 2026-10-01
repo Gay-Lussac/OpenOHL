@@ -1,0 +1,41 @@
+# Change of state of a single span, linear elastic + thermal (multiplicative
+# strain model). Reference values computed independently by
+# reference_change_of_state.py (numerical tension integral, secant root on
+# log H). Cable: EA = 34.64 MN, alpha = 18.9e-6 /K (Drake-like). Outputs in SI.
+
+[[case]]
+id = "cos-001"
+title = "Level 300 m: 28 kN at 15 °C bare -> 75 °C bare"
+calculation = "sagtension.change_of_state"
+reference = "Independent evaluation (benchmarks/sagtension/reference_change_of_state.py)"
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "0 m", axial_stiffness = "34.64e6 N", thermal_expansion = 18.9e-6, known_tension = "28 kN", known_load = "15.97 N/m", known_temperature = "15 °C", load = "15.97 N/m", temperature = "75 °C" }
+expected.horizontal_tension_n = { value = 21067.36989, rel_tol = 1e-7 }
+expected.sag_m = { value = 8.537190866, rel_tol = 1e-7 }
+expected.length_m = { value = 300.6468781, rel_tol = 1e-9 }
+expected.tension_left_n = { value = 21203.70883, rel_tol = 1e-7 }
+
+[[case]]
+id = "cos-002"
+title = "Level 300 m: 28 kN at 15 °C bare -> -20 °C under 30 N/m"
+calculation = "sagtension.change_of_state"
+reference = "Independent evaluation (benchmarks/sagtension/reference_change_of_state.py)"
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "0 m", axial_stiffness = "34.64e6 N", thermal_expansion = 18.9e-6, known_tension = "28 kN", known_load = "15.97 N/m", known_temperature = "15 °C", load = "30 N/m", temperature = "-20 °C" }
+expected.horizontal_tension_n = { value = 51958.43074, rel_tol = 1e-7 }
+expected.sag_m = { value = 6.499638472, rel_tol = 1e-7 }
+expected.length_m = { value = 300.3751853, rel_tol = 1e-9 }
+expected.tension_left_n = { value = 52153.41989, rel_tol = 1e-7 }
+
+[[case]]
+id = "cos-003"
+title = "Inclined 450 m, +35 m: 22 kN at 15 °C -> 100 °C"
+calculation = "sagtension.change_of_state"
+reference = "Independent evaluation (benchmarks/sagtension/reference_change_of_state.py)"
+max_seconds = 1.0
+inputs = { span = "450 m", rise = "35 m", axial_stiffness = "34.64e6 N", thermal_expansion = 18.9e-6, known_tension = "22 kN", known_load = "15.97 N/m", known_temperature = "15 °C", load = "15.97 N/m", temperature = "100 °C" }
+expected.horizontal_tension_n = { value = 18973.31157, rel_tol = 1e-7 }
+expected.sag_m = { value = 21.43340663, rel_tol = 1e-7 }
+expected.length_m = { value = 454.0458059, rel_tol = 1e-9 }
+expected.tension_left_n = { value = 19092.74876, rel_tol = 1e-7 }
+expected.tension_right_n = { value = 19651.69876, rel_tol = 1e-7 }
