@@ -13,10 +13,14 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
 
+# Every job has a time limit (timeout-minutes) of about 3x its expected
+# duration, so a hang fails fast instead of burning CI minutes for 6 hours.
+
 jobs:
   lint:
     name: Format & clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # expected ~5 min (cold cache)
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -30,34 +34,139 @@ jobs:
     name: Test (${{ matrix.os }})
     needs: lint
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30 # expected ~10 min (wasmtime compile on cold cache)
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      OLS_REQUIRE_PLUGIN_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            plugins/examples/hello-wasm
+            plugins/tests/runaway
+      - name: Build test plugins
+        shell: bash
+        run: |
+          (cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2)
+          (cd plugins/tests/runaway && cargo build --release --target wasm32-wasip2)
+      - run: cargo test --workspace --exclude ols-py --locked
+
+  msrv:
+    name: Minimum Rust version (1.96)
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20 # expected ~6 min
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.96
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --locked
+
+  validate:
+    name: Validation cases
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # expected ~4 min
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --locked
+      - name: Run validation cases
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo run --locked -p ols-cli -- validate --report validation-report.md
+      - name: Publish report
+        if: always()
+        shell: bash
+        run: test -f validation-report.md && cat validation-report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-report
+          path: validation-report.md
+          if-no-files-found: ignore
 
-  msrv:
-    name: Minimum Rust version (1.85)
+  python:
+    name: Python bindings
     needs: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # expected ~4 min
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --locked
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install maturin pytest
+      - run: pip install ./crates/ols-py
+      - run: pytest -q crates/ols-py/tests
+      - run: python plugins/examples/hello-python/hello.py
 
   docs:
-    name: Docs
+    name: Docs (rustdoc + book)
     needs: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # expected ~4 min
     env:
       RUSTDOCFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook
       - run: cargo doc --workspace --no-deps --locked
+      - run: cargo run --locked -p ols-cli -- validate --report docs/validation/report.md
+      - run: mdbook build
+      - run: cp -r target/doc target/book/api
+      - uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: target/book
+
+  bench:
+    name: Benchmarks
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20 # expected ~5 min; each benchmark is bounded to ~3 s
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run benchmarks
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo bench --locked --workspace --bench '*' -- --output-format bencher | tee bench-output.txt
+      - name: Restore previous results
+        uses: actions/cache/restore@v4
+        with:
+          path: bench-cache
+          key: bench-${{ runner.os }}-${{ github.sha }}
+          restore-keys: bench-${{ runner.os }}-
+      - name: Compare with previous results (fail if > 1.5x slower)
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: cargo
+          output-file-path: bench-output.txt
+          external-data-json-path: bench-cache/benchmark-data.json
+          alert-threshold: "150%"
+          fail-on-alert: true
+          summary-always: true
+      - name: Save results as the new baseline (main only)
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: bench-cache
+          key: bench-${{ runner.os }}-${{ github.sha }}

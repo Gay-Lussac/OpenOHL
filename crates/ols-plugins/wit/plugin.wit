@@ -1,0 +1,34 @@
+// OLS CAD plugin interface (ADR-0003).
+//
+// This is the stable contract between OLS CAD and WebAssembly plugins.
+// Breaking changes require a new major version of the package.
+
+package ols:plugin@0.1.0;
+
+/// Types shared by all plugins.
+interface types {
+    /// Identity of a plugin, reported to the host when it is loaded.
+    record plugin-info {
+        /// Unique plugin name, e.g. "acme-marker-balls".
+        name: string,
+        /// Plugin version (semantic versioning).
+        version: string,
+        /// One-line description.
+        description: string,
+    }
+}
+
+/// Minimal world every WebAssembly plugin implements.
+///
+/// Extension-point interfaces (cable models, design codes, checks, …) will be
+/// added as further exports in later versions.
+world plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    /// Example numeric entry point: total load of a uniformly distributed
+    /// load `load-per-meter` (N/m) over `span-length` (m), in N.
+    export span-load: func(load-per-meter: f64, span-length: f64) -> f64;
+}

@@ -12,19 +12,20 @@ Guiding principles:
 ## Phase 0 — Foundations
 *Goal: a project people can contribute to.*
 
-- [ ] Choose license (see ADR-0001)
-- [ ] Choose tech stack: language, GUI toolkit, 3D engine (ADR-0002)
-- [ ] Define the plugin / extension mechanism (ADR-0003)
-- [ ] Define the open project file format (ADR-0004)
-- [ ] Define the collaboration / session model (ADR-0005)
-- [ ] Define the rendering, LOD & streaming strategy (ADR-0006)
-- [ ] Cargo workspace layout, CI (clippy, tests, benchmarks) on Linux/macOS/Windows
-- [ ] Python bindings skeleton (`ols-py`, PyO3) and WASM plugin host skeleton
-- [ ] Performance benchmark harness (criterion) with regression gate in CI
-- [ ] Units system (SI internally, US customary + SI at the I/O boundary)
-- [ ] Documentation site skeleton (theory manual + API reference)
-- [ ] Validation/benchmark framework (case format + reference results + tolerance reporting)
-- [ ] Contribution guide, code of conduct, clean-room policy
+- [x] Choose license (see ADR-0001)
+- [x] Choose tech stack: language, 3D engine (ADR-0002) — GUI toolkit deferred to Phase 3
+- [x] Define the plugin / extension mechanism (ADR-0003)
+- [x] Define the open project file format (ADR-0004)
+- [x] Define the collaboration / session model (ADR-0005)
+- [x] Define the rendering, LOD & streaming strategy (ADR-0006)
+- [x] Cargo workspace layout, CI (clippy, tests, benchmarks) on Linux/macOS/Windows
+- [x] Python bindings skeleton (`ols-py`, PyO3) and WASM plugin host skeleton
+- [x] Performance benchmark harness (criterion) with regression gate in CI
+- [x] Units system (SI internally, US customary + SI at the I/O boundary)
+- [x] Documentation site skeleton (theory manual + API reference)
+- [x] Validation/benchmark framework (case format + reference results + tolerance reporting)
+- [x] Contribution guide, code of conduct, governance, clean-room policy
+- [x] Exit clauses: `ols_core::budget` (iteration/time limits, cancellation), plugin time & memory limits, validation case time limits, CI job timeouts
 
 **Deliverable:** empty-but-wired repo, CI green, ADRs accepted.
 

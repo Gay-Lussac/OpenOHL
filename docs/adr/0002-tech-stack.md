@@ -13,6 +13,7 @@ Goal: faster and more user-friendly than existing tools (DESIGN_GOALS §1). Core
 
 ## Decision
 - **Rust** (stable, edition 2024), single Cargo workspace, one crate per module.
+- Minimum supported Rust version (MSRV): follows the MSRV of `wasmtime` (about three releases behind latest stable); currently 1.96. OLS CAD is an application, so tracking recent Rust is acceptable.
 - Geometry: `glam` / `nalgebra`; large dense & sparse linear algebra (FE): `faer`.
 - Parallelism: `rayon` in engines; engines are synchronous. `tokio` only for networking.
 - Units: SI `f64` internally; typed quantities (`Newtons`, `NewtonsPerMeter`, …) at the public API; conversion only at I/O.

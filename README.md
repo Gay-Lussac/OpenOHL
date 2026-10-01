@@ -27,11 +27,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
 
 ```
 OLS-CAD/
-├── docs/              Architecture, ADRs, theory manual, validation reports
+├── docs/              Documentation book (mdBook): design, ADRs, theory manual, dev guide
 ├── crates/            One Rust crate per module (see docs/ARCHITECTURE.md)
-│   ├── ols-core/      Data model, units, geometry (started: units)
+│   ├── ols-core/      Data model, units, time budgets (exit clauses)
+│   ├── ols-validation/ Validation framework (`ols validate`)
+│   ├── ols-plugins/   Plugin manifests + sandboxed WebAssembly host (WIT interface)
+│   ├── ols-py/        Python bindings (`import ols`)
 │   └── ols-cli/       `ols` command-line tool
-├── plugins/           First-party plugins (design codes, formats, reports)
+├── plugins/           Plugins: examples/ (WASM + Python), tests/ (runaway plugin)
 ├── benchmarks/        Validation cases with reference results
 └── examples/          Sample projects
 ```
@@ -42,6 +45,7 @@ OLS-CAD/
 - [docs/DESIGN_GOALS.md](docs/DESIGN_GOALS.md) — performance targets, UX, wire loads, multi-user server, LOD, insulator strings, version control, exports
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — modules, data model, plugin system
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute, clean-room rules
+- [GOVERNANCE.md](GOVERNANCE.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - [docs/adr/](docs/adr/) — architecture decision records
 
 ## License

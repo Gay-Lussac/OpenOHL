@@ -21,7 +21,7 @@ Every calculation PR must include:
 
 ## Development setup
 
-1. Install Rust with [rustup](https://rustup.rs) (the repository pins the `stable` channel in `rust-toolchain.toml`; minimum supported version 1.85).
+1. Install Rust with [rustup](https://rustup.rs) (the repository pins the `stable` channel in `rust-toolchain.toml`; minimum supported version 1.96).
 2. Build and test:
 
    ```bash
@@ -37,7 +37,20 @@ Every calculation PR must include:
    cargo clippy --workspace --all-targets -- -D warnings
    ```
 
-Every source file starts with the MPL-2.0 header (copy it from an existing file).
+4. Optional parts:
+
+   ```bash
+   # WebAssembly plugins (needed for the plugin host tests)
+   rustup target add wasm32-wasip2
+   (cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2)
+   (cd plugins/tests/runaway && cargo build --release --target wasm32-wasip2)
+   # Python bindings
+   pip install maturin pytest && pip install ./crates/ols-py && pytest crates/ols-py/tests
+   # Documentation book
+   cargo install mdbook && mdbook build   # output in target/book
+   ```
+
+Every source file starts with the MPL-2.0 header (copy it from an existing file). Iterative or long-running code must have exit clauses (see docs/development/performance.md).
 
 ## Workflow
 

@@ -1,0 +1,100 @@
+# Unit conversion factors checked against NIST Special Publication 811 (2008 edition),
+# "Guide for the Use of the International System of Units (SI)", Appendix B.
+# NIST tabulates factors to 7 significant digits, hence rel_tol = 1e-6 unless exact.
+
+[[case]]
+id = "units-001"
+title = "Foot to metre (exact)"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — foot (exact)"
+inputs = { quantity = "length", value = "1 ft", to = "m" }
+expected.value = { value = 0.3048, abs_tol = 1e-15 }
+
+[[case]]
+id = "units-002"
+title = "Mile to metre (exact)"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — mile (international, exact)"
+inputs = { quantity = "length", value = "1 mi", to = "m" }
+expected.value = { value = 1609.344, abs_tol = 1e-9 }
+
+[[case]]
+id = "units-003"
+title = "Pound-force to newton"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — pound-force"
+inputs = { quantity = "force", value = "1 lbf", to = "N" }
+expected.value = { value = 4.448222, rel_tol = 1e-6 }
+
+[[case]]
+id = "units-004"
+title = "Kip to newton"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — kip (1 kip = 1000 lbf)"
+inputs = { quantity = "force", value = "1 kip", to = "N" }
+expected.value = { value = 4448.222, rel_tol = 1e-6 }
+
+[[case]]
+id = "units-005"
+title = "Pound-force per foot to newton per metre"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — pound-force per foot"
+inputs = { quantity = "force per length", value = "1 lbf/ft", to = "N/m" }
+expected.value = { value = 14.59390, rel_tol = 1e-6 }
+
+[[case]]
+id = "units-006"
+title = "Pound-force per square inch to pascal"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — psi"
+inputs = { quantity = "stress", value = "1 psi", to = "Pa" }
+expected.value = { value = 6894.757, rel_tol = 1e-6 }
+
+[[case]]
+id = "units-007"
+title = "Kip per square inch to pascal"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — ksi"
+inputs = { quantity = "stress", value = "1 ksi", to = "Pa" }
+expected.value = { value = 6.894757e6, rel_tol = 1e-6 }
+
+[[case]]
+id = "units-008"
+title = "Pound per foot to kilogram per metre"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — pound per foot"
+inputs = { quantity = "mass per length", value = "1 lbm/ft", to = "kg/m" }
+expected.value = { value = 1.488164, rel_tol = 1e-6 }
+
+[[case]]
+id = "units-009"
+title = "Circular mil to square metre"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — circular mil"
+notes = "1 kcmil = 1000 circular mils; NIST gives 5.067075E-10 m² per circular mil."
+inputs = { quantity = "area", value = "1 kcmil", to = "m²" }
+expected.value = { value = 5.067075e-7, rel_tol = 1e-6 }
+
+[[case]]
+id = "units-010"
+title = "Mile per hour to metre per second (exact)"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — mile per hour"
+inputs = { quantity = "speed", value = "1 mph", to = "m/s" }
+expected.value = { value = 0.44704, abs_tol = 1e-15 }
+
+[[case]]
+id = "units-011"
+title = "Degree Fahrenheit to degree Celsius"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — t/°C = (t/°F − 32)/1.8"
+inputs = { quantity = "temperature", value = "212 °F", to = "°C" }
+expected.value = { value = 100.0, abs_tol = 1e-9 }
+
+[[case]]
+id = "units-012"
+title = "Degree to radian"
+calculation = "units.convert"
+reference = "NIST SP 811 (2008), Appendix B.8 — degree (π/180 rad)"
+inputs = { quantity = "angle", value = "1 deg", to = "rad" }
+expected.value = { value = 1.745329e-2, rel_tol = 1e-6 }

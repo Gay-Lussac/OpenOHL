@@ -11,9 +11,13 @@ authors.workspace = true
 [[bin]]
 name = "ols"
 path = "src/main.rs"
+# The `ols` Python module (ols-py) owns the `ols` docs page.
+doc = false
 
 [dependencies]
 ols-core.workspace = true
+ols-validation.workspace = true
+ols-plugins.workspace = true
 clap.workspace = true
 
 [lints]

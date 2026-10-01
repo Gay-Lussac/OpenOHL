@@ -21,6 +21,18 @@ OLS CAD aims to be **faster and more user-friendly** than existing overhead line
 | 3D view with LiDAR (≥ 1 billion points, streamed) | ≥ 60 fps, first frame < 1 s |
 | Change propagated to other users in a shared session (LAN) | < 100 ms |
 
+### Time budgets and exit clauses
+
+Nothing in OLS CAD may run forever or freeze the application. Every function that can take time must have an **estimated duration** and **exit clauses**, and when it stops early it must **say why**:
+
+- **Iterative solvers** (catenary, change of state, FE, optimisation) always have a maximum iteration count *and* a convergence tolerance. Non-convergence returns an error with diagnostics (iterations done, last residual, inputs) — never an endless loop or a silently wrong result.
+- **Long-running tasks** (clearance runs, LiDAR processing, exports, spotting) have a time budget, can be cancelled by the user at any time, and report progress.
+- These rules are implemented once in `ols_core::budget` (`Budget`, `CancelToken`, `Stop`), and every engine uses them.
+- **Plugins** run with a time limit per call (default 5 s) and a memory cap (default 256 MiB); a runaway plugin is interrupted and reported (`PluginError::Timeout`) without affecting the rest of the application.
+- **Validation cases** have a time limit (`max_seconds`, default 10 s) and their duration is recorded in the report.
+- **CI jobs** have a `timeout-minutes` limit; benchmarks use fixed measurement times.
+- Budgets are derived from the performance targets above: when a target says "< 10 ms", the default time limit is set with a safety margin (e.g. 10×) so a limit being hit always indicates a real problem to investigate, not normal variation.
+
 ## 2. User-friendliness
 
 - Direct manipulation: drag structures on the profile, wires and clearances update live.

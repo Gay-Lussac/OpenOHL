@@ -13,14 +13,21 @@
 //! use ols_core::units::{Force, ForcePerLength, Length};
 //!
 //! let w = ForcePerLength::from_newtons_per_meter(15.97);
-//! let span = Length::from_feet(1000.0);
+//! let span: Length = "1000 ft".parse().unwrap();
 //! let total: Force = w * span;
 //! assert!((total.kilonewtons() - 4.8677).abs() < 1e-3);
 //! ```
+//!
+//! Quantities serialize as their plain SI value, so project files always
+//! store SI numbers (ADR-0004). Text input must always carry a unit: a bare
+//! number is rejected rather than guessed.
 
 use std::fmt;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
+use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
 
 /// Standard acceleration of gravity, m/s² (CGPM 1901).
 pub const STANDARD_GRAVITY: f64 = 9.806_65;
@@ -43,10 +50,138 @@ pub mod factors {
 
 use factors::{CIRCULAR_MIL, FOOT, INCH, MILE, POUND_FORCE, POUND_MASS};
 
+/// Unit system used to display quantities and to interpret user preferences.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnitSystem {
+    /// SI with engineering prefixes (m, kN, N/m, MPa, °C, …).
+    #[default]
+    Metric,
+    /// US customary (ft, lbf, lbf/ft, psi, °F, …).
+    UsCustomary,
+}
+
+/// Error returned when parsing a quantity from text such as `"1000 ft"`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseQuantityError {
+    /// The text has no unit. Units are mandatory on input.
+    MissingUnit,
+    /// The numeric part could not be parsed.
+    InvalidNumber(String),
+    /// The kind of quantity is not known (see [`QUANTITY_KINDS`]).
+    UnknownQuantity(String),
+    /// The unit is not known for this kind of quantity.
+    UnknownUnit {
+        /// The unit as written.
+        unit: String,
+        /// The kind of quantity that was expected.
+        quantity: &'static str,
+    },
+}
+
+impl fmt::Display for ParseQuantityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingUnit => write!(f, "missing unit (e.g. \"12.5 m\")"),
+            Self::InvalidNumber(n) => write!(f, "invalid number \"{n}\""),
+            Self::UnknownQuantity(kind) => write!(f, "unknown quantity \"{kind}\""),
+            Self::UnknownUnit { unit, quantity } => {
+                write!(f, "unknown unit \"{unit}\" for {quantity}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParseQuantityError {}
+
+/// Splits `"12.5 kN"` / `"12.5kN"` into its number and unit.
+fn split_value(text: &str) -> Result<(f64, &str), ParseQuantityError> {
+    let text = text.trim();
+    let end = text
+        .char_indices()
+        .find(|&(i, c)| {
+            !(c.is_ascii_digit()
+                || c == '.'
+                || ((c == '+' || c == '-')
+                    && (i == 0 || matches!(text.as_bytes()[i - 1], b'e' | b'E')))
+                || ((c == 'e' || c == 'E')
+                    && text[i + 1..]
+                        .starts_with(|n: char| n.is_ascii_digit() || n == '+' || n == '-')))
+        })
+        .map_or(text.len(), |(i, _)| i);
+    let (number, unit) = text.split_at(end);
+    let unit = unit.trim();
+    if unit.is_empty() {
+        return Err(ParseQuantityError::MissingUnit);
+    }
+    let value = number
+        .parse::<f64>()
+        .map_err(|_| ParseQuantityError::InvalidNumber(number.to_owned()))?;
+    Ok((value, unit))
+}
+
+/// A value with a display unit, produced by [`Quantity::display_in`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DisplayValue {
+    /// Numeric value in `unit`.
+    pub value: f64,
+    /// Unit symbol.
+    pub unit: &'static str,
+}
+
+impl fmt::Display for DisplayValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match f.precision() {
+            Some(p) => write!(f, "{:.*} {}", p, self.value, self.unit),
+            None => write!(f, "{} {}", self.value, self.unit),
+        }
+    }
+}
+
+/// Behaviour shared by all quantity types.
+pub trait Quantity: Copy + FromStr<Err = ParseQuantityError> {
+    /// Human-readable name of the kind of quantity (e.g. `"length"`).
+    const KIND: &'static str;
+
+    /// Creates the quantity from a value in SI units.
+    fn from_si(value: f64) -> Self;
+
+    /// Value in SI units.
+    fn si(self) -> f64;
+
+    /// Creates the quantity from a value in the unit with the given symbol.
+    fn from_value(value: f64, unit: &str) -> Option<Self>;
+
+    /// Value in the unit with the given symbol, if the unit is known.
+    fn value_in(self, unit: &str) -> Option<f64>;
+
+    /// Preferred display unit symbol for a unit system.
+    fn display_unit(system: UnitSystem) -> &'static str;
+
+    /// The value converted to the preferred unit of a unit system.
+    fn display_in(self, system: UnitSystem) -> DisplayValue {
+        let unit = Self::display_unit(system);
+        DisplayValue {
+            value: self.value_in(unit).expect("display unit is a known unit"),
+            unit,
+        }
+    }
+}
+
+/// Defines a quantity type stored in SI, its units and their symbols.
+///
+/// Each unit line is `from_fn, to_fn, factor_to_si, "label", ["symbol", "alias", …]`.
+/// The first symbol of a unit is its canonical symbol.
 macro_rules! quantity {
-    ($(#[$doc:meta])* $name:ident, $si_unit:literal) => {
+    (
+        $(#[$doc:meta])*
+        $name:ident, kind = $kind:literal, si = $si_unit:literal,
+        display = ($metric:literal, $us:literal),
+        units = [ $( $from:ident, $to:ident, $factor:expr, $label:literal, [$($sym:literal),+] );+ $(;)? ]
+    ) => {
         $(#[$doc])*
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+        #[serde(transparent)]
         #[repr(transparent)]
         pub struct $name(f64);
 
@@ -55,6 +190,8 @@ macro_rules! quantity {
             pub const ZERO: Self = Self(0.0);
             /// Symbol of the SI unit the value is stored in.
             pub const SI_UNIT: &'static str = $si_unit;
+            /// Known unit symbols (including aliases) and their factor to SI.
+            pub const UNITS: &'static [(&'static str, f64)] = &[ $( $( ($sym, $factor), )+ )+ ];
 
             /// Creates the quantity from a value in SI units.
             #[inline]
@@ -85,8 +222,83 @@ macro_rules! quantity {
             pub fn max(self, other: Self) -> Self {
                 Self(self.0.max(other.0))
             }
+
+            $(
+                #[doc = concat!("Creates the quantity from a value in ", $label, ".")]
+                #[inline]
+                pub fn $from(value: f64) -> Self {
+                    Self(value * $factor)
+                }
+
+                #[doc = concat!("Value in ", $label, ".")]
+                #[inline]
+                pub fn $to(self) -> f64 {
+                    self.0 / $factor
+                }
+            )+
+
+            fn factor(unit: &str) -> Option<f64> {
+                Self::UNITS.iter().find(|(s, _)| *s == unit).map(|&(_, f)| f)
+            }
         }
 
+        impl Quantity for $name {
+            const KIND: &'static str = $kind;
+
+            #[inline]
+            fn from_si(value: f64) -> Self {
+                Self(value)
+            }
+
+            #[inline]
+            fn si(self) -> f64 {
+                self.0
+            }
+
+            fn from_value(value: f64, unit: &str) -> Option<Self> {
+                Self::factor(unit).map(|f| Self(value * f))
+            }
+
+            fn value_in(self, unit: &str) -> Option<f64> {
+                Self::factor(unit).map(|f| self.0 / f)
+            }
+
+            fn display_unit(system: UnitSystem) -> &'static str {
+                match system {
+                    UnitSystem::Metric => $metric,
+                    UnitSystem::UsCustomary => $us,
+                }
+            }
+        }
+
+        impl FromStr for $name {
+            type Err = ParseQuantityError;
+
+            fn from_str(text: &str) -> Result<Self, Self::Err> {
+                let (value, unit) = split_value(text)?;
+                <Self as Quantity>::from_value(value, unit).ok_or_else(|| ParseQuantityError::UnknownUnit {
+                    unit: unit.to_owned(),
+                    quantity: $kind,
+                })
+            }
+        }
+
+        arithmetic!($name);
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match f.precision() {
+                    Some(p) => write!(f, "{:.*} {}", p, self.0, $si_unit),
+                    None => write!(f, "{} {}", self.0, $si_unit),
+                }
+            }
+        }
+    };
+}
+
+/// Same-kind arithmetic and scaling by plain numbers.
+macro_rules! arithmetic {
+    ($name:ident) => {
         impl Add for $name {
             type Output = Self;
             #[inline]
@@ -163,34 +375,6 @@ macro_rules! quantity {
                 Self(iter.map(|q| q.0).sum())
             }
         }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match f.precision() {
-                    Some(p) => write!(f, "{:.*} {}", p, self.0, $si_unit),
-                    None => write!(f, "{} {}", self.0, $si_unit),
-                }
-            }
-        }
-    };
-}
-
-/// Defines a constructor/accessor pair for a unit with a pure scale factor to SI.
-macro_rules! unit {
-    ($name:ident: $from:ident, $to:ident, $factor:expr, $label:literal) => {
-        impl $name {
-            #[doc = concat!("Creates the quantity from a value in ", $label, ".")]
-            #[inline]
-            pub fn $from(value: f64) -> Self {
-                Self(value * $factor)
-            }
-
-            #[doc = concat!("Value in ", $label, ".")]
-            #[inline]
-            pub fn $to(self) -> f64 {
-                self.0 / $factor
-            }
-        }
     };
 }
 
@@ -233,64 +417,73 @@ macro_rules! product {
 
 quantity!(
     /// Length, stored in metres.
-    Length,
-    "m"
+    Length, kind = "length", si = "m", display = ("m", "ft"),
+    units = [
+        from_meters, meters, 1.0, "metres", ["m"];
+        from_millimeters, millimeters, 1e-3, "millimetres", ["mm"];
+        from_kilometers, kilometers, 1e3, "kilometres", ["km"];
+        from_feet, feet, FOOT, "feet", ["ft"];
+        from_inches, inches, INCH, "inches", ["in"];
+        from_miles, miles, MILE, "miles", ["mi"];
+    ]
 );
-unit!(Length: from_meters, meters, 1.0, "metres");
-unit!(Length: from_millimeters, millimeters, 1e-3, "millimetres");
-unit!(Length: from_kilometers, kilometers, 1e3, "kilometres");
-unit!(Length: from_feet, feet, FOOT, "feet");
-unit!(Length: from_inches, inches, INCH, "inches");
-unit!(Length: from_miles, miles, MILE, "miles");
 
 quantity!(
     /// Area, stored in square metres.
-    Area,
-    "m²"
+    Area, kind = "area", si = "m²", display = ("mm²", "in²"),
+    units = [
+        from_square_meters, square_meters, 1.0, "square metres", ["m²", "m2"];
+        from_square_millimeters, square_millimeters, 1e-6, "square millimetres", ["mm²", "mm2"];
+        from_square_inches, square_inches, INCH * INCH, "square inches", ["in²", "in2"];
+        from_kcmil, kcmil, CIRCULAR_MIL * 1e3, "thousands of circular mils (kcmil / MCM)", ["kcmil", "MCM"];
+    ]
 );
-unit!(Area: from_square_meters, square_meters, 1.0, "square metres");
-unit!(Area: from_square_millimeters, square_millimeters, 1e-6, "square millimetres");
-unit!(Area: from_square_inches, square_inches, INCH * INCH, "square inches");
-unit!(Area: from_kcmil, kcmil, CIRCULAR_MIL * 1e3, "thousands of circular mils (kcmil / MCM)");
 
 quantity!(
     /// Force, stored in newtons. Used for tensions and point loads.
-    Force,
-    "N"
+    Force, kind = "force", si = "N", display = ("kN", "lbf"),
+    units = [
+        from_newtons, newtons, 1.0, "newtons", ["N"];
+        from_kilonewtons, kilonewtons, 1e3, "kilonewtons", ["kN"];
+        from_pounds_force, pounds_force, POUND_FORCE, "pounds-force", ["lbf", "lb"];
+        from_kips, kips, POUND_FORCE * 1e3, "kips", ["kip", "kips"];
+    ]
 );
-unit!(Force: from_newtons, newtons, 1.0, "newtons");
-unit!(Force: from_kilonewtons, kilonewtons, 1e3, "kilonewtons");
-unit!(Force: from_pounds_force, pounds_force, POUND_FORCE, "pounds-force");
-unit!(Force: from_kips, kips, POUND_FORCE * 1e3, "kips");
 
 quantity!(
     /// Force per unit length, stored in newtons per metre. Used for wire
     /// weights, wind and ice loads, and distributed loads on wires.
-    ForcePerLength,
-    "N/m"
+    ForcePerLength, kind = "force per length", si = "N/m", display = ("N/m", "lbf/ft"),
+    units = [
+        from_newtons_per_meter, newtons_per_meter, 1.0, "newtons per metre", ["N/m"];
+        from_kilonewtons_per_meter, kilonewtons_per_meter, 1e3, "kilonewtons per metre", ["kN/m"];
+        from_pounds_force_per_foot, pounds_force_per_foot, POUND_FORCE / FOOT, "pounds-force per foot", ["lbf/ft", "lb/ft"];
+    ]
 );
-unit!(ForcePerLength: from_newtons_per_meter, newtons_per_meter, 1.0, "newtons per metre");
-unit!(ForcePerLength: from_pounds_force_per_foot, pounds_force_per_foot, POUND_FORCE / FOOT, "pounds-force per foot");
 
 quantity!(
     /// Stress or pressure, stored in pascals. Used for moduli, stresses and
     /// wind pressures.
-    Stress,
-    "Pa"
+    Stress, kind = "stress", si = "Pa", display = ("MPa", "psi"),
+    units = [
+        from_pascals, pascals, 1.0, "pascals", ["Pa"];
+        from_kilopascals, kilopascals, 1e3, "kilopascals", ["kPa"];
+        from_megapascals, megapascals, 1e6, "megapascals", ["MPa", "N/mm²", "N/mm2"];
+        from_gigapascals, gigapascals, 1e9, "gigapascals", ["GPa"];
+        from_psi, psi, POUND_FORCE / (INCH * INCH), "pounds-force per square inch", ["psi"];
+        from_ksi, ksi, POUND_FORCE * 1e3 / (INCH * INCH), "kips per square inch", ["ksi"];
+        from_psf, psf, POUND_FORCE / (FOOT * FOOT), "pounds-force per square foot", ["psf"];
+    ]
 );
-unit!(Stress: from_pascals, pascals, 1.0, "pascals");
-unit!(Stress: from_megapascals, megapascals, 1e6, "megapascals");
-unit!(Stress: from_gigapascals, gigapascals, 1e9, "gigapascals");
-unit!(Stress: from_psi, psi, POUND_FORCE / (INCH * INCH), "pounds-force per square inch");
-unit!(Stress: from_psf, psf, POUND_FORCE / (FOOT * FOOT), "pounds-force per square foot");
 
 quantity!(
     /// Mass per unit length, stored in kilograms per metre.
-    MassPerLength,
-    "kg/m"
+    MassPerLength, kind = "mass per length", si = "kg/m", display = ("kg/m", "lbm/ft"),
+    units = [
+        from_kilograms_per_meter, kilograms_per_meter, 1.0, "kilograms per metre", ["kg/m"];
+        from_pounds_per_foot, pounds_per_foot, POUND_MASS / FOOT, "pounds (mass) per foot", ["lbm/ft"];
+    ]
 );
-unit!(MassPerLength: from_kilograms_per_meter, kilograms_per_meter, 1.0, "kilograms per metre");
-unit!(MassPerLength: from_pounds_per_foot, pounds_per_foot, POUND_MASS / FOOT, "pounds per foot");
 
 impl MassPerLength {
     /// Weight per unit length under standard gravity.
@@ -302,43 +495,47 @@ impl MassPerLength {
 
 quantity!(
     /// Plane angle, stored in radians.
-    Angle,
-    "rad"
+    Angle, kind = "angle", si = "rad", display = ("°", "°"),
+    units = [
+        from_radians, radians, 1.0, "radians", ["rad"];
+        from_degrees, degrees, std::f64::consts::PI / 180.0, "degrees", ["°", "deg"];
+    ]
 );
-unit!(Angle: from_radians, radians, 1.0, "radians");
-unit!(Angle: from_degrees, degrees, std::f64::consts::PI / 180.0, "degrees");
 
 quantity!(
     /// Speed, stored in metres per second. Used for wind speeds.
-    Speed,
-    "m/s"
+    Speed, kind = "speed", si = "m/s", display = ("m/s", "mph"),
+    units = [
+        from_meters_per_second, meters_per_second, 1.0, "metres per second", ["m/s"];
+        from_kilometers_per_hour, kilometers_per_hour, 1.0 / 3.6, "kilometres per hour", ["km/h"];
+        from_miles_per_hour, miles_per_hour, MILE / 3600.0, "miles per hour", ["mph"];
+    ]
 );
-unit!(Speed: from_meters_per_second, meters_per_second, 1.0, "metres per second");
-unit!(Speed: from_kilometers_per_hour, kilometers_per_hour, 1.0 / 3.6, "kilometres per hour");
-unit!(Speed: from_miles_per_hour, miles_per_hour, MILE / 3600.0, "miles per hour");
 
-quantity!(
-    /// Thermodynamic temperature, stored in kelvins.
-    ///
-    /// Differences between two temperatures are also expressed as a
-    /// `Temperature` (a difference of 1 K equals a difference of 1 °C).
-    Temperature,
-    "K"
-);
+/// Thermodynamic temperature, stored in kelvins.
+///
+/// Differences between two temperatures are also expressed as a `Temperature`
+/// (a difference of 1 K equals a difference of 1 °C).
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+#[repr(transparent)]
+pub struct Temperature(f64);
 
 impl Temperature {
+    /// Symbol of the SI unit the value is stored in.
+    pub const SI_UNIT: &'static str = "K";
     /// Offset between the Kelvin and Celsius scales.
     const CELSIUS_OFFSET: f64 = 273.15;
 
     /// Creates a temperature from kelvins.
     #[inline]
-    pub fn from_kelvin(value: f64) -> Self {
+    pub const fn from_kelvin(value: f64) -> Self {
         Self(value)
     }
 
     /// Value in kelvins.
     #[inline]
-    pub fn kelvin(self) -> f64 {
+    pub const fn kelvin(self) -> f64 {
         self.0
     }
 
@@ -364,6 +561,113 @@ impl Temperature {
     #[inline]
     pub fn fahrenheit(self) -> f64 {
         self.celsius() * 9.0 / 5.0 + 32.0
+    }
+}
+
+impl Quantity for Temperature {
+    const KIND: &'static str = "temperature";
+
+    #[inline]
+    fn from_si(value: f64) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    fn si(self) -> f64 {
+        self.0
+    }
+
+    fn from_value(value: f64, unit: &str) -> Option<Self> {
+        match unit {
+            "K" => Some(Self::from_kelvin(value)),
+            "°C" | "degC" => Some(Self::from_celsius(value)),
+            "°F" | "degF" => Some(Self::from_fahrenheit(value)),
+            _ => None,
+        }
+    }
+
+    fn value_in(self, unit: &str) -> Option<f64> {
+        match unit {
+            "K" => Some(self.kelvin()),
+            "°C" | "degC" => Some(self.celsius()),
+            "°F" | "degF" => Some(self.fahrenheit()),
+            _ => None,
+        }
+    }
+
+    fn display_unit(system: UnitSystem) -> &'static str {
+        match system {
+            UnitSystem::Metric => "°C",
+            UnitSystem::UsCustomary => "°F",
+        }
+    }
+}
+
+impl FromStr for Temperature {
+    type Err = ParseQuantityError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let (value, unit) = split_value(text)?;
+        Self::from_value(value, unit).ok_or_else(|| ParseQuantityError::UnknownUnit {
+            unit: unit.to_owned(),
+            quantity: Self::KIND,
+        })
+    }
+}
+
+arithmetic!(Temperature);
+
+impl fmt::Display for Temperature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match f.precision() {
+            Some(p) => write!(f, "{:.*} K", p, self.0),
+            None => write!(f, "{} K", self.0),
+        }
+    }
+}
+
+/// Names of every quantity kind, as accepted by [`convert`].
+pub const QUANTITY_KINDS: &[&str] = &[
+    Length::KIND,
+    Area::KIND,
+    Force::KIND,
+    ForcePerLength::KIND,
+    Stress::KIND,
+    MassPerLength::KIND,
+    Angle::KIND,
+    Speed::KIND,
+    Temperature::KIND,
+];
+
+/// Converts text such as `"1000 ft"` of the named quantity kind to the unit `to`.
+///
+/// Meant for dynamic callers (scripts, validation cases, file import); Rust
+/// code should use the typed quantities directly.
+///
+/// ```
+/// assert_eq!(ols_core::units::convert("length", "1 ft", "m"), Ok(0.3048));
+/// ```
+pub fn convert(quantity: &str, value: &str, to: &str) -> Result<f64, ParseQuantityError> {
+    fn run<Q: Quantity>(value: &str, to: &str) -> Result<f64, ParseQuantityError> {
+        let parsed: Q = value.parse()?;
+        parsed
+            .value_in(to)
+            .ok_or_else(|| ParseQuantityError::UnknownUnit {
+                unit: to.to_owned(),
+                quantity: Q::KIND,
+            })
+    }
+    match quantity {
+        Length::KIND => run::<Length>(value, to),
+        Area::KIND => run::<Area>(value, to),
+        Force::KIND => run::<Force>(value, to),
+        ForcePerLength::KIND => run::<ForcePerLength>(value, to),
+        Stress::KIND => run::<Stress>(value, to),
+        MassPerLength::KIND => run::<MassPerLength>(value, to),
+        Angle::KIND => run::<Angle>(value, to),
+        Speed::KIND => run::<Speed>(value, to),
+        Temperature::KIND => run::<Temperature>(value, to),
+        other => Err(ParseQuantityError::UnknownQuantity(other.to_owned())),
     }
 }
 
@@ -426,6 +730,11 @@ mod tests {
         assert_close(
             Stress::from_psi(1.0).pascals(),
             6_894.757_293_168_361,
+            1e-14,
+        );
+        assert_close(
+            Stress::from_ksi(1.0).megapascals(),
+            6.894_757_293_168_361,
             1e-14,
         );
         assert_close(
@@ -548,5 +857,148 @@ mod tests {
     fn display_uses_si_unit_and_precision() {
         assert_eq!(format!("{:.1}", Force::from_kilonewtons(1.25)), "1250.0 N");
         assert_eq!(format!("{}", Length::from_meters(2.5)), "2.5 m");
+    }
+
+    #[test]
+    fn parse_with_and_without_space() {
+        assert_close("1000 ft".parse::<Length>().unwrap().meters(), 304.8, 1e-15);
+        assert_close("1000ft".parse::<Length>().unwrap().meters(), 304.8, 1e-15);
+        assert_close(
+            "  -2.5e3 N ".parse::<Force>().unwrap().kilonewtons(),
+            -2.5,
+            1e-15,
+        );
+        assert_close(
+            "1.2E+1kN".parse::<Force>().unwrap().kilonewtons(),
+            12.0,
+            1e-15,
+        );
+        assert_close(
+            "795 kcmil".parse::<Area>().unwrap().square_millimeters(),
+            402.832_45,
+            1e-6,
+        );
+        assert_close(
+            "1.09 lbf/ft"
+                .parse::<ForcePerLength>()
+                .unwrap()
+                .newtons_per_meter(),
+            15.907_354,
+            1e-6,
+        );
+        assert_close(
+            "-20 °C".parse::<Temperature>().unwrap().kelvin(),
+            253.15,
+            1e-12,
+        );
+        assert_close(
+            "32 degF".parse::<Temperature>().unwrap().celsius(),
+            0.0,
+            1e-12,
+        );
+        assert_close(
+            "90 deg".parse::<Angle>().unwrap().radians(),
+            std::f64::consts::FRAC_PI_2,
+            1e-15,
+        );
+    }
+
+    #[test]
+    fn parse_errors() {
+        assert_eq!(
+            "12.5".parse::<Length>(),
+            Err(ParseQuantityError::MissingUnit)
+        );
+        assert_eq!(
+            "12.5 kN".parse::<Length>(),
+            Err(ParseQuantityError::UnknownUnit {
+                unit: "kN".into(),
+                quantity: "length"
+            })
+        );
+        assert!(matches!(
+            "1.2.3 m".parse::<Length>(),
+            Err(ParseQuantityError::InvalidNumber(_))
+        ));
+        assert_eq!(
+            " ft".parse::<Length>(),
+            Err(ParseQuantityError::InvalidNumber(String::new()))
+        );
+    }
+
+    #[test]
+    fn display_in_unit_system() {
+        let t = Force::from_kilonewtons(25.0);
+        assert_eq!(
+            format!("{:.2}", t.display_in(UnitSystem::Metric)),
+            "25.00 kN"
+        );
+        assert_eq!(
+            format!("{:.0}", t.display_in(UnitSystem::UsCustomary)),
+            "5620 lbf"
+        );
+        let temp = Temperature::from_celsius(75.0);
+        assert_eq!(
+            format!("{:.0}", temp.display_in(UnitSystem::UsCustomary)),
+            "167 °F"
+        );
+    }
+
+    #[test]
+    fn every_display_unit_is_known() {
+        fn check<Q: Quantity>() {
+            for system in [UnitSystem::Metric, UnitSystem::UsCustomary] {
+                assert!(
+                    Q::from_value(1.0, Q::display_unit(system)).is_some(),
+                    "{} / {system:?}",
+                    Q::KIND
+                );
+            }
+        }
+        check::<Length>();
+        check::<Area>();
+        check::<Force>();
+        check::<ForcePerLength>();
+        check::<Stress>();
+        check::<MassPerLength>();
+        check::<Angle>();
+        check::<Speed>();
+        check::<Temperature>();
+    }
+
+    #[test]
+    fn convert_by_kind_name() {
+        assert_close(
+            convert("force", "1 kip", "kN").unwrap(),
+            4.448_221_615_260_5,
+            1e-15,
+        );
+        assert_close(convert("temperature", "0 °C", "°F").unwrap(), 32.0, 1e-12);
+        assert_eq!(
+            convert("volume", "1 m", "m"),
+            Err(ParseQuantityError::UnknownQuantity("volume".into()))
+        );
+        assert!(matches!(
+            convert("length", "1 m", "kN"),
+            Err(ParseQuantityError::UnknownUnit { .. })
+        ));
+        for kind in QUANTITY_KINDS {
+            assert!(!matches!(
+                convert(kind, "1 x", "x"),
+                Err(ParseQuantityError::UnknownQuantity(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn serializes_as_plain_si_number() {
+        let span = Length::from_feet(100.0);
+        assert_eq!(serde_json::to_string(&span).unwrap(), "30.48");
+        let back: Length = serde_json::from_str("30.48").unwrap();
+        assert_eq!(back, span);
+        assert_eq!(
+            serde_json::to_string(&UnitSystem::UsCustomary).unwrap(),
+            "\"us_customary\""
+        );
     }
 }

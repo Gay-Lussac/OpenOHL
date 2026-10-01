@@ -1,0 +1,13 @@
+[book]
+title = "OLS CAD"
+description = "Open Line System Computer Assisted Design — documentation and theory manual"
+authors = ["OLS CAD contributors"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "target/book"
+
+[output.html]
+mathjax-support = true
+git-repository-url = "https://github.com/Gay-Lussac/OLS-CAD"

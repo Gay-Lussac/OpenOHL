@@ -15,4 +15,4 @@ htmlcov/
 .vscode/
 
 # Rust
-/target/
+target/
