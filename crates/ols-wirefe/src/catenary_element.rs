@@ -109,12 +109,16 @@ fn geometry(h: f64, v0: f64, l0: f64, ea: f64, w: f64) -> (Vector2<f64>, Matrix2
 }
 
 /// Default exit clauses for one element solve: Newton converges in a few
-/// iterations from a good start (~1 µs each); 100 iterations / 20 ms is a
-/// wide margin.
+/// iterations from a good start (~1 µs each). The iteration limit (100,
+/// ~100 µs) is what bounds the work; the time limit is only a backstop and
+/// must stay far above it: a 20 ms limit fired after 4 iterations on a CI
+/// Windows runner, where the OS paused the test thread while debug-build
+/// tests ran in parallel — a false stop, not a convergence problem. The
+/// enclosing structure solve has its own limit ([`crate::default_fe_budget`]).
 pub fn default_element_budget() -> Budget {
     Budget::new()
         .max_iterations(100)
-        .time_limit(std::time::Duration::from_millis(20))
+        .time_limit(std::time::Duration::from_millis(500))
 }
 
 impl CableProperties {
