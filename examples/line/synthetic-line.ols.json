@@ -3,23 +3,6 @@
   "version": 1,
   "name": "Synthetic example line (invented coordinates)",
   "crs": "local (invented)",
-  "alignment": [
-    [
-      0,
-      0,
-      500
-    ],
-    [
-      640,
-      0,
-      498
-    ],
-    [
-      1250.580806867569,
-      107.6618701534968,
-      503
-    ]
-  ],
   "structures": [
     {
       "id": "T1",
@@ -145,6 +128,21 @@
             524.5
           ],
           "insulator_weight": 900.0
+        },
+        {
+          "set": 2,
+          "phase": 1,
+          "label": "branch dead-end",
+          "insulator_point": [
+            640,
+            1.5,
+            524.0
+          ],
+          "wire_point": [
+            640,
+            6.5,
+            523.5
+          ]
         }
       ]
     },
@@ -228,6 +226,59 @@
             1244.615,
             112.702,
             532.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T6",
+      "position": [
+        640,
+        280.0,
+        504.0
+      ],
+      "orientation_deg": 180.0,
+      "attachments": [
+        {
+          "set": 1,
+          "phase": 1,
+          "label": "suspension",
+          "insulator_point": [
+            640,
+            280.0,
+            530.0
+          ],
+          "wire_point": [
+            640,
+            280.0,
+            526.5
+          ],
+          "insulator_weight": 900.0
+        }
+      ]
+    },
+    {
+      "id": "T7",
+      "position": [
+        640,
+        560.0,
+        496.0
+      ],
+      "orientation_deg": 180.0,
+      "attachments": [
+        {
+          "set": 1,
+          "phase": 1,
+          "label": "dead-end",
+          "insulator_point": [
+            640,
+            560.0,
+            522.0
+          ],
+          "wire_point": [
+            640,
+            555.0,
+            521.5
           ]
         }
       ]
@@ -324,6 +375,75 @@
         ],
         "temperature": 15.0
       }
+    },
+    {
+      "id": "S3",
+      "cable": "acsr-drake-26-7",
+      "circuit": "Branch",
+      "phase_label": "L1",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T3",
+          "set": 2,
+          "phase": 1
+        },
+        {
+          "structure": "T6",
+          "set": 1,
+          "phase": 1
+        },
+        {
+          "structure": "T7",
+          "set": 1,
+          "phase": 1
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 22000.0,
+        "temperature": 15.0
+      }
     }
-  ]
+  ],
+  "routes": [
+    {
+      "id": "main",
+      "name": "Main route",
+      "alignment": [
+        [
+          0,
+          0,
+          500
+        ],
+        [
+          640,
+          0,
+          498
+        ],
+        [
+          1250.580806867569,
+          107.6618701534968,
+          503
+        ]
+      ],
+      "structures": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5"
+      ]
+    },
+    {
+      "id": "branch",
+      "name": "Branch from the Y pylon T3",
+      "structures": [
+        "T3",
+        "T6",
+        "T7"
+      ]
+    }
+  ],
+  "alignment": []
 }

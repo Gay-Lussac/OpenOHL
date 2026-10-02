@@ -54,15 +54,18 @@ Guiding principles:
 - [x] Line data model (`ols-line`, `.ols.json`): alignment, structures, attachment sets (insulator + wire points), wire sections, stringing, point loads *(stations/offsets still to come)*
 - [ ] `ols-session`: command system, operation log, undo/redo, incremental recalculation (dirty tracking)
 - [ ] Spatial chunk index (quadtree tile grid) (basis for streaming and LOD)
-- [ ] Alignment: PIs, line angles, stationing, offsets, coordinate systems (EPSG via PROJ)
+- [ ] Routes (DESIGN_GOALS §9): several alignments per line, structures shared between routes (Y pylons, parallel routes rejoining), stationing, offsets and line angles per route; coordinate systems (EPSG via PROJ)
 - [ ] `ols-terrain`: survey point import (CSV/XYZ), feature codes, breaklines, TIN generation, profile extraction (centreline + side profiles)
-- [ ] Structure library v1: simple framing with attachment points (x, y, z)
+- [ ] Structure library v1 (`.olss`, DESIGN_GOALS §10): one file per type, local attachment points, default insulator per set, extensions, placement (position, rotation, extension), derive types from an existing line
+- [ ] Insulator library basics (`.olsi`, DESIGN_GOALS §11): suspension, V-string, strain assemblies used by the solver
 - [ ] Insulator assembly model (graph of nodes and elements): suspension (I), V-string, tension/strain (single & multiple), post; **linked strings** via shared nodes (yokes, jumpers, jumper support strings) — see DESIGN_GOALS §6
 - [x] Multi-span sections solved in 3D (FE with suspension strings, wind per span, point loads); `ols line` with 3D HTML viewer and CSV exports — checked against a real PLS-CADD line (930 spans, median 1.1 cm)
 - [ ] Analytic insulator behaviour: I-string swing, V-string leg forces & slack detection, strain string geometry
 - [ ] `ols-clearance` v1: ground clearance, feature clearance, clearance envelopes per weather case
 - [ ] Plan & profile data output (SVG/DXF/CSV) — no GUI yet
 - [ ] Exporter/importer plugin interface (first formats: CSV, KML/KMZ)
+- [ ] Display: phase colours per circuit/phase, configurable per project and section (DESIGN_GOALS §12)
+- [ ] Jumpers connecting sections at dead-ends (slack cable elements, optional support strings; DESIGN_GOALS §12)
 
 **Deliverable:** load a survey + structure positions, compute wire positions and ground clearance violations from CLI.
 

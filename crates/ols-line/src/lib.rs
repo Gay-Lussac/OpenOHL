@@ -20,7 +20,10 @@
 //! elements, insulator strings) and solves it in any weather state.
 
 pub mod export;
+pub mod route;
 pub mod solve;
+
+pub use route::{Route, Station};
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -59,9 +62,13 @@ pub struct Line {
     /// Coordinate reference system, e.g. `"EPSG:2056"` (informative).
     #[serde(default)]
     pub crs: String,
-    /// Alignment points (PIs), in order.
+    /// Alignment points (PIs) of the implicit single route, used when
+    /// `routes` is empty (files written before routes existed).
     #[serde(default)]
     pub alignment: Vec<Point>,
+    /// Routes (alignments with their structures); see [`route`].
+    #[serde(default)]
+    pub routes: Vec<Route>,
     /// Structures.
     pub structures: Vec<Structure>,
     /// Wire sections.
@@ -267,6 +274,24 @@ impl Line {
                         s.id, a.set, a.phase
                     ));
                 }
+            }
+        }
+        let mut route_ids = BTreeMap::new();
+        for r in &self.routes {
+            if route_ids.insert(r.id.as_str(), ()).is_some() {
+                return invalid(format!("duplicate route id {}", r.id));
+            }
+            if r.structures.len() < 2 {
+                return invalid(format!("route {}: needs at least two structures", r.id));
+            }
+            if r.alignment.len() == 1 {
+                return invalid(format!(
+                    "route {}: an alignment needs at least two points",
+                    r.id
+                ));
+            }
+            if let Some(s) = r.structures.iter().find(|s| self.structure(s).is_none()) {
+                return invalid(format!("route {}: unknown structure {s}", r.id));
             }
         }
         let mut section_ids = BTreeMap::new();

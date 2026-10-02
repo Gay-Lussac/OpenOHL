@@ -75,6 +75,9 @@ enum Command {
         /// Write one row per span (tensions, sag, mid and low points) as CSV.
         #[arg(long)]
         spans_csv: Option<PathBuf>,
+        /// Print stationing, offsets and line angles of every route.
+        #[arg(long)]
+        stations: bool,
     },
     /// Inspect plugins.
     Plugin {
@@ -116,11 +119,13 @@ fn main() -> ExitCode {
             html,
             csv,
             spans_csv,
+            stations,
         }) => line(
             &file,
             &library,
             (temperature, wind_pressure, ice_thickness),
             [html.as_deref(), csv.as_deref(), spans_csv.as_deref()],
+            stations,
         ),
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
@@ -166,6 +171,7 @@ fn line(
     library: &std::path::Path,
     (temperature, wind_pressure, ice_thickness): (f64, f64, f64),
     [html, csv, spans_csv]: [Option<&std::path::Path>; 3],
+    stations: bool,
 ) -> ExitCode {
     use ols_core::units::{Length, Stress, Temperature};
     use ols_weather::WeatherCase;
@@ -176,6 +182,33 @@ fn line(
         let mut case = WeatherCase::still("state", Temperature::from_celsius(temperature));
         case.wind_pressure = Stress::from_pascals(wind_pressure);
         case.ice_thickness = Length::from_millimeters(ice_thickness);
+        if stations {
+            for route in line.effective_routes() {
+                println!("Route {} {}", route.id, route.name);
+                println!(
+                    "  {:<12} {:>11} {:>9} {:>10} {:>10}  also on routes",
+                    "structure", "station m", "offset m", "angle °", "ahead m"
+                );
+                // Print tiny rounding values as 0.00, not -0.00.
+                let clean = |x: f64| if x.abs() < 0.005 { 0.0 } else { x };
+                for st in route.stations(&line).map_err(|e| e.to_string())? {
+                    let others: Vec<String> = line
+                        .routes_of(&st.structure)
+                        .into_iter()
+                        .filter(|r| *r != route.id)
+                        .collect();
+                    println!(
+                        "  {:<12} {:>11.2} {:>9.2} {:>10.2} {:>10.2}  {}",
+                        st.structure,
+                        clean(st.station),
+                        clean(st.offset),
+                        clean(st.line_angle_deg),
+                        clean(st.ahead_span),
+                        others.join(", ")
+                    );
+                }
+            }
+        }
         let started = std::time::Instant::now();
         let results = ols_line::solve::solve_line(&line, &library, &case);
         let elapsed = started.elapsed();

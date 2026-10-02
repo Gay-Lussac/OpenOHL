@@ -156,3 +156,37 @@ Profiles must be exportable on their own, not only as part of drawing sheets:
 - Ground profile (centreline and side profiles), wire profiles per weather case, clearance lines, structures and labels.
 - Configurable horizontal/vertical scales and exaggeration, station ranges, sheet splitting.
 - Formats: DXF, PDF, SVG, CSV/XML (numeric data), and images.
+
+## 9. Routes, branches and shared structures
+
+A line can have **several routes**. A route is an alignment (PIs) plus the ordered list of structures along it; it defines stationing, offsets and line angles for its structures, and is the basis for profile drawings and clearance reports.
+
+- **A structure may belong to several routes.** A *Y pylon* (branch point) is listed by the main route and by the branch; two systems carried by one pylon that split onto two parallel pylon lines and rejoin later are modelled as parallel routes sharing their end structures.
+- **Wire sections are independent of routes**: they reference structures by id, so a section can run along one route, cross onto another at a shared structure, or follow a parallel route.
+- Stationing, line angles and offsets are computed **per route**; a shared structure has one station per route it belongs to.
+- Lines without explicit routes have one implicit route through all structures in file order (backwards compatible).
+
+## 10. Structure library (`.olss`)
+
+Each **structure type** (pylon, pole, portal…) is a file of its own (`*.olss`, "OLS structure", TOML) in a structure library directory (default `libraries/structures/`), so it can be reused, shared and version-controlled individually.
+
+- **Local axes**: origin at the ground centre, x transverse, y along the line (ahead), z up.
+- **Attachments**: set, phase, label, the insulator attachment point (local), the default insulator assembly (from the insulator library), and for strain sets the side (`ahead` / `back`).
+- **Extensions**: body/leg extensions as named height offsets, so one type covers several heights.
+- **Body outline** (optional): simple polylines for drawings and the 3D view (detailed meshes and LOD come with the renderer).
+- **Placement in a line**: a structure instance references a type, a position, a rotation (local x axis direction) and an extension; global attachment points are computed. Per-attachment overrides remain possible.
+- **Deriving types from an existing line**: attachment points of instances are transformed back to local coordinates and identical geometries are grouped into one type — a draft library from any imported line.
+- Later: strength data (allowable loads, Method 1/2 — Phase 4), full frame models (`ols-structures-fe`, Phase 5).
+
+## 11. Insulator assembly library (`.olsi`)
+
+Each **insulator assembly** is a file of its own (`*.olsi`, TOML) in an insulator library directory (default `libraries/insulators/`).
+
+- **Basic kinds (now)**: `suspension` (I-string: length, weight, axial stiffness, wind area), `v_string` (two legs: half width, leg length, leg weight, stiffness; legs tension-only), `strain` (dead-end: length, weight, stiffness; single or multiple strings).
+- Structure-type attachments name their default assembly; a structure instance can override it per attachment.
+- **Later (DESIGN_GOALS §6)**: general linked assemblies as a graph of nodes and elements — yokes, multiple strings, jumper support strings, counterweights — solved by `ols-wirefe`.
+
+## 12. Display and connections
+
+- **Phase colours**: wires are displayed in colours by phase (and per circuit); the colour scheme is configurable per project (e.g. L1/L2/L3 conventions differ between utilities) and per section.
+- **Jumpers at dead-ends**: jumpers connect the end of one section to the start of the next at a strain structure (or between circuits). They are modelled as short slack cable elements between the two wire points (with optional jumper support strings, §6), are drawn in 3D and included in clearance checks; their length or sag is a design input.
