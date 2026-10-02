@@ -5,6 +5,7 @@
 # User guide
 
 - [Getting started](user-guide/getting-started.md)
+- [Wire library files (.olsw)](user-guide/wire-library.md)
 
 # Theory manual
 

@@ -12,9 +12,10 @@ Re-implements the composite non-linear cable model from its definition
 - section tension by the secant method on log H.
 
 Cable: the SYNTHETIC test cable (invented curves, not a real conductor):
-outer 400 mm², alpha 23e-6, initial 300 e - 150 e^2 MPa (e in %), creep
-200 e - 100 e^2, final 550 MPa/%, no compression; core 65 mm², alpha 11.5e-6,
-initial 1800 e - 100 e^2, final 1900 MPa/%. Curves at 20 C.
+outer 400 mm², alpha 23e-6, initial 250 e - 110 e^2 + 40 e^3 - 8 e^4 MPa
+(e in %), creep 160 e - 60 e^2 + 15 e^3 - 2 e^4, final 550 MPa/%, no
+compression; core 65 mm², alpha 11.5e-6, initial 1800 e - 120 e^2 + 30 e^3
+- 5 e^4, final 1900 MPa/%. Degree-4 polynomials. Curves at 20 C.
 
 Run: python3 benchmarks/sagtension/reference_nonlinear.py  (standard library only)
 """
@@ -25,8 +26,8 @@ T_REF = 20.0
 W = 1.6 * 9.80665  # N/m
 COMPONENTS = [
     # area m², alpha, initial [MPa per %^k], creep, final MPa/%, compression limited
-    (400e-6, 23.0e-6, [0.0, 300.0, -150.0], [0.0, 200.0, -100.0], 550.0, True),
-    (65e-6, 11.5e-6, [0.0, 1800.0, -100.0], None, 1900.0, False),
+    (400e-6, 23.0e-6, [0.0, 250.0, -110.0, 40.0, -8.0], [0.0, 160.0, -60.0, 15.0, -2.0], 550.0, True),
+    (65e-6, 11.5e-6, [0.0, 1800.0, -120.0, 30.0, -5.0], None, 1900.0, False),
 ]
 
 

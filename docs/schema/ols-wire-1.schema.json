@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Gay-Lussac/OLS-CAD/docs/schema/ols-wire-1.schema.json",
+  "title": "OLS CAD wire library (.olsw), version 1",
+  "description": "A .olsw file is TOML. Parse it with any TOML library and validate the resulting object against this schema. Semantic checks (plausible ranges, rising curves, area within the diameter) are listed in docs/user-guide/wire-library.md and enforced by OLS CAD when loading.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cable"],
+  "properties": {
+    "format": { "const": "ols-wire" },
+    "version": { "type": "integer", "minimum": 1, "maximum": 1 },
+    "cable": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/cable" } }
+  },
+  "$defs": {
+    "length": {
+      "description": "Text with a length unit (m, mm, km, ft, in, mi) or a number in metres.",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string", "pattern": "^\\s*[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?\\s*(m|mm|km|ft|in|mi)\\s*$" }
+      ]
+    },
+    "area": {
+      "description": "Text with an area unit (m², m2, mm², mm2, in², in2, kcmil, MCM) or a number in m².",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string", "pattern": "^\\s*[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?\\s*(m²|m2|mm²|mm2|in²|in2|kcmil|MCM)\\s*$" }
+      ]
+    },
+    "force": {
+      "description": "Text with a force unit (N, kN, lbf, lb, kip, kips) or a number in newtons.",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string", "pattern": "^\\s*[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?\\s*(N|kN|lbf|lb|kip|kips)\\s*$" }
+      ]
+    },
+    "mass_per_length": {
+      "description": "Text with a mass-per-length unit (kg/m, lbm/ft) or a number in kg/m. Note: lb/ft is a force per length and is NOT accepted here.",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string", "pattern": "^\\s*[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?\\s*(kg/m|lbm/ft)\\s*$" }
+      ]
+    },
+    "stress": {
+      "description": "Text with a stress unit (Pa, kPa, MPa, N/mm², N/mm2, GPa, psi, ksi, psf) or a number in pascals.",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string", "pattern": "^\\s*[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?\\s*(Pa|kPa|MPa|N/mm²|N/mm2|GPa|psi|ksi|psf)\\s*$" }
+      ]
+    },
+    "temperature": {
+      "description": "Text with a temperature unit (K, °C, degC, °F, degF) or a number in kelvins.",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string", "pattern": "^\\s*[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?\\s*(K|°C|degC|°F|degF)\\s*$" }
+      ]
+    },
+    "stress_strain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stress_unit", "initial", "final_modulus"],
+      "properties": {
+        "strain": { "enum": ["percent", "unit"], "default": "percent" },
+        "stress_unit": { "enum": ["Pa", "kPa", "MPa", "N/mm²", "N/mm2", "GPa", "psi", "ksi", "psf"] },
+        "basis": { "enum": ["component", "total"], "default": "component" },
+        "initial": { "type": "array", "items": { "type": "number" }, "minItems": 2 },
+        "creep": { "type": "array", "items": { "type": "number" }, "minItems": 2 },
+        "final_modulus": { "type": "number", "exclusiveMinimum": 0 },
+        "max_compression": { "type": "number", "minimum": 0 },
+        "max_strain": { "type": "number", "exclusiveMinimum": 0 },
+        "reference_temperature": { "$ref": "#/$defs/temperature" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["area", "modulus", "thermal_expansion"],
+      "properties": {
+        "area": { "$ref": "#/$defs/area" },
+        "modulus": { "$ref": "#/$defs/stress" },
+        "thermal_expansion": { "type": "number", "minimum": 0, "maximum": 5e-5 },
+        "stress_strain": { "$ref": "#/$defs/stress_strain" }
+      }
+    },
+    "cable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "diameter", "mass_per_length", "rated_tensile_strength", "outer"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["acsr", "acss", "aac", "aaac", "acar", "accc", "opgw", "adss", "steel", "other"] },
+        "source": { "type": "string" },
+        "diameter": { "$ref": "#/$defs/length" },
+        "mass_per_length": { "$ref": "#/$defs/mass_per_length" },
+        "rated_tensile_strength": { "$ref": "#/$defs/force" },
+        "outer": { "$ref": "#/$defs/component" },
+        "core": { "$ref": "#/$defs/component" }
+      }
+    }
+  }
+}

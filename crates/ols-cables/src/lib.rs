@@ -153,6 +153,17 @@ impl Cable {
             id: self.id.clone(),
             message,
         };
+        if self.id.is_empty()
+            || !self
+                .id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(error(format!(
+                "id \"{}\" must use only letters, digits, - and _",
+                self.id
+            )));
+        }
         let positive = [
             ("diameter", self.diameter.si()),
             ("mass_per_length", self.mass_per_length.si()),
@@ -225,9 +236,27 @@ impl fmt::Display for CableError {
 
 impl std::error::Error for CableError {}
 
+/// File extension of OLS CAD wire libraries (`*.olsw`, "OLS wire").
+///
+/// The content is TOML. A dedicated extension (rather than reusing another
+/// program's, e.g. PLS-CADD's `.wir`) avoids confusing different formats.
+pub const WIRE_FILE_EXTENSION: &str = "olsw";
+
+/// Value of the optional `format` header of wire libraries.
+pub const WIRE_FILE_FORMAT: &str = "ols-wire";
+
+/// Latest wire library format version.
+pub const WIRE_FILE_VERSION: u32 = 1;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LibraryFile {
+    /// `"ols-wire"` (optional header identifying the file).
+    #[serde(default)]
+    format: Option<String>,
+    /// Format version (optional; 1).
+    #[serde(default)]
+    version: Option<u32>,
     cable: Vec<Cable>,
 }
 
@@ -246,6 +275,16 @@ impl Library {
             message,
         };
         let file: LibraryFile = toml::from_str(text).map_err(|e| library_error(e.to_string()))?;
+        if let Some(format) = file.format.as_deref().filter(|f| *f != WIRE_FILE_FORMAT) {
+            return Err(library_error(format!(
+                "format \"{format}\" is not \"{WIRE_FILE_FORMAT}\""
+            )));
+        }
+        if let Some(version) = file.version.filter(|v| *v > WIRE_FILE_VERSION) {
+            return Err(library_error(format!(
+                "wire library version {version} is newer than supported ({WIRE_FILE_VERSION}); update OLS CAD"
+            )));
+        }
         for cable in file.cable {
             cable.validate()?;
             if self.cables.contains_key(&cable.id) {
@@ -256,7 +295,22 @@ impl Library {
         Ok(())
     }
 
-    /// Loads every `*.toml` file in a directory (not recursive), in name order.
+    /// Loads a wire library file, or every `*.olsw` file of a directory.
+    pub fn load(path: &Path) -> Result<Self, CableError> {
+        if path.is_dir() {
+            return Self::load_dir(path);
+        }
+        let text = std::fs::read_to_string(path).map_err(|e| CableError::Library {
+            path: path.to_owned(),
+            message: e.to_string(),
+        })?;
+        let mut library = Self::default();
+        library.add_toml(path, &text)?;
+        Ok(library)
+    }
+
+    /// Loads every `*.olsw` wire library in a directory (not recursive), in
+    /// name order.
     pub fn load_dir(dir: &Path) -> Result<Self, CableError> {
         let io_error = |path: &Path, e: std::io::Error| CableError::Library {
             path: path.to_owned(),
@@ -265,7 +319,7 @@ impl Library {
         let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
             .map_err(|e| io_error(dir, e))?
             .filter_map(|entry| entry.ok().map(|e| e.path()))
-            .filter(|p| p.extension().is_some_and(|ext| ext == "toml"))
+            .filter(|p| p.extension().is_some_and(|ext| ext == WIRE_FILE_EXTENSION))
             .collect();
         paths.sort();
         let mut library = Self::default();
@@ -394,6 +448,58 @@ mod tests {
             Library::default()
                 .add_toml(Path::new("c.toml"), &unknown)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn template_and_documented_example_load() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let template =
+            std::fs::read_to_string(root.join("libraries/cables/TEMPLATE.olsw.example")).unwrap();
+        let mut library = Library::default();
+        library
+            .add_toml(Path::new("TEMPLATE.olsw.example"), &template)
+            .unwrap();
+        let cable = library.get("acsr-example-26-7").unwrap();
+        assert!(cable.outer.stress_strain.is_some());
+        // The minimal example of docs/user-guide/wire-library.md.
+        let doc = std::fs::read_to_string(root.join("docs/user-guide/wire-library.md")).unwrap();
+        let start = doc.find("## Minimal example").unwrap();
+        let block = &doc[start..];
+        let code = &block[block.find("```toml\n").unwrap() + 8..];
+        let code = &code[..code.find("```").unwrap()];
+        Library::default()
+            .add_toml(Path::new("doc.olsw"), code)
+            .unwrap();
+    }
+
+    #[test]
+    fn rejects_bad_ids_and_formats() {
+        let ok = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables/acsr-examples.olsw"),
+        )
+        .unwrap();
+        let bad_id = ok.replace("id = \"acsr-drake-26-7\"", "id = \"acsr drake\"");
+        assert!(
+            Library::default()
+                .add_toml(Path::new("a.olsw"), &bad_id)
+                .unwrap_err()
+                .to_string()
+                .contains("letters, digits")
+        );
+        let bad_format = ok.replace("format = \"ols-wire\"", "format = \"something-else\"");
+        assert!(
+            Library::default()
+                .add_toml(Path::new("b.olsw"), &bad_format)
+                .is_err()
+        );
+        let future = ok.replace("version = 1", "version = 99");
+        assert!(
+            Library::default()
+                .add_toml(Path::new("c.olsw"), &future)
+                .unwrap_err()
+                .to_string()
+                .contains("newer")
         );
     }
 

@@ -30,7 +30,7 @@ use serde::Deserialize;
 struct Job {
     /// Cable id in the library.
     cable: String,
-    /// Library directory, relative to the job file (default: `libraries/cables`
+    /// Wire library (`.olsw` file or directory), relative to the job file (default: `libraries/cables`
     /// in the current directory).
     library: Option<PathBuf>,
     spans: Vec<SpanInput>,
@@ -473,7 +473,7 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
         Some(dir) => path.parent().unwrap_or(Path::new(".")).join(dir),
         None => PathBuf::from("libraries/cables"),
     };
-    let library = Library::load_dir(&library_dir).map_err(|e| e.to_string())?;
+    let library = Library::load(&library_dir).map_err(|e| e.to_string())?;
     let cable = library.get(&job.cable).ok_or_else(|| {
         format!(
             "cable \"{}\" not found in {}",

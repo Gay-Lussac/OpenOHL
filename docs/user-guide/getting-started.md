@@ -20,7 +20,7 @@ cargo run -p ols-cli -- sagtension examples/sagtension/drake-section.toml
 cargo run -p ols-cli -- sagtension examples/sagtension/drake-section.toml --units us --csv chart.csv
 ```
 
-The job file names the cable (from `libraries/cables/`), the spans (horizontal length and rise), the weather cases (temperature, radial ice, wind pressure), and either a fixed stringing tension or tension criteria. The report gives the ruling span, the governing stringing tension with the utilisation of every criterion, the tension and sag in each weather case, and a stringing chart; `--csv` exports the chart in SI units.
+The job file names the cable (from the `.olsw` wire libraries in `libraries/cables/` — see [Wire library files](wire-library.md)), the spans (horizontal length and rise), the weather cases (temperature, radial ice, wind pressure), and either a fixed stringing tension or tension criteria. The report gives the ruling span, the governing stringing tension with the utilisation of every criterion, the tension and sag in each weather case, and a stringing chart; `--csv` exports the chart in SI units.
 
 ## Python
 

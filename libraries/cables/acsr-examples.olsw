@@ -1,3 +1,7 @@
+# OLS CAD wire library (.olsw)
+format = "ols-wire"
+version = 1
+
 # Example ACSR conductors.
 #
 # Dimensions, mass and rated strength are the usual published values for these

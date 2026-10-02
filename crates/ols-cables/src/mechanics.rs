@@ -383,7 +383,10 @@ fn convert(
     }
     // Curves must rise over their validity range, or tension cannot be
     // inverted to strain.
-    let max_strain = data.max_strain.unwrap_or(1.0) / strain_scale;
+    // Default validity: 1 % strain, whatever unit the coefficients use (the
+    // default used to be applied before the unit conversion, i.e. 100 % strain
+    // for `strain = "unit"`).
+    let max_strain = data.max_strain.map_or(0.01, |m| m / strain_scale);
     for (name, c) in [
         ("initial", Some(&curves.initial)),
         ("creep", curves.creep.as_ref()),
@@ -425,8 +428,8 @@ mod tests {
         thermal_expansion = 23.0e-6
         [cable.outer.stress_strain]
         stress_unit = "MPa"
-        initial = [0.0, 300.0, -150.0]
-        creep = [0.0, 200.0, -100.0]
+        initial = [0.0, 250.0, -110.0, 40.0, -8.0]
+        creep = [0.0, 160.0, -60.0, 15.0, -2.0]
         final_modulus = 550.0
         max_compression = 0.0
         max_strain = 0.9
@@ -437,7 +440,7 @@ mod tests {
         thermal_expansion = 11.5e-6
         [cable.core.stress_strain]
         stress_unit = "MPa"
-        initial = [0.0, 1800.0, -100.0]
+        initial = [0.0, 1800.0, -120.0, 30.0, -5.0]
         final_modulus = 1900.0
     "#;
 
@@ -454,9 +457,10 @@ mod tests {
     #[test]
     fn conversion_from_percent_and_mpa() {
         let m = Mechanics::from_cable(&cable()).unwrap();
-        // At 0.1 % strain, 20 °C: outer 300·0.1 − 150·0.01 = 28.5 MPa on 400 mm²,
-        // core 1800·0.1 − 100·0.01 = 179 MPa on 65 mm².
-        let expected = 28.5e6 * 400e-6 + 179e6 * 65e-6;
+        // At 0.1 % strain, 20 °C (degree-4 curves):
+        // outer 250·0.1 − 110·0.1² + 40·0.1³ − 8·0.1⁴ = 23.9392 MPa on 400 mm²,
+        // core 1800·0.1 − 120·0.1² + 30·0.1³ − 5·0.1⁴ = 178.8295 MPa on 65 mm².
+        let expected = 23.9392e6 * 400e-6 + 178.8295e6 * 65e-6;
         let got = m.tension(0.001, t(20.0), &MaterialState::Initial).newtons();
         assert!((got - expected).abs() < 1e-6, "{got} vs {expected}");
     }
@@ -564,9 +568,43 @@ mod tests {
     }
 
     #[test]
+    fn any_polynomial_degree_is_accepted() {
+        // No degree cap: a degree-6 curve (a5 = a6 = 0 here, so same values).
+        let text = SYNTHETIC.replace(
+            "initial = [0.0, 1800.0, -120.0, 30.0, -5.0]",
+            "initial = [0.0, 1800.0, -120.0, 30.0, -5.0, 0.0, 0.0]",
+        );
+        let mut library = Library::default();
+        library.add_toml(Path::new("t.olsw"), &text).unwrap();
+        let six = Mechanics::from_cable(library.get("synthetic").unwrap()).unwrap();
+        let four = Mechanics::from_cable(&cable()).unwrap();
+        let state = MaterialState::Initial;
+        assert_eq!(
+            six.tension(0.004, t(20.0), &state),
+            four.tension(0.004, t(20.0), &state)
+        );
+    }
+
+    #[test]
+    fn default_validity_is_one_percent_in_any_strain_unit() {
+        // Same outer curve in unit strain: 250·100 e − 110·100² e² … MPa.
+        // It turns over near 2.2 % — beyond the default 1 % range, so it is
+        // accepted; with the old default (100 % in unit strain) it was rejected.
+        let text = SYNTHETIC.replace(
+            "initial = [0.0, 250.0, -110.0, 40.0, -8.0]",
+            "strain = \"unit\"\n        initial = [0.0, 25000.0, -1100000.0, 40000000.0, -800000000.0]",
+        )
+        .replace("creep = [0.0, 160.0, -60.0, 15.0, -2.0]", "")
+        .replace("final_modulus = 550.0", "final_modulus = 55000.0")
+        .replace("max_strain = 0.9", "");
+        let mut library = Library::default();
+        library.add_toml(Path::new("t.olsw"), &text).unwrap();
+    }
+
+    #[test]
     fn rejects_falling_curve() {
         let text = SYNTHETIC.replace(
-            "initial = [0.0, 300.0, -150.0]",
+            "initial = [0.0, 250.0, -110.0, 40.0, -8.0]",
             "initial = [0.0, 300.0, -400.0]",
         );
         let mut library = Library::default();

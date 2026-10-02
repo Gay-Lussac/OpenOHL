@@ -10,10 +10,10 @@ title = "Synthetic cable, level 300 m: initial and final (after load) at 75 °C"
 calculation = "sagtension.nonlinear"
 reference = "Independent re-implementation (benchmarks/sagtension/reference_nonlinear.py)"
 max_seconds = 2.0
-expected.h_initial_n = { value = 20095.93357, rel_tol = 1e-7 }
-expected.h_final_n = { value = 18456.82868, rel_tol = 1e-7 }
-expected.sag_initial_m = { value = 8.793896684, rel_tol = 1e-7 }
-expected.sag_final_m = { value = 9.576890648, rel_tol = 1e-7 }
+expected.h_initial_n = { value = 20273.02239, rel_tol = 1e-7 }
+expected.h_final_n = { value = 18688.8357, rel_tol = 1e-7 }
+expected.sag_initial_m = { value = 8.716906998, rel_tol = 1e-7 }
+expected.sag_final_m = { value = 9.457685024, rel_tol = 1e-7 }
 expected.final_cause = { value = 1.0, abs_tol = 0.0 }
 
 [case.inputs]
@@ -36,8 +36,8 @@ source = "Synthetic test data — not a real conductor"
 diameter = "28 mm"
 mass_per_length = "1.6 kg/m"
 rated_tensile_strength = "140 kN"
-outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 300.0, -150.0], creep = [0.0, 200.0, -100.0], final_modulus = 550.0, max_compression = 0.0, max_strain = 0.9 } }
-core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1800.0, -100.0], final_modulus = 1900.0 } }
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, max_strain = 0.9 } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1800.0, -120.0, 30.0, -5.0], final_modulus = 1900.0 } }
 
 [[case]]
 id = "nonlinear-002"
@@ -45,8 +45,8 @@ title = "Synthetic cable: at the max load case, final equals initial (reloading 
 calculation = "sagtension.nonlinear"
 reference = "Independent re-implementation (benchmarks/sagtension/reference_nonlinear.py)"
 max_seconds = 2.0
-expected.h_initial_n = { value = 42506.28663, rel_tol = 1e-7 }
-expected.h_final_n = { value = 42506.28663, rel_tol = 1e-7 }
+expected.h_initial_n = { value = 41994.2706, rel_tol = 1e-7 }
+expected.h_final_n = { value = 41994.2706, rel_tol = 1e-7 }
 expected.final_cause = { value = 1.0, abs_tol = 0.0 }
 
 [case.inputs]
@@ -69,5 +69,5 @@ source = "Synthetic test data — not a real conductor"
 diameter = "28 mm"
 mass_per_length = "1.6 kg/m"
 rated_tensile_strength = "140 kN"
-outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 300.0, -150.0], creep = [0.0, 200.0, -100.0], final_modulus = 550.0, max_compression = 0.0, max_strain = 0.9 } }
-core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1800.0, -100.0], final_modulus = 1900.0 } }
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, max_strain = 0.9 } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1800.0, -120.0, 30.0, -5.0], final_modulus = 1900.0 } }
