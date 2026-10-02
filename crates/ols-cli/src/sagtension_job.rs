@@ -12,6 +12,7 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use nalgebra::Vector3;
 use ols_cables::{Cable, Library};
 use ols_core::units::{Force, Length, Quantity, Temperature, UnitSystem};
 use ols_sagtension::catenary::default_solver_budget;
@@ -21,6 +22,7 @@ use ols_sagtension::{
     TensionSection, governing_tension, ruling_span,
 };
 use ols_weather::WeatherCase;
+use ols_wirefe::{Assembly, CableSpec, FeSection, SectionSpec, State, Support, default_fe_budget};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -40,6 +42,46 @@ struct Job {
     criterion: Vec<CriterionInput>,
     #[serde(default)]
     chart: Option<Chart>,
+    #[serde(default)]
+    fe: Option<FeInput>,
+}
+
+/// Finite-element section analysis (insulator swing, unequal spans, broken
+/// conductor). Spans are measured between conductor clamps.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FeInput {
+    #[serde(default)]
+    suspension: Option<SuspensionInput>,
+    #[serde(default)]
+    v_string: Option<VStringInput>,
+    #[serde(default)]
+    broken: Vec<BrokenInput>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SuspensionInput {
+    length: Length,
+    weight: Force,
+    axial_stiffness: Force,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VStringInput {
+    half_width: Length,
+    leg_length: Length,
+    leg_weight: Force,
+    axial_stiffness: Force,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BrokenInput {
+    weather: String,
+    /// Span number, 1-based as in the report.
+    span: usize,
 }
 
 #[derive(Deserialize)]
@@ -147,6 +189,165 @@ fn max_support(solution: &SectionSolution) -> Force {
         .iter()
         .map(|s| s.tension_left().max(s.tension_right()))
         .fold(Force::ZERO, Force::max)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fe_report(
+    out: &mut String,
+    fe: &FeInput,
+    job: &Job,
+    cable: &Cable,
+    spans: &[SpanGeometry],
+    elastic: ElasticCable,
+    stringing: Force,
+    reference_case: &WeatherCase,
+    units: UnitSystem,
+) -> Result<(), String> {
+    let middle = match (&fe.suspension, &fe.v_string) {
+        (Some(s), None) => Assembly::Suspension {
+            length: s.length.si(),
+            weight: s.weight.si(),
+            axial_stiffness: s.axial_stiffness.si(),
+        },
+        (None, Some(v)) => Assembly::VString {
+            half_width: v.half_width.si(),
+            leg_length: v.leg_length.si(),
+            leg_weight: v.leg_weight.si(),
+            axial_stiffness: v.axial_stiffness.si(),
+        },
+        _ => return Err("[fe] needs exactly one of suspension or v_string".into()),
+    };
+    let string_depth = match middle {
+        Assembly::Suspension { length, .. } => length,
+        Assembly::VString {
+            half_width,
+            leg_length,
+            ..
+        } => (leg_length * leg_length - half_width * half_width).sqrt(),
+        Assembly::DeadEnd => 0.0,
+    };
+    // Supports from the clamp geometry: x along the line, z from the rises.
+    let mut clamp = Vector3::zeros();
+    let mut supports = vec![Support {
+        attachment: clamp,
+        assembly: Assembly::DeadEnd,
+    }];
+    for (k, span) in spans.iter().enumerate() {
+        clamp += Vector3::new(span.span.si(), 0.0, span.rise.si());
+        let last = k == spans.len() - 1;
+        supports.push(Support {
+            attachment: if last {
+                clamp
+            } else {
+                clamp + Vector3::new(0.0, 0.0, string_depth)
+            },
+            assembly: if last { Assembly::DeadEnd } else { middle },
+        });
+    }
+    let spec = SectionSpec {
+        supports,
+        cable: CableSpec {
+            axial_stiffness: elastic.axial_stiffness.si(),
+            thermal_expansion: elastic.thermal_expansion,
+            weight: cable.weight().si(),
+        },
+        stringing_tension: stringing.si(),
+        stringing_temperature: reference_case.temperature.celsius(),
+        load_sites: vec![],
+    };
+    let section = FeSection::build(spec, &default_criteria_budget()).map_err(|e| e.to_string())?;
+    let state_for = |case: &WeatherCase| {
+        let load = case.wire_load(cable.diameter, cable.weight());
+        let mut state = State::bare(section.spec(), case.temperature.celsius());
+        state.cable_load = Vector3::new(0.0, load.horizontal.si(), -load.vertical.si());
+        state
+    };
+    let _ = writeln!(
+        out,
+        "\nFinite-element section (insulators modelled, sagged plumb at {} / \"{}\")",
+        show(stringing, units, 2),
+        reference_case.name
+    );
+    let _ = writeln!(
+        out,
+        "  {:<24} {:>12} {:>12} {:>16} {:>10} {:>10} {:>14}",
+        "case", "min H", "max H", "max support T", "max sag", "blowout", "max swing"
+    );
+    let row = |out: &mut String, label: &str, r: &ols_wirefe::SectionResult| {
+        let spans: Vec<_> = r.spans.iter().flatten().collect();
+        let h =
+            |f: fn(f64, f64) -> f64, init| spans.iter().map(|s| s.horizontal_tension).fold(init, f);
+        let max_t = spans
+            .iter()
+            .map(|s| s.tension_back.max(s.tension_ahead))
+            .fold(0.0, f64::max);
+        let sag = spans.iter().map(|s| s.sag).fold(0.0, f64::max);
+        let blowout = spans.iter().map(|s| s.blowout).fold(0.0, f64::max);
+        let (swing_at, swing) = r
+            .supports
+            .iter()
+            .enumerate()
+            .map(|(k, s)| (k + 1, s.swing_deg))
+            .fold((0, 0.0), |best, x| if x.1 > best.1 { x } else { best });
+        let _ = writeln!(
+            out,
+            "  {:<24} {:>12} {:>12} {:>16} {:>10} {:>10} {:>7.1}° {:<5}",
+            label,
+            show(Force::from_si(h(f64::min, f64::INFINITY)), units, 2),
+            show(Force::from_si(h(f64::max, 0.0)), units, 2),
+            show(Force::from_si(max_t), units, 2),
+            show(Length::from_si(sag), units, 2),
+            show(Length::from_si(blowout), units, 2),
+            swing,
+            if swing_at == 0 {
+                "—".to_owned()
+            } else {
+                format!("at {swing_at}")
+            }
+        );
+    };
+    let _ = writeln!(
+        out,
+        "  (swing: suspension string angle from vertical, support numbers from the first dead-end = 1)"
+    );
+    for case in &job.weather {
+        let r = section
+            .solve(&state_for(case), &default_fe_budget())
+            .map_err(|e| format!("FE case \"{}\": {e}", case.name))?;
+        row(out, &case.name, &r);
+    }
+    for broken in &fe.broken {
+        if broken.span == 0 || broken.span > spans.len() {
+            return Err(format!(
+                "broken span {} does not exist (1 to {})",
+                broken.span,
+                spans.len()
+            ));
+        }
+        let case = find_case(&job.weather, &broken.weather)?;
+        let mut state = state_for(case);
+        state.broken_spans = vec![broken.span - 1];
+        let r = section
+            .solve(&state, &default_fe_budget())
+            .map_err(|e| format!("FE broken span {} ({}): {e}", broken.span, case.name))?;
+        row(
+            out,
+            &format!("{} – span {} broken", case.name, broken.span),
+            &r,
+        );
+        let longitudinal = r
+            .supports
+            .iter()
+            .map(|s| s.load.x.abs())
+            .fold(0.0, f64::max);
+        let _ = writeln!(
+            out,
+            "  {:<24} largest longitudinal support load {}",
+            "",
+            show(Force::from_si(longitudinal), units, 2)
+        );
+    }
+    Ok(())
 }
 
 /// Runs a job file.
@@ -292,6 +493,20 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
         );
     }
 
+    if let Some(fe) = &job.fe {
+        fe_report(
+            &mut out,
+            fe,
+            &job,
+            cable,
+            &spans,
+            elastic,
+            stringing,
+            reference_case,
+            units,
+        )?;
+    }
+
     let chart_csv = match &job.chart {
         None => None,
         Some(chart) => {
@@ -369,6 +584,18 @@ mod tests {
             output.report
         );
         assert!(output.report.contains("← governs"));
+        // FE section: valley structure (support 3) swings most in high wind.
+        assert!(
+            output.report.contains("Finite-element section"),
+            "{}",
+            output.report
+        );
+        let high_wind = output
+            .report
+            .lines()
+            .rfind(|l| l.trim_start().starts_with("high wind"))
+            .unwrap();
+        assert!(high_wind.trim_end().ends_with("at 3"), "{high_wind}");
         let csv = output.chart_csv.unwrap();
         assert_eq!(csv.lines().count(), 1 + 9, "header + 9 temperatures");
         assert!(csv.starts_with("temperature_c,horizontal_tension_n,sag_span1_m"));

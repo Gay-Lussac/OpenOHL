@@ -2,7 +2,7 @@
 
 **OLS CAD** is an open-source, modular engineering platform for the design and analysis of overhead power lines — terrain modelling, conductor sag-tension, structure loading, clearance checking and drafting — in the spirit of the commercial tools used across the utility industry, but open, transparent and extensible.
 
-> Status: **Phase 0 — Foundations** (pre-alpha, nothing usable yet). See [ROADMAP.md](ROADMAP.md).
+> Status: **Phase 1 — Calculation core** (pre-alpha). Sag-tension and finite-element wire analysis work from the command line (`ols sagtension`). See [ROADMAP.md](ROADMAP.md).
 
 ## Why
 
@@ -19,6 +19,7 @@
 ```bash
 cargo test --workspace
 cargo run -p ols-cli -- info
+cargo run -p ols-cli -- sagtension examples/sagtension/drake-section.toml
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
@@ -33,6 +34,11 @@ OLS-CAD/
 │   ├── ols-validation/ Validation framework (`ols validate`)
 │   ├── ols-plugins/   Plugin manifests + sandboxed WebAssembly host (WIT interface)
 │   ├── ols-py/        Python bindings (`import ols`)
+│   ├── ols-cables/    Conductor library
+│   ├── ols-weather/   Weather cases and wire loads
+│   ├── ols-wireloads/ Point and distributed loads on wires
+│   ├── ols-sagtension/ Catenary, change of state, sections, criteria
+│   ├── ols-wirefe/    Finite-element wire systems (SAPS-style)
 │   └── ols-cli/       `ols` command-line tool
 ├── plugins/           Plugins: examples/ (WASM + Python), tests/ (runaway plugin)
 ├── benchmarks/        Validation cases with reference results

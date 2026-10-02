@@ -4,6 +4,7 @@
 
 //! Calculations shipped with OLS CAD, exposed to the validation runner.
 
+use nalgebra::Vector3;
 use ols_core::units::{
     Density, Force, ForcePerLength, Length, MassPerLength, Quantity, Stress, Temperature,
 };
@@ -16,6 +17,8 @@ use ols_sagtension::{
     TensionSection, governing_tension, ruling_span,
 };
 use ols_weather::WeatherCase;
+use ols_wirefe::catenary_element::default_element_budget;
+use ols_wirefe::{CableElement, CableProperties, Model, Node, default_fe_budget};
 use ols_wireloads::VerticalLoads;
 
 use crate::{Calculation, Inputs, Outputs, Registry};
@@ -30,6 +33,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(Section));
     registry.register(Box::new(LoadedShape));
     registry.register(Box::new(LoadedChangeOfState));
+    registry.register(Box::new(WireFeSpan));
+    registry.register(Box::new(WireFePointLoad));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -485,5 +490,105 @@ impl Calculation for LoadedChangeOfState {
             "horizontal_tension_n",
             solution.horizontal_tension.newtons(),
         )]))
+    }
+}
+
+fn vector_input<Q: Quantity>(inputs: &Inputs, prefix: &str) -> Result<Vector3<f64>, String> {
+    Ok(Vector3::new(
+        quantity_input::<Q>(inputs, &format!("{prefix}_x"))?.si(),
+        quantity_input::<Q>(inputs, &format!("{prefix}_y"))?.si(),
+        quantity_input::<Q>(inputs, &format!("{prefix}_z"))?.si(),
+    ))
+}
+
+/// `wirefe.span`: one exact elastic catenary element between fixed ends.
+struct WireFeSpan;
+
+impl Calculation for WireFeSpan {
+    fn id(&self) -> &'static str {
+        "wirefe.span"
+    }
+
+    fn description(&self) -> &'static str {
+        "Elastic catenary element (inputs: unstressed_length, chord_{x,y,z}, axial_stiffness, load_{x,y,z})"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let props = CableProperties {
+            unstressed_length: quantity_input::<Length>(inputs, "unstressed_length")?.si(),
+            axial_stiffness: quantity_input::<Force>(inputs, "axial_stiffness")?.si(),
+            load: vector_input::<ForcePerLength>(inputs, "load")?,
+        };
+        let state = props
+            .solve(
+                vector_input::<Length>(inputs, "chord")?,
+                None,
+                &default_element_budget(),
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(outputs([
+            ("horizontal_n", state.horizontal),
+            ("tension_i_n", state.tension_i),
+            ("tension_j_n", state.tension_j),
+        ]))
+    }
+}
+
+/// `wirefe.point_load`: a level span split by a free node carrying a load.
+struct WireFePointLoad;
+
+impl Calculation for WireFePointLoad {
+    fn id(&self) -> &'static str {
+        "wirefe.point_load"
+    }
+
+    fn description(&self) -> &'static str {
+        "Level span with a point load at unstressed arc length load_position (two elements, Newton)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let span = quantity_input::<Length>(inputs, "span")?.si();
+        let l0 = quantity_input::<Length>(inputs, "unstressed_length")?.si();
+        let at = quantity_input::<Length>(inputs, "load_position")?.si();
+        let p = quantity_input::<Force>(inputs, "point_load")?.si();
+        let w = quantity_input::<ForcePerLength>(inputs, "weight")?.si();
+        let ea = quantity_input::<Force>(inputs, "axial_stiffness")?.si();
+        let props = |length: f64| CableProperties {
+            unstressed_length: length,
+            axial_stiffness: ea,
+            load: Vector3::new(0.0, 0.0, -w),
+        };
+        let mut load_node = Node::free(Vector3::new(span * at / l0, 0.0, -5.0));
+        load_node.load = Vector3::new(0.0, 0.0, -p);
+        let model = Model {
+            nodes: vec![
+                Node::fixed(Vector3::zeros()),
+                load_node,
+                Node::fixed(Vector3::new(span, 0.0, 0.0)),
+            ],
+            cables: vec![
+                CableElement {
+                    i: 0,
+                    j: 1,
+                    properties: props(at),
+                },
+                CableElement {
+                    i: 1,
+                    j: 2,
+                    properties: props(l0 - at),
+                },
+            ],
+            trusses: vec![],
+        };
+        let s = model
+            .solve(&default_fe_budget())
+            .map_err(|e| e.to_string())?;
+        Ok(outputs([
+            ("horizontal_n", s.cables[0].horizontal),
+            ("tension_i_n", s.cables[0].tension_i),
+            ("tension_j_n", s.cables[1].tension_j),
+            ("load_point_x_m", s.positions[1].x),
+            ("load_point_z_m", s.positions[1].z),
+        ]))
     }
 }

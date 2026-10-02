@@ -8,6 +8,10 @@
 
 pub mod catenary_element;
 pub mod model;
+pub mod section;
 
 pub use catenary_element::{CableProperties, ElementError, ElementState};
 pub use model::{CableElement, FeError, Model, Node, Solution, TrussElement, default_fe_budget};
+pub use section::{
+    Assembly, CableSpec, FeSection, LoadSite, SectionResult, SectionSpec, State, Support,
+};

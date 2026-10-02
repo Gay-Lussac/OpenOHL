@@ -1,0 +1,39 @@
+# Finite-element wire system: exact elastic catenary elements and node
+# assembly. Reference values from reference_elastic_catenary.py, which
+# integrates the elastic cable along its unstressed length with RK4 and
+# shooting (independent of the closed-form element). EA = 34.64 MN.
+
+[[case]]
+id = "wirefe-001"
+title = "Level span 300 m, L0 = 300.4 m"
+calculation = "wirefe.span"
+reference = "RK4 + shooting, independent (benchmarks/wirefe/reference_elastic_catenary.py)"
+max_seconds = 1.0
+inputs = { unstressed_length = "300.4 m", chord_x = "300 m", chord_y = "0 m", chord_z = "0 m", axial_stiffness = "34.64e6 N", load_x = "0 N/m", load_y = "0 N/m", load_z = "-15.97 N/m" }
+expected.horizontal_n = { value = 22019.94973, rel_tol = 1e-8 }
+expected.tension_i_n = { value = 22150.21262, rel_tol = 1e-8 }
+expected.tension_j_n = { value = 22150.21262, rel_tol = 1e-8 }
+
+[[case]]
+id = "wirefe-002"
+title = "Inclined 450 m (+35 m) with transverse wind, L0 = 452 m (3D load plane)"
+calculation = "wirefe.span"
+reference = "RK4 + shooting in the load plane, independent (benchmarks/wirefe/reference_elastic_catenary.py)"
+max_seconds = 1.0
+inputs = { unstressed_length = "452 m", chord_x = "450 m", chord_y = "0 m", chord_z = "35 m", axial_stiffness = "34.64e6 N", load_x = "0 N/m", load_y = "8 N/m", load_z = "-15.97 N/m" }
+expected.horizontal_n = { value = 33464.88672, rel_tol = 1e-8 }
+expected.tension_i_n = { value = 33508.03064, rel_tol = 1e-8 }
+expected.tension_j_n = { value = 34066.43598, rel_tol = 1e-8 }
+
+[[case]]
+id = "wirefe-003"
+title = "Level 300 m with a 2 kN point load at s0 = 120 m (two elements + free node)"
+calculation = "wirefe.point_load"
+reference = "RK4 + shooting with a tension jump, independent (benchmarks/wirefe/reference_elastic_catenary.py)"
+max_seconds = 1.0
+inputs = { span = "300 m", unstressed_length = "300.4 m", load_position = "120 m", point_load = "2 kN", weight = "15.97 N/m", axial_stiffness = "34.64e6 N" }
+expected.horizontal_n = { value = 33484.5564, rel_tol = 1e-8 }
+expected.tension_i_n = { value = 33677.63383, rel_tol = 1e-8 }
+expected.tension_j_n = { value = 33636.76776, rel_tol = 1e-8 }
+expected.load_point_x_m = { value = 119.7280456, rel_tol = 1e-8 }
+expected.load_point_z_m = { value = -9.447238762, rel_tol = 1e-7 }

@@ -10,6 +10,7 @@
 
 - [Conventions and units](theory/conventions.md)
 - [Sag-tension](theory/sagtension.md)
+- [Finite-element wire systems](theory/wirefe.md)
 
 # Design
 

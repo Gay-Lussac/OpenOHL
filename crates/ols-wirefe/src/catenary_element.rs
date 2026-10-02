@@ -230,6 +230,55 @@ impl CableProperties {
         })
     }
 
+    /// Point of the cable at unstressed arc length `s0` from node i,
+    /// relative to node i (global axes), for a solved element with chord `d`.
+    pub fn point_at(&self, d: Vector3<f64>, state: &ElementState, s0: f64) -> Vector3<f64> {
+        let (ea, w) = (self.axial_stiffness, self.load.norm());
+        let up = -self.load / w;
+        let horizontal = d - up * d.dot(&up);
+        let e1 = horizontal / horizontal.norm();
+        let (h, v0) = (state.horizontal, state.v0);
+        let vs = v0 + w * s0;
+        let x = h * s0 / ea + h / w * ((vs / h).asinh() - (v0 / h).asinh());
+        let z = (v0 * s0 + w * s0 * s0 / 2.0) / ea + (h.hypot(vs) - h.hypot(v0)) / w;
+        e1 * x + up * z
+    }
+
+    /// `n + 1` points along the cable (relative to node i), evenly spaced in
+    /// unstressed arc length, both ends included.
+    pub fn shape(&self, d: Vector3<f64>, state: &ElementState, n: usize) -> Vec<Vector3<f64>> {
+        let n = n.max(1);
+        (0..=n)
+            .map(|k| self.point_at(d, state, self.unstressed_length * k as f64 / n as f64))
+            .collect()
+    }
+
+    /// Unstressed arc length from node i at which the cable reaches the
+    /// fraction `fraction` (0–1) of the chord's horizontal (in-plane) extent.
+    /// Monotone in `s0`, found by bisection (60 halvings, fixed).
+    pub fn arc_length_at_fraction(
+        &self,
+        d: Vector3<f64>,
+        state: &ElementState,
+        fraction: f64,
+    ) -> f64 {
+        let w = self.load.norm();
+        let up = -self.load / w;
+        let target = (d - up * d.dot(&up)).norm() * fraction.clamp(0.0, 1.0);
+        let (ea, h, v0) = (self.axial_stiffness, state.horizontal, state.v0);
+        let x_at = |s0: f64| h * s0 / ea + h / w * (((v0 + w * s0) / h).asinh() - (v0 / h).asinh());
+        let (mut lo, mut hi) = (0.0, self.unstressed_length);
+        for _ in 0..60 {
+            let mid = 0.5 * (lo + hi);
+            if x_at(mid) < target {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        0.5 * (lo + hi)
+    }
+
     /// Unstressed length that gives horizontal tension `h` for the chord `d`
     /// (used to "sag" a span at stringing). The chord length grows strictly
     /// as H grows for fixed geometry, so bisection on L0 is safe.
@@ -363,6 +412,22 @@ mod tests {
         .solve(d, None, &default_element_budget())
         .unwrap();
         close(s.horizontal, 28_000.0, 1e-9);
+    }
+
+    #[test]
+    fn shape_ends_on_both_nodes() {
+        let props = CableProperties {
+            unstressed_length: 452.0,
+            axial_stiffness: EA,
+            load: Vector3::new(0.0, 6.0, -W),
+        };
+        let d = Vector3::new(450.0, 3.0, 35.0);
+        let s = props.solve(d, None, &default_element_budget()).unwrap();
+        let shape = props.shape(d, &s, 40);
+        assert!(shape[0].norm() < 1e-12);
+        assert!((shape[40] - d).norm() < 1e-8, "{}", shape[40] - d);
+        let s_half = props.arc_length_at_fraction(d, &s, 0.5);
+        assert!(s_half > 0.0 && s_half < 452.0);
     }
 
     #[test]

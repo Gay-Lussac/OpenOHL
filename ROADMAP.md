@@ -90,7 +90,8 @@ Guiding principles:
 - [ ] Design code plugins: NESC (ANSI C2), CSA C22.3, IEC 60826, EN 50341 (+ national NNAs), ASCE MOP 74, GO 95 — each as a separate plugin
 - [ ] Structure capacity Method 1: allowable spans (wind/weight span, line angle)
 - [ ] Method 2: interaction diagrams / allowable load trees
-- [ ] Finite-element wire system: full tension section with non-linear cables, general linked insulator assemblies and jumpers, unbalanced ice, broken wire, longitudinal loads
+- [x] Finite-element wire system (SAPS-style, `ols-wirefe`): exact elastic catenary elements, I- and V-strings (tension-only legs), 3D wind blowout, insulator swing, broken span, point loads, unequal spans *(delivered early, in Phase 1)*
+- [ ] FE wire system extensions: strain insulators, jumpers, general linked assemblies from the structure library, bundles, non-linear stress-strain and creep in elements
 - [ ] Structure loads output (attachment point loads per load case)
 - [ ] Usage / utilisation reports
 

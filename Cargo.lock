@@ -1217,12 +1217,14 @@ name = "ols-cli"
 version = "0.0.1"
 dependencies = [
  "clap",
+ "nalgebra",
  "ols-cables",
  "ols-core",
  "ols-plugins",
  "ols-sagtension",
  "ols-validation",
  "ols-weather",
+ "ols-wirefe",
  "serde",
  "toml",
 ]
@@ -1267,9 +1269,11 @@ dependencies = [
 name = "ols-validation"
 version = "0.0.1"
 dependencies = [
+ "nalgebra",
  "ols-core",
  "ols-sagtension",
  "ols-weather",
+ "ols-wirefe",
  "ols-wireloads",
  "serde",
  "toml",
