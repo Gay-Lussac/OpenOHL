@@ -65,6 +65,31 @@ pub fn spans_csv(shapes: &[SectionShape]) -> String {
 /// legs included, slack legs highlighted), others to their wire point.
 /// `shapes` are matched to the line's sections by id.
 pub fn viewer_html(line: &Line, shapes: &[SectionShape], title: &str) -> String {
+    viewer_html_with(line, shapes, title, &ViewerExtras::default())
+}
+
+/// Largest ground surface drawn by the viewer, triangles: beyond this the
+/// page gets too heavy for a standalone file (streaming comes with the
+/// application renderer, ADR-0006).
+pub const MAX_VIEWER_TRIANGLES: usize = 400_000;
+
+/// Optional layers of the viewer.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ViewerExtras {
+    /// Ground surface: points and triangles (indices into the points).
+    pub ground: Option<(Vec<Point>, Vec<[usize; 3]>)>,
+    /// Marked points with labels (e.g. clearance violations), drawn as red
+    /// spheres and listed.
+    pub markers: Vec<(Point, String)>,
+}
+
+/// [`viewer_html`] with extra layers.
+pub fn viewer_html_with(
+    line: &Line,
+    shapes: &[SectionShape],
+    title: &str,
+    extras: &ViewerExtras,
+) -> String {
     let origin = line.structures.first().map_or([0.0; 3], |s| s.position);
     let local = |p: &Point| [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]];
     let fmt = |p: [f64; 3]| format!("[{:.3},{:.3},{:.3}]", p[0], p[1], p[2]);
@@ -153,12 +178,37 @@ pub fn viewer_html(line: &Line, shapes: &[SectionShape], title: &str) -> String 
         .iter()
         .map(|(l, c)| format!("[{},{}]", json_string(l), json_string(c)))
         .collect();
+    // Ground: flat arrays (x, y, z per point; three indices per triangle).
+    let (mut ground_points, mut ground_triangles) = (String::new(), String::new());
+    if let Some((points, triangles)) = extras
+        .ground
+        .as_ref()
+        .filter(|(_, t)| t.len() <= MAX_VIEWER_TRIANGLES)
+    {
+        for p in points {
+            let q = local(p);
+            let _ = write!(ground_points, "{:.2},{:.2},{:.2},", q[0], q[1], q[2]);
+        }
+        for t in triangles {
+            let _ = write!(ground_triangles, "{},{},{},", t[0], t[1], t[2]);
+        }
+        ground_points.pop();
+        ground_triangles.pop();
+    }
+    let markers: Vec<String> = extras
+        .markers
+        .iter()
+        .map(|(p, label)| format!("[{},{}]", fmt(local(p)), json_string(label)))
+        .collect();
     let data = format!(
-        "{{\"structures\":[{}],\"insulators\":[{}],\"wires\":[{}],\"legend\":[{}]}}",
+        "{{\"structures\":[{}],\"insulators\":[{}],\"wires\":[{}],\"legend\":[{}],\"ground\":{{\"p\":[{}],\"t\":[{}]}},\"markers\":[{}]}}",
         structures.join(","),
         insulators.join(","),
         wires.join(","),
-        legend.join(",")
+        legend.join(","),
+        ground_points,
+        ground_triangles,
+        markers.join(",")
     );
     VIEWER_TEMPLATE
         .replace("__TITLE__", &html_escape(title))
@@ -190,13 +240,14 @@ const VIEWER_TEMPLATE: &str = r#"<!doctype html>
   canvas { display: block; }
   #legend { margin-top: 4px; }
   #legend span { display: inline-block; margin-right: 10px; white-space: nowrap; }
+  #markers { margin-top: 4px; color: #ff8080; max-height: 30vh; overflow: auto; }
   #legend i { display: inline-block; width: 14px; height: 3px; margin-right: 4px; vertical-align: middle; }
 </style>
 </head>
 <body>
 <div id="info"><b>__TITLE__</b><br>drag: rotate · right-drag: pan · wheel: zoom · <span id="counts"></span><br>
 <label>vertical exaggeration <input id="exag" type="range" min="1" max="10" step="1" value="1"> <span id="exagv">×1</span></label>
-<div id="legend"></div></div>
+<div id="legend"></div><div id="markers"></div></div>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
@@ -221,6 +272,29 @@ data.structures.forEach(s => line([s.base, s.top], 0x9aa7b4));
 // Insulators: [top, clamp, slack]; slack V-string legs in magenta.
 data.insulators.forEach(i => line([i[0], i[1]], i[2] ? 0xff4fd8 : 0x6fd3ff));
 data.wires.forEach(w => line(w.p, new THREE.Color(w.c)));
+// Ground surface (lit, flat-shaded) and markers.
+if (data.ground.t.length) {
+  const g = new THREE.BufferGeometry();
+  const p = data.ground.p, pos = new Float32Array(p.length);
+  for (let k = 0; k < p.length; k += 3) { pos[k] = p[k]; pos[k + 1] = p[k + 2]; pos[k + 2] = -p[k + 1]; }
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setIndex(data.ground.t);
+  g.computeVertexNormals();
+  model.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x4f6b45, side: THREE.DoubleSide, flatShading: true })));
+  scene.add(new THREE.HemisphereLight(0xdfe6ee, 0x202a20, 1.6));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+  sun.position.set(1, 2, 1);
+  scene.add(sun);
+}
+const markerList = document.getElementById("markers");
+data.markers.forEach(([p, label]) => {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 12), new THREE.MeshBasicMaterial({ color: 0xff3030 }));
+  m.position.copy(v(p));
+  model.add(m);
+  const item = document.createElement("div");
+  item.textContent = "⚠ " + label;
+  markerList.append(item);
+});
 const legend = document.getElementById("legend");
 data.legend.forEach(([label, color]) => {
   const item = document.createElement("span");

@@ -813,6 +813,11 @@ name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash",
+]
 
 [[package]]
 name = "hashbrown"
@@ -1213,17 +1218,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-clearance"
+version = "0.0.1"
+dependencies = [
+ "ols-cables",
+ "ols-core",
+ "ols-line",
+ "ols-terrain",
+ "ols-weather",
+]
+
+[[package]]
 name = "ols-cli"
 version = "0.0.1"
 dependencies = [
  "clap",
  "nalgebra",
  "ols-cables",
+ "ols-clearance",
  "ols-core",
  "ols-line",
  "ols-plugins",
  "ols-sagtension",
  "ols-structures",
+ "ols-terrain",
  "ols-validation",
  "ols-weather",
  "ols-wirefe",
@@ -1289,6 +1307,13 @@ dependencies = [
  "ols-core",
  "serde",
  "toml",
+]
+
+[[package]]
+name = "ols-terrain"
+version = "0.0.1"
+dependencies = [
+ "spade",
 ]
 
 [[package]]
@@ -1619,6 +1644,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "robust"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e27ee8bb91ca0adcf0ecb116293afa12d393f9c2b9b9cd54d33e8078fe19839"
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1803,6 +1834,18 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "spade"
+version = "2.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9699399fd9349b00b184f5635b074f9ec93afffef30c853f8c875b32c0f8c7fa"
+dependencies = [
+ "hashbrown 0.16.1",
+ "num-traits",
+ "robust",
+ "smallvec",
 ]
 
 [[package]]

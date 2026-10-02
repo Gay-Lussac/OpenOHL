@@ -51,40 +51,7 @@ enum Command {
         csv: Option<PathBuf>,
     },
     /// Solve a line model (.ols.json) in 3D for one weather state.
-    Line {
-        /// Line file (.ols.json).
-        file: PathBuf,
-        /// Wire library: .olsw file or directory.
-        #[arg(long, default_value = "libraries/cables")]
-        library: PathBuf,
-        /// Structure type library directory (.olss), for typed structures.
-        #[arg(long, default_value = "libraries/structures")]
-        structures: PathBuf,
-        /// Insulator assembly library directory (.olsi).
-        #[arg(long, default_value = "libraries/insulators")]
-        insulators: PathBuf,
-        /// Cable temperature, °C.
-        #[arg(long, default_value_t = 15.0)]
-        temperature: f64,
-        /// Wind pressure on the wires, Pa (perpendicular to each span).
-        #[arg(long, default_value_t = 0.0)]
-        wind_pressure: f64,
-        /// Radial ice thickness, mm.
-        #[arg(long, default_value_t = 0.0)]
-        ice_thickness: f64,
-        /// Write a standalone 3D viewer (HTML).
-        #[arg(long)]
-        html: Option<PathBuf>,
-        /// Write all wire points as CSV.
-        #[arg(long)]
-        csv: Option<PathBuf>,
-        /// Write one row per span (tensions, sag, mid and low points) as CSV.
-        #[arg(long)]
-        spans_csv: Option<PathBuf>,
-        /// Print stationing, offsets and line angles of every route.
-        #[arg(long)]
-        stations: bool,
-    },
+    Line(Box<LineArgs>),
     /// Structure and insulator libraries.
     Structures {
         #[command(subcommand)]
@@ -95,6 +62,53 @@ enum Command {
         #[command(subcommand)]
         command: PluginCommand,
     },
+}
+
+/// Arguments of `ols line`.
+#[derive(clap::Args)]
+struct LineArgs {
+    /// Line file (.ols.json).
+    file: PathBuf,
+    /// Wire library: .olsw file or directory.
+    #[arg(long, default_value = "libraries/cables")]
+    library: PathBuf,
+    /// Structure type library directory (.olss), for typed structures.
+    #[arg(long, default_value = "libraries/structures")]
+    structures: PathBuf,
+    /// Insulator assembly library directory (.olsi).
+    #[arg(long, default_value = "libraries/insulators")]
+    insulators: PathBuf,
+    /// Cable temperature, °C.
+    #[arg(long, default_value_t = 15.0)]
+    temperature: f64,
+    /// Wind pressure on the wires, Pa (perpendicular to each span).
+    #[arg(long, default_value_t = 0.0)]
+    wind_pressure: f64,
+    /// Radial ice thickness, mm.
+    #[arg(long, default_value_t = 0.0)]
+    ice_thickness: f64,
+    /// Write a standalone 3D viewer (HTML).
+    #[arg(long)]
+    html: Option<PathBuf>,
+    /// Write all wire points as CSV.
+    #[arg(long)]
+    csv: Option<PathBuf>,
+    /// Write one row per span (tensions, sag, mid and low points) as CSV.
+    #[arg(long)]
+    spans_csv: Option<PathBuf>,
+    /// Print stationing, offsets and line angles of every route.
+    #[arg(long)]
+    stations: bool,
+    /// Survey points (CSV / XYZ) for the ground surface: enables the
+    /// ground clearance check and draws the ground in the viewer.
+    #[arg(long)]
+    terrain: Option<PathBuf>,
+    /// Required vertical ground clearance, m: spans below it are listed.
+    #[arg(long)]
+    clearance: Option<f64>,
+    /// Write the lowest ground clearance of every span as CSV.
+    #[arg(long)]
+    clearance_csv: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -135,25 +149,7 @@ fn main() -> ExitCode {
         }
         Some(Command::Validate { path, report, list }) => validate(&path, report.as_deref(), list),
         Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
-        Some(Command::Line {
-            file,
-            library,
-            structures,
-            insulators,
-            temperature,
-            wind_pressure,
-            ice_thickness,
-            html,
-            csv,
-            spans_csv,
-            stations,
-        }) => line(
-            &file,
-            [&library, &structures, &insulators],
-            (temperature, wind_pressure, ice_thickness),
-            [html.as_deref(), csv.as_deref(), spans_csv.as_deref()],
-            stations,
-        ),
+        Some(Command::Line(args)) => line(&args),
         Some(Command::Structures {
             command: StructuresCommand::Derive { file, out },
         }) => structures_derive(&file, &out),
@@ -196,13 +192,25 @@ fn sagtension(job: &std::path::Path, units: Units, csv: Option<&std::path::Path>
     }
 }
 
-fn line(
-    file: &std::path::Path,
-    [library, structure_dir, insulator_dir]: [&std::path::Path; 3],
-    (temperature, wind_pressure, ice_thickness): (f64, f64, f64),
-    [html, csv, spans_csv]: [Option<&std::path::Path>; 3],
-    stations: bool,
-) -> ExitCode {
+fn line(args: &LineArgs) -> ExitCode {
+    let LineArgs {
+        file,
+        library,
+        structures: structure_dir,
+        insulators: insulator_dir,
+        temperature,
+        wind_pressure,
+        ice_thickness,
+        html,
+        csv,
+        spans_csv,
+        stations,
+        terrain,
+        clearance,
+        clearance_csv,
+    } = args;
+    let (temperature, wind_pressure, ice_thickness) =
+        (*temperature, *wind_pressure, *ice_thickness);
     use ols_core::units::{Length, Stress, Temperature};
     use ols_weather::WeatherCase;
 
@@ -221,7 +229,7 @@ fn line(
         let mut case = WeatherCase::still("state", Temperature::from_celsius(temperature));
         case.wind_pressure = Stress::from_pascals(wind_pressure);
         case.ice_thickness = Length::from_millimeters(ice_thickness);
-        if stations {
+        if *stations {
             for route in line.effective_routes() {
                 println!("Route {} {}", route.id, route.name);
                 println!(
@@ -303,10 +311,87 @@ fn line(
             shapes.len(),
             line.sections.len()
         );
+        let mut extras = ols_line::export::ViewerExtras::default();
+        if let Some(path) = terrain {
+            let started = std::time::Instant::now();
+            let ground = ols_terrain::Terrain::load(path).map_err(|e| e.to_string())?;
+            let clearances: Vec<_> = shapes
+                .iter()
+                .flat_map(|shape| ols_clearance::ground_clearances(shape, &ground))
+                .collect();
+            println!(
+                "terrain: {} points, {} triangles{} — loaded and {} spans checked in {:.1?}",
+                ground.num_points(),
+                ground.num_triangles(),
+                match ground.skipped_breaklines() {
+                    0 => String::new(),
+                    n => format!(", {n} crossing breakline edges skipped"),
+                },
+                clearances.len(),
+                started.elapsed()
+            );
+            let lowest = clearances
+                .iter()
+                .filter_map(|c| c.lowest.map(|l| (c, l)))
+                .min_by(|a, b| a.1.clearance.total_cmp(&b.1.clearance));
+            if let Some((c, l)) = lowest {
+                println!(
+                    "  lowest vertical ground clearance {:.2} m: section {} span {} at ({:.1}, {:.1})",
+                    l.clearance, c.section, c.span, l.wire[0], l.wire[1]
+                );
+            }
+            let partly = clearances.iter().filter(|c| c.covered < 0.999).count();
+            if partly > 0 {
+                println!("  {partly} spans are not fully over the surveyed area");
+            }
+            if let Some(required) = clearance {
+                let found = ols_clearance::violations(&clearances, *required);
+                println!(
+                    "  spans below the required {required:.2} m: {}",
+                    found.len()
+                );
+                for c in &found {
+                    let l = c.lowest.expect("violations have a lowest point");
+                    println!(
+                        "    section {:<10} span {:>3}: {:>6.2} m at ({:.1}, {:.1}, wire {:.2} m)",
+                        c.section, c.span, l.clearance, l.wire[0], l.wire[1], l.wire[2]
+                    );
+                    extras.markers.push((
+                        l.wire,
+                        format!("{} span {}: {:.2} m", c.section, c.span, l.clearance),
+                    ));
+                }
+            }
+            if let Some(path) = clearance_csv {
+                let mut out = String::from(
+                    "section,span,clearance_m,wire_x,wire_y,wire_z,ground_z,covered\n",
+                );
+                for c in &clearances {
+                    match c.lowest {
+                        Some(l) => out.push_str(&format!(
+                            "{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}\n",
+                            c.section,
+                            c.span,
+                            l.clearance,
+                            l.wire[0],
+                            l.wire[1],
+                            l.wire[2],
+                            l.ground[2],
+                            c.covered
+                        )),
+                        None => out.push_str(&format!("{},{},,,,,,0\n", c.section, c.span)),
+                    }
+                }
+                std::fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))?;
+            }
+            extras.ground = Some(ground.mesh());
+        } else if clearance.is_some() || clearance_csv.is_some() {
+            return Err("--clearance and --clearance-csv need --terrain".into());
+        }
         if let Some(path) = html {
             std::fs::write(
                 path,
-                ols_line::export::viewer_html(&line, &shapes, &line.name),
+                ols_line::export::viewer_html_with(&line, &shapes, &line.name, &extras),
             )
             .map_err(|e| format!("{}: {e}", path.display()))?;
         }

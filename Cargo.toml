@@ -20,6 +20,8 @@ ols-wireloads = { path = "crates/ols-wireloads" }
 ols-wirefe = { path = "crates/ols-wirefe" }
 ols-line = { path = "crates/ols-line" }
 ols-structures = { path = "crates/ols-structures" }
+ols-terrain = { path = "crates/ols-terrain" }
+ols-clearance = { path = "crates/ols-clearance" }
 ols-validation = { path = "crates/ols-validation" }
 ols-plugins = { path = "crates/ols-plugins" }
 clap = { version = "4", features = ["derive"] }

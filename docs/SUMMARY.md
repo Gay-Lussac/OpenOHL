@@ -8,6 +8,7 @@
 - [Wire library files (.olsw)](user-guide/wire-library.md)
 - [Line files (.ols.json)](user-guide/line-file.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
+- [Terrain and ground clearance](user-guide/terrain.md)
 
 # Theory manual
 
