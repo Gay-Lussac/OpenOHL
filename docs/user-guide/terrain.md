@@ -63,10 +63,55 @@ the header `p,n,e,z,d`.
   skipped and counted in the output.
 - Points with the same x and y are merged (the first one is kept).
 
+## Ground from LiDAR
+
+```bash
+cargo run --release -p ols-cli -- line LINE.ols.json --lidar TILES_DIR \
+  --lidar-classes SCHEME.olsc --clearance 8
+```
+
+| Option | Meaning |
+|---|---|
+| `--lidar PATH` | LAS / LAZ file or directory of tiles. |
+| `--lidar-classes FILE` | Class scheme (below); default: ASPRS LAS 1.4 standard classes. |
+| `--ground-role ROLE` | Classes with this role make the ground surface (default `ground`). |
+| `--corridor M` | Only points within M of the spans (default 60 m); tiles outside are not decompressed. |
+| `--max-edge M` | Longest triangle side (default 50 m): no ground is invented across larger gaps. |
+| `--thin M` | Optional: keep the lowest ground point per M × M cell. |
+
+`ols lidar info PATH --classes [--scheme FILE]` lists the tiles and counts the points of every class, with the scheme's names and roles.
+
+### Class schemes (`.olsc`)
+
+What a class number means depends on who classified the data — the ASPRS LAS standard, or a utility's or surveyor's own specification. A class scheme names every class and gives it **roles**; tools select classes by role, so any classification works. A class can have several roles, and roles are free words:
+
+```toml
+format = "ols-lidar-classes"
+version = 1
+id = "my-survey"
+name = "Survey company X, project Y"
+
+[[class]]
+code = 1
+name = "Terrain"
+roles = ["ground"]
+
+[[class]]
+code = 5
+name = "Asphalt road"
+roles = ["ground", "road"]
+```
+
+The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.olsc`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/libraries/lidar-classes/asprs-las-1.4.olsc) (ground: 2, water 9, road surface 11). Used by OLS CAD so far: `ground`. Suggested for clearance rules and later tools: `vegetation`, `building`, `water`, `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`, `shield_wire`, `load_object`, `other_line_structure`, `other_line_conductor`, `object`, `noise`, `temporary`, `unclassified`.
+
+On a real 25 km line (private data, checked locally), ground built this way from 99.6 million LiDAR points (11.3 million in the utility's ground classes, 22.6 million triangles, about one minute) gave span clearances matching those on the TIN of a commercial program to a median of 2 mm (94 % of 930 spans within 10 cm).
+
 ## The ground surface
 
 The points are triangulated (constrained Delaunay, the
-[spade](https://crates.io/crates/spade) library) into a TIN. The ground
+[spade](https://crates.io/crates/spade) library) into a TIN. A finished
+mesh (an imported TIN, or the output of a terrain-building plugin) can be
+used as it is. The ground
 height anywhere inside the surveyed area (the convex hull of the points) is
 the linear interpolation on the triangle below. Outside it there is no
 ground: spans that are not fully over the survey are reported.

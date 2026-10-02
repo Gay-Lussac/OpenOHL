@@ -14,9 +14,16 @@
 //!   first-party terrain builder; other builders (plugins) produce the same
 //!   output, a mesh for [`Terrain::from_mesh`].
 //!
+//! - [`classes`]: what class numbers mean ([`ClassScheme`], `*.olsc`
+//!   files): ground is chosen by role, so any classification works.
+//!
 //! Cost: LAZ decompression dominates, roughly 5–10 million points per
 //! second; triangulation about 1 s per million points kept. Exit clauses: a
 //! [`Budget`] checked after every batch of points.
+
+pub mod classes;
+
+pub use classes::ClassScheme;
 
 use std::collections::HashMap;
 use std::fmt;

@@ -116,7 +116,8 @@ The open Phase 2 items above, grouped into four work packages:
 
 - [ ] `ols-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module
 - [ ] Wood/steel/concrete pole libraries and checks
-- [ ] LiDAR: LAS/LAZ/COPC import with octree streaming and point budget (billions of points at 60 fps)
+- [x] LiDAR basics (`ols-lidar`, delivered early in Phase 2): LAS/LAZ tiles, class schemes with roles (`.olsc`, any classification), ground in a corridor, TIN from LiDAR — matched a commercial TIN's span clearances to a median of 2 mm on a real line
+- [ ] LiDAR: COPC, octree streaming and point budget (billions of points at 60 fps)
 - [ ] LiDAR: classification, vegetation & encroachment analysis, as-built wire extraction/fitting
 - [ ] Thermal rating: IEEE 738, CIGRE TB 601 / TB 207, max operating temperature from clearance
 - [ ] Optimum (automatic) structure spotting — cost-based optimisation

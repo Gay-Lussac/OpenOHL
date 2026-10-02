@@ -108,6 +108,27 @@ struct LineArgs {
     /// ground clearance check and draws the ground in the viewer.
     #[arg(long)]
     terrain: Option<PathBuf>,
+    /// LiDAR tiles (LAS/LAZ file or directory): ground surface built from
+    /// the classes with the ground role, inside a corridor along the spans.
+    #[arg(long, conflicts_with = "terrain")]
+    lidar: Option<PathBuf>,
+    /// Class scheme (.olsc) of the LiDAR; default ASPRS LAS 1.4.
+    #[arg(long)]
+    lidar_classes: Option<PathBuf>,
+    /// Role of the classes that make the ground surface.
+    #[arg(long, default_value = "ground")]
+    ground_role: String,
+    /// Half width of the LiDAR corridor around the spans, m.
+    #[arg(long, default_value_t = 60.0)]
+    corridor: f64,
+    /// Longest triangle side of the LiDAR ground surface, m (no ground is
+    /// invented across larger gaps).
+    #[arg(long, default_value_t = 50.0)]
+    max_edge: f64,
+    /// Thin the LiDAR ground points: lowest point per square cell of this
+    /// size, m.
+    #[arg(long)]
+    thin: Option<f64>,
     /// Required vertical ground clearance, m: spans below it are listed.
     #[arg(long)]
     clearance: Option<f64>,
@@ -143,9 +164,12 @@ enum LidarCommand {
     Info {
         /// LAS / LAZ file or directory of tiles.
         path: PathBuf,
-        /// Count points per ASPRS class.
+        /// Count points per class.
         #[arg(long)]
         classes: bool,
+        /// Class scheme (.olsc) naming the classes; default ASPRS LAS 1.4.
+        #[arg(long)]
+        scheme: Option<PathBuf>,
     },
 }
 
@@ -175,13 +199,26 @@ fn main() -> ExitCode {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
         Some(Command::Lidar {
-            command: LidarCommand::Info { path, classes },
-        }) => lidar_info(&path, classes),
+            command:
+                LidarCommand::Info {
+                    path,
+                    classes,
+                    scheme,
+                },
+        }) => lidar_info(&path, classes, scheme.as_deref()),
     }
 }
 
-fn lidar_info(path: &std::path::Path, classes: bool) -> ExitCode {
+fn class_scheme(path: Option<&std::path::Path>) -> Result<ols_lidar::ClassScheme, String> {
+    match path {
+        Some(p) => ols_lidar::ClassScheme::load(p),
+        None => Ok(ols_lidar::ClassScheme::asprs()),
+    }
+}
+
+fn lidar_info(path: &std::path::Path, classes: bool, scheme: Option<&std::path::Path>) -> ExitCode {
     let run = || -> Result<(), String> {
+        let scheme = class_scheme(scheme)?;
         let tiles = ols_lidar::tiles_in(path).map_err(|e| e.to_string())?;
         let (mut total, mut lo, mut hi) = (0u64, [f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
         for tile in &tiles {
@@ -212,8 +249,14 @@ fn lidar_info(path: &std::path::Path, classes: bool) -> ExitCode {
                 stats.points_read,
                 started.elapsed()
             );
+            println!("classes ({}):", scheme.name);
             for (class, n) in stats.classes.iter().enumerate().filter(|(_, n)| **n > 0) {
-                println!("  class {class:>3}: {n:>12}");
+                let (name, roles) = scheme
+                    .class(class as u8)
+                    .map_or(("(not in the scheme)".to_owned(), String::new()), |c| {
+                        (c.name.clone(), c.roles.join(", "))
+                    });
+                println!("  {class:>3} {n:>12}  {name:<48} {roles}");
             }
         }
         Ok(())
@@ -274,6 +317,12 @@ fn line(args: &LineArgs) -> ExitCode {
         spans_csv,
         stations,
         terrain,
+        lidar,
+        lidar_classes,
+        ground_role,
+        corridor,
+        max_edge,
+        thin,
         clearance,
         clearance_csv,
     } = args;
@@ -410,9 +459,54 @@ fn line(args: &LineArgs) -> ExitCode {
                 }
             }
         }
-        if let Some(path) = terrain {
-            let started = std::time::Instant::now();
-            let ground = ols_terrain::Terrain::load(path).map_err(|e| e.to_string())?;
+        let started = std::time::Instant::now();
+        let ground = match (terrain, lidar) {
+            (Some(path), _) => Some(ols_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
+            (None, Some(path)) => {
+                let scheme = class_scheme(lidar_classes.as_deref())?;
+                let classes = scheme.codes_with_role(ground_role);
+                if classes.is_empty() {
+                    return Err(format!(
+                        "no class of \"{}\" has the role \"{ground_role}\"",
+                        scheme.name
+                    ));
+                }
+                let polylines: Vec<Vec<[f64; 2]>> = line
+                    .sections
+                    .iter()
+                    .map(|s| {
+                        s.points
+                            .iter()
+                            .filter_map(|p| line.attachment(p))
+                            .map(|a| [a.wire_point[0], a.wire_point[1]])
+                            .collect()
+                    })
+                    .collect();
+                let filter = ols_lidar::GroundFilter {
+                    classes: classes.clone(),
+                    corridor: Some(ols_lidar::Corridor::new(&polylines, *corridor)),
+                    thin: *thin,
+                };
+                let tiles = ols_lidar::tiles_in(path).map_err(|e| e.to_string())?;
+                // Exit clause: ~1 min per 10⁸ points decompressed; 30 min is far beyond.
+                let budget = ols_core::budget::Budget::new()
+                    .time_limit(std::time::Duration::from_secs(1800));
+                let (surface, stats) =
+                    ols_lidar::build_terrain(&tiles, &filter, Some(*max_edge), &budget)
+                        .map_err(|e| e.to_string())?;
+                println!(
+                    "lidar: {} tiles read ({} outside the ±{corridor} m corridor), {} points, ground classes {classes:?} ({}): {} points kept",
+                    stats.tiles_read,
+                    stats.tiles_skipped,
+                    stats.points_read,
+                    scheme.name,
+                    stats.points_kept
+                );
+                Some(surface)
+            }
+            (None, None) => None,
+        };
+        if let Some(ground) = ground {
             let clearances: Vec<_> = shapes
                 .iter()
                 .flat_map(|shape| ols_clearance::ground_clearances(shape, &ground))
@@ -490,7 +584,7 @@ fn line(args: &LineArgs) -> ExitCode {
             }
             extras.ground = Some(ground.mesh());
         } else if clearance.is_some() || clearance_csv.is_some() {
-            return Err("--clearance and --clearance-csv need --terrain".into());
+            return Err("--clearance and --clearance-csv need --terrain or --lidar".into());
         }
         if let Some(path) = html {
             std::fs::write(

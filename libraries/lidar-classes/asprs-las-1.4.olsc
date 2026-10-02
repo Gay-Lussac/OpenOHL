@@ -1,0 +1,113 @@
+# Standard point classes of the ASPRS LAS 1.4 specification (R15), with
+# default roles. Roles are the scheme author's choice: copy this file to
+# make a scheme for other data, or to change which classes count as ground.
+format = "ols-lidar-classes"
+version = 1
+id = "asprs-las-1.4"
+name = "ASPRS LAS 1.4 standard classes"
+source = "ASPRS LAS Specification 1.4 R15, table 17 (point formats 6-10)"
+
+[[class]]
+code = 0
+name = "Created, never classified"
+roles = ["unclassified"]
+
+[[class]]
+code = 1
+name = "Unclassified"
+roles = ["unclassified"]
+
+[[class]]
+code = 2
+name = "Ground"
+roles = ["ground"]
+
+[[class]]
+code = 3
+name = "Low vegetation"
+roles = ["vegetation"]
+
+[[class]]
+code = 4
+name = "Medium vegetation"
+roles = ["vegetation"]
+
+[[class]]
+code = 5
+name = "High vegetation"
+roles = ["vegetation"]
+
+[[class]]
+code = 6
+name = "Building"
+roles = ["building"]
+
+[[class]]
+code = 7
+name = "Low point (noise)"
+roles = ["noise"]
+
+[[class]]
+code = 9
+name = "Water"
+roles = ["water", "ground"]
+
+[[class]]
+code = 10
+name = "Rail"
+roles = ["railway"]
+
+[[class]]
+code = 11
+name = "Road surface"
+roles = ["road", "ground"]
+
+[[class]]
+code = 13
+name = "Wire - guard (shield)"
+roles = ["shield_wire"]
+
+[[class]]
+code = 14
+name = "Wire - conductor (phase)"
+roles = ["conductor"]
+
+[[class]]
+code = 15
+name = "Transmission tower"
+roles = ["structure"]
+
+[[class]]
+code = 16
+name = "Wire-structure connector (insulator)"
+roles = ["insulator"]
+
+[[class]]
+code = 17
+name = "Bridge deck"
+roles = ["bridge"]
+
+[[class]]
+code = 18
+name = "High noise"
+roles = ["noise"]
+
+[[class]]
+code = 19
+name = "Overhead structure"
+roles = ["object"]
+
+[[class]]
+code = 20
+name = "Ignored ground (e.g. breakline proximity)"
+roles = ["ignored_ground"]
+
+[[class]]
+code = 21
+name = "Snow"
+roles = ["snow"]
+
+[[class]]
+code = 22
+name = "Temporal exclusion"
+roles = ["temporary"]
