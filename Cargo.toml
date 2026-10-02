@@ -17,6 +17,7 @@ ols-cables = { path = "crates/ols-cables" }
 ols-sagtension = { path = "crates/ols-sagtension" }
 ols-weather = { path = "crates/ols-weather" }
 ols-wireloads = { path = "crates/ols-wireloads" }
+ols-wirefe = { path = "crates/ols-wirefe" }
 ols-validation = { path = "crates/ols-validation" }
 ols-plugins = { path = "crates/ols-plugins" }
 clap = { version = "4", features = ["derive"] }
@@ -24,6 +25,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
 criterion = "0.8"
+nalgebra = "0.35"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
