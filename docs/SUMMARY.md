@@ -6,6 +6,7 @@
 
 - [Getting started](user-guide/getting-started.md)
 - [Wire library files (.olsw)](user-guide/wire-library.md)
+- [Line files (.ols.json)](user-guide/line-file.md)
 
 # Theory manual
 

@@ -1,0 +1,21 @@
+[package]
+name = "ols-line"
+description = "OLS CAD line model: structures, attachments, wire sections; 3D solving"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-core.workspace = true
+ols-cables.workspace = true
+ols-weather.workspace = true
+ols-wirefe.workspace = true
+nalgebra.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

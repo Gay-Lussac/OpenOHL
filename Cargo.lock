@@ -1220,6 +1220,7 @@ dependencies = [
  "nalgebra",
  "ols-cables",
  "ols-core",
+ "ols-line",
  "ols-plugins",
  "ols-sagtension",
  "ols-validation",
@@ -1234,6 +1235,19 @@ name = "ols-core"
 version = "0.0.1"
 dependencies = [
  "criterion",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ols-line"
+version = "0.0.1"
+dependencies = [
+ "nalgebra",
+ "ols-cables",
+ "ols-core",
+ "ols-weather",
+ "ols-wirefe",
  "serde",
  "serde_json",
 ]

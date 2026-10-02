@@ -19,3 +19,6 @@ target/
 
 # Private project data for local checks only (never commit)
 local-data/
+
+# Local editor/agent settings
+.claude/

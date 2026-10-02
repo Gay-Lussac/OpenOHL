@@ -50,6 +50,32 @@ enum Command {
         #[arg(long)]
         csv: Option<PathBuf>,
     },
+    /// Solve a line model (.ols.json) in 3D for one weather state.
+    Line {
+        /// Line file (.ols.json).
+        file: PathBuf,
+        /// Wire library: .olsw file or directory.
+        #[arg(long, default_value = "libraries/cables")]
+        library: PathBuf,
+        /// Cable temperature, °C.
+        #[arg(long, default_value_t = 15.0)]
+        temperature: f64,
+        /// Wind pressure on the wires, Pa (perpendicular to each span).
+        #[arg(long, default_value_t = 0.0)]
+        wind_pressure: f64,
+        /// Radial ice thickness, mm.
+        #[arg(long, default_value_t = 0.0)]
+        ice_thickness: f64,
+        /// Write a standalone 3D viewer (HTML).
+        #[arg(long)]
+        html: Option<PathBuf>,
+        /// Write all wire points as CSV.
+        #[arg(long)]
+        csv: Option<PathBuf>,
+        /// Write one row per span (tensions, sag, mid and low points) as CSV.
+        #[arg(long)]
+        spans_csv: Option<PathBuf>,
+    },
     /// Inspect plugins.
     Plugin {
         #[command(subcommand)]
@@ -81,6 +107,21 @@ fn main() -> ExitCode {
         }
         Some(Command::Validate { path, report, list }) => validate(&path, report.as_deref(), list),
         Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
+        Some(Command::Line {
+            file,
+            library,
+            temperature,
+            wind_pressure,
+            ice_thickness,
+            html,
+            csv,
+            spans_csv,
+        }) => line(
+            &file,
+            &library,
+            (temperature, wind_pressure, ice_thickness),
+            [html.as_deref(), csv.as_deref(), spans_csv.as_deref()],
+        ),
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
@@ -113,6 +154,96 @@ fn sagtension(job: &std::path::Path, units: Units, csv: Option<&std::path::Path>
             }
             ExitCode::SUCCESS
         }
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn line(
+    file: &std::path::Path,
+    library: &std::path::Path,
+    (temperature, wind_pressure, ice_thickness): (f64, f64, f64),
+    [html, csv, spans_csv]: [Option<&std::path::Path>; 3],
+) -> ExitCode {
+    use ols_core::units::{Length, Stress, Temperature};
+    use ols_weather::WeatherCase;
+
+    let run = || -> Result<(), String> {
+        let line = ols_line::Line::load(file).map_err(|e| e.to_string())?;
+        let library = ols_cables::Library::load(library).map_err(|e| e.to_string())?;
+        let mut case = WeatherCase::still("state", Temperature::from_celsius(temperature));
+        case.wind_pressure = Stress::from_pascals(wind_pressure);
+        case.ice_thickness = Length::from_millimeters(ice_thickness);
+        let started = std::time::Instant::now();
+        let results = ols_line::solve::solve_line(&line, &library, &case);
+        let elapsed = started.elapsed();
+        println!(
+            "{}: {} structures, {} sections — {temperature} °C, wind {wind_pressure} Pa, ice {ice_thickness} mm",
+            line.name,
+            line.structures.len(),
+            line.sections.len()
+        );
+        println!(
+            "  {:<12} {:<22} {:>5} {:>12} {:>10} {:>6}",
+            "section", "circuit / phase", "spans", "max T (kN)", "max sag", "iter"
+        );
+        let mut shapes = Vec::new();
+        let mut failed = 0;
+        for (section, result) in line.sections.iter().zip(results) {
+            match result {
+                Ok(shape) => {
+                    let max_t = shape
+                        .spans
+                        .iter()
+                        .map(|s| s.max_tension)
+                        .fold(0.0, f64::max);
+                    let max_sag = shape.spans.iter().map(|s| s.sag).fold(0.0, f64::max);
+                    println!(
+                        "  {:<12} {:<22} {:>5} {:>12.2} {:>8.2} m {:>6}",
+                        section.id,
+                        format!("{} {}", section.circuit, section.phase_label),
+                        shape.spans.len(),
+                        max_t / 1e3,
+                        max_sag,
+                        shape.iterations
+                    );
+                    shapes.push(shape);
+                }
+                Err(error) => {
+                    failed += 1;
+                    println!("  {:<12} error: {error}", section.id);
+                }
+            }
+        }
+        println!(
+            "solved {} of {} sections in {elapsed:.1?}",
+            shapes.len(),
+            line.sections.len()
+        );
+        if let Some(path) = html {
+            std::fs::write(
+                path,
+                ols_line::export::viewer_html(&line, &shapes, &line.name),
+            )
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        if let Some(path) = csv {
+            std::fs::write(path, ols_line::export::wires_csv(&shapes))
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        if let Some(path) = spans_csv {
+            std::fs::write(path, ols_line::export::spans_csv(&shapes))
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        if failed > 0 {
+            return Err(format!("{failed} sections failed"));
+        }
+        Ok(())
+    };
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error}");
             ExitCode::FAILURE
