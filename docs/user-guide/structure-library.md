@@ -66,7 +66,7 @@ wind_area = "0.6 m²"         # projected area for wind (default 0)
 | Kind | Geometry | In the solver |
 |---|---|---|
 | `suspension` | clamp `length` below the attachment point | free clamp on a tension-only member (swings) |
-| `v_string` | two legs from ±`half_width` to a clamp below | tension-only legs (one goes slack in wind) |
+| `v_string` | two legs from ±`half_width` (along the structure's local x, across the line) to a clamp below | two tension-only legs to a free clamp; the leeward leg goes slack in strong wind |
 | `strain` | clamp `length` from the attachment point, along its conductor | free member of that length: direction and droop follow the conductor tension and the assembly weight |
 
 General linked assemblies (yokes, jumper support strings, counterweights) are planned (DESIGN_GOALS §6, §11).

@@ -281,6 +281,15 @@ fn line(
                         max_sag,
                         shape.iterations
                     );
+                    // Slack V-string legs: the clamp hangs on one leg.
+                    for (point, forces) in section.points.iter().zip(&shape.insulators) {
+                        if forces.len() == 2 && forces.contains(&0.0) {
+                            println!(
+                                "  {:<12}   slack V-string leg at {} set {} phase {}",
+                                "", point.structure, point.set, point.phase
+                            );
+                        }
+                    }
                     shapes.push(shape);
                 }
                 Err(error) => {

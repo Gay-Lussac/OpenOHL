@@ -149,6 +149,9 @@ pub struct PlacedAttachment {
     pub insulator: Option<String>,
     /// Insulator weight, N.
     pub insulator_weight: f64,
+    /// V-string: the two leg attachment points, at ±`half_width` along the
+    /// structure's local x axis from the insulator point (the centre).
+    pub legs: Option<[[f64; 3]; 2]>,
 }
 
 /// A set of structure types, by id.
@@ -262,6 +265,12 @@ impl StructureType {
                         }
                     },
                 };
+                let legs = assembly.and_then(|i| i.half_width).map(|hw| {
+                    let hw = hw.si();
+                    [-hw, hw].map(|dx| {
+                        to_global(position, rotation_deg, [local[0] + dx, local[1], local[2]])
+                    })
+                });
                 Ok(PlacedAttachment {
                     set: a.set,
                     phase: a.phase,
@@ -270,6 +279,7 @@ impl StructureType {
                     wire_point: to_global(position, rotation_deg, wire_local),
                     insulator: a.insulator.clone(),
                     insulator_weight: assembly.map_or(0.0, |i| i.weight.si()),
+                    legs,
                 })
             })
             .collect()
@@ -287,6 +297,7 @@ mod tests {
         for text in [
             "id = \"I5\"\nname = \"I\"\nkind = \"suspension\"\nlength = \"5 m\"\nweight = \"1 kN\"",
             "id = \"S6\"\nname = \"S\"\nkind = \"strain\"\nlength = \"6 m\"\nweight = \"2 kN\"",
+            "id = \"V5\"\nname = \"V\"\nkind = \"v_string\"\nlength = \"5 m\"\nhalf_width = \"3 m\"",
         ] {
             lib.insert(
                 Path::new("t.olsi"),
@@ -355,6 +366,28 @@ mod tests {
                 .place([0.0; 3], 0.0, Some("nope"), &insulators())
                 .is_err()
         );
+    }
+
+    #[test]
+    fn v_string_legs_lie_across_the_line() {
+        let mut t = tower();
+        t.attachments[0].insulator = Some("V5".into());
+        let placed = t
+            .place([0.0, 0.0, 500.0], -90.0, None, &insulators())
+            .unwrap();
+        let v = &placed[0];
+        // Leg depth sqrt(5² − 3²) = 4 m; legs ±3 m along local x (south here).
+        assert!((v.wire_point[2] - 536.0).abs() < 1e-12);
+        let legs = v.legs.unwrap();
+        for (leg, dy) in legs.iter().zip([3.0, -3.0]) {
+            assert!((leg[0] - v.insulator_point[0]).abs() < 1e-12);
+            assert!(
+                (leg[1] - v.insulator_point[1] - dy).abs() < 1e-12,
+                "{leg:?}"
+            );
+            assert_eq!(leg[2], v.insulator_point[2]);
+        }
+        assert!(placed[1].legs.is_none());
     }
 
     #[test]

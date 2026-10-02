@@ -123,6 +123,7 @@ impl Line {
                     wire_point: p.wire_point,
                     insulator_weight: p.insulator_weight,
                     insulator: p.insulator,
+                    legs: p.legs,
                 })
                 .collect();
             for (key, a) in overrides {

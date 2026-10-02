@@ -59,6 +59,11 @@ pub fn spans_csv(shapes: &[SectionShape]) -> String {
 /// 3D (three.js from a CDN). Coordinates are shifted to a local origin (the
 /// first structure) so that the graphics card's 32-bit floats keep
 /// millimetre precision even with national-grid coordinates (~2.6e6 m).
+///
+/// Wires are coloured by phase ([`Line::section_color`]) with a legend;
+/// insulators of solved sections are drawn to their solved clamps (V-string
+/// legs included, slack legs highlighted), others to their wire point.
+/// `shapes` are matched to the line's sections by id.
 pub fn viewer_html(line: &Line, shapes: &[SectionShape], title: &str) -> String {
     let origin = line.structures.first().map_or([0.0; 3], |s| s.position);
     let local = |p: &Point| [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]];
@@ -66,6 +71,32 @@ pub fn viewer_html(line: &Line, shapes: &[SectionShape], title: &str) -> String 
 
     let mut structures = Vec::new();
     let mut insulators = Vec::new();
+    let mut solved_points = std::collections::BTreeSet::new();
+    for shape in shapes {
+        let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
+            continue;
+        };
+        for (k, point) in section.points.iter().enumerate() {
+            let (Some(a), Some(clamp)) = (line.attachment(point), shape.clamps.get(k)) else {
+                continue;
+            };
+            solved_points.insert((point.structure.clone(), point.set, point.phase));
+            let forces = shape.insulators.get(k).map_or(&[][..], Vec::as_slice);
+            let tops: Vec<Point> = match &a.legs {
+                Some(legs) if forces.len() == 2 => legs.to_vec(),
+                _ => vec![a.insulator_point],
+            };
+            for (j, top) in tops.iter().enumerate() {
+                let slack = forces.len() == 2 && forces[j] <= 0.0;
+                insulators.push(format!(
+                    "[{},{},{}]",
+                    fmt(local(top)),
+                    fmt(local(clamp)),
+                    u8::from(slack)
+                ));
+            }
+        }
+    }
     for s in &line.structures {
         let top = s
             .attachments
@@ -73,35 +104,72 @@ pub fn viewer_html(line: &Line, shapes: &[SectionShape], title: &str) -> String 
             .map(|a| a.insulator_point[2])
             .fold(s.position[2], f64::max);
         structures.push(format!(
-            "{{\"id\":{:?},\"base\":{},\"top\":{}}}",
-            s.id,
+            "{{\"id\":{},\"base\":{},\"top\":{}}}",
+            json_string(&s.id),
             fmt(local(&s.position)),
             fmt(local(&[s.position[0], s.position[1], top]))
         ));
         for a in &s.attachments {
-            insulators.push(format!(
-                "[{},{}]",
-                fmt(local(&a.insulator_point)),
-                fmt(local(&a.wire_point))
-            ));
+            if solved_points.contains(&(s.id.clone(), a.set, a.phase)) {
+                continue;
+            }
+            for top in a.legs.map_or(vec![a.insulator_point], |l| l.to_vec()) {
+                insulators.push(format!(
+                    "[{},{},0]",
+                    fmt(local(&top)),
+                    fmt(local(&a.wire_point))
+                ));
+            }
         }
     }
     let mut wires = Vec::new();
+    let mut legend: Vec<(String, String)> = Vec::new();
     for shape in shapes {
+        let section = line.sections.iter().find(|s| s.id == shape.section);
+        let color = section.map_or_else(
+            || crate::NEUTRAL_COLOR.to_owned(),
+            |s| line.section_color(s),
+        );
+        let label = section.map_or_else(String::new, |s| {
+            let text = format!("{} {}", s.circuit, s.phase_label);
+            match text.trim() {
+                "" => format!("phase {}", s.points.first().map_or(0, |p| p.phase)),
+                t => t.to_owned(),
+            }
+        });
+        if !legend.iter().any(|(l, c)| *l == label && *c == color) {
+            legend.push((label, color.clone()));
+        }
         for span in &shape.spans {
             let points: Vec<String> = span.points.iter().map(|p| fmt(local(p))).collect();
-            wires.push(format!("[{}]", points.join(",")));
+            wires.push(format!(
+                "{{\"c\":{},\"p\":[{}]}}",
+                json_string(&color),
+                points.join(",")
+            ));
         }
     }
+    let legend: Vec<String> = legend
+        .iter()
+        .map(|(l, c)| format!("[{},{}]", json_string(l), json_string(c)))
+        .collect();
     let data = format!(
-        "{{\"structures\":[{}],\"insulators\":[{}],\"wires\":[{}]}}",
+        "{{\"structures\":[{}],\"insulators\":[{}],\"wires\":[{}],\"legend\":[{}]}}",
         structures.join(","),
         insulators.join(","),
-        wires.join(",")
+        wires.join(","),
+        legend.join(",")
     );
     VIEWER_TEMPLATE
         .replace("__TITLE__", &html_escape(title))
         .replace("__DATA__", &data)
+}
+
+/// A JSON string literal safe inside a `<script>` element.
+fn json_string(text: &str) -> String {
+    serde_json::to_string(text)
+        .expect("strings serialise")
+        .replace("</", "<\\/")
 }
 
 fn html_escape(text: &str) -> String {
@@ -120,11 +188,15 @@ const VIEWER_TEMPLATE: &str = r#"<!doctype html>
   html, body { margin: 0; height: 100%; background: #10151c; color: #dfe6ee; font: 13px system-ui, sans-serif; }
   #info { position: absolute; top: 8px; left: 10px; background: rgba(16,21,28,.8); padding: 6px 10px; border-radius: 6px; }
   canvas { display: block; }
+  #legend { margin-top: 4px; }
+  #legend span { display: inline-block; margin-right: 10px; white-space: nowrap; }
+  #legend i { display: inline-block; width: 14px; height: 3px; margin-right: 4px; vertical-align: middle; }
 </style>
 </head>
 <body>
 <div id="info"><b>__TITLE__</b><br>drag: rotate · right-drag: pan · wheel: zoom · <span id="counts"></span><br>
-<label>vertical exaggeration <input id="exag" type="range" min="1" max="10" step="1" value="1"> <span id="exagv">×1</span></label></div>
+<label>vertical exaggeration <input id="exag" type="range" min="1" max="10" step="1" value="1"> <span id="exagv">×1</span></label>
+<div id="legend"></div></div>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
@@ -146,8 +218,16 @@ const model = new THREE.Group();
 scene.add(model);
 const line = (points, color) => model.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(v)), new THREE.LineBasicMaterial({ color })));
 data.structures.forEach(s => line([s.base, s.top], 0x9aa7b4));
-data.insulators.forEach(i => line(i, 0x6fd3ff));
-data.wires.forEach(w => line(w, 0xffc857));
+// Insulators: [top, clamp, slack]; slack V-string legs in magenta.
+data.insulators.forEach(i => line([i[0], i[1]], i[2] ? 0xff4fd8 : 0x6fd3ff));
+data.wires.forEach(w => line(w.p, new THREE.Color(w.c)));
+const legend = document.getElementById("legend");
+data.legend.forEach(([label, color]) => {
+  const item = document.createElement("span");
+  item.innerHTML = `<i style="background:${color}"></i>`;
+  item.append(label);
+  legend.append(item);
+});
 const box = new THREE.Box3().setFromObject(model);
 const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
 controls.target.copy(center);
@@ -207,5 +287,8 @@ mod tests {
         assert!(html.contains("Test &lt;line&gt;"));
         assert_eq!(html.matches("\"wires\":[").count(), 1);
         assert!(spans > 0 && !html.contains("__DATA__"));
+        // Default phase colours: phases 1 and 2 of the example.
+        assert!(html.contains(crate::DEFAULT_PHASE_COLORS[0]));
+        assert!(html.contains(crate::DEFAULT_PHASE_COLORS[1]));
     }
 }

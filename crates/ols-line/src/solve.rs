@@ -11,6 +11,9 @@
 //! - middle points whose wire point hangs below the insulator point are
 //!   **suspension strings**: a free clamp on a truss of that length from the
 //!   (fixed) insulator point;
+//! - middle points with two `legs` are **V-strings**: a free clamp on two
+//!   tension-only trusses from the (fixed) leg points; a leg pushed into
+//!   compression goes slack (reported in [`SectionShape::insulators`]);
 //! - every span is one exact catenary element (split at point loads);
 //! - wind acts perpendicular to each span, horizontally, so the cable plane
 //!   swings differently in every span.
@@ -72,6 +75,10 @@ pub struct SectionShape {
     pub clamps: Vec<Point>,
     /// One shape per span.
     pub spans: Vec<SpanShape>,
+    /// Axial force of each insulator member at every point of the section,
+    /// N (tension positive): empty for fixed points, one value for I-strings
+    /// and strain assemblies, two for V-string legs (0 = slack leg).
+    pub insulators: Vec<Vec<f64>>,
     /// Newton iterations used.
     pub iterations: u64,
 }
@@ -82,6 +89,8 @@ struct Built {
     clamps: Vec<usize>,
     /// For each span, the cable elements (in order).
     span_elements: Vec<Vec<usize>>,
+    /// For each section point, its insulator trusses.
+    members: Vec<Vec<usize>>,
 }
 
 fn is_suspension(insulator: Vector3<f64>, wire: Vector3<f64>) -> bool {
@@ -131,6 +140,14 @@ enum Clamp {
         weight: f64,
         initial: Vector3<f64>,
     },
+    /// V-string: free clamp on two tension-only legs from `tops`; `plumb`
+    /// is the still-air clamp position from the data.
+    VString {
+        tops: [Vector3<f64>; 2],
+        lengths: [f64; 2],
+        weight: f64,
+        plumb: Vector3<f64>,
+    },
 }
 
 fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
@@ -147,7 +164,16 @@ fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
                 ))
             })?;
             let (ins, wire) = (v(a.insulator_point), v(a.wire_point));
-            Ok(if k > 0 && k < n - 1 && is_suspension(ins, wire) {
+            let middle = k > 0 && k < n - 1;
+            Ok(if let (true, Some(legs)) = (middle, &a.legs) {
+                let tops = legs.map(v);
+                Clamp::VString {
+                    tops,
+                    lengths: tops.map(|t| (wire - t).norm()),
+                    weight: a.insulator_weight,
+                    plumb: wire,
+                }
+            } else if middle && is_suspension(ins, wire) {
                 Clamp::Suspension {
                     top: ins,
                     length: (wire - ins).norm(),
@@ -178,6 +204,7 @@ fn plumb(clamp: &Clamp) -> Vector3<f64> {
         Clamp::Fixed(p) => *p,
         Clamp::Suspension { top, length, .. } => top - Vector3::new(0.0, 0.0, *length),
         Clamp::Strain { initial, .. } => *initial,
+        Clamp::VString { plumb, .. } => *plumb,
     }
 }
 
@@ -200,11 +227,37 @@ fn build(
 
     let mut model = Model::default();
     let mut clamps = Vec::with_capacity(n);
+    let mut members = Vec::with_capacity(n);
     for (k, clamp) in layout.iter().enumerate() {
         match clamp {
             Clamp::Fixed(p) => {
                 clamps.push(model.nodes.len());
                 model.nodes.push(Node::fixed(*p));
+                members.push(vec![]);
+            }
+            Clamp::VString {
+                tops,
+                lengths,
+                weight,
+                ..
+            } => {
+                let first = model.nodes.len();
+                model.nodes.push(Node::fixed(tops[0]));
+                model.nodes.push(Node::fixed(tops[1]));
+                let clamp_node = model.nodes.len();
+                clamps.push(clamp_node);
+                model.nodes.push(Node::free(reference.clamps[k]));
+                members.push(vec![model.trusses.len(), model.trusses.len() + 1]);
+                for (leg, length) in [first, first + 1].into_iter().zip(lengths) {
+                    model.trusses.push(TrussElement {
+                        i: leg,
+                        j: clamp_node,
+                        unstressed_length: *length,
+                        axial_stiffness: DEFAULT_INSULATOR_STIFFNESS,
+                        tension_only: true,
+                        weight: weight / 2.0,
+                    });
+                }
             }
             Clamp::Suspension {
                 top,
@@ -221,6 +274,7 @@ fn build(
                 model.nodes.push(Node::fixed(*top));
                 clamps.push(model.nodes.len());
                 model.nodes.push(Node::free(reference.clamps[k]));
+                members.push(vec![model.trusses.len()]);
                 model.trusses.push(TrussElement {
                     i: top_node,
                     j: top_node + 1,
@@ -307,6 +361,7 @@ fn build(
         model,
         clamps,
         span_elements,
+        members,
     })
 }
 
@@ -377,15 +432,32 @@ fn reference(
                 clamps = (0..n)
                     .map(|k| {
                         let position = solved.positions[built.clamps[k]];
-                        let Clamp::Suspension { top, .. } = &layout[k] else {
-                            return position;
-                        };
                         // Line direction at the clamp (horizontal bisector).
                         let along = (clamps[(k + 1).min(n - 1)] - clamps[k.saturating_sub(1)]).xy();
                         let along = Vector3::new(along.x, along.y, 0.0).normalize();
-                        let swing = position - top;
-                        let transverse_only = swing - along * swing.dot(&along);
-                        top + transverse_only * (swing.norm() / transverse_only.norm())
+                        match &layout[k] {
+                            Clamp::Suspension { top, .. } => {
+                                let swing = position - top;
+                                let transverse_only = swing - along * swing.dot(&along);
+                                top + transverse_only * (swing.norm() / transverse_only.norm())
+                            }
+                            // A V-string swings freely along the line, about
+                            // the axis through its leg tops: the same neutral
+                            // direction, removed by rotating the clamp about
+                            // that axis back into the plane across the line.
+                            Clamp::VString { tops, .. } => {
+                                let axis = (tops[1] - tops[0]).normalize();
+                                let centre = (tops[0] + tops[1]) / 2.0;
+                                let r = position - centre;
+                                let radial = r - axis * r.dot(&axis);
+                                let along = (along - axis * along.dot(&axis)).normalize();
+                                let across = radial - along * radial.dot(&along);
+                                centre
+                                    + axis * r.dot(&axis)
+                                    + across * (radial.norm() / across.norm())
+                            }
+                            _ => position,
+                        }
                     })
                     .collect();
                 // Converged when the clamps used for the next pass (after the
@@ -478,6 +550,11 @@ pub fn solve_section(
         section: section.id.clone(),
         clamps: built.clamps.iter().map(|&c| p(pos[c])).collect(),
         spans,
+        insulators: built
+            .members
+            .iter()
+            .map(|m| m.iter().map(|&t| solution.truss_forces[t]).collect())
+            .collect(),
         iterations: solution.iterations,
     })
 }
@@ -563,6 +640,91 @@ mod tests {
             "wind should blow the wire sideways, moved {shift} m"
         );
         let _ = Length::ZERO;
+    }
+
+    /// The synthetic line with T2's first attachment (a 3.5 m I-string,
+    /// line along x) replaced by a V-string with legs ±3 m across the line.
+    fn with_v_string() -> Line {
+        let mut line = crate::tests::example();
+        let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
+        let a = t2
+            .attachments
+            .iter_mut()
+            .find(|a| (a.set, a.phase) == (1, 1))
+            .unwrap();
+        let c = a.insulator_point;
+        a.legs = Some([[c[0], c[1] - 3.0, c[2]], [c[0], c[1] + 3.0, c[2]]]);
+        a.insulator_weight = 1000.0;
+        line.sections[0].loads.clear();
+        line.validate().unwrap();
+        line
+    }
+
+    #[test]
+    fn v_string_holds_the_clamp_against_wind_until_a_leg_goes_slack() {
+        let lib = library();
+        let case = |pa: f64| {
+            let mut c = WeatherCase::still("wind", Temperature::from_celsius(15.0));
+            c.wind_pressure = Stress::from_pascals(pa);
+            c
+        };
+        let solve = |line: &Line, pa: f64| solve_line(line, &lib, &case(pa)).remove(0).unwrap();
+        // Movement of T2's clamp across the line (y; the line runs along x).
+        let across = |a: &SectionShape, b: &SectionShape| (a.clamps[1][1] - b.clamps[1][1]).abs();
+
+        let v_line = with_v_string();
+        let calm = solve(&v_line, 0.0);
+        // Still air: both legs in tension, carrying the weight span.
+        assert_eq!(calm.insulators[1].len(), 2);
+        assert!(
+            calm.insulators[1].iter().all(|&f| f > 1000.0),
+            "{:?}",
+            calm.insulators[1]
+        );
+        assert!(calm.insulators[0].is_empty());
+        // Strung at 25 kN with the V clamped plumb: 25 kN at stringing.
+        for span in &calm.spans {
+            assert!(
+                (span.horizontal_tension - 25_000.0).abs() < 25.0,
+                "{}",
+                span.horizontal_tension
+            );
+        }
+
+        // 400 Pa: both legs still in tension, the clamp stays put across the
+        // line (< 1 mm: only the leg stretch), while an I-string swings.
+        let blown = solve(&v_line, 400.0);
+        assert!(
+            blown.insulators[1].iter().all(|&f| f > 0.0),
+            "{:?}",
+            blown.insulators[1]
+        );
+        let mut i_line = crate::tests::example();
+        i_line.sections[0].loads.clear();
+        let i_across = across(&solve(&i_line, 400.0), &solve(&i_line, 0.0));
+        let v_across = across(&blown, &calm);
+        assert!(
+            v_across < 1e-3 && i_across > 1.0,
+            "V {v_across} m, I {i_across} m"
+        );
+
+        // 800 Pa: the load leans further than the windward leg (40.6° from
+        // vertical), the leeward leg goes slack and the clamp swings about the
+        // windward leg's top — out and up on a circle of the leg length.
+        let gale = solve(&v_line, 800.0);
+        let legs = &gale.insulators[1];
+        assert!(
+            legs.contains(&0.0) && legs.iter().any(|&f| f > 1000.0),
+            "{legs:?}"
+        );
+        assert!(across(&gale, &calm) > 0.1);
+        let windward = v_line.structure("T2").unwrap().attachments[0].legs.unwrap()
+            [usize::from(legs[1] > 0.0)];
+        let radius = (v(gale.clamps[1]) - v(windward)).norm();
+        assert!(
+            (radius - (3.0f64.powi(2) + 3.5f64.powi(2)).sqrt()).abs() < 2e-3,
+            "{radius}"
+        );
     }
 
     #[test]

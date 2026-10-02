@@ -28,6 +28,7 @@ cargo run -p ols-cli -- line examples/line/synthetic-line.ols.json \
 | `alignment` | no | Alignment points (PIs) of the implicit route (files without `routes`). |
 | `structures` | yes | List of structures. |
 | `sections` | yes | List of wire sections. |
+| `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … } }` — wire colours (`#rrggbb`) by section `phase_label`. |
 
 ## Structures
 
@@ -50,8 +51,16 @@ cargo run -p ols-cli -- line examples/line/synthetic-line.ols.json \
 | `wire_point` | yes | Where the wire is clamped `[x, y, z]`. |
 | `insulator_weight` | no (0) | Insulator weight, N. |
 | `insulator` | no | Insulator assembly id from the [insulator library](structure-library.md). With an assembly, a strain attachment is a free member; without, its clamp stays at `wire_point`. |
+| `legs` | no | V-string: the two leg attachment points `[[x,y,z], [x,y,z]]` on the structure. Both legs end at `wire_point` (which must hang below both); `insulator_point` is then informative (e.g. their centre). Generated from `v_string` assemblies for typed structures. |
 
-The **assembly type follows from the geometry**: in the middle of a section, a wire point *below* its insulator point, swung less than 45°, is a **suspension string** of length `|wire_point − insulator_point|` that swings freely when solved. The first and last points of every section, and other attachments, are **strain points**: a free member of their length when they reference an insulator assembly, otherwise fixed at `wire_point`.
+The **assembly type follows from the geometry**: in the middle of a section, an attachment with `legs` is a **V-string** (two tension-only legs of lengths `|wire_point − leg|` to one free clamp, `insulator_weight` split between them); otherwise a wire point *below* its insulator point, swung less than 45°, is a **suspension string** of length `|wire_point − insulator_point|` that swings freely when solved. The first and last points of every section, and other attachments, are **strain points**: a free member of their length when they reference an insulator assembly, otherwise fixed at `wire_point`.
+
+A V-string holds its clamp across the line while both legs are in tension; when the wind load leans further from vertical than the windward leg, the leeward leg goes **slack** and the clamp swings about the windward leg's top. `ols line` lists slack legs, and the viewer draws them in magenta.
+
+```json
+{ "set": 1, "phase": 1, "insulator_point": [310.0, -6.0, 535.0], "wire_point": [310.0, -6.0, 531.5],
+  "legs": [[310.0, -9.0, 535.0], [310.0, -3.0, 535.0]], "insulator_weight": 1000.0 }
+```
 
 `cargo run -p ols-cli -- line FILE --stations` prints the stationing, offsets and line angles of every route.
 
@@ -66,6 +75,15 @@ The **assembly type follows from the geometry**: in the middle of a section, a w
 | `points` | yes | `{ "structure": id, "set": n, "phase": n }` in line order; spans are between consecutive points. |
 | `stringing` | yes | See below. |
 | `loads` | no | Point loads: `{ "span": index, "fraction": 0–1 (horizontal, from the back point), "vertical": N, "label": "…" }`. |
+| `color` | no | Display colour `#rrggbb`, overriding the phase colour. |
+
+### Colours
+
+Wires are drawn in the section's `color`, else the line's `display.phase_colors` entry for the section's `phase_label`, else a default by the phase number of the section's first point: phase 1 red `#e4572e`, 2 yellow `#f2c14e`, 3 blue `#4c9be8` (then repeating), phase 0 (e.g. shield wires) grey `#b0b8c0`. Utilities' conventions differ, so set them per project:
+
+```json
+"display": { "phase_colors": { "L1": "#8b4513", "L2": "#202020", "L3": "#808080" } }
+```
 
 ### Stringing
 
@@ -81,7 +99,7 @@ Unstressed length of each span (per subconductor) at a temperature — e.g. from
 
 ## How a section is solved
 
-Every span is one exact elastic catenary element (split at point loads), suspension strings are truss elements, wind acts horizontally and perpendicular to each span, and the free clamps and load points are found by Newton–Raphson in 3D (see [finite-element wire systems](../theory/wirefe.md)). Each span's unstressed length scales with \\( e^{\alpha \Delta t} \\) from the stringing temperature.
+Every span is one exact elastic catenary element (split at point loads), suspension strings and V-string legs are tension-only truss elements, wind acts horizontally and perpendicular to each span, and the free clamps and load points are found by Newton–Raphson in 3D (see [finite-element wire systems](../theory/wirefe.md)). Each span's unstressed length scales with \\( e^{\alpha \Delta t} \\) from the stringing temperature.
 
 ## Checked against PLS-CADD
 

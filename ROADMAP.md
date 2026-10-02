@@ -58,15 +58,24 @@ Guiding principles:
 - [ ] Coordinate systems (EPSG via PROJ), transformations for imports/exports
 - [ ] `ols-terrain`: survey point import (CSV/XYZ), feature codes, breaklines, TIN generation, profile extraction (centreline + side profiles)
 - [x] Structure library v1 (`.olss`, DESIGN_GOALS §10): one file per type, local attachment points, default insulator per set, extensions, placement (position, rotation, extension), derive types from an existing line
-- [x] Insulator library basics (`.olsi`, DESIGN_GOALS §11): suspension, V-string, strain assemblies used by the solver *(V-strings placed; V solving in lines still to wire up)*
+- [x] Insulator library basics (`.olsi`, DESIGN_GOALS §11): suspension, V-string, strain assemblies used by the solver (V-strings solved in lines with tension-only legs and slack-leg reporting)
 - [ ] Insulator assembly model (graph of nodes and elements): suspension (I), V-string, tension/strain (single & multiple), post; **linked strings** via shared nodes (yokes, jumpers, jumper support strings) — see DESIGN_GOALS §6
 - [x] Multi-span sections solved in 3D (FE with suspension strings, wind per span, point loads); `ols line` with 3D HTML viewer and CSV exports — checked against a real PLS-CADD line (930 spans, median 1.1 cm)
-- [ ] Analytic insulator behaviour: I-string swing, V-string leg forces & slack detection, strain string geometry
+- [x] Insulator behaviour in the 3D solve: I-string swing, V-string leg forces & slack detection, strain assembly geometry *(from the FE solve; closed-form checks still to add as validation cases)*
 - [ ] `ols-clearance` v1: ground clearance, feature clearance, clearance envelopes per weather case
 - [ ] Plan & profile data output (SVG/DXF/CSV) — no GUI yet
 - [ ] Exporter/importer plugin interface (first formats: CSV, KML/KMZ)
-- [ ] Display: phase colours per circuit/phase, configurable per project and section (DESIGN_GOALS §12)
+- [x] Display: phase colours per circuit/phase, configurable per project (by phase label) and per section, legend in the viewer (DESIGN_GOALS §12)
 - [ ] Jumpers connecting sections at dead-ends (slack cable elements, optional support strings; DESIGN_GOALS §12)
+
+### Phase 2 — next steps (in this order)
+
+The open Phase 2 items above, grouped into four work packages:
+
+1. ✅ **V-strings in line solving + phase colours** — V-string assemblies from the insulator library solved in lines (two tension-only legs from the leg attachment points, free clamp, slack-leg detection), V-string legs drawn in the viewer; wire colours by phase, configurable per project (by phase label) and per section, with a legend.
+2. **Terrain and clearances** — `ols-terrain` (survey points CSV/XYZ, TIN, profile extraction along each route) and `ols-clearance` v1 (wire-to-ground clearance per weather case, violations report). Synthetic survey data for committed tests; real survey or LiDAR data for local checks if available.
+3. **Plan and profile drawings per route** — ground profile, wires, structures and clearance lines along a route's stationing; SVG first, then DXF and CSV.
+4. **Jumpers at dead-ends** — slack cable elements between the end of one section and the start of the next (or between circuits), length or sag as input, optional jumper support strings; drawn in 3D and included in clearance checks.
 
 **Deliverable:** load a survey + structure positions, compute wire positions and ground clearance violations from CLI.
 

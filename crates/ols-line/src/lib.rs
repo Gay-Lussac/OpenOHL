@@ -12,7 +12,7 @@
 //!   (set, phase) has an **insulator point** (on the structure) and a **wire
 //!   point** (where the conductor is clamped). A wire point straight below
 //!   its insulator point is a suspension string; otherwise the attachment is
-//!   a strain (dead-end) point.
+//!   a strain (dead-end) point. An attachment with two `legs` is a V-string.
 //! - [`Section`]: one wire (or bundle) strung through attachment points, with
 //!   its cable and stringing. Spans are between consecutive points.
 //!
@@ -74,6 +74,36 @@ pub struct Line {
     pub structures: Vec<Structure>,
     /// Wire sections.
     pub sections: Vec<Section>,
+    /// Display settings (phase colours).
+    #[serde(default, skip_serializing_if = "Display::is_default")]
+    pub display: Display,
+}
+
+/// Default wire colours by phase number (1, 2, 3, then repeating); phase 0
+/// (e.g. shield wires) is grey. Red / yellow / blue reads well on dark and
+/// light backgrounds; utilities' own conventions go in [`Display`].
+pub const DEFAULT_PHASE_COLORS: [&str; 3] = ["#e4572e", "#f2c14e", "#4c9be8"];
+/// Colour of phase 0 wires.
+pub const NEUTRAL_COLOR: &str = "#b0b8c0";
+
+/// Display settings of a line.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Display {
+    /// Wire colours (`#rrggbb`) by section phase label, e.g.
+    /// `{"L1": "#8b4513", "L2": "#202020", "L3": "#808080"}`.
+    #[serde(default)]
+    pub phase_colors: BTreeMap<String, String>,
+}
+
+impl Display {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+fn is_hex_color(text: &str) -> bool {
+    text.len() == 7 && text.starts_with('#') && text[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// A structure.
@@ -124,6 +154,11 @@ pub struct Attachment {
     /// Insulator assembly id from the insulator library (`.olsi`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub insulator: Option<String>,
+    /// V-string: the attachment points of the two legs on the structure
+    /// (the insulator point is then informative, e.g. their centre). Both
+    /// legs end at the wire point; their lengths are the distances to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legs: Option<[Point; 2]>,
 }
 
 /// One point of a section: structure id + attachment.
@@ -198,6 +233,9 @@ pub struct Section {
     /// Point loads (marker balls, spacers, …).
     #[serde(default)]
     pub loads: Vec<SpanLoad>,
+    /// Display colour (`#rrggbb`), overriding the phase colour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 fn one() -> u32 {
@@ -260,6 +298,22 @@ impl Line {
             .find(|a| a.set == point.set && a.phase == point.phase)
     }
 
+    /// Display colour of a section: its own colour, else the line's colour
+    /// for its phase label, else a default by the phase number of its first
+    /// point ([`DEFAULT_PHASE_COLORS`], [`NEUTRAL_COLOR`] for phase 0).
+    pub fn section_color(&self, section: &Section) -> String {
+        if let Some(c) = &section.color {
+            return c.clone();
+        }
+        if let Some(c) = self.display.phase_colors.get(&section.phase_label) {
+            return c.clone();
+        }
+        match section.points.first().map_or(0, |p| p.phase) {
+            0 => NEUTRAL_COLOR.to_owned(),
+            n => DEFAULT_PHASE_COLORS[(n as usize - 1) % DEFAULT_PHASE_COLORS.len()].to_owned(),
+        }
+    }
+
     /// Checks references and basic consistency.
     pub fn validate(&self) -> Result<(), LineError> {
         let invalid = |m: String| Err(LineError::Invalid(m));
@@ -275,6 +329,16 @@ impl Line {
                 self.version
             ));
         }
+        if let Some((label, c)) = self
+            .display
+            .phase_colors
+            .iter()
+            .find(|(_, c)| !is_hex_color(c))
+        {
+            return invalid(format!(
+                "display: colour \"{c}\" of phase \"{label}\" is not #rrggbb"
+            ));
+        }
         let mut ids = BTreeMap::new();
         for s in &self.structures {
             if ids.insert(s.id.as_str(), ()).is_some() {
@@ -287,6 +351,22 @@ impl Line {
                         "structure {}: duplicate attachment set {} phase {}",
                         s.id, a.set, a.phase
                     ));
+                }
+                if let Some(legs) = &a.legs {
+                    let ok = legs.iter().all(|l| {
+                        let d = [
+                            a.wire_point[0] - l[0],
+                            a.wire_point[1] - l[1],
+                            a.wire_point[2] - l[2],
+                        ];
+                        d[2] < 0.0 && (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() > 0.01
+                    });
+                    if !ok {
+                        return invalid(format!(
+                            "structure {}: V-string set {} phase {}: the wire point must hang below both legs",
+                            s.id, a.set, a.phase
+                        ));
+                    }
                 }
             }
         }
@@ -352,6 +432,9 @@ impl Line {
                     sec.id, l.label
                 ));
             }
+            if let Some(c) = sec.color.as_deref().filter(|c| !is_hex_color(c)) {
+                return invalid(format!("section {}: colour \"{c}\" is not #rrggbb", sec.id));
+            }
             if sec.bundle == 0 {
                 return invalid(format!("section {}: bundle must be at least 1", sec.id));
             }
@@ -399,5 +482,50 @@ mod tests {
         let mut line = example();
         line.version = 99;
         assert!(line.validate().unwrap_err().to_string().contains("newer"));
+    }
+
+    #[test]
+    fn section_colours_by_precedence() {
+        let mut line = example();
+        // Defaults by phase number of the first point.
+        assert_eq!(
+            line.section_color(&line.sections[0]),
+            DEFAULT_PHASE_COLORS[0]
+        );
+        assert_eq!(
+            line.section_color(&line.sections[1]),
+            DEFAULT_PHASE_COLORS[1]
+        );
+        // The project's colour for the phase label, then the section's own.
+        line.display
+            .phase_colors
+            .insert("L1".into(), "#8b4513".into());
+        assert_eq!(line.section_color(&line.sections[0]), "#8b4513");
+        assert_eq!(line.section_color(&line.sections[2]), "#8b4513");
+        line.sections[2].color = Some("#00ff00".into());
+        assert_eq!(line.section_color(&line.sections[2]), "#00ff00");
+        let again = Line::from_json(&line.to_json()).unwrap();
+        assert_eq!(again, line);
+        line.display
+            .phase_colors
+            .insert("L2".into(), "brown".into());
+        assert!(line.validate().unwrap_err().to_string().contains("#rrggbb"));
+    }
+
+    #[test]
+    fn v_string_legs_must_be_above_the_clamp() {
+        let mut line = example();
+        let a = &mut line.structures[1].attachments[0];
+        let c = a.insulator_point;
+        a.legs = Some([
+            [c[0], c[1] - 3.0, c[2]],
+            [c[0], c[1] + 3.0, a.wire_point[2] - 1.0],
+        ]);
+        assert!(
+            line.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("below both legs")
+        );
     }
 }
