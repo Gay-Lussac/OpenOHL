@@ -312,12 +312,48 @@ fn line(args: &LineArgs) -> ExitCode {
             line.sections.len()
         );
         let mut extras = ols_line::export::ViewerExtras::default();
+        if !line.jumpers.is_empty() {
+            println!(
+                "  {:<16} {:>10} {:>9} {:>11}",
+                "jumper", "length m", "sag m", "max T (N)"
+            );
+            for (jumper, result) in line.jumpers.iter().zip(ols_line::jumper::solve_jumpers(
+                &line, &library, &case, &shapes,
+            )) {
+                match result {
+                    Ok(shape) => {
+                        println!(
+                            "  {:<16} {:>10.3} {:>9.3} {:>11.0}{}",
+                            jumper.id,
+                            shape.unstressed_length,
+                            shape.sag,
+                            shape.max_tension,
+                            match shape.support {
+                                Some((_, _, f)) => format!("   support string {f:.0} N"),
+                                None => String::new(),
+                            }
+                        );
+                        extras.jumpers.push(shape);
+                    }
+                    Err(error) => {
+                        failed += 1;
+                        println!("  {:<16} error: {error}", jumper.id);
+                    }
+                }
+            }
+        }
         if let Some(path) = terrain {
             let started = std::time::Instant::now();
             let ground = ols_terrain::Terrain::load(path).map_err(|e| e.to_string())?;
             let clearances: Vec<_> = shapes
                 .iter()
                 .flat_map(|shape| ols_clearance::ground_clearances(shape, &ground))
+                .chain(
+                    extras
+                        .jumpers
+                        .iter()
+                        .map(|j| ols_clearance::jumper_clearance(j, &ground)),
+                )
                 .collect();
             println!(
                 "terrain: {} points, {} triangles{} — loaded and {} spans checked in {:.1?}",
@@ -404,7 +440,7 @@ fn line(args: &LineArgs) -> ExitCode {
                 .map_err(|e| format!("{}: {e}", path.display()))?;
         }
         if failed > 0 {
-            return Err(format!("{failed} sections failed"));
+            return Err(format!("{failed} sections or jumpers failed"));
         }
         Ok(())
     };

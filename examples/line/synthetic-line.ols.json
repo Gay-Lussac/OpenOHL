@@ -406,6 +406,16 @@
       }
     }
   ],
+  "jumpers": [
+    {
+      "id": "J-T3-branch",
+      "cable": "acsr-drake-26-7",
+      "from": { "structure": "T3", "set": 2, "phase": 1 },
+      "to": { "structure": "T3", "set": 1, "phase": 1 },
+      "sag": 1.5,
+      "temperature": 15.0
+    }
+  ],
   "routes": [
     {
       "id": "main",

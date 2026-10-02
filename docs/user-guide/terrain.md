@@ -77,7 +77,7 @@ and no ridge missed between samples.
 
 ## Clearance
 
-For every span the **vertical** distance from the wire down to the ground is
+For every span (and every jumper, reported as `jumper:<id>`) the **vertical** distance from the wire down to the ground is
 evaluated under every piece of the solved wire, at every TIN edge crossing,
 and the smallest value is reported with its location. The wire is a
 polyline of closely spaced points on the exact catenary; between those

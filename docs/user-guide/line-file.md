@@ -28,6 +28,7 @@ cargo run -p ols-cli -- line examples/line/synthetic-line.ols.json \
 | `alignment` | no | Alignment points (PIs) of the implicit route (files without `routes`). |
 | `structures` | yes | List of structures. |
 | `sections` | yes | List of wire sections. |
+| `jumpers` | no | Jumpers between attachment points (below). |
 | `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … } }` — wire colours (`#rrggbb`) by section `phase_label`. |
 
 ## Structures
@@ -96,6 +97,32 @@ Every span is sagged to this horizontal tension (per subconductor) at this tempe
 { "kind": "unstressed_lengths", "lengths": [306.07, 330.73], "temperature": 15.0 }
 ```
 Unstressed length of each span (per subconductor) at a temperature — e.g. from a previous design or another program.
+
+## Jumpers
+
+A jumper is a slack cable joining two attachment points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire (the example joins the branch's first point at the Y pylon T3 to the main L1 wire).
+
+```json
+"jumpers": [
+  { "id": "J-T3-branch", "cable": "acsr-drake-26-7",
+    "from": { "structure": "T3", "set": 2, "phase": 1 },
+    "to":   { "structure": "T3", "set": 1, "phase": 1 },
+    "sag": 1.5, "temperature": 15.0 }
+]
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `id` | yes | Unique id. |
+| `cable` | yes | Cable id from the wire libraries. |
+| `from`, `to` | yes | Attachments `{ "structure", "set", "phase" }`. |
+| `length` | one of | Unstressed (cut) length, m, at `temperature`. |
+| `sag` | one of | Or the largest vertical distance below the end-to-end chord, m, in still air at `temperature`; the cut length is found from it (jumpers without support). |
+| `temperature` | no (15) | Temperature of `length` / `sag`, °C. |
+| `support` | no | Jumper support string: `{ "point": [x,y,z], "length": m, "weight": N, "fraction": 0–1 }` — a tension-only string from `point` holding the jumper at `fraction` of its length from `from` (default 0.5). Needs `length`. |
+| `color` | no | Display colour; default: the colour of the section through `from`. |
+
+Each end is the **solved clamp** of the section through that attachment (so the jumper follows strain assemblies and swung suspension clamps), or the attachment's `wire_point` if no section uses it. The jumper is one exact catenary element (two with a support string) carrying the weather case's weight, ice and wind (horizontal, perpendicular to the jumper's chord); its length scales with \\( e^{\alpha \Delta t} \\) from `temperature`. Sections are solved first: a jumper's tension (a few hundred N) does not change them. `ols line` prints each jumper's length, sag and tension, includes jumpers in the ground clearance check (as `jumper:<id>`) and draws them in the viewer. Clearance from jumpers to the structure body comes with structure outlines.
 
 ## How a section is solved
 

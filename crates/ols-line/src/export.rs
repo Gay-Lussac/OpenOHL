@@ -6,6 +6,7 @@
 
 use std::fmt::Write as _;
 
+use crate::jumper::JumperShape;
 use crate::solve::SectionShape;
 use crate::{Line, Point};
 
@@ -81,6 +82,8 @@ pub struct ViewerExtras {
     /// Marked points with labels (e.g. clearance violations), drawn as red
     /// spheres and listed.
     pub markers: Vec<(Point, String)>,
+    /// Solved jumpers, drawn as wires (with their support strings).
+    pub jumpers: Vec<JumperShape>,
 }
 
 /// [`viewer_html`] with extra layers.
@@ -171,6 +174,31 @@ pub fn viewer_html_with(
                 "{{\"c\":{},\"p\":[{}]}}",
                 json_string(&color),
                 points.join(",")
+            ));
+        }
+    }
+    for shape in &extras.jumpers {
+        let jumper = line.jumpers.iter().find(|j| j.id == shape.jumper);
+        let color = jumper
+            .and_then(|j| j.color.clone())
+            .or_else(|| {
+                let from = &jumper?.from;
+                let section = line.sections.iter().find(|s| s.points.contains(from))?;
+                Some(line.section_color(section))
+            })
+            .unwrap_or_else(|| crate::NEUTRAL_COLOR.to_owned());
+        let points: Vec<String> = shape.points.iter().map(|p| fmt(local(p))).collect();
+        wires.push(format!(
+            "{{\"c\":{},\"p\":[{}]}}",
+            json_string(&color),
+            points.join(",")
+        ));
+        if let Some((top, clamp, force)) = shape.support {
+            insulators.push(format!(
+                "[{},{},{}]",
+                fmt(local(&top)),
+                fmt(local(&clamp)),
+                u8::from(force <= 0.0)
             ));
         }
     }
@@ -308,7 +336,7 @@ controls.target.copy(center);
 // Start looking across the line from the side, far enough to see all of it.
 camera.position.copy(center).add(new THREE.Vector3(size * 0.35, size * 0.45, size * 0.75));
 controls.update();
-document.getElementById("counts").textContent = `${data.structures.length} structures, ${data.wires.length} spans`;
+document.getElementById("counts").textContent = `${data.structures.length} structures, ${data.wires.length} spans and jumpers`;
 // Vertical exaggeration scales heights (three.js y) around the line's centre height.
 const exag = document.getElementById("exag"), exagv = document.getElementById("exagv");
 exag.addEventListener("input", () => {

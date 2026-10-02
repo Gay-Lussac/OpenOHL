@@ -41,11 +41,11 @@ pub const DEFAULT_INSULATOR_STIFFNESS: f64 = 5e7;
 /// already swung — a near-plumb rule would misread them as strain points.
 const PLUMB_RATIO: f64 = 1.0;
 
-fn v(p: Point) -> Vector3<f64> {
+pub(crate) fn v(p: Point) -> Vector3<f64> {
     Vector3::new(p[0], p[1], p[2])
 }
 
-fn p(v: Vector3<f64>) -> Point {
+pub(crate) fn p(v: Vector3<f64>) -> Point {
     [v.x, v.y, v.z]
 }
 
@@ -100,7 +100,7 @@ fn is_suspension(insulator: Vector3<f64>, wire: Vector3<f64>) -> bool {
 
 /// Load per unit length on a span with chord `d` for a weather case:
 /// vertical (weight + ice) and horizontal wind perpendicular to the span.
-fn span_load(case: &WeatherCase, cable: &Cable, d: Vector3<f64>) -> Vector3<f64> {
+pub(crate) fn span_load(case: &WeatherCase, cable: &Cable, d: Vector3<f64>) -> Vector3<f64> {
     let load = case.wire_load(cable.diameter, cable.weight());
     let horizontal = d.xy();
     let transverse = if horizontal.norm() > 0.0 {

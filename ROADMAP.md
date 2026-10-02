@@ -67,7 +67,7 @@ Guiding principles:
 - [ ] Plan & profile data output (SVG/DXF/CSV) — no GUI yet
 - [ ] Exporter/importer plugin interface (first formats: CSV, KML/KMZ)
 - [x] Display: phase colours per circuit/phase, configurable per project (by phase label) and per section, legend in the viewer (DESIGN_GOALS §12)
-- [ ] Jumpers connecting sections at dead-ends (slack cable elements, optional support strings; DESIGN_GOALS §12)
+- [x] Jumpers connecting sections at dead-ends or taps (slack catenary between solved clamps, length or sag input, optional support string, weather loads, ground clearance; DESIGN_GOALS §12) *(clearance to the structure body still to come)*
 
 ### Phase 2 — next steps (in this order)
 
@@ -76,7 +76,7 @@ The open Phase 2 items above, grouped into four work packages:
 1. ✅ **V-strings in line solving + phase colours** — V-string assemblies from the insulator library solved in lines (two tension-only legs from the leg attachment points, free clamp, slack-leg detection), V-string legs drawn in the viewer; wire colours by phase, configurable per project (by phase label) and per section, with a legend.
 2. ✅ (v1) **Terrain and clearances** — `ols-terrain` (survey points CSV/XYZ, TIN, profile extraction along each route) and `ols-clearance` v1 (wire-to-ground clearance per weather case, violations report). Synthetic survey data for committed tests; real survey or LiDAR data for local checks if available.
 3. **Plan and profile drawings per route** — ground profile, wires, structures and clearance lines along a route's stationing; SVG first, then DXF and CSV.
-4. **Jumpers at dead-ends** — slack cable elements between the end of one section and the start of the next (or between circuits), length or sag as input, optional jumper support strings; drawn in 3D and included in clearance checks.
+4. ✅ **Jumpers at dead-ends** — slack cable elements between the end of one section and the start of the next (or between circuits), length or sag as input, optional jumper support strings; drawn in 3D and included in clearance checks.
 
 **Deliverable:** load a survey + structure positions, compute wire positions and ground clearance violations from CLI.
 

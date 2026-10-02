@@ -16,10 +16,15 @@
 //! - [`Section`]: one wire (or bundle) strung through attachment points, with
 //!   its cable and stringing. Spans are between consecutive points.
 //!
+//! - [`Jumper`]: a slack cable joining two attachment points — the ends of
+//!   two sections at a dead-end, or a tap from a branch to a through wire —
+//!   optionally held by a support string; solved by [`jumper`].
+//!
 //! [`solve`] turns a section into a finite-element model (exact catenary
 //! elements, insulator strings) and solves it in any weather state.
 
 pub mod export;
+pub mod jumper;
 pub mod library;
 pub mod route;
 pub mod solve;
@@ -74,9 +79,70 @@ pub struct Line {
     pub structures: Vec<Structure>,
     /// Wire sections.
     pub sections: Vec<Section>,
+    /// Jumpers between attachment points.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jumpers: Vec<Jumper>,
     /// Display settings (phase colours).
     #[serde(default, skip_serializing_if = "Display::is_default")]
     pub display: Display,
+}
+
+fn default_jumper_temperature() -> f64 {
+    15.0
+}
+
+fn half() -> f64 {
+    0.5
+}
+
+/// A jumper: a slack cable from the wire point of one attachment to that of
+/// another (solved clamp positions when the points belong to sections).
+/// Its cut length is given, or follows from a sag in still air.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Jumper {
+    /// Unique id.
+    pub id: String,
+    /// Cable id in the wire libraries.
+    pub cable: String,
+    /// First end.
+    pub from: SectionPoint,
+    /// Second end.
+    pub to: SectionPoint,
+    /// Unstressed (cut) length, m, at `temperature`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<f64>,
+    /// Or: largest vertical distance below the end-to-end chord, m, in
+    /// still air at `temperature` (jumpers without support only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sag: Option<f64>,
+    /// Temperature of `length` / `sag`, °C.
+    #[serde(default = "default_jumper_temperature")]
+    pub temperature: f64,
+    /// Optional jumper support string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub support: Option<JumperSupport>,
+    /// Display colour (`#rrggbb`); default: the colour of the section at
+    /// `from`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+/// A string holding a jumper at one point (DESIGN_GOALS §6).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JumperSupport {
+    /// Attachment point of the string on the structure, m.
+    pub point: Point,
+    /// String length, m.
+    pub length: f64,
+    /// String weight, N.
+    #[serde(default)]
+    pub weight: f64,
+    /// Where the string holds the jumper: fraction of the jumper's length
+    /// from `from`, 0–1.
+    #[serde(default = "half")]
+    pub fraction: f64,
 }
 
 /// Default wire colours by phase number (1, 2, 3, then repeating); phase 0
@@ -437,6 +503,48 @@ impl Line {
             }
             if sec.bundle == 0 {
                 return invalid(format!("section {}: bundle must be at least 1", sec.id));
+            }
+        }
+        let mut jumper_ids = BTreeMap::new();
+        for j in &self.jumpers {
+            let bad = |m: &str| invalid(format!("jumper {}: {m}", j.id));
+            if jumper_ids.insert(j.id.as_str(), ()).is_some() {
+                return bad("duplicate id");
+            }
+            for end in [&j.from, &j.to] {
+                let Some(structure) = self.structure(&end.structure) else {
+                    return bad(&format!("unknown structure {}", end.structure));
+                };
+                if structure.structure_type.is_none() && self.attachment(end).is_none() {
+                    return bad(&format!(
+                        "no attachment set {} phase {} on structure {}",
+                        end.set, end.phase, end.structure
+                    ));
+                }
+            }
+            if j.from == j.to {
+                return bad("both ends are the same attachment");
+            }
+            match (j.length, j.sag) {
+                (Some(l), None) if l > 0.0 => {}
+                (None, Some(s)) if s > 0.0 => {}
+                _ => return bad("give either a positive length or a positive sag"),
+            }
+            if let Some(support) = &j.support {
+                if j.length.is_none() {
+                    return bad(
+                        "a supported jumper needs a length (its sag depends on the support)",
+                    );
+                }
+                if !(support.length > 0.0 && support.weight >= 0.0) {
+                    return bad("support length must be > 0 and weight ≥ 0");
+                }
+                if !(0.0 < support.fraction && support.fraction < 1.0) {
+                    return bad("support fraction must be between 0 and 1");
+                }
+            }
+            if let Some(c) = j.color.as_deref().filter(|c| !is_hex_color(c)) {
+                return bad(&format!("colour \"{c}\" is not #rrggbb"));
             }
         }
         Ok(())

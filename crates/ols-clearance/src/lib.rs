@@ -21,6 +21,7 @@
 //! Planned (DESIGN_GOALS §12, ROADMAP Phase 2): clearance to features
 //! (roads, buildings, other lines) and shortest (radial) distances.
 
+use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;
 use ols_terrain::Terrain;
 
@@ -58,37 +59,56 @@ pub fn ground_clearances(shape: &SectionShape, terrain: &Terrain) -> Vec<SpanCle
         .iter()
         .enumerate()
         .map(|(s, span)| {
-            let mut lowest: Option<Lowest> = None;
-            let (mut total, mut covered) = (0.0, 0.0);
-            for w in span.points.windows(2) {
-                let (a, b) = (w[0], w[1]);
-                let horizontal = (b[0] - a[0]).hypot(b[1] - a[1]);
-                total += horizontal;
-                for run in terrain.profile([a[0], a[1]], [b[0], b[1]]) {
-                    if let (Some(first), Some(last)) = (run.first(), run.last()) {
-                        covered += (last.t - first.t) * horizontal;
-                    }
-                    for g in run {
-                        let z = a[2] + (b[2] - a[2]) * g.t;
-                        let clearance = z - g.point[2];
-                        if lowest.is_none_or(|l| clearance < l.clearance) {
-                            lowest = Some(Lowest {
-                                clearance,
-                                wire: [g.point[0], g.point[1], z],
-                                ground: g.point,
-                            });
-                        }
-                    }
-                }
-            }
+            let (lowest, covered) = polyline_clearance(&span.points, terrain);
             SpanClearance {
                 section: shape.section.clone(),
                 span: s,
                 lowest,
-                covered: if total > 0.0 { covered / total } else { 0.0 },
+                covered,
             }
         })
         .collect()
+}
+
+/// Vertical ground clearance of a jumper, reported as span 0 of
+/// `"jumper:<id>"`.
+pub fn jumper_clearance(shape: &JumperShape, terrain: &Terrain) -> SpanClearance {
+    let (lowest, covered) = polyline_clearance(&shape.points, terrain);
+    SpanClearance {
+        section: format!("jumper:{}", shape.jumper),
+        span: 0,
+        lowest,
+        covered,
+    }
+}
+
+/// Lowest vertical ground clearance under a wire polyline, and the fraction
+/// of its horizontal length over the terrain.
+pub fn polyline_clearance(points: &[[f64; 3]], terrain: &Terrain) -> (Option<Lowest>, f64) {
+    let mut lowest: Option<Lowest> = None;
+    let (mut total, mut covered) = (0.0, 0.0);
+    for w in points.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let horizontal = (b[0] - a[0]).hypot(b[1] - a[1]);
+        total += horizontal;
+        for run in terrain.profile([a[0], a[1]], [b[0], b[1]]) {
+            if let (Some(first), Some(last)) = (run.first(), run.last()) {
+                covered += (last.t - first.t) * horizontal;
+            }
+            for g in run {
+                let z = a[2] + (b[2] - a[2]) * g.t;
+                let clearance = z - g.point[2];
+                if lowest.is_none_or(|l| clearance < l.clearance) {
+                    lowest = Some(Lowest {
+                        clearance,
+                        wire: [g.point[0], g.point[1], z],
+                        ground: g.point,
+                    });
+                }
+            }
+        }
+    }
+    (lowest, if total > 0.0 { covered / total } else { 0.0 })
 }
 
 /// Spans whose lowest clearance is below `required` (m), lowest first.
@@ -204,6 +224,22 @@ mod tests {
             );
             assert!((lowest.wire[0] - 470.0).abs() < 30.0);
         }
+    }
+
+    #[test]
+    fn jumper_clearance_over_flat_ground() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let line = Line::load(&root.join("examples/line/synthetic-line.ols.json")).unwrap();
+        let library = ols_cables::Library::load(&root.join("libraries/cables")).unwrap();
+        let case = WeatherCase::still("t", Temperature::from_celsius(15.0));
+        let shapes = solved(15.0);
+        let jumper = ols_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
+            .remove(0)
+            .unwrap();
+        let c = jumper_clearance(&jumper, &flat(480.0));
+        assert_eq!(c.section, "jumper:J-T3-branch");
+        let lowest = c.lowest.unwrap();
+        assert!((lowest.clearance - (jumper.low_point[2] - 480.0)).abs() < 5e-3);
     }
 
     #[test]
