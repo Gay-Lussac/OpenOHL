@@ -11,6 +11,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use ols_core::units::UnitSystem;
 
 mod clearance_run;
+mod project;
 mod sagtension_job;
 
 #[derive(Parser)]
@@ -63,6 +64,16 @@ enum Command {
         #[command(subcommand)]
         command: LidarCommand,
     },
+    /// Project file (.ols): import/export, commands, undo, log, users.
+    Project {
+        #[command(subcommand)]
+        command: project::ProjectCommand,
+    },
+    /// Point clouds stored in a project file.
+    Pointcloud {
+        #[command(subcommand)]
+        command: PointcloudCommand,
+    },
     /// Inspect plugins.
     Plugin {
         #[command(subcommand)]
@@ -73,7 +84,7 @@ enum Command {
 /// Arguments of `ols line`.
 #[derive(clap::Args)]
 struct LineArgs {
-    /// Line file (.ols.json).
+    /// Line file (.ols.json) or project file (.ols).
     file: PathBuf,
     /// Wire library: .olsw file or directory.
     #[arg(long, default_value = "libraries/cables")]
@@ -113,6 +124,10 @@ struct LineArgs {
     /// the classes with the ground role, inside a corridor along the spans.
     #[arg(long, conflicts_with = "terrain")]
     lidar: Option<PathBuf>,
+    /// Point cloud stored in a project file (`FILE.ols`, or `FILE.ols#name`
+    /// when it holds several): much faster than reading tiles.
+    #[arg(long, conflicts_with_all = ["terrain", "lidar"])]
+    pointcloud: Option<String>,
     /// Class scheme (.olsc) of the LiDAR; default ASPRS LAS 1.4.
     #[arg(long)]
     lidar_classes: Option<PathBuf>,
@@ -184,6 +199,35 @@ enum LidarCommand {
 }
 
 #[derive(Subcommand)]
+enum PointcloudCommand {
+    /// Import LAS/LAZ tiles into a project file (created if missing).
+    Import {
+        /// LAS / LAZ file or directory of tiles.
+        tiles: PathBuf,
+        /// Project file (.ols).
+        #[arg(long)]
+        into: PathBuf,
+        /// Name of the point cloud in the project.
+        #[arg(long, default_value = "lidar")]
+        name: String,
+        /// Class scheme (.olsc) stored with the cloud.
+        #[arg(long)]
+        classes: Option<PathBuf>,
+        /// Coordinate system (informative), e.g. EPSG:2056.
+        #[arg(long, default_value = "")]
+        crs: String,
+        /// Chunk size, m.
+        #[arg(long, default_value_t = ols_pointcloud::DEFAULT_CHUNK)]
+        chunk: f64,
+    },
+    /// Point clouds of a project file and their points per class.
+    Info {
+        /// Project file (.ols).
+        file: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
 enum PluginCommand {
     /// Load a WebAssembly plugin from its directory and print what it reports.
     Info {
@@ -208,6 +252,14 @@ fn main() -> ExitCode {
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
+        Some(Command::Pointcloud { command }) => pointcloud(command),
+        Some(Command::Project { command }) => match project::run(command) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            }
+        },
         Some(Command::Lidar {
             command:
                 LidarCommand::Info {
@@ -280,6 +332,103 @@ fn lidar_info(path: &std::path::Path, classes: bool, scheme: Option<&std::path::
     }
 }
 
+fn pointcloud(command: PointcloudCommand) -> ExitCode {
+    let run = || -> Result<(), String> {
+        match command {
+            PointcloudCommand::Import {
+                tiles,
+                into,
+                name,
+                classes,
+                crs,
+                chunk,
+            } => {
+                let scheme = match &classes {
+                    Some(p) => {
+                        let text = std::fs::read_to_string(p)
+                            .map_err(|e| format!("{}: {e}", p.display()))?;
+                        ols_lidar::ClassScheme::parse(&text)?;
+                        Some(text)
+                    }
+                    None => None,
+                };
+                let tiles = ols_lidar::tiles_in(&tiles).map_err(|e| e.to_string())?;
+                let mut store = ols_pointcloud::Store::open(&into).map_err(|e| e.to_string())?;
+                let started = std::time::Instant::now();
+                // Exit clause: ~1 min per 10⁸ points; 2 h is far beyond.
+                let budget = ols_core::budget::Budget::new()
+                    .time_limit(std::time::Duration::from_secs(7200));
+                let total = tiles.len();
+                let (cloud, stats) = store
+                    .import_tiles(
+                        &name,
+                        &tiles,
+                        &crs,
+                        scheme.as_deref(),
+                        chunk,
+                        ols_pointcloud::DEFAULT_SCALE,
+                        &budget,
+                        |k, tile, n| {
+                            eprintln!(
+                                "  [{}/{total}] {} ({n} points, {:.0?})",
+                                k + 1,
+                                tile.file_name()
+                                    .map_or(String::new(), |f| f.to_string_lossy().into_owned()),
+                                started.elapsed()
+                            );
+                        },
+                    )
+                    .map_err(|e| e.to_string())?;
+                let size = std::fs::metadata(&into).map_or(0, |m| m.len());
+                println!(
+                    "imported {} points from {} tiles into \"{}\" in {} ({:.1?}); cloud now {} points, file {:.0} MB",
+                    stats.points_read,
+                    stats.read,
+                    cloud.name,
+                    into.display(),
+                    started.elapsed(),
+                    cloud.points,
+                    size as f64 / 1e6
+                );
+            }
+            PointcloudCommand::Info { file } => {
+                let store = ols_pointcloud::Store::open(&file).map_err(|e| e.to_string())?;
+                for cloud in store.clouds().map_err(|e| e.to_string())? {
+                    let scheme = match &cloud.class_scheme {
+                        Some(text) => ols_lidar::ClassScheme::parse(text)?,
+                        None => ols_lidar::ClassScheme::asprs(),
+                    };
+                    println!(
+                        "\"{}\": {} points, {} m chunks, scale {} m, {} — classes: {}",
+                        cloud.name,
+                        cloud.points,
+                        cloud.chunk_size,
+                        cloud.scale,
+                        cloud.crs,
+                        scheme.name
+                    );
+                    for (class, n) in store.class_counts(&cloud).map_err(|e| e.to_string())? {
+                        let (cname, roles) = scheme
+                            .class(class)
+                            .map_or(("(not in the scheme)".to_owned(), String::new()), |c| {
+                                (c.name.clone(), c.roles.join(", "))
+                            });
+                        println!("  {class:>3} {n:>12}  {cname:<48} {roles}");
+                    }
+                }
+            }
+        }
+        Ok(())
+    };
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn print_info() {
     println!("OLS CAD {}", env!("CARGO_PKG_VERSION"));
     println!("core    {}", ols_core::VERSION);
@@ -328,6 +477,7 @@ fn line(args: &LineArgs) -> ExitCode {
         stations,
         terrain,
         lidar,
+        pointcloud,
         lidar_classes,
         ground_role,
         corridor,
@@ -344,7 +494,7 @@ fn line(args: &LineArgs) -> ExitCode {
     use ols_weather::WeatherCase;
 
     let run = || -> Result<(), String> {
-        let mut line = ols_line::Line::load(file).map_err(|e| e.to_string())?;
+        let mut line = project::load_line(file)?;
         if line.structures.iter().any(|s| s.structure_type.is_some()) {
             let structures = ols_structures::StructureLibrary::load_dir(structure_dir)
                 .map_err(|e| e.to_string())?;
@@ -480,6 +630,7 @@ fn line(args: &LineArgs) -> ExitCode {
             &clearance_run::Options {
                 terrain: terrain.as_deref(),
                 lidar: lidar.as_deref(),
+                pointcloud: pointcloud.as_deref(),
                 lidar_classes: lidar_classes.as_deref(),
                 ground_role,
                 corridor: *corridor,

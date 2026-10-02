@@ -39,7 +39,9 @@
 | Crate | Responsibility |
 |---|---|
 | `ols-core` | Data model, units, geometry, CRS, spatial chunk index, plugin registry, schema & migrations |
-| `ols-session` | Commands, operation log, undo/redo, change sets, sync protocol, server & client |
+| `ols-session` | Project file (`.ols`), commands, operation log, per-user undo/redo, admin rollback, roles, dirty tracking; later sync protocol, server & client |
+| `ols-pointcloud` | Point clouds in the project file (chunk × class blocks), point-source interface |
+| `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors |
 | `ols-cables` | Cable/conductor library, stress-strain & creep models |
 | `ols-weather` | Weather cases, load case definitions (code-agnostic) |
 | `ols-wireloads` | Additional loads on wires: point loads (N) and distributed loads (N/m), permanent or per load case |

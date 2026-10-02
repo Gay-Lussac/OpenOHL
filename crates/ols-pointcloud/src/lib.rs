@@ -1,0 +1,646 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! Point clouds stored in the project file (ADR-0007).
+//!
+//! A [`Store`] is the project's SQLite file (`.ols`, ADR-0004); each named
+//! point cloud in it is held as **blocks** — one per square chunk of the
+//! plan and per class — so a query for a few classes in a corridor reads
+//! only those blocks. Coordinates are integers of the cloud's scale (1 mm
+//! by default) relative to the chunk, compressed ([`codec`]).
+//!
+//! - [`Store::import_tiles`]: LAS/LAZ tiles → blocks (once).
+//! - [`Store::visit`]: points by area and classes, blocks decompressed in
+//!   parallel.
+//! - [`PointSource`]: what every point reader offers — a stored cloud
+//!   ([`CloudSource`]), LAS/LAZ tiles read directly ([`TileSource`]), and
+//!   later plugins (e.g. a link to a point database).
+//!
+//! Schema (version 1):
+//!
+//! ```sql
+//! ols_meta(key PRIMARY KEY, value)            -- 'pointcloud_schema' = '1'
+//! pointcloud(id, name UNIQUE, crs, scale, chunk_size, class_scheme,
+//!            points, xmin, ymin, zmin, xmax, ymax, zmax, created)
+//! pointcloud_source(cloud, path, points, imported)
+//! pointcloud_block(id, cloud, cx, cy, class, count, z0,
+//!                  xyz, intensity, returns,  UNIQUE(cloud, cx, cy, class))
+//! ```
+
+pub mod codec;
+
+use std::collections::HashMap;
+use std::fmt;
+use std::path::{Path, PathBuf};
+
+use ols_core::budget::Budget;
+use ols_lidar::{Corridor, LidarPoint};
+use rusqlite::{Connection, OptionalExtension, params};
+
+use crate::codec::Columns;
+
+/// Schema version of the point-cloud tables.
+pub const SCHEMA_VERSION: u32 = 1;
+/// Default chunk size, m.
+pub const DEFAULT_CHUNK: f64 = 50.0;
+/// Default coordinate scale, m (1 mm).
+pub const DEFAULT_SCALE: f64 = 0.001;
+
+/// Errors of the store.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoreError(pub String);
+
+impl fmt::Display for StoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "point store: {}", self.0)
+    }
+}
+
+impl std::error::Error for StoreError {}
+
+impl From<rusqlite::Error> for StoreError {
+    fn from(e: rusqlite::Error) -> Self {
+        Self(e.to_string())
+    }
+}
+
+fn err(m: impl Into<String>) -> StoreError {
+    StoreError(m.into())
+}
+
+/// A point cloud in the store.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CloudInfo {
+    /// Row id.
+    pub id: i64,
+    /// Name (unique in the project).
+    pub name: String,
+    /// Coordinate system (informative).
+    pub crs: String,
+    /// Coordinate scale, m.
+    pub scale: f64,
+    /// Chunk size, m.
+    pub chunk_size: f64,
+    /// Class scheme (`.olsc` text), if given at import.
+    pub class_scheme: Option<String>,
+    /// Number of points.
+    pub points: u64,
+    /// Bounds: minimum and maximum (x, y, z).
+    pub bounds: [[f64; 3]; 2],
+}
+
+/// What an import or a query did.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Stats {
+    /// Blocks (store) or tiles (LAS/LAZ) read.
+    pub read: usize,
+    /// Blocks or tiles skipped (outside the area or of other classes).
+    pub skipped: usize,
+    /// Points decoded.
+    pub points_read: u64,
+    /// Points passed to the visitor.
+    pub points_visited: u64,
+}
+
+/// Anything that delivers points by area and class: a stored cloud, LAS/LAZ
+/// tiles, or a plugin (e.g. a point database).
+pub trait PointSource {
+    /// Description for reports.
+    fn describe(&self) -> String;
+    /// The class scheme of the points (`.olsc` text), if known.
+    fn class_scheme(&self) -> Option<String>;
+    /// Calls `visit(x, y, z, class)` for the points inside `area` (all
+    /// without one) of the `classes` (all without them).
+    fn visit(
+        &self,
+        area: Option<&Corridor>,
+        classes: Option<&[u8]>,
+        budget: &Budget,
+        visit: &mut dyn FnMut(f64, f64, f64, u8),
+    ) -> Result<Stats, String>;
+}
+
+/// The project file's point clouds.
+pub struct Store {
+    conn: Connection,
+}
+
+impl fmt::Debug for Store {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Store").finish_non_exhaustive()
+    }
+}
+
+/// A stored block: id, count, z0, coordinates, intensities, returns.
+type StoredBlock = (i64, i64, i64, Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
+
+/// Points of one block being imported (absolute integer coordinates).
+#[derive(Default)]
+struct Pending {
+    x: Vec<i64>,
+    y: Vec<i64>,
+    z: Vec<i64>,
+    intensity: Vec<u16>,
+    returns: Vec<u8>,
+}
+
+impl Store {
+    /// Opens (or creates) the project file and its point-cloud tables.
+    pub fn open(path: &Path) -> Result<Self, StoreError> {
+        let conn = Connection::open(path)?;
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             CREATE TABLE IF NOT EXISTS ols_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS pointcloud (
+                 id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, crs TEXT NOT NULL DEFAULT '',
+                 scale REAL NOT NULL, chunk_size REAL NOT NULL, class_scheme TEXT,
+                 points INTEGER NOT NULL DEFAULT 0,
+                 xmin REAL, ymin REAL, zmin REAL, xmax REAL, ymax REAL, zmax REAL,
+                 created TEXT NOT NULL DEFAULT (datetime('now')));
+             CREATE TABLE IF NOT EXISTS pointcloud_source (
+                 cloud INTEGER NOT NULL REFERENCES pointcloud(id) ON DELETE CASCADE,
+                 path TEXT NOT NULL, points INTEGER NOT NULL,
+                 imported TEXT NOT NULL DEFAULT (datetime('now')));
+             CREATE TABLE IF NOT EXISTS pointcloud_block (
+                 id INTEGER PRIMARY KEY,
+                 cloud INTEGER NOT NULL REFERENCES pointcloud(id) ON DELETE CASCADE,
+                 cx INTEGER NOT NULL, cy INTEGER NOT NULL, class INTEGER NOT NULL,
+                 count INTEGER NOT NULL, z0 INTEGER NOT NULL,
+                 xyz BLOB NOT NULL, intensity BLOB, returns BLOB,
+                 UNIQUE (cloud, cx, cy, class));
+             PRAGMA foreign_keys = ON;",
+        )?;
+        let version: Option<String> = conn
+            .query_row(
+                "SELECT value FROM ols_meta WHERE key = 'pointcloud_schema'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match version.as_deref().map(str::parse::<u32>) {
+            None => {
+                conn.execute(
+                    "INSERT INTO ols_meta (key, value) VALUES ('pointcloud_schema', ?1)",
+                    params![SCHEMA_VERSION.to_string()],
+                )?;
+            }
+            Some(Ok(v)) if v <= SCHEMA_VERSION => {}
+            Some(_) => {
+                return Err(err(format!(
+                    "{}: point-cloud schema newer than supported ({SCHEMA_VERSION})",
+                    path.display()
+                )));
+            }
+        }
+        Ok(Self { conn })
+    }
+
+    /// The point clouds in the project.
+    pub fn clouds(&self) -> Result<Vec<CloudInfo>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, crs, scale, chunk_size, class_scheme, points,
+                    xmin, ymin, zmin, xmax, ymax, zmax FROM pointcloud ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let opt = |k: usize| -> rusqlite::Result<f64> {
+                Ok(r.get::<_, Option<f64>>(k)?.unwrap_or(f64::NAN))
+            };
+            Ok(CloudInfo {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                crs: r.get(2)?,
+                scale: r.get(3)?,
+                chunk_size: r.get(4)?,
+                class_scheme: r.get(5)?,
+                points: r.get::<_, i64>(6)? as u64,
+                bounds: [[opt(7)?, opt(8)?, opt(9)?], [opt(10)?, opt(11)?, opt(12)?]],
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// The cloud named `name`, or the only cloud when `name` is `None`.
+    pub fn cloud(&self, name: Option<&str>) -> Result<CloudInfo, StoreError> {
+        let clouds = self.clouds()?;
+        match name {
+            Some(n) => clouds
+                .into_iter()
+                .find(|c| c.name == n)
+                .ok_or_else(|| err(format!("no point cloud \"{n}\""))),
+            None if clouds.len() == 1 => Ok(clouds.into_iter().next().expect("one")),
+            None if clouds.is_empty() => Err(err("the project has no point cloud")),
+            None => Err(err(format!(
+                "several point clouds ({}): choose one by name",
+                clouds
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))),
+        }
+    }
+
+    /// Removes a point cloud and its blocks.
+    pub fn delete_cloud(&self, name: &str) -> Result<(), StoreError> {
+        self.conn
+            .execute("DELETE FROM pointcloud WHERE name = ?1", params![name])?;
+        Ok(())
+    }
+
+    /// Points per class of a cloud.
+    pub fn class_counts(&self, cloud: &CloudInfo) -> Result<Vec<(u8, u64)>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT class, SUM(count) FROM pointcloud_block WHERE cloud = ?1 GROUP BY class ORDER BY class",
+        )?;
+        let rows = stmt.query_map(params![cloud.id], |r| {
+            Ok((r.get::<_, i64>(0)? as u8, r.get::<_, i64>(1)? as u64))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Imports LAS/LAZ tiles into the cloud `name` (created if missing,
+    /// with `crs`, `class_scheme` text, `chunk_size` and `scale`; an
+    /// existing cloud keeps its settings and gets the points added).
+    /// Points of a block already in the store are merged with it.
+    ///
+    /// Cost: dominated by LAZ decompression (~1 min per 10⁸ points); one
+    /// transaction per tile. Exit clause: `budget`, checked per batch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn import_tiles(
+        &mut self,
+        name: &str,
+        tiles: &[PathBuf],
+        crs: &str,
+        class_scheme: Option<&str>,
+        chunk_size: f64,
+        scale: f64,
+        budget: &Budget,
+        mut progress: impl FnMut(usize, &Path, u64),
+    ) -> Result<(CloudInfo, Stats), StoreError> {
+        if !(chunk_size > 0.0 && scale > 0.0 && chunk_size / scale < u32::MAX as f64 / 2.0) {
+            return Err(err(
+                "chunk size and scale must be positive, chunk/scale < 2³¹",
+            ));
+        }
+        let existing = self.clouds()?.into_iter().find(|c| c.name == name);
+        let cloud = match existing {
+            Some(c) => c,
+            None => {
+                self.conn.execute(
+                    "INSERT INTO pointcloud (name, crs, scale, chunk_size, class_scheme) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![name, crs, scale, chunk_size, class_scheme],
+                )?;
+                self.cloud(Some(name))?
+            }
+        };
+        let units = (cloud.chunk_size / cloud.scale).round() as i64;
+        let mut stats = Stats::default();
+        for (k, tile) in tiles.iter().enumerate() {
+            let mut pending: HashMap<(i64, i64, u8), Pending> = HashMap::new();
+            let (_, _, n) = ols_lidar::for_each_record(
+                std::slice::from_ref(tile),
+                None,
+                budget,
+                |p: &LidarPoint| {
+                    let q = |v: f64| (v / cloud.scale).round() as i64;
+                    let (x, y, z) = (q(p.x), q(p.y), q(p.z));
+                    let b = pending
+                        .entry((x.div_euclid(units), y.div_euclid(units), p.class))
+                        .or_default();
+                    b.x.push(x);
+                    b.y.push(y);
+                    b.z.push(z);
+                    b.intensity.push(p.intensity);
+                    b.returns
+                        .push((p.return_number.min(15) << 4) | p.number_of_returns.min(15));
+                },
+            )
+            .map_err(|e| err(e.to_string()))?;
+            let tx = self.conn.transaction()?;
+            for ((cx, cy, class), mut b) in pending {
+                // Merge with a block from an earlier tile (chunks across
+                // tile edges).
+                let old: Option<StoredBlock> = tx
+                    .query_row(
+                        "SELECT id, count, z0, xyz, intensity, returns FROM pointcloud_block
+                         WHERE cloud = ?1 AND cx = ?2 AND cy = ?3 AND class = ?4",
+                        params![cloud.id, cx, cy, class],
+                        |r| {
+                            Ok((
+                                r.get(0)?,
+                                r.get(1)?,
+                                r.get(2)?,
+                                r.get(3)?,
+                                r.get(4)?,
+                                r.get(5)?,
+                            ))
+                        },
+                    )
+                    .optional()?;
+                if let Some((id, count, z0, xyz, intensity, returns)) = &old {
+                    let n = *count as usize;
+                    let (x, y, z) = Columns::decode_xyz(xyz, n).map_err(err)?;
+                    let inten = match intensity {
+                        Some(i) => Columns::decode_intensity(i, n).map_err(err)?,
+                        None => vec![0; n],
+                    };
+                    let ret = match returns {
+                        Some(r) => Columns::decode_returns(r, n).map_err(err)?,
+                        None => vec![0; n],
+                    };
+                    for i in 0..n {
+                        b.x.push(cx * units + x[i] as i64);
+                        b.y.push(cy * units + y[i] as i64);
+                        b.z.push(z0 + z[i] as i64);
+                    }
+                    b.intensity.extend(inten);
+                    b.returns.extend(ret);
+                    tx.execute("DELETE FROM pointcloud_block WHERE id = ?1", params![id])?;
+                }
+                let z0 = b.z.iter().copied().min().unwrap_or(0);
+                let zmax = b.z.iter().copied().max().unwrap_or(0);
+                if zmax - z0 > u32::MAX as i64 {
+                    return Err(err("height range of a block exceeds the integer range"));
+                }
+                let mut columns = Columns {
+                    x: b.x.iter().map(|&v| (v - cx * units) as u32).collect(),
+                    y: b.y.iter().map(|&v| (v - cy * units) as u32).collect(),
+                    z: b.z.iter().map(|&v| (v - z0) as u32).collect(),
+                    intensity: b.intensity,
+                    returns: b.returns,
+                };
+                let count = columns.len() as i64;
+                let (xyz, intensity, returns) = columns.encode().map_err(err)?;
+                tx.execute(
+                    "INSERT INTO pointcloud_block (cloud, cx, cy, class, count, z0, xyz, intensity, returns)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![cloud.id, cx, cy, class, count, z0, xyz, intensity, returns],
+                )?;
+            }
+            tx.execute(
+                "INSERT INTO pointcloud_source (cloud, path, points) VALUES (?1, ?2, ?3)",
+                params![cloud.id, tile.display().to_string(), n as i64],
+            )?;
+            tx.commit()?;
+            stats.read += 1;
+            stats.points_read += n;
+            progress(k, tile, n);
+        }
+        self.update_summary(&cloud)?;
+        Ok((self.cloud(Some(name))?, stats))
+    }
+
+    /// Recomputes a cloud's point count and bounds from its blocks.
+    fn update_summary(&self, cloud: &CloudInfo) -> Result<(), StoreError> {
+        let (s, c) = (cloud.scale, cloud.chunk_size);
+        // Plan bounds from the chunks; heights from the block minima (the
+        // maxima need decoding — taken while visiting is enough for now).
+        self.conn.execute(
+            "UPDATE pointcloud SET
+                points = (SELECT COALESCE(SUM(count), 0) FROM pointcloud_block WHERE cloud = ?1),
+                xmin = (SELECT MIN(cx) * ?2 FROM pointcloud_block WHERE cloud = ?1),
+                ymin = (SELECT MIN(cy) * ?2 FROM pointcloud_block WHERE cloud = ?1),
+                xmax = (SELECT (MAX(cx) + 1) * ?2 FROM pointcloud_block WHERE cloud = ?1),
+                ymax = (SELECT (MAX(cy) + 1) * ?2 FROM pointcloud_block WHERE cloud = ?1),
+                zmin = (SELECT MIN(z0) * ?3 FROM pointcloud_block WHERE cloud = ?1)
+             WHERE id = ?1",
+            params![cloud.id, c, s],
+        )?;
+        Ok(())
+    }
+
+    /// Calls `visit(x, y, z, class)` for the points of `cloud` inside
+    /// `area` (whole cloud without one) of `classes` (all without them).
+    /// Blocks outside the area or of other classes are not read; the
+    /// others are decompressed in parallel, in batches.
+    pub fn visit(
+        &self,
+        cloud: &CloudInfo,
+        area: Option<&Corridor>,
+        classes: Option<&[u8]>,
+        budget: &Budget,
+        visit: &mut dyn FnMut(f64, f64, f64, u8),
+    ) -> Result<Stats, StoreError> {
+        let run = budget.start();
+        let mut wanted = [true; 256];
+        if let Some(cs) = classes {
+            wanted = [false; 256];
+            for &c in cs {
+                wanted[c as usize] = true;
+            }
+        }
+        // Block list without the data.
+        let mut stmt = self.conn.prepare(
+            "SELECT id, cx, cy, class, count, z0 FROM pointcloud_block WHERE cloud = ?1",
+        )?;
+        let rows = stmt.query_map(params![cloud.id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)? as u8,
+                r.get::<_, i64>(4)? as usize,
+                r.get::<_, i64>(5)?,
+            ))
+        })?;
+        let c = cloud.chunk_size;
+        let mut stats = Stats::default();
+        let mut selected = Vec::new();
+        // The corridor near each chunk (shared by its class blocks): the
+        // per-point test then looks at a few segments only.
+        let mut near: HashMap<(i64, i64), Option<std::sync::Arc<Corridor>>> = HashMap::new();
+        for row in rows {
+            let (id, cx, cy, class, count, z0) = row?;
+            if !wanted[class as usize] {
+                stats.skipped += 1;
+                continue;
+            }
+            let local = match area {
+                None => None,
+                Some(a) => {
+                    let entry = near.entry((cx, cy)).or_insert_with(|| {
+                        let l = a.local(
+                            [cx as f64 * c, cy as f64 * c],
+                            [(cx + 1) as f64 * c, (cy + 1) as f64 * c],
+                        );
+                        (!l.is_empty()).then(|| std::sync::Arc::new(l))
+                    });
+                    match entry {
+                        Some(l) => Some(l.clone()),
+                        None => {
+                            stats.skipped += 1;
+                            continue;
+                        }
+                    }
+                }
+            };
+            selected.push((id, cx, cy, class, count, z0, local));
+        }
+        let units = (cloud.chunk_size / cloud.scale).round() as i64;
+        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let mut blob_stmt = self
+            .conn
+            .prepare("SELECT xyz FROM pointcloud_block WHERE id = ?1")?;
+        // Batches of about 4 million points: bounded memory, threads busy.
+        let mut start = 0;
+        while start < selected.len() {
+            run.check()
+                .map_err(|stop| err(format!("stopped: {stop}")))?;
+            let mut end = start;
+            let mut points = 0;
+            while end < selected.len() && (points < 4_000_000 || end == start) {
+                points += selected[end].4;
+                end += 1;
+            }
+            let batch = &selected[start..end];
+            let blobs: Vec<Vec<u8>> = batch
+                .iter()
+                .map(|b| blob_stmt.query_row(params![b.0], |r| r.get(0)))
+                .collect::<Result<_, _>>()?;
+            let per = batch.len().div_ceil(threads);
+            let decoded: Vec<Result<Vec<[f64; 3]>, String>> = std::thread::scope(|scope| {
+                let handles: Vec<_> = batch
+                    .chunks(per)
+                    .zip(blobs.chunks(per))
+                    .map(|(metas, blobs)| {
+                        scope.spawn(move || {
+                            metas
+                                .iter()
+                                .zip(blobs)
+                                .map(|((_, cx, cy, _, n, z0, _), blob)| {
+                                    let (cx, cy, n, z0) = (*cx, *cy, *n, *z0);
+                                    let (x, y, z) = Columns::decode_xyz(blob, n)?;
+                                    Ok((0..n)
+                                        .map(|i| {
+                                            [
+                                                (cx * units + x[i] as i64) as f64 * cloud.scale,
+                                                (cy * units + y[i] as i64) as f64 * cloud.scale,
+                                                (z0 + z[i] as i64) as f64 * cloud.scale,
+                                            ]
+                                        })
+                                        .collect())
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .flat_map(|h| h.join().expect("decoder thread"))
+                    .collect()
+            });
+            for (meta, points) in batch.iter().zip(decoded) {
+                let points = points.map_err(err)?;
+                stats.read += 1;
+                stats.points_read += points.len() as u64;
+                for p in points {
+                    if meta.6.as_ref().is_none_or(|a| a.contains(p[0], p[1])) {
+                        stats.points_visited += 1;
+                        visit(p[0], p[1], p[2], meta.3);
+                    }
+                }
+            }
+            start = end;
+        }
+        Ok(stats)
+    }
+}
+
+/// A point cloud of a project file as a [`PointSource`].
+pub struct CloudSource {
+    store: Store,
+    cloud: CloudInfo,
+}
+
+impl CloudSource {
+    /// Opens the cloud `name` (or the only one) of a project file.
+    pub fn open(path: &Path, name: Option<&str>) -> Result<Self, StoreError> {
+        let store = Store::open(path)?;
+        let cloud = store.cloud(name)?;
+        Ok(Self { store, cloud })
+    }
+
+    /// The cloud.
+    pub fn cloud(&self) -> &CloudInfo {
+        &self.cloud
+    }
+}
+
+impl PointSource for CloudSource {
+    fn describe(&self) -> String {
+        format!(
+            "point cloud \"{}\" ({} points)",
+            self.cloud.name, self.cloud.points
+        )
+    }
+
+    fn class_scheme(&self) -> Option<String> {
+        self.cloud.class_scheme.clone()
+    }
+
+    fn visit(
+        &self,
+        area: Option<&Corridor>,
+        classes: Option<&[u8]>,
+        budget: &Budget,
+        visit: &mut dyn FnMut(f64, f64, f64, u8),
+    ) -> Result<Stats, String> {
+        self.store
+            .visit(&self.cloud, area, classes, budget, visit)
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// LAS/LAZ tiles read directly (every point is decompressed).
+pub struct TileSource {
+    /// Tiles.
+    pub tiles: Vec<PathBuf>,
+    /// Class scheme text, if known.
+    pub scheme: Option<String>,
+}
+
+impl PointSource for TileSource {
+    fn describe(&self) -> String {
+        format!("{} LAS/LAZ tiles", self.tiles.len())
+    }
+
+    fn class_scheme(&self) -> Option<String> {
+        self.scheme.clone()
+    }
+
+    fn visit(
+        &self,
+        area: Option<&Corridor>,
+        classes: Option<&[u8]>,
+        budget: &Budget,
+        visit: &mut dyn FnMut(f64, f64, f64, u8),
+    ) -> Result<Stats, String> {
+        let mut wanted = [true; 256];
+        if let Some(cs) = classes {
+            wanted = [false; 256];
+            for &c in cs {
+                wanted[c as usize] = true;
+            }
+        }
+        let mut visited = 0u64;
+        let (read, skipped, n) =
+            ols_lidar::for_each_point(&self.tiles, area, budget, |x, y, z, c| {
+                if wanted[c as usize] {
+                    visited += 1;
+                    visit(x, y, z, c);
+                }
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(Stats {
+            read,
+            skipped,
+            points_read: n,
+            points_visited: visited,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests;

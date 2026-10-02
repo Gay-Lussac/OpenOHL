@@ -18,7 +18,7 @@ Projects can be very large (hundreds of km, many revisions), must open fast with
   - R*Tree index on chunks for partial loading/streaming.
   - Command log, revisions, branches and tags stored in the same file.
   - Values always in SI units.
-- **Point clouds** stay in external **COPC** (LAZ 1.4) files, referenced by the project.
+- **Point clouds** stay in external **COPC** (LAZ 1.4) files, referenced by the project. *Amended by [ADR-0007](0007-point-clouds-in-the-project.md): point clouds are imported into the project file.*
 - **Libraries** (cables, insulators, structures, weather cases) as **text files** (TOML/JSON) — shareable and git-friendly.
 - **`.ols.json` export/import** — full human-readable dump for exchange, archiving and plain-text diffs.
 - **Schema versioning** with automatic forward migrations on open.

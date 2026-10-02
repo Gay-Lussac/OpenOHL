@@ -22,6 +22,8 @@ use ols_weather::WeatherCase;
 pub struct Options<'a> {
     pub terrain: Option<&'a Path>,
     pub lidar: Option<&'a Path>,
+    /// Project file with a point cloud, optionally `FILE#cloud-name`.
+    pub pointcloud: Option<&'a str>,
     pub lidar_classes: Option<&'a Path>,
     pub ground_role: &'a str,
     pub corridor: f64,
@@ -166,9 +168,32 @@ pub fn run(
         rules[0].vertical = None;
         rules[0].radial = None;
     }
-    let scheme = match o.lidar_classes {
-        Some(p) => ols_lidar::ClassScheme::load(p)?,
-        None => ols_lidar::ClassScheme::asprs(),
+    // Points: a project's point cloud or LAS/LAZ tiles, one interface.
+    let source: Option<Box<dyn ols_pointcloud::PointSource>> = match (o.pointcloud, o.lidar) {
+        (Some(spec), _) => {
+            let (file, name) = match spec.split_once('#') {
+                Some((f, n)) => (f, Some(n)),
+                None => (spec, None),
+            };
+            Some(Box::new(
+                ols_pointcloud::CloudSource::open(Path::new(file), name)
+                    .map_err(|e| e.to_string())?,
+            ))
+        }
+        (None, Some(dir)) => Some(Box::new(ols_pointcloud::TileSource {
+            tiles: ols_lidar::tiles_in(dir).map_err(|e| e.to_string())?,
+            scheme: None,
+        })),
+        (None, None) => None,
+    };
+    // Class scheme: given, else the one stored with the points, else ASPRS.
+    let scheme = match (
+        o.lidar_classes,
+        source.as_ref().and_then(|s| s.class_scheme()),
+    ) {
+        (Some(p), _) => ols_lidar::ClassScheme::load(p)?,
+        (None, Some(text)) => ols_lidar::ClassScheme::parse(&text)?,
+        (None, None) => ols_lidar::ClassScheme::asprs(),
     };
     let wires = wires_of(line, shapes, jumpers);
     let reach = rules.iter().map(Rule::reach).fold(0.0, f64::max);
@@ -189,15 +214,16 @@ pub fn run(
         }
         point_checks.push(PointCheck::new(rule, &classes, &set));
     }
-    if !point_checks.is_empty() && o.lidar.is_none() {
-        return Err("point rules need --lidar".into());
+    if !point_checks.is_empty() && source.is_none() {
+        return Err("point rules need --pointcloud or --lidar".into());
     }
 
-    // Ground surface, and one LiDAR pass for ground and point rules.
+    // Ground surface, and one pass over the points for ground and point
+    // rules (only the classes needed).
     let started = std::time::Instant::now();
-    let ground = match (o.terrain, o.lidar) {
+    let ground = match (o.terrain, &source) {
         (Some(path), _) => Some(ols_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
-        (None, Some(path)) => {
+        (None, Some(source)) => {
             let ground_classes = scheme.codes_with_role(o.ground_role);
             if ground_classes.is_empty() {
                 return Err(format!(
@@ -214,15 +240,26 @@ pub fn run(
                 .map(|w| w.points.iter().map(|p| [p[0], p[1]]).collect())
                 .collect();
             let corridor = ols_lidar::Corridor::new(&polylines, o.corridor);
-            let tiles = ols_lidar::tiles_in(path).map_err(|e| e.to_string())?;
-            // Exit clause: ~1 min per 10⁸ points; 30 min is far beyond.
+            let mut needed: Vec<u8> = ground_classes.clone();
+            for rule in rules
+                .iter()
+                .filter(|r| matches!(r.target, Target::Points { .. }))
+            {
+                needed.extend(rule.point_classes(|role| scheme.codes_with_role(role)));
+            }
+            needed.sort_unstable();
+            needed.dedup();
+            // Exit clause: ~1 min per 10⁸ points from LAZ; 30 min is far beyond.
             let budget =
                 ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(1800));
             let mut ground_points: Vec<[f64; 3]> = Vec::new();
             let mut cells: std::collections::HashMap<(i64, i64), usize> =
                 std::collections::HashMap::new();
-            let (read, skipped, n) =
-                ols_lidar::for_each_point(&tiles, Some(&corridor), &budget, |x, y, z, c| {
+            let stats = source.visit(
+                Some(&corridor),
+                Some(&needed),
+                &budget,
+                &mut |x, y, z, c| {
                     if is_ground[c as usize] {
                         match o.thin {
                             None => ground_points.push([x, y, z]),
@@ -242,13 +279,19 @@ pub fn run(
                     for check in &mut point_checks {
                         check.visit(&set, x, y, z, c);
                     }
-                })
-                .map_err(|e| e.to_string())?;
+                },
+            )?;
             println!(
-                "lidar: {read} tiles read ({skipped} outside the ±{} m corridor), {n} points ({}); ground classes {ground_classes:?}: {} points",
+                "points: {} — {} read, {} skipped (other classes or outside the ±{} m corridor); {} points decoded, {} used; classes: {}; ground classes {ground_classes:?}: {} points ({:.1?})",
+                source.describe(),
+                stats.read,
+                stats.skipped,
                 o.corridor,
+                stats.points_read,
+                stats.points_visited,
                 scheme.name,
-                ground_points.len()
+                ground_points.len(),
+                started.elapsed()
             );
             Some(
                 ols_terrain::Terrain::from_xyz(&ground_points, Some(o.max_edge))

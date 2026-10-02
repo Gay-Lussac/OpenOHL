@@ -106,23 +106,53 @@ pub fn tiles_in(path: &Path) -> Result<Vec<PathBuf>, LidarError> {
 }
 
 /// The area within `half_width` (horizontally) of polylines, e.g. a line's
-/// route alignments or its spans.
+/// route alignments or its spans. Segments are indexed on a plan grid, so
+/// queries look only at the segments near them (a line's spans as dense
+/// wire polylines are tens of thousands of segments).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Corridor {
     segments: Vec<[[f64; 2]; 2]>,
     half_width: f64,
+    /// Grid cell size, m.
+    cell: f64,
+    /// Segments within `half_width` of each cell (by bounding boxes).
+    cells: HashMap<(i64, i64), Vec<u32>>,
 }
 
 impl Corridor {
     /// Corridor around polylines (x, y).
     pub fn new(polylines: &[Vec<[f64; 2]>], half_width: f64) -> Self {
-        let segments = polylines
+        let segments: Vec<[[f64; 2]; 2]> = polylines
             .iter()
             .flat_map(|l| l.windows(2).map(|w| [w[0], w[1]]))
             .collect();
+        Self::from_segments(segments, half_width)
+    }
+
+    fn from_segments(segments: Vec<[[f64; 2]; 2]>, half_width: f64) -> Self {
+        let cell = (2.0 * half_width).max(25.0);
+        let mut cells: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
+        for (k, s) in segments.iter().enumerate() {
+            let key = |v: f64| (v / cell).floor() as i64;
+            let (x0, x1) = (
+                s[0][0].min(s[1][0]) - half_width,
+                s[0][0].max(s[1][0]) + half_width,
+            );
+            let (y0, y1) = (
+                s[0][1].min(s[1][1]) - half_width,
+                s[0][1].max(s[1][1]) + half_width,
+            );
+            for i in key(x0)..=key(x1) {
+                for j in key(y0)..=key(y1) {
+                    cells.entry((i, j)).or_default().push(k as u32);
+                }
+            }
+        }
         Self {
             segments,
             half_width,
+            cell,
+            cells,
         }
     }
 
@@ -142,29 +172,60 @@ impl Corridor {
     /// Whether (x, y) is inside.
     pub fn contains(&self, x: f64, y: f64) -> bool {
         let r2 = self.half_width * self.half_width;
-        self.segments
-            .iter()
-            .any(|s| Self::near_segment(s, x, y, r2))
+        let key = (
+            (x / self.cell).floor() as i64,
+            (y / self.cell).floor() as i64,
+        );
+        self.cells.get(&key).is_some_and(|ids| {
+            ids.iter()
+                .any(|&k| Self::near_segment(&self.segments[k as usize], x, y, r2))
+        })
     }
 
-    /// The corridor's segments that may reach into the box `min`–`max`.
-    fn within(&self, min: [f64; 2], max: [f64; 2]) -> Self {
+    /// Whether the corridor may reach into the plan box `min`–`max`
+    /// (conservative: compares bounding boxes).
+    pub fn touches(&self, min: [f64; 2], max: [f64; 2]) -> bool {
+        !self.near_box(min, max).is_empty()
+    }
+
+    /// Ids of the segments that may reach into the box (sorted, unique).
+    fn near_box(&self, min: [f64; 2], max: [f64; 2]) -> Vec<u32> {
+        let key = |v: f64| (v / self.cell).floor() as i64;
         let r = self.half_width;
-        let segments = self
-            .segments
-            .iter()
-            .filter(|s| {
-                s[0][0].min(s[1][0]) - r <= max[0]
-                    && s[0][0].max(s[1][0]) + r >= min[0]
-                    && s[0][1].min(s[1][1]) - r <= max[1]
-                    && s[0][1].max(s[1][1]) + r >= min[1]
-            })
-            .copied()
-            .collect();
-        Self {
-            segments,
-            half_width: r,
+        let mut ids: Vec<u32> = Vec::new();
+        for i in key(min[0])..=key(max[0]) {
+            for j in key(min[1])..=key(max[1]) {
+                if let Some(cell) = self.cells.get(&(i, j)) {
+                    ids.extend(cell.iter().copied().filter(|&k| {
+                        let s = &self.segments[k as usize];
+                        s[0][0].min(s[1][0]) - r <= max[0]
+                            && s[0][0].max(s[1][0]) + r >= min[0]
+                            && s[0][1].min(s[1][1]) - r <= max[1]
+                            && s[0][1].max(s[1][1]) + r >= min[1]
+                    }));
+                }
+            }
         }
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    /// The part of the corridor that may reach into the plan box
+    /// `min`–`max`: same width, only the segments near the box (empty if
+    /// none). Queries on it are cheaper.
+    pub fn local(&self, min: [f64; 2], max: [f64; 2]) -> Self {
+        let segments = self
+            .near_box(min, max)
+            .into_iter()
+            .map(|k| self.segments[k as usize])
+            .collect();
+        Self::from_segments(segments, self.half_width)
+    }
+
+    /// Whether there is no segment.
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
     }
 }
 
@@ -204,15 +265,31 @@ pub struct ReadStats {
     pub points_kept: usize,
 }
 
-/// Calls `visit(x, y, z, class)` for every point of `tiles` inside the
-/// corridor (all points without one); tiles that do not touch the corridor
-/// are skipped without decompressing them. Returns the tiles read and
-/// skipped, and the points read.
-pub fn for_each_point(
+/// One point with the attributes kept by OLS CAD.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LidarPoint {
+    /// Easting, m.
+    pub x: f64,
+    /// Northing, m.
+    pub y: f64,
+    /// Elevation, m.
+    pub z: f64,
+    /// Class number.
+    pub class: u8,
+    /// Intensity.
+    pub intensity: u16,
+    /// Return number (1-based).
+    pub return_number: u8,
+    /// Number of returns of the pulse.
+    pub number_of_returns: u8,
+}
+
+/// Like [`for_each_point`], with every attribute kept by OLS CAD.
+pub fn for_each_record(
     tiles: &[PathBuf],
     corridor: Option<&Corridor>,
     budget: &Budget,
-    mut visit: impl FnMut(f64, f64, f64, u8),
+    mut visit: impl FnMut(&LidarPoint),
 ) -> Result<(usize, usize, u64), LidarError> {
     let run = budget.start();
     let (mut read, mut skipped, mut points) = (0, 0, 0u64);
@@ -223,8 +300,8 @@ pub fn for_each_point(
         let b = header.bounds();
         let local = match corridor {
             Some(c) => {
-                let local = c.within([b.min.x, b.min.y], [b.max.x, b.max.y]);
-                if local.segments.is_empty() {
+                let local = c.local([b.min.x, b.min.y], [b.max.x, b.max.y]);
+                if local.is_empty() {
                     skipped += 1;
                     continue;
                 }
@@ -250,11 +327,32 @@ pub fn for_each_point(
                 {
                     continue;
                 }
-                visit(point.x, point.y, point.z, u8::from(point.classification));
+                visit(&LidarPoint {
+                    x: point.x,
+                    y: point.y,
+                    z: point.z,
+                    class: u8::from(point.classification),
+                    intensity: point.intensity,
+                    return_number: point.return_number,
+                    number_of_returns: point.number_of_returns,
+                });
             }
         }
     }
     Ok((read, skipped, points))
+}
+
+/// Calls `visit(x, y, z, class)` for every point of `tiles` inside the
+/// corridor (all points without one); tiles that do not touch the corridor
+/// are skipped without decompressing them. Returns the tiles read and
+/// skipped, and the points read.
+pub fn for_each_point(
+    tiles: &[PathBuf],
+    corridor: Option<&Corridor>,
+    budget: &Budget,
+    mut visit: impl FnMut(f64, f64, f64, u8),
+) -> Result<(usize, usize, u64), LidarError> {
+    for_each_record(tiles, corridor, budget, |p| visit(p.x, p.y, p.z, p.class))
 }
 
 /// Reads the points of `filter.classes` from `tiles`, inside the corridor,

@@ -1,0 +1,18 @@
+[package]
+name = "ols-session"
+description = "OLS CAD session: project file (.ols), validated commands, operation log, per-user undo, admin rollback, import/export"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-line.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
