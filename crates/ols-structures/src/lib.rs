@@ -8,7 +8,7 @@
 //!
 //! - [`structures`]: structure types in local axes, placement into a line.
 //! - [`insulators`]: suspension, V-string and strain assemblies.
-//! - [`derive`]: draft libraries derived from the attachment geometry of an
+//! - [`derive`](mod@derive): draft libraries derived from the attachment geometry of an
 //!   existing line.
 
 pub mod derive;
