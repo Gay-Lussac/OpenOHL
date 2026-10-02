@@ -9,11 +9,13 @@
 //! - [`criteria`]: tension limits and the governing stringing tension.
 //! - [`section`]: tension sections — ruling span and exact equal-H solution.
 //! - [`loaded`]: spans with additional point and distributed loads (segmented catenary).
+//! - [`nonlinear`]: non-linear stress-strain and creep; initial and final conditions.
 
 pub mod catenary;
 pub mod change_of_state;
 pub mod criteria;
 pub mod loaded;
+pub mod nonlinear;
 pub mod section;
 
 pub use catenary::{Catenary, SagTensionError, SpanGeometry, SpanSolution};

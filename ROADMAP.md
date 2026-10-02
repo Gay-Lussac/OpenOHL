@@ -33,10 +33,10 @@ Guiding principles:
 *Goal: trustworthy single-section sag-tension engine.*
 
 - [x] `ols-cables`: conductor/cable library — area, diameter, weight, RTS, modulus, thermal coefficients, bimetallic (core/outer) properties
-- [ ] Stress-strain models: linear elastic, polynomial (initial / final / creep curves, per CIGRE/Aluminum Association practice), bimetallic split
-- [ ] Creep models: equivalent temperature, time-based (IEC/CIGRE TB 324 approaches)
+- [x] Stress-strain models: linear elastic, polynomial (initial / final / creep curves, per CIGRE/Aluminum Association practice), bimetallic split, aluminium compression limit
+- [x] Creep models: creep-curve method (10-year curve) — *time-based / equivalent-temperature variants still open*
 - [x] `ols-sagtension`: exact catenary, parabola approximation, inclined spans, sag/tension/length/slack
-- [ ] Change-of-state equation; initial / final-after-creep / final-after-load conditions *(linear elastic + thermal done; creep / final conditions pending)*
+- [x] Change-of-state equation; initial / final-after-creep / final-after-load conditions
 - [x] Ruling-span (equivalent span) method for tension sections, plus exact equal-H section solution
 - [x] Weather cases (temperature, wind, ice, combined) and tension limit criteria (% RTS, catenary constant, H/w)
 - [x] `ols-wireloads`: additional loads on wires — point loads (N, 3D vector) and distributed loads (N/m, full span or sub-interval), permanent or per load case

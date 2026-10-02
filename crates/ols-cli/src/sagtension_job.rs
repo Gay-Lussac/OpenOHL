@@ -44,6 +44,18 @@ struct Job {
     chart: Option<Chart>,
     #[serde(default)]
     fe: Option<FeInput>,
+    #[serde(default, rename = "final")]
+    final_conditions: Option<FinalInput>,
+}
+
+/// Cases defining the final condition of a non-linear cable.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinalInput {
+    /// Creep condition (default: the reference weather case).
+    creep_weather: Option<String>,
+    /// Heaviest load case (default: the weather case with the largest load).
+    load_weather: Option<String>,
 }
 
 /// Finite-element section analysis (insulator swing, unequal spans, broken
@@ -189,6 +201,109 @@ fn max_support(solution: &SectionSolution) -> Force {
         .iter()
         .map(|s| s.tension_left().max(s.tension_right()))
         .fold(Force::ZERO, Force::max)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn nonlinear_report(
+    out: &mut String,
+    job: &Job,
+    cable: &Cable,
+    mechanics: ols_cables::mechanics::Mechanics,
+    spans: &[SpanGeometry],
+    stringing: Force,
+    reference_case: &WeatherCase,
+    units: UnitSystem,
+) -> Result<(), String> {
+    use ols_cables::mechanics::MaterialState;
+    use ols_sagtension::nonlinear::{FinalCause, NonlinearSection, final_condition};
+
+    let creep_case = match job
+        .final_conditions
+        .as_ref()
+        .and_then(|f| f.creep_weather.as_deref())
+    {
+        Some(name) => find_case(&job.weather, name)?,
+        None => reference_case,
+    };
+    let load_case = match job
+        .final_conditions
+        .as_ref()
+        .and_then(|f| f.load_weather.as_deref())
+    {
+        Some(name) => find_case(&job.weather, name)?,
+        None => job
+            .weather
+            .iter()
+            .max_by(|a, b| {
+                state(a, cable)
+                    .load
+                    .si()
+                    .total_cmp(&state(b, cable).load.si())
+            })
+            .ok_or("no weather cases")?,
+    };
+    let budget = default_solver_budget();
+    let section = NonlinearSection::from_known_state(
+        spans.to_vec(),
+        mechanics,
+        state(reference_case, cable),
+        stringing,
+        &MaterialState::Initial,
+    )
+    .map_err(|e| e.to_string())?;
+    let (final_state, cause) = final_condition(
+        &section,
+        state(creep_case, cable),
+        state(load_case, cable),
+        &budget,
+    )
+    .map_err(|e| e.to_string())?;
+    let _ = writeln!(
+        out,
+        "\nNon-linear stress-strain and creep (strung on the initial curve at {} / \"{}\")",
+        show(stringing, units, 2),
+        reference_case.name
+    );
+    let _ = writeln!(
+        out,
+        "  Final condition governed by {} (creep at \"{}\", heaviest load \"{}\")",
+        match cause {
+            FinalCause::Creep => "creep",
+            FinalCause::Load => "load",
+        },
+        creep_case.name,
+        load_case.name
+    );
+    let _ = writeln!(
+        out,
+        "  {:<24} {:>12} {:>12} {:>12} {:>12}",
+        "case", "H initial", "H final", "sag initial", "sag final"
+    );
+    for case in &job.weather {
+        let s = state(case, cable);
+        let initial = section
+            .solve(s, &MaterialState::Initial, &budget)
+            .map_err(|e| format!("case \"{}\": {e}", case.name))?;
+        let final_ = section
+            .solve(s, &final_state, &budget)
+            .map_err(|e| format!("case \"{}\": {e}", case.name))?;
+        let sag = |sol: &SectionSolution| {
+            sol.spans
+                .iter()
+                .map(|sp| sp.sag())
+                .fold(Length::ZERO, Length::max)
+        };
+        let _ = writeln!(
+            out,
+            "  {:<24} {:>12} {:>12} {:>12} {:>12}",
+            case.name,
+            show(initial.horizontal_tension, units, 2),
+            show(final_.horizontal_tension, units, 2),
+            show(sag(&initial), units, 2),
+            show(sag(&final_), units, 2)
+        );
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -493,6 +608,21 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
         );
     }
 
+    let mechanics =
+        ols_cables::mechanics::Mechanics::from_cable(cable).map_err(|e| e.to_string())?;
+    if mechanics.is_nonlinear() {
+        nonlinear_report(
+            &mut out,
+            &job,
+            cable,
+            mechanics,
+            &spans,
+            stringing,
+            reference_case,
+            units,
+        )?;
+    }
+
     if let Some(fe) = &job.fe {
         fe_report(
             &mut out,
@@ -555,8 +685,9 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
 
     let _ = writeln!(
         out,
-        "\nModel: linear elastic + thermal, exact catenary, equal horizontal tension in the section.\n\
-         Wind and ice use the resultant load in the span plane. Creep and non-linear stress-strain are not yet included."
+        "\nModel: exact catenary, equal horizontal tension in the section; weather table and criteria use the\n\
+         linear-elastic cable (non-linear curves, when the cable has them, are reported separately above).\n\
+         Wind and ice use the resultant load in the span plane."
     );
     Ok(JobOutput {
         report: out,
@@ -599,6 +730,24 @@ mod tests {
         let csv = output.chart_csv.unwrap();
         assert_eq!(csv.lines().count(), 1 + 9, "header + 9 temperatures");
         assert!(csv.starts_with("temperature_c,horizontal_tension_n,sag_span1_m"));
+    }
+
+    #[test]
+    fn nonlinear_example_reports_initial_and_final() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/sagtension/synthetic-nonlinear.toml");
+        let report = run(&path, UnitSystem::Metric).unwrap().report;
+        assert!(
+            report.contains("Final condition governed by load"),
+            "{report}"
+        );
+        // At the governing heaviest case, final equals initial.
+        let line = report
+            .lines()
+            .rfind(|l| l.trim_start().starts_with("cold + ice"))
+            .unwrap();
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols[3], cols[5], "{line}");
     }
 
     #[test]

@@ -1261,6 +1261,7 @@ name = "ols-sagtension"
 version = "0.0.1"
 dependencies = [
  "criterion",
+ "ols-cables",
  "ols-core",
  "ols-wireloads",
 ]
@@ -1270,6 +1271,7 @@ name = "ols-validation"
 version = "0.0.1"
 dependencies = [
  "nalgebra",
+ "ols-cables",
  "ols-core",
  "ols-sagtension",
  "ols-weather",

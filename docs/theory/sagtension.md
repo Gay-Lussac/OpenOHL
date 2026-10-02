@@ -56,6 +56,26 @@ Between loads the cable is a catenary with the common \\( H \\); with \\( y' = \
 
 *Validation:* `loaded-001…002` against an RK4 integration of the cable ODE.
 
+## Non-linear stress-strain and creep
+
+Implemented in `ols_cables::mechanics` and `ols_sagtension::nonlinear`, following the published polynomial method (Aluminum Association practice; the approach of IEEE and CIGRE sag-tension methods). Each component (outer / core) may carry:
+
+- an **initial** curve: stress as a polynomial of strain (typically 4th order, % strain, psi or MPa, on the component or total area — converted to SI load on loading);
+- a **creep** curve (typically 10-year);
+- a **final modulus** (unloading and reloading).
+
+Components share the total strain; component *k* has mechanical strain \\( \varepsilon - \alpha_k (t - t_0) \\) and the cable tension is the sum of the component loads. The outer layers can be limited in compression (aluminium unloads onto the core at high temperature: the "knee point").
+
+A section keeps one unstressed length (zero strain, curves' reference temperature) and each span stretches with the strain at its mean tension:
+
+\\[ \sum_i \frac{L_i(H)}{1 + \varepsilon(\bar T_i(H), t, s)} = L_0 \\]
+
+**Final condition.** The cable is strung on its initial curve. The permanent set *after load* is computed from the heaviest load case on the initial curve, the permanent set *after creep* from the creep case on the creep curve; the final state is the one leaving the cable longer, elastic along the final modulus (and back onto the initial curve if loaded beyond). At the governing heaviest case, final and initial tensions are therefore equal — a consistency check used in the validation.
+
+Curves are cable **data**: OLS CAD ships no manufacturer curves. The repository's non-linear validation cases use a **synthetic** cable (invented curves) against an independent re-implementation; comparison with published examples (CIGRE TB 324 etc.) is planned.
+
+*Validation:* `nonlinear-001…002`.
+
 ## Not yet included
 
-Non-linear stress-strain (polynomial initial/final curves), creep, and final-after-load conditions — next Phase 1 steps. Results are linear-elastic and must be verified by a qualified engineer.
+Tension criteria and the finite-element elements still use the linear-elastic cable; time-based creep models; published-case validation of the non-linear method. Results must be verified by a qualified engineer.

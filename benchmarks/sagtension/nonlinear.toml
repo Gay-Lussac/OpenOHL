@@ -1,0 +1,73 @@
+# Non-linear stress-strain and creep: initial and final conditions of a span.
+# Reference values from reference_nonlinear.py (independent re-implementation
+# with different numerics). Uses a SYNTHETIC cable with invented curves — this
+# validates the implementation of the method, not any real conductor.
+# Comparison against published examples (CIGRE TB 324, …) is still to come.
+
+[[case]]
+id = "nonlinear-001"
+title = "Synthetic cable, level 300 m: initial and final (after load) at 75 °C"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_nonlinear.py)"
+max_seconds = 2.0
+expected.h_initial_n = { value = 20095.93357, rel_tol = 1e-7 }
+expected.h_final_n = { value = 18456.82868, rel_tol = 1e-7 }
+expected.sag_initial_m = { value = 8.793896684, rel_tol = 1e-7 }
+expected.sag_final_m = { value = 9.576890648, rel_tol = 1e-7 }
+expected.final_cause = { value = 1.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "25 kN"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
+load = "15.690640 N/m"
+temperature = "75 °C"
+
+[case.inputs.cable]
+id = "synthetic"
+name = "Synthetic ACSR-like test cable"
+kind = "acsr"
+source = "Synthetic test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 300.0, -150.0], creep = [0.0, 200.0, -100.0], final_modulus = 550.0, max_compression = 0.0, max_strain = 0.9 } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1800.0, -100.0], final_modulus = 1900.0 } }
+
+[[case]]
+id = "nonlinear-002"
+title = "Synthetic cable: at the max load case, final equals initial (reloading onto the initial curve)"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_nonlinear.py)"
+max_seconds = 2.0
+expected.h_initial_n = { value = 42506.28663, rel_tol = 1e-7 }
+expected.h_final_n = { value = 42506.28663, rel_tol = 1e-7 }
+expected.final_cause = { value = 1.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "25 kN"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
+load = "30 N/m"
+temperature = "-10 °C"
+
+[case.inputs.cable]
+id = "synthetic"
+name = "Synthetic ACSR-like test cable"
+kind = "acsr"
+source = "Synthetic test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 300.0, -150.0], creep = [0.0, 200.0, -100.0], final_modulus = 550.0, max_compression = 0.0, max_strain = 0.9 } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1800.0, -100.0], final_modulus = 1900.0 } }

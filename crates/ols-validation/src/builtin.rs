@@ -35,6 +35,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(LoadedChangeOfState));
     registry.register(Box::new(WireFeSpan));
     registry.register(Box::new(WireFePointLoad));
+    registry.register(Box::new(Nonlinear));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -589,6 +590,75 @@ impl Calculation for WireFePointLoad {
             ("tension_j_n", s.cables[1].tension_j),
             ("load_point_x_m", s.positions[1].x),
             ("load_point_z_m", s.positions[1].z),
+        ]))
+    }
+}
+
+/// `sagtension.nonlinear`: initial and final conditions with a non-linear cable.
+struct Nonlinear;
+
+impl Calculation for Nonlinear {
+    fn id(&self) -> &'static str {
+        "sagtension.nonlinear"
+    }
+
+    fn description(&self) -> &'static str {
+        "Level span with non-linear stress-strain/creep: initial and final (inputs: cable table, span, \
+         known_*, creep_*, max_*, load, temperature)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ols_cables::mechanics::{MaterialState, Mechanics};
+        use ols_sagtension::nonlinear::{FinalCause, NonlinearSection, final_condition};
+
+        let cable: ols_cables::Cable = inputs
+            .get("cable")
+            .ok_or("missing input \"cable\"")?
+            .clone()
+            .try_into()
+            .map_err(|e| format!("input \"cable\": {e}"))?;
+        cable.validate().map_err(|e| e.to_string())?;
+        let mechanics = Mechanics::from_cable(&cable).map_err(|e| e.to_string())?;
+        let state = |load: &str, temperature: &str| -> Result<LoadState, String> {
+            Ok(LoadState {
+                load: quantity_input::<ForcePerLength>(inputs, load)?,
+                temperature: quantity_input::<Temperature>(inputs, temperature)?,
+            })
+        };
+        let budget = default_solver_budget();
+        let section = NonlinearSection::from_known_state(
+            vec![SpanGeometry::level(quantity_input::<Length>(
+                inputs, "span",
+            )?)],
+            mechanics,
+            state("known_load", "known_temperature")?,
+            quantity_input::<Force>(inputs, "known_tension")?,
+            &MaterialState::Initial,
+        )
+        .map_err(|e| e.to_string())?;
+        let (final_state, cause) = final_condition(
+            &section,
+            state("creep_load", "creep_temperature")?,
+            state("max_load", "max_temperature")?,
+            &budget,
+        )
+        .map_err(|e| e.to_string())?;
+        let target = state("load", "temperature")?;
+        let initial = section
+            .solve(target, &MaterialState::Initial, &budget)
+            .map_err(|e| e.to_string())?;
+        let final_ = section
+            .solve(target, &final_state, &budget)
+            .map_err(|e| e.to_string())?;
+        Ok(outputs([
+            ("h_initial_n", initial.horizontal_tension.newtons()),
+            ("h_final_n", final_.horizontal_tension.newtons()),
+            ("sag_initial_m", initial.spans[0].sag().meters()),
+            ("sag_final_m", final_.spans[0].sag().meters()),
+            (
+                "final_cause",
+                if cause == FinalCause::Load { 1.0 } else { 0.0 },
+            ),
         ]))
     }
 }

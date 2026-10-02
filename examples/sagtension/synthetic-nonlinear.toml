@@ -1,0 +1,36 @@
+# Example: initial and final conditions with non-linear stress-strain and creep.
+# Uses a SYNTHETIC cable with invented curves (examples/sagtension/synthetic-library) —
+# replace it with curves from your conductor's data sheet for real work.
+# Run:  cargo run -p ols-cli -- sagtension examples/sagtension/synthetic-nonlinear.toml
+
+cable = "synthetic"
+library = "synthetic-library"
+
+spans = [
+    { span = "280 m", rise = "5 m" },
+    { span = "340 m", rise = "-10 m" },
+    { span = "300 m", rise = "0 m" },
+]
+
+[reference]
+weather = "everyday"
+
+[stringing]
+horizontal_tension = "25 kN"
+
+[[weather]]
+name = "everyday"
+temperature = "15 °C"
+
+[[weather]]
+name = "cold + ice"
+temperature = "-10 °C"
+ice_thickness = "6 mm"
+
+[[weather]]
+name = "hot 75 °C"
+temperature = "75 °C"
+
+[final]
+creep_weather = "everyday"
+load_weather = "cold + ice"

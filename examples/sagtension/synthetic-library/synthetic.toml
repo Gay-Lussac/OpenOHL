@@ -1,0 +1,32 @@
+# SYNTHETIC test cable — invented curves to exercise the non-linear model.
+# NOT real conductor data; never use for design.
+
+[[cable]]
+id = "synthetic"
+name = "Synthetic ACSR-like test cable"
+kind = "acsr"
+source = "Synthetic test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+
+[cable.outer]
+area = "400 mm²"
+modulus = "55 GPa"
+thermal_expansion = 23.0e-6
+[cable.outer.stress_strain]
+stress_unit = "MPa"
+initial = [0.0, 300.0, -150.0]
+creep = [0.0, 200.0, -100.0]
+final_modulus = 550.0
+max_compression = 0.0
+max_strain = 0.9
+
+[cable.core]
+area = "65 mm²"
+modulus = "190 GPa"
+thermal_expansion = 11.5e-6
+[cable.core.stress_strain]
+stress_unit = "MPa"
+initial = [0.0, 1800.0, -100.0]
+final_modulus = 1900.0

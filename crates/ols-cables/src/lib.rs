@@ -12,8 +12,8 @@
 //! - axial stiffness: \\( EA = E_o A_o + E_c A_c \\)
 //! - thermal expansion: \\( \alpha = (E_o A_o \alpha_o + E_c A_c \alpha_c) / EA \\)
 //!
-//! This is the linear-elastic model. Non-linear stress-strain polynomials and
-//! creep (initial / final curves) come next (roadmap Phase 1).
+//! This is the linear-elastic model; components may also carry non-linear
+//! stress-strain and creep curves (see [`mechanics`]).
 //!
 //! Libraries are TOML files where values carry their units:
 //!
@@ -28,6 +28,8 @@
 //! outer = { area = "0.6245 in²", modulus = "55 GPa", thermal_expansion = 23.0e-6 }
 //! core = { area = "0.1019 in²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }
 //! ```
+
+pub mod mechanics;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -63,7 +65,7 @@ pub enum CableKind {
 }
 
 /// One material component of a cable.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Component {
     /// Cross-sectional area.
@@ -72,6 +74,9 @@ pub struct Component {
     pub modulus: Stress,
     /// Linear thermal expansion coefficient, 1/K.
     pub thermal_expansion: f64,
+    /// Non-linear stress-strain and creep curves (none = linear with `modulus`).
+    #[serde(default)]
+    pub stress_strain: Option<mechanics::StressStrainData>,
 }
 
 impl Component {
@@ -185,6 +190,7 @@ impl Cable {
                 circle * 1e6
             )));
         }
+        mechanics::Mechanics::from_cable(self)?;
         Ok(())
     }
 }
