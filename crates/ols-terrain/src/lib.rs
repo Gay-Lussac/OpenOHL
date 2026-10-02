@@ -642,6 +642,31 @@ impl Terrain {
         runs
     }
 
+    /// Calls `visit` with the corners of every triangle whose bounding box
+    /// may come within `radius` (in plan) of (x, y); a triangle can be
+    /// visited more than once.
+    pub fn triangles_near(
+        &self,
+        x: f64,
+        y: f64,
+        radius: f64,
+        mut visit: impl FnMut([[f64; 3]; 3]),
+    ) {
+        if self.grid.nx == 0 {
+            return;
+        }
+        let g = &self.grid;
+        let (i0, i1) = (g.index(x - radius, 0, g.nx), g.index(x + radius, 0, g.nx));
+        let (j0, j1) = (g.index(y - radius, 1, g.ny), g.index(y + radius, 1, g.ny));
+        for j in j0..=j1 {
+            for i in i0..=i1 {
+                for &k in g.cell_items(i, j) {
+                    visit(self.corners(k));
+                }
+            }
+        }
+    }
+
     /// The surface as a mesh: points and triangles (indices into the
     /// points).
     pub fn mesh(&self) -> (Vec<[f64; 3]>, Vec<[usize; 3]>) {

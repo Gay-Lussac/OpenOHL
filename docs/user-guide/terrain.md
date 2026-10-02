@@ -19,12 +19,63 @@ terrain: 2960 points, 5694 triangles — loaded and 10 spans checked in 7.7ms
 |---|---|
 | `--terrain FILE` | Survey points (below). Enables the clearance check; the viewer draws the ground. |
 | `--clearance M` | Required vertical ground clearance, m: spans below it are listed and marked in the viewer. |
-| `--clearance-csv FILE` | Lowest clearance of every span: `section,span,clearance_m,wire_x,wire_y,wire_z,ground_z,covered`. |
+| `--rules FILE` | Clearance rules (`.olsr`, below): vertical and radial clearances to the ground, LiDAR classes, other lines and other wires of this line. `--clearance M` adds a vertical ground rule. |
+| `--other-line FILE` | Another line (`.ols.json`) for wire-to-wire clearances; repeatable. Solved in the same weather case with the same libraries. |
+| `--clearance-csv FILE` | Every clearance found: `rule,measure,section,span,other_section,other_span,clearance_m,required_m,violations,wire_x,…,target_x,…,class`. |
 
 Run it once per weather case that governs clearance (e.g. maximum operating
 temperature, ice), with `--temperature`, `--ice-thickness` and
 `--wind-pressure`. Blown-out wires are checked over the ground they are blown
 over.
+
+## Clearance rules (`.olsr`)
+
+Every rule names a **target** and the required **vertical** and/or **radial** clearance:
+
+- **vertical**: to the ground, the wire's height above it directly below (negative: the wire is below the ground); to points, the vertical separation from points within `vertical_band` (default 0.5 m) of the wire in plan, above or below it; to other wires, the vertical separation where the wires cross in plan.
+- **radial**: the shortest 3D distance between the wire and the target.
+
+```toml
+format = "ols-clearance-rules"
+version = 1
+name = "Example rules"
+
+[[rule]]
+name = "Ground"
+target = "ground"
+vertical = "7 m"
+radial = "6.5 m"
+
+[[rule]]
+name = "Vegetation"
+target = "points"            # LiDAR points, by role and/or class number
+roles = ["vegetation"]
+classes = [99]
+vertical = "5 m"
+radial = "4 m"
+
+[[rule]]
+name = "Phase to phase"
+target = "same_line"         # other wires of this line: same span and other spans
+radial = "3 m"
+
+[[rule]]
+name = "Crossed lines"
+target = "other_lines"       # wires of the lines given with --other-line
+vertical = "4.5 m"
+radial = "4.5 m"
+```
+
+| Field | Meaning |
+|---|---|
+| `target` | `ground`, `points`, `same_line` or `other_lines`. |
+| `roles`, `classes` | Points rules: classes by role (resolved with `--lidar-classes`) and/or by number. |
+| `vertical`, `radial` | Required clearances (at least one). |
+| `vertical_band` | Points count for vertical clearance within this horizontal distance of the wire (default 0.5 m). |
+| `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
+| `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
+
+Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.olsr`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/clearance-rules.olsr) and the crossing line `crossing-line.ols.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; a rule editor (per LiDAR class) and design-code plugins producing rule sets are planned.
 
 ## Survey files
 
@@ -129,9 +180,7 @@ polyline of closely spaced points on the exact catenary; between those
 points it lies slightly below its chords, so clearances can be high by at
 most the chord sag of a piece — a few millimetres.
 
-Planned next (ROADMAP Phase 2): clearance rules by feature code (roads,
-buildings, water), shortest (radial) distances, clearance envelopes over
-several weather cases, and profiles in plan and profile drawings.
+Planned next: clearance envelopes over several weather cases (and different cases for the two wires of a pair), exclusion zones near supports and terminations, and clearances in plan and profile drawings.
 
 ## Example data
 

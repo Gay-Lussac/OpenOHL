@@ -18,8 +18,16 @@
 //! catenary constant C — about 3 mm for 6 m pieces at C = 1500 m — and the
 //! wire lies below its chords, so clearances are high by at most that.
 //!
-//! Planned (DESIGN_GOALS §12, ROADMAP Phase 2): clearance to features
-//! (roads, buildings, other lines) and shortest (radial) distances.
+//! v2 ([`checks`], [`rules`], DESIGN_GOALS §13): **vertical and radial**
+//! clearances by rule (`.olsr`) to the ground, to points of chosen classes
+//! (LiDAR), to wires of other lines and to other wires of the same line.
+
+pub mod checks;
+pub mod geometry;
+pub mod rules;
+
+pub use checks::{Hit, PairResult, PointCheck, Wire, WireResult, WireSet, wires_of};
+pub use rules::{Rule, RuleSet, Target};
 
 use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;

@@ -1,0 +1,23 @@
+# Example clearance rules for the synthetic line (invented values, not a
+# design code). Targets: ground, points (LiDAR classes by number or role),
+# same_line (other wires of this line), other_lines.
+format = "ols-clearance-rules"
+version = 1
+name = "Synthetic example rules"
+
+[[rule]]
+name = "Ground"
+target = "ground"
+vertical = "7 m"
+radial = "6.5 m"
+
+[[rule]]
+name = "Phase to phase"
+target = "same_line"
+radial = "4 m"
+
+[[rule]]
+name = "Crossed lines"
+target = "other_lines"
+vertical = "4.5 m"
+radial = "4.5 m"

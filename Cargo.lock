@@ -1309,6 +1309,8 @@ dependencies = [
  "ols-line",
  "ols-terrain",
  "ols-weather",
+ "serde",
+ "toml",
 ]
 
 [[package]]

@@ -1,0 +1,81 @@
+{
+  "format": "ols-line",
+  "version": 1,
+  "name": "Crossing line (invented)",
+  "crs": "local (invented)",
+  "structures": [
+    {
+      "id": "C1",
+      "position": [
+        155.0,
+        -150.0,
+        499.0
+      ],
+      "attachments": [
+        {
+          "set": 1,
+          "phase": 1,
+          "insulator_point": [
+            155.0,
+            -150.0,
+            518.0
+          ],
+          "wire_point": [
+            155.0,
+            -150.0,
+            518.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "position": [
+        155.0,
+        150.0,
+        500.0
+      ],
+      "attachments": [
+        {
+          "set": 1,
+          "phase": 1,
+          "insulator_point": [
+            155.0,
+            150.0,
+            518.0
+          ],
+          "wire_point": [
+            155.0,
+            150.0,
+            518.0
+          ]
+        }
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "X1",
+      "cable": "acsr-drake-26-7",
+      "circuit": "Crossing",
+      "phase_label": "L1",
+      "points": [
+        {
+          "structure": "C1",
+          "set": 1,
+          "phase": 1
+        },
+        {
+          "structure": "C2",
+          "set": 1,
+          "phase": 1
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 15000.0,
+        "temperature": 15.0
+      }
+    }
+  ]
+}

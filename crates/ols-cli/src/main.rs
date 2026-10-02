@@ -10,6 +10,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use ols_core::units::UnitSystem;
 
+mod clearance_run;
 mod sagtension_job;
 
 #[derive(Parser)]
@@ -129,10 +130,19 @@ struct LineArgs {
     /// size, m.
     #[arg(long)]
     thin: Option<f64>,
-    /// Required vertical ground clearance, m: spans below it are listed.
+    /// Required vertical ground clearance, m (a ground rule; adds to
+    /// --rules).
     #[arg(long)]
     clearance: Option<f64>,
-    /// Write the lowest ground clearance of every span as CSV.
+    /// Clearance rules (.olsr): vertical and radial clearances to the
+    /// ground, LiDAR classes, other lines and wires of this line.
+    #[arg(long)]
+    rules: Option<PathBuf>,
+    /// Another line (.ols.json) for wire-to-wire clearances (repeatable);
+    /// solved in the same weather with the same libraries.
+    #[arg(long)]
+    other_line: Vec<PathBuf>,
+    /// Write every clearance found (per rule, wire and measure) as CSV.
     #[arg(long)]
     clearance_csv: Option<PathBuf>,
 }
@@ -324,6 +334,8 @@ fn line(args: &LineArgs) -> ExitCode {
         max_edge,
         thin,
         clearance,
+        rules,
+        other_line,
         clearance_csv,
     } = args;
     let (temperature, wind_pressure, ice_thickness) =
@@ -459,133 +471,29 @@ fn line(args: &LineArgs) -> ExitCode {
                 }
             }
         }
-        let started = std::time::Instant::now();
-        let ground = match (terrain, lidar) {
-            (Some(path), _) => Some(ols_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
-            (None, Some(path)) => {
-                let scheme = class_scheme(lidar_classes.as_deref())?;
-                let classes = scheme.codes_with_role(ground_role);
-                if classes.is_empty() {
-                    return Err(format!(
-                        "no class of \"{}\" has the role \"{ground_role}\"",
-                        scheme.name
-                    ));
-                }
-                let polylines: Vec<Vec<[f64; 2]>> = line
-                    .sections
-                    .iter()
-                    .map(|s| {
-                        s.points
-                            .iter()
-                            .filter_map(|p| line.attachment(p))
-                            .map(|a| [a.wire_point[0], a.wire_point[1]])
-                            .collect()
-                    })
-                    .collect();
-                let filter = ols_lidar::GroundFilter {
-                    classes: classes.clone(),
-                    corridor: Some(ols_lidar::Corridor::new(&polylines, *corridor)),
-                    thin: *thin,
-                };
-                let tiles = ols_lidar::tiles_in(path).map_err(|e| e.to_string())?;
-                // Exit clause: ~1 min per 10⁸ points decompressed; 30 min is far beyond.
-                let budget = ols_core::budget::Budget::new()
-                    .time_limit(std::time::Duration::from_secs(1800));
-                let (surface, stats) =
-                    ols_lidar::build_terrain(&tiles, &filter, Some(*max_edge), &budget)
-                        .map_err(|e| e.to_string())?;
-                println!(
-                    "lidar: {} tiles read ({} outside the ±{corridor} m corridor), {} points, ground classes {classes:?} ({}): {} points kept",
-                    stats.tiles_read,
-                    stats.tiles_skipped,
-                    stats.points_read,
-                    scheme.name,
-                    stats.points_kept
-                );
-                Some(surface)
-            }
-            (None, None) => None,
-        };
-        if let Some(ground) = ground {
-            let clearances: Vec<_> = shapes
-                .iter()
-                .flat_map(|shape| ols_clearance::ground_clearances(shape, &ground))
-                .chain(
-                    extras
-                        .jumpers
-                        .iter()
-                        .map(|j| ols_clearance::jumper_clearance(j, &ground)),
-                )
-                .collect();
-            println!(
-                "terrain: {} points, {} triangles{} — loaded and {} spans checked in {:.1?}",
-                ground.num_points(),
-                ground.num_triangles(),
-                match ground.skipped_breaklines() {
-                    0 => String::new(),
-                    n => format!(", {n} crossing breakline edges skipped"),
-                },
-                clearances.len(),
-                started.elapsed()
-            );
-            let lowest = clearances
-                .iter()
-                .filter_map(|c| c.lowest.map(|l| (c, l)))
-                .min_by(|a, b| a.1.clearance.total_cmp(&b.1.clearance));
-            if let Some((c, l)) = lowest {
-                println!(
-                    "  lowest vertical ground clearance {:.2} m: section {} span {} at ({:.1}, {:.1})",
-                    l.clearance, c.section, c.span, l.wire[0], l.wire[1]
-                );
-            }
-            let partly = clearances.iter().filter(|c| c.covered < 0.999).count();
-            if partly > 0 {
-                println!("  {partly} spans are not fully over the surveyed area");
-            }
-            if let Some(required) = clearance {
-                let found = ols_clearance::violations(&clearances, *required);
-                println!(
-                    "  spans below the required {required:.2} m: {}",
-                    found.len()
-                );
-                for c in &found {
-                    let l = c.lowest.expect("violations have a lowest point");
-                    println!(
-                        "    section {:<10} span {:>3}: {:>6.2} m at ({:.1}, {:.1}, wire {:.2} m)",
-                        c.section, c.span, l.clearance, l.wire[0], l.wire[1], l.wire[2]
-                    );
-                    extras.markers.push((
-                        l.wire,
-                        format!("{} span {}: {:.2} m", c.section, c.span, l.clearance),
-                    ));
-                }
-            }
-            if let Some(path) = clearance_csv {
-                let mut out = String::from(
-                    "section,span,clearance_m,wire_x,wire_y,wire_z,ground_z,covered\n",
-                );
-                for c in &clearances {
-                    match c.lowest {
-                        Some(l) => out.push_str(&format!(
-                            "{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}\n",
-                            c.section,
-                            c.span,
-                            l.clearance,
-                            l.wire[0],
-                            l.wire[1],
-                            l.wire[2],
-                            l.ground[2],
-                            c.covered
-                        )),
-                        None => out.push_str(&format!("{},{},,,,,,0\n", c.section, c.span)),
-                    }
-                }
-                std::fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))?;
-            }
-            extras.ground = Some(ground.mesh());
-        } else if clearance.is_some() || clearance_csv.is_some() {
-            return Err("--clearance and --clearance-csv need --terrain or --lidar".into());
-        }
+        clearance_run::run(
+            &line,
+            &library,
+            &case,
+            &shapes,
+            &extras.jumpers.clone(),
+            &clearance_run::Options {
+                terrain: terrain.as_deref(),
+                lidar: lidar.as_deref(),
+                lidar_classes: lidar_classes.as_deref(),
+                ground_role,
+                corridor: *corridor,
+                max_edge: *max_edge,
+                thin: *thin,
+                rules: rules.as_deref(),
+                clearance: *clearance,
+                clearance_csv: clearance_csv.as_deref(),
+                other_lines: other_line,
+                structures: structure_dir,
+                insulators: insulator_dir,
+            },
+            &mut extras,
+        )?;
         if let Some(path) = html {
             std::fs::write(
                 path,

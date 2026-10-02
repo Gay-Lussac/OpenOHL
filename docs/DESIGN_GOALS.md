@@ -190,3 +190,12 @@ Each **insulator assembly** is a file of its own (`*.olsi`, TOML) in an insulato
 
 - **Phase colours**: wires are displayed in colours by phase (and per circuit); the colour scheme is configurable per project (e.g. L1/L2/L3 conventions differ between utilities) and per section.
 - **Jumpers at dead-ends**: jumpers connect the end of one section to the start of the next at a strain structure (or between circuits). They are modelled as short slack cable elements between the two wire points (with optional jumper support strings, §6), are drawn in 3D and included in clearance checks; their length or sag is a design input.
+
+## 13. Clearances
+
+- **Two measures, always**: **vertical** clearance (wire height above a target directly below it) and **radial** clearance (shortest 3D distance between wire and target). Each rule requires one or both.
+- **Targets**: the ground surface (TIN); LiDAR / survey points selected by class or by class role (§ LiDAR class schemes) — vegetation, buildings, roads, water, objects…; wires of **other lines** (crossings, parallel lines); and other wires of the **same line** — within the same span (phase to phase, circuit to circuit) and between spans (e.g. a branch passing under the main line).
+- **Rules are data** (`.olsr` files): a rule names its target and required distances; a later tool (GUI or plugin) edits them per LiDAR class, per crossing, per design code. Design codes (EN 50341, Swiss LeV, NESC…) are plugins that produce rule sets.
+- **Per weather case**, and later as **envelopes** over several cases (hot, iced, blown-out wires), including different cases for the two wires of a wire-to-wire check (e.g. upper wire iced, lower wire cold).
+- **Exclusion zones** (later): parts of a wire near supports, terminations and cable transitions (where wires converge and come down to the ground by design) can be excluded from a rule, e.g. within a distance of the attachment points.
+- Results per span and rule: smallest vertical and radial clearance with their locations, number of violating points or places; marked in the viewer and exported (CSV, later reports and drawings).
