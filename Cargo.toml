@@ -25,6 +25,7 @@ ols-clearance = { path = "crates/ols-clearance" }
 ols-lidar = { path = "crates/ols-lidar" }
 ols-pointcloud = { path = "crates/ols-pointcloud" }
 ols-session = { path = "crates/ols-session" }
+ols-drawing = { path = "crates/ols-drawing" }
 ols-validation = { path = "crates/ols-validation" }
 ols-plugins = { path = "crates/ols-plugins" }
 clap = { version = "4", features = ["derive"] }

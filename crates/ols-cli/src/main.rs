@@ -160,6 +160,22 @@ struct LineArgs {
     /// Write every clearance found (per rule, wire and measure) as CSV.
     #[arg(long)]
     clearance_csv: Option<PathBuf>,
+    /// Write a plan and profile sheet (SVG) and profile CSV per route into
+    /// this directory.
+    #[arg(long)]
+    drawings: Option<PathBuf>,
+    /// Horizontal scale of the drawings (2000 = 1:2000).
+    #[arg(long, default_value_t = 2000.0)]
+    hscale: f64,
+    /// Vertical scale of the profile (200 = 1:200).
+    #[arg(long, default_value_t = 200.0)]
+    vscale: f64,
+    /// Side ground profile at this offset, m (right positive; repeatable).
+    #[arg(long, allow_hyphen_values = true)]
+    side_offset: Vec<f64>,
+    /// Half width of the plan view, m.
+    #[arg(long, default_value_t = 40.0)]
+    plan_width: f64,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -487,6 +503,11 @@ fn line(args: &LineArgs) -> ExitCode {
         rules,
         other_line,
         clearance_csv,
+        drawings,
+        hscale,
+        vscale,
+        side_offset,
+        plan_width,
     } = args;
     let (temperature, wind_pressure, ice_thickness) =
         (*temperature, *wind_pressure, *ice_thickness);
@@ -621,7 +642,7 @@ fn line(args: &LineArgs) -> ExitCode {
                 }
             }
         }
-        clearance_run::run(
+        let ground = clearance_run::run(
             &line,
             &library,
             &case,
@@ -645,6 +666,45 @@ fn line(args: &LineArgs) -> ExitCode {
             },
             &mut extras,
         )?;
+        if let Some(dir) = drawings {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            let options = ols_drawing::Options {
+                horizontal_scale: *hscale,
+                vertical_scale: *vscale,
+                side_offsets: side_offset.clone(),
+                clearance: *clearance,
+                plan_half_width: *plan_width,
+                title: vec![
+                    line.name.clone(),
+                    format!("{temperature} °C, wind {wind_pressure} Pa, ice {ice_thickness} mm"),
+                ],
+            };
+            for route in line.effective_routes() {
+                let d = ols_drawing::build(
+                    &line,
+                    &route,
+                    &shapes,
+                    &extras.jumpers,
+                    ground.as_ref(),
+                    &extras.markers,
+                    &options,
+                )?;
+                let svg_path = dir.join(format!("{}.svg", route.id));
+                let csv_path = dir.join(format!("{}-profile.csv", route.id));
+                std::fs::write(&svg_path, ols_drawing::svg(&d, &options))
+                    .map_err(|e| format!("{}: {e}", svg_path.display()))?;
+                std::fs::write(&csv_path, ols_drawing::profile_csv(&d))
+                    .map_err(|e| format!("{}: {e}", csv_path.display()))?;
+                println!(
+                    "drawing: route {} ({:.0} m, {} structures, {} wires) → {}",
+                    route.id,
+                    d.length,
+                    d.structures.len(),
+                    d.wires.len(),
+                    svg_path.display()
+                );
+            }
+        }
         if let Some(path) = html {
             std::fs::write(
                 path,

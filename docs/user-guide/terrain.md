@@ -28,6 +28,19 @@ temperature, ice), with `--temperature`, `--ice-thickness` and
 `--wind-pressure`. Blown-out wires are checked over the ground they are blown
 over.
 
+## Plan and profile drawings
+
+`--drawings DIR` writes, for every route, a plan and profile sheet `ROUTE.svg` and the profiles as `ROUTE-profile.csv`:
+
+```bash
+ols line project.ols --pointcloud project.ols --temperature 80 --rules rules.olsr \
+  --clearance 7 --drawings sheets --side-offset -15 --side-offset 15
+```
+
+- **Profile**: ground along the route centreline (exact TIN profile), side ground profiles at `--side-offset` (right positive), the required-clearance line (ground + `--clearance`), structures with their stations, the route's wires and jumpers coloured by phase, and violation markers.
+- **Plan**: straightened along the route (station × offset at true scale), aligned with the profile.
+- Scales `--hscale 2000 --vscale 200` (1:2000 / 1:200 by default), plan half width `--plan-width 40`.
+
 ## Clearance rules (`.olsr`)
 
 Every rule names a **target** and the required **vertical** and/or **radial** clearance:

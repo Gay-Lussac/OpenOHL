@@ -1,0 +1,21 @@
+[package]
+name = "ols-drawing"
+description = "OLS CAD plan and profile views per route (SVG, CSV)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-line.workspace = true
+ols-terrain.workspace = true
+
+[dev-dependencies]
+ols-cables.workspace = true
+ols-core.workspace = true
+ols-weather.workspace = true
+
+[lints]
+workspace = true

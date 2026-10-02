@@ -139,7 +139,8 @@ fn marker(extras: &mut ViewerExtras, rule: &Rule, label: String, r: &WireResult)
     }
 }
 
-/// Runs the clearance checks and prints the report.
+/// Runs the clearance checks and prints the report; returns the ground
+/// surface used, if any (for drawings).
 pub fn run(
     line: &Line,
     library: &ols_cables::Library,
@@ -148,7 +149,7 @@ pub fn run(
     jumpers: &[JumperShape],
     o: &Options,
     extras: &mut ViewerExtras,
-) -> Result<(), String> {
+) -> Result<Option<ols_terrain::Terrain>, String> {
     let mut rules = match o.rules {
         Some(path) => RuleSet::load(path)?.rules,
         None => Vec::new(),
@@ -162,7 +163,7 @@ pub fn run(
         }
         // Ground only: still report the lowest ground clearance.
         if o.terrain.is_none() && o.lidar.is_none() {
-            return Ok(());
+            return Ok(None);
         }
         rules = RuleSet::ground(0.0).rules;
         rules[0].vertical = None;
@@ -467,5 +468,5 @@ pub fn run(
     {
         extras.ground = Some(g.mesh());
     }
-    Ok(())
+    Ok(ground)
 }

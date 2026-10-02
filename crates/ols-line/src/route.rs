@@ -52,8 +52,9 @@ fn horizontal(a: Point, b: Point) -> (f64, f64) {
     (b[0] - a[0], b[1] - a[1])
 }
 
-/// Projects `p` onto a polyline: (station, signed offset).
-fn project(polyline: &[Point], p: Point) -> (f64, f64) {
+/// Projects `p` onto a polyline in plan: (station, signed offset, right
+/// of the direction positive), to the closest segment.
+pub fn project(polyline: &[Point], p: Point) -> (f64, f64) {
     let mut best = (f64::INFINITY, 0.0, 0.0); // (distance², station, offset)
     let mut start = 0.0;
     for w in polyline.windows(2) {
@@ -76,7 +77,43 @@ fn project(polyline: &[Point], p: Point) -> (f64, f64) {
     (best.1, best.2)
 }
 
+/// The plan point at `station` along a polyline, `offset` to its right.
+pub fn point_at(polyline: &[Point], station: f64, offset: f64) -> [f64; 2] {
+    let mut start = 0.0;
+    let n = polyline.len();
+    for (k, w) in polyline.windows(2).enumerate() {
+        let (dx, dy) = horizontal(w[0], w[1]);
+        let len = dx.hypot(dy);
+        if len == 0.0 {
+            continue;
+        }
+        if station <= start + len || k + 2 == n {
+            let (ux, uy) = (dx / len, dy / len);
+            let t = station - start;
+            return [
+                w[0][0] + ux * t + uy * offset,
+                w[0][1] + uy * t - ux * offset,
+            ];
+        }
+        start += len;
+    }
+    polyline.first().map_or([0.0, 0.0], |p| [p[0], p[1]])
+}
+
 impl Route {
+    /// The route's centreline: its alignment, or its structures' positions
+    /// when it has none.
+    pub fn centreline(&self, line: &Line) -> Vec<Point> {
+        if self.alignment.len() >= 2 {
+            self.alignment.clone()
+        } else {
+            self.structures
+                .iter()
+                .filter_map(|id| line.structure(id).map(|s| s.position))
+                .collect()
+        }
+    }
+
     /// Stationing of every structure of the route.
     pub fn stations(&self, line: &Line) -> Result<Vec<Station>, LineError> {
         let positions: Vec<Point> = self
@@ -151,6 +188,21 @@ impl Line {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn point_at_inverts_project() {
+        let poly = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [100.0, 50.0, 0.0]];
+        for (station, offset) in [(30.0, 5.0), (30.0, -4.0), (120.0, 3.0), (150.0, -2.0)] {
+            let q = point_at(&poly, station, offset);
+            let (s, o) = project(&poly, [q[0], q[1], 0.0]);
+            assert!(
+                (s - station).abs() < 1e-9 && (o - offset).abs() < 1e-9,
+                "{station} {offset}: {s} {o}"
+            );
+        }
+        // Right of the direction is positive: heading east, right is south.
+        assert_eq!(point_at(&poly, 10.0, 2.0), [10.0, -2.0]);
+    }
 
     fn close(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-9, "{a} vs {b}");

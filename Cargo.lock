@@ -1366,6 +1366,7 @@ dependencies = [
  "ols-cables",
  "ols-clearance",
  "ols-core",
+ "ols-drawing",
  "ols-lidar",
  "ols-line",
  "ols-plugins",
@@ -1389,6 +1390,17 @@ dependencies = [
  "criterion",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ols-drawing"
+version = "0.0.1"
+dependencies = [
+ "ols-cables",
+ "ols-core",
+ "ols-line",
+ "ols-terrain",
+ "ols-weather",
 ]
 
 [[package]]
