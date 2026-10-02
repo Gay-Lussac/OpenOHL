@@ -110,13 +110,26 @@ struct Reference {
     temperature: f64,
 }
 
-/// Clamp layout of a section: fixed points, or suspension strings.
+/// Clamp layout of a section: fixed points, suspension strings, strain
+/// assemblies. Section ends are always strain points (or fixed).
 enum Clamp {
+    /// Wire fixed at a point (no insulator length).
     Fixed(Vector3<f64>),
+    /// Suspension string: free clamp hanging from `top`.
     Suspension {
         top: Vector3<f64>,
         length: f64,
         weight: f64,
+    },
+    /// Strain assembly: free clamp on a member of `length` from `top`; it
+    /// lines up with its conductor by equilibrium (direction and droop
+    /// depend on the tension — a steep down-lead's string hangs 47° below
+    /// horizontal in real data). `initial` is the starting position.
+    Strain {
+        top: Vector3<f64>,
+        length: f64,
+        weight: f64,
+        initial: Vector3<f64>,
     },
 }
 
@@ -140,6 +153,19 @@ fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
                     length: (wire - ins).norm(),
                     weight: a.insulator_weight,
                 }
+            } else if a.insulator.is_some() && (wire - ins).norm() > 0.01 {
+                // A library strain assembly is modelled as a free member (it
+                // needs its weight). Attachments given only as geometry keep
+                // their clamp where the data puts it: imported clamp positions
+                // already are the source's equilibrium, and freeing them
+                // without weights made a 930-span comparison worse (median
+                // 1.1 → 4.2 cm).
+                Clamp::Strain {
+                    top: ins,
+                    length: (wire - ins).norm(),
+                    weight: a.insulator_weight,
+                    initial: wire,
+                }
             } else {
                 Clamp::Fixed(wire)
             })
@@ -151,6 +177,7 @@ fn plumb(clamp: &Clamp) -> Vector3<f64> {
     match clamp {
         Clamp::Fixed(p) => *p,
         Clamp::Suspension { top, length, .. } => top - Vector3::new(0.0, 0.0, *length),
+        Clamp::Strain { initial, .. } => *initial,
     }
 }
 
@@ -183,6 +210,12 @@ fn build(
                 top,
                 length,
                 weight,
+            }
+            | Clamp::Strain {
+                top,
+                length,
+                weight,
+                ..
             } => {
                 let top_node = model.nodes.len();
                 model.nodes.push(Node::fixed(*top));

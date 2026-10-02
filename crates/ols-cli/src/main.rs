@@ -57,6 +57,12 @@ enum Command {
         /// Wire library: .olsw file or directory.
         #[arg(long, default_value = "libraries/cables")]
         library: PathBuf,
+        /// Structure type library directory (.olss), for typed structures.
+        #[arg(long, default_value = "libraries/structures")]
+        structures: PathBuf,
+        /// Insulator assembly library directory (.olsi).
+        #[arg(long, default_value = "libraries/insulators")]
+        insulators: PathBuf,
         /// Cable temperature, °C.
         #[arg(long, default_value_t = 15.0)]
         temperature: f64,
@@ -79,6 +85,11 @@ enum Command {
         #[arg(long)]
         stations: bool,
     },
+    /// Structure and insulator libraries.
+    Structures {
+        #[command(subcommand)]
+        command: StructuresCommand,
+    },
     /// Inspect plugins.
     Plugin {
         #[command(subcommand)]
@@ -90,6 +101,20 @@ enum Command {
 enum Units {
     Metric,
     Us,
+}
+
+#[derive(Subcommand)]
+enum StructuresCommand {
+    /// Derive draft structure types (.olss) and insulator assemblies (.olsi)
+    /// from a line's attachment geometry, plus a copy of the line that
+    /// references them; reports how closely the types reproduce the line.
+    Derive {
+        /// Line file (.ols.json).
+        file: PathBuf,
+        /// Output directory (created): structures/, insulators/, typed line.
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -113,6 +138,8 @@ fn main() -> ExitCode {
         Some(Command::Line {
             file,
             library,
+            structures,
+            insulators,
             temperature,
             wind_pressure,
             ice_thickness,
@@ -122,11 +149,14 @@ fn main() -> ExitCode {
             stations,
         }) => line(
             &file,
-            &library,
+            [&library, &structures, &insulators],
             (temperature, wind_pressure, ice_thickness),
             [html.as_deref(), csv.as_deref(), spans_csv.as_deref()],
             stations,
         ),
+        Some(Command::Structures {
+            command: StructuresCommand::Derive { file, out },
+        }) => structures_derive(&file, &out),
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
@@ -168,7 +198,7 @@ fn sagtension(job: &std::path::Path, units: Units, csv: Option<&std::path::Path>
 
 fn line(
     file: &std::path::Path,
-    library: &std::path::Path,
+    [library, structure_dir, insulator_dir]: [&std::path::Path; 3],
     (temperature, wind_pressure, ice_thickness): (f64, f64, f64),
     [html, csv, spans_csv]: [Option<&std::path::Path>; 3],
     stations: bool,
@@ -177,7 +207,16 @@ fn line(
     use ols_weather::WeatherCase;
 
     let run = || -> Result<(), String> {
-        let line = ols_line::Line::load(file).map_err(|e| e.to_string())?;
+        let mut line = ols_line::Line::load(file).map_err(|e| e.to_string())?;
+        if line.structures.iter().any(|s| s.structure_type.is_some()) {
+            let structures = ols_structures::StructureLibrary::load_dir(structure_dir)
+                .map_err(|e| e.to_string())?;
+            let insulators = ols_structures::InsulatorLibrary::load_dir(insulator_dir)
+                .map_err(|e| e.to_string())?;
+            line = line
+                .resolve(&structures, &insulators)
+                .map_err(|e| e.to_string())?;
+        }
         let library = ols_cables::Library::load(library).map_err(|e| e.to_string())?;
         let mut case = WeatherCase::still("state", Temperature::from_celsius(temperature));
         case.wind_pressure = Stress::from_pascals(wind_pressure);
@@ -273,6 +312,82 @@ fn line(
         if failed > 0 {
             return Err(format!("{failed} sections failed"));
         }
+        Ok(())
+    };
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn structures_derive(file: &std::path::Path, out: &std::path::Path) -> ExitCode {
+    use ols_structures::{
+        InsulatorAssembly, InsulatorLibrary, LibraryItem, StructureLibrary, StructureType,
+    };
+
+    let run = || -> Result<(), String> {
+        let line = ols_line::Line::load(file).map_err(|e| e.to_string())?;
+        let (derived, typed) = line.derive_libraries();
+        let (sdir, idir) = (out.join("structures"), out.join("insulators"));
+        for dir in [&sdir, &idir] {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        let mut structures = StructureLibrary::default();
+        let mut insulators = InsulatorLibrary::default();
+        for (id, text) in &derived.structure_types {
+            let path = sdir.join(format!("{id}.olss"));
+            std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+            structures
+                .insert(
+                    &path,
+                    StructureType::parse(&path, text).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        for (id, text) in &derived.insulators {
+            let path = idir.join(format!("{id}.olsi"));
+            std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+            insulators
+                .insert(
+                    &path,
+                    InsulatorAssembly::parse(&path, text).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        let stem = file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map_or("line", |n| n.trim_end_matches(".ols.json"));
+        let typed_path = out.join(format!("{stem}-typed.ols.json"));
+        std::fs::write(&typed_path, typed.to_json())
+            .map_err(|e| format!("{}: {e}", typed_path.display()))?;
+        // Self-check: resolve the typed line and compare with the original.
+        let resolved = typed
+            .resolve(&structures, &insulators)
+            .map_err(|e| e.to_string())?;
+        let check = ols_line::library::compare_attachments(&line, &resolved);
+        let worst = (check.worst, check.at);
+        println!(
+            "{} structures -> {} structure types, {} insulator assemblies",
+            line.structures.len(),
+            derived.structure_types.len(),
+            derived.insulators.len()
+        );
+        println!(
+            "written to {} (typed line: {})",
+            out.display(),
+            typed_path.display()
+        );
+        println!(
+            "self-check: attachment points and insulator lengths reproduced within {:.3} m (largest at {})",
+            worst.0, worst.1
+        );
+        println!(
+            "Note: insulator weights come from the line when given; check them, and fill in stiffness and wind areas."
+        );
         Ok(())
     };
     match run() {

@@ -1223,6 +1223,7 @@ dependencies = [
  "ols-line",
  "ols-plugins",
  "ols-sagtension",
+ "ols-structures",
  "ols-validation",
  "ols-weather",
  "ols-wirefe",
@@ -1246,6 +1247,7 @@ dependencies = [
  "nalgebra",
  "ols-cables",
  "ols-core",
+ "ols-structures",
  "ols-weather",
  "ols-wirefe",
  "serde",
@@ -1278,6 +1280,15 @@ dependencies = [
  "ols-cables",
  "ols-core",
  "ols-wireloads",
+]
+
+[[package]]
+name = "ols-structures"
+version = "0.0.1"
+dependencies = [
+ "ols-core",
+ "serde",
+ "toml",
 ]
 
 [[package]]

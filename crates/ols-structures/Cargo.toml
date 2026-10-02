@@ -1,0 +1,17 @@
+[package]
+name = "ols-structures"
+description = "OLS CAD structure type library (.olss) and insulator assembly library (.olsi)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-core.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

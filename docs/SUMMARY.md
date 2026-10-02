@@ -7,6 +7,7 @@
 - [Getting started](user-guide/getting-started.md)
 - [Wire library files (.olsw)](user-guide/wire-library.md)
 - [Line files (.ols.json)](user-guide/line-file.md)
+- [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
 
 # Theory manual
 

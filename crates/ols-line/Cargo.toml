@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 ols-core.workspace = true
 ols-cables.workspace = true
+ols-structures.workspace = true
 ols-weather.workspace = true
 ols-wirefe.workspace = true
 nalgebra.workspace = true

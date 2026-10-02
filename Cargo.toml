@@ -19,6 +19,7 @@ ols-weather = { path = "crates/ols-weather" }
 ols-wireloads = { path = "crates/ols-wireloads" }
 ols-wirefe = { path = "crates/ols-wirefe" }
 ols-line = { path = "crates/ols-line" }
+ols-structures = { path = "crates/ols-structures" }
 ols-validation = { path = "crates/ols-validation" }
 ols-plugins = { path = "crates/ols-plugins" }
 clap = { version = "4", features = ["derive"] }

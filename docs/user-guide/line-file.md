@@ -24,7 +24,8 @@ cargo run -p ols-cli -- line examples/line/synthetic-line.ols.json \
 | `version` | no (`1`) | Format version; newer versions are rejected. |
 | `name` | yes | Line name. |
 | `crs` | no | Coordinate system, informative (e.g. `"EPSG:2056"`). |
-| `alignment` | no | Alignment points (PIs) `[x, y, z]`, in order. |
+| `routes` | no | Routes: `{ "id", "name", "alignment": [[x,y,z]…], "structures": [ids…] }`. A structure may belong to several routes (Y pylons, parallel routes rejoining). Without routes, one implicit route runs through all structures in file order along `alignment`. |
+| `alignment` | no | Alignment points (PIs) of the implicit route (files without `routes`). |
 | `structures` | yes | List of structures. |
 | `sections` | yes | List of wire sections. |
 
@@ -34,8 +35,10 @@ cargo run -p ols-cli -- line examples/line/synthetic-line.ols.json \
 |---|---|---|
 | `id` | yes | Unique id, referenced by sections. |
 | `position` | yes | Structure origin `[x, y, z]` (centre at ground). |
-| `orientation_deg` | no | Orientation of the transverse axis, informative. |
-| `attachments` | yes | Attachment points (below). |
+| `orientation_deg` | no | Direction of the local x axis (right of the line), degrees CCW from east; used to place a structure type. |
+| `type` | no | Structure type id from the [structure library](structure-library.md); attachments are then generated. |
+| `extension` | no | Height extension of the type. |
+| `attachments` | yes, unless `type` | Attachment points (below); with a `type` they override the type's attachments with the same set and phase. |
 
 ### Attachments
 
@@ -45,9 +48,12 @@ cargo run -p ols-cli -- line examples/line/synthetic-line.ols.json \
 | `label` | no | Free text. |
 | `insulator_point` | yes | Where the insulator assembly attaches to the structure `[x, y, z]`. |
 | `wire_point` | yes | Where the wire is clamped `[x, y, z]`. |
-| `insulator_weight` | no (0) | Insulator weight, N (suspension strings). |
+| `insulator_weight` | no (0) | Insulator weight, N. |
+| `insulator` | no | Insulator assembly id from the [insulator library](structure-library.md). With an assembly, a strain attachment is a free member; without, its clamp stays at `wire_point`. |
 
-The **assembly type follows from the geometry**: a wire point *below* its insulator point, swung less than 45°, is a **suspension string** of length `|wire_point − insulator_point|` that swings freely when solved; any other attachment (and the first and last point of every section) is a **strain point**: the wire is fixed at `wire_point`.
+The **assembly type follows from the geometry**: in the middle of a section, a wire point *below* its insulator point, swung less than 45°, is a **suspension string** of length `|wire_point − insulator_point|` that swings freely when solved. The first and last points of every section, and other attachments, are **strain points**: a free member of their length when they reference an insulator assembly, otherwise fixed at `wire_point`.
+
+`cargo run -p ols-cli -- line FILE --stations` prints the stationing, offsets and line angles of every route.
 
 ## Sections
 

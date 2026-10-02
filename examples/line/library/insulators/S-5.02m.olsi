@@ -1,0 +1,8 @@
+# Derived from a line's geometry (weight from the line when it was given) — check stiffness and wind area.
+format = "ols-insulator"
+version = 1
+id = "S-5.02m"
+name = "strain 5.025 m (derived)"
+kind = "strain"
+length = "5.025 m"
+weight = "0.0 N"

@@ -1,0 +1,29 @@
+# Derived from the geometry of an existing line — check and complete.
+format = "ols-structure"
+version = 1
+id = "type-03"
+name = "type-03 (1 structures, e.g. T3)"
+kind = "other"
+source = "derived from: T3"
+
+[[attachment]]
+set = 1
+phase = 1
+label = "suspension"
+point = ["6.000 m", "-0.025 m", "30.000 m"]
+insulator = "I-3.50m"
+
+[[attachment]]
+set = 1
+phase = 2
+label = "suspension"
+point = ["-6.000 m", "0.025 m", "30.000 m"]
+insulator = "I-3.50m"
+
+[[attachment]]
+set = 2
+phase = 1
+label = "branch dead-end"
+point = ["-1.494 m", "0.131 m", "26.000 m"]
+insulator = "S-5.02m"
+side = "ahead"
