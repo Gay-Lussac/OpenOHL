@@ -340,6 +340,81 @@ impl Model {
     /// and solves a dense system of 3 × (free nodes); a 10-span section with
     /// suspension strings converges in well under 10 ms.
     pub fn solve(&self, budget: &Budget) -> Result<Solution, FeError> {
+        match self.solve_direct(budget) {
+            Ok(solution) => Ok(solution),
+            Err(
+                error @ (FeError::NotConverged { .. }
+                | FeError::Element { .. }
+                | FeError::Singular { .. }),
+            ) if self
+                .nodes
+                .iter()
+                .any(|n| !n.fixed && n.load != Vector3::zeros()) =>
+            {
+                self.solve_by_load_steps(budget).map_err(|_| error)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Fallback for hard cases (e.g. many heavy point loads far from the
+    /// starting shape — a span with 23 alternating 359 N / 30 N markers did
+    /// not converge directly): solve the cables alone, then ramp the point
+    /// loads up, each step starting from the previous solution, halving the
+    /// step after a failure. Exit clauses: at most 40 steps, step ≥ 1/256,
+    /// and the budget's time limit for the whole procedure.
+    fn solve_by_load_steps(&self, budget: &Budget) -> Result<Solution, FeError> {
+        let run = budget.start();
+        let full: Vec<Vector3<f64>> = self.nodes.iter().map(|n| n.load).collect();
+        let mut model = self.clone();
+        let set_loads = |model: &mut Model, factor: f64| {
+            for (node, load) in model.nodes.iter_mut().zip(&full) {
+                node.load = load * factor;
+            }
+        };
+        set_loads(&mut model, 0.0);
+        let mut solution = model.solve_direct(budget)?;
+        let (mut done, mut step) = (0.0_f64, 0.25_f64);
+        for _ in 0..40 {
+            run.check().map_err(|stop| FeError::NotConverged {
+                stop,
+                residual: f64::NAN,
+                worst_node: 0,
+            })?;
+            let target = (done + step).min(1.0);
+            for (node, p) in model.nodes.iter_mut().zip(&solution.positions) {
+                node.position = *p;
+            }
+            set_loads(&mut model, target);
+            match model.solve_direct(budget) {
+                Ok(next) => {
+                    solution = next;
+                    done = target;
+                    if done >= 1.0 {
+                        return Ok(solution);
+                    }
+                    step = (step * 2.0).min(0.5);
+                }
+                Err(error) => {
+                    step /= 2.0;
+                    if step < 1.0 / 256.0 {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        Err(FeError::NotConverged {
+            stop: Stop::IterationLimit {
+                iterations: 40,
+                elapsed: run.elapsed(),
+            },
+            residual: f64::NAN,
+            worst_node: 0,
+        })
+    }
+
+    /// Newton–Raphson from the nodes' current positions.
+    fn solve_direct(&self, budget: &Budget) -> Result<Solution, FeError> {
         self.check()?;
         let mut dof = vec![None; self.nodes.len()];
         let mut n_dof = 0;
@@ -383,7 +458,20 @@ impl Model {
         let stiffest = (0..n_dof)
             .map(|d| eval.stiffness[(d, d)].abs())
             .fold(0.0, f64::max);
-        let tolerance = (1e-9 * load_scale).max(64.0 * f64::EPSILON * stiffest * coordinate_scale);
+        // Each cable element is itself solved iteratively, which leaves force
+        // noise proportional to EA: converged spans checked against a PLS-CADD
+        // export stalled at 6.3e-6 N (≈ 3e-13·EA, 1e-9 of the load) and were
+        // reported as failures. 1e-11·EA covers it with a 30x margin (1e-10
+        // was too loose: it cost accuracy in the insulator-swing check).
+        let element_floor = 1e-11
+            * self
+                .cables
+                .iter()
+                .map(|c| c.properties.axial_stiffness)
+                .fold(0.0, f64::max);
+        let tolerance = (1e-9 * load_scale)
+            .max(64.0 * f64::EPSILON * stiffest * coordinate_scale)
+            .max(element_floor);
         // Initial damping: a small fraction of the stiffest diagonal term.
         let mut mu = 1e-4
             * (0..n_dof)
@@ -610,6 +698,38 @@ mod tests {
         assert!((swing.norm() - 3.0).abs() < 1e-3);
         // With the clamp pulled back the remaining span slackens.
         assert!(s.cables[0].horizontal < 28_000.0);
+    }
+
+    /// 23 heavy point loads from a crude straight-line start (the case that
+    /// failed against a PLS-CADD export): solved, possibly by load stepping.
+    #[test]
+    fn many_heavy_point_loads_converge() {
+        let (span, l0, n) = (560.0, 561.8, 23);
+        let mut model = Model {
+            nodes: vec![Node::fixed(Vector3::zeros())],
+            cables: vec![],
+            trusses: vec![],
+        };
+        for k in 1..=n {
+            let x = span * k as f64 / (n + 1) as f64;
+            let mut node = Node::free(Vector3::new(x, 0.0, 0.0));
+            node.load = Vector3::new(0.0, 0.0, if k % 2 == 1 { -359.0 } else { -30.0 });
+            model.nodes.push(node);
+        }
+        model.nodes.push(Node::fixed(Vector3::new(span, 0.0, 0.0)));
+        for k in 0..=n {
+            model.cables.push(cable(
+                k,
+                k + 1,
+                l0 / (n + 1) as f64,
+                Vector3::new(0.0, 0.0, -10.47),
+            ));
+        }
+        let s = model.solve(&default_fe_budget()).unwrap();
+        // Vertical equilibrium: reactions carry cable weight + point loads.
+        let total: f64 = s.reactions.iter().map(|r| r.z).sum();
+        let expected = 10.47 * l0 + 12.0 * 359.0 + 11.0 * 30.0;
+        assert!((total - expected).abs() < 1e-3, "{total} vs {expected}");
     }
 
     #[test]
