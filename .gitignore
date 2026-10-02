@@ -16,3 +16,6 @@ htmlcov/
 
 # Rust
 target/
+
+# Private project data for local checks only (never commit)
+local-data/
