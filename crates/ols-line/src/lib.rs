@@ -557,7 +557,7 @@ mod tests {
 
     pub(crate) fn example() -> Line {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/line/synthetic-line.ols.json");
+            .join("../../examples/synthetic-line/synthetic-line.ols.json");
         Line::load(&path).unwrap()
     }
 

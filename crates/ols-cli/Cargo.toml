@@ -26,6 +26,7 @@ ols-line.workspace = true
 ols-structures.workspace = true
 ols-terrain.workspace = true
 ols-clearance.workspace = true
+ols-lidar.workspace = true
 nalgebra.workspace = true
 serde.workspace = true
 toml.workspace = true

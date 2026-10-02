@@ -9,7 +9,7 @@ wire comes close to the ground there), and a road embankment across span
 T4-T5 surveyed as a breakline. A 20 m grid plus the road points; no
 randomness, so the file is reproducible:
 
-    python3 examples/line/make_synthetic_survey.py
+    python3 examples/synthetic-line/make_synthetic_survey.py
 """
 
 import json

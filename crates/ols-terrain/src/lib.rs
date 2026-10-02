@@ -24,8 +24,7 @@
 use std::fmt;
 
 use spade::{
-    ConstrainedDelaunayTriangulation, HasPosition, Intersection, LineIntersectionIterator, Point2,
-    PositionInTriangulation, Triangulation,
+    ConstrainedDelaunayTriangulation, HasPosition, Point2, PositionInTriangulation, Triangulation,
 };
 
 /// One survey point.
@@ -187,85 +186,336 @@ pub struct GroundPoint {
     pub point: [f64; 3],
 }
 
-/// A triangulated ground surface.
+/// Most grid cells of the triangle index (64 Mi, 256 MB of offsets);
+/// beyond this the cells are made larger.
+const MAX_CELLS: f64 = 67_108_864.0;
+
+/// Uniform grid over the mesh: for every cell, the triangles whose bounding
+/// box overlaps it (compressed rows: `start[c]..start[c + 1]` in `items`).
+#[derive(Debug, Clone, Default)]
+struct Grid {
+    origin: [f64; 2],
+    cell: f64,
+    nx: usize,
+    ny: usize,
+    start: Vec<u32>,
+    items: Vec<u32>,
+}
+
+impl Grid {
+    fn build(points: &[[f64; 3]], triangles: &[[u32; 3]]) -> Self {
+        if triangles.is_empty() {
+            return Self::default();
+        }
+        let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+        let mut edge_sum = 0.0;
+        for t in triangles {
+            for &k in t {
+                let p = points[k as usize];
+                for i in 0..2 {
+                    lo[i] = lo[i].min(p[i]);
+                    hi[i] = hi[i].max(p[i]);
+                }
+            }
+            let (a, b) = (points[t[0] as usize], points[t[1] as usize]);
+            edge_sum += (b[0] - a[0]).hypot(b[1] - a[1]);
+        }
+        // Cells about twice the mean edge: a few triangles per cell. Mean
+        // edge, not area / count: corridor data fills a small part of its
+        // bounding box.
+        let mean_edge = (edge_sum / triangles.len() as f64).max(1e-6);
+        let (w, h) = ((hi[0] - lo[0]).max(1e-9), (hi[1] - lo[1]).max(1e-9));
+        let cell = (2.0 * mean_edge).max((w * h / MAX_CELLS).sqrt());
+        let nx = (w / cell).floor() as usize + 1;
+        let ny = (h / cell).floor() as usize + 1;
+        let mut grid = Self {
+            origin: lo,
+            cell,
+            nx,
+            ny,
+            start: vec![0; nx * ny + 1],
+            items: Vec::new(),
+        };
+        // Two passes: count, then fill.
+        for pass in 0..2 {
+            let mut fill = if pass == 1 {
+                let mut acc = 0u32;
+                for c in grid.start.iter_mut() {
+                    let n = *c;
+                    *c = acc;
+                    acc += n;
+                }
+                grid.items = vec![0; acc as usize];
+                grid.start.clone()
+            } else {
+                Vec::new()
+            };
+            for (k, t) in triangles.iter().enumerate() {
+                let (i0, i1, j0, j1) = grid.cell_range(t.map(|v| points[v as usize]));
+                for j in j0..=j1 {
+                    for i in i0..=i1 {
+                        let c = j * nx + i;
+                        if pass == 0 {
+                            grid.start[c] += 1;
+                        } else {
+                            grid.items[fill[c] as usize] = k as u32;
+                            fill[c] += 1;
+                        }
+                    }
+                }
+            }
+        }
+        grid
+    }
+
+    fn index(&self, v: f64, axis: usize, n: usize) -> usize {
+        (((v - self.origin[axis]) / self.cell).floor().max(0.0) as usize).min(n - 1)
+    }
+
+    fn cell_range(&self, t: [[f64; 3]; 3]) -> (usize, usize, usize, usize) {
+        let min = |a: usize| t[0][a].min(t[1][a]).min(t[2][a]);
+        let max = |a: usize| t[0][a].max(t[1][a]).max(t[2][a]);
+        (
+            self.index(min(0), 0, self.nx),
+            self.index(max(0), 0, self.nx),
+            self.index(min(1), 1, self.ny),
+            self.index(max(1), 1, self.ny),
+        )
+    }
+
+    fn cell_items(&self, i: usize, j: usize) -> &[u32] {
+        let c = j * self.nx + i;
+        &self.items[self.start[c] as usize..self.start[c + 1] as usize]
+    }
+
+    /// Triangles near the segment a–b (sorted, unique): the cells met when
+    /// stepping along it at a quarter cell, and their neighbours across
+    /// each step.
+    fn along(&self, a: [f64; 2], b: [f64; 2]) -> Vec<u32> {
+        if self.nx == 0 {
+            return Vec::new();
+        }
+        let length = (b[0] - a[0]).hypot(b[1] - a[1]);
+        let steps = ((length / (0.25 * self.cell)).ceil() as usize).max(1);
+        let mut cells = Vec::new();
+        for k in 0..=steps {
+            let t = k as f64 / steps as f64;
+            let (x, y) = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+            let (i, j) = (self.index(x, 0, self.nx), self.index(y, 1, self.ny));
+            cells.push((i, j));
+        }
+        cells.dedup();
+        let mut found: Vec<u32> = Vec::new();
+        for w in cells
+            .windows(2)
+            .chain(std::iter::once(&cells[cells.len() - 1..]))
+        {
+            let (i, j) = w[0];
+            found.extend_from_slice(self.cell_items(i, j));
+            if let Some(&(i2, j2)) = w.get(1)
+                && i2 != i
+                && j2 != j
+            {
+                // Diagonal step: the two cells beside the corner too.
+                found.extend_from_slice(self.cell_items(i2, j));
+                found.extend_from_slice(self.cell_items(i, j2));
+            }
+        }
+        found.sort_unstable();
+        found.dedup();
+        found
+    }
+}
+
+/// A triangulated ground surface (a TIN): points and triangles, from a
+/// Delaunay triangulation of survey points ([`Terrain::from_points`]) or
+/// given as a mesh ([`Terrain::from_mesh`]: imported TINs, terrain-building
+/// plugins). The surface may have holes (triangles removed, e.g. longer
+/// than a maximum side): there is no ground there.
 pub struct Terrain {
-    tin: ConstrainedDelaunayTriangulation<Vertex>,
+    points: Vec<[f64; 3]>,
+    triangles: Vec<[u32; 3]>,
+    grid: Grid,
     skipped_breaklines: usize,
 }
 
 impl fmt::Debug for Terrain {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Terrain")
-            .field("points", &self.tin.num_vertices())
-            .field("triangles", &self.tin.num_inner_faces())
-            .field("breaklines", &self.tin.num_constraints())
+            .field("points", &self.points.len())
+            .field("triangles", &self.triangles.len())
             .finish()
     }
 }
 
+/// Signed doubled area of a triangle in plan.
+fn area2(p: [f64; 3], q: [f64; 3], r: [f64; 3]) -> f64 {
+    (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+}
+
 impl Terrain {
-    /// Triangulates survey points. Points at the same x, y are merged (the
-    /// first one is kept). Breakline edges that would cross an earlier
-    /// breakline are skipped and counted ([`Terrain::skipped_breaklines`]).
-    pub fn from_points(points: &[SurveyPoint]) -> Result<Self, TerrainError> {
-        let mut tin = ConstrainedDelaunayTriangulation::<Vertex>::new();
-        let mut handles = Vec::with_capacity(points.len());
-        for p in points {
-            let vertex = Vertex {
-                position: Point2::new(p.x, p.y),
-                z: p.z,
-            };
-            let handle = match tin.locate(vertex.position) {
-                PositionInTriangulation::OnVertex(existing) => existing,
-                _ => tin
-                    .insert(vertex)
-                    .map_err(|e| TerrainError::Degenerate(format!("point {p:?}: {e:?}")))?,
-            };
-            handles.push(handle);
-        }
+    /// Triangulates survey points (constrained Delaunay). Points at the same
+    /// x, y are merged (the first one is kept). Breakline edges that would
+    /// cross an earlier breakline are skipped and counted
+    /// ([`Terrain::skipped_breaklines`]). With `max_edge`, triangles with a
+    /// side longer than it (in plan) are left out — no ground across gaps
+    /// in the data or outside a concave survey area.
+    ///
+    /// Cost: O(n log n) — about 1 s per million points.
+    pub fn from_points(
+        points: &[SurveyPoint],
+        max_edge: Option<f64>,
+    ) -> Result<Self, TerrainError> {
+        let has_breaklines = points
+            .windows(2)
+            .any(|w| !w[0].line.is_empty() && w[0].line == w[1].line);
+        let vertex = |p: &SurveyPoint| Vertex {
+            position: Point2::new(p.x, p.y),
+            z: p.z,
+        };
+        let insert_error = |e: spade::InsertionError| TerrainError::Degenerate(format!("{e:?}"));
+        let mut skipped_breaklines = 0;
+        let tin = if has_breaklines {
+            let mut tin = ConstrainedDelaunayTriangulation::<Vertex>::new();
+            let mut handles = Vec::with_capacity(points.len());
+            for p in points {
+                let v = vertex(p);
+                let handle = match tin.locate(v.position) {
+                    PositionInTriangulation::OnVertex(existing) => existing,
+                    _ => tin.insert(v).map_err(insert_error)?,
+                };
+                handles.push(handle);
+            }
+            for k in 1..points.len() {
+                let (a, b) = (&points[k - 1], &points[k]);
+                if a.line.is_empty() || a.line != b.line || handles[k - 1] == handles[k] {
+                    continue;
+                }
+                if tin
+                    .try_add_constraint(handles[k - 1], handles[k])
+                    .is_empty()
+                    && !tin.exists_constraint(handles[k - 1], handles[k])
+                {
+                    skipped_breaklines += 1;
+                }
+            }
+            tin
+        } else {
+            // Bulk loading is several times faster for large point sets.
+            ConstrainedDelaunayTriangulation::<Vertex>::bulk_load(
+                points.iter().map(vertex).collect(),
+            )
+            .map_err(insert_error)?
+        };
+        let mut terrain = Self::from_triangulation(&tin, max_edge)?;
+        terrain.skipped_breaklines = skipped_breaklines;
+        Ok(terrain)
+    }
+
+    /// Triangulates plain points (x, y, z) without codes or breaklines —
+    /// e.g. LiDAR ground points — like [`Terrain::from_points`].
+    pub fn from_xyz(points: &[[f64; 3]], max_edge: Option<f64>) -> Result<Self, TerrainError> {
+        let vertices = points
+            .iter()
+            .map(|p| Vertex {
+                position: Point2::new(p[0], p[1]),
+                z: p[2],
+            })
+            .collect();
+        let tin = ConstrainedDelaunayTriangulation::<Vertex>::bulk_load(vertices)
+            .map_err(|e| TerrainError::Degenerate(format!("{e:?}")))?;
+        Self::from_triangulation(&tin, max_edge)
+    }
+
+    fn from_triangulation(
+        tin: &ConstrainedDelaunayTriangulation<Vertex>,
+        max_edge: Option<f64>,
+    ) -> Result<Self, TerrainError> {
         if tin.num_inner_faces() == 0 {
             return Err(TerrainError::Degenerate(format!(
                 "{} distinct points do not span a surface (need three not on a line)",
                 tin.num_vertices()
             )));
         }
-        let mut skipped_breaklines = 0;
-        for k in 1..points.len() {
-            let (a, b) = (&points[k - 1], &points[k]);
-            if a.line.is_empty() || a.line != b.line || handles[k - 1] == handles[k] {
-                continue;
-            }
-            if tin
-                .try_add_constraint(handles[k - 1], handles[k])
-                .is_empty()
-                && !tin.exists_constraint(handles[k - 1], handles[k])
-            {
-                skipped_breaklines += 1;
-            }
+        let mesh_points: Vec<[f64; 3]> = tin
+            .vertices()
+            .map(|v| [v.position().x, v.position().y, v.data().z])
+            .collect();
+        let limit2 = max_edge.map_or(f64::INFINITY, |m| m * m);
+        let triangles: Vec<[u32; 3]> = tin
+            .inner_faces()
+            .map(|f| f.vertices().map(|v| v.fix().index() as u32))
+            .filter(|t| {
+                (0..3).all(|k| {
+                    let (a, b) = (
+                        mesh_points[t[k] as usize],
+                        mesh_points[t[(k + 1) % 3] as usize],
+                    );
+                    (b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2) <= limit2
+                })
+            })
+            .collect();
+        Self::from_mesh(mesh_points, triangles)
+    }
+
+    /// A surface from a given mesh: points (x, y, z) and triangles (indices
+    /// into the points, either orientation). Triangles with no area in plan
+    /// are ignored. Overlapping triangles are not detected: the first one
+    /// found wins.
+    pub fn from_mesh(
+        points: Vec<[f64; 3]>,
+        triangles: Vec<[u32; 3]>,
+    ) -> Result<Self, TerrainError> {
+        if let Some(p) = points.iter().find(|p| !p.iter().all(|v| v.is_finite())) {
+            return Err(TerrainError::Degenerate(format!(
+                "point {p:?} is not finite"
+            )));
         }
+        if let Some(t) = triangles
+            .iter()
+            .find(|t| t.iter().any(|&k| k as usize >= points.len()))
+        {
+            return Err(TerrainError::Degenerate(format!(
+                "triangle {t:?} refers to a point beyond the {} given",
+                points.len()
+            )));
+        }
+        let triangles: Vec<[u32; 3]> = triangles
+            .into_iter()
+            .filter(|t| {
+                let [a, b, c] = t.map(|k| points[k as usize]);
+                area2(a, b, c).abs() > 1e-12
+            })
+            .collect();
+        if triangles.is_empty() {
+            return Err(TerrainError::Degenerate("no triangle with an area".into()));
+        }
+        let grid = Grid::build(&points, &triangles);
         Ok(Self {
-            tin,
-            skipped_breaklines,
+            points,
+            triangles,
+            grid,
+            skipped_breaklines: 0,
         })
     }
 
-    /// Reads and triangulates a survey file.
+    /// Reads and triangulates a survey file (no maximum side).
     pub fn load(path: &std::path::Path) -> Result<Self, TerrainError> {
         let text = std::fs::read_to_string(path).map_err(|e| TerrainError::Parse {
             line: 0,
             message: format!("{}: {e}", path.display()),
         })?;
-        Self::from_points(&read_points(&text)?)
+        Self::from_points(&read_points(&text)?, None)
     }
 
-    /// Number of distinct points.
+    /// Number of points.
     pub fn num_points(&self) -> usize {
-        self.tin.num_vertices()
+        self.points.len()
     }
 
     /// Number of triangles.
     pub fn num_triangles(&self) -> usize {
-        self.tin.num_inner_faces()
+        self.triangles.len()
     }
 
     /// Breakline edges skipped because they crossed earlier breaklines.
@@ -273,125 +523,135 @@ impl Terrain {
         self.skipped_breaklines
     }
 
-    /// Ground height at (x, y), m; `None` outside the surveyed area (the
-    /// convex hull of the points).
-    pub fn height(&self, x: f64, y: f64) -> Option<f64> {
-        let q = Point2::new(x, y);
-        match self.tin.locate(q) {
-            PositionInTriangulation::OnVertex(v) => Some(self.tin.vertex(v).data().z),
-            PositionInTriangulation::OnEdge(e) => {
-                let edge = self.tin.directed_edge(e);
-                let (a, b) = (*edge.from().data(), *edge.to().data());
-                let (dx, dy) = (b.position.x - a.position.x, b.position.y - a.position.y);
-                let t = ((x - a.position.x) * dx + (y - a.position.y) * dy) / (dx * dx + dy * dy);
-                Some(a.z + (b.z - a.z) * t)
-            }
-            PositionInTriangulation::OnFace(f) => {
-                let face = self.tin.face(f);
-                let w = face.barycentric_interpolation(q);
-                let v = face.vertices();
-                Some(w[0] * v[0].data().z + w[1] * v[1].data().z + w[2] * v[2].data().z)
-            }
-            PositionInTriangulation::OutsideOfConvexHull(_)
-            | PositionInTriangulation::NoTriangulation => None,
-        }
+    fn corners(&self, k: u32) -> [[f64; 3]; 3] {
+        self.triangles[k as usize].map(|v| self.points[v as usize])
     }
 
-    /// Ground profile under the segment from `a` to `b` (x, y): the
-    /// segment's ends and every crossing with a triangle edge or vertex, in
-    /// order, as runs of points with ground between them (a run ends where
-    /// the segment leaves the surveyed area). Between consecutive points of
-    /// a run the ground is exactly linear.
-    pub fn profile(&self, a: [f64; 2], b: [f64; 2]) -> Vec<Vec<GroundPoint>> {
-        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-        let len2 = dx * dx + dy * dy;
-        let at = |t: f64| [a[0] + dx * t, a[1] + dy * t];
-        let param = |p: Point2<f64>| {
-            if len2 > 0.0 {
-                (((p.x - a[0]) * dx + (p.y - a[1]) * dy) / len2).clamp(0.0, 1.0)
+    /// Height of triangle `k`'s plane at (x, y), if (x, y) is inside it
+    /// (with a tolerance of 1e-9 of the triangle's size).
+    fn height_in(&self, k: u32, x: f64, y: f64) -> Option<f64> {
+        let [a, b, c] = self.corners(k);
+        let d = area2(a, b, c);
+        let q = [x, y, 0.0];
+        let (wa, wb, wc) = (area2(q, b, c) / d, area2(a, q, c) / d, area2(a, b, q) / d);
+        let eps = -1e-9;
+        (wa >= eps && wb >= eps && wc >= eps).then(|| wa * a[2] + wb * b[2] + wc * c[2])
+    }
+
+    /// Ground height at (x, y), m; `None` where there is no ground (outside
+    /// the triangles).
+    pub fn height(&self, x: f64, y: f64) -> Option<f64> {
+        if self.grid.nx == 0 {
+            return None;
+        }
+        let (i, j) = (
+            self.grid.index(x, 0, self.grid.nx),
+            self.grid.index(y, 1, self.grid.ny),
+        );
+        self.grid
+            .cell_items(i, j)
+            .iter()
+            .find_map(|&k| self.height_in(k, x, y))
+    }
+
+    /// Part of the segment a + t·(b − a), t ∈ [0, 1], inside triangle `k`
+    /// in plan (Cyrus–Beck clipping against its three edges).
+    fn clip(&self, k: u32, a: [f64; 2], d: [f64; 2]) -> Option<(f64, f64)> {
+        let corners = self.corners(k);
+        let s = area2(corners[0], corners[1], corners[2]).signum();
+        let (mut lo, mut hi) = (0.0f64, 1.0f64);
+        for e in 0..3 {
+            let (p, q) = (corners[e], corners[(e + 1) % 3]);
+            let edge = [q[0] - p[0], q[1] - p[1]];
+            // Inside: s · cross(edge, x − p) ≥ 0, linear in t.
+            let f0 = s * (edge[0] * (a[1] - p[1]) - edge[1] * (a[0] - p[0]));
+            let f1 = s * (edge[0] * d[1] - edge[1] * d[0]);
+            // Exact bounds (neighbours then meet at the same t); a
+            // tolerance only for a segment running along this edge.
+            let scale = edge[0].hypot(edge[1]) * d[0].hypot(d[1]);
+            if f1.abs() <= 1e-12 * scale {
+                if f0 < -1e-9 * edge[0].hypot(edge[1]) {
+                    return None;
+                }
+            } else if f1 > 0.0 {
+                lo = lo.max(-f0 / f1);
             } else {
-                0.0
+                hi = hi.min(-f0 / f1);
+            }
+            if lo > hi {
+                return None;
+            }
+        }
+        Some((lo.clamp(0.0, 1.0), hi.clamp(0.0, 1.0)))
+    }
+
+    /// Ground profile under the segment from `a` to `b` (x, y): runs of
+    /// points where the segment is over ground, ending where it leaves the
+    /// surface (an edge of the TIN or a hole). Points are where the segment
+    /// enters and leaves each triangle — every edge crossing — so between
+    /// consecutive points of a run the ground is exactly linear.
+    pub fn profile(&self, a: [f64; 2], b: [f64; 2]) -> Vec<Vec<GroundPoint>> {
+        let d = [b[0] - a[0], b[1] - a[1]];
+        if d[0].hypot(d[1]) == 0.0 {
+            return self
+                .height(a[0], a[1])
+                .map(|z| {
+                    vec![vec![GroundPoint {
+                        t: 0.0,
+                        point: [a[0], a[1], z],
+                    }]]
+                })
+                .unwrap_or_default();
+        }
+        let mut pieces: Vec<(f64, f64, u32)> = self
+            .grid
+            .along(a, b)
+            .into_iter()
+            .filter_map(|k| self.clip(k, a, d).map(|(t0, t1)| (t0, t1, k)))
+            .collect();
+        pieces.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.total_cmp(&y.1)));
+        let at = |t: f64, k: u32| -> GroundPoint {
+            let (x, y) = (a[0] + d[0] * t, a[1] + d[1] * t);
+            // On the triangle's plane (no inside test: t is on its boundary
+            // or inside by construction).
+            let [p, q, r] = self.corners(k);
+            let den = area2(p, q, r);
+            let s = [x, y, 0.0];
+            let z = (area2(s, q, r) * p[2] + area2(p, s, r) * q[2] + area2(p, q, s) * r[2]) / den;
+            GroundPoint {
+                t,
+                point: [x, y, z],
             }
         };
-        let mut found: Vec<(f64, f64)> = Vec::new();
-        for end in [0.0, 1.0] {
-            let p = at(end);
-            if let Some(z) = self.height(p[0], p[1]) {
-                found.push((end, z));
-            }
-        }
-        if len2 > 0.0 {
-            let iter = LineIntersectionIterator::new(
-                &self.tin,
-                Point2::new(a[0], a[1]),
-                Point2::new(b[0], b[1]),
-            );
-            for intersection in iter {
-                match intersection {
-                    Intersection::VertexIntersection(v) => {
-                        found.push((param(v.position()), v.data().z));
-                    }
-                    Intersection::EdgeOverlap(e) => {
-                        for v in [e.from(), e.to()] {
-                            found.push((param(v.position()), v.data().z));
-                        }
-                    }
-                    Intersection::EdgeIntersection(e) => {
-                        let (p, q) = (*e.from().data(), *e.to().data());
-                        // Segment a + t·d crosses edge p + s·(q − p).
-                        let (ex, ey) = (q.position.x - p.position.x, q.position.y - p.position.y);
-                        let det = dx * ey - dy * ex;
-                        if det.abs() < f64::EPSILON * len2.sqrt() * ex.hypot(ey) {
-                            continue;
-                        }
-                        let (rx, ry) = (p.position.x - a[0], p.position.y - a[1]);
-                        let t = (rx * ey - ry * ex) / det;
-                        let s = (rx * dy - ry * dx) / det;
-                        if (0.0..=1.0).contains(&t) {
-                            found.push((t, p.z + (q.z - p.z) * s.clamp(0.0, 1.0)));
-                        }
-                    }
-                }
-            }
-        }
-        found.sort_by(|x, y| x.0.total_cmp(&y.0));
-        found.dedup_by(|x, y| (x.0 - y.0).abs() < 1e-12);
+        const GAP: f64 = 1e-9;
         let mut runs: Vec<Vec<GroundPoint>> = Vec::new();
-        let mut previous: Option<f64> = None;
-        for (t, z) in found {
-            let p = at(t);
-            let point = GroundPoint {
-                t,
-                point: [p[0], p[1], z],
-            };
-            // Same run if the ground continues between the two points.
-            let joined = previous.is_some_and(|t0| {
-                let m = at((t0 + t) / 2.0);
-                self.height(m[0], m[1]).is_some()
-            });
-            match runs.last_mut() {
-                Some(run) if joined => run.push(point),
-                _ => runs.push(vec![point]),
+        let mut reach = f64::NEG_INFINITY;
+        for (t0, t1, k) in pieces {
+            if t0 > reach + GAP || runs.is_empty() {
+                runs.push(Vec::new());
             }
-            previous = Some(t);
+            let run = runs.last_mut().expect("pushed");
+            run.push(at(t0, k));
+            run.push(at(t1, k));
+            reach = reach.max(t1);
+        }
+        for run in &mut runs {
+            run.sort_by(|x, y| x.t.total_cmp(&y.t));
+            run.dedup_by(|x, y| (x.t - y.t).abs() < 1e-10);
         }
         runs
     }
 
     /// The surface as a mesh: points and triangles (indices into the
-    /// points, counter-clockwise seen from above).
+    /// points).
     pub fn mesh(&self) -> (Vec<[f64; 3]>, Vec<[usize; 3]>) {
-        let points = self
-            .tin
-            .vertices()
-            .map(|v| [v.position().x, v.position().y, v.data().z])
-            .collect();
-        let triangles = self
-            .tin
-            .inner_faces()
-            .map(|f| f.vertices().map(|v| v.fix().index()))
-            .collect();
-        (points, triangles)
+        (
+            self.points.clone(),
+            self.triangles
+                .iter()
+                .map(|t| t.map(|k| k as usize))
+                .collect(),
+        )
     }
 }
 
@@ -445,7 +705,7 @@ mod tests {
 
     #[test]
     fn plane_is_reproduced_exactly() {
-        let terrain = Terrain::from_points(&grid(plane, 6, 20.0)).unwrap();
+        let terrain = Terrain::from_points(&grid(plane, 6, 20.0), None).unwrap();
         for (x, y) in [(0.0, 0.0), (13.3, 71.9), (40.0, 40.0), (99.99, 0.01)] {
             let z = terrain.height(x, y).unwrap();
             assert!((z - plane(x, y)).abs() < 1e-9, "{x} {y}: {z}");
@@ -459,7 +719,7 @@ mod tests {
         // A ridge along x = 50 between two valleys: z = 400 + |x − 50|·0.2,
         // sampled every 25 m — the ridge line is an edge of the TIN.
         let f = |x: f64, _y: f64| 400.0 + (x - 50.0).abs() * 0.2;
-        let terrain = Terrain::from_points(&grid(f, 5, 25.0)).unwrap();
+        let terrain = Terrain::from_points(&grid(f, 5, 25.0), None).unwrap();
         let runs = terrain.profile([-10.0, 37.0], [90.0, 41.0]);
         assert_eq!(runs.len(), 1);
         let run = &runs[0];
@@ -505,13 +765,68 @@ mod tests {
                 p(50.0, 20.0, 0.0, ""),
             ]
         };
-        let plain = Terrain::from_points(&corners("")).unwrap();
+        let plain = Terrain::from_points(&corners(""), None).unwrap();
         assert!(plain.height(50.0, 0.0).unwrap().abs() < 1e-9);
-        let ridged = Terrain::from_points(&corners("ridge")).unwrap();
+        let ridged = Terrain::from_points(&corners("ridge"), None).unwrap();
         assert_eq!(ridged.skipped_breaklines(), 0);
         for x in [25.0, 50.0, 75.0] {
             assert!((ridged.height(x, 0.0).unwrap() - 10.0).abs() < 1e-9);
         }
+    }
+
+    #[test]
+    fn long_triangles_are_left_out_as_holes() {
+        // Two survey patches 100 m apart: without a limit the gap is bridged
+        // by long triangles; with a 30 m limit it is a hole.
+        let mut points = grid(plane, 3, 10.0);
+        points.extend(grid(plane, 3, 10.0).into_iter().map(|mut p| {
+            p.x += 120.0;
+            p.z = plane(p.x, p.y);
+            p
+        }));
+        let bridged = Terrain::from_points(&points, None).unwrap();
+        let xyz: Vec<[f64; 3]> = points.iter().map(|p| [p.x, p.y, p.z]).collect();
+        assert_eq!(
+            Terrain::from_xyz(&xyz, Some(30.0)).unwrap().num_triangles(),
+            Terrain::from_points(&points, Some(30.0))
+                .unwrap()
+                .num_triangles()
+        );
+        let holed = Terrain::from_points(&points, Some(30.0)).unwrap();
+        assert!(bridged.height(70.0, 10.0).is_some());
+        assert_eq!(holed.height(70.0, 10.0), None);
+        assert!((holed.height(130.0, 10.0).unwrap() - plane(130.0, 10.0)).abs() < 1e-9);
+        // A profile across the gap: two runs, ending and starting at the
+        // patch edges (x = 20 and x = 120).
+        let runs = holed.profile([-5.0, 10.0], [150.0, 10.0]);
+        assert_eq!(runs.len(), 2, "{runs:?}");
+        assert!((runs[0].last().unwrap().point[0] - 20.0).abs() < 1e-6);
+        assert!((runs[1][0].point[0] - 120.0).abs() < 1e-6);
+        assert_eq!(bridged.profile([-5.0, 10.0], [150.0, 10.0]).len(), 1);
+    }
+
+    #[test]
+    fn given_mesh_is_used_as_is() {
+        // Two triangles of a 10 m square, split along the other diagonal
+        // than Delaunay would choose for these heights (both are Delaunay
+        // in plan; the mesh decides).
+        let points = vec![
+            [0.0, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [10.0, 10.0, 0.0],
+            [0.0, 10.0, 10.0],
+        ];
+        // Diagonal 1–3: the centre is halfway along it, at 5 m.
+        let terrain = Terrain::from_mesh(points.clone(), vec![[0, 1, 3], [1, 2, 3]]).unwrap();
+        assert!((terrain.height(5.0, 5.0).unwrap() - 5.0).abs() < 1e-12);
+        // Diagonal 0–2: the centre is on it, at 0 m.
+        let other = Terrain::from_mesh(points.clone(), vec![[0, 1, 2], [0, 2, 3]]).unwrap();
+        assert!(other.height(5.0, 5.0).unwrap().abs() < 1e-12);
+        // Profile across: crossings of the diagonal included, exact.
+        let run = &terrain.profile([-1.0, 2.0], [11.0, 2.0])[0];
+        assert_eq!(run.len(), 3, "{run:?}");
+        assert!((run[1].point[0] - 8.0).abs() < 1e-9 && (run[1].point[2] - 2.0).abs() < 1e-9);
+        assert!(Terrain::from_mesh(points, vec![[0, 1, 9]]).is_err());
     }
 
     #[test]
@@ -526,7 +841,7 @@ mod tests {
             })
             .collect();
         assert!(matches!(
-            Terrain::from_points(&line),
+            Terrain::from_points(&line, None),
             Err(TerrainError::Degenerate(_))
         ));
     }

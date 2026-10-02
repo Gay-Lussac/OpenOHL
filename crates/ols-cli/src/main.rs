@@ -57,6 +57,11 @@ enum Command {
         #[command(subcommand)]
         command: StructuresCommand,
     },
+    /// LiDAR point clouds (LAS / LAZ).
+    Lidar {
+        #[command(subcommand)]
+        command: LidarCommand,
+    },
     /// Inspect plugins.
     Plugin {
         #[command(subcommand)]
@@ -132,6 +137,19 @@ enum StructuresCommand {
 }
 
 #[derive(Subcommand)]
+enum LidarCommand {
+    /// Tiles, point counts and bounds; with --classes, point counts per
+    /// class (reads every point).
+    Info {
+        /// LAS / LAZ file or directory of tiles.
+        path: PathBuf,
+        /// Count points per ASPRS class.
+        #[arg(long)]
+        classes: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum PluginCommand {
     /// Load a WebAssembly plugin from its directory and print what it reports.
     Info {
@@ -156,6 +174,56 @@ fn main() -> ExitCode {
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
+        Some(Command::Lidar {
+            command: LidarCommand::Info { path, classes },
+        }) => lidar_info(&path, classes),
+    }
+}
+
+fn lidar_info(path: &std::path::Path, classes: bool) -> ExitCode {
+    let run = || -> Result<(), String> {
+        let tiles = ols_lidar::tiles_in(path).map_err(|e| e.to_string())?;
+        let (mut total, mut lo, mut hi) = (0u64, [f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for tile in &tiles {
+            let info = ols_lidar::tile_info(tile).map_err(|e| e.to_string())?;
+            total += info.points;
+            for k in 0..3 {
+                lo[k] = lo[k].min(info.bounds[0][k]);
+                hi[k] = hi[k].max(info.bounds[1][k]);
+            }
+        }
+        println!("{} tiles, {total} points", tiles.len());
+        println!(
+            "bounds x {:.2} – {:.2}, y {:.2} – {:.2}, z {:.2} – {:.2}",
+            lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]
+        );
+        if classes {
+            let started = std::time::Instant::now();
+            let filter = ols_lidar::GroundFilter {
+                classes: vec![],
+                ..Default::default()
+            };
+            let budget =
+                ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(1800));
+            let (_, stats) =
+                ols_lidar::read_ground(&tiles, &filter, &budget).map_err(|e| e.to_string())?;
+            println!(
+                "read {} points in {:.1?}",
+                stats.points_read,
+                started.elapsed()
+            );
+            for (class, n) in stats.classes.iter().enumerate().filter(|(_, n)| **n > 0) {
+                println!("  class {class:>3}: {n:>12}");
+            }
+        }
+        Ok(())
+    };
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
     }
 }
 

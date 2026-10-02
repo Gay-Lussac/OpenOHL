@@ -135,7 +135,8 @@ mod tests {
 
     fn solved(temperature: f64) -> Vec<SectionShape> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let line = Line::load(&root.join("examples/line/synthetic-line.ols.json")).unwrap();
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
         let library = ols_cables::Library::load(&root.join("libraries/cables")).unwrap();
         let case = WeatherCase::still("t", Temperature::from_celsius(temperature));
         ols_line::solve::solve_line(&line, &library, &case)
@@ -153,12 +154,15 @@ mod tests {
             code: String::new(),
             line: String::new(),
         };
-        Terrain::from_points(&[
-            p(-100.0, -200.0),
-            p(1400.0, -200.0),
-            p(1400.0, 700.0),
-            p(-100.0, 700.0),
-        ])
+        Terrain::from_points(
+            &[
+                p(-100.0, -200.0),
+                p(1400.0, -200.0),
+                p(1400.0, 700.0),
+                p(-100.0, 700.0),
+            ],
+            None,
+        )
         .unwrap()
     }
 
@@ -206,7 +210,8 @@ mod tests {
     #[test]
     fn example_survey_hill_is_the_critical_point() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let terrain = Terrain::load(&root.join("examples/line/synthetic-survey.csv")).unwrap();
+        let terrain =
+            Terrain::load(&root.join("examples/synthetic-line/synthetic-survey.csv")).unwrap();
         assert_eq!(terrain.skipped_breaklines(), 0);
         for (temperature, range) in [(15.0, 6.0..7.0), (80.0, 4.0..5.5)] {
             let all: Vec<SpanClearance> = solved(temperature)
@@ -229,7 +234,8 @@ mod tests {
     #[test]
     fn jumper_clearance_over_flat_ground() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let line = Line::load(&root.join("examples/line/synthetic-line.ols.json")).unwrap();
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
         let library = ols_cables::Library::load(&root.join("libraries/cables")).unwrap();
         let case = WeatherCase::still("t", Temperature::from_celsius(15.0));
         let shapes = solved(15.0);
@@ -252,12 +258,15 @@ mod tests {
             line: String::new(),
         };
         // Survey covers x < 160 only: half of the first span of S1 and S2.
-        let terrain = Terrain::from_points(&[
-            p(-100.0, -50.0),
-            p(160.0, -50.0),
-            p(160.0, 50.0),
-            p(-100.0, 50.0),
-        ])
+        let terrain = Terrain::from_points(
+            &[
+                p(-100.0, -50.0),
+                p(160.0, -50.0),
+                p(160.0, 50.0),
+                p(-100.0, 50.0),
+            ],
+            None,
+        )
         .unwrap();
         let shapes = solved(15.0);
         let c = ground_clearances(&shapes[0], &terrain);

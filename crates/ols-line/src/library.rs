@@ -385,7 +385,7 @@ mod tests {
     /// The committed typed example resolves from its libraries and solves.
     #[test]
     fn typed_example_resolves_and_solves() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/line");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
         let line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
         let structures = StructureLibrary::load_dir(&root.join("library/structures")).unwrap();
         let insulators = InsulatorLibrary::load_dir(&root.join("library/insulators")).unwrap();

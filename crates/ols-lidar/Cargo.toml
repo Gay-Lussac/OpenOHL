@@ -1,0 +1,17 @@
+[package]
+name = "ols-lidar"
+description = "OLS CAD LiDAR: LAS/LAZ point reading, ground filtering in a corridor, terrain building"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+las = { version = "0.11", features = ["laz"] }
+ols-core.workspace = true
+ols-terrain.workspace = true
+
+[lints]
+workspace = true

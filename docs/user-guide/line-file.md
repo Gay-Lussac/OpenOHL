@@ -1,9 +1,9 @@
 # Line files (`.ols.json`)
 
-A **line file** describes a line in 3D: structures with their attachment points, and the wire sections strung through them. It is JSON (the open exchange format of ADR-0004). Example: [`examples/line/synthetic-line.ols.json`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/line/synthetic-line.ols.json).
+A **line file** describes a line in 3D: structures with their attachment points, and the wire sections strung through them. It is JSON (the open exchange format of ADR-0004). Example: [`examples/synthetic-line/synthetic-line.ols.json`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/synthetic-line.ols.json).
 
 ```bash
-cargo run -p ols-cli -- line examples/line/synthetic-line.ols.json \
+cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
     --temperature 15 --wind-pressure 600 --ice-thickness 0 \
     --html line.html --spans-csv spans.csv --csv wires.csv
 ```
