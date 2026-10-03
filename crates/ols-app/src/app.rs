@@ -140,6 +140,8 @@ pub struct Ready {
     /// Library editor pages opened.
     pub libraries:
         std::collections::BTreeMap<crate::library::LibraryKind, crate::library::LibraryPage>,
+    /// The "Display weather cases" window, when open: a tick per case.
+    pub display_window: Option<Vec<bool>>,
     /// Table pages opened.
     pub tables: std::collections::BTreeMap<crate::tables::TableKind, crate::tables::TablePage>,
 }
@@ -176,6 +178,7 @@ impl Ready {
             edit_position: None,
             libraries: Default::default(),
             tables: Default::default(),
+            display_window: None,
             clearances: crate::clearance::Clearances::new(
                 &model.sources.file,
                 model.sources.rules.as_deref(),
@@ -627,6 +630,9 @@ impl Ready {
                 if previous.is_some() && self.case >= self.model.cases.len() {
                     self.case = 0;
                 }
+                if let (Ok(e), Some(p)) = (&self.model.editing, &self.model.sources.weather) {
+                    crate::model::remember_weather(&e.session, p);
+                }
                 // The other pages list the files the model now reads.
                 let sources = self.model.sources.clone();
                 for (k, page) in self.libraries.iter_mut() {
@@ -737,14 +743,12 @@ impl Ready {
             self.status = Some((format!("{}: {e}", path.display()), true));
             return false;
         }
-        let case = self.case;
+        let shown = self.model.shown_cases.clone();
         self.library_saved(
             LibraryKind::WeatherCases,
             crate::library::PageAction::Saved(path.to_path_buf()),
         );
-        if case < self.model.cases.len() {
-            self.set_case(case);
-        }
+        self.show_cases(shown, false);
         if let Some(page) = self.libraries.get_mut(&LibraryKind::WeatherCases)
             && page.file.as_deref() == Some(path)
             && !page.dirty()
@@ -756,11 +760,31 @@ impl Ready {
 
     /// Shows weather case `k`.
     pub fn set_case(&mut self, k: usize) {
-        self.case = k;
+        self.show_cases(vec![k], false);
+    }
+
+    /// Shows weather cases `cases` (the first one reported and checked);
+    /// with `all_sections`, every section (sections' own display cases go).
+    pub fn show_cases(&mut self, cases: Vec<usize>, all_sections: bool) {
+        let cases: Vec<usize> = cases
+            .into_iter()
+            .filter(|k| *k < self.model.cases.len())
+            .collect();
+        let Some(&first) = cases.first() else {
+            return;
+        };
+        self.case = first;
+        self.model.shown_cases = cases;
+        if all_sections {
+            self.model.display_cases.clear();
+        }
         self.clearances.stale = true;
-        self.view3d
-            .dirty
-            .extend([Layer::Wires, Layer::OtherCases, Layer::Selection]);
+        self.view3d.dirty.extend([
+            Layer::Wires,
+            Layer::OtherCases,
+            Layer::Structures,
+            Layer::Selection,
+        ]);
         self.profile.invalidate();
     }
 
@@ -1037,8 +1061,11 @@ fn goto_key(ctx: &egui::Context, r: &mut Ready) {
 /// opens at the crosshair in first person (else at the mouse), and a
 /// captured mouse is freed — a window needs the cursor.
 fn popups(ctx: &egui::Context, r: &mut Ready) {
-    let open =
-        r.goto.is_some() || r.move_dialog.is_some() || r.confirm.is_some() || r.editor.is_some();
+    let open = r.goto.is_some()
+        || r.move_dialog.is_some()
+        || r.confirm.is_some()
+        || r.editor.is_some()
+        || r.display_window.is_some();
     if open && !r.popup_open {
         let crosshair = r.view3d.rect.map(|x| x.center());
         let at = if r.view3d.captured {
@@ -1233,6 +1260,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     goto_window(ctx, r);
     move_window(ctx, r);
     editor_window(ctx, r);
+    display_window(ctx, r);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
     };
@@ -1271,6 +1299,56 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
         }
         Some(false) => r.confirm = None,
         None => {}
+    }
+}
+
+/// The "Display weather cases" window: tick one case or several; Apply
+/// (Enter) shows them for every section, the first one reported.
+fn display_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(mut ticks) = r.display_window.clone() else {
+        return;
+    };
+    let (mut apply, mut cancel) = (false, false);
+    tool_window(r, "display-cases", "Display weather cases").show(ctx, |ui| {
+        ui.label("Show the wires in:");
+        for (k, c) in r.model.cases.iter().enumerate() {
+            if let Some(t) = ticks.get_mut(k) {
+                ui.checkbox(t, &c.case.name).on_hover_text(c.case.summary());
+            }
+        }
+        ui.horizontal(|ui| {
+            if ui.small_button("All").clicked() {
+                ticks.iter_mut().for_each(|t| *t = true);
+            }
+            if ui.small_button("None").clicked() {
+                ticks.iter_mut().for_each(|t| *t = false);
+            }
+        });
+        ui.label(
+            egui::RichText::new(
+                "Applied to every section (sections' own display cases go). The first one ticked is the one reported, checked and clicked.",
+            )
+            .small(),
+        );
+        ui.horizontal(|ui| {
+            let any = ticks.iter().any(|t| *t);
+            apply |= ui
+                .add_enabled(any, egui::Button::new("Apply to all sections"))
+                .on_hover_text("Enter")
+                .clicked();
+            cancel |= ui.button("Cancel").on_hover_text("Escape").clicked();
+        });
+    });
+    apply |= ctx.input(|i| i.key_pressed(egui::Key::Enter)) && ticks.iter().any(|t| *t);
+    cancel |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    if apply {
+        let cases: Vec<usize> = (0..ticks.len()).filter(|k| ticks[*k]).collect();
+        r.show_cases(cases, true);
+        r.display_window = None;
+    } else if cancel {
+        r.display_window = None;
+    } else {
+        r.display_window = Some(ticks);
     }
 }
 
@@ -1689,19 +1767,7 @@ fn menus(
                 }
             }
         });
-        ui.menu_button("Weather case", |ui| {
-            let mut chosen = None;
-            for (k, c) in r.model.cases.iter().enumerate() {
-                if ui.radio(r.case == k, &c.case.name).clicked() {
-                    chosen = Some(k);
-                }
-            }
-            if let Some(k) = chosen
-                && k != r.case
-            {
-                r.set_case(k);
-            }
-        });
+        item(ui, Command::DisplayCases, out);
         ui.separator();
         if ui.button("Customize the quick bar…").clicked() {
             *customize = true;
@@ -1830,6 +1896,14 @@ fn run_command(
             open_page(dock, Tab::Clearances);
         }
         Command::Library(k) => open_page(dock, Tab::Library(k)),
+        Command::DisplayCases => {
+            let shown = r.model.shown(r.case);
+            r.display_window = Some(
+                (0..r.model.cases.len())
+                    .map(|k| shown.contains(&k))
+                    .collect(),
+            );
+        }
         Command::Table(k) => open_page(dock, Tab::Table(k)),
         Command::Hold(t) => r.hotbar.hold(t),
     }
@@ -1936,22 +2010,17 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
                     });
             });
         ui.separator();
-        ui.label(egui::RichText::new("Weather cases").strong());
-        let mut chosen = None;
-        for (k, c) in r.model.cases.iter().enumerate() {
-            let text = format!("{} — {}", c.case.name, c.case.summary());
-            if ui.radio(r.case == k, text).clicked() && r.case != k {
-                chosen = Some(k);
-            }
-            if !c.failed.is_empty() {
-                ui.colored_label(
-                    egui::Color32::LIGHT_RED,
-                    format!("{} sections or jumpers failed", c.failed.len()),
-                );
-            }
-        }
-        if let Some(k) = chosen {
-            r.set_case(k);
+        // Failures by weather case (the cases are chosen with Display
+        // weather cases).
+        for c in r.model.cases.iter().filter(|c| !c.failed.is_empty()) {
+            ui.colored_label(
+                egui::Color32::LIGHT_RED,
+                format!(
+                    "{}: {} sections or jumpers failed",
+                    c.case.name,
+                    c.failed.len()
+                ),
+            );
         }
         ui.separator();
         ui.label(egui::RichText::new("Loaded").strong());
@@ -2062,21 +2131,21 @@ impl eframe::App for App {
                     ui.horizontal(|ui| {
                         ui.strong(&ready.model.line.name);
                         ui.separator();
-                        let case_name = ready
-                            .model
-                            .cases
-                            .get(ready.case)
-                            .map_or(String::new(), |c| c.case.name.clone());
-                        let mut case = ready.case;
-                        egui::ComboBox::from_id_salt("case")
-                            .selected_text(format!("case: {case_name}"))
-                            .show_ui(ui, |ui| {
-                                for (k, c) in ready.model.cases.iter().enumerate() {
-                                    ui.selectable_value(&mut case, k, &c.case.name);
-                                }
-                            });
-                        if case != ready.case {
-                            ready.set_case(case);
+                        // The weather cases shown: a click opens the window.
+                        let shown = ready.model.shown(ready.case);
+                        let names: Vec<&str> = shown
+                            .iter()
+                            .filter_map(|k| ready.model.cases.get(*k))
+                            .map(|c| c.case.name.as_str())
+                            .collect();
+                        if ui
+                            .button(format!("Weather: {}", names.join(" + ")))
+                            .on_hover_text(
+                                "Display weather cases: choose one or several, for every section",
+                            )
+                            .clicked()
+                        {
+                            commands.push(crate::menu::Command::DisplayCases);
                         }
                         ui.separator();
                         ui.label(ready.selection.describe());

@@ -752,3 +752,22 @@ fn renaming_keeps_the_place_and_what_refers_to_it_follows() {
             .all(|x| x.system.as_deref() != Some(sys.as_str()))
     );
 }
+
+#[test]
+fn settings_are_kept_with_the_project() {
+    let (path, s) = project("settings");
+    assert_eq!(s.setting("app.weather").unwrap(), None);
+    s.set_setting("app.weather", Some("/x/cases.olswc"))
+        .unwrap();
+    s.set_setting("app.weather", Some("/y/cases.olswc"))
+        .unwrap();
+    drop(s);
+    let again = Session::open(&path).unwrap();
+    assert_eq!(
+        again.setting("app.weather").unwrap().as_deref(),
+        Some("/y/cases.olswc")
+    );
+    again.set_setting("app.weather", None).unwrap();
+    assert_eq!(again.setting("app.weather").unwrap(), None);
+    assert_eq!(again.export(), example(), "not part of the line");
+}

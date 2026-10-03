@@ -170,8 +170,11 @@ pub struct Model {
     /// The project to edit, or why the model is read-only.
     pub editing: Result<Editing, String>,
     /// Sections drawn in their own weather cases (indices; the first one
-    /// is reported and picked), instead of the case shown (Sections table).
+    /// is reported and picked), instead of the cases shown (Sections table).
     pub display_cases: std::collections::BTreeMap<String, Vec<usize>>,
+    /// The weather cases shown for the whole line (Display weather cases;
+    /// empty: the case passed to the views).
+    pub shown_cases: Vec<usize>,
 }
 
 fn dir_of(file: &Path) -> PathBuf {
@@ -278,6 +281,17 @@ fn load_types(
     Ok(Some((structures, insulators)))
 }
 
+/// Project setting holding the weather case file used.
+pub const WEATHER_SETTING: &str = "app.weather";
+
+/// Keeps the weather case file in the project's settings (absolute path).
+pub fn remember_weather(session: &ols_session::Session, path: &Path) {
+    let p = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if let Err(e) = session.set_setting(WEATHER_SETTING, Some(&p.display().to_string())) {
+        log::warn!("remembering the weather case file: {e}");
+    }
+}
+
 /// The weather cases: from the file given, else still air at 15 °C.
 fn load_cases(sources: &Sources) -> Result<Vec<WeatherCase>, String> {
     Ok(match &sources.weather {
@@ -291,19 +305,35 @@ fn load_cases(sources: &Sources) -> Result<Vec<WeatherCase>, String> {
 
 impl Model {
     /// The weather cases section `section` is drawn in: its own display
-    /// cases, else `case`.
+    /// cases, else the cases shown for the line, else `case`.
     pub fn section_cases(&self, section: &str, case: usize) -> Vec<usize> {
-        let own: Vec<usize> = self
+        let valid = |v: &Vec<usize>| -> Vec<usize> {
+            v.iter()
+                .copied()
+                .filter(|k| *k < self.cases.len())
+                .collect()
+        };
+        let own = self
             .display_cases
             .get(section)
-            .map(|v| {
-                v.iter()
-                    .copied()
-                    .filter(|k| *k < self.cases.len())
-                    .collect()
-            })
+            .map(valid)
             .unwrap_or_default();
-        if own.is_empty() { vec![case] } else { own }
+        if !own.is_empty() {
+            return own;
+        }
+        let shown = valid(&self.shown_cases);
+        if shown.is_empty() { vec![case] } else { shown }
+    }
+
+    /// The weather cases shown for the whole line (at least one).
+    pub fn shown(&self, case: usize) -> Vec<usize> {
+        let v: Vec<usize> = self
+            .shown_cases
+            .iter()
+            .copied()
+            .filter(|k| *k < self.cases.len())
+            .collect();
+        if v.is_empty() { vec![case] } else { v }
     }
 
     /// The weather case section `section` is reported and picked in: its
@@ -378,7 +408,7 @@ impl Model {
 }
 
 /// Loads and solves everything; `progress` gets a line per step.
-pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String> {
+pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String> {
     let mut log = Vec::new();
     let step = |m: String, log: &mut Vec<String>| {
         progress(m.clone());
@@ -412,6 +442,25 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
     let lib_path = library_path(&sources);
     let library = ols_cables::Library::load(&lib_path).map_err(|e| e.to_string())?;
     step(format!("wire library {}", lib_path.display()), &mut log);
+    // The weather case file the project used last, when none is given.
+    if sources.weather.is_none()
+        && let Some(s) = &session
+        && let Ok(Some(p)) = s.setting(WEATHER_SETTING)
+    {
+        let p = PathBuf::from(p);
+        if p.is_file() {
+            step(
+                format!("weather cases from {} (used last)", p.display()),
+                &mut log,
+            );
+            sources.weather = Some(p);
+        } else {
+            step(
+                format!("weather case file used last not found: {}", p.display()),
+                &mut log,
+            );
+        }
+    }
     let cases = load_cases(&sources)?;
     let mut solved = Vec::new();
     for case in cases {
@@ -543,6 +592,10 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
         }
     }
     let editing = editing(session, sources.user.as_deref());
+    // Remember the weather case file with the project.
+    if let (Ok(e), Some(p)) = (&editing, &sources.weather) {
+        remember_weather(&e.session, p);
+    }
     match &editing {
         Ok(e) => step(format!("editing as {}", e.user), &mut log),
         Err(why) => step(format!("read-only: {why}"), &mut log),
@@ -562,5 +615,6 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
         types,
         editing,
         display_cases: Default::default(),
+        shown_cases: vec![0],
     })
 }

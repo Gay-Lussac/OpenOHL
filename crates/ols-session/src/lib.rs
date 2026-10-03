@@ -839,6 +839,35 @@ impl Session {
         Ok(())
     }
 
+    /// A setting of the project kept for the applications (not part of the
+    /// line, not logged), e.g. `app.weather` — the weather case file used.
+    pub fn setting(&self, key: &str) -> Result<Option<String>, SessionError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT value FROM ols_meta WHERE key = ?1",
+                params![format!("setting.{key}")],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Sets (or, with `None`, removes) a setting ([`Session::setting`]).
+    pub fn set_setting(&self, key: &str, value: Option<&str>) -> Result<(), SessionError> {
+        let key = format!("setting.{key}");
+        match value {
+            Some(v) => self.conn.execute(
+                "INSERT INTO ols_meta (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, v],
+            )?,
+            None => self
+                .conn
+                .execute("DELETE FROM ols_meta WHERE key = ?1", params![key])?,
+        };
+        Ok(())
+    }
+
     /// A user's role (`None`: unknown user).
     pub fn role(&self, user: &str) -> Result<Option<Role>, SessionError> {
         let r: Option<String> = self

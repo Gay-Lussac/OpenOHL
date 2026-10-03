@@ -1228,6 +1228,143 @@ impl TableKind {
     }
 }
 
+/// The values a cell is chosen from (a dropdown), and whether several can
+/// be ticked (joined with `; `); `None`: typed.
+fn choices(
+    kind: TableKind,
+    column: usize,
+    model: &Model,
+    cells: &[String],
+) -> Option<(Vec<String>, bool)> {
+    let name = kind.columns()[column].0;
+    let with_none = |v: Vec<String>| {
+        let mut out = vec![String::new()];
+        out.extend(v);
+        out
+    };
+    let cables = || {
+        model
+            .library
+            .iter()
+            .map(|c| c.id.clone())
+            .collect::<Vec<_>>()
+    };
+    Some(match (kind, name) {
+        (TableKind::Structures, "type") => (
+            with_none(
+                model
+                    .types
+                    .as_ref()
+                    .map(|(s, _)| s.iter().map(|t| t.id.clone()).collect())
+                    .unwrap_or_default(),
+            ),
+            false,
+        ),
+        (TableKind::Sections | TableKind::Jumpers, "cable") => (cables(), false),
+        (TableKind::Sections, "system") => (
+            with_none(model.line.systems.iter().map(|s| s.id.clone()).collect()),
+            false,
+        ),
+        (TableKind::Sections, "status") => {
+            (vec!["in the blocks".into(), "clipped in".into()], false)
+        }
+        (TableKind::Sections, "condition") => {
+            let spans = cells
+                .get(TableKind::Sections.column("points"))
+                .map_or(0, |p| p.split(',').filter(|x| !x.trim().is_empty()).count())
+                .saturating_sub(1);
+            let mut v = vec!["tension".to_owned(), "sag, ruling span".to_owned()];
+            v.extend((1..=spans).map(|k| format!("sag, span {k}")));
+            (v, false)
+        }
+        (TableKind::Sections, "display cases") => (
+            model.cases.iter().map(|c| c.case.name.clone()).collect(),
+            true,
+        ),
+        (TableKind::Strings, "insulator") => (
+            with_none(
+                model
+                    .types
+                    .as_ref()
+                    .map(|(_, i)| i.iter().map(|a| a.id.clone()).collect())
+                    .unwrap_or_default(),
+            ),
+            false,
+        ),
+        (TableKind::Strings, "strain") => (vec!["no".into(), "yes".into()], false),
+        (TableKind::Systems, "kind") => (vec!["AC".into(), "DC".into()], false),
+        (TableKind::WeatherCases, "wind from") => (vec!["right".into(), "left".into()], false),
+        (TableKind::Alignments, "structure") => (
+            with_none(model.line.structures.iter().map(|s| s.id.clone()).collect()),
+            false,
+        ),
+        _ => return None,
+    })
+}
+
+/// A cell chosen from a list; true when changed.
+fn choice_cell(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    width: f32,
+    text: &mut String,
+    (values, multi): (Vec<String>, bool),
+    color: Option<egui::Color32>,
+) -> bool {
+    let mut changed = false;
+    let mut shown = egui::RichText::new(if text.is_empty() {
+        "—"
+    } else {
+        text.as_str()
+    });
+    if let Some(c) = color {
+        shown = shown.color(c);
+    }
+    let mut combo = egui::ComboBox::from_id_salt(id)
+        .selected_text(shown)
+        .width(width - 8.0)
+        .height(400.0);
+    if multi {
+        combo = combo.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+    }
+    combo.show_ui(ui, |ui| {
+        if multi {
+            let mut ticked: Vec<String> = text
+                .split(';')
+                .map(|t| t.trim().to_owned())
+                .filter(|t| !t.is_empty())
+                .collect();
+            for v in &values {
+                let mut on = ticked.contains(v);
+                if ui.checkbox(&mut on, v).changed() {
+                    if on {
+                        ticked.push(v.clone());
+                    } else {
+                        ticked.retain(|t| t != v);
+                    }
+                    // In the order of the list.
+                    ticked.sort_by_key(|t| values.iter().position(|x| x == t));
+                    *text = ticked.join("; ");
+                    changed = true;
+                }
+            }
+            if ui.small_button("none (the cases shown)").clicked() {
+                text.clear();
+                changed = true;
+            }
+        } else {
+            for v in &values {
+                let label = if v.is_empty() { "—" } else { v.as_str() };
+                if ui.selectable_label(text == v, label).clicked() && text != v {
+                    *text = v.clone();
+                    changed = true;
+                }
+            }
+        }
+    });
+    changed
+}
+
 /// The alignments: per route, its points (`"line"`: the line's own, when
 /// it has no routes).
 fn alignments(line: &ols_line::Line) -> Vec<(String, Vec<ols_line::AlignmentPoint>)> {
@@ -2065,6 +2202,20 @@ impl TablePage {
                                         );
                                         continue;
                                     }
+                                    if let Some(list) = choices(kind, c, model, &self.added[k]) {
+                                        let mut text = self.added[k][c].clone();
+                                        if choice_cell(
+                                            ui,
+                                            ("new", kind, k, c),
+                                            col.1,
+                                            &mut text,
+                                            list,
+                                            Some(egui::Color32::LIGHT_GREEN),
+                                        ) {
+                                            self.added[k][c] = text;
+                                        }
+                                        continue;
+                                    }
                                     let edit = egui::TextEdit::singleline(&mut self.added[k][c])
                                         .text_color(egui::Color32::LIGHT_GREEN);
                                     ui.add_sized([col.1, row_height], edit);
@@ -2140,6 +2291,20 @@ impl TablePage {
                                 }
                                 let edited = self.edits.get(&row.key).and_then(|e| e.get(&c));
                                 let mut text = edited.cloned().unwrap_or_else(|| original.clone());
+                                if let Some(list) = choices(kind, c, model, &row.cells) {
+                                    let color = edited.map(|_| egui::Color32::YELLOW);
+                                    if choice_cell(
+                                        ui,
+                                        (kind, &row.key, c),
+                                        col.1,
+                                        &mut text,
+                                        list,
+                                        color,
+                                    ) {
+                                        self.set(&row.key, c, &text, original);
+                                    }
+                                    continue;
+                                }
                                 let mut edit = egui::TextEdit::singleline(&mut text);
                                 if edited.is_some() {
                                     edit = edit.text_color(egui::Color32::YELLOW);

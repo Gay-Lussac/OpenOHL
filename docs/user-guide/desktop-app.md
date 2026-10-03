@@ -30,7 +30,7 @@ The **menu bar** holds what needs no view:
 |---|---|
 | File | the model's file, Quit |
 | Edit | Undo, Redo, Delete selected, Clear selection, Go to structure; **Snap: what can be clicked** |
-| View | Fit views; the pages to show (tick to open, untick to close); layers; weather case; Customize the quick bar |
+| View | Fit views; the pages to show (tick to open, untick to close); layers; Display weather cases; Customize the quick bar |
 | Tools | the tool inventory (E); hold any tool |
 | Checks | calculations run **on demand** — they never change the model: Clearances (Run checks, also after every edit, rule file, Show results); more checks to come |
 | Libraries | the library editors: wires, insulators, structure types, weather cases (see [Library editors](#library-editors)) |
@@ -38,7 +38,7 @@ The **menu bar** holds what needs no view:
 | Plugins | to come (the plugin manager) |
 | Help | version, keys and mouse |
 
-Under it, the **quick bar**: the line's name, the weather case, the selection, then the commands chosen for it (default Undo, Redo, Fit views, Run checks). **⚙** (or View › Customize the quick bar) adds any command of the menus — commands, library editors, tools — removes and orders them; the bar is remembered.
+Under it, the **quick bar**: the line's name, **Weather: …** (the weather cases shown — a click opens Display weather cases), the selection, then the commands chosen for it (default Undo, Redo, Fit views, Run checks). **⚙** (or View › Customize the quick bar) adds any command of the menus — commands, library editors, tools — removes and orders them; the bar is remembered.
 
 **Pages** work like browser tabs: each has a tab with a close button; drag a tab to rearrange, or out of the window to make a floating, resizable window with its own row of tabs (drop more pages on it). Closed pages come back from View. Library editors open together in a floating window.
 
@@ -48,9 +48,15 @@ Under it, the **quick bar**: the line's name, the weather case, the selection, t
 - **Plan** — alignments, wires and structures from above, north up, with a scale bar. Drag, scroll at the pointer, double-click to centre.
 - **Profile** — per route: ground along the centreline, structures and wires by station; heights fit the visible stretch. Scroll zooms along the route, drag moves, double-click shows the whole route.
 - **Properties** — the selected structure (position, type, attachments, spans through it) or span (cable, circuit, electrical system and voltage, bundle, horizontal and maximum tension, sag and lowest point in every weather case). Links select related objects.
-- **Model** — layers, weather cases, what was loaded and how long it took.
+- **Model** — layers, controls, sections or jumpers that failed to solve, what was loaded and how long it took.
 - **Clearances** — clearance violations of the shown weather case (see [Clearances](#clearances)).
 - **Properties** of the other kinds: an attachment point (string type, insulator and wire points, length, weight, spans and jumpers there), an alignment point (position, tied structure), a LiDAR point (position, class and roles).
+
+## Weather cases shown
+
+**Display weather cases** (the **Weather: …** button of the quick bar, or View) lists the model's weather cases: tick one or several and **Apply to all sections** — every section is drawn in each case ticked (sections' own display cases from the Sections table go), with its jumpers, yokes and **insulator strings, drawn to their clamp as solved in each case** (swung by the wind, moved with the temperature). The first case ticked is the one reported in the properties, clicked, and checked for clearances. A single section can still be given its own display cases in the Sections table.
+
+The model's **weather case file** is remembered with the project (`--weather`, or Libraries › Weather cases › Use for the model): opened again without `--weather`, the project uses the file it used last.
 
 ## Editing
 
@@ -96,6 +102,7 @@ Rules for other lines and rules across pairs of weather cases are run by `ols li
 | Alignment points | route (new rows), #, E, N, z, structure (tied under it, following it; empty: free) |
 | Weather cases | #, name, description, tags, temperature, ice thickness, ice load, ice density, wind, wind from (left or right, looking ahead along the line) |
 
+- Cells with a known set of values are **dropdowns**: cables, structure types, systems, insulators, status, condition, AC/DC, strain, wind from, tied structure; **display cases** lists the model's weather cases to tick, several at once.
 - A changed cell turns yellow and stays **pending**; **+ Add row** adds an object typed in a green row (🗑 removes it); 🗑 on a row marks it for deletion (struck through; click again to keep it). **Apply N changes** makes one command for all of them (one undo, ⌘Z), with the same checks as the editor windows — a cell that does not read is named and nothing is applied; **Revert** drops them. When deletions take other objects with them (a structure's sections and jumpers, a string's sections…), they are listed first and **Apply and delete all that** confirms.
 - **Renaming** a structure, section, jumper or system, or renumbering a string, keeps its place, and what refers to it follows (section points, jumper ends, routes, tied alignment points, sections' system).
 - Sections: changing the **condition** needs its value; **status** clipped in computes the lengths of its condition (as the section window does); **points** restring it. **Display cases** draws the section in each weather case listed, separated by `;` (e.g. `max temperature; glaze ice`), in every view; the first one is the one picked and reported in the properties (empty: the case shown) — sections can be shown each in their own cases. **H kN** and **max sag m** give one value per display case (`12.31 / 9.87`); typing one number is a **target** in the first display case: the section's condition (tension or sag) is found that gives it (a section clipped in must go back to the blocks for that).

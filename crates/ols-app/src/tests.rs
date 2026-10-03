@@ -67,7 +67,6 @@ fn the_window_shows_the_model_and_the_selection() {
     let mut harness =
         builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
     harness.run();
-    harness.get_by_label("Weather cases");
     harness.get_by_label("nothing selected");
     // Select a structure: the properties show it and its spans.
     harness.state_mut().ready().unwrap().selection = Selection::Structure("T3".into());
@@ -2003,4 +2002,92 @@ fn alignment_points_are_added_edited_and_deleted_with_the_tools() {
         None,
     );
     assert_eq!(points(&mut harness).len(), before.len() - 1);
+}
+
+/// Display weather cases (quick bar "Weather: …"): two cases ticked, applied to every
+/// section; the strings are drawn to their clamp in each.
+#[test]
+fn several_weather_cases_are_shown_for_the_whole_line() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let strings = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        crate::scene::layer(
+            &r.model,
+            crate::scene::Layer::Structures,
+            r.case,
+            &Selection::None,
+        )
+        .counts()
+        .0
+    };
+    let one = strings(&mut harness);
+    harness.get_by_label_contains("Weather: ").click();
+    harness.run();
+    harness.get_by_label("Display weather cases");
+    harness.get_by_label("high wind").click();
+    harness.run();
+    harness.get_by_label("Apply to all sections").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let wind = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "high wind")
+            .unwrap();
+        assert_eq!(r.model.shown(r.case), vec![0, wind]);
+        assert_eq!(r.model.section_cases("S2", 0), vec![0, wind]);
+        assert!(r.display_window.is_none());
+        // Every section drawn twice.
+        let n = r.model.line.sections.len();
+        assert_eq!(r.model.shapes_shown(r.case).len(), 2 * n);
+    }
+    assert!(strings(&mut harness) > one, "strings in both cases");
+    // The swung strings: in high wind a suspension clamp is not plumb.
+    let r = harness.state_mut().ready().unwrap();
+    let wind = r.model.shown(0)[1];
+    let s1 = &r.model.cases[wind].shapes[0];
+    let a = r
+        .model
+        .line
+        .attachment(&r.model.line.sections[0].points[1])
+        .unwrap();
+    let c = s1.clamps[1];
+    assert!((c[0] - a.wire_point[0]).hypot(c[1] - a.wire_point[1]) > 0.3);
+}
+
+/// The project remembers the weather case file it was solved in: opened
+/// again without one, it uses it.
+#[test]
+fn the_project_remembers_its_weather_case_file() {
+    let ex = root().join("examples/synthetic-line");
+    let first = synthetic_project("remember-weather");
+    let file = first.sources.file.clone();
+    assert!(first.sources.weather.is_some(), "the test project has one");
+    drop(first);
+    let again = model::load(
+        Sources {
+            file,
+            library: Some(root().join("libraries/cables")),
+            point_budget: 1000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    let used = std::fs::canonicalize(ex.join("weather-cases.olswc")).unwrap();
+    assert_eq!(again.sources.weather.as_deref(), Some(used.as_path()));
+    assert!(again.cases.len() > 1);
+    assert!(
+        again.log.iter().any(|l| l.contains("used last")),
+        "{:?}",
+        again.log
+    );
 }

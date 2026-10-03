@@ -259,21 +259,61 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
             }
         }
         Layer::Structures => {
+            // Where each string's clamp is solved, in every weather case its
+            // section is shown in (strings swing with the wind, move with
+            // temperature); strings without a section hang as given.
+            let mut clamps: std::collections::HashMap<(&str, u32, u32), Vec<[f64; 3]>> =
+                std::collections::HashMap::new();
+            for sec in &line.sections {
+                for k in model.section_cases(&sec.id, case) {
+                    let Some(shape) = model
+                        .cases
+                        .get(k)
+                        .and_then(|c| c.shapes.iter().find(|x| x.section == sec.id))
+                    else {
+                        continue;
+                    };
+                    for (p, c) in sec.points.iter().zip(&shape.clamps) {
+                        clamps
+                            .entry((p.structure.as_str(), p.set, p.phase))
+                            .or_default()
+                            .push(*c);
+                    }
+                }
+            }
             for st in &line.structures {
                 for (part, pts) in structure_lines(st) {
                     let (col, width) = match part {
                         Part::Mast => ([215, 215, 220, 255], 2.5),
                         Part::Member => ([215, 215, 220, 255], 1.5),
-                        Part::Insulator => ([120, 180, 255, 255], 2.0),
+                        Part::Insulator => continue,
                     };
                     s.polyline(&pts, col, width);
+                }
+                let blue = [120, 180, 255, 255];
+                for a in &st.attachments {
+                    let solved = clamps.get(&(st.id.as_str(), a.set, a.phase));
+                    let ends: Vec<[f64; 3]> = match solved {
+                        Some(c) if !c.is_empty() => c.clone(),
+                        _ => vec![a.wire_point],
+                    };
+                    for end in ends {
+                        match &a.legs {
+                            Some(legs) => {
+                                for l in legs {
+                                    s.polyline(&[*l, end], blue, 2.0);
+                                }
+                            }
+                            None => s.polyline(&[a.insulator_point, end], blue, 2.0),
+                        }
+                    }
                 }
             }
         }
         Layer::Wires | Layer::OtherCases => {
             for (k, solved) in model.cases.iter().enumerate() {
-                // Jumpers and yokes in the case shown.
-                let this_case = (layer == Layer::Wires) == (k == case);
+                // Jumpers in the cases shown for the line.
+                let this_case = (layer == Layer::Wires) == model.shown(case).contains(&k);
                 let alpha = if layer == Layer::Wires { 255 } else { 90 };
                 for shape in &solved.shapes {
                     // Each section in its own display case.
@@ -304,7 +344,17 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 // Yokes at the clamps: a bar, a triangle, a polygon.
-                for y in solved.bundles.yokes.iter().filter(|_| this_case) {
+                // Yokes with their section, in its cases.
+                for y in solved
+                    .bundles
+                    .yokes
+                    .iter()
+                    .zip(&solved.bundles.yoke_sections)
+                    .filter(|(_, sec)| {
+                        (layer == Layer::Wires) == model.section_cases(sec, case).contains(&k)
+                    })
+                    .map(|(y, _)| y)
+                {
                     let mut ring = y.clone();
                     if y.len() > 2 {
                         ring.push(y[0]);

@@ -31,6 +31,8 @@ pub enum Command {
     Inventory,
     /// Run the checks (clearances) now.
     RunChecks,
+    /// Choose the weather cases shown.
+    DisplayCases,
     /// Open a library editor.
     Library(LibraryKind),
     /// Open a table.
@@ -51,6 +53,7 @@ impl Command {
             Command::GoTo,
             Command::Inventory,
             Command::RunChecks,
+            Command::DisplayCases,
         ];
         out.extend(LibraryKind::ALL.map(Command::Library));
         out.extend(crate::tables::TableKind::ALL.map(Command::Table));
@@ -79,6 +82,7 @@ impl Command {
             Command::GoTo => "Go to structure…".into(),
             Command::Inventory => "Tool inventory".into(),
             Command::RunChecks => "Run checks".into(),
+            Command::DisplayCases => "Display weather cases…".into(),
             Command::Library(k) => format!("{} library", k.title()),
             Command::Table(k) => format!("{} table", k.title()),
             Command::Hold(t) => format!("{} {}", t.icon(), t.name()),
@@ -109,6 +113,7 @@ impl Command {
             Command::GoTo => "goto".into(),
             Command::Inventory => "inventory".into(),
             Command::RunChecks => "checks".into(),
+            Command::DisplayCases => "display-cases".into(),
             Command::Library(k) => format!("library-{}", k.extension()),
             Command::Table(k) => format!("table-{}", k.key()),
             Command::Hold(t) => format!("tool-{}", t.key_name()),

@@ -41,6 +41,8 @@ pub struct BundleLines {
     pub jumpers: HashMap<String, Vec<Vec<Point>>>,
     /// Clamp yokes of bundles: the corners in order (a bar for two).
     pub yokes: Vec<Vec<Point>>,
+    /// The section of each yoke (same order as `yokes`).
+    pub yoke_sections: Vec<String>,
 }
 
 impl BundleLines {
@@ -113,6 +115,7 @@ impl BundleLines {
                 if let (Some(c), Some(p)) = (c, section.points.get(k)) {
                     clamps.entry(key(p)).or_insert_with(|| c.clone());
                     out.yokes.push(c);
+                    out.yoke_sections.push(shape.section.clone());
                 }
             }
         }
