@@ -116,3 +116,29 @@ outer = { area = "270 mm²", modulus = "60 GPa", thermal_expansion = 23.0e-6 }
 2. Write quantities as `"<number> <unit>"` with the units listed above, or as SI numbers.
 3. Run the semantic checks listed above, or let OLS CAD do it: `ols sagtension` and the library loader report the first problem with its file, cable id and field.
 4. Keep comments and field order stable when rewriting files, so manual edits survive (TOML libraries that preserve formatting, such as `toml_edit` in Rust or `tomlkit` in Python, help).
+
+## Electrical data: `[cable.electrical]`
+
+Optional electrical and thermal data of the cable, for losses, impedances and thermal rating. The voltage and the phases are not cable data: they belong to the line's [electrical systems](line-file.md#electrical-systems), and sections link the two through their `cable`.
+
+```toml
+[cable.electrical]
+ac_resistance = [
+    { temperature = "20 °C", resistance = "0.0618 Ω/km" },
+    { temperature = "40 °C", resistance = "0.0661 Ω/km" },
+]
+dc_resistance = { temperature = "20 °C", resistance = "0.0605 Ω/km" }
+geometric_mean_radius = "11.779 mm"
+emissivity = 0.6
+solar_absorptivity = 0.5
+```
+
+| Field | Type / units | Notes |
+|---|---|---|
+| `ac_resistance` | list of `{ temperature, resistance }` | Resistance per length: `Ω/m`, `Ω/km`, `Ω/mi`, `Ω/kft` (or `ohm/…`). Linear between the temperatures given, and beyond them along the same line. |
+| `dc_resistance` | `{ temperature, resistance }` | |
+| `geometric_mean_radius` | length | For inductance; at most the cable's radius. |
+| `emissivity`, `solar_absorptivity` | number 0–1 | Surface coefficients for thermal rating. |
+
+PLS-CADD cable files (`.wir`) hold the same data (AC resistances at two temperatures, DC resistance, geometric mean radius, emissivity); a PLS-CADD importer can fill this table.
+

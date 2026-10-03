@@ -94,7 +94,40 @@
         "mass_per_length": { "$ref": "#/$defs/mass_per_length" },
         "rated_tensile_strength": { "$ref": "#/$defs/force" },
         "outer": { "$ref": "#/$defs/component" },
-        "core": { "$ref": "#/$defs/component" }
+        "core": { "$ref": "#/$defs/component" },
+        "electrical": { "$ref": "#/$defs/electrical" }
+      }
+    },
+    "resistance_per_length": {
+      "description": "Text with a resistance-per-length unit (Ω/m, ohm/m, Ω/km, ohm/km, Ω/mi, ohm/mi, Ω/kft, ohm/kft) or a number in Ω/m.",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string", "pattern": "^\\s*[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?\\s*(Ω/m|ohm/m|Ω/km|ohm/km|Ω/mi|ohm/mi|Ω/kft|ohm/kft)\\s*$" }
+      ]
+    },
+    "resistance_at": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temperature", "resistance"],
+      "properties": {
+        "temperature": { "$ref": "#/$defs/temperature" },
+        "resistance": { "$ref": "#/$defs/resistance_per_length" }
+      }
+    },
+    "electrical": {
+      "description": "Electrical and thermal data of the cable (all optional). Voltages and phases belong to the line's electrical systems.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ac_resistance": {
+          "description": "AC resistance at one or more temperatures (linear between them).",
+          "type": "array",
+          "items": { "$ref": "#/$defs/resistance_at" }
+        },
+        "dc_resistance": { "$ref": "#/$defs/resistance_at" },
+        "geometric_mean_radius": { "$ref": "#/$defs/length" },
+        "emissivity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "solar_absorptivity": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     }
   }

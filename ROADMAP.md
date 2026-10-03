@@ -69,7 +69,7 @@ Guiding principles:
 - [x] Exclusion zones in clearance rules: near the wire ends (`exclude_near_ends`) and spans at given structures (`exclude_spans_at`, e.g. cable terminations)
 - [x] Electrical systems (`systems`: AC/DC, voltage, frequency, phase angles or pole polarities) assigned once per conductor path (sections joined by jumpers); clearances by voltage — tables or formulas per rule (so per LiDAR class group), pair voltage higher / sum / actual difference between conductors; unknown voltages refused before checking
 - [x] Bundled conductors: `bundle` subconductors on a circle with `bundle_spacing` (e.g. 4 × 400 mm) and optional rotation; insulator weight shared by the subconductors in the solve; clearances to the nearest subconductor
-- [ ] Electrical cable data (resistance, ampacity data…) in the wire library, imported from PLS-CADD `.wir` files
+- [x] Electrical cable data in the wire library (`[cable.electrical]`: AC resistance by temperature, DC resistance, geometric mean radius, emissivity, solar absorptivity; resistance units) — filled from PLS-CADD `.wir`/XML by the local importer until a PLS-CADD importer is decided
 - [ ] Rule editor tool (per LiDAR class)
 - [x] Plan & profile views per route (`ols-drawing`, `ols line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures, title block with logos, separate plan scale across the line *(DXF and layout templates as plugins still to come)*
 - [x] Exporter/importer plugin interface (first formats: CSV, KML/KMZ; GeoJSON example plugin)

@@ -525,6 +525,17 @@ quantity!(
 );
 
 quantity!(
+    /// Electrical resistance per unit length, stored in ohms per metre.
+    ResistancePerLength, kind = "resistance per length", si = "Ω/m", display = ("Ω/km", "Ω/mi"),
+    units = [
+        from_ohms_per_meter, ohms_per_meter, 1.0, "ohms per metre", ["Ω/m", "ohm/m"];
+        from_ohms_per_kilometer, ohms_per_kilometer, 1e-3, "ohms per kilometre", ["Ω/km", "ohm/km"];
+        from_ohms_per_mile, ohms_per_mile, 1.0 / MILE, "ohms per mile", ["Ω/mi", "ohm/mi"];
+        from_ohms_per_kilofoot, ohms_per_kilofoot, 1.0 / (1000.0 * FOOT), "ohms per 1000 feet", ["Ω/kft", "ohm/kft"];
+    ]
+);
+
+quantity!(
     /// Density (mass per unit volume), stored in kilograms per cubic metre.
     /// Used for ice and snow.
     Density, kind = "density", si = "kg/m³", display = ("kg/m³", "lbm/ft³"),
@@ -693,6 +704,7 @@ pub const QUANTITY_KINDS: &[&str] = &[
     ForcePerLength::KIND,
     Stress::KIND,
     MassPerLength::KIND,
+    ResistancePerLength::KIND,
     Density::KIND,
     Angle::KIND,
     Speed::KIND,
@@ -724,6 +736,7 @@ pub fn convert(quantity: &str, value: &str, to: &str) -> Result<f64, ParseQuanti
         ForcePerLength::KIND => run::<ForcePerLength>(value, to),
         Stress::KIND => run::<Stress>(value, to),
         MassPerLength::KIND => run::<MassPerLength>(value, to),
+        ResistancePerLength::KIND => run::<ResistancePerLength>(value, to),
         Density::KIND => run::<Density>(value, to),
         Angle::KIND => run::<Angle>(value, to),
         Speed::KIND => run::<Speed>(value, to),
@@ -1035,6 +1048,7 @@ mod tests {
         check::<ForcePerLength>();
         check::<Stress>();
         check::<MassPerLength>();
+        check::<ResistancePerLength>();
         check::<Density>();
         check::<Angle>();
         check::<Speed>();

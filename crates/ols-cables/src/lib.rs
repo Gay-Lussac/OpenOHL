@@ -35,7 +35,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use ols_core::units::{Area, Force, ForcePerLength, Length, MassPerLength, Stress};
+use ols_core::units::{
+    Area, Force, ForcePerLength, Length, MassPerLength, ResistancePerLength, Stress, Temperature,
+};
 use serde::Deserialize;
 
 /// Family of cable.
@@ -110,6 +112,101 @@ pub struct Cable {
     /// Core component, for bimetallic and composite cables.
     #[serde(default)]
     pub core: Option<Component>,
+    /// Electrical and thermal data (optional).
+    #[serde(default)]
+    pub electrical: Option<Electrical>,
+}
+
+/// A resistance at a temperature.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResistanceAt {
+    /// Conductor temperature.
+    pub temperature: Temperature,
+    /// Resistance per unit length.
+    pub resistance: ResistancePerLength,
+}
+
+/// Electrical and thermal data of a cable (`[cable.electrical]`), linked to
+/// the line's sections through their `cable`. The electrical systems
+/// (voltages, phases) are part of the line, not of the cable.
+#[derive(Debug, Clone, PartialEq, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Electrical {
+    /// AC resistance at one or more temperatures (linear between them).
+    #[serde(default)]
+    pub ac_resistance: Vec<ResistanceAt>,
+    /// DC resistance at a temperature.
+    #[serde(default)]
+    pub dc_resistance: Option<ResistanceAt>,
+    /// Geometric mean radius (for inductance).
+    #[serde(default)]
+    pub geometric_mean_radius: Option<Length>,
+    /// Emissivity of the surface, 0–1 (thermal rating).
+    #[serde(default)]
+    pub emissivity: Option<f64>,
+    /// Solar absorptivity of the surface, 0–1 (thermal rating).
+    #[serde(default)]
+    pub solar_absorptivity: Option<f64>,
+}
+
+impl Electrical {
+    /// AC resistance at `t`: linear through the two nearest given
+    /// temperatures (extrapolated beyond them); constant with one value;
+    /// `None` without data.
+    pub fn ac_resistance_at(&self, t: Temperature) -> Option<ResistancePerLength> {
+        let mut pts: Vec<(f64, f64)> = self
+            .ac_resistance
+            .iter()
+            .map(|r| (r.temperature.celsius(), r.resistance.si()))
+            .collect();
+        pts.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let x = t.celsius();
+        match pts.len() {
+            0 => None,
+            1 => Some(ResistancePerLength::from_si(pts[0].1)),
+            n => {
+                let k = pts.partition_point(|p| p.0 < x).clamp(1, n - 1);
+                let ((x0, y0), (x1, y1)) = (pts[k - 1], pts[k]);
+                Some(ResistancePerLength::from_si(
+                    y0 + (y1 - y0) * (x - x0) / (x1 - x0),
+                ))
+            }
+        }
+    }
+
+    fn validate(&self, diameter: Length) -> Result<(), String> {
+        let mut temps: Vec<f64> = Vec::new();
+        for r in self.ac_resistance.iter().chain(&self.dc_resistance) {
+            if !(r.resistance.si().is_finite() && r.resistance.si() > 0.0) {
+                return Err("resistances must be positive".into());
+            }
+        }
+        for r in &self.ac_resistance {
+            let t = r.temperature.celsius();
+            if temps.iter().any(|x| (x - t).abs() < 1e-9) {
+                return Err(format!("ac_resistance: temperature {t} °C given twice"));
+            }
+            temps.push(t);
+        }
+        if let Some(g) = self.geometric_mean_radius
+            && !(g.si() > 0.0 && g.si() <= 0.5 * diameter.si())
+        {
+            return Err(format!(
+                "geometric_mean_radius {:.3} mm must be positive and at most the radius",
+                g.millimeters()
+            ));
+        }
+        for (name, v) in [
+            ("emissivity", self.emissivity),
+            ("solar_absorptivity", self.solar_absorptivity),
+        ] {
+            if v.is_some_and(|v| !(0.0..=1.0).contains(&v)) {
+                return Err(format!("{name} must be between 0 and 1"));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Cable {
@@ -200,6 +297,10 @@ impl Cable {
                 self.diameter.millimeters(),
                 circle * 1e6
             )));
+        }
+        if let Some(e) = &self.electrical {
+            e.validate(self.diameter)
+                .map_err(|m| error(format!("electrical: {m}")))?;
         }
         mechanics::Mechanics::from_cable(self)?;
         Ok(())
@@ -377,6 +478,65 @@ mod tests {
         let mut library = Library::default();
         library.add_toml(Path::new("t.toml"), text).unwrap();
         library.get("drake").unwrap().clone()
+    }
+
+    #[test]
+    fn electrical_data() {
+        let text = |extra: &str| {
+            format!(
+                r#"
+                [[cable]]
+                id = "aaac-551"
+                name = "AAAC 551 (invented test values)"
+                kind = "aaac"
+                diameter = "30.5 mm"
+                mass_per_length = "1.52 kg/m"
+                rated_tensile_strength = "162 kN"
+                outer = {{ area = "550.6 mm²", modulus = "55 GPa", thermal_expansion = 2.3e-5 }}
+                [cable.electrical]
+                ac_resistance = [
+                    {{ temperature = "20 °C", resistance = "0.0618 Ω/km" }},
+                    {{ temperature = "40 °C", resistance = "0.0661 Ω/km" }},
+                ]
+                dc_resistance = {{ temperature = "20 °C", resistance = "0.0605 ohm/km" }}
+                geometric_mean_radius = "11.779 mm"
+                emissivity = 0.6
+                {extra}
+                "#
+            )
+        };
+        let mut lib = Library::default();
+        lib.add_toml(Path::new("t.olsw"), &text("solar_absorptivity = 0.5"))
+            .unwrap();
+        let e = lib.get("aaac-551").unwrap().electrical.clone().unwrap();
+        let at = |c: f64| {
+            e.ac_resistance_at(Temperature::from_celsius(c))
+                .unwrap()
+                .ohms_per_kilometer()
+        };
+        assert!((at(30.0) - 0.06395).abs() < 1e-12);
+        // Beyond the data: the same straight line.
+        assert!((at(80.0) - (0.0661 + 2.0 * 0.0043)).abs() < 1e-12);
+        assert_eq!(
+            e.dc_resistance.unwrap().resistance.ohms_per_kilometer(),
+            0.0605
+        );
+        assert!((e.geometric_mean_radius.unwrap().millimeters() - 11.779).abs() < 1e-9);
+        for bad in ["solar_absorptivity = 1.5", "resistivity = 3"] {
+            assert!(
+                Library::default()
+                    .add_toml(Path::new("t.olsw"), &text(bad))
+                    .is_err(),
+                "{bad}"
+            );
+        }
+        // A geometric mean radius larger than the cable: a unit mistake.
+        let big = text("").replace("11.779 mm", "11.779 m");
+        assert!(
+            Library::default()
+                .add_toml(Path::new("t.olsw"), &big)
+                .is_err()
+        );
     }
 
     #[test]
