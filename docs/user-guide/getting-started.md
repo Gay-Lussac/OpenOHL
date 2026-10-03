@@ -2,6 +2,16 @@
 
 OLS CAD is not usable for line design yet. These tools work today.
 
+## Desktop application
+
+```bash
+cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.json \
+    --terrain examples/synthetic-line/synthetic-survey.csv \
+    --weather examples/synthetic-line/weather-cases.olswc
+```
+
+See [Desktop application](desktop-app.md).
+
 ## Command-line tool
 
 ```bash

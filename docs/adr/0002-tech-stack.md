@@ -19,7 +19,7 @@ Goal: faster and more user-friendly than existing tools (DESIGN_GOALS §1). Core
 - Units: SI `f64` internally; typed quantities (`Newtons`, `NewtonsPerMeter`, …) at the public API; conversion only at I/O.
 - Coordinates: `f64` in the project CRS; `proj` for transformations.
 - Bindings: PyO3 + `maturin` (Python), `wasmtime` (WASM plugins).
-- GUI toolkit: **deferred** to the start of Phase 3 (prototype comparison: Slint, egui, Qt/cxx-qt).
+- GUI toolkit: **deferred** to the start of Phase 3 (prototype comparison: Slint, egui, Qt/cxx-qt). *Decided in [ADR-0009](0009-gui-toolkit.md): egui with wgpu.*
 - Quality: clippy, rustfmt, `cargo test`, `proptest`, `criterion` benchmarks with CI regression gate.
 
 ## Consequences

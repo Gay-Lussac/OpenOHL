@@ -1,0 +1,192 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! The plan view: alignments, wires and structures from above, north up.
+//! Drag: pan, scroll: zoom at the pointer, click: select, double-click:
+//! centre on the object.
+
+use eframe::egui;
+
+use crate::model::Model;
+use crate::scene::rgb;
+use crate::selection::{self, Selection};
+
+/// State of the plan view.
+#[derive(Debug, Default)]
+pub struct PlanView {
+    /// Project coordinates at the centre of the view.
+    centre: Option<[f64; 2]>,
+    /// Pixels per metre.
+    scale: f64,
+}
+
+fn color(c: [u8; 3]) -> egui::Color32 {
+    egui::Color32::from_rgb(c[0], c[1], c[2])
+}
+
+impl PlanView {
+    fn fit(&mut self, model: &Model, size: egui::Vec2) {
+        let pts: Vec<[f64; 3]> = model.line.structures.iter().map(|s| s.position).collect();
+        let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+        for p in &pts {
+            for k in 0..2 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        if pts.is_empty() {
+            lo = [model.origin[0] - 100.0, model.origin[1] - 100.0];
+            hi = [model.origin[0] + 100.0, model.origin[1] + 100.0];
+        }
+        self.centre = Some([0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1])]);
+        let w = (hi[0] - lo[0]).max(50.0) * 1.1;
+        let h = (hi[1] - lo[1]).max(50.0) * 1.1;
+        self.scale = (f64::from(size.x) / w).min(f64::from(size.y) / h);
+    }
+
+    /// Centres the view on a point.
+    pub fn centre_on(&mut self, p: [f64; 3]) {
+        self.centre = Some([p[0], p[1]]);
+    }
+
+    /// Shows the view.
+    pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model, case: usize, selection: &mut Selection) {
+        let (rect, response) =
+            ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
+        if self.centre.is_none() {
+            self.fit(model, rect.size());
+        }
+        let mid = rect.center();
+        if response.dragged() {
+            let d = response.drag_delta();
+            let c = self.centre.as_mut().expect("fitted");
+            c[0] -= f64::from(d.x) / self.scale;
+            c[1] += f64::from(d.y) / self.scale;
+        }
+        if response.hovered() {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0
+                && let Some(pos) = response.hover_pos()
+            {
+                // Zoom about the pointer.
+                let c = self.centre.expect("fitted");
+                let at = [
+                    c[0] + f64::from(pos.x - mid.x) / self.scale,
+                    c[1] - f64::from(pos.y - mid.y) / self.scale,
+                ];
+                let f = (f64::from(scroll) * 0.002).exp();
+                self.scale = (self.scale * f).clamp(1e-4, 500.0);
+                self.centre = Some([
+                    at[0] - f64::from(pos.x - mid.x) / self.scale,
+                    at[1] + f64::from(pos.y - mid.y) / self.scale,
+                ]);
+            }
+        }
+        let c = self.centre.expect("fitted");
+        let scale = self.scale;
+        let to_screen = move |p: [f64; 3]| {
+            egui::pos2(
+                mid.x + ((p[0] - c[0]) * scale) as f32,
+                mid.y - ((p[1] - c[1]) * scale) as f32,
+            )
+        };
+        if (response.clicked() || response.double_clicked())
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let cands = selection::candidates(model, case);
+            *selection = selection::pick(&cands, [f64::from(pos.x), f64::from(pos.y)], 12.0, |p| {
+                let q = to_screen(p);
+                Some([f64::from(q.x), f64::from(q.y)])
+            });
+            if response.double_clicked()
+                && let Some(f) = selection.focus(model, case)
+            {
+                self.centre_on(f);
+            }
+        }
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(24, 28, 34));
+        let line = &model.line;
+        for r in line.effective_routes() {
+            let pts: Vec<egui::Pos2> = r.centreline(line).into_iter().map(to_screen).collect();
+            painter.add(egui::Shape::line(
+                pts,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 200, 220)),
+            ));
+        }
+        if let Some(solved) = model.cases.get(case) {
+            for shape in &solved.shapes {
+                let col = line
+                    .sections
+                    .iter()
+                    .find(|x| x.id == shape.section)
+                    .map_or([176, 184, 192], |s| rgb(&line.section_color(s)));
+                for (k, span) in shape.spans.iter().enumerate() {
+                    let selected = matches!(selection, Selection::Span { section, span: n }
+                        if *section == shape.section && *n == k);
+                    let pts: Vec<egui::Pos2> = span.points.iter().map(|p| to_screen(*p)).collect();
+                    let (w, col) = if selected {
+                        (4.0, egui::Color32::WHITE)
+                    } else {
+                        (1.5, color(col))
+                    };
+                    painter.add(egui::Shape::line(pts, egui::Stroke::new(w, col)));
+                }
+            }
+        }
+        let labels = scale > 0.08;
+        for s in &line.structures {
+            let p = to_screen(s.position);
+            if !rect.expand(20.0).contains(p) {
+                continue;
+            }
+            let selected = matches!(selection, Selection::Structure(id) if *id == s.id);
+            painter.circle_filled(
+                p,
+                if selected { 6.0 } else { 3.5 },
+                if selected {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::from_gray(215)
+                },
+            );
+            if labels || selected {
+                painter.text(
+                    p + egui::vec2(6.0, -6.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    &s.id,
+                    egui::FontId::proportional(11.0),
+                    egui::Color32::from_gray(200),
+                );
+            }
+        }
+        // Scale bar.
+        let target = 120.0 / scale;
+        let nice = [1.0, 2.0, 5.0]
+            .iter()
+            .flat_map(|m| (-2..6).map(move |e| m * 10f64.powi(e)))
+            .filter(|v| *v <= target)
+            .fold(1.0, f64::max);
+        let len = (nice * scale) as f32;
+        let a = rect.left_bottom() + egui::vec2(12.0, -14.0);
+        painter.line_segment(
+            [a, a + egui::vec2(len, 0.0)],
+            egui::Stroke::new(2.0, egui::Color32::from_gray(200)),
+        );
+        painter.text(
+            a + egui::vec2(len + 6.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            format!("{nice} m"),
+            egui::FontId::proportional(11.0),
+            egui::Color32::from_gray(200),
+        );
+        painter.text(
+            rect.right_top() + egui::vec2(-10.0, 10.0),
+            egui::Align2::RIGHT_TOP,
+            "N ↑",
+            egui::FontId::proportional(13.0),
+            egui::Color32::from_gray(200),
+        );
+    }
+}

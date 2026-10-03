@@ -30,12 +30,16 @@ ols-crs = { path = "crates/ols-crs" }
 ols-io = { path = "crates/ols-io" }
 ols-validation = { path = "crates/ols-validation" }
 ols-plugins = { path = "crates/ols-plugins" }
+ols-render = { path = "crates/ols-render" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 toml = "0.9"
 criterion = "0.8"
 nalgebra = "0.35"
+wgpu = "30"
+eframe = { version = "0.36", default-features = false, features = ["wgpu", "default_fonts", "accesskit", "x11"] }
+egui_dock = "0.21"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

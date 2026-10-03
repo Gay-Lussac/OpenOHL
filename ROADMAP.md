@@ -90,9 +90,11 @@ The open Phase 2 items above, grouped into four work packages:
 ## Phase 3 — Desktop application MVP
 *Goal: engineers can build and inspect a line interactively.*
 
-- [ ] Application shell on top of the in-process `ols-session`
-- [ ] `ols-render`: wgpu renderer with chunk streaming, render distance per layer, LOD (terrain quadtree, structure mesh LODs, adaptive wires), culling, instancing
-- [ ] Plan view, profile view, 3D view (synchronised selection), live update while dragging
+- [x] Application shell (`ols-cad`, egui + wgpu, ADR-0009): background loading and solving, dockable views sharing selection and weather case *(editing through `ols-session` commands next)*
+- [x] `ols-render` basics: wgpu lines (pixel widths), points, shaded surfaces with depth and anti-aliasing; origin-relative precision; orbit camera; headless images
+- [ ] `ols-render`: chunk streaming, render distance per layer, LOD (terrain quadtree, structure mesh LODs, adaptive wires), culling, instancing
+- [x] Plan view, profile view, 3D view with synchronised selection; properties of structures and spans in every weather case; layers; LiDAR points by class role and ground from LiDAR
+- [ ] Live update while dragging
 - [ ] Command palette, keyboard workflows, explainable results (click value → inputs & references)
 - [ ] Interactive structure spotting (add/move/delete structures on profile)
 - [ ] Wire stringing UI (sections, tension criteria, weather cases)

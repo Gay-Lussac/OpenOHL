@@ -5,6 +5,7 @@
 # User guide
 
 - [Getting started](user-guide/getting-started.md)
+- [Desktop application](user-guide/desktop-app.md)
 - [Wire library files (.olsw)](user-guide/wire-library.md)
 - [Line files (.ols.json)](user-guide/line-file.md)
 - [Weather cases (.olswc)](user-guide/weather.md)
@@ -34,6 +35,7 @@
   - [ADR-0006 Rendering, LOD & streaming](adr/0006-rendering-lod-streaming.md)
   - [ADR-0007 Point clouds in the project](adr/0007-point-clouds-in-the-project.md)
   - [ADR-0008 Spatial chunk index](adr/0008-spatial-chunk-index.md)
+  - [ADR-0009 GUI toolkit](adr/0009-gui-toolkit.md)
 
 # Development
 

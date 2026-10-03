@@ -1,0 +1,36 @@
+[package]
+name = "ols-app"
+description = "OLS CAD desktop application: 3D, plan and profile views of a line model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ols-cad"
+path = "src/main.rs"
+
+[dependencies]
+ols-core.workspace = true
+ols-cables.workspace = true
+ols-line.workspace = true
+ols-structures.workspace = true
+ols-weather.workspace = true
+ols-terrain.workspace = true
+ols-lidar.workspace = true
+ols-pointcloud.workspace = true
+ols-session.workspace = true
+ols-drawing.workspace = true
+ols-render.workspace = true
+eframe.workspace = true
+egui_dock.workspace = true
+clap.workspace = true
+png = "0.18"
+
+[dev-dependencies]
+egui_kittest = { version = "0.36", features = ["wgpu", "eframe"] }
+
+[lints]
+workspace = true

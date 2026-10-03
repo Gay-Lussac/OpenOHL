@@ -1,0 +1,335 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! Loading a model for the views: the line (from a line file or a project),
+//! its structure types and libraries, the weather cases solved, the ground
+//! surface and LiDAR points. Runs on a background thread
+//! ([`load`]), reporting progress.
+
+use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+use ols_line::Line;
+use ols_line::jumper::JumperShape;
+use ols_line::solve::SectionShape;
+use ols_terrain::Terrain;
+use ols_weather::{WeatherCase, WeatherCases};
+
+/// Where the model comes from.
+#[derive(Debug, Clone, Default)]
+pub struct Sources {
+    /// Line file (`.ols.json`) or project (`.ols`).
+    pub file: PathBuf,
+    /// Wire library (file or directory); default: `*.olsw` next to the
+    /// file, else `libraries/cables`.
+    pub library: Option<PathBuf>,
+    /// Pylon files; default: `Structures/` next to the file, else
+    /// `libraries/structures`.
+    pub structures: Option<PathBuf>,
+    /// Insulator library.
+    pub insulators: Option<PathBuf>,
+    /// Weather case file (`.olswc`); default: one case at 15 °C.
+    pub weather: Option<PathBuf>,
+    /// Survey points for the ground (CSV/XYZ).
+    pub terrain: Option<PathBuf>,
+    /// Point cloud: a project file (`FILE.ols` or `FILE.ols#name`);
+    /// default: the project's own, if it has one.
+    pub pointcloud: Option<String>,
+    /// Most LiDAR points shown (the ground surface uses all ground points).
+    pub point_budget: usize,
+    /// Half width of the corridor around the spans for LiDAR, m.
+    pub corridor: f64,
+}
+
+/// One solved weather case.
+#[derive(Debug, Clone)]
+pub struct Solved {
+    /// The case.
+    pub case: WeatherCase,
+    /// Solved sections (failed ones left out).
+    pub shapes: Vec<SectionShape>,
+    /// Solved jumpers.
+    pub jumpers: Vec<JumperShape>,
+    /// Sections or jumpers that failed, with why.
+    pub failed: Vec<String>,
+}
+
+/// A LiDAR point: millimetres from the model origin, class.
+pub type LidarPoint = ([i32; 3], u8);
+
+/// A loaded model.
+#[derive(Debug)]
+pub struct Model {
+    /// Where it came from.
+    pub sources: Sources,
+    /// The line (structure types resolved).
+    pub line: Line,
+    /// Weather cases, solved.
+    pub cases: Vec<Solved>,
+    /// Ground surface.
+    pub ground: Option<Terrain>,
+    /// LiDAR points shown (thinned to the budget).
+    pub points: Vec<LidarPoint>,
+    /// Origin of the points (and of the views), project coordinates.
+    pub origin: [f64; 3],
+    /// Class scheme of the points.
+    pub scheme: ols_lidar::ClassScheme,
+    /// What was loaded, for the status panel.
+    pub log: Vec<String>,
+}
+
+fn dir_of(file: &Path) -> PathBuf {
+    file.parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+        .to_path_buf()
+}
+
+/// The wire library: given, else the `*.olsw` files next to the model,
+/// else `libraries/cables`.
+fn library_path(s: &Sources) -> PathBuf {
+    if let Some(p) = &s.library {
+        return p.clone();
+    }
+    let dir = dir_of(&s.file);
+    let has_olsw = std::fs::read_dir(&dir).is_ok_and(|mut it| {
+        it.any(|e| e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "olsw")))
+    });
+    if has_olsw {
+        dir
+    } else {
+        PathBuf::from("libraries/cables")
+    }
+}
+
+fn load_line(path: &Path) -> Result<Line, String> {
+    if path.extension().is_some_and(|e| e == "ols") {
+        let s = ols_session::Session::open(path).map_err(|e| e.to_string())?;
+        if !s.has_line() {
+            return Err(format!("{}: the project holds no line", path.display()));
+        }
+        Ok(s.export())
+    } else {
+        Line::load(path).map_err(|e| e.to_string())
+    }
+}
+
+/// Loads and solves everything; `progress` gets a line per step.
+pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String> {
+    let mut log = Vec::new();
+    let step = |m: String, log: &mut Vec<String>| {
+        progress(m.clone());
+        log.push(m);
+    };
+    let started = Instant::now();
+    let mut line = load_line(&sources.file)?;
+    step(
+        format!(
+            "{}: {} structures, {} sections, {} jumpers",
+            line.name,
+            line.structures.len(),
+            line.sections.len(),
+            line.jumpers.len()
+        ),
+        &mut log,
+    );
+    if line.structures.iter().any(|s| s.structure_type.is_some()) {
+        let dir = sources.structures.clone().unwrap_or_else(|| {
+            let local = dir_of(&sources.file).join("Structures");
+            if local.is_dir() {
+                local
+            } else {
+                PathBuf::from("libraries/structures")
+            }
+        });
+        let structures =
+            ols_structures::StructureLibrary::load_dir(&dir).map_err(|e| e.to_string())?;
+        let insulators = ols_structures::InsulatorLibrary::load_dir(
+            sources
+                .insulators
+                .as_deref()
+                .unwrap_or(Path::new("libraries/insulators")),
+        )
+        .map_err(|e| e.to_string())?;
+        line = line
+            .resolve(&structures, &insulators)
+            .map_err(|e| e.to_string())?;
+        step(format!("structure types from {}", dir.display()), &mut log);
+    }
+    let lib_path = library_path(&sources);
+    let library = ols_cables::Library::load(&lib_path).map_err(|e| e.to_string())?;
+    step(format!("wire library {}", lib_path.display()), &mut log);
+    let cases: Vec<WeatherCase> = match &sources.weather {
+        Some(p) => WeatherCases::load(p)?.cases,
+        None => vec![WeatherCase::still(
+            "15 °C",
+            ols_core::units::Temperature::from_celsius(15.0),
+        )],
+    };
+    let mut solved = Vec::new();
+    for case in cases {
+        let t = Instant::now();
+        let mut shapes = Vec::new();
+        let mut failed = Vec::new();
+        for (section, r) in line
+            .sections
+            .iter()
+            .zip(ols_line::solve::solve_line(&line, &library, &case))
+        {
+            match r {
+                Ok(s) => shapes.push(s),
+                Err(e) => failed.push(format!("{}: {e}", section.id)),
+            }
+        }
+        let mut jumpers = Vec::new();
+        for (j, r) in line.jumpers.iter().zip(ols_line::jumper::solve_jumpers(
+            &line, &library, &case, &shapes,
+        )) {
+            match r {
+                Ok(s) => jumpers.push(s),
+                Err(e) => failed.push(format!("{}: {e}", j.id)),
+            }
+        }
+        step(
+            format!(
+                "case \"{}\" solved in {:.0?}{}",
+                case.name,
+                t.elapsed(),
+                if failed.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {} failed", failed.len())
+                }
+            ),
+            &mut log,
+        );
+        solved.push(Solved {
+            case,
+            shapes,
+            jumpers,
+            failed,
+        });
+    }
+    let origin = line.structures.first().map_or([0.0; 3], |s| s.position);
+    let mut ground = match &sources.terrain {
+        Some(p) => {
+            let t = Terrain::load(p).map_err(|e| e.to_string())?;
+            step(format!("ground: {} triangles", t.num_triangles()), &mut log);
+            Some(t)
+        }
+        None => None,
+    };
+    // Point cloud: given, else the project's own.
+    let cloud = sources.pointcloud.clone().or_else(|| {
+        let is_project = sources.file.extension().is_some_and(|e| e == "ols");
+        let has = is_project
+            && ols_pointcloud::Store::open(&sources.file)
+                .and_then(|s| s.clouds())
+                .is_ok_and(|c| !c.is_empty());
+        has.then(|| sources.file.display().to_string())
+    });
+    let mut points = Vec::new();
+    let mut scheme = ols_lidar::ClassScheme::asprs();
+    if let Some(spec) = cloud {
+        let t = Instant::now();
+        let (file, name) = match spec.split_once('#') {
+            Some((f, n)) => (f.to_owned(), Some(n.to_owned())),
+            None => (spec.clone(), None),
+        };
+        let source = ols_pointcloud::CloudSource::open(Path::new(&file), name.as_deref())
+            .map_err(|e| e.to_string())?;
+        if let Some(text) = ols_pointcloud::PointSource::class_scheme(&source) {
+            scheme = ols_lidar::ClassScheme::parse(&text)?;
+        }
+        let ground_classes = scheme.codes_with_role("ground");
+        let mut is_ground = [false; 256];
+        for &c in &ground_classes {
+            is_ground[c as usize] = true;
+        }
+        // Corridor along the spans' chords.
+        let polylines: Vec<Vec<[f64; 2]>> = line
+            .sections
+            .iter()
+            .map(|s| {
+                s.points
+                    .iter()
+                    .filter_map(|p| line.attachment(p))
+                    .map(|a| [a.wire_point[0], a.wire_point[1]])
+                    .collect()
+            })
+            .collect();
+        let corridor = ols_lidar::Corridor::new(&polylines, sources.corridor);
+        // Every n-th point of the other classes, n from the cloud's size.
+        let info = source.cloud().clone();
+        let stride = (info.points as usize / sources.point_budget.max(1)).max(1);
+        let mut cells: std::collections::HashMap<(i64, i64), usize> =
+            std::collections::HashMap::new();
+        let mut ground_points: Vec<[f64; 3]> = Vec::new();
+        let mut k = 0usize;
+        let mm = |v: f64, i: usize| ((v - origin[i]) * 1000.0).round() as i32;
+        // Exit clause: decoding is ~1 s per 10⁷ points; 10 min is far beyond.
+        let budget =
+            ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+        let stats = ols_pointcloud::PointSource::visit(
+            &source,
+            Some(&corridor),
+            None,
+            &budget,
+            &mut |x, y, z, c| {
+                if is_ground[c as usize] {
+                    // Lowest point per 1 m cell for the surface.
+                    let key = (x.floor() as i64, y.floor() as i64);
+                    match cells.get(&key) {
+                        Some(&i) if ground_points[i][2] <= z => {}
+                        Some(&i) => ground_points[i] = [x, y, z],
+                        None => {
+                            cells.insert(key, ground_points.len());
+                            ground_points.push([x, y, z]);
+                        }
+                    }
+                } else {
+                    k += 1;
+                    if k.is_multiple_of(stride) {
+                        points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
+                    }
+                }
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        step(
+            format!(
+                "points: {} decoded in {:.1?}; {} shown, {} ground cells",
+                stats.points_visited,
+                t.elapsed(),
+                points.len(),
+                ground_points.len()
+            ),
+            &mut log,
+        );
+        if ground.is_none() && ground_points.len() >= 3 {
+            let t = Instant::now();
+            let g = Terrain::from_xyz(&ground_points, Some(50.0)).map_err(|e| e.to_string())?;
+            step(
+                format!(
+                    "ground: {} triangles from LiDAR in {:.1?}",
+                    g.num_triangles(),
+                    t.elapsed()
+                ),
+                &mut log,
+            );
+            ground = Some(g);
+        }
+    }
+    step(format!("ready in {:.1?}", started.elapsed()), &mut log);
+    Ok(Model {
+        sources,
+        line,
+        cases: solved,
+        ground,
+        points,
+        origin,
+        scheme,
+        log,
+    })
+}
