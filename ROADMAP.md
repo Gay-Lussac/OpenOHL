@@ -65,7 +65,8 @@ Guiding principles:
 - [x] Insulator behaviour in the 3D solve: I-string swing, V-string leg forces & slack detection, strain assembly geometry *(from the FE solve; closed-form checks still to add as validation cases)*
 - [x] `ols-clearance` v1: vertical ground clearance of every solved span per weather case, violations in `ols line --terrain --clearance` and in the viewer
 - [x] `ols-clearance` v2 (DESIGN_GOALS §13): vertical **and** radial clearances; rule files (`.olsr`) per target — ground, LiDAR classes/roles, other lines, other wires of the same line (same span and between spans)
-- [ ] Clearance envelopes over several weather cases, different cases per wire in wire-to-wire checks; rule editor tool (per LiDAR class)
+- [x] Clearance envelopes over several weather cases (lowest clearance and governing case per wire and rule), different cases per wire in wire-to-wire checks (`case_pairs`), rules limited to cases; sheets draw every case
+- [ ] Rule editor tool (per LiDAR class); exclusion zones near supports and terminations
 - [x] Plan & profile views per route (`ols-drawing`, `ols line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures, title block with logos, separate plan scale across the line *(DXF and layout templates as plugins still to come)*
 - [ ] Exporter/importer plugin interface (first formats: CSV, KML/KMZ)
 - [x] Display: phase colours per circuit/phase, configurable per project (by phase label) and per section, legend in the viewer (DESIGN_GOALS §12)

@@ -808,6 +808,14 @@ fn line(args: &LineArgs) -> ExitCode {
         let mut clearance_rows = String::from(clearance_run::CSV_HEADER);
         // Outputs (viewer, CSV, drawings) show the first case.
         let mut first: Option<(WeatherCase, Vec<ols_line::solve::SectionShape>)> = None;
+        // Every case's solution, for the drawings (one trace per case).
+        let mut solved_cases: Vec<(
+            WeatherCase,
+            Vec<ols_line::solve::SectionShape>,
+            Vec<ols_line::jumper::JumperShape>,
+        )> = Vec::new();
+        let mut case_wires = Vec::new();
+        let mut envelope = ols_clearance::Envelope::default();
         let mut extras = ols_line::export::ViewerExtras::default();
         let mut failed = 0;
         for case in &cases {
@@ -898,7 +906,7 @@ fn line(args: &LineArgs) -> ExitCode {
                     }
                 }
             }
-            clearance_run::check(
+            case_wires.push(clearance_run::check(
                 &line,
                 &library,
                 case,
@@ -907,18 +915,26 @@ fn line(args: &LineArgs) -> ExitCode {
                 &prepared,
                 &mut clearance_rows,
                 &mut extras,
-            )?;
+                &mut envelope,
+            )?);
+            solved_cases.push((case.clone(), shapes.clone(), jumpers.clone()));
             if first.is_none() {
                 extras.jumpers = jumpers;
                 first = Some((case.clone(), shapes));
             }
         }
+        clearance_run::cross_cases(
+            &prepared,
+            &case_wires,
+            &mut clearance_rows,
+            &mut extras,
+            &mut envelope,
+        );
+        clearance_run::envelope_report(&prepared, &envelope, &mut clearance_rows);
         let (first_case, shapes) = first.expect("at least one case");
-        if cases.len() > 1
-            && (drawings.is_some() || html.is_some() || csv.is_some() || spans_csv.is_some())
-        {
+        if cases.len() > 1 && (html.is_some() || csv.is_some() || spans_csv.is_some()) {
             println!(
-                "drawings, viewer and wire CSV show the first case, \"{}\" (violation markers of all cases)",
+                "viewer and wire CSVs show the first case, \"{}\" (violation markers of all cases); drawings show every case",
                 first_case.name
             );
         }
@@ -958,15 +974,35 @@ fn line(args: &LineArgs) -> ExitCode {
                 side_offsets: side_offset.clone(),
                 clearance: *clearance,
                 plan_half_width: *plan_width,
-                title: vec![
-                    line.name.clone(),
-                    format!("{}: {}", first_case.name, first_case.summary()),
-                ],
+                title: {
+                    let mut t = vec![line.name.clone()];
+                    let names: Vec<String> = solved_cases
+                        .iter()
+                        .enumerate()
+                        .map(|(k, (c, _, _))| {
+                            format!(
+                                "{}{}",
+                                c.name,
+                                if k == 0 {
+                                    " (solid)".to_owned()
+                                } else {
+                                    format!(" ({})", ols_drawing::case_dash_name(k))
+                                }
+                            )
+                        })
+                        .collect();
+                    t.push(if names.len() > 1 {
+                        format!("Weather cases: {}", names.join(", "))
+                    } else {
+                        format!("{}: {}", first_case.name, first_case.summary())
+                    });
+                    t
+                },
                 plan_offset_scale: *plan_scale,
                 logos,
             };
             for route in line.effective_routes() {
-                let d = ols_drawing::build(
+                let mut d = ols_drawing::build(
                     &line,
                     &route,
                     &shapes,
@@ -975,6 +1011,25 @@ fn line(args: &LineArgs) -> ExitCode {
                     &extras.markers,
                     &options,
                 )?;
+                // The other cases' wires, dashed (the envelope of positions).
+                for (k, (case, case_shapes, case_jumpers)) in
+                    solved_cases.iter().enumerate().skip(1)
+                {
+                    let other = ols_drawing::build(
+                        &line,
+                        &route,
+                        case_shapes,
+                        case_jumpers,
+                        None,
+                        &[],
+                        &options,
+                    )?;
+                    for mut w in other.wires {
+                        w.label = format!("{} — {}", w.label, case.name);
+                        w.dash = Some(ols_drawing::case_dash(k));
+                        d.wires.push(w);
+                    }
+                }
                 let svg_path = dir.join(format!("{}.svg", route.id));
                 let csv_path = dir.join(format!("{}-profile.csv", route.id));
                 match &page {

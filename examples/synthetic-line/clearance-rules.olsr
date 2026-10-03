@@ -21,3 +21,15 @@ name = "Crossed lines"
 target = "other_lines"
 vertical = "4.5 m"
 radial = "4.5 m"
+
+[[rule]]
+name = "Iced wire over a hot wire"
+target = "same_line"
+radial = "4 m"
+case_pairs = [["glaze ice", "max temperature"]]
+
+[[rule]]
+name = "Ground at maximum temperature"
+target = "ground"
+vertical = "7.5 m"
+cases = ["max temperature"]

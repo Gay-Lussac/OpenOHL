@@ -81,6 +81,26 @@ pub struct Trace {
     pub color: String,
     /// Points: station, offset, z.
     pub points: Vec<[f64; 3]>,
+    /// Dash pattern (SVG `stroke-dasharray`) for other weather cases;
+    /// `None`: solid.
+    pub dash: Option<String>,
+}
+
+const DASHES: [(&str, &str); 4] = [
+    ("3 1.5", "dashed"),
+    ("0.8 0.8", "dotted"),
+    ("4 1 1 1", "dash-dot"),
+    ("6 2", "long dashes"),
+];
+
+/// Dash pattern of the `k`-th weather case (k ≥ 1; case 0 is solid).
+pub fn case_dash(k: usize) -> String {
+    DASHES[(k.max(1) - 1) % DASHES.len()].0.to_owned()
+}
+
+/// Name of the dash pattern of the `k`-th weather case.
+pub fn case_dash_name(k: usize) -> &'static str {
+    DASHES[(k.max(1) - 1) % DASHES.len()].1
 }
 
 /// A structure along the route.
@@ -235,6 +255,7 @@ pub fn build(
             );
             if consecutive(a, b) {
                 wires.push(Trace {
+                    dash: None,
                     label: format!(
                         "{} span {k} ({} {})",
                         section.id, section.circuit, section.phase_label
@@ -261,6 +282,7 @@ pub fn build(
                     })
             });
             wires.push(Trace {
+                dash: None,
                 label: format!("jumper {}", j.jumper),
                 color,
                 points: j.points.iter().map(to_route).collect(),
@@ -558,9 +580,12 @@ fn draw(out: &mut String, d: &RouteDrawing, o: &Options, f: &Frame, z_step: f64,
     for w in &d.wires {
         let _ = writeln!(
             out,
-            r#"<path d="{}" fill="none" stroke="{}" stroke-width="0.35"><title>{}</title></path>"#,
+            r#"<path d="{}" fill="none" stroke="{}" stroke-width="0.35"{}><title>{}</title></path>"#,
             path(w.points.iter().map(|p| (f.x(p[0]), f.plan_y(p[1])))),
             w.color,
+            w.dash
+                .as_ref()
+                .map_or(String::new(), |d| format!(r#" stroke-dasharray="{d}""#)),
             escape(&w.label)
         );
     }
@@ -647,9 +672,12 @@ fn draw(out: &mut String, d: &RouteDrawing, o: &Options, f: &Frame, z_step: f64,
     for w in &d.wires {
         let _ = writeln!(
             out,
-            r#"<path d="{}" fill="none" stroke="{}" stroke-width="0.35"><title>{}</title></path>"#,
+            r#"<path d="{}" fill="none" stroke="{}" stroke-width="0.35"{}><title>{}</title></path>"#,
             path(w.points.iter().map(|p| (f.x(p[0]), f.y(p[2])))),
             w.color,
+            w.dash
+                .as_ref()
+                .map_or(String::new(), |d| format!(r#" stroke-dasharray="{d}""#)),
             escape(&w.label)
         );
     }

@@ -47,6 +47,13 @@ pub struct Wire {
     pub phase: String,
     /// Points along the wire.
     pub points: Vec<P3>,
+    /// The attachments it hangs on (`structure:set:phase`): wires sharing
+    /// one are connected (adjacent spans, a jumper and its sections).
+    pub ends: Vec<String>,
+}
+
+fn key(p: &ols_line::SectionPoint) -> String {
+    format!("{}:{}:{}", p.structure, p.set, p.phase)
 }
 
 /// The wires of a solved line: every span of every section, and every
@@ -62,21 +69,22 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
                 circuit: section.map_or(String::new(), |s| s.circuit.clone()),
                 phase: section.map_or(String::new(), |s| s.phase_label.clone()),
                 points: span.points.clone(),
+                ends: section.map_or(Vec::new(), |s| {
+                    s.points.iter().skip(k).take(2).map(key).collect()
+                }),
             });
         }
     }
     for j in jumpers {
-        let from = line
-            .jumpers
-            .iter()
-            .find(|d| d.id == j.jumper)
-            .and_then(|d| line.sections.iter().find(|s| s.points.contains(&d.from)));
+        let def = line.jumpers.iter().find(|d| d.id == j.jumper);
+        let from = def.and_then(|d| line.sections.iter().find(|s| s.points.contains(&d.from)));
         wires.push(Wire {
             section: format!("jumper:{}", j.jumper),
             span: 0,
             circuit: from.map_or(String::new(), |s| s.circuit.clone()),
             phase: from.map_or(String::new(), |s| s.phase_label.clone()),
             points: j.points.clone(),
+            ends: def.map_or(Vec::new(), |d| vec![key(&d.from), key(&d.to)]),
         });
     }
     wires
@@ -359,6 +367,9 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
 
 /// Whether two wires share an end point (within 1 cm).
 fn connected(a: &Wire, b: &Wire) -> bool {
+    if !a.ends.is_empty() && !b.ends.is_empty() {
+        return a.ends.iter().any(|e| b.ends.contains(e));
+    }
     let ends = |w: &Wire| [w.points.first().copied(), w.points.last().copied()];
     ends(a)
         .into_iter()
@@ -378,6 +389,27 @@ pub struct PairResult {
     pub result: WireResult,
 }
 
+/// Which wire pairs [`wire_pairs`] checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PairMode {
+    /// `b` holds the same wires as `a` (one weather case): each pair once,
+    /// not a wire with itself, nor connected wires (sharing an attachment),
+    /// nor wires of the same circuit and phase unless asked.
+    SameLine {
+        /// Also check wires of the same circuit and phase.
+        include_same_phase: bool,
+    },
+    /// `b` holds the same line's wires in another weather case: every
+    /// ordered pair except a wire with itself, connected wires, and (unless
+    /// asked) the same circuit and phase.
+    SameLineOtherCase {
+        /// Also check wires of the same circuit and phase.
+        include_same_phase: bool,
+    },
+    /// `b` holds another line's wires: every pair.
+    OtherLines,
+}
+
 /// Clearances between the wires of `a` and those of the indexed set `b`:
 /// radial for pairs closer than the rule's reach, vertical wherever they
 /// cross in plan (crossing clearances are always reported). With
@@ -386,13 +418,7 @@ pub struct PairResult {
 /// `include_same_phase`. Wires sharing an end point (within 1 cm) are
 /// connected — adjacent spans, a jumper and its sections — and not checked
 /// against each other.
-pub fn wire_pairs(
-    rule: &Rule,
-    a: &[Wire],
-    b: &WireSet,
-    same_set: bool,
-    include_same_phase: bool,
-) -> Vec<PairResult> {
+pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<PairResult> {
     let reach = rule.reach().min(b.reach);
     let mut pairs: HashMap<(usize, usize), WireResult> = HashMap::new();
     for (i, wire) in a.iter().enumerate() {
@@ -408,17 +434,20 @@ pub fn wire_pairs(
             // Wires this segment violates (counted once per segment).
             let mut bad: Vec<(usize, bool, bool)> = Vec::new();
             for (j, k) in candidates {
-                if same_set {
-                    let other = &b.wires[j];
-                    if j <= i
-                        || (!include_same_phase
-                            && other.circuit == wire.circuit
-                            && other.phase == wire.phase)
-                    {
-                        continue;
+                let other = &b.wires[j];
+                let same_phase = other.circuit == wire.circuit && other.phase == wire.phase;
+                let skip = match mode {
+                    PairMode::SameLine { include_same_phase } => {
+                        j <= i || (!include_same_phase && same_phase) || connected(wire, other)
                     }
-                }
-                if connected(wire, &b.wires[j]) {
+                    PairMode::SameLineOtherCase { include_same_phase } => {
+                        (other.section == wire.section && other.span == wire.span)
+                            || (!include_same_phase && same_phase)
+                            || connected(wire, other)
+                    }
+                    PairMode::OtherLines => false,
+                };
+                if skip {
                     continue;
                 }
                 let (c, d) = b.segment(j, k);
@@ -496,11 +525,56 @@ mod tests {
                     ]
                 })
                 .collect(),
+            ends: vec![],
         }
     }
 
     fn rule(text: &str) -> Rule {
         RuleSet::parse(text).unwrap().rules.remove(0)
+    }
+
+    #[test]
+    fn same_line_in_another_case() {
+        // Two phases 4 m apart, and a next span of phase 1 sharing the
+        // attachment B (connected), in two cases that differ (the second
+        // case's wires 0.5 m lower and their ends moved).
+        let with_ends = |mut w: Wire, ends: [&str; 2]| {
+            w.ends = ends.iter().map(|e| e.to_string()).collect();
+            w
+        };
+        let case = |dz: f64| {
+            vec![
+                with_ends(
+                    straight("S1", "L1", [0.0, 0.0, 20.0 - dz], [100.0, 0.0, 20.0 - dz]),
+                    ["A:1:1", "B:1:1"],
+                ),
+                with_ends(
+                    straight("S2", "L2", [0.0, 4.0, 20.0 - dz], [100.0, 4.0, 20.0 - dz]),
+                    ["A:1:2", "B:1:2"],
+                ),
+                with_ends(
+                    straight("S3", "L9", [100.0, 0.0, 20.0 - dz], [200.0, 0.0, 20.0 - dz]),
+                    ["B:1:1", "C:1:1"],
+                ),
+            ]
+        };
+        let (iced, hot) = (case(0.0), case(0.5));
+        let set = WireSet::new(hot, 20.0);
+        let pp = rule("[[rule]]\nname = \"pp\"\ntarget = \"same_line\"\nradial = 5.0");
+        let pairs = wire_pairs(
+            &pp,
+            &iced,
+            &set,
+            PairMode::SameLineOtherCase {
+                include_same_phase: true,
+            },
+        );
+        let found: Vec<(usize, usize)> = pairs.iter().map(|p| (p.a, p.b)).collect();
+        // Both orderings of S1–S2 and S2–S3; not a wire with itself; not
+        // S1–S3 (they share B:1:1), although their ends no longer meet.
+        assert_eq!(found, vec![(0, 1), (1, 0), (1, 2), (2, 1)], "{found:?}");
+        let d = pairs[0].result.radial.unwrap().distance;
+        assert!((d - 4.0f64.hypot(0.5)).abs() < 1e-9, "{d}");
     }
 
     #[test]
@@ -569,14 +643,32 @@ mod tests {
         ];
         let same = WireSet::new(line.clone(), 20.0);
         let pp = rule("[[rule]]\nname = \"pp\"\ntarget = \"same_line\"\nradial = 5.0");
-        let pairs = wire_pairs(&pp, &line, &same, true, false);
+        let pairs = wire_pairs(
+            &pp,
+            &line,
+            &same,
+            PairMode::SameLine {
+                include_same_phase: false,
+            },
+        );
         assert_eq!(pairs.len(), 2, "{pairs:?}"); // S1–S2, S2–S3; not S1–S3
         let s1s2 = pairs.iter().find(|p| (p.a, p.b) == (0, 1)).unwrap();
         assert!((s1s2.result.radial.unwrap().distance - 4.0).abs() < 1e-9);
         assert!(s1s2.result.violates(&pp));
         // With same-phase pairs included, S1–S3 is still skipped: they
         // meet end to end (connected).
-        assert_eq!(wire_pairs(&pp, &line, &same, true, true).len(), 2);
+        assert_eq!(
+            wire_pairs(
+                &pp,
+                &line,
+                &same,
+                PairMode::SameLine {
+                    include_same_phase: true
+                }
+            )
+            .len(),
+            2
+        );
 
         let other = WireSet::new(
             vec![straight(
@@ -588,7 +680,7 @@ mod tests {
             20.0,
         );
         let cross = rule("[[rule]]\nname = \"x\"\ntarget = \"other_lines\"\nvertical = 6.0");
-        let pairs = wire_pairs(&cross, &line, &other, false, false);
+        let pairs = wire_pairs(&cross, &line, &other, PairMode::OtherLines);
         // Crosses S1 and S2 (5 m below each), not S3.
         assert_eq!(pairs.len(), 2);
         for p in &pairs {
@@ -609,7 +701,7 @@ mod tests {
             )],
             20.0,
         );
-        let pairs = wire_pairs(&cross, &line, &deep, false, false);
+        let pairs = wire_pairs(&cross, &line, &deep, PairMode::OtherLines);
         assert_eq!(pairs.len(), 2);
         assert!(pairs.iter().all(|p| p.result.radial.is_none()
             && (p.result.vertical.unwrap().distance - 30.0).abs() < 1e-9));
@@ -622,7 +714,14 @@ mod tests {
             [100.0, 2.0, 18.0],
         ));
         let set = WireSet::new(with_jumper.clone(), 20.0);
-        let pairs = wire_pairs(&pp, &with_jumper, &set, true, true);
+        let pairs = wire_pairs(
+            &pp,
+            &with_jumper,
+            &set,
+            PairMode::SameLine {
+                include_same_phase: true,
+            },
+        );
         assert!(
             pairs.iter().all(|p| !(p.b == 3 && (p.a == 0 || p.a == 2))),
             "{pairs:?}"

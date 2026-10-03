@@ -208,6 +208,12 @@ pub struct WeatherCases {
     pub cases: Vec<WeatherCase>,
 }
 
+/// Whether `name` matches `pattern`: `*` (any text) and `?` (one
+/// character) wildcards, case-insensitive.
+pub fn name_matches(pattern: &str, name: &str) -> bool {
+    matches(pattern, name)
+}
+
 /// `*` (any text) and `?` (one character) wildcards, case-insensitive.
 fn matches(pattern: &str, text: &str) -> bool {
     let (p, t): (Vec<char>, Vec<char>) = (

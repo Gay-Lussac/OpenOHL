@@ -23,10 +23,12 @@
 //! (LiDAR), to wires of other lines and to other wires of the same line.
 
 pub mod checks;
+pub mod envelope;
 pub mod geometry;
 pub mod rules;
 
-pub use checks::{Hit, PairResult, PointCheck, Wire, WireResult, WireSet, wires_of};
+pub use checks::{Hit, PairMode, PairResult, PointCheck, Wire, WireResult, WireSet, wires_of};
+pub use envelope::{Envelope, EnvelopeEntry};
 pub use rules::{Rule, RuleSet, Target};
 
 use ols_line::jumper::JumperShape;

@@ -43,6 +43,11 @@
 //! - `same_line`: other wires of the same line, in the same span and other
 //!   spans; wires of the same circuit and phase (its back and ahead spans,
 //!   jumpers) are skipped unless `include_same_phase = true`.
+//! - `cases = ["max temperature", "glaze*"]`: the weather cases the rule
+//!   applies to (default: all).
+//! - `case_pairs = [["glaze ice", "everyday"]]` (wire rules): the first
+//!   wire in the first case, the second wire in the second — e.g. an iced
+//!   upper wire sagging onto a lower wire without ice.
 
 use std::path::Path;
 
@@ -91,6 +96,13 @@ pub struct Rule {
     pub vertical_band: f64,
     /// Targets are reported within the required distance plus this, m.
     pub search_margin: f64,
+    /// Weather cases the rule applies to (names, `*` `?` wildcards); empty:
+    /// all cases.
+    pub cases: Vec<String>,
+    /// Wire rules: pairs of weather cases — the first wire in the first
+    /// case, the second wire in the second (e.g. an iced upper wire over a
+    /// cold lower one). Empty: both wires in the same case.
+    pub case_pairs: Vec<[String; 2]>,
 }
 
 impl Rule {
@@ -134,6 +146,10 @@ struct RawRule {
     vertical_band: Option<Length>,
     #[serde(default)]
     search_margin: Option<Length>,
+    #[serde(default)]
+    cases: Vec<String>,
+    #[serde(default)]
+    case_pairs: Vec<[String; 2]>,
 }
 
 #[derive(Deserialize)]
@@ -215,6 +231,11 @@ impl RuleSet {
                 {
                     return bad("clearances must be ≥ 0");
                 }
+                if !r.case_pairs.is_empty()
+                    && !matches!(target, Target::SameLine { .. } | Target::OtherLines)
+                {
+                    return bad("case_pairs are for wire rules (same_line, other_lines)");
+                }
                 Ok(Rule {
                     name: r.name,
                     target,
@@ -222,6 +243,8 @@ impl RuleSet {
                     radial,
                     vertical_band: r.vertical_band.map_or(DEFAULT_VERTICAL_BAND, |l| l.si()),
                     search_margin: r.search_margin.map_or(DEFAULT_SEARCH_MARGIN, |l| l.si()),
+                    cases: r.cases,
+                    case_pairs: r.case_pairs,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -248,6 +271,8 @@ impl RuleSet {
                 radial: None,
                 vertical_band: DEFAULT_VERTICAL_BAND,
                 search_margin: DEFAULT_SEARCH_MARGIN,
+                cases: Vec::new(),
+                case_pairs: Vec::new(),
             }],
         }
     }
@@ -302,6 +327,20 @@ mod tests {
                 include_same_phase: false
             }
         );
+    }
+
+    #[test]
+    fn case_options() {
+        let set = RuleSet::parse(
+            "[[rule]]\nname = \"pp\"\ntarget = \"same_line\"\nradial = 3.0\ncases = [\"hot*\"]\ncase_pairs = [[\"ice\", \"cold\"]]",
+        )
+        .unwrap();
+        assert_eq!(set.rules[0].cases, vec!["hot*"]);
+        assert_eq!(
+            set.rules[0].case_pairs,
+            vec![["ice".to_owned(), "cold".to_owned()]]
+        );
+        assert!(RuleSet::parse("[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 1.0\ncase_pairs = [[\"a\", \"b\"]]").is_err());
     }
 
     #[test]

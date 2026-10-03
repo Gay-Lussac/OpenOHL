@@ -60,7 +60,7 @@ ols line project.ols --weather cases.olswc --case "glaze*" --case "max temperatu
 
 `--case` takes names with `*` and `?` wildcards, `--tag` tags; both can be repeated and combined (a case is run if it matches any). Without them every case of the file runs. A name or tag that matches nothing is an error, so a typo cannot silently skip a case.
 
-Each case is solved and checked against the clearance rules in turn; the ground and LiDAR points are loaded once for all cases. The clearance CSV has a `case` column; drawings, the 3D viewer and the wire CSVs show the first case (with violation markers of all cases).
+Each case is solved and checked against the clearance rules in turn; the ground and LiDAR points are loaded once for all cases. The clearance CSV has a `case` column and ends with the envelope over all cases (lowest clearance and governing case per wire and rule; see [clearance rules](terrain.md#envelopes-over-weather-cases)). The plan and profile sheets draw every case's wires; the 3D viewer and the wire CSVs show the first case (with violation markers of all cases).
 
 Without `--weather`, one case comes from `--temperature`, `--wind-pressure` and `--ice-thickness` or `--ice-load` (with `--ice-density`).
 

@@ -91,6 +91,21 @@ radial = "4.5 m"
 | `vertical_band` | Points count for vertical clearance within this horizontal distance of the wire (default 0.5 m). |
 | `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
 | `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
+| `cases` | Weather cases the rule applies to, by name (`*` `?` wildcards); default: all cases run. |
+| `case_pairs` | Wire rules: `[["glaze ice", "max temperature"]]` — the first wire in the first case, the second wire in the second (e.g. an iced upper wire sagging towards a hot lower one); checked after all cases are solved. |
+
+### Envelopes over weather cases
+
+With several weather cases (`--weather`), each case is reported in turn, then the **envelope**: for every rule and every wire (or wire pair), the lowest vertical and radial clearance over all cases with the **case that governs** it, and the cases in which a requirement is not met:
+
+```text
+envelope over 3 weather cases (glaze ice, max temperature, rime ice + wind) and 1 case pairs (glaze ice × max temperature):
+  rule "Ground": lowest vertical 4.64 m (S2 span 1, max temperature); lowest radial 4.63 m (S2 span 1, max temperature)
+    below the requirement in some case: 1
+      S2 span 1: vertical 4.64 m (max temperature), radial 4.63 m (max temperature) — in: glaze ice, max temperature
+```
+
+The clearance CSV holds each case's rows and then the envelope rows (`case = envelope`, last column `governing_case`). The plan and profile sheets draw every case's wires — the first solid, the others dashed, dotted… (named in the title block) — the envelope of the wire positions.
 
 Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.olsr`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/clearance-rules.olsr) and the crossing line `crossing-line.ols.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; a rule editor (per LiDAR class) and design-code plugins producing rule sets are planned.
 

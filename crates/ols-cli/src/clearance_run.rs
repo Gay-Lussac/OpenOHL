@@ -15,7 +15,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use ols_clearance::{
-    PairResult, PointCheck, Rule, RuleSet, Target, Wire, WireResult, WireSet, wires_of,
+    PairMode, PairResult, PointCheck, Rule, RuleSet, Target, Wire, WireResult, WireSet, wires_of,
 };
 use ols_line::Line;
 use ols_line::export::ViewerExtras;
@@ -338,11 +338,114 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
     })
 }
 
-/// The CSV header of [`check`]'s rows.
-pub const CSV_HEADER: &str = "case,rule,measure,section,span,other_section,other_span,clearance_m,required_m,violations,wire_x,wire_y,wire_z,target_x,target_y,target_z,class\n";
+/// The CSV header of the clearance rows ([`check`], [`cross_cases`],
+/// [`envelope_report`]): per-case rows, then envelope rows with
+/// `case = envelope` and the case that governs each value.
+pub const CSV_HEADER: &str = "case,rule,measure,section,span,other_section,other_span,clearance_m,required_m,violations,wire_x,wire_y,wire_z,target_x,target_y,target_z,class,governing_case\n";
+
+/// Whether `rule` applies to `case` (its `cases` list, default all).
+fn applies(rule: &Rule, case: &str) -> bool {
+    rule.cases.is_empty()
+        || rule
+            .cases
+            .iter()
+            .any(|c| ols_weather::name_matches(c, case))
+}
+
+fn rule_header(rule: &Rule, p: &Prepared) -> String {
+    let required = |r: Option<f64>| r.map_or("-".to_owned(), |v| format!("{v:.2} m"));
+    format!(
+        "rule \"{}\" ({}): required vertical {}, radial {}",
+        rule.name,
+        match &rule.target {
+            Target::Ground => "ground".to_owned(),
+            Target::Points { .. } => format!(
+                "points of classes {:?}",
+                rule.point_classes(|role| p.scheme.codes_with_role(role))
+            ),
+            Target::SameLine { .. } => "other wires of this line".to_owned(),
+            Target::OtherLines => "wires of other lines".to_owned(),
+        },
+        required(rule.vertical),
+        required(rule.radial)
+    )
+}
+
+/// The wires of one weather case, kept for checks across cases.
+pub struct CaseWires {
+    /// Case name.
+    pub case: String,
+    /// This line's wires.
+    pub wires: Vec<Wire>,
+    /// Other lines' wires.
+    pub other: Vec<Wire>,
+}
+
+/// Prints and records wire-pair results.
+#[allow(clippy::too_many_arguments)]
+fn report_pairs(
+    rule_index: usize,
+    rule: &Rule,
+    label: &str,
+    a_wires: &[Wire],
+    b_wires: &[Wire],
+    pairs: &[PairResult],
+    rows: &mut String,
+    extras: &mut ViewerExtras,
+    env: &mut ols_clearance::Envelope,
+) {
+    println!(
+        "  {} wire pairs within reach; {}",
+        pairs.len(),
+        lowest(pairs.iter().map(|p| &p.result))
+    );
+    let bad: Vec<&PairResult> = pairs.iter().filter(|p| p.result.violates(rule)).collect();
+    println!("  pairs below the requirement: {}", bad.len());
+    for pr in bad.iter().take(20) {
+        println!(
+            "    {:<24} – {:<24} {}",
+            wire_name(&a_wires[pr.a]),
+            wire_name(&b_wires[pr.b]),
+            describe(&pr.result, rule)
+        );
+    }
+    for pr in &bad {
+        marker(
+            extras,
+            rule,
+            format!(
+                "{} – {} ({label})",
+                wire_name(&a_wires[pr.a]),
+                wire_name(&b_wires[pr.b])
+            ),
+            &pr.result,
+        );
+    }
+    for pr in pairs {
+        csv_rows(rows, rule, &a_wires[pr.a], Some(&b_wires[pr.b]), &pr.result);
+        env.add(
+            rule_index,
+            rule,
+            label,
+            &wire_name(&a_wires[pr.a]),
+            Some(&wire_name(&b_wires[pr.b])),
+            &pr.result,
+        );
+    }
+}
+
+/// Appends rows prefixed with the case (and an empty governing case).
+fn push_rows(csv: &mut String, case: &str, rows: &str) {
+    let name = case.replace(',', ";");
+    for row in rows.lines() {
+        let _ = writeln!(csv, "{name},{row},");
+    }
+}
 
 /// Checks one weather case: prints the report, appends CSV rows, marks
-/// violations for the viewer.
+/// violations for the viewer, adds the results to the envelope. Rules not
+/// applying to the case are skipped; wire rules with `case_pairs` run
+/// later in [`cross_cases`]. Returns the case's wires.
 #[allow(clippy::too_many_arguments)]
 pub fn check(
     line: &Line,
@@ -353,29 +456,38 @@ pub fn check(
     p: &Prepared,
     csv: &mut String,
     extras: &mut ViewerExtras,
-) -> Result<(), String> {
-    if p.rules.is_empty() {
-        return Ok(());
-    }
+    env: &mut ols_clearance::Envelope,
+) -> Result<CaseWires, String> {
     let rules = &p.rules;
     let wires = wires_of(line, shapes, jumpers);
+    if rules.is_empty() {
+        return Ok(CaseWires {
+            case: case.name.clone(),
+            wires,
+            other: Vec::new(),
+        });
+    }
     let reach = rules.iter().map(Rule::reach).fold(0.0, f64::max);
     let set = WireSet::new(wires.clone(), reach);
-    // Point rules from the points in memory.
-    let mut point_checks: Vec<PointCheck> = rules
+    // Point rules (those applying to this case) from the points in memory.
+    let mut point_checks: Vec<Option<PointCheck>> = rules
         .iter()
         .filter(|r| matches!(r.target, Target::Points { .. }))
         .zip(&p.point_classes)
-        .map(|(rule, classes)| PointCheck::new(rule, classes, &set))
+        .map(|(rule, classes)| {
+            applies(rule, &case.name).then(|| PointCheck::new(rule, classes, &set))
+        })
         .collect();
-    for (q, c) in &p.points {
-        let (x, y, z) = (
-            p.origin[0] + q[0] as f64 / 1000.0,
-            p.origin[1] + q[1] as f64 / 1000.0,
-            p.origin[2] + q[2] as f64 / 1000.0,
-        );
-        for check in &mut point_checks {
-            check.visit(&set, x, y, z, *c);
+    if point_checks.iter().any(Option::is_some) {
+        for (q, c) in &p.points {
+            let (x, y, z) = (
+                p.origin[0] + q[0] as f64 / 1000.0,
+                p.origin[1] + q[1] as f64 / 1000.0,
+                p.origin[2] + q[2] as f64 / 1000.0,
+            );
+            for check in point_checks.iter_mut().flatten() {
+                check.visit(&set, x, y, z, *c);
+            }
         }
     }
     // Other lines in this weather case.
@@ -396,27 +508,22 @@ pub fn check(
         }
         other_wires.extend(w);
     }
-    let other_set = (!other_wires.is_empty()).then(|| WireSet::new(other_wires, reach));
+    let other_set = (!other_wires.is_empty()).then(|| WireSet::new(other_wires.clone(), reach));
 
     let mut point_checks = point_checks.into_iter();
     let mut rows = String::new();
-    for rule in rules {
-        let required = |r: Option<f64>| r.map_or("-".to_owned(), |v| format!("{v:.2} m"));
-        println!(
-            "rule \"{}\" ({}): required vertical {}, radial {}",
-            rule.name,
-            match &rule.target {
-                Target::Ground => "ground".to_owned(),
-                Target::Points { .. } => format!(
-                    "points of classes {:?}",
-                    rule.point_classes(|role| p.scheme.codes_with_role(role))
-                ),
-                Target::SameLine { .. } => "other wires of this line".to_owned(),
-                Target::OtherLines => "wires of other lines".to_owned(),
-            },
-            required(rule.vertical),
-            required(rule.radial)
-        );
+    for (ri, rule) in rules.iter().enumerate() {
+        let point_check = match rule.target {
+            Target::Points { .. } => point_checks.next().expect("one slot per point rule"),
+            _ => None,
+        };
+        if !applies(rule, &case.name) {
+            continue;
+        }
+        if !rule.case_pairs.is_empty() {
+            continue; // across cases, after all cases are solved
+        }
+        println!("{}", rule_header(rule, p));
         match &rule.target {
             Target::Ground | Target::Points { .. } => {
                 let results: Vec<WireResult> = match &rule.target {
@@ -427,12 +534,7 @@ pub fn check(
                             continue;
                         }
                     },
-                    _ => {
-                        point_checks
-                            .next()
-                            .expect("one check per point rule")
-                            .results
-                    }
+                    _ => point_check.expect("built for applying rules").results,
                 };
                 println!("  {}", lowest(results.iter()));
                 let mut bad: Vec<(usize, &WireResult)> = results
@@ -464,76 +566,203 @@ pub fn check(
                 }
                 for (w, r) in results.iter().enumerate() {
                     csv_rows(&mut rows, rule, &wires[w], None, r);
+                    env.add(ri, rule, &case.name, &wire_name(&wires[w]), None, r);
                 }
             }
-            Target::SameLine { .. } | Target::OtherLines => {
-                let (pairs, b_wires): (Vec<PairResult>, &[Wire]) = match &rule.target {
-                    Target::SameLine { include_same_phase } => (
-                        ols_clearance::checks::wire_pairs(
-                            rule,
-                            &wires,
-                            &set,
-                            true,
-                            *include_same_phase,
-                        ),
-                        &set.wires,
-                    ),
-                    _ => match &other_set {
-                        Some(os) => (
-                            ols_clearance::checks::wire_pairs(rule, &wires, os, false, false),
-                            &os.wires,
-                        ),
-                        None => {
-                            println!("  no other line: give --other-line FILE");
-                            continue;
-                        }
+            Target::SameLine { include_same_phase } => {
+                let pairs = ols_clearance::checks::wire_pairs(
+                    rule,
+                    &wires,
+                    &set,
+                    PairMode::SameLine {
+                        include_same_phase: *include_same_phase,
                     },
-                };
-                println!(
-                    "  {} wire pairs within reach; {}",
-                    pairs.len(),
-                    lowest(pairs.iter().map(|p| &p.result))
                 );
-                let bad: Vec<&PairResult> =
-                    pairs.iter().filter(|p| p.result.violates(rule)).collect();
-                println!("  pairs below the requirement: {}", bad.len());
-                for pr in bad.iter().take(20) {
-                    println!(
-                        "    {:<24} – {:<24} {}",
-                        wire_name(&wires[pr.a]),
-                        wire_name(&b_wires[pr.b]),
-                        describe(&pr.result, rule)
+                report_pairs(
+                    ri, rule, &case.name, &wires, &set.wires, &pairs, &mut rows, extras, env,
+                );
+            }
+            Target::OtherLines => match &other_set {
+                Some(os) => {
+                    let pairs =
+                        ols_clearance::checks::wire_pairs(rule, &wires, os, PairMode::OtherLines);
+                    report_pairs(
+                        ri, rule, &case.name, &wires, &os.wires, &pairs, &mut rows, extras, env,
                     );
                 }
-                for pr in &bad {
-                    marker(
-                        extras,
-                        rule,
-                        format!(
-                            "{} – {} ({})",
-                            wire_name(&wires[pr.a]),
-                            wire_name(&b_wires[pr.b]),
-                            case.name
-                        ),
-                        &pr.result,
-                    );
-                }
-                for pr in &pairs {
-                    csv_rows(
-                        &mut rows,
-                        rule,
-                        &wires[pr.a],
-                        Some(&b_wires[pr.b]),
-                        &pr.result,
-                    );
+                None => println!("  no other line: give --other-line FILE"),
+            },
+        }
+    }
+    push_rows(csv, &case.name, &rows);
+    Ok(CaseWires {
+        case: case.name.clone(),
+        wires,
+        other: other_wires,
+    })
+}
+
+/// Wire rules with `case_pairs`: the first wire in one case, the second in
+/// another (e.g. an iced upper wire over a cold lower one).
+pub fn cross_cases(
+    p: &Prepared,
+    all: &[CaseWires],
+    csv: &mut String,
+    extras: &mut ViewerExtras,
+    env: &mut ols_clearance::Envelope,
+) {
+    let reach = p.rules.iter().map(Rule::reach).fold(0.0, f64::max);
+    for (ri, rule) in p.rules.iter().enumerate() {
+        for [ca, cb] in &rule.case_pairs {
+            let firsts: Vec<&CaseWires> = all
+                .iter()
+                .filter(|c| ols_weather::name_matches(ca, &c.case))
+                .collect();
+            let seconds: Vec<&CaseWires> = all
+                .iter()
+                .filter(|c| ols_weather::name_matches(cb, &c.case))
+                .collect();
+            if firsts.is_empty() || seconds.is_empty() {
+                println!(
+                    "rule \"{}\": case pair [{ca}, {cb}] skipped: not among the cases run",
+                    rule.name
+                );
+                continue;
+            }
+            for a in &firsts {
+                for b in &seconds {
+                    let label = format!("{} × {}", a.case, b.case);
+                    println!("{} — {label}", rule_header(rule, p));
+                    let mut rows = String::new();
+                    match &rule.target {
+                        Target::SameLine { include_same_phase } => {
+                            let set = WireSet::new(b.wires.clone(), reach);
+                            let pairs = ols_clearance::checks::wire_pairs(
+                                rule,
+                                &a.wires,
+                                &set,
+                                PairMode::SameLineOtherCase {
+                                    include_same_phase: *include_same_phase,
+                                },
+                            );
+                            report_pairs(
+                                ri, rule, &label, &a.wires, &set.wires, &pairs, &mut rows, extras,
+                                env,
+                            );
+                        }
+                        _ if b.other.is_empty() => {
+                            println!("  no other line: give --other-line FILE")
+                        }
+                        _ => {
+                            let set = WireSet::new(b.other.clone(), reach);
+                            let pairs = ols_clearance::checks::wire_pairs(
+                                rule,
+                                &a.wires,
+                                &set,
+                                PairMode::OtherLines,
+                            );
+                            report_pairs(
+                                ri, rule, &label, &a.wires, &set.wires, &pairs, &mut rows, extras,
+                                env,
+                            );
+                        }
+                    }
+                    push_rows(csv, &label, &rows);
                 }
             }
         }
     }
-    // Prefix the rows with the case name.
-    let name = case.name.replace(',', ";");
-    for row in rows.lines() {
-        let _ = writeln!(csv, "{name},{row}");
+}
+
+/// The envelope over all cases: per rule the lowest clearances with the
+/// governing case, and every wire (pair) below a requirement in any case.
+pub fn envelope_report(p: &Prepared, env: &ols_clearance::Envelope, csv: &mut String) {
+    let (pairs, cases): (Vec<&String>, Vec<&String>) =
+        env.cases().iter().partition(|c| c.contains(" × "));
+    if cases.len() + pairs.len() < 2 {
+        return;
     }
-    Ok(())
+    let join = |v: &[&String]| v.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ");
+    println!(
+        "envelope over {} weather cases ({}){}:",
+        cases.len(),
+        join(&cases),
+        if pairs.is_empty() {
+            String::new()
+        } else {
+            format!(" and {} case pairs ({})", pairs.len(), join(&pairs))
+        }
+    );
+    for (ri, rule) in p.rules.iter().enumerate() {
+        let entries = env.entries(ri);
+        if entries.is_empty() {
+            continue;
+        }
+        let best =
+            |f: fn(&ols_clearance::EnvelopeEntry) -> Option<&(ols_clearance::Hit, String)>| {
+                entries
+                    .iter()
+                    .filter_map(|e| f(e).map(|x| (*e, x)))
+                    .min_by(|x, y| x.1.0.distance.total_cmp(&y.1.0.distance))
+            };
+        let mut parts = Vec::new();
+        if let Some((e, (h, c))) = best(|e| e.vertical.as_ref()) {
+            parts.push(format!(
+                "lowest vertical {:.2} m ({}, {c})",
+                h.distance, e.a
+            ));
+        }
+        if let Some((e, (h, c))) = best(|e| e.radial.as_ref()) {
+            parts.push(format!("lowest radial {:.2} m ({}, {c})", h.distance, e.a));
+        }
+        println!("  rule \"{}\": {}", rule.name, parts.join("; "));
+        let bad = env.violations(ri);
+        println!("    below the requirement in some case: {}", bad.len());
+        for e in bad.iter().take(20) {
+            let measure = |m: &Option<(ols_clearance::Hit, String)>, what: &str| {
+                m.as_ref()
+                    .map(|(h, c)| format!("{what} {:.2} m ({c})", h.distance))
+            };
+            println!(
+                "      {}{}: {} — in: {}",
+                e.a,
+                e.b.as_ref().map_or(String::new(), |b| format!(" – {b}")),
+                [
+                    measure(&e.vertical, "vertical"),
+                    measure(&e.radial, "radial")
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(", "),
+                e.violated_in.iter().cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+        for e in entries {
+            for (measure, value, required) in [
+                ("vertical", &e.vertical, rule.vertical),
+                ("radial", &e.radial, rule.radial),
+            ] {
+                let Some((h, c)) = value else { continue };
+                let _ = writeln!(
+                    csv,
+                    "envelope,{},{measure},{},,{},,{:.3},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{}",
+                    rule.name,
+                    e.a.replace(',', ";"),
+                    e.b.as_deref().unwrap_or("").replace(',', ";"),
+                    h.distance,
+                    required.map_or(String::new(), |v| format!("{v:.3}")),
+                    e.violated_in.len(),
+                    h.wire[0],
+                    h.wire[1],
+                    h.wire[2],
+                    h.target[0],
+                    h.target[1],
+                    h.target[2],
+                    h.class.map_or(String::new(), |c| c.to_string()),
+                    c.replace(',', ";")
+                );
+            }
+        }
+    }
 }
