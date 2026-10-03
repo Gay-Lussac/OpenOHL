@@ -119,6 +119,127 @@ pub fn ui(ui: &mut egui::Ui, model: &Model, case: usize, selection: &mut Selecti
                     }
                 }
             }
+            let jumpers: Vec<&ols_line::Jumper> = line
+                .jumpers
+                .iter()
+                .filter(|jp| jp.from.structure == id || jp.to.structure == id)
+                .collect();
+            if !jumpers.is_empty() {
+                ui.separator();
+                ui.label(egui::RichText::new("Jumpers at this structure").strong());
+                for jp in jumpers {
+                    let text = format!("{}: set {} → set {}", jp.id, jp.from.set, jp.to.set);
+                    if ui.link(text).clicked() {
+                        next = Some(Selection::Jumper(jp.id.clone()));
+                    }
+                }
+            }
+        }
+        Selection::Jumper(id) => {
+            let Some(j) = line.jumpers.iter().find(|j| j.id == id) else {
+                ui.label(format!("{id}: not in the line"));
+                return;
+            };
+            ui.heading(format!("Jumper {id}"));
+            ui.horizontal(|ui| {
+                for end in [&j.from, &j.to] {
+                    if ui
+                        .link(format!(
+                            "{} set {} phase {}",
+                            end.structure, end.set, end.phase
+                        ))
+                        .clicked()
+                    {
+                        next = Some(Selection::Structure(end.structure.clone()));
+                    }
+                }
+            });
+            let section = line.jumper_section(j);
+            let b = line.jumper_bundle(j);
+            // Where each bundle value comes from: the jumper or its section.
+            let from = |own: bool| {
+                if own {
+                    "set on the jumper"
+                } else {
+                    "from its section"
+                }
+            };
+            grid(
+                ui,
+                "jumper",
+                &[
+                    ("cable", j.cable.clone()),
+                    (
+                        "section",
+                        section.map_or("—".into(), |s| {
+                            format!("{} ({} {})", s.id, s.circuit, s.phase_label)
+                        }),
+                    ),
+                    (
+                        "bundle",
+                        match (b.count, b.spacing) {
+                            (1, _) => format!("single ({})", from(j.bundle.is_some())),
+                            (n, Some(s)) => format!(
+                                "{n} × {:.0} mm ({})",
+                                s * 1000.0,
+                                from(j.bundle.is_some() || j.bundle_spacing.is_some())
+                            ),
+                            (n, None) => format!("{n}, no spacing ({})", from(j.bundle.is_some())),
+                        },
+                    ),
+                    (
+                        "defined by",
+                        match (j.length, j.sag) {
+                            (Some(l), _) => format!("length {l:.3} m at {} °C", j.temperature),
+                            (_, Some(s)) => format!("sag {s:.2} m at {} °C", j.temperature),
+                            _ => "—".into(),
+                        },
+                    ),
+                    (
+                        "support string",
+                        j.support.as_ref().map_or("none".into(), |s| {
+                            format!("{:.2} m, {:.0} N", s.length, s.weight)
+                        }),
+                    ),
+                ],
+            );
+            ui.separator();
+            ui.label(egui::RichText::new("Weather cases").strong());
+            egui::Grid::new("jumper-cases")
+                .striped(true)
+                .show(ui, |ui| {
+                    for h in ["case", "length (m)", "sag (m)", "max T (N)", "low z (m)"] {
+                        ui.label(egui::RichText::new(h).small());
+                    }
+                    ui.end_row();
+                    for (k, solved) in model.cases.iter().enumerate() {
+                        let name = if k == case {
+                            egui::RichText::new(&solved.case.name).strong()
+                        } else {
+                            egui::RichText::new(&solved.case.name)
+                        };
+                        ui.label(name);
+                        match solved.jumpers.iter().find(|x| x.jumper == id) {
+                            Some(js) => {
+                                ui.label(format!("{:.3}", js.unstressed_length));
+                                ui.label(format!("{:.3}", js.sag));
+                                ui.label(format!("{:.0}", js.max_tension));
+                                ui.label(format!("{:.2}", js.low_point[2]));
+                            }
+                            None => {
+                                ui.label("not solved");
+                            }
+                        }
+                        ui.end_row();
+                    }
+                });
+            if let Some(why) = model
+                .cases
+                .get(case)
+                .and_then(|c| c.failed.iter().find(|f| f.starts_with(&format!("{id}:"))))
+            {
+                ui.colored_label(egui::Color32::LIGHT_RED, why);
+            }
         }
         Selection::Span { section, span } => {
             let Some(sec) = line.sections.iter().find(|s| s.id == section) else {

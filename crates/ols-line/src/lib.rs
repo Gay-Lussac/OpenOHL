@@ -132,6 +132,18 @@ pub struct Jumper {
     /// `from`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Subconductors; default: the bundle of the section at `from`
+    /// ([`Line::jumper_bundle`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle: Option<u32>,
+    /// Distance between neighbouring subconductors, m; default: that of the
+    /// section at `from`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_spacing: Option<f64>,
+    /// Rotation of the bundle, degrees; default: that of the section at
+    /// `from`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_rotation_deg: Option<f64>,
 }
 
 /// A string holding a jumper at one point (DESIGN_GOALS §6).
@@ -377,11 +389,75 @@ pub fn bundle_point(q: Point, a: Point, b: Point, offset: [f64; 2]) -> Point {
 }
 
 impl Section {
+    /// The section's bundle.
+    pub fn bundle_geometry(&self) -> Bundle {
+        Bundle {
+            count: self.bundle.max(1),
+            spacing: self.bundle_spacing,
+            rotation_deg: self.bundle_rotation_deg,
+        }
+    }
+
     /// The polylines of the subconductors along a centre-line polyline of
-    /// this section (one polyline, the same points, for a single wire). At
-    /// each point the wire's direction is that between its neighbours.
+    /// this section (see [`Bundle::polylines`]).
     pub fn subconductor_polylines(&self, points: &[Point]) -> Vec<Vec<Point>> {
-        let offsets = self.bundle_offsets();
+        self.bundle_geometry().polylines(points)
+    }
+
+    /// Positions of the subconductors around the centre line (see
+    /// [`Bundle::offsets`]).
+    pub fn bundle_offsets(&self) -> Vec<[f64; 2]> {
+        self.bundle_geometry().offsets()
+    }
+}
+
+/// A bundle of subconductors: how many, how far apart, how turned.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Bundle {
+    /// Subconductors (1: a single wire).
+    pub count: u32,
+    /// Distance between neighbouring subconductors, m.
+    pub spacing: Option<f64>,
+    /// Rotation of the arrangement, degrees.
+    pub rotation_deg: Option<f64>,
+}
+
+impl Bundle {
+    /// A single wire.
+    pub const SINGLE: Bundle = Bundle {
+        count: 1,
+        spacing: None,
+        rotation_deg: None,
+    };
+
+    /// Positions of the subconductors around the centre line, m: (across,
+    /// up) in the plane across the wire — across to the right looking
+    /// ahead, up away from the ground. On a circle of radius
+    /// `s / (2·sin(π/n))`; by default the two lowest subconductors are
+    /// level. One entry `[0, 0]` for a single wire or a bundle without a
+    /// spacing (geometry as one wire).
+    pub fn offsets(&self) -> Vec<[f64; 2]> {
+        let n = self.count.max(1);
+        let Some(s) = self.spacing.filter(|_| n >= 2) else {
+            return vec![[0.0, 0.0]];
+        };
+        let r = s / (2.0 * (std::f64::consts::PI / f64::from(n)).sin());
+        let start = -std::f64::consts::FRAC_PI_2
+            + std::f64::consts::PI / f64::from(n)
+            + self.rotation_deg.unwrap_or(0.0).to_radians();
+        (0..n)
+            .map(|k| {
+                let a = start + 2.0 * std::f64::consts::PI * f64::from(k) / f64::from(n);
+                [r * a.cos(), r * a.sin()]
+            })
+            .collect()
+    }
+
+    /// The polylines of the subconductors along a centre-line polyline
+    /// (one polyline, the same points, for a single wire). At each point
+    /// the wire's direction is that between its neighbours.
+    pub fn polylines(&self, points: &[Point]) -> Vec<Vec<Point>> {
+        let offsets = self.offsets();
         if offsets.len() <= 1 {
             return vec![points.to_vec()];
         }
@@ -399,27 +475,52 @@ impl Section {
             .collect()
     }
 
-    /// Positions of the subconductors around the centre line, m: (across,
-    /// up) in the plane across the wire — across to the right looking
-    /// ahead, up away from the ground. On a circle of radius
-    /// `s / (2·sin(π/n))`; by default the two lowest subconductors are
-    /// level. One entry `[0, 0]` for a single wire or a bundle without a
-    /// spacing (geometry as one wire).
-    pub fn bundle_offsets(&self) -> Vec<[f64; 2]> {
-        let n = self.bundle.max(1);
-        let Some(s) = self.bundle_spacing.filter(|_| n >= 2) else {
-            return vec![[0.0, 0.0]];
-        };
-        let r = s / (2.0 * (std::f64::consts::PI / f64::from(n)).sin());
-        let start = -std::f64::consts::FRAC_PI_2
-            + std::f64::consts::PI / f64::from(n)
-            + self.bundle_rotation_deg.unwrap_or(0.0).to_radians();
-        (0..n)
-            .map(|k| {
-                let a = start + 2.0 * std::f64::consts::PI * f64::from(k) / f64::from(n);
-                [r * a.cos(), r * a.sin()]
-            })
-            .collect()
+    fn check(&self, what: &str) -> Result<(), String> {
+        if self.count == 0 {
+            return Err(format!("{what}: bundle must be at least 1"));
+        }
+        match (self.count, self.spacing) {
+            (1, Some(_)) => Err(format!(
+                "{what}: bundle_spacing is for bundles (bundle ≥ 2)"
+            )),
+            (_, Some(s)) if !(s.is_finite() && s > 0.0) => {
+                Err(format!("{what}: bundle_spacing must be > 0 m"))
+            }
+            _ if self.rotation_deg.is_some_and(|r| !r.is_finite()) => {
+                Err(format!("{what}: bundle_rotation_deg must be a number"))
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+impl Line {
+    /// The section a jumper takes its defaults from (colour, bundle,
+    /// circuit): the first section through its `from` point.
+    pub fn jumper_section(&self, jumper: &Jumper) -> Option<&Section> {
+        self.sections
+            .iter()
+            .find(|s| s.points.contains(&jumper.from))
+    }
+
+    /// A jumper's bundle: its own `bundle`, `bundle_spacing` and
+    /// `bundle_rotation_deg` where given, the rest from its section
+    /// ([`Line::jumper_section`]), else a single wire.
+    pub fn jumper_bundle(&self, jumper: &Jumper) -> Bundle {
+        let base = self
+            .jumper_section(jumper)
+            .map_or(Bundle::SINGLE, Section::bundle_geometry);
+        let count = jumper.bundle.unwrap_or(base.count).max(1);
+        Bundle {
+            count,
+            // A spacing only for a bundle (a jumper set to a single wire
+            // drops the section's).
+            spacing: jumper
+                .bundle_spacing
+                .or(base.spacing)
+                .filter(|_| count >= 2),
+            rotation_deg: jumper.bundle_rotation_deg.or(base.rotation_deg),
+        }
     }
 }
 
@@ -712,27 +813,13 @@ impl Line {
             if let Some(c) = sec.color.as_deref().filter(|c| !is_hex_color(c)) {
                 return invalid(format!("section {}: colour \"{c}\" is not #rrggbb", sec.id));
             }
-            if sec.bundle == 0 {
-                return invalid(format!("section {}: bundle must be at least 1", sec.id));
+            Bundle {
+                count: sec.bundle,
+                spacing: sec.bundle_spacing,
+                rotation_deg: sec.bundle_rotation_deg,
             }
-            match (sec.bundle, sec.bundle_spacing) {
-                (1, Some(_)) => {
-                    return invalid(format!(
-                        "section {}: bundle_spacing is for bundles (bundle ≥ 2)",
-                        sec.id
-                    ));
-                }
-                (_, Some(s)) if !(s.is_finite() && s > 0.0) => {
-                    return invalid(format!("section {}: bundle_spacing must be > 0 m", sec.id));
-                }
-                _ => {}
-            }
-            if sec.bundle_rotation_deg.is_some_and(|r| !r.is_finite()) {
-                return invalid(format!(
-                    "section {}: bundle_rotation_deg must be a number",
-                    sec.id
-                ));
-            }
+            .check(&format!("section {}", sec.id))
+            .map_err(LineError::Invalid)?;
         }
         let mut jumper_ids = BTreeMap::new();
         for j in &self.jumpers {
@@ -740,6 +827,14 @@ impl Line {
             if jumper_ids.insert(j.id.as_str(), ()).is_some() {
                 return bad("duplicate id");
             }
+            // Its own bundle values, over those it takes from its section.
+            let own = Bundle {
+                count: j.bundle.unwrap_or_else(|| self.jumper_bundle(j).count),
+                spacing: j.bundle_spacing,
+                rotation_deg: j.bundle_rotation_deg,
+            };
+            own.check(&format!("jumper {}", j.id))
+                .map_err(LineError::Invalid)?;
             for end in [&j.from, &j.to] {
                 let Some(structure) = self.structure(&end.structure) else {
                     return bad(&format!("unknown structure {}", end.structure));
@@ -854,6 +949,35 @@ mod tests {
         sec.bundle = 1;
         sec.bundle_spacing = None;
         assert_eq!(sec.subconductor_polylines(&centre), vec![centre.to_vec()]);
+    }
+
+    #[test]
+    fn jumpers_take_their_sections_bundle_unless_set() {
+        let mut line = example();
+        // The jumper at T3 starts on S3 (a single wire): single.
+        let j = line.jumpers[0].clone();
+        assert_eq!(line.jumper_section(&j).unwrap().id, "S3");
+        assert_eq!(line.jumper_bundle(&j), Bundle::SINGLE);
+        // S3 becomes a 3-bundle: the jumper follows.
+        line.sections[2].bundle = 3;
+        line.sections[2].bundle_spacing = Some(0.4);
+        line.validate().unwrap();
+        let b = line.jumper_bundle(&j);
+        assert_eq!((b.count, b.spacing), (3, Some(0.4)));
+        // Its own spacing overrides; its own count of 1 drops the spacing.
+        line.jumpers[0].bundle_spacing = Some(0.3);
+        let b = line.jumper_bundle(&line.jumpers[0]);
+        assert_eq!((b.count, b.spacing), (3, Some(0.3)));
+        line.jumpers[0].bundle_spacing = None;
+        line.jumpers[0].bundle = Some(1);
+        assert_eq!(line.jumper_bundle(&line.jumpers[0]), Bundle::SINGLE);
+        line.validate().unwrap();
+        // A spacing on a single-wire jumper is refused.
+        line.jumpers[0].bundle_spacing = Some(0.3);
+        assert!(line.validate().unwrap_err().to_string().contains("jumper"));
+        // Saved only when set.
+        let text = example().to_json();
+        assert!(!text.contains("\"bundle\": 1,\n      \"bundle_spacing"));
     }
 
     #[test]

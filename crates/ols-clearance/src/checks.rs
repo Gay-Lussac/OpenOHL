@@ -172,7 +172,7 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
             circuit: from.map_or(String::new(), |s| s.circuit.clone()),
             phase: from.map_or(String::new(), |s| s.phase_label.clone()),
             potential: from.and_then(|s| potential(&s.id)),
-            bundle: Vec::new(),
+            bundle: def.map_or(Vec::new(), |d| line.jumper_bundle(d).offsets()),
             points: j.points.clone(),
             ends: def.map_or(Vec::new(), |d| vec![key(&d.from), key(&d.to)]),
         });

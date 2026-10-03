@@ -102,6 +102,27 @@ pub fn structure_lines(st: &ols_line::Structure) -> Vec<(Part, Vec<[f64; 3]>)> {
     out
 }
 
+/// A solved jumper's colour (its own, else its section's) and its
+/// subconductor polylines ([`ols_line::Line::jumper_bundle`]).
+pub fn jumper_lines(
+    line: &ols_line::Line,
+    j: &ols_line::jumper::JumperShape,
+) -> ([u8; 3], Vec<Vec<[f64; 3]>>) {
+    let def = line.jumpers.iter().find(|d| d.id == j.jumper);
+    let col = def
+        .and_then(|d| d.color.clone())
+        .or_else(|| {
+            def.and_then(|d| line.jumper_section(d))
+                .map(|s| line.section_color(s))
+        })
+        .map_or([200, 200, 200], |c| rgb(&c));
+    let lines = match def {
+        Some(d) => line.jumper_bundle(d).polylines(&j.points),
+        None => vec![j.points.clone()],
+    };
+    (col, lines)
+}
+
 /// `#rrggbb` → sRGB bytes (grey if not a colour).
 pub fn rgb(hex: &str) -> [u8; 3] {
     let h = hex.trim_start_matches('#');
@@ -250,7 +271,11 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 for j in &solved.jumpers {
-                    s.polyline(&j.points, rgba([200, 200, 200], alpha), 1.5);
+                    let (col, lines) = jumper_lines(line, j);
+                    let width = if lines.len() > 1 { 1.2 } else { 1.5 };
+                    for l in &lines {
+                        s.polyline(l, rgba(col, alpha), width);
+                    }
                 }
             }
         }
@@ -279,6 +304,18 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         let width = if lines.len() > 1 { 3.0 } else { 5.0 };
                         for l in &lines {
                             s.polyline(l, hi, width);
+                        }
+                    }
+                }
+                Selection::Jumper(id) => {
+                    if let Some(j) = model
+                        .cases
+                        .get(case)
+                        .and_then(|c| c.jumpers.iter().find(|x| &x.jumper == id))
+                    {
+                        let (_, lines) = jumper_lines(line, j);
+                        for l in &lines {
+                            s.polyline(l, hi, 3.0);
                         }
                     }
                 }

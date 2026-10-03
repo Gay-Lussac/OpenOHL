@@ -203,9 +203,7 @@ impl ProfileView {
             );
         }
         for w in &d.wires {
-            let (sec, span) = parse_label(&w.label);
-            let selected = matches!(selection, Selection::Span { section, span: n }
-                if Some(section.as_str()) == sec.as_deref() && Some(*n) == span);
+            let selected = trace_selection(&w.label).is_some_and(|s| s == *selection);
             let c = rgb(&w.color);
             let pts: Vec<egui::Pos2> = w.points.iter().map(|p| to_screen(p[0], p[2])).collect();
             painter.add(egui::Shape::line(
@@ -251,7 +249,7 @@ impl ProfileView {
                 }
             }
             for w in &d.wires {
-                let (Some(section), Some(span)) = parse_label(&w.label) else {
+                let Some(sel) = trace_selection(&w.label) else {
                     continue;
                 };
                 let dmin = w
@@ -259,32 +257,44 @@ impl ProfileView {
                     .iter()
                     .map(|p| to_screen(p[0], p[2]).distance(pos))
                     .fold(f32::INFINITY, f32::min);
-                consider(dmin, Selection::Span { section, span });
+                consider(dmin, sel);
             }
             *selection = best.map_or(Selection::None, |b| b.1);
         }
     }
 }
 
-/// Section and span from a trace label `S1 span 0 (circuit phase)`.
-fn parse_label(label: &str) -> (Option<String>, Option<usize>) {
-    match label.split_once(" span ") {
-        Some((sec, rest)) => (
-            Some(sec.to_owned()),
-            rest.split_whitespace().next().and_then(|n| n.parse().ok()),
-        ),
-        None => (None, None),
+/// What a trace is, from its label: `S1 span 0 (circuit phase)` or
+/// `jumper J1`.
+fn trace_selection(label: &str) -> Option<Selection> {
+    if let Some(id) = label.strip_prefix("jumper ") {
+        return Some(Selection::Jumper(id.to_owned()));
     }
+    let (sec, rest) = label.split_once(" span ")?;
+    let span = rest.split_whitespace().next()?.parse().ok()?;
+    Some(Selection::Span {
+        section: sec.to_owned(),
+        span,
+    })
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::selection::Selection;
+
     #[test]
     fn labels() {
         assert_eq!(
-            super::parse_label("sec12 span 3 (380 kV L1)"),
-            (Some("sec12".into()), Some(3))
+            super::trace_selection("sec12 span 3 (380 kV L1)"),
+            Some(Selection::Span {
+                section: "sec12".into(),
+                span: 3
+            })
         );
-        assert_eq!(super::parse_label("jumper J1"), (None, None));
+        assert_eq!(
+            super::trace_selection("jumper J1"),
+            Some(Selection::Jumper("J1".into()))
+        );
+        assert_eq!(super::trace_selection("ground"), None);
     }
 }

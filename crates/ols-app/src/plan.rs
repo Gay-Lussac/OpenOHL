@@ -135,6 +135,19 @@ impl PlanView {
                 }
             }
         }
+        if let Some(solved) = model.cases.get(case) {
+            for j in &solved.jumpers {
+                let selected = matches!(selection, Selection::Jumper(id) if *id == j.jumper);
+                let (col, _) = crate::scene::jumper_lines(line, j);
+                let pts: Vec<egui::Pos2> = j.points.iter().map(|p| to_screen(*p)).collect();
+                let (w, col) = if selected {
+                    (4.0, egui::Color32::WHITE)
+                } else {
+                    (1.0, color(col))
+                };
+                painter.add(egui::Shape::line(pts, egui::Stroke::new(w, col)));
+            }
+        }
         let labels = scale > 0.08;
         for s in &line.structures {
             let p = to_screen(s.position);

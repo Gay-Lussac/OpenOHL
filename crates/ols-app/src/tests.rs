@@ -379,3 +379,42 @@ fn the_scheme_is_remembered() {
     assert_eq!(crate::controls::Controls::load(&Memory::default()), None);
     assert!(crate::controls::Controls::by_name("nope").is_none());
 }
+
+/// Jumpers can be picked and show their properties; the jumper of the
+/// example takes the single-wire bundle of its section.
+#[test]
+fn jumpers_are_selectable() {
+    let model = synthetic();
+    let cands = crate::selection::candidates(&model, 0);
+    assert!(
+        cands
+            .iter()
+            .any(|(s, _, _)| *s == Selection::Jumper("J-T3-branch".into()))
+    );
+    let gpu = ols_render::headless_device().is_ok();
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    harness.state_mut().ready().unwrap().selection = Selection::Jumper("J-T3-branch".into());
+    harness.run();
+    harness.get_by_label("Jumper J-T3-branch");
+    assert!(
+        harness
+            .query_all_by_label_contains("single (from its section)")
+            .next()
+            .is_some()
+    );
+    // From the structure, the jumper is a link.
+    harness.state_mut().ready().unwrap().selection = Selection::Structure("T3".into());
+    harness.run();
+    assert!(
+        harness
+            .query_all_by_label_contains("J-T3-branch: set 2")
+            .next()
+            .is_some()
+    );
+}

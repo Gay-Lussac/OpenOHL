@@ -128,6 +128,9 @@ A jumper is a slack cable joining two attachment points: the ends of two section
 
 Each end is the **solved clamp** of the section through that attachment (so the jumper follows strain assemblies and swung suspension clamps), or the attachment's `wire_point` if no section uses it. The jumper is one exact catenary element (two with a support string) carrying the weather case's weight, ice and wind (horizontal, perpendicular to the jumper's chord); its length scales with \\( e^{\alpha \Delta t} \\) from `temperature`. Sections are solved first: a jumper's tension (a few hundred N) does not change them. `ols line` prints each jumper's length, sag and tension, includes jumpers in the ground clearance check (as `jumper:<id>`) and draws them in the viewer. Clearance from jumpers to the structure body comes with structure outlines.
 
+
+A jumper is drawn and checked as a bundle like its section: `bundle`, `bundle_spacing` and `bundle_rotation_deg` default to those of the section at `from` (the first section through that point) and can be set on the jumper, each on its own (e.g. only a different spacing). A support string's weight is shared by the subconductors.
+
 ## Electrical systems
 
 The electrical model is kept apart from the physical wires: a **system** is a group of phases (AC) or poles (DC) with its voltage, and sections point to it.

@@ -203,6 +203,7 @@ pub fn solve_jumper(
         load,
     };
 
+    let bundle = line.jumper_bundle(jumper).count.max(1);
     let (points, max_tension, support) = match &jumper.support {
         None => {
             let (points, t) = element_shape(&props, a, d).map_err(invalid)?;
@@ -234,7 +235,8 @@ pub fn solve_jumper(
                 unstressed_length: s.length,
                 axial_stiffness: DEFAULT_INSULATOR_STIFFNESS,
                 tension_only: true,
-                weight: s.weight,
+                // One subconductor of the bundle: its share of the weight.
+                weight: s.weight / f64::from(bundle),
             });
             let solution = model
                 .solve(&default_fe_budget())
@@ -259,7 +261,12 @@ pub fn solve_jumper(
             (
                 points,
                 max_tension,
-                Some((s.point, p(pos[3]), solution.truss_forces[0])),
+                // The string's force for the whole bundle.
+                Some((
+                    s.point,
+                    p(pos[3]),
+                    solution.truss_forces[0] * f64::from(bundle),
+                )),
             )
         }
     };
@@ -394,6 +401,34 @@ mod tests {
         assert!(((v(top) - v(clamp)).norm() - 1.0).abs() < 1e-3);
         assert!(force > 50.0 && force < 5_000.0, "{force}");
         assert!(held[0].sag < free[0].sag);
+    }
+
+    #[test]
+    fn a_bundled_jumper_shares_its_support_weight() {
+        // As above, then the jumper as a 3-bundle under a string 3 × as
+        // heavy: the same shape (per subconductor), 3 × the string force.
+        let mut line = crate::tests::example();
+        let (_, free) = solve_all(&line, &still(15.0));
+        let low = free[0].points[32];
+        line.jumpers[0].sag = None;
+        line.jumpers[0].length = Some(free[0].unstressed_length);
+        line.jumpers[0].support = Some(JumperSupport {
+            point: [low[0], low[1], low[2] + 2.0],
+            length: 1.0,
+            weight: 100.0,
+            fraction: 0.5,
+        });
+        let (_, one) = solve_all(&line, &still(15.0));
+        line.jumpers[0].bundle = Some(3);
+        line.jumpers[0].bundle_spacing = Some(0.4);
+        line.jumpers[0].support.as_mut().unwrap().weight = 300.0;
+        line.validate().unwrap();
+        let (_, three) = solve_all(&line, &still(15.0));
+        for (p, q) in one[0].points.iter().zip(&three[0].points) {
+            assert!((v(*p) - v(*q)).norm() < 1e-9);
+        }
+        let (f1, f3) = (one[0].support.unwrap().2, three[0].support.unwrap().2);
+        assert!((3.0 * f1 - f3).abs() < 1e-6 * f3, "{f1} {f3}");
     }
 
     #[test]

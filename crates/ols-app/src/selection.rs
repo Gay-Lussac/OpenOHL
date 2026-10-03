@@ -14,6 +14,8 @@ pub enum Selection {
     None,
     /// A structure, by id.
     Structure(String),
+    /// A jumper, by id.
+    Jumper(String),
     /// A span: section id and span index.
     Span {
         /// Section id.
@@ -30,6 +32,7 @@ impl Selection {
             Selection::None => "nothing selected".into(),
             Selection::Structure(id) => format!("structure {id}"),
             Selection::Span { section, span } => format!("{section} span {}", span + 1),
+            Selection::Jumper(id) => format!("jumper {id}"),
         }
     }
 
@@ -45,6 +48,13 @@ impl Selection {
                     .fold(s.position[2], f64::max);
                 [s.position[0], s.position[1], 0.5 * (s.position[2] + top)]
             }),
+            Selection::Jumper(id) => model
+                .cases
+                .get(case)?
+                .jumpers
+                .iter()
+                .find(|j| &j.jumper == id)
+                .map(|j| j.points[j.points.len() / 2]),
             Selection::Span { section, span } => model
                 .cases
                 .get(case)?
@@ -63,7 +73,7 @@ impl Selection {
 pub type Candidate = (Selection, [f64; 3], [f64; 3]);
 
 /// What can be clicked: every line a structure is drawn with (mast or stick
-/// drawing, arms, insulator strings) and every piece of every span.
+/// drawing, arms, insulator strings), every piece of every span and jumper.
 pub fn candidates(model: &Model, case: usize) -> Vec<Candidate> {
     let mut out = Vec::new();
     for s in &model.line.structures {
@@ -85,6 +95,12 @@ pub fn candidates(model: &Model, case: usize) -> Vec<Candidate> {
                 for w in span.points.windows(2) {
                     out.push((sel.clone(), w[0], w[1]));
                 }
+            }
+        }
+        for j in &c.jumpers {
+            let sel = Selection::Jumper(j.jumper.clone());
+            for w in j.points.windows(2) {
+                out.push((sel.clone(), w[0], w[1]));
             }
         }
     }
