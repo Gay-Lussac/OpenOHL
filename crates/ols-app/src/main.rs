@@ -16,6 +16,7 @@ use clap::Parser;
 use eframe::egui;
 
 mod app;
+mod controls;
 mod model;
 mod plan;
 mod profile;

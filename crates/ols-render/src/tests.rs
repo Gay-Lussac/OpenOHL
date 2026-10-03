@@ -112,3 +112,31 @@ fn renders_lines_and_surfaces_headless() {
     });
     assert!(red, "wire not drawn");
 }
+
+#[test]
+fn flying_and_looking() {
+    let mut c = Camera::fit(&Bounds {
+        min: at(-100.0, -100.0, 0.0),
+        max: at(100.0, 100.0, 50.0),
+    });
+    c.yaw = (-90f64).to_radians(); // eye south of the target, looking north
+    c.pitch = 0.3;
+    let (t0, e0) = (c.target, c.eye());
+    // W: north; D: east; Space: up — eye and target move together.
+    c.fly(10.0, 0.0, 0.0);
+    assert!((c.target[1] - t0[1] - 10.0).abs() < 1e-9 && (c.target[0] - t0[0]).abs() < 1e-9);
+    c.fly(0.0, 5.0, 2.0);
+    assert!((c.target[0] - t0[0] - 5.0).abs() < 1e-9);
+    assert!((c.target[2] - t0[2] - 2.0).abs() < 1e-9);
+    let e1 = c.eye();
+    assert!((e1[1] - e0[1] - 10.0).abs() < 1e-9 && (e1[2] - e0[2] - 2.0).abs() < 1e-9);
+    // Looking around keeps the eye in place and turns the view.
+    let before = c.eye();
+    c.look(0.5, 0.2);
+    let after = c.eye();
+    assert!(
+        (0..3).all(|k| (before[k] - after[k]).abs() < 1e-6),
+        "{before:?} {after:?}"
+    );
+    assert!((c.yaw - ((-90f64).to_radians() - 0.5)).abs() < 1e-12);
+}

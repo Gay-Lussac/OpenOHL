@@ -239,6 +239,30 @@ impl Camera {
         }
     }
 
+    /// Turns the view around the eye (first person): `dx`, `dy` in
+    /// radians; the eye stays where it is, the target moves.
+    pub fn look(&mut self, dx: f64, dy: f64) {
+        let eye = self.eye();
+        self.orbit(dx, -dy);
+        let (cp, sp) = (self.pitch.cos(), self.pitch.sin());
+        self.target = [
+            eye[0] - self.distance * cp * self.yaw.cos(),
+            eye[1] - self.distance * cp * self.yaw.sin(),
+            eye[2] - self.distance * sp,
+        ];
+    }
+
+    /// Moves the eye and the target together: `forward` and `right` along
+    /// the ground in the direction of view, `up` vertically, metres.
+    pub fn fly(&mut self, forward: f64, right: f64, up: f64) {
+        let (c, s) = (self.yaw.cos(), self.yaw.sin());
+        // Looking from the eye to the target: (−cos, −sin); right of it:
+        // (−sin, cos).
+        self.target[0] += -c * forward - s * right;
+        self.target[1] += -s * forward + c * right;
+        self.target[2] += up;
+    }
+
     /// Zooms by `factor` (< 1 closer).
     pub fn zoom(&mut self, factor: f64) {
         self.distance = (self.distance * factor).clamp(0.5, 1e7);

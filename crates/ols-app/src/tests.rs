@@ -94,3 +94,59 @@ fn the_window_shows_the_model_and_the_selection() {
     assert_eq!(harness.query_all_by_label("S1 span 2").count(), 2);
     assert!(harness.query_all_by_label("glaze ice").count() >= 1);
 }
+
+/// Holding W over the 3D view flies forward; Space climbs.
+#[test]
+fn keys_fly_the_camera() {
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    let cam = |h: &mut Harness<'_, App>| h.state_mut().ready().unwrap().view3d.camera.unwrap();
+    let before = cam(&mut harness);
+    // The 3D view is in the middle of the default layout.
+    let key = |key, pressed| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(620.0, 300.0)));
+    harness.input_mut().events.push(key(egui::Key::W, true));
+    harness.input_mut().events.push(key(egui::Key::Space, true));
+    for _ in 0..10 {
+        harness.step();
+    }
+    harness.input_mut().events.push(key(egui::Key::W, false));
+    harness
+        .input_mut()
+        .events
+        .push(key(egui::Key::Space, false));
+    harness.step();
+    let after = cam(&mut harness);
+    let dir = [-before.yaw.cos(), -before.yaw.sin()];
+    let moved = [
+        after.target[0] - before.target[0],
+        after.target[1] - before.target[1],
+    ];
+    let forward = moved[0] * dir[0] + moved[1] * dir[1];
+    assert!(forward > 0.1, "moved {moved:?} along {dir:?}");
+    assert!(after.target[2] > before.target[2], "climbed");
+    // Released: no more movement.
+    harness.step();
+    harness.step();
+    assert_eq!(cam(&mut harness).target, after.target);
+}

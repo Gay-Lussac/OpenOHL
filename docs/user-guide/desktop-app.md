@@ -23,11 +23,32 @@ cargo run --release -p ols-app -- project.ols          # with the project's poin
 
 ## Views
 
-- **3D** — ground (shaded), LiDAR points coloured by class role (vegetation green, buildings red, water blue, wires yellow…), structures, insulator strings, wires in their phase colours, alignments. Drag to turn, right-drag or shift-drag to pan, scroll to zoom, double-click to fly to an object. Height exaggeration in the Model panel.
+- **3D** — ground (shaded), LiDAR points coloured by class role (vegetation green, buildings red, water blue, wires yellow…), structures, insulator strings, wires in their phase colours, alignments. Navigation: see [Controls](#controls). Height exaggeration in the Model panel.
 - **Plan** — alignments, wires and structures from above, north up, with a scale bar. Drag, scroll at the pointer, double-click to centre.
 - **Profile** — per route: ground along the centreline, structures and wires by station; heights fit the visible stretch. Scroll zooms along the route, drag moves, double-click shows the whole route.
 - **Properties** — the selected structure (position, type, attachments, spans through it) or span (cable, circuit, electrical system and voltage, bundle, horizontal and maximum tension, sag and lowest point in every weather case). Links select related objects.
 - **Model** — layers, weather cases, what was loaded and how long it took.
+
+## Controls
+
+The 3D view is navigated with the mouse and, while the pointer is over it, the keyboard — like Minecraft in creative mode:
+
+| Input | Action |
+|---|---|
+| W / S | forward / back along the ground, in the direction of view |
+| A / D | left / right |
+| Space / Shift | up / down |
+| Ctrl (held) | four times faster |
+| scroll | zoom |
+| right or middle drag | pan |
+| double-click | fly to the object |
+
+Two schemes, chosen in the Model panel (Controls), differ in the left drag:
+
+- **Orbit** — turns the view around the point looked at.
+- **Minecraft creative** — looks around from where you stand.
+
+The speed (m/s) is set there too, and the list shows every key of the scheme. Schemes are data (`controls.rs`: actions bound to keys and mouse buttons), so schemes familiar from other software can be added as presets, and later edited and saved.
 
 Clicking an object in any view selects it everywhere. Tabs can be dragged to rearrange the window.
 

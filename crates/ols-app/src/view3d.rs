@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The 3D view: the renderer's image of the visible layers, with an orbit
-//! camera (drag: turn, right-drag or shift-drag: pan, scroll: zoom,
-//! double-click: fly to the object) and picking.
+//! The 3D view: the renderer's image of the visible layers, a camera
+//! moved with the mouse and the keyboard as the chosen control scheme
+//! says ([`Controls`]), and picking.
 
 use std::collections::{HashMap, HashSet};
 
@@ -12,6 +12,7 @@ use eframe::egui;
 use eframe::egui_wgpu;
 use ols_render::{Camera, GpuScene, Renderer};
 
+use crate::controls::{Controls, Drag};
 use crate::model::Model;
 use crate::scene::{self, Layer};
 use crate::selection::{self, Selection};
@@ -21,6 +22,8 @@ use crate::selection::{self, Selection};
 pub struct View3d {
     /// Camera (set when a model is shown).
     pub camera: Option<Camera>,
+    /// Navigation controls.
+    pub controls: Controls,
     renderer: Option<Renderer>,
     gpu: HashMap<Layer, GpuScene>,
     /// Layers to rebuild before the next frame.
@@ -65,15 +68,38 @@ impl View3d {
         });
         // Input.
         let size = [f64::from(rect.width()), f64::from(rect.height())];
+        // Keys act while the pointer is over the view or it has focus.
+        if response.clicked() || response.drag_started() {
+            response.request_focus();
+        }
         if response.dragged() {
             let d = response.drag_delta();
-            let pan = response.dragged_by(egui::PointerButton::Secondary)
-                || response.dragged_by(egui::PointerButton::Middle)
-                || ui.input(|i| i.modifiers.shift);
-            if pan {
-                camera.pan(f64::from(d.x), f64::from(d.y), size[1]);
-            } else {
-                camera.orbit(f64::from(d.x) * 0.008, f64::from(d.y) * 0.008);
+            let (dx, dy) = (f64::from(d.x), f64::from(d.y));
+            let action = [
+                egui::PointerButton::Primary,
+                egui::PointerButton::Secondary,
+                egui::PointerButton::Middle,
+            ]
+            .into_iter()
+            .find(|b| response.dragged_by(*b))
+            .map_or(Drag::None, |b| self.controls.drag(b));
+            match action {
+                Drag::Orbit => camera.orbit(dx * 0.008, dy * 0.008),
+                Drag::Look => camera.look(dx * 0.004, dy * 0.004),
+                Drag::Pan => camera.pan(dx, dy, size[1]),
+                Drag::None => {}
+            }
+        }
+        if response.hovered() || response.has_focus() {
+            let (v, sprint, dt) = ui.input(|i| {
+                let (v, sprint) = self.controls.held(i);
+                (v, sprint, f64::from(i.stable_dt).min(0.1))
+            });
+            if v != [0.0; 3] {
+                let speed = self.controls.speed * if sprint { self.controls.sprint } else { 1.0 };
+                camera.fly(v[0] * speed * dt, v[1] * speed * dt, v[2] * speed * dt);
+                // Keep moving while the keys are held.
+                ui.ctx().request_repaint();
             }
         }
         if response.hovered() {
@@ -168,7 +194,15 @@ impl View3d {
         painter.text(
             rect.left_bottom() + egui::vec2(8.0, -8.0),
             egui::Align2::LEFT_BOTTOM,
-            "drag: turn · right-drag / shift-drag: pan · scroll: zoom · double-click: fly to",
+            format!(
+                "{}: W A S D move · Space up · Shift down · Ctrl faster · drag: {} · right-drag: pan · scroll: zoom · double-click: fly to",
+                self.controls.name,
+                if self.controls.left == Drag::Look {
+                    "look around"
+                } else {
+                    "turn"
+                }
+            ),
             egui::FontId::proportional(11.0),
             egui::Color32::from_gray(150),
         );

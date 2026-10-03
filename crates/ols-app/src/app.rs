@@ -221,6 +221,39 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
             );
         }
         ui.separator();
+        ui.label(egui::RichText::new("Controls (3D)").strong());
+        let c = &mut r.view3d.controls;
+        egui::ComboBox::from_id_salt("controls")
+            .selected_text(c.name)
+            .show_ui(ui, |ui| {
+                for p in crate::controls::Controls::presets() {
+                    if ui.selectable_label(c.name == p.name, p.name).clicked() {
+                        // Keep the chosen speed.
+                        let speed = c.speed;
+                        *c = p;
+                        c.speed = speed;
+                    }
+                }
+            });
+        ui.add(
+            egui::Slider::new(&mut c.speed, 1.0..=1000.0)
+                .text("m/s")
+                .logarithmic(true),
+        );
+        egui::CollapsingHeader::new("keys and mouse")
+            .id_salt("controls-list")
+            .show(ui, |ui| {
+                egui::Grid::new("controls-grid")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for (k, v) in c.describe() {
+                            ui.label(egui::RichText::new(k).small().strong());
+                            ui.label(egui::RichText::new(v).small());
+                            ui.end_row();
+                        }
+                    });
+            });
+        ui.separator();
         ui.label(egui::RichText::new("Weather cases").strong());
         for (k, c) in r.model.cases.iter().enumerate() {
             let text = format!("{} — {}", c.case.name, c.case.summary());
