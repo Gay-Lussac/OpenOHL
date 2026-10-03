@@ -48,6 +48,10 @@ pub struct Wire {
     pub phase: String,
     /// Electrical potential of its section (none: earthed wire).
     pub potential: Option<Potential>,
+    /// Bundles: subconductor positions (across, up) around the points,
+    /// m ([`ols_line::Section::bundle_offsets`]); empty or `[[0, 0]]` for a
+    /// single wire.
+    pub bundle: Vec<[f64; 2]>,
     /// Points along the wire.
     pub points: Vec<P3>,
     /// The attachments it hangs on (`structure:set:phase`): wires sharing
@@ -59,6 +63,104 @@ impl Wire {
     /// Nominal voltage of its system, kV (none: earthed).
     pub fn kv(&self) -> Option<f64> {
         self.potential.map(|p| p.nominal_kv)
+    }
+
+    /// Radius of the bundle, m (0 for a single wire).
+    pub fn bundle_radius(&self) -> f64 {
+        self.bundle
+            .iter()
+            .map(|o| o[0].hypot(o[1]))
+            .fold(0.0, f64::max)
+    }
+
+    /// Lowest and highest subconductor relative to the centre line, m.
+    fn vertical_extent(&self) -> (f64, f64) {
+        if self.bundle.is_empty() {
+            return (0.0, 0.0);
+        }
+        self.bundle
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), o| {
+                (lo.min(o[1]), hi.max(o[1]))
+            })
+    }
+
+    /// The subconductors at centre-line point `q` of the segment `a`–`b`:
+    /// `up` is the vertical made square to the wire, `across` horizontal to
+    /// the right looking along it.
+    fn subconductors(&self, q: P3, a: P3, b: P3) -> Vec<P3> {
+        if self.bundle.len() <= 1 && self.bundle.first().is_none_or(|o| *o == [0.0, 0.0]) {
+            return vec![q];
+        }
+        let t = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let len = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
+        let (t, plan) = if len > 0.0 {
+            ([t[0] / len, t[1] / len, t[2] / len], t[0].hypot(t[1]))
+        } else {
+            ([1.0, 0.0, 0.0], 1.0)
+        };
+        // Across: horizontal, perpendicular to the wire in plan.
+        let across = if plan > 1e-12 {
+            let h = t[0].hypot(t[1]);
+            [t[1] / h, -t[0] / h, 0.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        // Up: the vertical without its part along the wire.
+        let up = {
+            let u = [-t[2] * t[0], -t[2] * t[1], 1.0 - t[2] * t[2]];
+            let n = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
+            if n > 1e-12 {
+                [u[0] / n, u[1] / n, u[2] / n]
+            } else {
+                [0.0, 1.0, 0.0]
+            }
+        };
+        self.bundle
+            .iter()
+            .map(|o| {
+                [
+                    q[0] + o[0] * across[0] + o[1] * up[0],
+                    q[1] + o[0] * across[1] + o[1] * up[1],
+                    q[2] + o[0] * across[2] + o[1] * up[2],
+                ]
+            })
+            .collect()
+    }
+
+    /// The subconductors' pieces along the centre-line segment `a`–`b`.
+    fn sub_segments(&self, a: P3, b: P3) -> Vec<(P3, P3)> {
+        self.subconductors(a, a, b)
+            .into_iter()
+            .zip(self.subconductors(b, a, b))
+            .collect()
+    }
+
+    /// The nearest point of the subconductors along `a`–`b` to `p`:
+    /// (distance, its point).
+    fn nearest(&self, p: P3, a: P3, b: P3) -> (f64, P3) {
+        self.sub_segments(a, b)
+            .into_iter()
+            .map(|(s, t)| {
+                let (q, _) = closest_on_segment(p, s, t);
+                (distance(p, q), q)
+            })
+            .min_by(|x, y| x.0.total_cmp(&y.0))
+            .expect("at least one subconductor")
+    }
+
+    /// Vertical separation of the bundle at centre-line point `q` from a
+    /// point at height `z` below or above it (0 inside its height range):
+    /// to the lowest subconductor from below, the highest from above.
+    fn vertical_gap(&self, q: P3, z: f64) -> f64 {
+        let (lo, hi) = self.vertical_extent();
+        if z <= q[2] + lo {
+            q[2] + lo - z
+        } else if z >= q[2] + hi {
+            z - (q[2] + hi)
+        } else {
+            0.0
+        }
     }
 }
 
@@ -83,6 +185,7 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
                 circuit: section.map_or(String::new(), |s| s.circuit.clone()),
                 phase: section.map_or(String::new(), |s| s.phase_label.clone()),
                 potential: potential(&shape.section),
+                bundle: section.map_or(Vec::new(), |s| s.bundle_offsets()),
                 points: span.points.clone(),
                 ends: section.map_or(Vec::new(), |s| {
                     s.points.iter().skip(k).take(2).map(key).collect()
@@ -99,6 +202,7 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
             circuit: from.map_or(String::new(), |s| s.circuit.clone()),
             phase: from.map_or(String::new(), |s| s.phase_label.clone()),
             potential: from.and_then(|s| potential(&s.id)),
+            bundle: Vec::new(),
             points: j.points.clone(),
             ends: def.map_or(Vec::new(), |d| vec![key(&d.from), key(&d.to)]),
         });
@@ -177,6 +281,8 @@ pub fn checked_parts(rule: &Rule, wires: &[Wire]) -> Vec<Wire> {
 pub struct WireSet {
     /// The wires.
     pub wires: Vec<Wire>,
+    /// Bundle radius of each wire, m.
+    radii: Vec<f64>,
     reach: f64,
     segments: Vec<(u32, u32)>,
     cells: HashMap<(i64, i64), Vec<u32>>,
@@ -192,6 +298,8 @@ impl WireSet {
         let mut segments = Vec::new();
         let mut cells: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
         for (w, wire) in wires.iter().enumerate() {
+            // Subconductors reach out by the bundle radius.
+            let reach = reach + wire.bundle_radius();
             for (k, s) in wire.points.windows(2).enumerate() {
                 let id = segments.len() as u32;
                 segments.push((w as u32, k as u32));
@@ -205,6 +313,7 @@ impl WireSet {
             }
         }
         Self {
+            radii: wires.iter().map(Wire::bundle_radius).collect(),
             wires,
             reach,
             segments,
@@ -347,14 +456,21 @@ impl PointCheck {
         self.seen.clear();
         for (w, k) in wires.near(x, y) {
             let (a, b) = wires.segment(w, k);
-            let (q, _) = closest_on_segment(p, a, b);
-            let d = distance(p, q);
+            let wire = &wires.wires[w];
             let result = &mut self.results[w];
             let reach = (result.required.largest() + self.rule.search_margin).min(wires.reach);
-            if d <= reach {
+            // The centre line first: subconductors only when within reach.
+            let (q, _) = closest_on_segment(p, a, b);
+            let near = distance(p, q) - wires.radii[w] <= reach;
+            let (d, sub) = if near && wires.radii[w] > 0.0 {
+                wire.nearest(p, a, b)
+            } else {
+                (distance(p, q), q)
+            };
+            if near && d <= reach {
                 let hit = Hit {
                     distance: d,
-                    wire: q,
+                    wire: sub,
                     target: p,
                     class: Some(class),
                 };
@@ -366,7 +482,7 @@ impl PointCheck {
                 // Vertical separation, above or below the wire (a tree
                 // overhanging a low wire, a line crossing over).
                 let hit = Hit {
-                    distance: (q[2] - z).abs(),
+                    distance: wire.vertical_gap(q, z),
                     wire: q,
                     target: p,
                     class: Some(class),
@@ -397,12 +513,15 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
         .map(|wire| {
             let mut result = WireResult::with(rule.required(wire.kv()));
             let reach = result.required.largest() + rule.search_margin;
+            // Bundles: the lowest subconductor for the vertical clearance.
+            let (lowest, _) = wire.vertical_extent();
+            let radius_of_bundle = wire.bundle_radius();
             for s in wire.points.windows(2) {
                 let (a, b) = (s[0], s[1]);
                 let (mut vertical_bad, mut radial_bad) = (false, false);
                 for run in terrain.profile([a[0], a[1]], [b[0], b[1]]) {
                     for g in run {
-                        let z = a[2] + (b[2] - a[2]) * g.t;
+                        let z = a[2] + (b[2] - a[2]) * g.t + lowest;
                         let hit = Hit {
                             distance: z - g.point[2],
                             wire: [g.point[0], g.point[1], z],
@@ -419,35 +538,45 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
                 let n = ((distance(a, b) / GROUND_STEP).ceil() as usize).max(1);
                 for i in 0..=n {
                     let t = i as f64 / n as f64;
-                    let p = [
+                    let centre = [
                         a[0] + (b[0] - a[0]) * t,
                         a[1] + (b[1] - a[1]) * t,
                         a[2] + (b[2] - a[2]) * t,
                     ];
-                    let Some(below) = terrain.height(p[0], p[1]) else {
-                        continue;
-                    };
-                    let radius = (p[2] - below).max(0.0).min(reach);
-                    if p[2] - below > reach {
+                    // Each subconductor of a bundle (one point for a wire),
+                    // when the centre line is within reach.
+                    if terrain
+                        .height(centre[0], centre[1])
+                        .is_some_and(|g| centre[2] - g - radius_of_bundle > reach)
+                    {
                         continue;
                     }
-                    let mut best: Option<(f64, P3)> = None;
-                    terrain.triangles_near(p[0], p[1], radius, |[ta, tb, tc]| {
-                        let q = closest_on_triangle(p, ta, tb, tc);
-                        let d = distance(p, q);
-                        if best.is_none_or(|(bd, _)| d < bd) {
-                            best = Some((d, q));
-                        }
-                    });
-                    if let Some((d, q)) = best {
-                        let d = if p[2] < below { -d } else { d };
-                        let hit = Hit {
-                            distance: d,
-                            wire: p,
-                            target: q,
-                            class: None,
+                    for p in wire.subconductors(centre, a, b) {
+                        let Some(below) = terrain.height(p[0], p[1]) else {
+                            continue;
                         };
-                        radial_bad |= result.radial(hit);
+                        let radius = (p[2] - below).max(0.0).min(reach);
+                        if p[2] - below > reach {
+                            continue;
+                        }
+                        let mut best: Option<(f64, P3)> = None;
+                        terrain.triangles_near(p[0], p[1], radius, |[ta, tb, tc]| {
+                            let q = closest_on_triangle(p, ta, tb, tc);
+                            let d = distance(p, q);
+                            if best.is_none_or(|(bd, _)| d < bd) {
+                                best = Some((d, q));
+                            }
+                        });
+                        if let Some((d, q)) = best {
+                            let d = if p[2] < below { -d } else { d };
+                            let hit = Hit {
+                                distance: d,
+                                wire: p,
+                                target: q,
+                                class: None,
+                            };
+                            radial_bad |= result.radial(hit);
+                        }
                     }
                 }
                 result.radial_violations += u64::from(radial_bad);
@@ -542,12 +671,30 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                     continue;
                 }
                 let (c, d) = b.segment(j, k);
-                let (on_a, on_b) = closest_between_segments(p, q, c, d);
-                let dist = distance(on_a, on_b);
                 let crossing = crossing_in_plan(p, q, c, d);
                 let required = rule
                     .required(rule.pair_voltage(wire.potential.as_ref(), other.potential.as_ref()));
                 let reach = (required.largest() + rule.search_margin).min(b.reach);
+                // Centre lines first: bundles only when within reach.
+                let (ca, cb) = closest_between_segments(p, q, c, d);
+                let spread = wire.bundle_radius() + b.radii[j];
+                if distance(ca, cb) - spread > reach && crossing.is_none() {
+                    continue;
+                }
+                // Bundles: the nearest pair of subconductor pieces.
+                let (dist, on_a, on_b) = if spread == 0.0 {
+                    (distance(ca, cb), ca, cb)
+                } else {
+                    let (sa, sb) = (wire.sub_segments(p, q), other.sub_segments(c, d));
+                    sa.iter()
+                        .flat_map(|x| sb.iter().map(move |y| (x, y)))
+                        .map(|(x, y)| {
+                            let (u, w) = closest_between_segments(x.0, x.1, y.0, y.1);
+                            (distance(u, w), u, w)
+                        })
+                        .min_by(|x, y| x.0.total_cmp(&y.0))
+                        .expect("at least one subconductor each")
+                };
                 if dist > reach && crossing.is_none() {
                     continue;
                 }
@@ -566,9 +713,17 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                 }
                 let mut vertical_bad = false;
                 if let Some((x, y)) = crossing {
-                    let (upper, lower) = if x[2] >= y[2] { (x, y) } else { (y, x) };
+                    // Bundles: the upper one's lowest subconductor over the
+                    // lower one's highest.
+                    let ((alo, ahi), (blo, bhi)) =
+                        (wire.vertical_extent(), other.vertical_extent());
+                    let gap = if x[2] >= y[2] {
+                        (x[2] + alo) - (y[2] + bhi)
+                    } else {
+                        (y[2] + blo) - (x[2] + ahi)
+                    };
                     let hit = Hit {
-                        distance: upper[2] - lower[2],
+                        distance: gap,
                         wire: x,
                         target: y,
                         class: None,
@@ -623,6 +778,7 @@ mod tests {
                 .collect(),
             ends: vec![],
             potential: None,
+            bundle: vec![],
         }
     }
 
@@ -774,6 +930,65 @@ mod tests {
         let radial = res.radial.unwrap().distance;
         assert!((radial - 10.0 / 2f64.sqrt()).abs() < 1e-9, "{radial}");
         assert!(res.radial_violations > 0 && res.vertical_violations == 0);
+    }
+
+    #[test]
+    fn bundles_are_checked_at_their_subconductors() {
+        // Flat ground z = 0; a 4-bundle (0.4 m spacing, a square with a
+        // flat bottom: subconductors 0.2 m below and above the centre line)
+        // 10 m above it, along x.
+        let mut points = Vec::new();
+        for i in 0..=10 {
+            for j in -10..=10 {
+                points.push(SurveyPoint {
+                    x: i as f64 * 10.0,
+                    y: j as f64 * 5.0,
+                    z: 0.0,
+                    code: String::new(),
+                    line: String::new(),
+                });
+            }
+        }
+        let terrain = Terrain::from_points(&points, None).unwrap();
+        let square = vec![[0.2, -0.2], [0.2, 0.2], [-0.2, 0.2], [-0.2, -0.2]];
+        let bundle = Wire {
+            bundle: square.clone(),
+            ..straight("B", "L1", [10.0, 0.0, 10.0], [90.0, 0.0, 10.0])
+        };
+        let g = rule("[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 9.0\nradial = 9.0");
+        let res = &ground_check(&g, std::slice::from_ref(&bundle), &terrain)[0];
+        assert!((res.vertical.unwrap().distance - 9.8).abs() < 1e-9);
+        assert!((res.radial.unwrap().distance - 9.8).abs() < 1e-9);
+        // A point 3 m to the right (across, y < 0 looking along +x) at the
+        // centre line's height: 2.8 m from the nearest subconductors.
+        let pr = rule("[[rule]]\nname = \"p\"\ntarget = \"points\"\nclasses = [5]\nradial = 2.9");
+        let set = WireSet::new(vec![bundle.clone()], 10.0);
+        let mut pc = PointCheck::new(&pr, &[5], &set);
+        pc.visit(&set, 50.0, -3.0, 10.0, 5);
+        let hit = pc.results[0].radial.unwrap();
+        assert!((hit.distance - 2.8f64.hypot(0.2)).abs() < 1e-9, "{hit:?}");
+        assert!((hit.wire[1] + 0.2).abs() < 1e-9);
+        assert!(pc.results[0].violates());
+        // A point straight below: vertical to the lowest subconductors.
+        let vr = rule("[[rule]]\nname = \"v\"\ntarget = \"points\"\nclasses = [5]\nvertical = 3.0");
+        let mut pc = PointCheck::new(&vr, &[5], &set);
+        pc.visit(&set, 50.0, 0.0, 7.0, 5);
+        assert!((pc.results[0].vertical.unwrap().distance - 2.8).abs() < 1e-9);
+        // Two bundles crossing 3 m apart (centre lines): 2.6 m between the
+        // upper one's bottom and the lower one's top.
+        let lower = WireSet::new(
+            vec![Wire {
+                bundle: square,
+                ..straight("C", "L1", [50.0, -20.0, 7.0], [50.0, 20.0, 7.0])
+            }],
+            10.0,
+        );
+        let x =
+            rule("[[rule]]\nname = \"x\"\ntarget = \"other_lines\"\nvertical = 3.0\nradial = 3.0");
+        let pairs = wire_pairs(&x, &[bundle], &lower, PairMode::OtherLines);
+        let r = &pairs[0].result;
+        assert!((r.vertical.unwrap().distance - 2.6).abs() < 1e-9);
+        assert!((r.radial.unwrap().distance - 2.6).abs() < 1e-9);
     }
 
     #[test]

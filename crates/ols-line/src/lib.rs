@@ -316,9 +316,20 @@ pub struct Section {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system: Option<String>,
     /// Subconductors per phase (1 = single wire). Each subconductor carries
-    /// the same tension; geometry is that of one wire.
+    /// the same tension and loads; the solve follows one subconductor (the
+    /// bundle's centre line) with its share of the insulator weight.
     #[serde(default = "one")]
     pub bundle: u32,
+    /// Bundles: distance between neighbouring subconductors, m (e.g. 0.4).
+    /// They sit evenly on a circle around the centre line, in the plane
+    /// across the wire ([`Section::bundle_offsets`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_spacing: Option<f64>,
+    /// Bundles: rotation of the arrangement, degrees counter-clockwise
+    /// looking ahead (default 0: a flat bottom — two side by side, three
+    /// with one on top, four in a square).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_rotation_deg: Option<f64>,
     /// Attachment points in line order (first and last: strain points).
     pub points: Vec<SectionPoint>,
     /// Stringing.
@@ -333,6 +344,31 @@ pub struct Section {
 
 fn one() -> u32 {
     1
+}
+
+impl Section {
+    /// Positions of the subconductors around the centre line, m: (across,
+    /// up) in the plane across the wire — across to the right looking
+    /// ahead, up away from the ground. On a circle of radius
+    /// `s / (2·sin(π/n))`; by default the two lowest subconductors are
+    /// level. One entry `[0, 0]` for a single wire or a bundle without a
+    /// spacing (geometry as one wire).
+    pub fn bundle_offsets(&self) -> Vec<[f64; 2]> {
+        let n = self.bundle.max(1);
+        let Some(s) = self.bundle_spacing.filter(|_| n >= 2) else {
+            return vec![[0.0, 0.0]];
+        };
+        let r = s / (2.0 * (std::f64::consts::PI / f64::from(n)).sin());
+        let start = -std::f64::consts::FRAC_PI_2
+            + std::f64::consts::PI / f64::from(n)
+            + self.bundle_rotation_deg.unwrap_or(0.0).to_radians();
+        (0..n)
+            .map(|k| {
+                let a = start + 2.0 * std::f64::consts::PI * f64::from(k) / f64::from(n);
+                [r * a.cos(), r * a.sin()]
+            })
+            .collect()
+    }
 }
 
 /// Errors in a line model.
@@ -627,6 +663,24 @@ impl Line {
             if sec.bundle == 0 {
                 return invalid(format!("section {}: bundle must be at least 1", sec.id));
             }
+            match (sec.bundle, sec.bundle_spacing) {
+                (1, Some(_)) => {
+                    return invalid(format!(
+                        "section {}: bundle_spacing is for bundles (bundle ≥ 2)",
+                        sec.id
+                    ));
+                }
+                (_, Some(s)) if !(s.is_finite() && s > 0.0) => {
+                    return invalid(format!("section {}: bundle_spacing must be > 0 m", sec.id));
+                }
+                _ => {}
+            }
+            if sec.bundle_rotation_deg.is_some_and(|r| !r.is_finite()) {
+                return invalid(format!(
+                    "section {}: bundle_rotation_deg must be a number",
+                    sec.id
+                ));
+            }
         }
         let mut jumper_ids = BTreeMap::new();
         for j in &self.jumpers {
@@ -682,6 +736,54 @@ mod tests {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../examples/synthetic-line/synthetic-line.ols.json");
         Line::load(&path).unwrap()
+    }
+
+    #[test]
+    fn bundle_offsets_on_a_circle() {
+        let mut s = example().sections[0].clone();
+        assert_eq!(s.bundle_offsets(), [[0.0, 0.0]]);
+        s.bundle = 2;
+        s.bundle_spacing = Some(0.4);
+        let two = s.bundle_offsets();
+        assert!(
+            (two[0][0] - 0.2).abs() < 1e-12 && two[0][1].abs() < 1e-12,
+            "{two:?}"
+        );
+        assert!((two[1][0] + 0.2).abs() < 1e-12 && two[1][1].abs() < 1e-12);
+        for n in 3..=8 {
+            s.bundle = n;
+            let o = s.bundle_offsets();
+            // Neighbours 0.4 m apart; the two lowest level.
+            for k in 0..o.len() {
+                let (a, b) = (o[k], o[(k + 1) % o.len()]);
+                assert!(
+                    ((a[0] - b[0]).hypot(a[1] - b[1]) - 0.4).abs() < 1e-12,
+                    "{n}: {o:?}"
+                );
+            }
+            let mut ys: Vec<f64> = o.iter().map(|p| p[1]).collect();
+            ys.sort_by(f64::total_cmp);
+            assert!((ys[0] - ys[1]).abs() < 1e-12, "{n}: {o:?}");
+        }
+        // Three: one on top; turned by 60°: one at the bottom.
+        s.bundle = 3;
+        let r = 0.4 / (2.0 * (std::f64::consts::PI / 3.0).sin());
+        assert!(s.bundle_offsets().iter().any(|p| (p[1] - r).abs() < 1e-12));
+        s.bundle_rotation_deg = Some(60.0);
+        assert!(s.bundle_offsets().iter().any(|p| (p[1] + r).abs() < 1e-12));
+        // Checked in the line.
+        let mut line = example();
+        line.sections[0].bundle_spacing = Some(0.4);
+        assert!(
+            line.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("bundle ≥ 2")
+        );
+        line.sections[0].bundle = 2;
+        line.validate().unwrap();
+        line.sections[0].bundle_spacing = Some(0.0);
+        assert!(line.validate().is_err());
     }
 
     #[test]

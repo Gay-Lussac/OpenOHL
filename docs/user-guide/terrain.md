@@ -51,6 +51,7 @@ Every rule names a **target** and the required **vertical** and/or **radial** cl
 
 - **vertical**: to the ground, the wire's height above it directly below (negative: the wire is below the ground); to points, the vertical separation from points within `vertical_band` (default 0.5 m) of the wire in plan, above or below it; to other wires, the vertical separation where the wires cross in plan.
 - **radial**: the shortest 3D distance between the wire and the target.
+- **Bundles** (sections with `bundle_spacing`): to the nearest subconductor — the lowest one for vertical clearances below the wire, the highest above it, each subconductor for radial clearances.
 
 ```toml
 format = "ols-clearance-rules"

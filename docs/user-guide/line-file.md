@@ -74,7 +74,9 @@ A V-string holds its clamp across the line while both legs are in tension; when 
 | `cable` | yes | Cable id from the wire libraries. |
 | `circuit`, `phase_label` | no | Labels. |
 | `system` | no | Electrical system (id in `systems`) whose phase `phase_label` the section carries. Give it once per conductor path: sections joined by jumpers (or sharing an attachment) follow. None on the whole path: earthed (earth wire, OPGW). Independent of the cable. |
-| `bundle` | no (1) | Subconductors per phase; geometry and tension are per subconductor. |
+| `bundle` | no (1) | Subconductors per phase. Tension, sag and loads are per subconductor; the solve follows the bundle's centre line with each subconductor's share of the insulator weights (string forces are reported for the whole bundle). |
+| `bundle_spacing` | no | Distance between neighbouring subconductors, m (e.g. `0.4` for 400 mm). They sit evenly on a circle around the centre line, across the wire — radius `s / (2·sin(π/n))` — so clearances are measured to the nearest subconductor. Without it a bundle is checked as one wire. |
+| `bundle_rotation_deg` | no (0) | Turns the arrangement (counter-clockwise looking ahead). 0: the two lowest subconductors level — two side by side, three with one on top, four in a square. |
 | `points` | yes | `{ "structure": id, "set": n, "phase": n }` in line order; spans are between consecutive points. |
 | `stringing` | yes | See below. |
 | `loads` | no | Point loads: `{ "span": index, "fraction": 0–1 (horizontal, from the back point), "vertical": N, "label": "…" }`. |

@@ -83,7 +83,7 @@ pub struct SectionShape {
     /// One shape per span.
     pub spans: Vec<SpanShape>,
     /// Axial force of each insulator member at every point of the section,
-    /// N (tension positive): empty for fixed points, one value for I-strings
+    /// N (tension positive; the whole bundle's): empty for fixed points, one value for I-strings
     /// and strain assemblies, two for V-string legs (0 = slack leg).
     pub insulators: Vec<Vec<f64>>,
     /// Newton iterations used.
@@ -177,14 +177,14 @@ fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
                 Clamp::VString {
                     tops,
                     lengths: tops.map(|t| (wire - t).norm()),
-                    weight: a.insulator_weight,
+                    weight: a.insulator_weight / f64::from(section.bundle.max(1)),
                     plumb: wire,
                 }
             } else if middle && is_suspension(ins, wire) {
                 Clamp::Suspension {
                     top: ins,
                     length: (wire - ins).norm(),
-                    weight: a.insulator_weight,
+                    weight: a.insulator_weight / f64::from(section.bundle.max(1)),
                 }
             } else if (a.insulator.is_some() || a.strain_member) && (wire - ins).norm() > 0.01 {
                 // A library strain assembly is modelled as a free member (it
@@ -196,7 +196,7 @@ fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
                 Clamp::Strain {
                     top: ins,
                     length: (wire - ins).norm(),
-                    weight: a.insulator_weight,
+                    weight: a.insulator_weight / f64::from(section.bundle.max(1)),
                     initial: wire,
                 }
             } else {
@@ -578,7 +578,12 @@ pub fn solve_section(
         insulators: built
             .members
             .iter()
-            .map(|m| m.iter().map(|&t| solution.truss_forces[t]).collect())
+            // Forces of the whole bundle (the model is one subconductor).
+            .map(|m| {
+                m.iter()
+                    .map(|&t| solution.truss_forces[t] * f64::from(section.bundle.max(1)))
+                    .collect()
+            })
             .collect(),
         iterations: solution.iterations,
     })
@@ -665,6 +670,39 @@ mod tests {
             "wind should blow the wire sideways, moved {shift} m"
         );
         let _ = Length::ZERO;
+    }
+
+    #[test]
+    fn a_bundle_shares_its_strings_weight() {
+        // A 3-bundle under 3 × 900 N strings swings like one wire under
+        // 900 N; the reported string forces are the whole bundle's.
+        let lib = library();
+        let mut windy = WeatherCase::still("wind", Temperature::from_celsius(15.0));
+        windy.wind_pressure = Stress::from_pascals(400.0);
+        let single = crate::tests::example();
+        let mut bundled = single.clone();
+        bundled.sections[0].bundle = 3;
+        bundled.sections[0].bundle_spacing = Some(0.4);
+        for s in &mut bundled.structures {
+            for a in &mut s.attachments {
+                a.insulator_weight *= 3.0;
+            }
+        }
+        bundled.validate().unwrap();
+        let a = solve_line(&single, &lib, &windy).remove(0).unwrap();
+        let b = solve_line(&bundled, &lib, &windy).remove(0).unwrap();
+        for (p, q) in a.clamps.iter().zip(&b.clamps) {
+            assert!((v(*p) - v(*q)).norm() < 1e-9, "{p:?} {q:?}");
+        }
+        for (f, g) in a
+            .insulators
+            .iter()
+            .flatten()
+            .zip(b.insulators.iter().flatten())
+        {
+            assert!((3.0 * f - g).abs() < 1e-6 * g.abs().max(1.0), "{f} {g}");
+        }
+        assert!(a.insulators.iter().flatten().count() > 0);
     }
 
     /// The synthetic line with T2's first attachment (a 3.5 m I-string,
