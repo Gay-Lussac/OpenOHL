@@ -56,7 +56,7 @@ pub enum SessionError {
     Refused(String),
     /// The command would delete more than its object: it lists everything
     /// that would go with it and must be repeated with `confirm: true`.
-    NeedsConfirmation(Impact),
+    NeedsConfirmation(Box<Impact>),
     /// The project file could not be used.
     Store(String),
 }
@@ -741,7 +741,7 @@ impl Session {
             Command::DeleteStructure { id, confirm } => {
                 let impact = self.structure_deletion(&id)?;
                 if !confirm {
-                    return Err(SessionError::NeedsConfirmation(impact));
+                    return Err(SessionError::NeedsConfirmation(Box::new(impact)));
                 }
                 for j in &impact.jumpers {
                     out.push(Command::Delete {
