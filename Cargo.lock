@@ -3271,6 +3271,7 @@ dependencies = [
  "env_logger",
  "log",
  "ols-cables",
+ "ols-clearance",
  "ols-core",
  "ols-drawing",
  "ols-lidar",

@@ -42,6 +42,8 @@ pub struct Sources {
     pub corridor: f64,
     /// User editing the project (default: the login name).
     pub user: Option<String>,
+    /// Clearance rules (`.olsr`).
+    pub rules: Option<PathBuf>,
 }
 
 /// One solved weather case.
@@ -146,8 +148,10 @@ pub struct Model {
     pub line: Line,
     /// Weather cases, solved.
     pub cases: Vec<Solved>,
-    /// Ground surface.
-    pub ground: Option<Terrain>,
+    /// Ground surface (shared with clearance checks).
+    pub ground: Option<std::sync::Arc<Terrain>>,
+    /// The point cloud read (`FILE.ols` or `FILE.ols#name`).
+    pub cloud: Option<String>,
     /// LiDAR points shown (thinned to the budget).
     pub points: Vec<LidarPoint>,
     /// Origin of the points (and of the views), project coordinates.
@@ -315,7 +319,7 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
     });
     let mut points = Vec::new();
     let mut scheme = ols_lidar::ClassScheme::asprs();
-    if let Some(spec) = cloud {
+    if let Some(spec) = cloud.clone() {
         let t = Instant::now();
         let (file, name) = match spec.split_once('#') {
             Some((f, n)) => (f.to_owned(), Some(n.to_owned())),
@@ -415,7 +419,8 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
         sources,
         line,
         cases: solved,
-        ground,
+        ground: ground.map(std::sync::Arc::new),
+        cloud,
         points,
         origin,
         scheme,

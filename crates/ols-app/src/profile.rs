@@ -71,7 +71,7 @@ impl ProfileView {
                 &routes[self.route],
                 solved.map_or(&[][..], |s| &s.shapes),
                 solved.map_or(&[][..], |s| &s.jumpers),
-                model.ground.as_ref(),
+                model.ground.as_deref(),
                 &[],
                 &ols_drawing::Options::default(),
             );

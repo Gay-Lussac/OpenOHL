@@ -957,3 +957,78 @@ fn tools_act_on_a_right_click_only() {
     assert!(r.confirm.is_none());
     assert!(r.model.line.structure("T3").is_some(), "not deleted");
 }
+
+fn clearance_input(m: &model::Model, rules: Vec<ols_clearance::Rule>) -> crate::clearance::Input {
+    crate::clearance::Input {
+        line: m.line.clone(),
+        case: m.cases[0].case.name.clone(),
+        shapes: m.cases[0].shapes.clone(),
+        jumpers: m.cases[0].jumpers.clone(),
+        rules,
+        scheme: m.scheme.clone(),
+        cloud: m.cloud.clone(),
+        ground: m.ground.clone(),
+        corridor: 60.0,
+    }
+}
+
+/// A ground rule far above the wires finds every span; one far below,
+/// none.
+#[test]
+fn clearance_violations_of_the_shown_case() {
+    let m = synthetic();
+    let high = crate::clearance::run(&clearance_input(
+        &m,
+        ols_clearance::RuleSet::ground(100.0).rules,
+    ))
+    .unwrap();
+    let spans: usize = m.cases[0].shapes.iter().map(|s| s.spans.len()).sum();
+    let wires: std::collections::BTreeSet<String> =
+        high.findings.iter().map(|f| f.wire.describe()).collect();
+    assert!(wires.len() >= spans, "{} of {spans}", wires.len());
+    for f in &high.findings {
+        assert!(f.distance < f.required);
+        assert_eq!(f.measure, "vertical");
+        // The target is the ground under the wire.
+        assert!(f.target[2] < f.at[2]);
+    }
+    let low = crate::clearance::run(&clearance_input(
+        &m,
+        ols_clearance::RuleSet::ground(0.5).rules,
+    ))
+    .unwrap();
+    assert!(low.findings.is_empty(), "{:?}", low.findings);
+    assert_eq!(low.rules.len(), 1);
+}
+
+/// The Clearances tab finds the example rules next to the model and checks
+/// the shown case on its own; the violations are drawn.
+#[test]
+fn the_clearances_tab_checks_on_its_own() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.state_mut().show_tab(crate::app::Tab::Clearances);
+    let started = std::time::Instant::now();
+    loop {
+        harness.run();
+        let r = harness.state_mut().ready().unwrap();
+        if r.clearances.report.is_some() && !r.clearances.running() {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 60, "no report in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.clearances.files[0].ends_with("clearance-rules.olsr"));
+    let rep = r.clearances.report.clone().unwrap().unwrap();
+    assert_eq!(r.view3d.marks.len(), rep.findings.len());
+    // Rules for other lines and across cases are noted, not run.
+    assert!(
+        rep.notes.iter().any(|n| n.contains("Crossed lines")),
+        "{:?}",
+        rep.notes
+    );
+    harness.get_by_label_contains("Check now");
+}

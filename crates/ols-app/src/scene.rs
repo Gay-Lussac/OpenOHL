@@ -24,19 +24,23 @@ pub enum Layer {
     Wires,
     /// Wires of the other weather cases (faded).
     OtherCases,
+    /// Clearance violations: wire to target, red
+    /// ([`View3d::marks`](crate::view3d::View3d::marks)).
+    Clearances,
     /// The selection, highlighted.
     Selection,
 }
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 7] = [
+    pub const ALL: [Layer; 8] = [
         Layer::Ground,
         Layer::Points,
         Layer::Alignment,
         Layer::Structures,
         Layer::Wires,
         Layer::OtherCases,
+        Layer::Clearances,
         Layer::Selection,
     ];
 
@@ -49,6 +53,7 @@ impl Layer {
             Layer::Structures => "Structures",
             Layer::Wires => "Wires (selected case)",
             Layer::OtherCases => "Wires (other cases)",
+            Layer::Clearances => "Clearance violations",
             Layer::Selection => "Selection",
         }
     }
@@ -290,6 +295,8 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                 }
             }
         }
+        // Drawn from the clearance report ([`marks`]).
+        Layer::Clearances => {}
         Layer::Selection => {
             let hi = [255, 255, 255, 255];
             match selection {
@@ -363,6 +370,18 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                 Selection::None => {}
             }
         }
+    }
+    s
+}
+
+/// Clearance violations as drawn: a red line from the wire to the target,
+/// a dot on the wire.
+pub fn marks(origin: [f64; 3], marks: &[([f64; 3], [f64; 3])]) -> Scene {
+    let mut s = Scene::new(origin);
+    for (at, target) in marks {
+        s.polyline(&[*at, *target], [255, 60, 50, 255], 2.5);
+        s.point(*at, [255, 60, 50, 255], 9.0);
+        s.point(*target, [255, 160, 60, 255], 6.0);
     }
     s
 }

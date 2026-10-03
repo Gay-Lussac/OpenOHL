@@ -22,6 +22,7 @@ ols-terrain.workspace = true
 ols-lidar.workspace = true
 ols-pointcloud.workspace = true
 ols-session.workspace = true
+ols-clearance.workspace = true
 ols-drawing.workspace = true
 ols-render.workspace = true
 eframe.workspace = true

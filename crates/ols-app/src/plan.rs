@@ -19,6 +19,8 @@ pub struct PlanView {
     centre: Option<[f64; 2]>,
     /// Pixels per metre.
     scale: f64,
+    /// Clearance violations to mark (points on the wires).
+    pub marks: Vec<[f64; 3]>,
 }
 
 fn color(c: [u8; 3]) -> egui::Color32 {
@@ -43,6 +45,11 @@ impl PlanView {
         let w = (hi[0] - lo[0]).max(50.0) * 1.1;
         let h = (hi[1] - lo[1]).max(50.0) * 1.1;
         self.scale = (f64::from(size.x) / w).min(f64::from(size.y) / h);
+    }
+
+    /// Fits the line again on the next frame.
+    pub fn refit(&mut self) {
+        self.centre = None;
     }
 
     /// Centres the view on a point.
@@ -202,6 +209,16 @@ impl PlanView {
                     &s.id,
                     egui::FontId::proportional(11.0),
                     egui::Color32::from_gray(200),
+                );
+            }
+        }
+        for m in &self.marks {
+            let p = to_screen(*m);
+            if rect.expand(10.0).contains(p) {
+                painter.circle_stroke(
+                    p,
+                    6.0,
+                    egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 60, 50)),
                 );
             }
         }

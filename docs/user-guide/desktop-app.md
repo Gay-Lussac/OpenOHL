@@ -30,6 +30,7 @@ cargo run --release -p ols-app -- project.ols          # with the project's poin
 - **Properties** — the selected structure (position, type, attachments, spans through it) or span (cable, circuit, electrical system and voltage, bundle, horizontal and maximum tension, sag and lowest point in every weather case). Links select related objects.
 - **Model** — layers, weather cases, what was loaded and how long it took.
 - **Snap** — what can be clicked.
+- **Clearances** — clearance violations of the shown weather case (see [Clearances](#clearances)).
 - **Properties** of the other kinds: an attachment point (string type, insulator and wire points, length, weight, spans and jumpers there), an alignment point (position, tied structure), a LiDAR point (position, class and roles).
 
 ## Editing
@@ -47,6 +48,14 @@ After an edit only the sections it touched are re-solved, in every weather case 
 ## Tools: hotbar and inventory
 
 As in Minecraft, the bottom of the 3D view holds a **hotbar** of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair): Move opens the Move window for the structure, Delete deletes it (with the confirmation), Go to opens the Go to window, Select selects. A left click always selects; a right-*drag* still pans. A window opened by a tool (Move, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person); it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come.
+
+## Clearances
+
+The **Clearances** tab checks the shown weather case with a rule file (`.olsr`, the format of `ols line --rules`; see [Clearance rules](terrain.md#clearance-rules-olsr)): the wires against the ground surface, against the LiDAR points of the rules' classes, and against the line's other wires, with the requirements by voltage of each section's electrical system. Rule files are listed from `--rules FILE`, the `.olsr` files next to the model and `libraries/clearance-rules`; the one given or the only one found is chosen at start.
+
+The check runs in the background and again after every edit and change of weather case (untick "after every edit" to check only with **Check now**). LiDAR points are read again from the project's point cloud each time, only those of the rules' classes in a corridor around the spans, so nothing more is kept in memory: on the 25 km line with 18.8 million such points a check takes a few seconds. The list shows each violation, worst first: wire (span or jumper, and the other wire for wire rules), rule, vertical or radial clearance against the requirement, the LiDAR class, how many points are too close. Clicking one selects the wire and brings the views to it. The violations are drawn in red in the 3D view (a line from the wire to the point too close; layer "Clearance violations") and circled in the plan.
+
+Rules for other lines and rules across pairs of weather cases are run by `ols line` only; the tab says so.
 
 ## Controls
 

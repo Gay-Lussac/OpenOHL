@@ -34,6 +34,8 @@ pub enum Tab {
     Model,
     /// What can be clicked.
     Snap,
+    /// Clearance violations.
+    Clearances,
 }
 
 enum Message {
@@ -98,6 +100,8 @@ pub struct Ready {
 
     /// A position being typed in the properties: (structure, position).
     pub edit_position: Option<(String, [f64; 3])>,
+    /// Clearance checks.
+    pub clearances: crate::clearance::Clearances,
 }
 
 impl Ready {
@@ -108,7 +112,6 @@ impl Ready {
         let mut visible: HashSet<Layer> = Layer::ALL.into_iter().collect();
         visible.remove(&Layer::OtherCases);
         Self {
-            model,
             case: 0,
             selection: Selection::None,
             snaps: crate::selection::Snaps::default(),
@@ -128,6 +131,11 @@ impl Ready {
             popup_open: false,
 
             edit_position: None,
+            clearances: crate::clearance::Clearances::new(
+                &model.sources.file,
+                model.sources.rules.as_deref(),
+            ),
+            model,
         }
     }
 }
@@ -161,7 +169,7 @@ pub fn default_dock() -> DockState<Tab> {
     let mut dock = DockState::new(vec![Tab::View3d, Tab::Plan]);
     let tree = dock.main_surface_mut();
     let [centre, _] = tree.split_right(NodeIndex::root(), 0.74, vec![Tab::Properties]);
-    let [centre, _] = tree.split_left(centre, 0.2, vec![Tab::Model, Tab::Snap]);
+    let [centre, _] = tree.split_left(centre, 0.2, vec![Tab::Model, Tab::Snap, Tab::Clearances]);
     tree.split_below(centre, 0.66, vec![Tab::Profile]);
     dock
 }
@@ -247,6 +255,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Properties => "Properties",
             Tab::Model => "Model",
             Tab::Snap => "Snap",
+            Tab::Clearances => "Clearances",
         }
         .into()
     }
@@ -296,6 +305,10 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Snap => {
                 snap_panel(ui, &mut r.snaps);
+                None
+            }
+            Tab::Clearances => {
+                clearance_panel(ui, r);
                 None
             }
         };
@@ -425,6 +438,7 @@ impl Ready {
                 log::info!("{report}");
                 self.status = Some((report, false));
                 self.confirm = None;
+                self.clearances.stale = true;
             }
             Err(EditError::NeedsConfirmation(impact)) => self.confirm = Some(impact),
             Err(e) => {
@@ -795,6 +809,174 @@ fn move_window(ctx: &egui::Context, r: &mut Ready) {
     r.move_dialog = Some(d);
 }
 
+/// Clearances: takes a finished check, starts one when the model changed
+/// (with "check after edits" on) or no check ran yet.
+fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
+    if r.clearances.poll() {
+        let f = r.clearances.findings();
+        r.view3d.marks = f.iter().map(|f| (f.at, f.target)).collect();
+        r.plan.marks = f.iter().map(|f| f.at).collect();
+        r.view3d.dirty.insert(Layer::Clearances);
+    }
+    let first = r.clearances.report.is_none();
+    if r.clearances.stale && (r.clearances.auto || first) {
+        start_clearance_check(ctx, r);
+    }
+}
+
+fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
+    let m = &r.model;
+    let Some(solved) = m.cases.get(r.case) else {
+        return;
+    };
+    r.clearances.start(ctx, |rules| crate::clearance::Input {
+        line: m.line.clone(),
+        case: solved.case.name.clone(),
+        shapes: solved.shapes.clone(),
+        jumpers: solved.jumpers.clone(),
+        rules,
+        scheme: m.scheme.clone(),
+        cloud: m.cloud.clone(),
+        ground: m.ground.clone(),
+        corridor: m.sources.corridor,
+    });
+}
+
+/// The Clearances tab: rule file, the violations of the shown case (click
+/// one to go there).
+fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
+    let c = &mut r.clearances;
+    if c.files.is_empty() {
+        ui.label("No rule file (.olsr) next to the model or in libraries/clearance-rules.");
+        ui.label(egui::RichText::new("Start with --rules FILE.olsr.").small());
+        return;
+    }
+    let name = |p: &std::path::Path| {
+        p.file_name()
+            .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+    };
+    let mut chosen = c.chosen;
+    egui::ComboBox::from_id_salt("rule-file")
+        .selected_text(
+            chosen
+                .and_then(|k| c.files.get(k))
+                .map_or("choose rules…".into(), |p| name(p)),
+        )
+        .width(220.0)
+        .show_ui(ui, |ui| {
+            for (k, p) in c.files.iter().enumerate() {
+                ui.selectable_value(&mut chosen, Some(k), name(p))
+                    .on_hover_text(p.display().to_string());
+            }
+        });
+    if chosen != c.chosen
+        && let Some(k) = chosen
+    {
+        c.choose(k);
+    }
+    let mut check = false;
+    ui.horizontal(|ui| {
+        check = ui.button("Check now").clicked();
+        ui.checkbox(&mut c.auto, "after every edit");
+        if c.running() {
+            ui.spinner();
+        }
+    });
+    match &c.rules {
+        Some(Err(e)) => {
+            ui.colored_label(egui::Color32::LIGHT_RED, e);
+        }
+        Some(Ok(rules)) => {
+            ui.label(egui::RichText::new(format!("{} rules", rules.len())).small());
+        }
+        None => {}
+    }
+    if c.stale && !c.running() && c.report.is_some() {
+        ui.colored_label(egui::Color32::YELLOW, "out of date: the model changed");
+    }
+    let mut go: Option<crate::clearance::Finding> = None;
+    match &c.report {
+        Some(Err(e)) => {
+            ui.colored_label(egui::Color32::LIGHT_RED, e);
+        }
+        Some(Ok(rep)) => {
+            let n = rep.findings.len();
+            let head = format!(
+                "case {}: {n} violation{} ({:.1?})",
+                rep.case,
+                if n == 1 { "" } else { "s" },
+                rep.took
+            );
+            if n == 0 {
+                ui.colored_label(egui::Color32::LIGHT_GREEN, head);
+            } else {
+                ui.colored_label(egui::Color32::from_rgb(255, 120, 100), head);
+            }
+            for (rule, text) in &rep.rules {
+                ui.label(egui::RichText::new(format!("{rule}: {text}")).small());
+            }
+            for note in &rep.notes {
+                ui.label(egui::RichText::new(note).small().weak());
+            }
+            ui.separator();
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for f in &rep.findings {
+                    let other = f
+                        .other
+                        .as_ref()
+                        .map_or(String::new(), |o| format!(" – {}", o.describe()));
+                    let class = f.class.map_or(String::new(), |k| {
+                        format!(
+                            ", class {k}{}",
+                            r.model
+                                .scheme
+                                .class(k)
+                                .map_or(String::new(), |d| format!(" {}", d.name))
+                        )
+                    });
+                    let text = format!(
+                        "{}{other} — {}: {} {:.2} m < {:.2} m{class}{}",
+                        f.wire.describe(),
+                        f.rule,
+                        f.measure,
+                        f.distance,
+                        f.required,
+                        if f.count > 1 {
+                            format!(" ({} below)", f.count)
+                        } else {
+                            String::new()
+                        }
+                    );
+                    let selected = r.selection == f.wire;
+                    if ui
+                        .selectable_label(selected, egui::RichText::new(text).small())
+                        .clicked()
+                    {
+                        go = Some(f.clone());
+                    }
+                }
+            });
+        }
+        None if c.running() => {
+            ui.label("checking…");
+        }
+        None => {}
+    }
+    if check {
+        r.clearances.stale = true;
+        start_clearance_check(ui.ctx(), r);
+    }
+    if let Some(f) = go {
+        r.selection = f.wire;
+        r.view3d.dirty.insert(Layer::Selection);
+        if let Some(cam) = r.view3d.camera.as_mut() {
+            cam.target = f.at;
+            cam.distance = cam.distance.min(80.0);
+        }
+        r.plan.centre_on(f.at);
+    }
+}
+
 fn snap_panel(ui: &mut egui::Ui, snaps: &mut crate::selection::Snaps) {
     use crate::selection::Snap;
     ui.label(egui::RichText::new("What can be clicked").strong());
@@ -901,6 +1083,7 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
             let text = format!("{} — {}", c.case.name, c.case.summary());
             if ui.radio(r.case == k, text).clicked() && r.case != k {
                 r.case = k;
+                r.clearances.stale = true;
                 r.view3d
                     .dirty
                     .extend([Layer::Wires, Layer::OtherCases, Layer::Selection]);
@@ -979,6 +1162,7 @@ impl eframe::App for App {
             State::Ready(ready) => {
                 goto_key(ui.ctx(), ready);
                 edit_keys(ui.ctx(), ready);
+                clearance_frame(ui.ctx(), ready);
                 popups(ui.ctx(), ready);
                 tool_windows(ui.ctx(), ready);
                 egui::Panel::bottom("status").show(ui, |ui| {
@@ -1026,6 +1210,7 @@ impl eframe::App for App {
                             });
                         if case != ready.case {
                             ready.case = case;
+                            ready.clearances.stale = true;
                             ready.view3d.dirty.extend([
                                 Layer::Wires,
                                 Layer::OtherCases,
@@ -1037,7 +1222,7 @@ impl eframe::App for App {
                         ui.label(ready.selection.describe());
                         if ui.button("Fit views").clicked() {
                             ready.view3d.camera = None;
-                            ready.plan = PlanView::default();
+                            ready.plan.refit();
                         }
                         if ready.selection != Selection::None && ui.button("Clear").clicked() {
                             ready.selection = Selection::None;

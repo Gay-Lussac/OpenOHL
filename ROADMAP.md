@@ -101,7 +101,7 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] Editing through the session in the app: move (drag or typed position) and delete structures (confirmation listing what goes with them), undo/redo, incremental re-solve of every case
 - [ ] Interactive structure spotting: add structures (type, attachments), spot on the profile
 - [ ] Wire stringing UI (sections, tension criteria, weather cases)
-- [ ] Clearance violation display and reports
+- [x] Clearance violation display: Clearances tab (rule file, violations of the shown case re-checked after edits in the background, click to go there), red marks in 3D and plan *(reports: `ols line --clearance-csv`)*
 - [ ] Library editors (cables, insulators, structures, weather cases)
 - [ ] Plugin manager UI
 - [ ] Python scripting console inside the application

@@ -35,6 +35,8 @@ pub struct View3d {
     pub rect: Option<egui::Rect>,
     /// The release of the press that captured the mouse is not a click.
     swallow_release: bool,
+    /// Clearance violations to draw: (on the wire, on the target).
+    pub marks: Vec<([f64; 3], [f64; 3])>,
 }
 
 impl View3d {
@@ -265,7 +267,10 @@ impl View3d {
         // Upload changed layers, render, show.
         let device = &rs.device;
         for layer in self.dirty.drain() {
-            let s = scene::layer(model, layer, case, selection);
+            let s = match layer {
+                Layer::Clearances => scene::marks(model.origin, &self.marks),
+                _ => scene::layer(model, layer, case, selection),
+            };
             self.gpu.insert(layer, GpuScene::new(device, &s));
         }
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));

@@ -16,6 +16,7 @@ use clap::Parser;
 use eframe::egui;
 
 mod app;
+mod clearance;
 mod controls;
 mod edit;
 mod model;
@@ -65,6 +66,10 @@ struct Args {
     /// User editing the project (default: the login name).
     #[arg(long)]
     user: Option<String>,
+    /// Clearance rules (.olsr) for the Clearances tab; default: the only
+    /// .olsr next to the file.
+    #[arg(long)]
+    rules: Option<PathBuf>,
     /// Instead of opening a window: load, render the 3D view to this PNG
     /// file and exit (checks, documentation).
     #[arg(long)]
@@ -101,6 +106,7 @@ fn main() -> std::process::ExitCode {
         point_budget: args.points,
         corridor: args.corridor,
         user: args.user,
+        rules: args.rules,
     };
     if let Some(path) = args.screenshot {
         return match screenshot(sources, &path, args.focus.as_deref(), args.distance) {
