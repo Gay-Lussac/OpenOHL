@@ -52,7 +52,7 @@ Guiding principles:
 *Goal: a real line described in data, with a ground profile.*
 
 - [x] Line data model (`ols-line`, `.ols.json`): alignment, structures, attachment sets (insulator + wire points), wire sections, stringing, point loads *(stations/offsets still to come)*
-- [x] `ols-session`: project file (`.ols`), validated commands, operation log, per-user undo/redo (content-based conflicts), admin rollback, roles, dirty tracking (sections to recalculate), `.ols.json` import/export *(recalculation scheduling comes with the application)*
+- [x] `ols-session`: project file (`.ols`), validated commands, operation log, per-user undo/redo (content-based conflicts), admin rollback, roles, dirty tracking with **incremental re-solving** (`ols-line::incremental`, `ols_session::Live`: only the touched sections, identical to a full solve), `.ols.json` import/export
 - [x] Point clouds in the project file (`ols-pointcloud`, ADR-0007): import from LAS/LAZ, chunk × class blocks, point-source interface (database link as a plugin later)
 - [ ] Spatial chunk index (quadtree tile grid) (basis for streaming and LOD)
 - [x] Routes (DESIGN_GOALS §9): several alignments per line, structures shared between routes (Y pylons, parallel routes rejoining), stationing, offsets and line angles per route

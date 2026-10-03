@@ -24,6 +24,7 @@
 //! elements, insulator strings) and solves it in any weather state.
 
 pub mod export;
+pub mod incremental;
 pub mod jumper;
 pub mod library;
 pub mod route;

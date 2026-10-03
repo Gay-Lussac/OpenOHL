@@ -1471,7 +1471,10 @@ dependencies = [
 name = "ols-session"
 version = "0.0.1"
 dependencies = [
+ "ols-cables",
+ "ols-core",
  "ols-line",
+ "ols-weather",
  "rusqlite",
  "serde",
  "serde_json",

@@ -385,8 +385,8 @@ pub struct Applied {
     pub seq: i64,
     /// Objects changed.
     pub objects: Vec<(Kind, String)>,
-    /// Sections to recalculate: changed sections, sections through changed
-    /// structures, sections of changed jumpers' ends.
+    /// Sections to recalculate: changed sections and sections through
+    /// changed structures (jumpers are recalculated on their own).
     pub sections: Vec<String>,
 }
 
@@ -535,7 +535,8 @@ fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionEr
 }
 
 /// Sections to recalculate after `changed` objects (on the line after the
-/// change, and before it for deleted ones).
+/// change, and before it for deleted ones): changed sections and sections
+/// through changed structures.
 fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<String> {
     let mut out = BTreeSet::new();
     for line in lines {
@@ -551,16 +552,9 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
                         }
                     }
                 }
-                Kind::Jumper => {
-                    if let Some(j) = line.jumpers.iter().find(|j| &j.id == id) {
-                        for s in &line.sections {
-                            if s.points.contains(&j.from) || s.points.contains(&j.to) {
-                                out.insert(s.id.clone());
-                            }
-                        }
-                    }
-                }
-                Kind::Meta | Kind::Route => {}
+                // Jumpers hang on the solved clamps but do not change the
+                // sections: they are recalculated on their own.
+                Kind::Jumper | Kind::Meta | Kind::Route => {}
             }
         }
     }
@@ -1572,6 +1566,10 @@ impl Session {
         Ok(Some(applied))
     }
 }
+
+pub mod live;
+
+pub use live::Live;
 
 #[cfg(test)]
 mod tests;

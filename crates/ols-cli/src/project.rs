@@ -40,6 +40,16 @@ pub enum ProjectCommand {
         user: String,
         /// Command, e.g. '{"op": "move_structure", "id": "T4", "position": [x, y, z]}'.
         command: String,
+        /// Solve the line before, then re-solve only what the command
+        /// touched, and report both (what the application does live).
+        #[arg(long)]
+        solve: bool,
+        /// Wire library for --solve.
+        #[arg(long, default_value = "libraries/cables")]
+        library: PathBuf,
+        /// Cable temperature for --solve, °C.
+        #[arg(long, default_value_t = 15.0)]
+        temperature: f64,
     },
     /// Delete an object (structure, section, jumper, route). When it takes
     /// others with it, lists them and changes nothing unless --confirm.
@@ -110,10 +120,10 @@ fn report(a: &Applied) {
         "entry {}: {} object(s) changed; sections to recalculate: {}",
         a.seq,
         a.objects.len(),
-        if a.sections.is_empty() {
-            "none".to_owned()
-        } else {
-            a.sections.join(", ")
+        match a.sections.len() {
+            0 => "none".to_owned(),
+            n if n <= 12 => a.sections.join(", "),
+            n => format!("{} … ({n} sections)", a.sections[..10].join(", ")),
         }
     );
 }
@@ -151,6 +161,9 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             project,
             user,
             command,
+            solve,
+            library,
+            temperature,
         } => {
             let text = match command.strip_prefix('@') {
                 Some(file) => std::fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?,
@@ -158,8 +171,43 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             };
             let command: Command =
                 serde_json::from_str(&text).map_err(|e| format!("command: {e}"))?;
-            let mut s = open(&project)?;
-            report(&s.apply(&user, command).map_err(|e| e.to_string())?);
+            let s = open(&project)?;
+            if !solve {
+                let mut s = s;
+                report(&s.apply(&user, command).map_err(|e| e.to_string())?);
+                return Ok(());
+            }
+            let library = ols_cables::Library::load(&library).map_err(|e| e.to_string())?;
+            let case = ols_weather::WeatherCase::still(
+                "state",
+                ols_core::units::Temperature::from_celsius(temperature),
+            );
+            let started = std::time::Instant::now();
+            let mut live = ols_session::Live::new(s, library, &case);
+            let full = started.elapsed();
+            let started = std::time::Instant::now();
+            let (applied, update) = live.apply(&user, command).map_err(|e| e.to_string())?;
+            let incremental = started.elapsed();
+            report(&applied);
+            let failed = live
+                .solved()
+                .results(live.session().line())
+                .iter()
+                .filter(|(_, r)| r.is_err())
+                .count();
+            println!(
+                "full solve of {} sections: {full:.1?}; after the command: {} re-solved, {} kept, {} dropped, {} jumpers in {incremental:.1?} (command, log and solve){}",
+                update.solved + update.kept,
+                update.solved,
+                update.kept,
+                update.dropped,
+                update.jumpers,
+                if failed > 0 {
+                    format!("; {failed} sections fail to solve")
+                } else {
+                    String::new()
+                }
+            );
         }
         ProjectCommand::Delete {
             project,
