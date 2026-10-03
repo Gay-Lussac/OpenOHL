@@ -106,8 +106,11 @@ struct Assembly {
     id: String,
 }
 
-/// Derives draft libraries from structures.
-pub fn derive(structures: &[SourceStructure]) -> Derived {
+/// Derives draft libraries from structures. With `inline`, each structure
+/// type carries its strings in its own file (length, weight, top and
+/// bottom labels: a simple pylon file) and no insulator assemblies are
+/// written; otherwise attachments reference insulator assemblies.
+pub fn derive(structures: &[SourceStructure], inline: bool) -> Derived {
     let mut assemblies: Vec<Assembly> = Vec::new();
     let mut layouts: Vec<Layout> = Vec::new();
     let mut assignments = Vec::with_capacity(structures.len());
@@ -235,13 +238,32 @@ pub fn derive(structures: &[SourceStructure]) -> Derived {
             {
                 let _ = writeln!(out, "label = {label:?}");
             }
+            // No "-0.000 m" from rounding noise.
+            let c = |v: f64| if v.abs() < 5e-4 { 0.0 } else { v };
             let _ = writeln!(
                 out,
                 "point = [\"{:.3} m\", \"{:.3} m\", \"{:.3} m\"]",
-                k.point[0], k.point[1], k.point[2]
+                c(k.point[0]),
+                c(k.point[1]),
+                c(k.point[2])
             );
             if !k.insulator.is_empty() {
-                let _ = writeln!(out, "insulator = \"{}\"", k.insulator);
+                match assemblies
+                    .iter()
+                    .find(|a| a.id == k.insulator)
+                    .filter(|_| inline)
+                {
+                    Some(a) => {
+                        let _ = writeln!(
+                            out,
+                            "string = {{ length = \"{:.3} m\", weight = \"{:.1} N\", top = \"A{}-{}\", bottom = \"W{}-{}\" }}",
+                            a.length, a.weight, k.set, k.phase, k.set, k.phase
+                        );
+                    }
+                    None => {
+                        let _ = writeln!(out, "insulator = \"{}\"", k.insulator);
+                    }
+                }
             }
             if let Some(side) = k.side {
                 let _ = writeln!(out, "side = \"{side}\"");
@@ -251,6 +273,7 @@ pub fn derive(structures: &[SourceStructure]) -> Derived {
     }
     let insulators = assemblies
         .iter()
+        .filter(|_| !inline)
         .map(|a| {
             let text = assembly_toml(&a.id, a.kind, a.length, a.weight);
             (a.id.clone(), text)
@@ -309,14 +332,17 @@ mod tests {
 
     #[test]
     fn identical_layouts_at_different_rotations_share_a_type() {
-        let derived = derive(&[
-            source("A", [0.0, 0.0, 400.0], 10.0),
-            source("B", [500.0, 80.0, 420.0], 37.0),
-            SourceStructure {
-                attachments: vec![source("C", [0.0; 3], 0.0).attachments[0].clone()],
-                ..source("C", [900.0, 100.0, 410.0], 50.0)
-            },
-        ]);
+        let derived = derive(
+            &[
+                source("A", [0.0, 0.0, 400.0], 10.0),
+                source("B", [500.0, 80.0, 420.0], 37.0),
+                SourceStructure {
+                    attachments: vec![source("C", [0.0; 3], 0.0).attachments[0].clone()],
+                    ..source("C", [900.0, 100.0, 410.0], 50.0)
+                },
+            ],
+            false,
+        );
         assert_eq!(derived.assignments[0], derived.assignments[1]);
         assert_ne!(derived.assignments[0], derived.assignments[2]);
         assert_eq!(derived.structure_types.len(), 2);
@@ -324,8 +350,43 @@ mod tests {
     }
 
     #[test]
+    fn inline_strings_make_simple_pylon_files() {
+        let derived = derive(&[source("A", [100.0, 50.0, 400.0], 25.0)], true);
+        assert!(derived.insulators.is_empty());
+        let (id, text) = derived.structure_types.iter().next().unwrap();
+        assert!(
+            text.contains("string = { length = \"5.000 m\"") && text.contains("top = \"A1-1\""),
+            "{text}"
+        );
+        let t = StructureType::parse(Path::new(id), text).unwrap();
+        // Placed without any insulator library: same points and lengths.
+        let placed = t
+            .place(
+                [100.0, 50.0, 400.0],
+                25.0,
+                None,
+                &InsulatorLibrary::default(),
+            )
+            .unwrap();
+        let src = source("A", [100.0, 50.0, 400.0], 25.0);
+        let dist = |a: [f64; 3], b: [f64; 3]| {
+            ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+        };
+        for (p, s) in placed.iter().zip(&src.attachments) {
+            assert!(dist(p.insulator_point, s.insulator_point) < 0.01);
+            let (lp, ls) = (
+                dist(p.wire_point, p.insulator_point),
+                dist(s.wire_point, s.insulator_point),
+            );
+            assert!((lp - ls).abs() < 0.01);
+            // The section end is a strain string (free member in the solver).
+            assert_eq!(p.strain, s.section_end);
+        }
+    }
+
+    #[test]
     fn derived_files_load_and_place_back() {
-        let derived = derive(&[source("A", [100.0, 50.0, 400.0], 25.0)]);
+        let derived = derive(&[source("A", [100.0, 50.0, 400.0], 25.0)], false);
         let mut insulators = InsulatorLibrary::default();
         for (id, text) in &derived.insulators {
             insulators

@@ -98,6 +98,8 @@ pub struct Mark {
     pub top: f64,
     /// Attachment points: station, offset, z.
     pub attachments: Vec<[f64; 3]>,
+    /// Stick drawing: polylines of (station, offset, z).
+    pub sticks: Vec<Vec<[f64; 3]>>,
 }
 
 /// Ground profile runs: (station, z) points; a run ends where there is no
@@ -204,6 +206,11 @@ pub fn build(
                     .attachments
                     .iter()
                     .map(|a| to_route(&a.insulator_point))
+                    .collect(),
+                sticks: s
+                    .members
+                    .iter()
+                    .map(|m| m.iter().map(to_route).collect())
                     .collect(),
             }
         })
@@ -446,6 +453,9 @@ fn height_range(d: &RouteDrawing, s0: f64, s1: f64) -> (f64, f64, f64) {
     for m in &d.structures {
         see(m.station, m.base);
         see(m.station, m.top);
+        for p in m.sticks.iter().flatten() {
+            see(p[0], p[2]);
+        }
     }
     for w in &d.wires {
         for p in &w.points {
@@ -565,6 +575,16 @@ fn draw(out: &mut String, d: &RouteDrawing, o: &Options, f: &Frame, z_step: f64,
             escape(&m.id)
         );
     }
+    // Stick drawings seen from above.
+    for m in &d.structures {
+        for stick in &m.sticks {
+            let _ = writeln!(
+                out,
+                r##"<path d="{}" fill="none" stroke="#555" stroke-width="0.25"/>"##,
+                path(stick.iter().map(|p| (f.x(p[0]), f.plan_y(p[1]))))
+            );
+        }
+    }
     out.push_str("</g>\n");
 
     // Profile.
@@ -610,6 +630,17 @@ fn draw(out: &mut String, d: &RouteDrawing, o: &Options, f: &Frame, z_step: f64,
                 r##"<circle cx="{:.2}" cy="{:.2}" r="0.4" fill="#333"/>"##,
                 f.x(a[0]),
                 f.y(a[2])
+            );
+        }
+    }
+    // Stick drawings seen along the route.
+    for m in &d.structures {
+        for stick in &m.sticks {
+            let _ = writeln!(
+                out,
+                r##"<path d="{}" fill="none" stroke="#555" stroke-width="0.3"><title>{}</title></path>"##,
+                path(stick.iter().map(|p| (f.x(p[0]), f.y(p[2])))),
+                escape(&m.id)
             );
         }
     }

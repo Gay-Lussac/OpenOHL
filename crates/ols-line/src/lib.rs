@@ -197,6 +197,10 @@ pub struct Structure {
     /// type's attachments with the same set and phase).
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// Stick drawing (polylines, metres): from the structure type when it
+    /// is placed, or given; for views and drawings only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<Vec<Point>>,
 }
 
 /// One attachment point of a structure.
@@ -226,6 +230,17 @@ pub struct Attachment {
     /// legs end at the wire point; their lengths are the distances to it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legs: Option<[Point; 2]>,
+    /// Label of the string's top (insulator attachment point).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub top_label: String,
+    /// Label of the string's bottom (wire attachment point).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub bottom_label: String,
+    /// The string is a strain string: in a section's middle or end it is
+    /// solved as a free member along its conductor (like a library strain
+    /// assembly) instead of holding the wire at `wire_point`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub strain_member: bool,
 }
 
 /// One point of a section: structure id + attachment.

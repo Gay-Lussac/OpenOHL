@@ -124,6 +124,9 @@ impl Line {
                     insulator_weight: p.insulator_weight,
                     insulator: p.insulator,
                     legs: p.legs,
+                    top_label: p.top_label,
+                    bottom_label: p.bottom_label,
+                    strain_member: p.strain,
                 })
                 .collect();
             for (key, a) in overrides {
@@ -133,6 +136,9 @@ impl Line {
                 }
             }
             s.attachments = merged;
+            s.members = t
+                .place_stick(s.position, s.orientation_deg, s.extension.as_deref())
+                .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
         }
 
         // Aim strain assemblies of typed structures along their conductor.
@@ -151,13 +157,18 @@ impl Line {
                 let Some(a) = line.attachment(p) else {
                     continue;
                 };
-                let Some(assembly) = a.insulator.as_deref().and_then(|id| insulators.get(id))
-                else {
-                    continue;
-                };
-                if assembly.kind != AssemblyKind::Strain {
+                // Strain strings: from the insulator library, or given in the
+                // structure type (flagged as strain members).
+                let library = a.insulator.as_deref().and_then(|id| insulators.get(id));
+                let strain =
+                    library.is_some_and(|i| i.kind == AssemblyKind::Strain) || a.strain_member;
+                if !strain {
                     continue;
                 }
+                let length = {
+                    let (i, w) = (a.insulator_point, a.wire_point);
+                    ((w[0] - i[0]).powi(2) + (w[1] - i[1]).powi(2) + (w[2] - i[2]).powi(2)).sqrt()
+                };
                 // Neighbour: the next point for a section start, the previous
                 // one otherwise.
                 let neighbour = if k + 1 < n {
@@ -178,7 +189,6 @@ impl Line {
                 ];
                 let norm = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
                 if norm > 1e-9 {
-                    let length = assembly.length.si();
                     let wire = [
                         a.insulator_point[0] + d[0] / norm * length,
                         a.insulator_point[1] + d[1] / norm * length,
@@ -248,7 +258,7 @@ impl Line {
     /// Draft structure types and insulator assemblies derived from this
     /// line's attachments, with route-based rotations. Returns the libraries
     /// and a line whose structures reference the derived types.
-    pub fn derive_libraries(&self) -> (Derived, Line) {
+    pub fn derive_libraries(&self, inline: bool) -> (Derived, Line) {
         let rotations = self.route_rotations();
         // Attachments where a section starts or ends: always strain points.
         let ends: std::collections::BTreeSet<(String, u32, u32)> = self
@@ -280,7 +290,7 @@ impl Line {
                     .collect(),
             })
             .collect();
-        let derived = derive(&sources);
+        let derived = derive(&sources, inline);
         let mut typed = self.clone();
         for (s, (source, type_id)) in typed
             .structures
@@ -324,13 +334,29 @@ mod tests {
         (structures, insulators)
     }
 
+    /// Inline strings: simple pylon files reproduce the line without an
+    /// insulator library; the dead-end strings are strain members.
+    #[test]
+    fn derive_inline_strings() {
+        let line = crate::tests::example();
+        let (derived, typed) = line.derive_libraries(true);
+        assert!(derived.insulators.is_empty());
+        let (structures, _) = libraries(&derived);
+        let resolved = typed
+            .resolve(&structures, &InsulatorLibrary::default())
+            .unwrap();
+        assert!(compare_attachments(&line, &resolved).worst < 0.01);
+        let t1 = &resolved.structures[0].attachments[0];
+        assert!(t1.strain_member && t1.insulator.is_none());
+    }
+
     /// Derive types from the example line, resolve the typed line again and
     /// compare every attachment with the original: the round trip must
     /// reproduce the geometry (to the 1 cm rounding of derived files).
     #[test]
     fn derive_then_resolve_reproduces_the_line() {
         let line = crate::tests::example();
-        let (derived, typed) = line.derive_libraries();
+        let (derived, typed) = line.derive_libraries(false);
         let (structures, insulators) = libraries(&derived);
         let resolved = typed.resolve(&structures, &insulators).unwrap();
         let check = compare_attachments(&line, &resolved);
@@ -367,7 +393,7 @@ mod tests {
     #[test]
     fn explicit_attachments_override_the_type() {
         let line = crate::tests::example();
-        let (derived, mut typed) = line.derive_libraries();
+        let (derived, mut typed) = line.derive_libraries(false);
         let (structures, insulators) = libraries(&derived);
         let mut custom = line.structures[1].attachments[0].clone();
         custom.insulator_point[2] += 1.0;
@@ -382,20 +408,69 @@ mod tests {
         assert_eq!(a.insulator_point, custom.insulator_point);
     }
 
-    /// The committed typed example resolves from its libraries and solves.
+    /// The committed typed example resolves from its simple pylon files
+    /// (`Structures/`, strings in the files, no insulator library) and
+    /// solves; the pylons carry their stick drawings and string labels.
     #[test]
     fn typed_example_resolves_and_solves() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
         let line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
-        let structures = StructureLibrary::load_dir(&root.join("library/structures")).unwrap();
-        let insulators = InsulatorLibrary::load_dir(&root.join("library/insulators")).unwrap();
-        let resolved = line.resolve(&structures, &insulators).unwrap();
+        let structures = StructureLibrary::load_dir(&root.join("Structures")).unwrap();
+        let resolved = line
+            .resolve(&structures, &InsulatorLibrary::default())
+            .unwrap();
+        assert!(resolved.structures.iter().all(|s| !s.members.is_empty()));
+        assert!(
+            resolved.structures[1]
+                .attachments
+                .iter()
+                .all(|a| a.top_label.starts_with('A'))
+        );
+        // The same geometry as the explicit example line.
+        let check = compare_attachments(&crate::tests::example(), &resolved);
+        assert!(check.worst < 0.01, "{check:?}");
         let cables = ols_cables::Library::load(&root.join("../../libraries/cables")).unwrap();
         let case =
             ols_weather::WeatherCase::still("15", ols_core::units::Temperature::from_celsius(15.0));
         for result in crate::solve::solve_line(&resolved, &cables, &case) {
             assert!(result.is_ok(), "{result:?}");
         }
+    }
+
+    /// Free strain strings (from simple pylon files) with a marker ball
+    /// right next to the clamp: the case that stalled on a real earth wire
+    /// (ball at fraction 0.001 of a 445 m span) solves, quickly.
+    #[test]
+    fn free_strain_strings_with_a_ball_at_the_clamp() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+        let line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
+        let structures = StructureLibrary::load_dir(&root.join("Structures")).unwrap();
+        let mut resolved = line
+            .resolve(&structures, &InsulatorLibrary::default())
+            .unwrap();
+        // T1's dead-end strings are free members.
+        assert!(
+            resolved.structures[0]
+                .attachments
+                .iter()
+                .all(|a| a.strain_member)
+        );
+        for fraction in [0.001, 0.999] {
+            resolved.sections[0].loads.push(crate::SpanLoad {
+                span: 0,
+                fraction,
+                vertical: 55.0,
+                label: "ball".into(),
+            });
+        }
+        resolved.validate().unwrap();
+        let cables = ols_cables::Library::load(&root.join("../../libraries/cables")).unwrap();
+        let case =
+            ols_weather::WeatherCase::still("10", ols_core::units::Temperature::from_celsius(10.0));
+        let shape = crate::solve::solve_line(&resolved, &cables, &case)
+            .remove(0)
+            .unwrap();
+        assert!(shape.iterations < 30, "{} iterations", shape.iterations);
     }
 
     #[test]

@@ -2,8 +2,8 @@
 
 Structure types and insulator assemblies are stored **one per file**, so each can be reused, shared and versioned individually:
 
-- `libraries/structures/*.olss` — structure types ("OLS structure"),
-- `libraries/insulators/*.olsi` — insulator assemblies ("OLS insulator").
+- `*.olss` — structure types ("OLS structure"), like PLS-CADD's structure files: a project keeps its pylons in a **`Structures`** folder next to its line or project file (used automatically by `ols line`); shared types can live in `libraries/structures/`,
+- `libraries/insulators/*.olsi` — insulator assemblies ("OLS insulator"), for detailed strings; simple pylons define their strings in the pylon file itself (below).
 
 Both are TOML with units on every quantity (`"12.5 m"`, `"1.4 kN"`), like [wire libraries](wire-library.md). Unknown fields are errors.
 
@@ -46,7 +46,51 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `id`, `name`, `kind` | yes | Identity and family. |
 | `attachment` | no | Attachment points: `set`, `phase`, `point` (local), optional `label`, `insulator`, `side` (strain sets). Set/phase pairs are unique; points must not be below ground. |
 | `extension` | no | Named height offsets added to every attachment. |
-| `body` | no | Outline polylines (local axes). |
+| `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest attachment) and a crossarm from the mast to every attachment point. |
+| `height` | no | Mast top for the generated stick drawing. |
+
+## Simple pylon files
+
+How much string detail is worth modelling depends on the pylon. A **simple pylon file** gives each string in the pylon itself: where it hangs, its length, and a label at its top (insulator attachment point) and at its bottom (wire attachment point) — no insulator library needed:
+
+```toml
+format = "ols-structure"
+version = 1
+id = "D380-tangent"
+name = "380 kV double circuit, tangent: 3 crossarms each side + earth wire"
+kind = "lattice"
+height = "62 m"
+
+[[attachment]]
+set = 1
+phase = 1
+point = ["-12 m", "0 m", "40 m"]
+string = { length = "5.2 m", weight = "1.4 kN", top = "A1-1", bottom = "L1" }
+
+[[attachment]]                      # … one per crossarm end, both sides
+
+[[attachment]]                      # the earth wire, clamped on the mast top
+set = 9
+phase = 1
+label = "earth wire"
+point = ["0 m", "0 m", "62 m"]
+
+[[attachment]]                      # a strain string on a dead-end: with a side
+set = 2
+phase = 1
+point = ["-12 m", "1.5 m", "36 m"]
+side = "ahead"
+string = { length = "5.0 m", top = "A2-1", bottom = "L2" }
+```
+
+| `string` field | Required | Meaning |
+|---|---|---|
+| `length` | yes | From the attachment point to the wire point. |
+| `weight` | no (0) | Weight of the string. |
+| `top` | no | Label of the insulator attachment point. |
+| `bottom` | no | Label of the wire attachment point. |
+
+A string hangs down (suspension) or, with a `side`, is a strain string along the line — solved as a free member that lines up with its conductor, like a library strain assembly. An attachment has an `insulator` (library) or a `string`, not both; with neither, the wire is clamped at the point. The labels are kept on the line's attachments; the stick drawing appears in the 3D viewer and in the plan and profile sheets.
 
 ## Insulator assemblies (`.olsi`)
 
@@ -87,9 +131,9 @@ A structure in a [line file](line-file.md) references a type instead of listing 
 ## Deriving libraries from an existing line
 
 ```bash
-cargo run -p ols-cli -- structures derive my-line.ols.json --out derived/
+cargo run -p ols-cli -- structures derive my-line.ols.json --out project/ --inline-strings
 ```
 
-writes `derived/structures/*.olss`, `derived/insulators/*.olsi` and `derived/my-line-typed.ols.json` (the line referencing the types). Each structure's rotation is taken from its route (bisector of its back and ahead spans), attachment layouts that match within 1 cm become one type, and insulators are classified from the geometry (section ends are always strain assemblies; other clamps hanging below their attachment, swung less than 45°, are suspension strings) and grouped by kind, length and weight. The self-check reports how closely the derived libraries reproduce the attachment points and insulator lengths.
+writes simple pylon files, one per type, into `project/Structures/` (strings in the files, labels `A<set>-<phase>` and `W<set>-<phase>` to rename) and `project/my-line-typed.ols.json`. Without `--inline-strings`, `--out derived/` writes `derived/structures/*.olss`, `derived/insulators/*.olsi` and `derived/my-line-typed.ols.json` (the line referencing the types). Each structure's rotation is taken from its route (bisector of its back and ahead spans), attachment layouts that match within 1 cm become one type, and insulators are classified from the geometry (section ends are always strain assemblies; other clamps hanging below their attachment, swung less than 45°, are suspension strings) and grouped by kind, length and weight. The self-check reports how closely the derived libraries reproduce the attachment points and insulator lengths.
 
 On a real 78-structure line (local check, data not in the repository) every tower turned out to be individual — each has its own layout — while about 1 500 attachments reduced to 33 insulator assemblies; the self-check reproduced all attachment points and lengths within 1 cm. Weights, stiffness and wind areas cannot be derived from geometry: fill them in.

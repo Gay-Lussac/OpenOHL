@@ -11,5 +11,5 @@ set = 1
 phase = 1
 label = "dead-end"
 point = ["0.000 m", "0.000 m", "26.000 m"]
-insulator = "S-5.02m"
+string = { length = "5.025 m", weight = "0.0 N", top = "A1-1", bottom = "W1-1" }
 side = "back"

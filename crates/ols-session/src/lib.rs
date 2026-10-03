@@ -949,6 +949,9 @@ impl Session {
                         legs.iter_mut().for_each(shift);
                     }
                 }
+                for m in &mut moved.members {
+                    m.iter_mut().for_each(shift);
+                }
                 out.push(Command::Put {
                     kind: Kind::Structure,
                     id: id.clone(),
@@ -1123,6 +1126,9 @@ impl Session {
                 let mut t = format!("{}:{}", a.set, a.phase);
                 if !a.label.is_empty() {
                     t.push_str(&format!(" {}", a.label));
+                }
+                if !a.top_label.is_empty() || !a.bottom_label.is_empty() {
+                    t.push_str(&format!(" [{} → {}]", a.top_label, a.bottom_label));
                 }
                 if let Some(i) = &a.insulator {
                     t.push_str(&format!(" ({i})"));

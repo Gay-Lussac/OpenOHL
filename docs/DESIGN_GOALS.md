@@ -188,6 +188,10 @@ Each **structure type** (pylon, pole, portal…) is a file of its own (`*.olss`,
 - **Deriving types from an existing line**: attachment points of instances are transformed back to local coordinates and identical geometries are grouped into one type — a draft library from any imported line.
 - Later: strength data (allowable loads, Method 1/2 — Phase 4), full frame models (`ols-structures-fe`, Phase 5).
 
+### Simple pylon files
+
+How much string detail is useful depends on the pylon. A pylon file can therefore stand alone: a stick drawing (centre point, mast, crossarms to the suspension points) and, per attachment, the string's length and a label at its top (insulator attachment point) and bottom (wire attachment point). Each pylon is one file; a project keeps them in its `Structures` folder (like PLS-CADD's structure files). Detailed assemblies (`.olsi`, linked strings) stay available when a pylon needs them.
+
 ## 11. Insulator assembly library (`.olsi`)
 
 Each **insulator assembly** is a file of its own (`*.olsi`, TOML) in an insulator library directory (default `libraries/insulators/`).

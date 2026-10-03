@@ -168,7 +168,14 @@ impl CableProperties {
         let mut run = budget.start();
         let (mut pos, mut flex) = geometry(h, v0, l0, ea, w);
         let mut residual = (target - pos).norm();
-        let tol = 1e-12 * (hx + vz.abs() + l0);
+        // Relative tolerance, but never below the floating-point floor of
+        // the position formulas: x = (H/w)·Δasinh carries rounding errors
+        // of order ε·H/w (the catenary parameter, often 1–2 km). A short
+        // piece (e.g. between a clamp and a marker ball, l0 ≈ 0.5 m) on such
+        // a wire otherwise asks for less than the arithmetic gives and
+        // stalls at its iteration limit (a real earth wire: 3e-12 m left).
+        let floor = |h: f64| 64.0 * f64::EPSILON * (h / w + l0 + hx + vz.abs());
+        let mut tol = (1e-12 * (hx + vz.abs() + l0)).max(floor(h));
         while residual > tol {
             run.step()
                 .map_err(|stop| ElementError::NotConverged { stop, residual })?;
@@ -190,6 +197,7 @@ impl CableProperties {
                     let r = (target - p).norm();
                     if r < residual || factor < 1e-6 {
                         (h, v0, pos, flex, residual) = (h_new, v_new, p, f, r);
+                        tol = tol.max(floor(h));
                         break;
                     }
                 }
@@ -341,6 +349,38 @@ impl CableProperties {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Short pieces of tight wires (catenary parameter H/w of 1–2 km)
+    /// converge to the exact answer (end points from the element's own
+    /// formulas). The stall that led to the tolerance floor (a 0.45 m piece
+    /// next to a marker ball on a real earth wire, 3e-12 m left at the
+    /// iteration limit) arose inside a global iteration and is not
+    /// reproduced by this isolated check.
+    #[test]
+    fn short_pieces_of_tight_wires_converge() {
+        let (ea, w) = (2.0e7, 10.0);
+        let mut worst: f64 = 0.0;
+        for k in 0..200 {
+            let h = 8_000.0 + 60.0 * k as f64; // H/w 800–2 000 m
+            let v0 = -0.3 * h + 7.0 * k as f64;
+            let l0 = 0.2 + 0.013 * k as f64;
+            let (pos, _) = geometry(h, v0, l0, ea, w);
+            let props = CableProperties {
+                unstressed_length: l0,
+                axial_stiffness: ea,
+                load: Vector3::new(0.0, 0.0, -w),
+            };
+            let state = props
+                .solve(
+                    Vector3::new(pos.x, 0.0, pos.y),
+                    None,
+                    &default_element_budget(),
+                )
+                .unwrap_or_else(|e| panic!("H {h}, l0 {l0}: {e}"));
+            worst = worst.max((state.horizontal - h).abs() / h);
+        }
+        assert!(worst < 1e-6, "{worst}");
+    }
 
     fn close(a: f64, b: f64, tol: f64) {
         assert!(((a - b) / b).abs() <= tol, "actual {a}, expected {b}");

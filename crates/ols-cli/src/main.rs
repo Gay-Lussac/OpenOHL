@@ -89,9 +89,11 @@ struct LineArgs {
     /// Wire library: .olsw file or directory.
     #[arg(long, default_value = "libraries/cables")]
     library: PathBuf,
-    /// Structure type library directory (.olss), for typed structures.
-    #[arg(long, default_value = "libraries/structures")]
-    structures: PathBuf,
+    /// Structure type directory (.olss pylon files), for typed structures
+    /// (default: the `Structures` folder next to the line or project file,
+    /// else libraries/structures).
+    #[arg(long)]
+    structures: Option<PathBuf>,
     /// Insulator assembly library directory (.olsi).
     #[arg(long, default_value = "libraries/insulators")]
     insulators: PathBuf,
@@ -221,9 +223,15 @@ enum StructuresCommand {
     Derive {
         /// Line file (.ols.json).
         file: PathBuf,
-        /// Output directory (created): structures/, insulators/, typed line.
+        /// Output directory (created): structures/, insulators/, typed line;
+        /// with --inline-strings: the project folder, pylon files go to its
+        /// Structures/ folder.
         #[arg(long)]
         out: PathBuf,
+        /// Write simple pylon files: the strings in each structure type
+        /// (length, weight, top and bottom labels), no insulator library.
+        #[arg(long)]
+        inline_strings: bool,
     },
 }
 
@@ -292,8 +300,13 @@ fn main() -> ExitCode {
         Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
         Some(Command::Line(args)) => line(&args),
         Some(Command::Structures {
-            command: StructuresCommand::Derive { file, out },
-        }) => structures_derive(&file, &out),
+            command:
+                StructuresCommand::Derive {
+                    file,
+                    out,
+                    inline_strings,
+                },
+        }) => structures_derive(&file, &out, inline_strings),
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
@@ -511,7 +524,7 @@ fn line(args: &LineArgs) -> ExitCode {
     let LineArgs {
         file,
         library,
-        structures: structure_dir,
+        structures: structure_dir_arg,
         insulators: insulator_dir,
         temperature,
         wind_pressure,
@@ -548,6 +561,22 @@ fn line(args: &LineArgs) -> ExitCode {
     } = args;
     use ols_core::units::{Density, ForcePerLength, Length, Stress, Temperature};
     use ols_weather::{WeatherCase, WeatherCases};
+    // Pylon files: given, else the project's Structures/ folder, else the
+    // shared library.
+    let structure_dir: &std::path::Path = &match structure_dir_arg {
+        Some(d) => d.clone(),
+        None => {
+            let local = file
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("Structures");
+            if local.is_dir() {
+                local
+            } else {
+                PathBuf::from("libraries/structures")
+            }
+        }
+    };
 
     let run = || -> Result<(), String> {
         let mut line = project::load_line(file)?;
@@ -883,17 +912,23 @@ fn line(args: &LineArgs) -> ExitCode {
     }
 }
 
-fn structures_derive(file: &std::path::Path, out: &std::path::Path) -> ExitCode {
+fn structures_derive(file: &std::path::Path, out: &std::path::Path, inline: bool) -> ExitCode {
     use ols_structures::{
         InsulatorAssembly, InsulatorLibrary, LibraryItem, StructureLibrary, StructureType,
     };
 
     let run = || -> Result<(), String> {
         let line = ols_line::Line::load(file).map_err(|e| e.to_string())?;
-        let (derived, typed) = line.derive_libraries();
-        let (sdir, idir) = (out.join("structures"), out.join("insulators"));
-        for dir in [&sdir, &idir] {
-            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        let (derived, typed) = line.derive_libraries(inline);
+        // Simple pylon files: one per type in the project's Structures/.
+        let (sdir, idir) = if inline {
+            (out.join("Structures"), out.join("insulators"))
+        } else {
+            (out.join("structures"), out.join("insulators"))
+        };
+        std::fs::create_dir_all(&sdir).map_err(|e| format!("{}: {e}", sdir.display()))?;
+        if !inline {
+            std::fs::create_dir_all(&idir).map_err(|e| format!("{}: {e}", idir.display()))?;
         }
         let mut structures = StructureLibrary::default();
         let mut insulators = InsulatorLibrary::default();
@@ -945,9 +980,16 @@ fn structures_derive(file: &std::path::Path, out: &std::path::Path) -> ExitCode 
             "self-check: attachment points and insulator lengths reproduced within {:.3} m (largest at {})",
             worst.0, worst.1
         );
-        println!(
-            "Note: insulator weights come from the line when given; check them, and fill in stiffness and wind areas."
-        );
+        if inline {
+            println!(
+                "Note: one simple pylon file per type in {}; string weights come from the line when given; labels A<set>-<phase> (top) and W<set>-<phase> (bottom) can be renamed.",
+                sdir.display()
+            );
+        } else {
+            println!(
+                "Note: insulator weights come from the line when given; check them, and fill in stiffness and wind areas."
+            );
+        }
         Ok(())
     };
     match run() {

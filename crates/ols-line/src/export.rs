@@ -131,11 +131,26 @@ pub fn viewer_html_with(
             .iter()
             .map(|a| a.insulator_point[2])
             .fold(s.position[2], f64::max);
+        // Stick drawing when the structure has one, else a mast line.
+        let sticks: Vec<String> = s
+            .members
+            .iter()
+            .map(|m| {
+                format!(
+                    "[{}]",
+                    m.iter()
+                        .map(|p| fmt(local(p)))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+            })
+            .collect();
         structures.push(format!(
-            "{{\"id\":{},\"base\":{},\"top\":{}}}",
+            "{{\"id\":{},\"base\":{},\"top\":{},\"sticks\":[{}]}}",
             json_string(&s.id),
             fmt(local(&s.position)),
-            fmt(local(&[s.position[0], s.position[1], top]))
+            fmt(local(&[s.position[0], s.position[1], top])),
+            sticks.join(",")
         ));
         for a in &s.attachments {
             if solved_points.contains(&(s.id.clone(), a.set, a.phase)) {
@@ -296,7 +311,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 const model = new THREE.Group();
 scene.add(model);
 const line = (points, color) => model.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(v)), new THREE.LineBasicMaterial({ color })));
-data.structures.forEach(s => line([s.base, s.top], 0x9aa7b4));
+data.structures.forEach(s => s.sticks.length ? s.sticks.forEach(m => line(m, 0x9aa7b4)) : line([s.base, s.top], 0x9aa7b4));
 // Insulators: [top, clamp, slack]; slack V-string legs in magenta.
 data.insulators.forEach(i => line([i[0], i[1]], i[2] ? 0xff4fd8 : 0x6fd3ff));
 data.wires.forEach(w => line(w.p, new THREE.Color(w.c)));

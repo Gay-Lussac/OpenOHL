@@ -11,19 +11,19 @@ set = 1
 phase = 1
 label = "suspension"
 point = ["6.000 m", "-0.025 m", "30.000 m"]
-insulator = "I-3.50m"
+string = { length = "3.500 m", weight = "900.0 N", top = "A1-1", bottom = "W1-1" }
 
 [[attachment]]
 set = 1
 phase = 2
 label = "suspension"
 point = ["-6.000 m", "0.025 m", "30.000 m"]
-insulator = "I-3.50m"
+string = { length = "3.500 m", weight = "900.0 N", top = "A1-2", bottom = "W1-2" }
 
 [[attachment]]
 set = 2
 phase = 1
 label = "branch dead-end"
 point = ["-1.494 m", "0.131 m", "26.000 m"]
-insulator = "S-5.02m"
+string = { length = "5.025 m", weight = "0.0 N", top = "A2-1", bottom = "W2-1" }
 side = "ahead"

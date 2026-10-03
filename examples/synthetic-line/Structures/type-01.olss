@@ -10,8 +10,8 @@ source = "derived from: T1"
 set = 1
 phase = 1
 label = "dead-end"
-point = ["6.000 m", "-0.000 m", "30.000 m"]
-insulator = "S-5.02m"
+point = ["6.000 m", "0.000 m", "30.000 m"]
+string = { length = "5.025 m", weight = "0.0 N", top = "A1-1", bottom = "W1-1" }
 side = "ahead"
 
 [[attachment]]
@@ -19,5 +19,5 @@ set = 1
 phase = 2
 label = "dead-end"
 point = ["-6.000 m", "0.000 m", "30.000 m"]
-insulator = "S-5.02m"
+string = { length = "5.025 m", weight = "0.0 N", top = "A1-2", bottom = "W1-2" }
 side = "ahead"

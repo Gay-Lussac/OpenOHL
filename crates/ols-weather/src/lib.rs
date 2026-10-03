@@ -99,7 +99,10 @@ impl WeatherCase {
                 return bad("give the ice as a thickness or as a load, not both");
             }
         }
-        if self.ice_density.is_some_and(|d| d.si().is_nan() || d.si() <= 0.0) {
+        if self
+            .ice_density
+            .is_some_and(|d| d.si().is_nan() || d.si() <= 0.0)
+        {
             return bad("ice density must be > 0");
         }
         Ok(())

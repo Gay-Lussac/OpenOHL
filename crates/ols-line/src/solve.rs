@@ -31,6 +31,13 @@ use ols_wirefe::{CableElement, CableProperties, Model, Node, TrussElement, defau
 
 use crate::{Line, LineError, Point, Section, Stringing};
 
+/// Point loads closer than this to a span's end (along the wire), m, are
+/// applied to the clamp. A marker ball 0.45 m from a free strain clamp
+/// (fraction 0.001 of a 445 m span, real data) otherwise leaves a 0.45 m
+/// cable piece between two free nodes — a nearly singular chain on which
+/// Newton stalls; the effect on the wire's shape is far below a millimetre.
+pub const LUMP_AT_CLAMP: f64 = 1.0;
+
 /// Axial stiffness used for insulator strings, N (composite long-rod order).
 pub const DEFAULT_INSULATOR_STIFFNESS: f64 = 5e7;
 
@@ -179,7 +186,7 @@ fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
                     length: (wire - ins).norm(),
                     weight: a.insulator_weight,
                 }
-            } else if a.insulator.is_some() && (wire - ins).norm() > 0.01 {
+            } else if (a.insulator.is_some() || a.strain_member) && (wire - ins).norm() > 0.01 {
                 // A library strain assembly is modelled as a free member (it
                 // needs its weight). Attachments given only as geometry keep
                 // their clamp where the data puts it: imported clamp positions
@@ -322,9 +329,15 @@ fn build(
         let mut elements = Vec::new();
         let (mut prev_node, mut prev_s) = (clamps[s], 0.0);
         for (s0, force) in sites {
-            if s0 - prev_s < 1e-6 {
-                // Coincident with the previous point: add to that node.
+            if s0 - prev_s < 1e-6 || s0 < LUMP_AT_CLAMP {
+                // Coincident with the previous point, or next to the clamp:
+                // add to that node.
                 model.nodes[prev_node].load.z -= force;
+                continue;
+            }
+            if reference.lengths[s] - s0 < LUMP_AT_CLAMP {
+                // Next to the ahead clamp: on it.
+                model.nodes[clamps[s + 1]].load.z -= force;
                 continue;
             }
             let node = model.nodes.len();
@@ -363,6 +376,24 @@ fn build(
         span_elements,
         members,
     })
+}
+
+/// Builds and solves a section model.
+fn solve_built(
+    section: &Section,
+    layout: &[Clamp],
+    reference: &Reference,
+    cable: &Cable,
+    case: &WeatherCase,
+    with_loads: bool,
+    budget: &Budget,
+) -> Result<(Built, ols_wirefe::Solution), LineError> {
+    let built = build(section, layout, reference, cable, case, with_loads)?;
+    let solution = built
+        .model
+        .solve(budget)
+        .map_err(|e| LineError::Invalid(format!("section {}: {e}", section.id)))?;
+    Ok((built, solution))
 }
 
 /// Stringing reference. For a tension, every span is sagged to that
@@ -422,11 +453,9 @@ fn reference(
                     lengths,
                     temperature: *temperature,
                 };
-                let built = build(section, layout, &reference, cable, &case, false)?;
-                let solved = built
-                    .model
-                    .solve(budget)
-                    .map_err(|e| invalid(format!("stringing: {e}")))?;
+                let (built, solved) =
+                    solve_built(section, layout, &reference, cable, &case, false, budget)
+                        .map_err(|e| invalid(format!("stringing: {e}")))?;
                 let n = clamps.len();
                 let previous = clamps.clone();
                 clamps = (0..n)
@@ -491,11 +520,7 @@ pub fn solve_section(
 ) -> Result<SectionShape, LineError> {
     let layout = clamps_of(line, section)?;
     let reference = reference(section, &layout, cable, budget)?;
-    let built = build(section, &layout, &reference, cable, case, true)?;
-    let solution = built
-        .model
-        .solve(budget)
-        .map_err(|e| LineError::Invalid(format!("section {}: {e}", section.id)))?;
+    let (built, solution) = solve_built(section, &layout, &reference, cable, case, true, budget)?;
     let pos = &solution.positions;
     let mut spans = Vec::with_capacity(built.span_elements.len());
     for (s, elements) in built.span_elements.iter().enumerate() {
