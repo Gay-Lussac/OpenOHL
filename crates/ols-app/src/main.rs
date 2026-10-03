@@ -28,6 +28,7 @@ mod profile;
 mod properties;
 mod scene;
 mod selection;
+mod tables;
 mod tools;
 mod view3d;
 

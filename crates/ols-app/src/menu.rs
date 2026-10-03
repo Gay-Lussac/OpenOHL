@@ -33,6 +33,8 @@ pub enum Command {
     RunChecks,
     /// Open a library editor.
     Library(LibraryKind),
+    /// Open a table.
+    Table(crate::tables::TableKind),
     /// Hold a tool.
     Hold(Tool),
 }
@@ -51,6 +53,7 @@ impl Command {
             Command::RunChecks,
         ];
         out.extend(LibraryKind::ALL.map(Command::Library));
+        out.extend(crate::tables::TableKind::ALL.map(Command::Table));
         out.extend(Tool::ALL.map(Command::Hold));
         out
     }
@@ -77,6 +80,7 @@ impl Command {
             Command::Inventory => "Tool inventory".into(),
             Command::RunChecks => "Run checks".into(),
             Command::Library(k) => format!("{} library", k.title()),
+            Command::Table(k) => format!("{} table", k.title()),
             Command::Hold(t) => format!("{} {}", t.icon(), t.name()),
         }
     }
@@ -106,6 +110,7 @@ impl Command {
             Command::Inventory => "inventory".into(),
             Command::RunChecks => "checks".into(),
             Command::Library(k) => format!("library-{}", k.extension()),
+            Command::Table(k) => format!("table-{}", k.key()),
             Command::Hold(t) => format!("tool-{}", t.key_name()),
         }
     }

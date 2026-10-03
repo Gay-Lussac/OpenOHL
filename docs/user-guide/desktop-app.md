@@ -34,7 +34,8 @@ The **menu bar** holds what needs no view:
 | Tools | the tool inventory (E); hold any tool |
 | Checks | calculations run **on demand** — they never change the model: Clearances (Run checks, also after every edit, rule file, Show results); more checks to come |
 | Libraries | the library editors: wires, insulators, structure types, weather cases (see [Library editors](#library-editors)) |
-| Tables, Plugins | to come (table editing of structures, sections, strings…; the plugin manager) |
+| Tables | the line as tables: structures, sections, strings, jumpers, electrical systems (see [Tables](#tables)) |
+| Plugins | to come (the plugin manager) |
 | Help | version, keys and mouse |
 
 Under it, the **quick bar**: the line's name, the weather case, the selection, then the commands chosen for it (default Undo, Redo, Fit views, Run checks). **⚙** (or View › Customize the quick bar) adds any command of the menus — commands, library editors, tools — removes and orders them; the bar is remembered.
@@ -81,13 +82,27 @@ Checks run **on demand**: **Run checks** (Checks menu or quick bar) or **Check n
 
 Rules for other lines and rules across pairs of weather cases are run by `ols line` only; the tab says so.
 
+## Tables
+
+**Tables** shows the line one object per row, in a floating window (each table a page):
+
+| Table | Editable columns | Shown only |
+|---|---|---|
+| Structures | type, extension, orientation, E, N, z | strings, sections through it |
+| Sections | cable, circuit, phase, system, bundle, spacing, value (tension in kN or sag in m, by its condition), temperature | status, condition, points, H and largest sag in the shown weather case |
+| Strings | label, insulator point and wire point (across, along, up from the base, in the structure's axes), weight, insulator, strain (yes/no) | length, sections through it |
+| Jumpers | cable, length or sag, temperature, bundle and spacing (empty: its section's) | from, to |
+| Electrical systems | name, AC/DC, kV, Hz | phases, sections given it |
+
+Type in a cell like in a spreadsheet: a changed cell turns yellow and stays **pending**; **Apply N changes** makes one command for all of them (one undo, ⌘Z), with the same checks as the editor windows — a cell that does not read (a word for a number, an unknown cable…) is named and nothing is applied; **Revert** drops them. A page with pending changes shows * on its tab and does not close. Click a column title to sort (again: descending, again: unsorted); the filter keeps rows with the text in any cell. Clicking a row's first cell selects the object and brings the views to it. The status, condition and points of a section are changed in its window (Edit tool), new objects with the tools.
+
 ## Library editors
 
 **Libraries** opens an editor for the wire library (`.olsw`), insulator assemblies (`.olsi`), structure types (`.olss`) or weather cases (`.olswc`) — the files the model uses: the wire library given or next to the model, `Structures/` next to it, the insulator directory, the weather case file. Choose a file (or type a name and **New file**); for wires and weather cases the list on the left holds the items (**Add**, **Duplicate**, **Delete**).
 
 Every field is shown as written in the file, with its units (`"28.1 mm"`, `"55 GPa"`, `"-5 °C"`); numbers and lists as TOML (`23e-6`, `["clearance", "loads"]`). **add a field…** offers the fields of that kind not yet given, with an example and their meaning; 🗑 removes one. A structure type's attachments, extensions and body lines are listed below its fields (add, duplicate, remove). Comments and layout of the file are kept.
 
-The file is checked as you type with the library's own reader; the error is shown and **Save** waits until it reads. After saving, the model reads its libraries again, resolves the structure types and solves every weather case; a page with unsaved changes shows ● and does not close. **Use for the model** (weather cases) solves the model in another case file.
+The file is checked as you type with the library's own reader; the error is shown and **Save** waits until it reads. After saving, the model reads its libraries again, resolves the structure types and solves every weather case; a page with unsaved changes shows * and does not close. **Use for the model** (weather cases) solves the model in another case file.
 
 ## Controls
 

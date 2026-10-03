@@ -179,7 +179,7 @@ impl StructureForm {
         })
     }
 
-    fn command(&self, stored: Option<&Line>) -> Result<(String, Command), String> {
+    pub(crate) fn command(&self, stored: Option<&Line>) -> Result<(String, Command), String> {
         let id = self.id.trim().to_owned();
         if id.is_empty() {
             return Err("the structure needs an id".into());
@@ -318,11 +318,9 @@ impl StringForm {
         (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
     }
 
-    fn command(&self, stored: Option<&Line>, reset: bool) -> Result<(String, Command), String> {
-        let mut s = stored
-            .and_then(|l| l.structure(&self.structure))
-            .ok_or_else(|| format!("no structure {}", self.structure))?
-            .clone();
+    /// This string put on structure `s` (as stored), replacing the one
+    /// with its set and phase (and no longer left out of its type).
+    pub fn apply_to(&self, s: &mut Structure) {
         let key = (self.set, self.phase);
         let global = |p| to_global(s.position, s.orientation_deg, p);
         let a = Attachment {
@@ -340,14 +338,28 @@ impl StringForm {
         };
         s.attachments.retain(|x| (x.set, x.phase) != key);
         s.omit.retain(|k| *k != [self.set, self.phase]);
+        s.attachments.push(a);
+        s.attachments.sort_by_key(|a| (a.set, a.phase));
+    }
+
+    fn command(&self, stored: Option<&Line>, reset: bool) -> Result<(String, Command), String> {
+        let mut s = stored
+            .and_then(|l| l.structure(&self.structure))
+            .ok_or_else(|| format!("no structure {}", self.structure))?
+            .clone();
+        if reset {
+            s.attachments
+                .retain(|x| (x.set, x.phase) != (self.set, self.phase));
+            s.omit.retain(|k| *k != [self.set, self.phase]);
+        } else {
+            self.apply_to(&mut s);
+        }
         let what = if reset {
             format!(
                 "string {}:{} of {} back to its type",
                 self.set, self.phase, self.structure
             )
         } else {
-            s.attachments.push(a);
-            s.attachments.sort_by_key(|a| (a.set, a.phase));
             format!(
                 "{} string {}:{} of {}",
                 if self.new { "added" } else { "changed" },
@@ -534,7 +546,7 @@ impl SectionForm {
         }
     }
 
-    fn command(&self, stored: Option<&Line>) -> Result<(String, Command), String> {
+    pub(crate) fn command(&self, stored: Option<&Line>) -> Result<(String, Command), String> {
         let id = self.id.trim().to_owned();
         if id.is_empty() {
             return Err("the section needs an id".into());

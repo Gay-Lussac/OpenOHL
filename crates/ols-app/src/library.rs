@@ -619,7 +619,7 @@ impl LibraryPage {
                 self.open(&f);
             }
             if dirty {
-                ui.colored_label(egui::Color32::YELLOW, "● unsaved");
+                ui.colored_label(egui::Color32::YELLOW, "* unsaved");
             }
             ui.separator();
             ui.add(

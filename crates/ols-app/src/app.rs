@@ -36,6 +36,8 @@ pub enum Tab {
     Clearances,
     /// A library editor.
     Library(crate::library::LibraryKind),
+    /// A table of the line.
+    Table(crate::tables::TableKind),
 }
 
 impl Tab {
@@ -59,6 +61,7 @@ impl Tab {
             Tab::Model => "Model",
             Tab::Clearances => "Clearances",
             Tab::Library(k) => k.title(),
+            Tab::Table(k) => k.title(),
         }
     }
 }
@@ -137,6 +140,8 @@ pub struct Ready {
     /// Library editor pages opened.
     pub libraries:
         std::collections::BTreeMap<crate::library::LibraryKind, crate::library::LibraryPage>,
+    /// Table pages opened.
+    pub tables: std::collections::BTreeMap<crate::tables::TableKind, crate::tables::TablePage>,
 }
 
 impl Ready {
@@ -170,6 +175,7 @@ impl Ready {
 
             edit_position: None,
             libraries: Default::default(),
+            tables: Default::default(),
             clearances: crate::clearance::Clearances::new(
                 &model.sources.file,
                 model.sources.rules.as_deref(),
@@ -289,10 +295,11 @@ impl TabViewer for Viewer<'_> {
     fn title(&mut self, tab: &mut Tab) -> egui::WidgetText {
         let dirty = match tab {
             Tab::Library(k) => self.ready.libraries.get(k).is_some_and(|p| p.dirty()),
+            Tab::Table(k) => self.ready.tables.get(k).is_some_and(|p| p.pending() > 0),
             _ => false,
         };
         if dirty {
-            format!("{} ●", tab.title()).into()
+            format!("{} *", tab.title()).into()
         } else {
             tab.title().into()
         }
@@ -313,6 +320,13 @@ impl TabViewer for Viewer<'_> {
             && p.dirty()
         {
             p.message = Some(("Save or discard the changes before closing".into(), true));
+            return egui_dock::tab_viewer::OnCloseResponse::Ignore;
+        }
+        if let Tab::Table(k) = tab
+            && let Some(p) = self.ready.tables.get_mut(k)
+            && p.pending() > 0
+        {
+            p.message = Some(("Apply or revert the changes before closing".into(), true));
             return egui_dock::tab_viewer::OnCloseResponse::Ignore;
         }
         egui_dock::tab_viewer::OnCloseResponse::Close
@@ -357,6 +371,20 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Clearances => {
                 clearance_panel(ui, r);
+                None
+            }
+            Tab::Table(kind) => {
+                let kind = *kind;
+                let page = r.tables.entry(kind).or_default();
+                match page.ui(ui, kind, &r.model, r.case, &r.selection) {
+                    Some(crate::tables::TableAction::Select(s)) => {
+                        r.go_to(s);
+                    }
+                    Some(crate::tables::TableAction::Apply(commands)) => {
+                        r.apply_table(kind, commands);
+                    }
+                    None => {}
+                }
                 None
             }
             Tab::Library(kind) => {
@@ -562,6 +590,50 @@ impl Ready {
         }
         self.clearances.stale = true;
         self.refresh_views();
+    }
+
+    /// Selects `target` and brings the views to it.
+    pub fn go_to(&mut self, target: Selection) {
+        self.select(target);
+        if let Some(f) = self.selection.focus(&self.model, self.case) {
+            if let Some(cam) = self.view3d.camera.as_mut() {
+                cam.target = f;
+                cam.distance = cam.distance.min(150.0);
+            }
+            self.plan.centre_on(f);
+        }
+    }
+
+    /// Applies a table's changes as one command; its edits go when done.
+    pub fn apply_table(
+        &mut self,
+        kind: crate::tables::TableKind,
+        mut commands: Vec<(String, ols_session::Command)>,
+    ) {
+        let n = commands.len();
+        let (what, command) = if n == 1 {
+            commands.remove(0)
+        } else {
+            (
+                format!("{} table: {n} objects changed", kind.title()),
+                ols_session::Command::Batch {
+                    commands: commands.into_iter().map(|c| c.1).collect(),
+                },
+            )
+        };
+        let done = self.perform(crate::edit::Action::Command { what, command });
+        if let Some(page) = self.tables.get_mut(&kind) {
+            if done {
+                page.edits.clear();
+                page.message = self.status.clone();
+            } else {
+                page.message = self
+                    .status
+                    .clone()
+                    .map(|(m, _)| (m, true))
+                    .or(Some(("not applied".into(), true)));
+            }
+        }
     }
 
     /// Shows weather case `k`.
@@ -1396,15 +1468,24 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
         let _ = dock.set_active_tab(path);
         return;
     }
-    if matches!(tab, Tab::Library(_)) {
-        if let Some(path) = dock.find_tab_from(|t| matches!(t, Tab::Library(_))) {
+    let group = |t: &Tab| match t {
+        Tab::Library(_) => 1,
+        Tab::Table(_) => 2,
+        _ => 0,
+    };
+    if group(&tab) > 0 {
+        if let Some(path) = dock.find_tab_from(|t| group(t) == group(&tab)) {
             dock.set_focused_node_and_surface(path.node_path());
             dock.push_to_focused_leaf(tab);
         } else {
             let surface = dock.add_window(vec![tab]);
             if let Some(w) = dock.get_window_state_mut(surface) {
                 w.set_position(egui::pos2(140.0, 110.0));
-                w.set_size(egui::vec2(900.0, 620.0));
+                w.set_size(if group(&tab) == 2 {
+                    egui::vec2(1250.0, 560.0)
+                } else {
+                    egui::vec2(900.0, 620.0)
+                });
             }
         }
         return;
@@ -1558,14 +1639,8 @@ fn menus(
         }
     });
     ui.menu_button("Tables", |ui| {
-        for t in [
-            "Structures",
-            "Sections",
-            "Strings",
-            "Jumpers",
-            "Electrical systems",
-        ] {
-            ui.add_enabled(false, egui::Button::new(format!("{t} (to come)")));
+        for k in crate::tables::TableKind::ALL {
+            item(ui, Command::Table(k), out);
         }
     });
     ui.menu_button("Plugins", |ui| {
@@ -1630,6 +1705,7 @@ fn run_command(
             open_page(dock, Tab::Clearances);
         }
         Command::Library(k) => open_page(dock, Tab::Library(k)),
+        Command::Table(k) => open_page(dock, Tab::Table(k)),
         Command::Hold(t) => r.hotbar.hold(t),
     }
 }
