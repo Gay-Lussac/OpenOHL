@@ -8,7 +8,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
     --html line.html --spans-csv spans.csv --csv wires.csv
 ```
 
-`--html` writes a standalone 3D viewer (rotate, pan, zoom, vertical exaggeration); `--spans-csv` one row per span (tensions, sag, mid-point, low point); `--csv` every wire point.
+`--html` writes a standalone 3D viewer (rotate, pan, zoom, vertical exaggeration); `--spans-csv` one row per span (tensions, sag, mid-point, low point); `--csv` every wire point. More formats (KML/KMZ, CSV of every weather case, plugin formats) with `--export`: see [Import and export](import-export.md).
 
 ## Conventions
 

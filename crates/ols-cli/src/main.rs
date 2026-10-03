@@ -11,6 +11,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use ols_core::units::UnitSystem;
 
 mod clearance_run;
+mod io_run;
 mod project;
 mod sagtension_job;
 
@@ -78,6 +79,32 @@ enum Command {
     Pointcloud {
         #[command(subcommand)]
         command: PointcloudCommand,
+    },
+    /// File formats for import and export (built-in and from plugins).
+    Formats {
+        /// File-format plugin directory (repeatable).
+        #[arg(long)]
+        plugin: Vec<PathBuf>,
+    },
+    /// Read a file into a line file (.ols.json).
+    Import {
+        /// File to read.
+        file: PathBuf,
+        /// Format id (default: from the file extension; see ols formats).
+        #[arg(long)]
+        format: Option<String>,
+        /// Line to update (e.g. structure positions into an existing line).
+        #[arg(long)]
+        into: Option<PathBuf>,
+        /// Output line file.
+        #[arg(long)]
+        out: PathBuf,
+        /// Format option KEY=VALUE (repeatable).
+        #[arg(long = "option")]
+        options: Vec<String>,
+        /// File-format plugin directory (repeatable).
+        #[arg(long)]
+        plugin: Vec<PathBuf>,
     },
     /// Inspect plugins.
     Plugin {
@@ -212,6 +239,17 @@ struct LineArgs {
     /// FILE:WIDTH_MM (repeatable).
     #[arg(long)]
     logo: Vec<String>,
+    /// Export the solved line (every weather case): FILE (format from the
+    /// extension) or FORMAT=FILE, e.g. kmz=line.kmz (repeatable; see ols
+    /// formats).
+    #[arg(long)]
+    export: Vec<String>,
+    /// Export format option KEY=VALUE (repeatable), e.g. crs=EPSG:2056.
+    #[arg(long = "option")]
+    export_options: Vec<String>,
+    /// File-format plugin directory (repeatable).
+    #[arg(long)]
+    plugin: Vec<PathBuf>,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -358,6 +396,17 @@ fn main() -> ExitCode {
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
+        Some(Command::Formats { plugin }) => report(io_run::formats(&plugin)),
+        Some(Command::Import {
+            file,
+            format,
+            into,
+            out,
+            options,
+            plugin,
+        }) => report(io_run::options(&options).and_then(|o| {
+            io_run::import(&file, format.as_deref(), into.as_deref(), &out, &o, &plugin)
+        })),
         Some(Command::Pointcloud { command }) => pointcloud(command),
         Some(Command::Crs { command }) => match crs(command) {
             Ok(()) => ExitCode::SUCCESS,
@@ -381,6 +430,16 @@ fn main() -> ExitCode {
                     scheme,
                 },
         }) => lidar_info(&path, classes, scheme.as_deref()),
+    }
+}
+
+fn report(result: Result<(), String>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -694,6 +753,9 @@ fn line(args: &LineArgs) -> ExitCode {
         plan_scale,
         page,
         logo,
+        export,
+        export_options,
+        plugin,
     } = args;
     use ols_core::units::{Density, ForcePerLength, Length, Stress, Temperature};
     use ols_weather::{WeatherCase, WeatherCases};
@@ -726,6 +788,13 @@ fn line(args: &LineArgs) -> ExitCode {
                 .map_err(|e| e.to_string())?;
         }
         let library = ols_cables::Library::load(library).map_err(|e| e.to_string())?;
+        // Formats first: a wrong format or plugin fails before solving.
+        let export_options = io_run::options(export_options)?;
+        let mut formats = if export.is_empty() {
+            None
+        } else {
+            Some(io_run::registry(plugin)?)
+        };
         let cases: Vec<WeatherCase> = match weather {
             Some(path) => {
                 let set = WeatherCases::load(path)?;
@@ -1088,6 +1157,14 @@ fn line(args: &LineArgs) -> ExitCode {
         if let Some(path) = spans_csv {
             std::fs::write(path, ols_line::export::spans_csv(&shapes))
                 .map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        if let Some(registry) = &mut formats {
+            let solved: Vec<_> = solved_cases
+                .iter()
+                .map(|(c, s, j)| (c.name.clone(), c.summary(), s.clone(), j.clone()))
+                .collect();
+            let model = ols_io::ExportModel::new(&line, &solved);
+            io_run::export(&model, export, &export_options, registry)?;
         }
         if failed > 0 {
             return Err(format!("{failed} sections or jumpers failed"));

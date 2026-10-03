@@ -32,3 +32,50 @@ world plugin {
     /// load `load-per-meter` (N/m) over `span-length` (m), in N.
     export span-load: func(load-per-meter: f64, span-length: f64) -> f64;
 }
+
+/// Types of file-format plugins (exporters and importers).
+interface io-types {
+    /// What a format does.
+    enum direction {
+        /// Writes a file from a (solved) model.
+        exporter,
+        /// Reads a file into a line.
+        importer,
+    }
+
+    /// A file format provided by a plugin.
+    record format {
+        /// Unique id, e.g. "geojson".
+        id: string,
+        /// One-line description.
+        description: string,
+        /// File extension, without the dot.
+        extension: string,
+        /// Exporter or importer.
+        direction: direction,
+    }
+}
+
+/// World of file-format plugins: export a solved model, import a file.
+///
+/// The export model is JSON (format "ols-export-model", documented in the
+/// OLS CAD plugin guide): the line file, its coordinate system and, per
+/// weather case, the solved wires as polylines.
+world io-plugin {
+    use types.{plugin-info};
+    use io-types.{format};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    /// The formats this plugin provides.
+    export formats: func() -> list<format>;
+
+    /// Writes the model in format `format` (an exporter's id); `options`
+    /// are key/value pairs given by the user.
+    export export-model: func(format: string, model: string, options: list<tuple<string, string>>) -> result<list<u8>, string>;
+
+    /// Reads `data` in format `format` (an importer's id) and returns a line
+    /// file (.ols.json) as JSON.
+    export import-file: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<string, string>;
+}

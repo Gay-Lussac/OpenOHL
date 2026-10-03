@@ -43,6 +43,7 @@ Every calculation PR must include:
    # WebAssembly plugins (needed for the plugin host tests)
    rustup target add wasm32-wasip2
    (cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2)
+   (cd plugins/examples/geojson && cargo build --release --target wasm32-wasip2)
    (cd plugins/tests/runaway && cargo build --release --target wasm32-wasip2)
    # Python bindings
    pip install maturin pytest && pip install ./crates/ols-py && pytest crates/ols-py/tests

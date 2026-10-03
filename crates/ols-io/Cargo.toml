@@ -1,0 +1,24 @@
+[package]
+name = "ols-io"
+description = "OLS CAD import/export: format interface, registry, built-in formats (CSV, KML/KMZ), plugin formats"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-crs.workspace = true
+ols-line.workspace = true
+ols-plugins.workspace = true
+serde_json.workspace = true
+zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[dev-dependencies]
+ols-cables.workspace = true
+ols-core.workspace = true
+ols-weather.workspace = true
+
+[lints]
+workspace = true

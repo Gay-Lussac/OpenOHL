@@ -27,11 +27,12 @@ ols-pointcloud = { path = "crates/ols-pointcloud" }
 ols-session = { path = "crates/ols-session" }
 ols-drawing = { path = "crates/ols-drawing" }
 ols-crs = { path = "crates/ols-crs" }
+ols-io = { path = "crates/ols-io" }
 ols-validation = { path = "crates/ols-validation" }
 ols-plugins = { path = "crates/ols-plugins" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 toml = "0.9"
 criterion = "0.8"
 nalgebra = "0.35"

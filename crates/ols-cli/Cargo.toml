@@ -31,6 +31,7 @@ ols-pointcloud.workspace = true
 ols-session.workspace = true
 ols-drawing.workspace = true
 ols-crs.workspace = true
+ols-io.workspace = true
 serde_json.workspace = true
 nalgebra.workspace = true
 serde.workspace = true

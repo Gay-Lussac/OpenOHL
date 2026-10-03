@@ -47,7 +47,15 @@ mod bindings {
     });
 }
 
+mod io_bindings {
+    wasmtime::component::bindgen!({
+        world: "io-plugin",
+        path: "wit",
+    });
+}
+
 pub use bindings::ols::plugin::types::PluginInfo;
+pub use io_bindings::ols::plugin::io_types::{Direction, Format};
 
 /// Version (major, minor) of the plugin interface implemented by this host.
 pub const SDK_VERSION: (u64, u64) = (0, 1);
@@ -433,6 +441,121 @@ impl WasmHost {
             instance,
             limits: self.limits,
         })
+    }
+}
+
+impl WasmHost {
+    /// Loads a file-format plugin (`io-plugin` world, extension point
+    /// `io` in its manifest).
+    pub fn load_io(&self, dir: &Path) -> Result<WasmIoPlugin, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm {
+            return Err(PluginError::UnsupportedTier(
+                manifest.plugin.tier.to_string(),
+            ));
+        }
+        manifest.check_compatible()?;
+        manifest.check_permissions()?;
+        if !manifest.plugin.extension_points.iter().any(|e| e == "io") {
+            return Err(PluginError::Manifest {
+                path: dir.join(MANIFEST_FILE),
+                message: "a file-format plugin lists the extension point \"io\"".into(),
+            });
+        }
+        let component = Component::from_file(&self.engine, manifest.entry_path())?;
+        let state = HostState {
+            wasi: WasiCtxBuilder::new().build(),
+            table: ResourceTable::new(),
+            limits: StoreLimitsBuilder::new()
+                .memory_size(self.limits.max_memory_bytes)
+                .build(),
+        };
+        let mut store = Store::new(&self.engine, state);
+        store.limiter(|state| &mut state.limits);
+        store.set_epoch_deadline(self.limits.deadline_ticks());
+        let name = manifest.plugin.name.clone();
+        let instance = io_bindings::IoPlugin::instantiate(&mut store, &component, &self.linker)
+            .map_err(|e| classify(e, &name, "instantiation", self.limits))?;
+        Ok(WasmIoPlugin {
+            manifest,
+            store,
+            instance,
+            limits: self.limits,
+        })
+    }
+}
+
+/// A loaded file-format plugin.
+pub struct WasmIoPlugin {
+    manifest: Manifest,
+    store: Store<HostState>,
+    instance: io_bindings::IoPlugin,
+    limits: Limits,
+}
+
+impl WasmIoPlugin {
+    /// The plugin's manifest.
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    fn arm(&mut self) {
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+    }
+
+    fn classify(&self, error: wasmtime::Error, function: &'static str) -> PluginError {
+        classify(error, &self.manifest.plugin.name, function, self.limits)
+    }
+
+    /// Calls `describe`.
+    pub fn describe(&mut self) -> Result<PluginInfo, PluginError> {
+        self.arm();
+        let info = self
+            .instance
+            .call_describe(&mut self.store)
+            .map_err(|e| self.classify(e, "describe"))?;
+        // Same WIT record, generated once per world.
+        Ok(PluginInfo {
+            name: info.name,
+            version: info.version,
+            description: info.description,
+        })
+    }
+
+    /// Calls `formats`.
+    pub fn formats(&mut self) -> Result<Vec<Format>, PluginError> {
+        self.arm();
+        self.instance
+            .call_formats(&mut self.store)
+            .map_err(|e| self.classify(e, "formats"))
+    }
+
+    /// Calls `export-model`; the plugin's own error comes back as `Err` in
+    /// the inner result.
+    pub fn export_model(
+        &mut self,
+        format: &str,
+        model: &str,
+        options: &[(String, String)],
+    ) -> Result<Result<Vec<u8>, String>, PluginError> {
+        self.arm();
+        self.instance
+            .call_export_model(&mut self.store, format, model, options)
+            .map_err(|e| self.classify(e, "export-model"))
+    }
+
+    /// Calls `import-file`; returns the line file JSON (inner `Err`: the
+    /// plugin's own error).
+    pub fn import_file(
+        &mut self,
+        format: &str,
+        data: &[u8],
+        options: &[(String, String)],
+    ) -> Result<Result<String, String>, PluginError> {
+        self.arm();
+        self.instance
+            .call_import_file(&mut self.store, format, data, options)
+            .map_err(|e| self.classify(e, "import-file"))
     }
 }
 

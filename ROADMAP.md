@@ -69,7 +69,7 @@ Guiding principles:
 - [x] Exclusion zones in clearance rules: near the wire ends (`exclude_near_ends`) and spans at given structures (`exclude_spans_at`, e.g. cable terminations)
 - [ ] Rule editor tool (per LiDAR class)
 - [x] Plan & profile views per route (`ols-drawing`, `ols line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures, title block with logos, separate plan scale across the line *(DXF and layout templates as plugins still to come)*
-- [ ] Exporter/importer plugin interface (first formats: CSV, KML/KMZ)
+- [x] Exporter/importer plugin interface (first formats: CSV, KML/KMZ; GeoJSON example plugin)
 - [x] Display: phase colours per circuit/phase, configurable per project (by phase label) and per section, legend in the viewer (DESIGN_GOALS §12)
 - [x] Jumpers connecting sections at dead-ends or taps (slack catenary between solved clamps, length or sag input, optional support string, weather loads, ground clearance; DESIGN_GOALS §12) *(clearance to the structure body still to come)*
 

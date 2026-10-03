@@ -31,6 +31,21 @@ cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
 
 Plugins run sandboxed — no file system, network, environment variables or standard I/O — with **exit clauses** on every call: a time limit (default 5 s; a runaway plugin is interrupted and reported as a timeout) and a memory cap (default 256 MiB). `plugins/tests/runaway` is a deliberately endless plugin used to test this.
 
+## File-format plugins
+
+A plugin that adds import or export formats implements the `io-plugin` world of the same WIT file and lists the extension point `io` in its manifest:
+
+```toml
+extension-points = ["io"]
+```
+
+- `formats()` lists its formats: id, description, extension and direction (exporter or importer).
+- `export-model(format, model, options)` receives the solved model as JSON and returns the file's bytes. The model is `{"format": "ols-export-model", "version": 1, "crs": …, "line": <line file>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "points": [[x, y, z], …]}]}]}` (coordinates in the line's coordinate system; jumpers have section `jumper:<id>`).
+- `import-file(format, data, options)` returns a line file (JSON), which the host checks like any line file. When the user gives a line to update, it arrives as option `into` (its JSON).
+- Errors are returned as strings and shown to the user as the format's error.
+
+`plugins/examples/geojson` is a complete example (GeoJSON export of structures and wires; structures imported from GeoJSON points). Its formats appear next to the built-in ones in `ols formats --plugin plugins/examples/geojson`; see [Import and export](../user-guide/import-export.md).
+
 ## Python plugins
 
 Python plugins use the `ols` module built from `crates/ols-py`. See `plugins/examples/hello-python`. Running Python plugins from inside the application is planned; today they run as scripts.
