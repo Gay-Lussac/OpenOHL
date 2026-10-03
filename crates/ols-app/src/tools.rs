@@ -208,15 +208,23 @@ fn slot_frame(
 /// The hotbar at the bottom of the window: click a slot to hold its tool,
 /// drop a tool on a slot (from the inventory or another slot); right-click
 /// empties a slot.
-pub fn hotbar_ui(ctx: &egui::Context, hotbar: &mut Hotbar) {
+pub fn hotbar_ui(ctx: &egui::Context, hotbar: &mut Hotbar, at: egui::Pos2, arranging: bool) {
     egui::Area::new(egui::Id::new("hotbar"))
-        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -30.0))
+        .pivot(egui::Align2::CENTER_BOTTOM)
+        .fixed_pos(at - egui::vec2(0.0, 8.0))
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 3.0;
                 for k in 0..9 {
                     let tool = hotbar.slots[k];
+                    if !arranging {
+                        // Slots stay put unless the inventory is open.
+                        if slot_frame(ui, tool, k == hotbar.active, Some(k + 1)).clicked() {
+                            hotbar.active = k;
+                        }
+                        continue;
+                    }
                     let (_, dropped) = ui.dnd_drop_zone::<Dragged, _>(egui::Frame::NONE, |ui| {
                         let r = ui.dnd_drag_source(
                             egui::Id::new(("hotbar-slot", k)),
@@ -245,7 +253,7 @@ pub fn hotbar_ui(ctx: &egui::Context, hotbar: &mut Hotbar) {
             });
             ui.label(
                 egui::RichText::new(format!(
-                    "{} — {} · 1–9 or wheel (captured) · E: inventory",
+                    "{} — {} · 1–9 or wheel (captured) · E: inventory (arrange)",
                     hotbar.tool().name(),
                     hotbar.tool().help()
                 ))
@@ -253,6 +261,39 @@ pub fn hotbar_ui(ctx: &egui::Context, hotbar: &mut Hotbar) {
                 .color(egui::Color32::from_gray(200)),
             );
         });
+}
+
+/// Hotbar steps from wheel events: one per mouse-wheel notch; trackpad
+/// scrolling (points) one per 30 points, at most one every 0.12 s; never
+/// more than one per frame — slow turns move, fast ones do not skip.
+#[derive(Debug, Clone, Default)]
+pub struct WheelSteps {
+    points: f32,
+    last: f64,
+}
+
+impl WheelSteps {
+    /// The step (+1 next slot, −1 previous) for this frame's `lines`
+    /// (notch directions summed) and `points` at time `now`, s.
+    pub fn step(&mut self, lines: f32, points: f32, now: f64) -> Option<i32> {
+        // Wheel down (negative y) goes to the next slot.
+        if lines != 0.0 {
+            self.points = 0.0;
+            self.last = now;
+            return Some(if lines < 0.0 { 1 } else { -1 });
+        }
+        if points == 0.0 {
+            return None;
+        }
+        self.points += points;
+        if self.points.abs() >= 30.0 && now - self.last >= 0.12 {
+            let step = if self.points < 0.0 { 1 } else { -1 };
+            self.points = 0.0;
+            self.last = now;
+            return Some(step);
+        }
+        None
+    }
 }
 
 /// The inventory (E): every tool; drag one onto a slot of the hotbar, or
@@ -298,6 +339,21 @@ pub fn inventory_ui(ctx: &egui::Context, open: &mut bool, hotbar: &mut Hotbar) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wheel_steps_are_one_at_a_time() {
+        let mut w = WheelSteps::default();
+        // A slow notch moves one slot; several notches in a frame, one.
+        assert_eq!(w.step(-1.0, 0.0, 0.0), Some(1));
+        assert_eq!(w.step(-3.0, 0.0, 0.01), Some(1));
+        assert_eq!(w.step(1.0, 0.0, 0.5), Some(-1));
+        assert_eq!(w.step(0.0, 0.0, 0.6), None);
+        // Trackpad: small movements add up; then at most one per 0.12 s.
+        assert_eq!(w.step(0.0, -10.0, 1.0), None);
+        assert_eq!(w.step(0.0, -25.0, 1.02), Some(1));
+        assert_eq!(w.step(0.0, -80.0, 1.05), None, "too soon");
+        assert_eq!(w.step(0.0, -5.0, 1.2), Some(1));
+    }
 
     #[test]
     fn hold_scroll_and_empty_slots() {

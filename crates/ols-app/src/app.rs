@@ -87,8 +87,8 @@ pub struct Ready {
     pub inventory: bool,
     /// The "Move structure" window, when open.
     pub move_dialog: Option<MoveDialog>,
-    /// Wheel movement not yet a whole hotbar step.
-    wheel_rest: f32,
+    /// Turns wheel events into hotbar steps.
+    wheel: crate::tools::WheelSteps,
     /// Where tool windows open (the crosshair, or the mouse).
     pub popup_at: egui::Pos2,
     /// Counts the windows opened: a new one opens at `popup_at` again.
@@ -122,7 +122,7 @@ impl Ready {
             hotbar: crate::tools::Hotbar::default(),
             inventory: false,
             move_dialog: None,
-            wheel_rest: 0.0,
+            wheel: Default::default(),
             popup_at: egui::pos2(400.0, 200.0),
             popup_serial: 0,
             popup_open: false,
@@ -616,6 +616,10 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         if move_key {
             r.hotbar.hold(Tool::Move);
         }
+        if r.inventory && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            r.inventory = false;
+        }
         if inventory {
             r.inventory = !r.inventory;
             if r.inventory && r.view3d.captured {
@@ -639,28 +643,28 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
     // Captured mouse: the wheel (without Ctrl) scrolls the hotbar, wheel
     // down to the next slot.
     if r.view3d.captured {
-        let notches: f32 = ctx.input(|i| {
-            i.events
-                .iter()
-                .map(|e| match e {
-                    egui::Event::MouseWheel {
-                        unit,
-                        delta,
-                        modifiers,
-                        ..
-                    } if !modifiers.ctrl => match unit {
-                        egui::MouseWheelUnit::Point => delta.y / 40.0,
-                        _ => delta.y,
-                    },
-                    _ => 0.0,
-                })
-                .sum()
+        let (lines, points, now) = ctx.input(|i| {
+            let (mut lines, mut points) = (0.0f32, 0.0f32);
+            for e in &i.events {
+                if let egui::Event::MouseWheel {
+                    unit,
+                    delta,
+                    modifiers,
+                    ..
+                } = e
+                    && !modifiers.ctrl
+                {
+                    log::debug!("hotbar wheel: {unit:?} {delta:?}");
+                    match unit {
+                        egui::MouseWheelUnit::Point => points += delta.y,
+                        _ => lines += delta.y.signum(),
+                    }
+                }
+            }
+            (lines, points, i.time)
         });
-        r.wheel_rest += notches;
-        let steps = r.wheel_rest.trunc();
-        if steps != 0.0 {
-            r.hotbar.scroll(-steps as i32);
-            r.wheel_rest -= steps;
+        if let Some(step) = r.wheel.step(lines, points, now) {
+            r.hotbar.scroll(step);
         }
     }
 }
@@ -669,7 +673,12 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
 /// confirmation of a deletion.
 fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     use crate::edit::Action;
-    crate::tools::hotbar_ui(ctx, &mut r.hotbar);
+    // At the bottom of the 3D view.
+    let at = r
+        .view3d
+        .rect
+        .map_or(ctx.content_rect().center_bottom(), |v| v.center_bottom());
+    crate::tools::hotbar_ui(ctx, &mut r.hotbar, at, r.inventory);
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
     move_window(ctx, r);

@@ -844,6 +844,18 @@ fn the_move_tool_and_the_hotbar() {
         let path = PathBuf::from(dir).join("ols-cad-inventory.png");
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
     }
+    // Escape closes it.
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    assert!(!harness.state_mut().ready().unwrap().inventory);
+    assert!(harness.query_by_label("Inventory — tools").is_none());
+    // The hotbar sits at the bottom of the 3D view, not of the window.
+    let view = harness.state_mut().ready().unwrap().view3d.rect.unwrap();
+    let bar = harness
+        .ctx
+        .memory(|m| m.area_rect(egui::Id::new("hotbar")))
+        .unwrap();
+    assert!(view.contains_rect(bar), "{bar:?} in {view:?}");
+    assert!(view.bottom() - bar.bottom() < 20.0, "{bar:?} in {view:?}");
 }
 
 #[test]
