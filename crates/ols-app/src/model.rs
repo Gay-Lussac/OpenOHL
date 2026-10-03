@@ -40,6 +40,8 @@ pub struct Sources {
     pub point_budget: usize,
     /// Half width of the corridor around the spans for LiDAR, m.
     pub corridor: f64,
+    /// User editing the project (default: the login name).
+    pub user: Option<String>,
 }
 
 /// One solved weather case.
@@ -55,6 +57,81 @@ pub struct Solved {
     pub failed: Vec<String>,
     /// Subconductors joined up at the clamps (yokes), for drawing.
     pub bundles: ols_line::bundles::BundleLines,
+    /// The solution kept for re-solving only what an edit touches.
+    pub live: ols_line::incremental::SolvedLine,
+}
+
+impl Solved {
+    /// Solves `line` in `case`.
+    pub fn new(line: &Line, library: &ols_cables::Library, case: WeatherCase) -> Self {
+        let live = ols_line::incremental::SolvedLine::solve(line, library, &case);
+        Self::from_live(line, case, live)
+    }
+
+    /// The shapes, failures and bundles of a solution.
+    pub fn from_live(
+        line: &Line,
+        case: WeatherCase,
+        live: ols_line::incremental::SolvedLine,
+    ) -> Self {
+        let mut s = Self {
+            case,
+            shapes: Vec::new(),
+            jumpers: Vec::new(),
+            failed: Vec::new(),
+            bundles: Default::default(),
+            live,
+        };
+        s.refresh(line);
+        s
+    }
+
+    fn refresh(&mut self, line: &Line) {
+        self.shapes = self.live.shapes(line);
+        self.jumpers = self.live.jumper_shapes(line);
+        self.failed = self
+            .live
+            .results(line)
+            .into_iter()
+            .filter_map(|(id, r)| r.as_ref().err().map(|e| format!("{id}: {e}")))
+            .collect();
+        self.failed.extend(
+            self.live
+                .jumper_results(line)
+                .into_iter()
+                .filter_map(|(id, r)| r.as_ref().err().map(|e| format!("{id}: {e}"))),
+        );
+        self.bundles = ols_line::bundles::BundleLines::new(line, &self.shapes, &self.jumpers);
+    }
+
+    /// Re-solves the sections `dirty` of `line` (and every jumper); returns
+    /// how many sections were solved.
+    pub fn update(
+        &mut self,
+        line: &Line,
+        library: &ols_cables::Library,
+        dirty: &[String],
+    ) -> usize {
+        let u = self.live.update(line, library, dirty);
+        self.refresh(line);
+        u.solved
+    }
+}
+
+/// The project being edited.
+pub struct Editing {
+    /// The project's session.
+    pub session: ols_session::Session,
+    /// The user editing.
+    pub user: String,
+}
+
+impl std::fmt::Debug for Editing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Editing")
+            .field("user", &self.user)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A LiDAR point: millimetres from the model origin, class.
@@ -79,6 +156,15 @@ pub struct Model {
     pub scheme: ols_lidar::ClassScheme,
     /// What was loaded, for the status panel.
     pub log: Vec<String>,
+    /// Wire library (for re-solving after edits).
+    pub library: ols_cables::Library,
+    /// Structure and insulator libraries, when the line uses types.
+    pub types: Option<(
+        ols_structures::StructureLibrary,
+        ols_structures::InsulatorLibrary,
+    )>,
+    /// The project to edit, or why the model is read-only.
+    pub editing: Result<Editing, String>,
 }
 
 fn dir_of(file: &Path) -> PathBuf {
@@ -105,15 +191,34 @@ fn library_path(s: &Sources) -> PathBuf {
     }
 }
 
-fn load_line(path: &Path) -> Result<Line, String> {
+/// The line, and the project's session when it is a project file.
+fn load_line(path: &Path) -> Result<(Line, Option<ols_session::Session>), String> {
     if path.extension().is_some_and(|e| e == "ols") {
         let s = ols_session::Session::open(path).map_err(|e| e.to_string())?;
         if !s.has_line() {
             return Err(format!("{}: the project holds no line", path.display()));
         }
-        Ok(s.export())
+        Ok((s.export(), Some(s)))
     } else {
-        Line::load(path).map_err(|e| e.to_string())
+        Ok((Line::load(path).map_err(|e| e.to_string())?, None))
+    }
+}
+
+/// Who edits, and whether they may.
+fn editing(session: Option<ols_session::Session>, user: Option<&str>) -> Result<Editing, String> {
+    let Some(session) = session else {
+        return Err("a line file: open a project (.ols) to edit (ols project import)".into());
+    };
+    let user = user
+        .map(str::to_owned)
+        .or_else(|| std::env::var("USER").ok())
+        .unwrap_or_default();
+    match session.role(&user).map_err(|e| e.to_string())? {
+        Some(ols_session::Role::Viewer) => Err(format!("user {user} is a viewer of this project")),
+        Some(_) => Ok(Editing { session, user }),
+        None => Err(format!(
+            "user {user} has no role in this project (an admin adds users: ols project user)"
+        )),
     }
 }
 
@@ -125,7 +230,7 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
         log.push(m);
     };
     let started = Instant::now();
-    let mut line = load_line(&sources.file)?;
+    let (mut line, session) = load_line(&sources.file)?;
     step(
         format!(
             "{}: {} structures, {} sections, {} jumpers",
@@ -136,6 +241,7 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
         ),
         &mut log,
     );
+    let mut types = None;
     if line.structures.iter().any(|s| s.structure_type.is_some()) {
         let dir = sources.structures.clone().unwrap_or_else(|| {
             let local = dir_of(&sources.file).join("Structures");
@@ -158,6 +264,7 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
             .resolve(&structures, &insulators)
             .map_err(|e| e.to_string())?;
         step(format!("structure types from {}", dir.display()), &mut log);
+        types = Some((structures, insulators));
     }
     let lib_path = library_path(&sources);
     let library = ols_cables::Library::load(&lib_path).map_err(|e| e.to_string())?;
@@ -172,48 +279,21 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
     let mut solved = Vec::new();
     for case in cases {
         let t = Instant::now();
-        let mut shapes = Vec::new();
-        let mut failed = Vec::new();
-        for (section, r) in line
-            .sections
-            .iter()
-            .zip(ols_line::solve::solve_line(&line, &library, &case))
-        {
-            match r {
-                Ok(s) => shapes.push(s),
-                Err(e) => failed.push(format!("{}: {e}", section.id)),
-            }
-        }
-        let mut jumpers = Vec::new();
-        for (j, r) in line.jumpers.iter().zip(ols_line::jumper::solve_jumpers(
-            &line, &library, &case, &shapes,
-        )) {
-            match r {
-                Ok(s) => jumpers.push(s),
-                Err(e) => failed.push(format!("{}: {e}", j.id)),
-            }
-        }
+        let name = case.name.clone();
+        let one = Solved::new(&line, &library, case);
         step(
             format!(
-                "case \"{}\" solved in {:.0?}{}",
-                case.name,
+                "case \"{name}\" solved in {:.0?}{}",
                 t.elapsed(),
-                if failed.is_empty() {
+                if one.failed.is_empty() {
                     String::new()
                 } else {
-                    format!(" — {} failed", failed.len())
+                    format!(" — {} failed", one.failed.len())
                 }
             ),
             &mut log,
         );
-        let bundles = ols_line::bundles::BundleLines::new(&line, &shapes, &jumpers);
-        solved.push(Solved {
-            case,
-            shapes,
-            jumpers,
-            failed,
-            bundles,
-        });
+        solved.push(one);
     }
     let origin = line.structures.first().map_or([0.0; 3], |s| s.position);
     let mut ground = match &sources.terrain {
@@ -325,6 +405,11 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
             ground = Some(g);
         }
     }
+    let editing = editing(session, sources.user.as_deref());
+    match &editing {
+        Ok(e) => step(format!("editing as {}", e.user), &mut log),
+        Err(why) => step(format!("read-only: {why}"), &mut log),
+    }
     step(format!("ready in {:.1?}", started.elapsed()), &mut log);
     Ok(Model {
         sources,
@@ -335,5 +420,8 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
         origin,
         scheme,
         log,
+        library,
+        types,
+        editing,
     })
 }

@@ -17,6 +17,7 @@ use eframe::egui;
 
 mod app;
 mod controls;
+mod edit;
 mod model;
 mod plan;
 mod profile;
@@ -60,6 +61,9 @@ struct Args {
     /// Half width of the LiDAR corridor around the spans, m.
     #[arg(long, default_value_t = 60.0)]
     corridor: f64,
+    /// User editing the project (default: the login name).
+    #[arg(long)]
+    user: Option<String>,
     /// Instead of opening a window: load, render the 3D view to this PNG
     /// file and exit (checks, documentation).
     #[arg(long)]
@@ -95,6 +99,7 @@ fn main() -> std::process::ExitCode {
         pointcloud: args.pointcloud,
         point_budget: args.points,
         corridor: args.corridor,
+        user: args.user,
     };
     if let Some(path) = args.screenshot {
         return match screenshot(sources, &path, args.focus.as_deref(), args.distance) {

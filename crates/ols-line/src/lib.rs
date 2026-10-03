@@ -359,6 +359,36 @@ fn one() -> u32 {
     1
 }
 
+impl Structure {
+    /// The structure moved to `position`, with its attachments, V-string
+    /// legs and stick drawing.
+    pub fn moved_to(&self, position: Point) -> Structure {
+        let d = [
+            position[0] - self.position[0],
+            position[1] - self.position[1],
+            position[2] - self.position[2],
+        ];
+        let shift = |p: &mut Point| {
+            for k in 0..3 {
+                p[k] += d[k];
+            }
+        };
+        let mut moved = self.clone();
+        moved.position = position;
+        for a in &mut moved.attachments {
+            shift(&mut a.insulator_point);
+            shift(&mut a.wire_point);
+            if let Some(legs) = &mut a.legs {
+                legs.iter_mut().for_each(shift);
+            }
+        }
+        for m in &mut moved.members {
+            m.iter_mut().for_each(shift);
+        }
+        moved
+    }
+}
+
 /// The position of a subconductor at `offset` (across, up — see
 /// [`Section::bundle_offsets`]) from the centre-line point `q` of a wire
 /// running from `a` to `b`: across is horizontal, to the right looking from

@@ -19,6 +19,9 @@ pub struct PlanView {
     centre: Option<[f64; 2]>,
     /// Pixels per metre.
     scale: f64,
+    /// A structure being dragged (Move tool): its id, its position at the
+    /// press, and the pointer's offset from it (plan, m).
+    dragging: Option<(String, [f64; 3], [f64; 2])>,
 }
 
 fn color(c: [u8; 3]) -> egui::Color32 {
@@ -58,14 +61,76 @@ impl PlanView {
         case: usize,
         selection: &mut Selection,
         snaps: &selection::Snaps,
-    ) {
+        move_tool: bool,
+    ) -> Option<crate::edit::Action> {
+        use crate::edit::Action;
+        let mut action = None;
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         if self.centre.is_none() {
             self.fit(model, rect.size());
         }
         let mid = rect.center();
-        if response.dragged() {
+        let world = |c: [f64; 2], scale: f64, p: egui::Pos2| {
+            [
+                c[0] + f64::from(p.x - mid.x) / scale,
+                c[1] - f64::from(p.y - mid.y) / scale,
+            ]
+        };
+        // Move tool: a press on a structure starts dragging it.
+        if move_tool
+            && response.drag_started()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let (c, scale) = (self.centre.expect("fitted"), self.scale);
+            let only_structures =
+                selection::Snaps([selection::Snap::Structure].into_iter().collect());
+            if let Selection::Structure(id) = selection::pick_in_model(
+                model,
+                case,
+                &only_structures,
+                [f64::from(pos.x), f64::from(pos.y)],
+                12.0,
+                |p| {
+                    Some([
+                        f64::from(mid.x) + (p[0] - c[0]) * scale,
+                        f64::from(mid.y) - (p[1] - c[1]) * scale,
+                    ])
+                },
+            ) && let Some(s) = model.line.structure(&id)
+            {
+                let at = world(c, scale, pos);
+                self.dragging = Some((
+                    id.clone(),
+                    s.position,
+                    [at[0] - s.position[0], at[1] - s.position[1]],
+                ));
+                *selection = Selection::Structure(id);
+            }
+        }
+        if let Some((id, start, offset)) = self.dragging.clone() {
+            let (c, scale) = (self.centre.expect("fitted"), self.scale);
+            let target = response.interact_pointer_pos().map(|p| {
+                let w = world(c, scale, p);
+                let (x, y) = (w[0] - offset[0], w[1] - offset[1]);
+                // On the ground where there is ground, else at its height.
+                [x, y, model.ground_at(x, y).unwrap_or(start[2])]
+            });
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.dragging = None;
+                action = Some(Action::CancelPreview { id });
+            } else if response.drag_stopped() {
+                self.dragging = None;
+                action = Some(match target {
+                    Some(position) => Action::Move { id, position },
+                    None => Action::CancelPreview { id },
+                });
+            } else if response.dragged()
+                && let Some(position) = target
+            {
+                action = Some(Action::PreviewMove { id, position });
+            }
+        } else if response.dragged() {
             let d = response.drag_delta();
             let c = self.centre.as_mut().expect("fitted");
             c[0] -= f64::from(d.x) / self.scale;
@@ -214,5 +279,15 @@ impl PlanView {
             egui::FontId::proportional(13.0),
             egui::Color32::from_gray(200),
         );
+        if move_tool {
+            painter.text(
+                rect.left_top() + egui::vec2(10.0, 10.0),
+                egui::Align2::LEFT_TOP,
+                "Move: drag a structure · Esc cancels · M ends",
+                egui::FontId::proportional(12.0),
+                egui::Color32::from_rgb(240, 200, 90),
+            );
+        }
+        action
     }
 }

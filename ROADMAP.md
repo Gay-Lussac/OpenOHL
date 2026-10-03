@@ -94,10 +94,11 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] `ols-render` basics: wgpu lines (pixel widths), points, shaded surfaces with depth and anti-aliasing; origin-relative precision; orbit camera; headless images
 - [ ] `ols-render`: chunk streaming, render distance per layer, LOD (terrain quadtree, structure mesh LODs, adaptive wires), culling, instancing
 - [x] Plan view, profile view, 3D view with synchronised selection; properties of structures and spans in every weather case; layers; LiDAR points by class role and ground from LiDAR
-- [ ] Live update while dragging
+- [x] Live update while dragging (plan Move tool: the shown case re-solves the touched sections each frame; one command on release)
 - [x] 3D navigation: fly with W A S D, Space/Shift up/down, Ctrl faster; control schemes as data (Orbit; Minecraft creative with captured mouse, crosshair selection, Escape to free) — more schemes and editing later
 - [ ] Command palette, keyboard workflows, explainable results (click value → inputs & references)
-- [ ] Interactive structure spotting (add/move/delete structures on profile)
+- [x] Editing through the session in the app: move (drag or typed position) and delete structures (confirmation listing what goes with them), undo/redo, incremental re-solve of every case
+- [ ] Interactive structure spotting: add structures (type, attachments), spot on the profile
 - [ ] Wire stringing UI (sections, tension criteria, weather cases)
 - [ ] Clearance violation display and reports
 - [ ] Library editors (cables, insulators, structures, weather cases)

@@ -26,9 +26,18 @@ fn grid(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
 
 /// Shows the properties of `selection`; clicking a related object selects
 /// it.
-pub fn ui(ui: &mut egui::Ui, model: &Model, case: usize, selection: &mut Selection) {
+/// `position`: the position being typed for a structure, when the model
+/// can be edited (`None`: read-only). Returns an edit to perform.
+pub fn ui(
+    ui: &mut egui::Ui,
+    model: &Model,
+    case: usize,
+    selection: &mut Selection,
+    position: Option<&mut Option<(String, [f64; 3])>>,
+) -> Option<crate::edit::Action> {
     let line = &model.line;
     let mut next: Option<Selection> = None;
+    let mut action: Option<crate::edit::Action> = None;
     egui::ScrollArea::vertical().show(ui, |ui| match selection.clone() {
         Selection::None => {
             ui.label("Click a structure or a wire in a view.");
@@ -72,6 +81,40 @@ pub fn ui(ui: &mut egui::Ui, model: &Model, case: usize, selection: &mut Selecti
                     ("routes", line.routes_of(&id).join(", ")),
                 ],
             );
+            if let Some(position) = position {
+                // Typed position: applied as one move.
+                let buffer = match position {
+                    Some((sid, p)) if *sid == id => p,
+                    _ => &mut position.insert((id.clone(), s.position)).1,
+                };
+                ui.separator();
+                ui.horizontal(|ui| {
+                    for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
+                        ui.label(name);
+                        ui.add(
+                            egui::DragValue::new(&mut buffer[k])
+                                .speed(0.1)
+                                .max_decimals(3),
+                        );
+                    }
+                });
+                ui.horizontal(|ui| {
+                    let moved = (0..3).any(|k| (buffer[k] - s.position[k]).abs() > 1e-9);
+                    if ui.add_enabled(moved, egui::Button::new("Move")).clicked() {
+                        action = Some(crate::edit::Action::Move {
+                            id: id.clone(),
+                            position: *buffer,
+                        });
+                    }
+                    if ui.button("Delete…").on_hover_text("Delete key").clicked() {
+                        action = Some(crate::edit::Action::Delete {
+                            kind: ols_session::Kind::Structure,
+                            id: id.clone(),
+                            confirm: false,
+                        });
+                    }
+                });
+            }
             ui.separator();
             ui.label(egui::RichText::new("Attachments").strong());
             egui::Grid::new("attachments").striped(true).show(ui, |ui| {
@@ -495,4 +538,5 @@ pub fn ui(ui: &mut egui::Ui, model: &Model, case: usize, selection: &mut Selecti
     if let Some(n) = next {
         *selection = n;
     }
+    action
 }

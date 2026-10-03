@@ -1,0 +1,218 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! Editing the model through the project's session: every change is a
+//! logged command ([`ols_session::Command`]), undoable per user; after it
+//! only the sections it touched are re-solved, in every weather case.
+//!
+//! While a structure is dragged the change is previewed without the
+//! session ([`Model::preview_move`]): the line is changed in memory and the
+//! shown case re-solves the sections through the structure. Releasing
+//! applies one command ([`Model::apply`]); cancelling goes back to the
+//! session's line ([`Model::cancel_preview`]).
+
+use std::time::Instant;
+
+use ols_line::{Line, Point};
+use ols_session::{Applied, Command, Impact, SessionError};
+
+use crate::model::Model;
+
+/// Why an edit was not made.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EditError {
+    /// The model cannot be edited (a line file, no role…).
+    ReadOnly(String),
+    /// A deletion takes other objects with it: confirm to apply.
+    NeedsConfirmation(Box<Impact>),
+    /// The session refused the command (the line would not be valid…).
+    Refused(String),
+}
+
+impl std::fmt::Display for EditError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EditError::ReadOnly(why) => write!(f, "read-only: {why}"),
+            EditError::NeedsConfirmation(i) => write!(f, "{}", i.summary()),
+            EditError::Refused(why) => write!(f, "{why}"),
+        }
+    }
+}
+
+impl From<SessionError> for EditError {
+    fn from(e: SessionError) -> Self {
+        match e {
+            SessionError::NeedsConfirmation(i) => EditError::NeedsConfirmation(i),
+            other => EditError::Refused(other.to_string()),
+        }
+    }
+}
+
+impl Model {
+    /// Whether the model can be edited.
+    pub fn can_edit(&self) -> Result<(), String> {
+        self.editing.as_ref().map(|_| ()).map_err(Clone::clone)
+    }
+
+    /// The session's line, structure types resolved.
+    fn session_line(&self) -> Result<Line, EditError> {
+        let e = self
+            .editing
+            .as_ref()
+            .map_err(|why| EditError::ReadOnly(why.clone()))?;
+        let line = e.session.export();
+        match &self.types {
+            Some((s, i)) => line
+                .resolve(s, i)
+                .map_err(|e| EditError::Refused(e.to_string())),
+            None => Ok(line),
+        }
+    }
+
+    /// Brings the model up to the session after `applied`: re-solves its
+    /// dirty sections in every case. Returns a one-line report.
+    fn sync(
+        &mut self,
+        what: &str,
+        applied: Applied,
+        started: Instant,
+    ) -> Result<String, EditError> {
+        let line = self.session_line()?;
+        let mut solved = 0;
+        for c in &mut self.cases {
+            solved += c.update(&line, &self.library, &applied.sections);
+        }
+        self.line = line;
+        Ok(format!(
+            "{what} (log entry {}): {} sections touched, {solved} re-solved over {} weather cases in {:.0?}",
+            applied.seq,
+            applied.sections.len(),
+            self.cases.len(),
+            started.elapsed()
+        ))
+    }
+
+    fn user(&self) -> Result<String, EditError> {
+        self.editing
+            .as_ref()
+            .map(|e| e.user.clone())
+            .map_err(|why| EditError::ReadOnly(why.clone()))
+    }
+
+    /// Applies a command as the editing user.
+    pub fn apply(&mut self, what: &str, command: Command) -> Result<String, EditError> {
+        let started = Instant::now();
+        let user = self.user()?;
+        let applied = self
+            .editing
+            .as_mut()
+            .map_err(|why| EditError::ReadOnly(why.clone()))?
+            .session
+            .apply(&user, command)?;
+        self.sync(what, applied, started)
+    }
+
+    /// Undoes the user's last command.
+    pub fn undo(&mut self) -> Result<String, EditError> {
+        let started = Instant::now();
+        let user = self.user()?;
+        let applied = self
+            .editing
+            .as_mut()
+            .map_err(|why| EditError::ReadOnly(why.clone()))?
+            .session
+            .undo(&user)?;
+        self.sync("undo", applied, started)
+    }
+
+    /// Redoes the user's last undo.
+    pub fn redo(&mut self) -> Result<String, EditError> {
+        let started = Instant::now();
+        let user = self.user()?;
+        let applied = self
+            .editing
+            .as_mut()
+            .map_err(|why| EditError::ReadOnly(why.clone()))?
+            .session
+            .redo(&user)?;
+        self.sync("redo", applied, started)
+    }
+
+    /// The sections through structure `id`.
+    fn sections_through(&self, id: &str) -> Vec<String> {
+        self.line
+            .sections
+            .iter()
+            .filter(|s| s.points.iter().any(|p| p.structure == id))
+            .map(|s| s.id.clone())
+            .collect()
+    }
+
+    /// Previews structure `id` at `position` in case `case` (no command
+    /// yet): only the sections through it are re-solved.
+    pub fn preview_move(&mut self, case: usize, id: &str, position: Point) {
+        let Some(k) = self.line.structures.iter().position(|s| s.id == id) else {
+            return;
+        };
+        self.line.structures[k] = self.line.structures[k].moved_to(position);
+        let dirty = self.sections_through(id);
+        if let Some(c) = self.cases.get_mut(case) {
+            c.update(&self.line, &self.library, &dirty);
+        }
+    }
+
+    /// Ends a preview without a command: back to the session's line.
+    pub fn cancel_preview(&mut self, case: usize, id: &str) {
+        let Ok(line) = self.session_line() else {
+            return;
+        };
+        let dirty = self.sections_through(id);
+        self.line = line;
+        if let Some(c) = self.cases.get_mut(case) {
+            c.update(&self.line, &self.library, &dirty);
+        }
+    }
+
+    /// The ground height under (x, y), if there is ground there.
+    pub fn ground_at(&self, x: f64, y: f64) -> Option<f64> {
+        self.ground.as_ref().and_then(|g| g.height(x, y))
+    }
+}
+
+/// An edit asked for by a view or panel; the application performs it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    /// Show structure `id` at `position` while it is dragged.
+    PreviewMove {
+        /// Structure.
+        id: String,
+        /// Where it is now.
+        position: Point,
+    },
+    /// Move structure `id` to `position` (one command).
+    Move {
+        /// Structure.
+        id: String,
+        /// New position.
+        position: Point,
+    },
+    /// Give up a preview.
+    CancelPreview {
+        /// Structure.
+        id: String,
+    },
+    /// Delete an object (asks for a confirmation when it takes others).
+    Delete {
+        /// Kind.
+        kind: ols_session::Kind,
+        /// Id.
+        id: String,
+        /// Confirmed.
+        confirm: bool,
+    },
+    /// Undo the user's last command.
+    Undo,
+    /// Redo the user's last undo.
+    Redo,
+}

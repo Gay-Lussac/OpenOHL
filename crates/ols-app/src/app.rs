@@ -61,6 +61,14 @@ pub struct Ready {
     pub profile: ProfileView,
     /// The "Go to structure" window, when open: the structure chosen.
     pub goto: Option<String>,
+    /// What the last edit did (or why it was not done: `true`).
+    pub status: Option<(String, bool)>,
+    /// A deletion waiting for its confirmation: what it takes with it.
+    pub confirm: Option<Box<ols_session::Impact>>,
+    /// The Move tool (drag structures in the plan).
+    pub move_tool: bool,
+    /// A position being typed in the properties: (structure, position).
+    pub edit_position: Option<(String, [f64; 3])>,
 }
 
 impl Ready {
@@ -80,6 +88,10 @@ impl Ready {
             plan: PlanView::default(),
             profile: ProfileView::default(),
             goto: None,
+            status: None,
+            confirm: None,
+            move_tool: false,
+            edit_position: None,
         }
     }
 }
@@ -220,11 +232,34 @@ impl TabViewer for Viewer<'_> {
                 &r.visible,
                 &r.snaps,
             ),
-            Tab::Plan => r.plan.ui(ui, &r.model, r.case, &mut r.selection, &r.snaps),
+            Tab::Plan => {
+                if let Some(a) = r.plan.ui(
+                    ui,
+                    &r.model,
+                    r.case,
+                    &mut r.selection,
+                    &r.snaps,
+                    r.move_tool && r.model.can_edit().is_ok(),
+                ) {
+                    r.perform(a);
+                }
+            }
             Tab::Profile => r
                 .profile
                 .ui(ui, &r.model, r.case, &mut r.selection, &r.snaps),
-            Tab::Properties => crate::properties::ui(ui, &r.model, r.case, &mut r.selection),
+            Tab::Properties => {
+                let editable = r.model.can_edit().is_ok();
+                let action = crate::properties::ui(
+                    ui,
+                    &r.model,
+                    r.case,
+                    &mut r.selection,
+                    editable.then_some(&mut r.edit_position),
+                );
+                if let Some(a) = action {
+                    r.perform(a);
+                }
+            }
             Tab::Model => model_panel(ui, r),
             Tab::Snap => snap_panel(ui, &mut r.snaps),
         }
@@ -235,6 +270,87 @@ impl TabViewer for Viewer<'_> {
 }
 
 impl Ready {
+    /// Performs an edit and updates the views.
+    pub fn perform(&mut self, action: crate::edit::Action) {
+        use crate::edit::{Action, EditError};
+        let result = match action {
+            Action::PreviewMove { id, position } => {
+                self.model.preview_move(self.case, &id, position);
+                self.refresh_views();
+                return;
+            }
+            Action::CancelPreview { id } => {
+                self.model.cancel_preview(self.case, &id);
+                self.refresh_views();
+                return;
+            }
+            Action::Move { id, position } => self.model.apply(
+                &format!("moved {id}"),
+                ols_session::Command::MoveStructure {
+                    id: id.clone(),
+                    position,
+                },
+            ),
+            Action::Delete { kind, id, confirm } => self.model.apply(
+                &format!("deleted {} {id}", kind.as_str()),
+                ols_session::Command::Delete { kind, id, confirm },
+            ),
+            Action::Undo => self.model.undo(),
+            Action::Redo => self.model.redo(),
+        };
+        match result {
+            Ok(report) => {
+                log::info!("{report}");
+                self.status = Some((report, false));
+                self.confirm = None;
+            }
+            Err(EditError::NeedsConfirmation(impact)) => self.confirm = Some(impact),
+            Err(e) => {
+                log::warn!("{e}");
+                self.status = Some((e.to_string(), true));
+            }
+        }
+        self.edit_position = None;
+        if !self.selection_exists() {
+            self.selection = Selection::None;
+        }
+        self.refresh_views();
+    }
+
+    /// After the line changed: every 3D layer and the profile again.
+    fn refresh_views(&mut self) {
+        self.view3d.rebuild_all();
+        self.profile.invalidate();
+    }
+
+    /// Whether the selected object is still in the line.
+    fn selection_exists(&self) -> bool {
+        let line = &self.model.line;
+        match &self.selection {
+            Selection::None | Selection::LidarPoint(_) => true,
+            Selection::Structure(id) => line.structure(id).is_some(),
+            Selection::Jumper(id) => line.jumpers.iter().any(|j| &j.id == id),
+            Selection::Span { section, span } => line
+                .sections
+                .iter()
+                .any(|s| &s.id == section && *span + 1 < s.points.len()),
+            Selection::Attachment {
+                structure,
+                set,
+                phase,
+            } => line
+                .attachment(&ols_line::SectionPoint {
+                    structure: structure.clone(),
+                    set: *set,
+                    phase: *phase,
+                })
+                .is_some(),
+            Selection::AlignmentPoint { route, index } => {
+                crate::selection::alignment_point(&self.model, route, *index).is_some()
+            }
+        }
+    }
+
     /// Selects structure `id` and brings every view to it: the 3D camera
     /// within 150 m, the plan centred on it.
     pub fn go_to_structure(&mut self, id: &str) {
@@ -301,6 +417,91 @@ fn goto_window(ctx: &egui::Context, r: &mut Ready) {
         r.goto = None;
     } else {
         r.goto = Some(chosen);
+    }
+}
+
+/// Edit shortcuts (not while typing): ⌘Z undo, ⇧⌘Z redo, Delete or
+/// Backspace deletes the selected structure, M toggles the Move tool; and
+/// the confirmation of a deletion that takes other objects with it.
+fn edit_keys_and_windows(ctx: &egui::Context, r: &mut Ready) {
+    use crate::edit::Action;
+    if !ctx.egui_wants_keyboard_input() && r.model.can_edit().is_ok() {
+        // Redo first: ⇧⌘Z also matches ⌘Z when shift is ignored.
+        let (redo, undo, delete, move_tool) = ctx.input_mut(|i| {
+            use egui::{Key, Modifiers};
+            let redo = i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+            let undo = !redo && i.consume_key(Modifiers::COMMAND, Key::Z);
+            (
+                redo,
+                undo,
+                i.consume_key(Modifiers::NONE, Key::Delete)
+                    || i.consume_key(Modifiers::NONE, Key::Backspace),
+                i.consume_key(Modifiers::NONE, Key::M),
+            )
+        });
+        if undo {
+            r.perform(Action::Undo);
+        }
+        if redo {
+            r.perform(Action::Redo);
+        }
+        if move_tool {
+            r.move_tool = !r.move_tool;
+        }
+        if delete && let Selection::Structure(id) = r.selection.clone() {
+            r.perform(Action::Delete {
+                kind: ols_session::Kind::Structure,
+                id,
+                confirm: false,
+            });
+        }
+    }
+    let Some(impact) = r.confirm.clone() else {
+        return;
+    };
+    let mut decision: Option<bool> = None;
+    egui::Window::new(format!("Delete {} {}?", impact.kind.as_str(), impact.id))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .show(ctx, |ui| {
+            ui.label("This also deletes or changes:");
+            egui::ScrollArea::vertical()
+                .max_height(300.0)
+                .show(ui, |ui| {
+                    for (title, items) in impact.groups() {
+                        if items.is_empty() {
+                            continue;
+                        }
+                        ui.label(
+                            egui::RichText::new(format!("{title} ({})", items.len())).strong(),
+                        );
+                        for it in items {
+                            ui.label(egui::RichText::new(format!("  {it}")).small());
+                        }
+                    }
+                });
+            ui.label("It is one log entry: undo brings everything back.");
+            ui.horizontal(|ui| {
+                if ui.button("Delete all").clicked() {
+                    decision = Some(true);
+                }
+                if ui.button("Cancel").clicked() {
+                    decision = Some(false);
+                }
+            });
+        });
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        decision = Some(false);
+    }
+    match decision {
+        Some(true) => r.perform(Action::Delete {
+            kind: impact.kind,
+            id: impact.id.clone(),
+            confirm: true,
+        }),
+        Some(false) => r.confirm = None,
+        None => {}
     }
 }
 
@@ -484,6 +685,32 @@ impl eframe::App for App {
             }
             State::Ready(ready) => {
                 goto_window(ui.ctx(), ready);
+                edit_keys_and_windows(ui.ctx(), ready);
+                egui::Panel::bottom("status").show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        match ready.model.can_edit() {
+                            Ok(()) => ui.label(
+                                egui::RichText::new(format!(
+                                    "editing as {}",
+                                    ready.model.editing.as_ref().map_or("", |e| e.user.as_str())
+                                ))
+                                .small(),
+                            ),
+                            Err(why) => {
+                                ui.label(egui::RichText::new(format!("read-only: {why}")).small())
+                            }
+                        };
+                        if let Some((text, error)) = &ready.status {
+                            ui.separator();
+                            let t = egui::RichText::new(text).small();
+                            if *error {
+                                ui.colored_label(egui::Color32::LIGHT_RED, t);
+                            } else {
+                                ui.label(t);
+                            }
+                        }
+                    });
+                });
                 egui::Panel::top("top").show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.strong("OLS CAD");
@@ -521,6 +748,18 @@ impl eframe::App for App {
                             ready.selection = Selection::None;
                             ready.view3d.dirty.insert(Layer::Selection);
                         }
+                        ui.separator();
+                        let editable = ready.model.can_edit().is_ok();
+                        ui.add_enabled_ui(editable, |ui| {
+                            if ui.button("↶ Undo").on_hover_text("⌘Z").clicked() {
+                                ready.perform(crate::edit::Action::Undo);
+                            }
+                            if ui.button("↷ Redo").on_hover_text("⇧⌘Z").clicked() {
+                                ready.perform(crate::edit::Action::Redo);
+                            }
+                            ui.toggle_value(&mut ready.move_tool, "✥ Move (M)")
+                                .on_hover_text("Drag structures in the plan view");
+                        });
                     });
                 });
                 egui::CentralPanel::default()

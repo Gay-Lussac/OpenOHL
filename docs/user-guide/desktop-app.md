@@ -32,6 +32,18 @@ cargo run --release -p ols-app -- project.ols          # with the project's poin
 - **Snap** — what can be clicked.
 - **Properties** of the other kinds: an attachment point (string type, insulator and wire points, length, weight, spans and jumpers there), an alignment point (position, tied structure), a LiDAR point (position, class and roles).
 
+## Editing
+
+A project (`.ols`) opened by a user with the designer or admin role (`--user`, default the login name) can be edited; every edit is a command in the project's log, undoable per user (ADR-0005). A line file, or a user without a role, opens read-only — the status bar says why.
+
+| Action | How |
+|---|---|
+| Move a structure | Move tool (**M** or the toolbar): drag it in the plan — the shown weather case is re-solved live while dragging, its base follows the ground; release applies one command, **Escape** cancels. Or type its position in its properties and press **Move**. |
+| Delete a structure | **Delete** / **Backspace**, or **Delete…** in its properties. When it takes other objects with it (sections, jumpers, routes…), a window lists them; **Delete all** applies it as one command. |
+| Undo / redo | **⌘Z** / **⇧⌘Z**, or the toolbar. |
+
+After an edit only the sections it touched are re-solved, in every weather case (incremental solving); the status bar reports what was re-solved and how long it took. Adding structures comes next.
+
 ## Controls
 
 The 3D view is navigated with the mouse and, while the pointer is over it, the keyboard — like Minecraft in creative mode:

@@ -573,3 +573,132 @@ fn g_goes_to_a_structure() {
         assert!(cam.distance <= 150.0);
     }
 }
+
+/// The example as a project edited by "tester".
+fn synthetic_project(name: &str) -> model::Model {
+    let ex = root().join("examples/synthetic-line");
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.ols");
+    std::fs::remove_file(&path).ok();
+    let line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    ols_session::Session::open(&path)
+        .unwrap()
+        .import(&line, "tester")
+        .unwrap();
+    model::load(
+        Sources {
+            file: path,
+            library: Some(root().join("libraries/cables")),
+            weather: Some(ex.join("weather-cases.olswc")),
+            point_budget: 1000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap()
+}
+
+/// Every case equals a full solve of the current line.
+fn assert_solved_fully(m: &model::Model) {
+    for c in &m.cases {
+        let full = model::Solved::new(&m.line, &m.library, c.case.clone());
+        assert_eq!(c.shapes, full.shapes, "{}", c.case.name);
+        assert_eq!(c.jumpers, full.jumpers, "{}", c.case.name);
+    }
+}
+
+#[test]
+fn edits_go_through_the_session_and_re_solve_what_they_touch() {
+    use crate::edit::EditError;
+    use ols_session::Command;
+    let mut m = synthetic_project("edit");
+    assert!(m.can_edit().is_ok());
+    let p = m.line.structure("T6").unwrap().position;
+    let report = m
+        .apply(
+            "moved T6",
+            Command::MoveStructure {
+                id: "T6".into(),
+                position: [p[0] + 4.0, p[1], p[2]],
+            },
+        )
+        .unwrap();
+    // T6 is on the branch only: S3 touched, re-solved in the 5 cases.
+    assert!(
+        report.contains("1 sections touched, 5 re-solved"),
+        "{report}"
+    );
+    assert_eq!(m.line.structure("T6").unwrap().position[0], p[0] + 4.0);
+    assert_solved_fully(&m);
+    m.undo().unwrap();
+    assert_eq!(m.line.structure("T6").unwrap().position, p);
+    assert_solved_fully(&m);
+    m.redo().unwrap();
+    assert_eq!(m.line.structure("T6").unwrap().position[0], p[0] + 4.0);
+    // Deleting T7 takes S3 and the jumper: a confirmation first.
+    let del = |confirm| Command::Delete {
+        kind: ols_session::Kind::Structure,
+        id: "T7".into(),
+        confirm,
+    };
+    match m.apply("deleted T7", del(false)) {
+        Err(EditError::NeedsConfirmation(i)) => {
+            assert_eq!(i.sections, vec!["S3".to_owned()]);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(m.line.structure("T7").is_some());
+    m.apply("deleted T7", del(true)).unwrap();
+    assert!(m.line.structure("T7").is_none());
+    assert!(m.line.sections.iter().all(|s| s.id != "S3"));
+    assert_solved_fully(&m);
+    m.undo().unwrap();
+    assert!(m.line.structure("T7").is_some());
+    assert_solved_fully(&m);
+    // A preview moves the line in memory only; cancelling restores it.
+    let q = m.line.structure("T2").unwrap().position;
+    m.preview_move(0, "T2", [q[0], q[1] + 3.0, q[2]]);
+    assert_eq!(m.line.structure("T2").unwrap().position[1], q[1] + 3.0);
+    m.cancel_preview(0, "T2");
+    assert_eq!(m.line.structure("T2").unwrap().position, q);
+    assert_solved_fully(&m);
+    // A line file is read-only.
+    assert!(synthetic().can_edit().unwrap_err().contains("line file"));
+}
+
+#[test]
+fn command_z_undoes_in_the_window() {
+    let mut model = synthetic_project("window");
+    let p = model.line.structure("T6").unwrap().position;
+    model
+        .apply(
+            "moved T6",
+            ols_session::Command::MoveStructure {
+                id: "T6".into(),
+                position: [p[0] + 4.0, p[1], p[2]],
+            },
+        )
+        .unwrap();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    // Status bar and the load log.
+    assert!(harness.query_all_by_label("editing as tester").count() >= 1);
+    for pressed in [true, false] {
+        harness.input_mut().events.push(egui::Event::Key {
+            key: egui::Key::Z,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        });
+    }
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.line.structure("T6").unwrap().position, p);
+    assert!(r.status.as_ref().unwrap().0.starts_with("undo"));
+}

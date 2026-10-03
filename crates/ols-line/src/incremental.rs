@@ -140,6 +140,17 @@ impl SolvedLine {
             .collect()
     }
 
+    /// The result of every jumper, in line order.
+    pub fn jumper_results<'a>(
+        &'a self,
+        line: &'a Line,
+    ) -> Vec<(&'a str, &'a Result<JumperShape, LineError>)> {
+        line.jumpers
+            .iter()
+            .filter_map(|j| self.jumpers.get(&j.id).map(|r| (j.id.as_str(), r)))
+            .collect()
+    }
+
     /// Solved jumpers in line order (failed ones left out).
     pub fn jumper_shapes(&self, line: &Line) -> Vec<JumperShape> {
         line.jumpers

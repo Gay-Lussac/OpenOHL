@@ -1016,28 +1016,7 @@ impl Session {
                     .line
                     .structure(&id)
                     .ok_or_else(|| refused(format!("no structure {id}")))?;
-                let d = [
-                    position[0] - s.position[0],
-                    position[1] - s.position[1],
-                    position[2] - s.position[2],
-                ];
-                let mut moved = s.clone();
-                moved.position = position;
-                let shift = |p: &mut Point| {
-                    for k in 0..3 {
-                        p[k] += d[k];
-                    }
-                };
-                for a in &mut moved.attachments {
-                    shift(&mut a.insulator_point);
-                    shift(&mut a.wire_point);
-                    if let Some(legs) = &mut a.legs {
-                        legs.iter_mut().for_each(shift);
-                    }
-                }
-                for m in &mut moved.members {
-                    m.iter_mut().for_each(shift);
-                }
+                let moved = s.moved_to(position);
                 out.push(Command::Put {
                     kind: Kind::Structure,
                     id: id.clone(),
