@@ -212,11 +212,7 @@ impl Selection {
                 .find(|j| &j.jumper == id)
                 .map(|j| j.points[j.points.len() / 2]),
             Selection::Span { section, span } => model
-                .cases
-                .get(case)?
-                .shapes
-                .iter()
-                .find(|x| &x.section == section)?
+                .shape(section, case)?
                 .spans
                 .get(*span)
                 .map(|s| s.mid_point),
@@ -248,7 +244,17 @@ pub fn alignment_point(model: &Model, route: &str, index: usize) -> Option<[f64;
         .find(|r| r.id == route)?
         .centreline(&model.line)
         .get(index)
-        .copied()
+        .map(|p| draped(model, *p))
+}
+
+/// An alignment point as drawn: on the ground where there is ground.
+pub fn draped(model: &Model, p: [f64; 3]) -> [f64; 3] {
+    let z = model
+        .ground
+        .as_ref()
+        .and_then(|g| g.height(p[0], p[1]))
+        .unwrap_or(p[2]);
+    [p[0], p[1], z + 0.3]
 }
 
 /// A LiDAR point's project coordinates.
@@ -290,7 +296,12 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
     }
     if let Some(c) = model.cases.get(case) {
         if snaps.on(Snap::Span) {
-            for shape in &c.shapes {
+            for shape in model
+                .line
+                .sections
+                .iter()
+                .filter_map(|s| model.shape(&s.id, case))
+            {
                 for (k, span) in shape.spans.iter().enumerate() {
                     let sel = Selection::Span {
                         section: shape.section.clone(),
@@ -314,6 +325,7 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
     if snaps.on(Snap::AlignmentPoint) {
         for r in model.line.effective_routes() {
             for (index, p) in r.centreline(&model.line).into_iter().enumerate() {
+                let p = draped(model, p);
                 out.push((
                     Selection::AlignmentPoint {
                         route: r.id.clone(),

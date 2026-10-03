@@ -72,7 +72,7 @@ After an edit only the sections it touched are re-solved, in every weather case 
 
 ## Tools: hotbar and inventory
 
-As in Minecraft, the bottom of the 3D view holds a **hotbar** of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair): Select, Move structure (M), Delete, Go to structure (G), Edit, Add structure, Add string, String wire (see [Editing](#editing)). A left click always selects; a right-*drag* still pans. A window opened by a tool (Move, an editor, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person); it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come.
+As in Minecraft, the bottom of the 3D view holds a **hotbar** of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair): Select, Move structure (M), Delete, Go to structure (G), Edit, Add structure, Add string, String wire, Add alignment point (see [Editing](#editing) and [Alignments](#alignments)). A left click always selects; a right-*drag* still pans. A window opened by a tool (Move, an editor, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person); it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come.
 
 ## Clearances
 
@@ -84,20 +84,28 @@ Rules for other lines and rules across pairs of weather cases are run by `ols li
 
 ## Tables
 
-**Tables** shows the line one object per row, in a floating window (each table a page):
+**Tables** shows the line one object per row, in a floating window (each table a page): structures, sections, strings, jumpers, electrical systems, alignment points, weather cases. **Every value shown can be typed in**, except counts derived from other rows (shown dimmed) and what a string or an alignment point belongs to (typed in new rows):
 
-| Table | Editable columns | Shown only |
-|---|---|---|
-| Structures | type, extension, orientation, E, N, z | strings, sections through it |
-| Sections | cable, circuit, phase, system, bundle, spacing, value (tension in kN or sag in m, by its condition), temperature | status, condition, points, H and largest sag in the shown weather case |
-| Strings | label, insulator point and wire point (across, along, up from the base, in the structure's axes), weight, insulator, strain (yes/no) | length, sections through it |
-| Jumpers | cable, length or sag, temperature, bundle and spacing (empty: its section's) | from, to |
-| Electrical systems | name, AC/DC, kV, Hz | phases, sections given it |
-| Weather cases | name, description, tags (comma separated), temperature °C, ice thickness mm, ice load N/m, ice density kg/m³, wind Pa (empty: none) | order |
+| Table | Columns |
+|---|---|
+| Structures | id, type, extension, orientation, E, N, z · *strings, sections* |
+| Sections | id, cable, circuit, phase, system, bundle, spacing, status (in the blocks / clipped in), condition (tension · sag, ruling span · sag, span N), value (kN or m), temperature, points (`T1 1:1, T2 1:1, …`), display case, H kN, max sag m |
+| Strings | structure (new rows), set:phase, label, insulator point and wire point (across, along, up from the base, in the structure's axes), length, weight, insulator, strain · *sections* |
+| Jumpers | id, from, to (`T3 2:1`), cable, length or sag, temperature, bundle and spacing (empty: its section's) |
+| Electrical systems | id, name, AC/DC, kV, Hz, phases (`L1 L2 L3`; angles kept by position) · *sections* |
+| Alignment points | route (new rows), #, E, N, z, structure (tied under it, following it; empty: free) |
+| Weather cases | #, name, description, tags, temperature, ice thickness, ice load, ice density, wind |
 
-Type in a cell like in a spreadsheet: a changed cell turns yellow and stays **pending**; **Apply N changes** makes one command for all of them (one undo, ⌘Z), with the same checks as the editor windows — a cell that does not read (a word for a number, an unknown cable…) is named and nothing is applied; **Revert** drops them. A page with pending changes shows * on its tab and does not close. Click a column title to sort (again: descending, again: unsorted); the filter keeps rows with the text in any cell. Clicking a row's first cell selects the object and brings the views to it. The status, condition and points of a section are changed in its window (Edit tool), new objects with the tools.
+- A changed cell turns yellow and stays **pending**; **+ Add row** adds an object typed in a green row (🗑 removes it); 🗑 on a row marks it for deletion (struck through; click again to keep it). **Apply N changes** makes one command for all of them (one undo, ⌘Z), with the same checks as the editor windows — a cell that does not read is named and nothing is applied; **Revert** drops them. When deletions take other objects with them (a structure's sections and jumpers, a string's sections…), they are listed first and **Apply and delete all that** confirms.
+- **Renaming** a structure, section, jumper or system, or renumbering a string, keeps its place, and what refers to it follows (section points, jumper ends, routes, tied alignment points, sections' system).
+- Sections: changing the **condition** needs its value; **status** clipped in computes the lengths of its condition (as the section window does); **points** restring it. **Display case** draws and reports the section in that weather case in every view (empty: the case shown) — sections can be shown each in their own case. **H kN** and **max sag m** are those of the first span and of the section in its display case; typing one is a **target**: the section's condition (tension or sag) is found that gives it (a section clipped in must go back to the blocks for that).
+- **#** orders alignment points and weather cases: `3.5` goes between 3 and 4.
+- Weather cases are not part of the project but the model's case file: **Apply** writes it (comments and layout kept, values with their units) and the model is solved again; not undone with ⌘Z. Without a case file (the default 15 °C case) make one in Libraries › Weather cases and choose **Use for the model**.
+- Click a column title to sort (again: descending, again: unsorted); the filter keeps rows with the text in any cell. **⤴** selects the row's object and brings the views to it (a weather case: shows it). A page with pending changes shows * on its tab and does not close.
 
-Weather cases are not part of the project but the model's case file: **Apply** writes it (comments and layout kept, the values with their units), the model is solved again in the changed cases, and an open Weather cases library page reads it again. It is not undone with ⌘Z (edit the values back). Clicking a case's number shows it. Cases are added and removed in Libraries › Weather cases; without a case file (the default 15 °C case) make one there and choose **Use for the model**.
+## Alignments
+
+The profile view follows each route's **alignment points** (the line's own alignment when it has no routes); a route without points follows its structures. The points are drawn in the 3D view (cyan, on the ground) and the plan, and can be clicked (Edit › Snap, alignment points). **Add alignment point** (tool) and a right-click on the ground inserts one into the nearest segment of the nearest route — a route following its structures first gets points under them; **Edit** opens its window (E, N, z or on the ground, tied to a structure); **Delete** removes it; the **Alignment points** table holds them all. The profile follows at once.
 
 ## Library editors
 

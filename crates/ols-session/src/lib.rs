@@ -380,6 +380,38 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         confirm: bool,
     },
+    /// Rename a structure, section or jumper (it keeps its place); what
+    /// refers to a structure follows: section points, jumper ends, routes
+    /// and alignment points tied to it.
+    Rename {
+        /// Kind (structure, section or jumper).
+        kind: Kind,
+        /// Id.
+        id: String,
+        /// New id.
+        new_id: String,
+    },
+    /// Renumber a structure's string (an explicit one); the sections and
+    /// jumpers through it follow.
+    RenameAttachment {
+        /// Structure id.
+        structure: String,
+        /// Set.
+        set: u32,
+        /// Phase.
+        phase: u32,
+        /// New set.
+        new_set: u32,
+        /// New phase.
+        new_phase: u32,
+    },
+    /// Rename an electrical system; the sections given it follow.
+    RenameSystem {
+        /// System id.
+        id: String,
+        /// New id.
+        new_id: String,
+    },
     /// Several commands applied together (all or none).
     Batch {
         /// The commands.
@@ -1071,6 +1103,240 @@ impl Session {
                     ord: None,
                 });
                 notes.push(impact.summary());
+            }
+            Command::Rename { kind, id, new_id } => {
+                let new_id = new_id.trim().to_owned();
+                if new_id.is_empty() || new_id == id {
+                    return Err(refused(format!("{} {id}: give a new id", kind.as_str())));
+                }
+                let old = self
+                    .objects
+                    .get(&(kind, id.clone()))
+                    .ok_or_else(|| refused(format!("no {} {id}", kind.as_str())))?;
+                if self.objects.contains_key(&(kind, new_id.clone())) {
+                    return Err(refused(format!(
+                        "{} {new_id} exists already",
+                        kind.as_str()
+                    )));
+                }
+                let mut value = old.value.clone();
+                value["id"] = Value::String(new_id.clone());
+                out.push(Command::Put {
+                    kind,
+                    id: new_id.clone(),
+                    value,
+                    ord: Some(old.ord),
+                });
+                match kind {
+                    Kind::Structure => {
+                        for sec in &self.line.sections {
+                            if sec.points.iter().any(|p| p.structure == id) {
+                                let mut sec = sec.clone();
+                                for p in &mut sec.points {
+                                    if p.structure == id {
+                                        p.structure = new_id.clone();
+                                    }
+                                }
+                                out.push(Command::Put {
+                                    kind: Kind::Section,
+                                    id: sec.id.clone(),
+                                    value: json(&sec),
+                                    ord: None,
+                                });
+                            }
+                        }
+                        for j in &self.line.jumpers {
+                            if j.from.structure == id || j.to.structure == id {
+                                let mut j = j.clone();
+                                for p in [&mut j.from, &mut j.to] {
+                                    if p.structure == id {
+                                        p.structure = new_id.clone();
+                                    }
+                                }
+                                out.push(Command::Put {
+                                    kind: Kind::Jumper,
+                                    id: j.id.clone(),
+                                    value: json(&j),
+                                    ord: None,
+                                });
+                            }
+                        }
+                        let tie = |a: &mut Vec<ols_line::AlignmentPoint>| {
+                            let mut changed = false;
+                            for p in a {
+                                if p.structure.as_deref() == Some(&id) {
+                                    p.structure = Some(new_id.clone());
+                                    changed = true;
+                                }
+                            }
+                            changed
+                        };
+                        for r in &self.line.routes {
+                            let mut r = r.clone();
+                            let mut changed = tie(&mut r.alignment);
+                            for s in &mut r.structures {
+                                if *s == id {
+                                    *s = new_id.clone();
+                                    changed = true;
+                                }
+                            }
+                            if changed {
+                                out.push(Command::Put {
+                                    kind: Kind::Route,
+                                    id: r.id.clone(),
+                                    value: json(&r),
+                                    ord: None,
+                                });
+                            }
+                        }
+                        let mut alignment = self.line.alignment.clone();
+                        if tie(&mut alignment) {
+                            out.push(self.put_alignment("line", alignment)?);
+                        }
+                    }
+                    Kind::Section | Kind::Jumper => {}
+                    other => {
+                        return Err(refused(format!(
+                            "a {} is not renamed this way",
+                            other.as_str()
+                        )));
+                    }
+                }
+                out.push(Command::Delete {
+                    kind,
+                    id: id.clone(),
+                    confirm: false,
+                });
+                notes.push(format!("rename {} {id} to {new_id}", kind.as_str()));
+            }
+            Command::RenameAttachment {
+                structure,
+                set,
+                phase,
+                new_set,
+                new_phase,
+            } => {
+                let mut s = self
+                    .line
+                    .structure(&structure)
+                    .ok_or_else(|| refused(format!("no structure {structure}")))?
+                    .clone();
+                if (set, phase) == (new_set, new_phase) {
+                    return Err(refused("give another set or phase"));
+                }
+                if s.attachments
+                    .iter()
+                    .any(|a| (a.set, a.phase) == (new_set, new_phase))
+                {
+                    return Err(refused(format!(
+                        "{structure} has a string {new_set}:{new_phase} already"
+                    )));
+                }
+                let a = s
+                    .attachments
+                    .iter_mut()
+                    .find(|a| (a.set, a.phase) == (set, phase))
+                    .ok_or_else(|| {
+                        refused(format!(
+                            "{structure} {set}:{phase} is not a string of its own (one of its type: change it first, it then becomes its own)"
+                        ))
+                    })?;
+                a.set = new_set;
+                a.phase = new_phase;
+                s.attachments.sort_by_key(|a| (a.set, a.phase));
+                if s.structure_type.is_some() && !s.omit.contains(&[set, phase]) {
+                    // The type's string of the old number stays out.
+                    s.omit.push([set, phase]);
+                }
+                out.push(Command::Put {
+                    kind: Kind::Structure,
+                    id: structure.clone(),
+                    value: json(&s),
+                    ord: None,
+                });
+                let old = ols_line::SectionPoint {
+                    structure: structure.clone(),
+                    set,
+                    phase,
+                };
+                let new = ols_line::SectionPoint {
+                    structure: structure.clone(),
+                    set: new_set,
+                    phase: new_phase,
+                };
+                for sec in &self.line.sections {
+                    if sec.points.contains(&old) {
+                        let mut sec = sec.clone();
+                        for p in &mut sec.points {
+                            if *p == old {
+                                *p = new.clone();
+                            }
+                        }
+                        out.push(Command::Put {
+                            kind: Kind::Section,
+                            id: sec.id.clone(),
+                            value: json(&sec),
+                            ord: None,
+                        });
+                    }
+                }
+                for j in &self.line.jumpers {
+                    if j.from == old || j.to == old {
+                        let mut j = j.clone();
+                        for p in [&mut j.from, &mut j.to] {
+                            if *p == old {
+                                *p = new.clone();
+                            }
+                        }
+                        out.push(Command::Put {
+                            kind: Kind::Jumper,
+                            id: j.id.clone(),
+                            value: json(&j),
+                            ord: None,
+                        });
+                    }
+                }
+                notes.push(format!(
+                    "renumber string {structure} {set}:{phase} to {new_set}:{new_phase}"
+                ));
+            }
+            Command::RenameSystem { id, new_id } => {
+                let new_id = new_id.trim().to_owned();
+                let mut systems = self.line.systems.clone();
+                if new_id.is_empty() || systems.iter().any(|s| s.id == new_id) {
+                    return Err(refused(format!("system {new_id}: empty or taken")));
+                }
+                systems
+                    .iter_mut()
+                    .find(|s| s.id == id)
+                    .ok_or_else(|| refused(format!("no system {id}")))?
+                    .id = new_id.clone();
+                let meta = Meta {
+                    name: self.line.name.clone(),
+                    crs: self.line.crs.clone(),
+                    alignment: self.line.alignment.clone(),
+                    display: self.line.display.clone(),
+                    systems,
+                };
+                out.push(Command::Put {
+                    kind: Kind::Meta,
+                    id: "line".into(),
+                    value: json(&meta),
+                    ord: None,
+                });
+                for sec in &self.line.sections {
+                    if sec.system.as_deref() == Some(&id) {
+                        let mut sec = sec.clone();
+                        sec.system = Some(new_id.clone());
+                        out.push(Command::Put {
+                            kind: Kind::Section,
+                            id: sec.id.clone(),
+                            value: json(&sec),
+                            ord: None,
+                        });
+                    }
+                }
+                notes.push(format!("rename system {id} to {new_id}"));
             }
             Command::Batch { commands } => {
                 for c in commands {

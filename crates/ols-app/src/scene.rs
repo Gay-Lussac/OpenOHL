@@ -246,6 +246,16 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 s.polyline(&pts, [90, 200, 220, 200], 1.5);
+                // Its points, when it has its own (not just its structures).
+                if r.alignment.len() >= 2 {
+                    for p in &c {
+                        s.point(
+                            crate::selection::draped(model, *p),
+                            [90, 200, 220, 255],
+                            8.0,
+                        );
+                    }
+                }
             }
         }
         Layer::Structures => {
@@ -262,11 +272,15 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         }
         Layer::Wires | Layer::OtherCases => {
             for (k, solved) in model.cases.iter().enumerate() {
-                if (layer == Layer::Wires) != (k == case) {
-                    continue;
-                }
+                // Jumpers and yokes in the case shown.
+                let this_case = (layer == Layer::Wires) == (k == case);
                 let alpha = if layer == Layer::Wires { 255 } else { 90 };
                 for shape in &solved.shapes {
+                    // Each section in its own display case.
+                    let shown = model.section_case(&shape.section, case) == k;
+                    if (layer == Layer::Wires) != shown {
+                        continue;
+                    }
                     let sec = line.sections.iter().find(|x| x.id == shape.section);
                     let col = sec.map_or([176, 184, 192], |sec| rgb(&line.section_color(sec)));
                     for (k, span) in shape.spans.iter().enumerate() {
@@ -282,7 +296,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         }
                     }
                 }
-                for j in &solved.jumpers {
+                for j in solved.jumpers.iter().filter(|_| this_case) {
                     let (col, lines) = jumper_lines(line, j, &solved.bundles);
                     let width = if lines.len() > 1 { 1.2 } else { 1.5 };
                     for l in &lines {
@@ -290,7 +304,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 // Yokes at the clamps: a bar, a triangle, a polygon.
-                for y in &solved.bundles.yokes {
+                for y in solved.bundles.yokes.iter().filter(|_| this_case) {
                     let mut ring = y.clone();
                     if y.len() > 2 {
                         ring.push(y[0]);
@@ -313,13 +327,11 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 Selection::Span { section, span } => {
-                    if let Some(shape) = model
-                        .cases
-                        .get(case)
-                        .and_then(|c| c.shapes.iter().find(|x| &x.section == section))
+                    let shown = model.section_case(section, case);
+                    if let Some(shape) = model.shape(section, case)
                         && let Some(sp) = shape.spans.get(*span)
                     {
-                        let lines = match model.cases[case]
+                        let lines = match model.cases[shown]
                             .bundles
                             .spans
                             .get(&(section.clone(), *span))

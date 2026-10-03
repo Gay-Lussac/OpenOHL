@@ -169,6 +169,9 @@ pub struct Model {
     )>,
     /// The project to edit, or why the model is read-only.
     pub editing: Result<Editing, String>,
+    /// Sections drawn and reported in their own weather case (index),
+    /// instead of the case shown (Sections table).
+    pub display_cases: std::collections::BTreeMap<String, usize>,
 }
 
 fn dir_of(file: &Path) -> PathBuf {
@@ -287,6 +290,34 @@ fn load_cases(sources: &Sources) -> Result<Vec<WeatherCase>, String> {
 }
 
 impl Model {
+    /// The weather case section `section` is shown in: its own display
+    /// case, else `case`.
+    pub fn section_case(&self, section: &str, case: usize) -> usize {
+        self.display_cases
+            .get(section)
+            .copied()
+            .filter(|k| *k < self.cases.len())
+            .unwrap_or(case)
+    }
+
+    /// Section `section` as shown (its display case, else `case`).
+    pub fn shape(&self, section: &str, case: usize) -> Option<&SectionShape> {
+        self.cases
+            .get(self.section_case(section, case))?
+            .shapes
+            .iter()
+            .find(|s| s.section == section)
+    }
+
+    /// Every section as shown, in line order.
+    pub fn shapes_shown(&self, case: usize) -> Vec<SectionShape> {
+        self.line
+            .sections
+            .iter()
+            .filter_map(|s| self.shape(&s.id, case).cloned())
+            .collect()
+    }
+
     /// Reads the libraries again (wires, structure types, insulators,
     /// weather cases) after one was edited, resolves the line again and
     /// solves every case. Nothing changes when one does not load.
@@ -509,5 +540,6 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
         library,
         types,
         editing,
+        display_cases: Default::default(),
     })
 }

@@ -66,10 +66,11 @@ impl ProfileView {
         let key = (self.route, case);
         if self.drawing.as_ref().is_none_or(|(k, _)| *k != key) {
             let solved = model.cases.get(case);
+            let shapes = model.shapes_shown(case);
             let d = ols_drawing::build(
                 &model.line,
                 &routes[self.route],
-                solved.map_or(&[][..], |s| &s.shapes),
+                &shapes,
                 solved.map_or(&[][..], |s| &s.jumpers),
                 model.ground.as_deref(),
                 &[],

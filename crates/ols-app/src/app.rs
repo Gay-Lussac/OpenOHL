@@ -383,9 +383,6 @@ impl TabViewer for Viewer<'_> {
                     Some(crate::tables::TableAction::Apply(commands)) => {
                         r.apply_table(kind, commands);
                     }
-                    Some(crate::tables::TableAction::Write(path, text)) => {
-                        r.write_table_file(kind, &path, &text);
-                    }
                     Some(crate::tables::TableAction::ShowCase(k))
                         if k < r.model.cases.len() && k != r.case =>
                     {
@@ -425,6 +422,9 @@ impl Ready {
         let mut s = self.snaps.clone();
         if self.hotbar.tool().picks_strings() {
             s.0.insert(crate::selection::Snap::Attachment);
+        }
+        if self.hotbar.tool().picks_alignment() {
+            s.0.insert(crate::selection::Snap::AlignmentPoint);
         }
         s
     }
@@ -469,7 +469,7 @@ impl Ready {
                 self.use_tool_on(&id);
             }
             (Tool::Delete, _) => {
-                if let Some(action) = delete_action(&target) {
+                if let Some(action) = delete_action(&self.model.line, &target) {
                     self.select(target);
                     self.perform(action);
                 } else {
@@ -491,6 +491,33 @@ impl Ready {
                 self.editor = StringForm::of(model, structure, *set, *phase).map(Form::String);
                 self.select(target);
             }
+            (Tool::Edit, Selection::AlignmentPoint { route, index }) => {
+                self.editor =
+                    crate::editors::AlignmentForm::of(model, route, *index).map(Form::Alignment);
+                if self.editor.is_none() {
+                    self.status = Some((
+                        "Edit: this route follows its structures — give it points first (Add alignment point, or the Alignment points table)".into(),
+                        true,
+                    ));
+                }
+                self.select(target);
+            }
+            (Tool::AddAlignment, _) => match u.at {
+                Some(at) => match crate::editors::insert_alignment_point(model, at) {
+                    Ok((what, command, route, index)) => {
+                        if self.perform(crate::edit::Action::Command { what, command }) {
+                            self.select(Selection::AlignmentPoint { route, index });
+                        }
+                    }
+                    Err(e) => self.status = Some((e, true)),
+                },
+                None => {
+                    self.status = Some((
+                        "Add alignment point: right-click the ground (3D or plan view)".into(),
+                        true,
+                    ));
+                }
+            },
             (Tool::Edit, Selection::Span { section, .. }) => {
                 self.editor = SectionForm::of(model, section).map(Form::Section);
                 self.select(target);
@@ -647,27 +674,52 @@ impl Ready {
         }
     }
 
-    /// Applies a table's changes as one command; its edits go when done.
-    pub fn apply_table(
-        &mut self,
-        kind: crate::tables::TableKind,
-        mut commands: Vec<(String, ols_session::Command)>,
-    ) {
+    /// Makes a table's changes: the sections' display cases, the session
+    /// commands as one, the file written; its pending changes go when done.
+    pub fn apply_table(&mut self, kind: crate::tables::TableKind, changes: crate::tables::Changes) {
+        let crate::tables::Changes {
+            mut commands,
+            file,
+            display,
+            ..
+        } = changes;
+        let mut done = true;
         let n = commands.len();
-        let (what, command) = if n == 1 {
-            commands.remove(0)
-        } else {
-            (
-                format!("{} table: {n} objects changed", kind.title()),
-                ols_session::Command::Batch {
-                    commands: commands.into_iter().map(|c| c.1).collect(),
-                },
-            )
-        };
-        let done = self.perform(crate::edit::Action::Command { what, command });
+        if n > 0 {
+            let (what, command) = if n == 1 {
+                commands.remove(0)
+            } else {
+                (
+                    format!("{} table: {n} changes", kind.title()),
+                    ols_session::Command::Batch {
+                        commands: commands.into_iter().map(|c| c.1).collect(),
+                    },
+                )
+            };
+            done = self.perform(crate::edit::Action::Command { what, command });
+        }
+        if done && let Some((path, text)) = file {
+            done = self.write_table_file(&path, &text);
+        }
+        if done && !display.is_empty() {
+            for (id, k) in display {
+                match k {
+                    Some(k) => {
+                        self.model.display_cases.insert(id, k);
+                    }
+                    None => {
+                        self.model.display_cases.remove(&id);
+                    }
+                }
+            }
+            if n == 0 {
+                self.status = Some(("display weather cases set".into(), false));
+            }
+            self.refresh_views();
+        }
         if let Some(page) = self.tables.get_mut(&kind) {
             if done {
-                page.edits.clear();
+                page.clear();
                 page.message = self.status.clone();
             } else {
                 page.message = self
@@ -681,18 +733,12 @@ impl Ready {
 
     /// Writes a table's file (weather cases), then the model reads its
     /// libraries again; an open editor page of that file reads it again.
-    pub fn write_table_file(
-        &mut self,
-        kind: crate::tables::TableKind,
-        path: &std::path::Path,
-        text: &str,
-    ) {
+    /// Whether it worked.
+    pub fn write_table_file(&mut self, path: &std::path::Path, text: &str) -> bool {
         use crate::library::LibraryKind;
         if let Err(e) = std::fs::write(path, text) {
-            if let Some(page) = self.tables.get_mut(&kind) {
-                page.message = Some((format!("{}: {e}", path.display()), true));
-            }
-            return;
+            self.status = Some((format!("{}: {e}", path.display()), true));
+            return false;
         }
         let case = self.case;
         self.library_saved(
@@ -708,13 +754,7 @@ impl Ready {
         {
             page.open(path);
         }
-        let error = self.status.as_ref().is_some_and(|s| s.1);
-        if let Some(page) = self.tables.get_mut(&kind) {
-            if !error {
-                page.edits.clear();
-            }
-            page.message = self.status.clone();
-        }
+        !self.status.as_ref().is_some_and(|s| s.1)
     }
 
     /// Shows weather case `k`.
@@ -951,7 +991,7 @@ impl Ready {
 
 /// The deletion of a right-clicked object: a structure, a string, a span's
 /// section, a jumper.
-fn delete_action(target: &Selection) -> Option<crate::edit::Action> {
+fn delete_action(line: &ols_line::Line, target: &Selection) -> Option<crate::edit::Action> {
     use crate::edit::Action;
     use ols_session::Kind;
     let del = |kind, id: &String| Action::Delete {
@@ -972,6 +1012,13 @@ fn delete_action(target: &Selection) -> Option<crate::edit::Action> {
             set: *set,
             phase: *phase,
             confirm: false,
+        },
+        Selection::AlignmentPoint { route, index } => Action::Command {
+            what: format!("deleted alignment point {} of {route}", index + 1),
+            command: ols_session::Command::RemoveAlignmentPoint {
+                route: crate::editors::route_key(line, route),
+                index: *index,
+            },
         },
         _ => return None,
     })
@@ -1142,7 +1189,7 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         }
         if delete
             && editable
-            && let Some(action) = delete_action(&r.selection)
+            && let Some(action) = delete_action(&r.model.line, &r.selection)
         {
             r.perform(action);
         }
@@ -1764,7 +1811,7 @@ fn run_command(
         }
         Command::ClearSelection => r.select(Selection::None),
         Command::DeleteSelected => {
-            if editable && let Some(a) = delete_action(&r.selection) {
+            if editable && let Some(a) = delete_action(&r.model.line, &r.selection) {
                 r.perform(a);
             }
         }

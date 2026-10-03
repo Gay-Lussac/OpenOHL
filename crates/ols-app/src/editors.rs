@@ -125,6 +125,191 @@ pub enum Form {
     String(StringForm),
     /// A section.
     Section(SectionForm),
+    /// An alignment point.
+    Alignment(AlignmentForm),
+}
+
+/// An alignment point being changed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlignmentForm {
+    /// Route as the views name it (`main` for the line's own alignment).
+    pub route: String,
+    /// Index in the route's alignment.
+    pub index: usize,
+    /// Position.
+    pub position: [f64; 3],
+    /// Tied under this structure (it follows it).
+    pub structure: Option<String>,
+    /// The point sits on the ground.
+    pub on_ground: bool,
+}
+
+/// The session's name of a route's alignment: `"line"` for the line's own
+/// (a line without routes; the views call it `main`).
+pub fn route_key(line: &Line, route: &str) -> String {
+    if line.routes.is_empty() {
+        "line".into()
+    } else {
+        route.to_owned()
+    }
+}
+
+/// A route's stored alignment (by its session name).
+pub fn stored_alignment(stored: &Line, key: &str) -> Option<Vec<ols_line::AlignmentPoint>> {
+    if key == "line" {
+        Some(stored.alignment.clone())
+    } else {
+        stored
+            .routes
+            .iter()
+            .find(|r| r.id == key)
+            .map(|r| r.alignment.clone())
+    }
+}
+
+/// The put replacing a route's alignment (the line settings for `"line"`).
+pub fn alignment_put(
+    stored: &Line,
+    key: &str,
+    alignment: Vec<ols_line::AlignmentPoint>,
+) -> Result<Command, String> {
+    if key == "line" {
+        return Ok(Command::Put {
+            kind: Kind::Meta,
+            id: "line".into(),
+            value: serde_json::json!({
+                "name": stored.name,
+                "crs": stored.crs,
+                "alignment": alignment,
+                "display": stored.display,
+                "systems": stored.systems,
+            }),
+            ord: None,
+        });
+    }
+    let mut r = stored
+        .routes
+        .iter()
+        .find(|r| r.id == key)
+        .ok_or_else(|| format!("no route {key}"))?
+        .clone();
+    r.alignment = alignment;
+    Ok(Command::Put {
+        kind: Kind::Route,
+        id: key.to_owned(),
+        value: serde_json::to_value(&r).map_err(|e| e.to_string())?,
+        ord: None,
+    })
+}
+
+impl AlignmentForm {
+    /// Point `index` of route `route` (as the views name it).
+    pub fn of(model: &Model, route: &str, index: usize) -> Option<Self> {
+        let stored = model.stored_line().unwrap_or(&model.line);
+        let p = stored_alignment(stored, &route_key(&model.line, route))?
+            .get(index)?
+            .clone();
+        Some(Self {
+            route: route.to_owned(),
+            index,
+            position: p.position,
+            structure: p.structure,
+            on_ground: false,
+        })
+    }
+
+    fn command(&self, model: &Model) -> Result<(String, Command), String> {
+        let stored = model
+            .stored_line()
+            .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
+        let key = route_key(&model.line, &self.route);
+        let mut alignment = stored_alignment(stored, &key).ok_or("no such route")?;
+        let p = alignment.get_mut(self.index).ok_or("no such point")?;
+        p.structure = self.structure.clone();
+        p.position = match &self.structure {
+            Some(s) => {
+                model
+                    .line
+                    .structure(s)
+                    .ok_or_else(|| format!("no structure {s}"))?
+                    .position
+            }
+            None => self.position,
+        };
+        Ok((
+            format!(
+                "changed alignment point {} of {}",
+                self.index + 1,
+                self.route
+            ),
+            alignment_put(stored, &key, alignment)?,
+        ))
+    }
+}
+
+/// A new alignment point at `at`: in the nearest segment of the nearest
+/// alignment (a route following its structures first gets points under
+/// them). The command, and the point (route as the views name it, index).
+pub fn insert_alignment_point(
+    model: &Model,
+    at: [f64; 3],
+) -> Result<(String, Command, String, usize), String> {
+    let stored = model
+        .stored_line()
+        .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
+    let mut best: Option<(f64, String, Vec<ols_line::AlignmentPoint>, usize)> = None;
+    for r in model.line.effective_routes() {
+        let key = route_key(&model.line, &r.id);
+        let mut points = stored_alignment(stored, &key).unwrap_or_default();
+        if points.len() < 2 {
+            points = model.line.alignment_under_structures(&r);
+        }
+        if points.is_empty() {
+            continue;
+        }
+        // Distance in plan to each segment, and where it goes.
+        let mut here = (f64::INFINITY, points.len());
+        for k in 0..points.len().saturating_sub(1) {
+            let (a, b) = (points[k].position, points[k + 1].position);
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let len2 = d[0] * d[0] + d[1] * d[1];
+            let t = if len2 > 0.0 {
+                ((at[0] - a[0]) * d[0] + (at[1] - a[1]) * d[1]) / len2
+            } else {
+                0.0
+            };
+            let tc = t.clamp(0.0, 1.0);
+            let dist = (a[0] + tc * d[0] - at[0]).hypot(a[1] + tc * d[1] - at[1]);
+            let index = if t < 0.0 && k == 0 {
+                0
+            } else if t > 1.0 && k + 2 == points.len() {
+                points.len()
+            } else {
+                k + 1
+            };
+            if dist < here.0 {
+                here = (dist, index);
+            }
+        }
+        if best.as_ref().is_none_or(|b| here.0 < b.0) {
+            best = Some((here.0, r.id.clone(), points, here.1));
+        }
+    }
+    let (_, route, mut points, index) = best.ok_or("no route to add a point to")?;
+    let key = route_key(&model.line, &route);
+    points.insert(
+        index.min(points.len()),
+        ols_line::AlignmentPoint {
+            position: at,
+            structure: None,
+        },
+    );
+    Ok((
+        format!("added alignment point {} to {route}", index + 1),
+        alignment_put(stored, &key, points)?,
+        route,
+        index,
+    ))
 }
 
 /// What the window asks for.
@@ -529,7 +714,7 @@ impl SectionForm {
     }
 
     /// The section as typed (loads and colour kept from `old`).
-    fn section(&self, old: Option<&Section>) -> Section {
+    pub fn section(&self, old: Option<&Section>) -> Section {
         Section {
             id: self.id.trim().to_owned(),
             cable: self.cable.clone(),
@@ -596,6 +781,7 @@ impl Form {
             Form::String(f) => format!("String {}:{} of {}", f.set, f.phase, f.structure),
             Form::Section(f) if f.new => "String wire: new section".into(),
             Form::Section(f) => format!("Section {}", f.id),
+            Form::Alignment(f) => format!("Alignment point {} of {}", f.index + 1, f.route),
         }
     }
 
@@ -621,6 +807,7 @@ impl Form {
                 f.command(stored, reset)
             }
             Form::Section(f) => f.command(stored),
+            Form::Alignment(f) => f.command(model),
         }
     }
 
@@ -639,6 +826,7 @@ impl Form {
                     out = Some(Outcome::PickPoints);
                 }
             }
+            Form::Alignment(f) => alignment_ui(ui, f, model),
         }
         ui.separator();
         ui.horizontal(|ui| {
@@ -1021,4 +1209,43 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
     ui.button("Pick points again")
         .on_hover_text("With the String wire tool: right-click the strings in order, Enter")
         .clicked()
+}
+
+fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
+    egui::Grid::new("alignment-form")
+        .num_columns(2)
+        .show(ui, |ui| {
+            ui.label("tied to");
+            egui::ComboBox::from_id_salt("alignment-structure")
+                .selected_text(f.structure.as_deref().unwrap_or("(free)"))
+                .height(400.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut f.structure, None, "(free)");
+                    for s in &model.line.structures {
+                        ui.selectable_value(&mut f.structure, Some(s.id.clone()), &s.id);
+                    }
+                });
+            ui.end_row();
+            let free = f.structure.is_none();
+            for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
+                ui.label(name);
+                ui.add_enabled_ui(free && (k < 2 || !f.on_ground), |ui| {
+                    value(ui, &mut f.position[k], 0.1, " m");
+                });
+                ui.end_row();
+            }
+        });
+    if f.structure.is_none() {
+        ui.checkbox(&mut f.on_ground, "on the ground");
+        if f.on_ground
+            && let Some(z) = model.ground_at(f.position[0], f.position[1])
+        {
+            f.position[2] = z;
+        }
+    } else {
+        ui.label(
+            egui::RichText::new("A tied point sits under its structure and follows it.").small(),
+        );
+    }
+    ui.label(egui::RichText::new("The profile view follows the alignment points.").small());
 }

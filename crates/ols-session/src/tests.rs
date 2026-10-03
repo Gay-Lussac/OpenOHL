@@ -664,3 +664,91 @@ fn a_typed_structure_leaves_out_a_string_of_its_type() {
     let t3 = s.line().structure("T3").unwrap();
     assert_eq!(t3.omit, vec![[2, 1]]);
 }
+
+#[test]
+fn renaming_keeps_the_place_and_what_refers_to_it_follows() {
+    let (_, mut s) = project("rename");
+    let order =
+        |s: &Session| -> Vec<String> { s.line().structures.iter().map(|x| x.id.clone()).collect() };
+    let before = order(&s);
+    s.apply(
+        "ben",
+        Command::Rename {
+            kind: Kind::Structure,
+            id: "T3".into(),
+            new_id: "Y3".into(),
+        },
+    )
+    .unwrap();
+    let after = order(&s);
+    assert_eq!(after[2], "Y3", "same place: {after:?}");
+    assert_eq!(after.len(), before.len());
+    let l = s.line();
+    assert!(
+        l.sections
+            .iter()
+            .all(|x| x.points.iter().all(|p| p.structure != "T3"))
+    );
+    assert!(l.sections[0].points.iter().any(|p| p.structure == "Y3"));
+    assert_eq!(l.jumpers[0].from.structure, "Y3");
+    assert!(
+        l.routes
+            .iter()
+            .all(|r| !r.structures.contains(&"T3".to_owned()))
+    );
+    assert!(
+        s.apply(
+            "ben",
+            Command::Rename {
+                kind: Kind::Structure,
+                id: "Y3".into(),
+                new_id: "T2".into(),
+            },
+        )
+        .is_err(),
+        "taken"
+    );
+    s.undo("ben").unwrap();
+    assert_eq!(s.export(), example());
+    // A section, a string, a system.
+    s.apply(
+        "ben",
+        Command::Rename {
+            kind: Kind::Section,
+            id: "S3".into(),
+            new_id: "branch".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(s.line().sections[2].id, "branch");
+    s.apply(
+        "ben",
+        Command::RenameAttachment {
+            structure: "T3".into(),
+            set: 2,
+            phase: 1,
+            new_set: 5,
+            new_phase: 1,
+        },
+    )
+    .unwrap();
+    let p = &s.line().sections[2].points[0];
+    assert_eq!((p.structure.as_str(), p.set, p.phase), ("T3", 5, 1));
+    assert_eq!(s.line().jumpers[0].from.set, 5);
+    let sys = s.line().systems[0].id.clone();
+    s.apply(
+        "ben",
+        Command::RenameSystem {
+            id: sys.clone(),
+            new_id: "main-220".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(s.line().systems[0].id, "main-220");
+    assert!(
+        s.line()
+            .sections
+            .iter()
+            .all(|x| x.system.as_deref() != Some(sys.as_str()))
+    );
+}

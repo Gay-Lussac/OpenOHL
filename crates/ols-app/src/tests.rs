@@ -1426,211 +1426,6 @@ fn a_saved_library_reaches_the_model() {
     assert_solved_fully(&r.model);
 }
 
-/// Every table: cells changed stay pending until Apply, which makes one
-/// command (one undo); a cell that does not read blocks it.
-#[test]
-fn tables_edit_the_line_in_one_command_each() {
-    use crate::tables::TableKind;
-    let model = synthetic_project("tables");
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(1500.0, 950.0))
-        .build_eframe(|_| App::with_model(model, None));
-    harness.run();
-    let set = |h: &mut Harness<'_, App>, kind: TableKind, key: &str, col: &str, text: &str| {
-        let c = kind.columns().iter().position(|x| x.0 == col).unwrap();
-        let r = h.state_mut().ready().unwrap();
-        r.tables
-            .entry(kind)
-            .or_default()
-            .edits
-            .entry(key.to_owned())
-            .or_default()
-            .insert(c, text.to_owned());
-    };
-    let apply = |h: &mut Harness<'_, App>, kind: TableKind| {
-        let r = h.state_mut().ready().unwrap();
-        let rows = kind.rows(&r.model, r.case);
-        let edits = r.tables[&kind].edits.clone();
-        match kind.commands(&r.model, &rows, &edits) {
-            Ok(c) => {
-                r.apply_table(kind, c);
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
-    };
-    // Opened from the menu.
-    harness.get_by_label("Tables").click();
-    harness.run();
-    harness.get_by_label("Structures table").click();
-    harness.run();
-    harness.run();
-    assert!(
-        harness
-            .state_mut()
-            .ready()
-            .unwrap()
-            .tables
-            .contains_key(&TableKind::Structures)
-    );
-    harness.get_by_label("T2");
-    // Structures: T2 moved east, T4 raised — one log entry.
-    let (t2, t4) = {
-        let r = harness.state_mut().ready().unwrap();
-        (
-            r.model.line.structure("T2").unwrap().position,
-            r.model.line.structure("T4").unwrap().position,
-        )
-    };
-    set(
-        &mut harness,
-        TableKind::Structures,
-        "T2",
-        "E",
-        &format!("{}", t2[0] + 2.0),
-    );
-    set(
-        &mut harness,
-        TableKind::Structures,
-        "T4",
-        "z",
-        &format!("{}", t4[2] + 1.0),
-    );
-    harness.run();
-    harness.get_by_label("Apply 2 changes");
-    // A cell that does not read: nothing applied, the edits stay.
-    set(&mut harness, TableKind::Structures, "T4", "N", "north");
-    let err = apply(&mut harness, TableKind::Structures).unwrap_err();
-    assert!(err.contains("not a number"), "{err}");
-    set(
-        &mut harness,
-        TableKind::Structures,
-        "T4",
-        "N",
-        &format!("{}", t4[1]),
-    );
-    apply(&mut harness, TableKind::Structures).unwrap();
-    {
-        let r = harness.state_mut().ready().unwrap();
-        assert!(
-            r.tables[&TableKind::Structures].edits.is_empty(),
-            "{:?}",
-            r.status
-        );
-        assert!((r.model.line.structure("T2").unwrap().position[0] - t2[0] - 2.0).abs() < 1e-9);
-        assert!((r.model.line.structure("T4").unwrap().position[2] - t4[2] - 1.0).abs() < 1e-9);
-        assert_solved_fully(&r.model);
-    }
-    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
-    {
-        let r = harness.state_mut().ready().unwrap();
-        assert_eq!(r.model.line.structure("T2").unwrap().position, t2);
-        assert_eq!(
-            r.model.line.structure("T4").unwrap().position,
-            t4,
-            "one undo"
-        );
-    }
-    // Sections: S3's cable kept, its condition's temperature changed.
-    set(&mut harness, TableKind::Sections, "S3", "temp °C", "20");
-    apply(&mut harness, TableKind::Sections).unwrap();
-    assert_eq!(
-        harness.state_mut().ready().unwrap().model.line.sections[2]
-            .stringing
-            .temperature(),
-        20.0
-    );
-    // Strings: two strings of T3 in one put.
-    set(
-        &mut harness,
-        TableKind::Strings,
-        "T3\t1:1",
-        "weight N",
-        "1234",
-    );
-    set(&mut harness, TableKind::Strings, "T3\t1:2", "label", "left");
-    apply(&mut harness, TableKind::Strings).unwrap();
-    {
-        let r = harness.state_mut().ready().unwrap();
-        let t3 = r.model.line.structure("T3").unwrap();
-        assert_eq!(t3.attachments[0].insulator_weight, 1234.0);
-        assert_eq!(t3.attachments[1].label, "left");
-    }
-    // Jumpers: a new sag.
-    set(
-        &mut harness,
-        TableKind::Jumpers,
-        "J-T3-branch",
-        "sag m",
-        "2",
-    );
-    apply(&mut harness, TableKind::Jumpers).unwrap();
-    assert_eq!(
-        harness.state_mut().ready().unwrap().model.line.jumpers[0].sag,
-        Some(2.0)
-    );
-    // Electrical systems: a voltage.
-    let id = harness.state_mut().ready().unwrap().model.line.systems[0]
-        .id
-        .clone();
-    set(&mut harness, TableKind::Systems, &id, "kV", "230");
-    apply(&mut harness, TableKind::Systems).unwrap();
-    let r = harness.state_mut().ready().unwrap();
-    assert_eq!(r.model.line.systems[0].voltage_kv, 230.0, "{:?}", r.status);
-    assert_solved_fully(&r.model);
-}
-
-/// The weather case table writes the model's case file (comments kept),
-/// and the model is solved again in the changed cases.
-#[test]
-fn the_weather_case_table_writes_its_file() {
-    use crate::tables::TableKind;
-    let mut model = synthetic_project("weather-table");
-    let path = model.sources.file.parent().unwrap().join("cases.olswc");
-    std::fs::copy(
-        root().join("examples/synthetic-line/weather-cases.olswc"),
-        &path,
-    )
-    .unwrap();
-    model.sources.weather = Some(path.clone());
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(1500.0, 950.0))
-        .build_eframe(|_| App::with_model(model, None));
-    harness.run();
-    let kind = TableKind::WeatherCases;
-    let col = |name: &str| kind.columns().iter().position(|x| x.0 == name).unwrap();
-    let r = harness.state_mut().ready().unwrap();
-    let rows = kind.rows(&r.model, 0);
-    assert_eq!(rows[2].cells[1], "glaze ice");
-    let page = r.tables.entry(kind).or_default();
-    let e = page.edits.entry("2".into()).or_default();
-    e.insert(col("ice mm"), "20".into());
-    e.insert(col("wind Pa"), "150".into());
-    e.insert(col("tags"), "clearance, loads, heavy".into());
-    // A cell that does not read: nothing written.
-    page.edits
-        .entry("0".into())
-        .or_default()
-        .insert(col("temp °C"), "warm".into());
-    let edits = page.edits.clone();
-    assert!(TableKind::weather_file(&r.model, &rows, &edits).is_err());
-    r.tables.get_mut(&kind).unwrap().edits.remove("0");
-    let edits = r.tables[&kind].edits.clone();
-    let (p, text) = TableKind::weather_file(&r.model, &rows, &edits).unwrap();
-    r.write_table_file(kind, &p, &text);
-    assert!(r.tables[&kind].edits.is_empty(), "{:?}", r.status);
-    let glaze = &r.model.cases[2].case;
-    assert!((glaze.ice_thickness.si() - 0.02).abs() < 1e-12);
-    assert!((glaze.wind_pressure.si() - 150.0).abs() < 1e-9);
-    assert_eq!(glaze.tags, vec!["clearance", "loads", "heavy"]);
-    let written = std::fs::read_to_string(&path).unwrap();
-    assert!(
-        written.starts_with("# Example weather cases"),
-        "comments kept"
-    );
-    assert_solved_fully(&r.model);
-}
-
 /// "Use for the model" with a browsed wire file: one without the line's
 /// cables does not load — the model keeps its wires; a good one is used.
 #[test]
@@ -1655,4 +1450,543 @@ fn a_browsed_library_is_used_for_the_model_only_when_it_loads() {
     assert!(!r.status.as_ref().unwrap().1, "{:?}", r.status);
     assert_eq!(r.model.sources.library, Some(good));
     assert_solved_fully(&r.model);
+}
+
+/// Sets a cell of an existing row of `kind`.
+fn set_cell(
+    h: &mut Harness<'_, App>,
+    kind: crate::tables::TableKind,
+    key: &str,
+    col: &str,
+    text: &str,
+) {
+    let c = kind.column(col);
+    let r = h.state_mut().ready().unwrap();
+    let rows = kind.rows(&r.model, r.case);
+    let original = rows.iter().find(|x| x.key == key).unwrap().cells[c].clone();
+    r.tables
+        .entry(kind)
+        .or_default()
+        .set(key, c, text, &original);
+}
+
+/// Apply (deletions confirmed when `confirm`); the error if it failed.
+fn apply_table(
+    h: &mut Harness<'_, App>,
+    kind: crate::tables::TableKind,
+    confirm: bool,
+) -> Result<(), String> {
+    let r = h.state_mut().ready().unwrap();
+    let mut page = r.tables.remove(&kind).unwrap_or_default();
+    let prepared = page.prepare(kind, &r.model, r.case, confirm);
+    r.tables.insert(kind, page);
+    match prepared? {
+        Some(c) => {
+            r.apply_table(kind, c);
+            match &r.tables[&kind].message {
+                Some((m, true)) => Err(m.clone()),
+                _ => Ok(()),
+            }
+        }
+        None => Err("needs a confirmation".into()),
+    }
+}
+
+/// Every table edits the line in one command (one undo), renames keep what
+/// refers to them, a cell that does not read blocks Apply.
+#[test]
+fn tables_edit_the_line_in_one_command_each() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("tables");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // Opened from the menu.
+    harness.get_by_label("Tables").click();
+    harness.run();
+    harness.get_by_label("Structures table").click();
+    harness.run();
+    harness.run();
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .tables
+            .contains_key(&TableKind::Structures)
+    );
+    let (t2, t4) = {
+        let r = harness.state_mut().ready().unwrap();
+        (
+            r.model.line.structure("T2").unwrap().position,
+            r.model.line.structure("T4").unwrap().position,
+        )
+    };
+    set_cell(
+        &mut harness,
+        TableKind::Structures,
+        "T2",
+        "E",
+        &format!("{}", t2[0] + 2.0),
+    );
+    set_cell(
+        &mut harness,
+        TableKind::Structures,
+        "T4",
+        "z",
+        &format!("{}", t4[2] + 1.0),
+    );
+    harness.run();
+    harness.get_by_label("Apply 2 changes");
+    set_cell(&mut harness, TableKind::Structures, "T4", "N", "north");
+    let err = apply_table(&mut harness, TableKind::Structures, false).unwrap_err();
+    assert!(err.contains("not a number"), "{err}");
+    set_cell(
+        &mut harness,
+        TableKind::Structures,
+        "T4",
+        "N",
+        &format!("{:.3}", t4[1]),
+    );
+    apply_table(&mut harness, TableKind::Structures, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.tables[&TableKind::Structures].pending(), 0);
+        assert!((r.model.line.structure("T2").unwrap().position[0] - t2[0] - 2.0).abs() < 1e-9);
+        assert!((r.model.line.structure("T4").unwrap().position[2] - t4[2] - 1.0).abs() < 1e-9);
+        assert_solved_fully(&r.model);
+    }
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.line.structure("T2").unwrap().position, t2);
+        assert_eq!(
+            r.model.line.structure("T4").unwrap().position,
+            t4,
+            "one undo"
+        );
+    }
+    // Renamed and moved at once: the sections follow.
+    set_cell(&mut harness, TableKind::Structures, "T3", "id", "Y3");
+    set_cell(
+        &mut harness,
+        TableKind::Structures,
+        "T3",
+        "orientation °",
+        "5",
+    );
+    apply_table(&mut harness, TableKind::Structures, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.line.structures[2].id, "Y3");
+        assert_eq!(r.model.line.structures[2].orientation_deg, 5.0);
+        assert!(
+            r.model.line.sections[0]
+                .points
+                .iter()
+                .any(|p| p.structure == "Y3")
+        );
+        assert_solved_fully(&r.model);
+    }
+    // Sections: condition by sag, with its value; a string renumbered with
+    // a new weight; a jumper's sag; a system's voltage and phases.
+    set_cell(
+        &mut harness,
+        TableKind::Sections,
+        "S1",
+        "condition",
+        "sag, span 2",
+    );
+    set_cell(&mut harness, TableKind::Sections, "S1", "value", "8");
+    apply_table(&mut harness, TableKind::Sections, false).unwrap();
+    assert_eq!(
+        harness.state_mut().ready().unwrap().model.line.sections[0].stringing,
+        ols_line::Stringing::Sag {
+            sag: 8.0,
+            temperature: 15.0,
+            span: Some(1)
+        }
+    );
+    set_cell(&mut harness, TableKind::Strings, "Y3\t2:1", "string", "5:1");
+    set_cell(
+        &mut harness,
+        TableKind::Strings,
+        "Y3\t2:1",
+        "weight N",
+        "1234",
+    );
+    apply_table(&mut harness, TableKind::Strings, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let a = r
+            .model
+            .line
+            .structure("Y3")
+            .unwrap()
+            .attachments
+            .iter()
+            .find(|a| (a.set, a.phase) == (5, 1))
+            .unwrap();
+        assert_eq!(a.insulator_weight, 1234.0);
+        assert_eq!(r.model.line.sections[2].points[0].set, 5);
+        assert_eq!(r.model.line.jumpers[0].from.set, 5);
+    }
+    set_cell(
+        &mut harness,
+        TableKind::Jumpers,
+        "J-T3-branch",
+        "sag m",
+        "2",
+    );
+    apply_table(&mut harness, TableKind::Jumpers, false).unwrap();
+    assert_eq!(
+        harness.state_mut().ready().unwrap().model.line.jumpers[0].sag,
+        Some(2.0)
+    );
+    let id = harness.state_mut().ready().unwrap().model.line.systems[0]
+        .id
+        .clone();
+    set_cell(&mut harness, TableKind::Systems, &id, "kV", "230");
+    set_cell(&mut harness, TableKind::Systems, &id, "id", "sys-230");
+    apply_table(&mut harness, TableKind::Systems, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.line.systems[0].voltage_kv, 230.0, "{:?}", r.status);
+    assert_eq!(r.model.line.systems[0].id, "sys-230");
+    assert!(
+        r.model
+            .line
+            .sections
+            .iter()
+            .any(|s| s.system.as_deref() == Some("sys-230"))
+    );
+    assert_solved_fully(&r.model);
+}
+
+/// Rows added and deleted; a deletion taking sections waits for its
+/// confirmation.
+#[test]
+fn table_rows_are_added_and_deleted() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("table-rows");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let add = |h: &mut Harness<'_, App>, kind: TableKind, cells: &[(&str, &str)]| {
+        let r = h.state_mut().ready().unwrap();
+        let mut row = kind.new_row(&r.model, r.case, &[]);
+        for (col, text) in cells {
+            row[kind.column(col)] = (*text).to_owned();
+        }
+        r.tables.entry(kind).or_default().added.push(row);
+    };
+    let t5 = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .structure("T5")
+        .unwrap()
+        .position;
+    add(
+        &mut harness,
+        TableKind::Structures,
+        &[
+            ("id", "T8"),
+            ("E", &format!("{}", t5[0] + 200.0)),
+            ("N", &format!("{}", t5[1])),
+            ("z", &format!("{}", t5[2])),
+        ],
+    );
+    apply_table(&mut harness, TableKind::Structures, false).unwrap();
+    add(
+        &mut harness,
+        TableKind::Strings,
+        &[
+            ("structure", "T8"),
+            ("string", "1:1"),
+            ("top up", "30"),
+            ("length m", "3"),
+        ],
+    );
+    apply_table(&mut harness, TableKind::Strings, false).unwrap();
+    add(
+        &mut harness,
+        TableKind::Sections,
+        &[("id", "S4"), ("points", "T5 1:1, T8 1:1"), ("value", "20")],
+    );
+    apply_table(&mut harness, TableKind::Sections, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(
+            r.model.line.sections.iter().any(|s| s.id == "S4"),
+            "{:?}",
+            r.status
+        );
+        assert_solved_fully(&r.model);
+    }
+    // Deleting T8 takes S4: listed first, then applied.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .get_mut(&TableKind::Structures)
+        .unwrap()
+        .deleted
+        .insert("T8".into());
+    assert!(apply_table(&mut harness, TableKind::Structures, false).is_err());
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let takes = r.tables[&TableKind::Structures].confirm.clone().unwrap();
+        assert!(takes.iter().any(|t| t.contains("S4")), "{takes:?}");
+        assert!(r.model.line.structure("T8").is_some(), "not yet");
+    }
+    apply_table(&mut harness, TableKind::Structures, true).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.line.structure("T8").is_none());
+    assert!(r.model.line.sections.iter().all(|s| s.id != "S4"));
+}
+
+/// A target largest sag in the section's display weather case: the
+/// condition giving it is found; the display case is per section.
+#[test]
+fn sections_get_a_target_sag_in_their_display_case() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("table-target");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let hot = {
+        let r = harness.state_mut().ready().unwrap();
+        r.model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "max temperature")
+            .unwrap()
+    };
+    set_cell(
+        &mut harness,
+        TableKind::Sections,
+        "S1",
+        "display case",
+        "max temperature",
+    );
+    apply_table(&mut harness, TableKind::Sections, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.section_case("S1", 0), hot);
+        assert_eq!(r.model.section_case("S3", 0), 0);
+    }
+    set_cell(&mut harness, TableKind::Sections, "S1", "max sag m", "12");
+    apply_table(&mut harness, TableKind::Sections, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let sag = r
+        .model
+        .shape("S1", 0)
+        .unwrap()
+        .spans
+        .iter()
+        .map(|s| s.sag)
+        .fold(0.0, f64::max);
+    assert!((sag - 12.0).abs() < 0.01, "{sag}");
+    assert_eq!(r.model.shape("S1", 0).unwrap().section, "S1");
+    let rows = TableKind::Sections.rows(&r.model, 0);
+    assert_eq!(
+        rows[0].cells[TableKind::Sections.column("display case")],
+        "max temperature"
+    );
+}
+
+/// Alignment points: moved, tied to a structure, added between two,
+/// deleted — one put of the route; the profile follows.
+#[test]
+fn alignment_points_are_edited_in_their_table() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("table-alignment");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (route, n, p0) = {
+        let r = harness.state_mut().ready().unwrap();
+        let rows = TableKind::Alignments.rows(&r.model, 0);
+        let (route, _) = rows[0].key.split_once('\t').unwrap();
+        let n = rows
+            .iter()
+            .filter(|x| x.key.starts_with(&format!("{route}\t")))
+            .count();
+        (route.to_owned(), n, rows[0].cells.clone())
+    };
+    assert!(n >= 2, "{n}");
+    let key0 = format!("{route}\t0");
+    let key1 = format!("{route}\t1");
+    let e = p0[2].parse::<f64>().unwrap() + 3.0;
+    set_cell(
+        &mut harness,
+        TableKind::Alignments,
+        &key0,
+        "E",
+        &format!("{e}"),
+    );
+    set_cell(&mut harness, TableKind::Alignments, &key0, "structure", "");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut row = TableKind::Alignments.new_row(&r.model, 0, &[]);
+        row[0] = route.clone();
+        row[1] = "1.5".into();
+        row[2] = format!("{e}");
+        row[3] = p0[3].clone();
+        let page = r.tables.entry(TableKind::Alignments).or_default();
+        page.added.push(row);
+        page.deleted.insert(key1);
+    }
+    apply_table(&mut harness, TableKind::Alignments, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let rows = TableKind::Alignments.rows(&r.model, 0);
+    let mine: Vec<&crate::tables::Row> = rows
+        .iter()
+        .filter(|x| x.key.starts_with(&format!("{route}\t")))
+        .collect();
+    assert_eq!(mine.len(), n, "one added, one deleted");
+    assert_eq!(mine[0].cells[5], "", "detached");
+    assert!((mine[0].cells[2].parse::<f64>().unwrap() - e).abs() < 1e-6);
+    assert!(
+        (mine[1].cells[2].parse::<f64>().unwrap() - e).abs() < 1e-6,
+        "the new one second"
+    );
+}
+
+/// Weather cases: changed, added (between two), deleted — written to the
+/// case file (comments kept), the model solved again.
+#[test]
+fn the_weather_case_table_writes_its_file() {
+    use crate::tables::TableKind;
+    let mut model = synthetic_project("weather-table");
+    let path = model.sources.file.parent().unwrap().join("cases.olswc");
+    std::fs::copy(
+        root().join("examples/synthetic-line/weather-cases.olswc"),
+        &path,
+    )
+    .unwrap();
+    model.sources.weather = Some(path.clone());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let kind = TableKind::WeatherCases;
+    let n = harness.state_mut().ready().unwrap().model.cases.len();
+    set_cell(&mut harness, kind, "2", "ice mm", "20");
+    set_cell(&mut harness, kind, "2", "tags", "clearance, loads, heavy");
+    set_cell(&mut harness, kind, "0", "temp °C", "warm");
+    assert!(apply_table(&mut harness, kind, false).is_err());
+    set_cell(&mut harness, kind, "0", "temp °C", "10.0");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut row = kind.new_row(&r.model, 0, &[]);
+        row[kind.column("#")] = "1.5".into();
+        row[kind.column("name")] = "cold".into();
+        row[kind.column("temp °C")] = "-20".into();
+        let page = r.tables.entry(kind).or_default();
+        page.added.push(row);
+        page.deleted.insert("4".into());
+    }
+    apply_table(&mut harness, kind, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let names: Vec<&str> = r.model.cases.iter().map(|c| c.case.name.as_str()).collect();
+    assert_eq!(names.len(), n, "{names:?}");
+    assert_eq!(names[1], "cold");
+    let glaze = r
+        .model
+        .cases
+        .iter()
+        .find(|c| c.case.name == "glaze ice")
+        .unwrap();
+    assert!((glaze.case.ice_thickness.si() - 0.02).abs() < 1e-12);
+    assert_eq!(glaze.case.tags, vec!["clearance", "loads", "heavy"]);
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        written.starts_with("# Example weather cases"),
+        "comments kept"
+    );
+    assert_solved_fully(&r.model);
+}
+
+/// Alignment points with the tools: added on the ground (into the nearest
+/// segment; a route following its structures gets points under them
+/// first), moved in the Edit window, deleted.
+#[test]
+fn alignment_points_are_added_edited_and_deleted_with_the_tools() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project("alignment-tools");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (t1, t2) = {
+        let r = harness.state_mut().ready().unwrap();
+        let l = &r.model.line;
+        (
+            l.structure("T1").unwrap().position,
+            l.structure("T2").unwrap().position,
+        )
+    };
+    // Between T1 and T2, 5 m aside.
+    let at = [0.5 * (t1[0] + t2[0]), 0.5 * (t1[1] + t2[1]) + 5.0, t1[2]];
+    use_tool(&mut harness, Tool::AddAlignment, Selection::None, Some(at));
+    let (route, index) = {
+        let r = harness.state_mut().ready().unwrap();
+        let Selection::AlignmentPoint { route, index } = r.selection.clone() else {
+            panic!("{:?} {:?}", r.selection, r.status);
+        };
+        assert_eq!(index, 1, "between the first two");
+        (route, index)
+    };
+    let points = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        r.model
+            .line
+            .effective_routes()
+            .into_iter()
+            .find(|x| x.id == route)
+            .unwrap()
+            .alignment
+    };
+    let before = points(&mut harness);
+    assert_eq!(before[index].position, at);
+    assert!(before.len() >= 3);
+    // Moved 2 m east in its window.
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::AlignmentPoint {
+            route: route.clone(),
+            index,
+        },
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Alignment(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        f.position[0] += 2.0;
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    assert_eq!(points(&mut harness)[index].position[0], at[0] + 2.0);
+    // Deleted.
+    use_tool(
+        &mut harness,
+        Tool::Delete,
+        Selection::AlignmentPoint {
+            route: route.clone(),
+            index,
+        },
+        None,
+    );
+    assert_eq!(points(&mut harness).len(), before.len() - 1);
 }

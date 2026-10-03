@@ -846,6 +846,23 @@ pub fn solve_section(
     })
 }
 
+/// Solves one section (it need not be the line's own: a section being
+/// edited) with the default exit clauses; its cable from `library`.
+pub fn solve_one(
+    line: &Line,
+    section: &Section,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+) -> Result<SectionShape, LineError> {
+    let cable = library.get(&section.cable).ok_or_else(|| {
+        LineError::Invalid(format!(
+            "section {}: cable {} is not in the wire library",
+            section.id, section.cable
+        ))
+    })?;
+    solve_section(line, section, cable, case, &default_fe_budget())
+}
+
 /// Solves every section; returns one result per section, in order.
 pub fn solve_line(
     line: &Line,

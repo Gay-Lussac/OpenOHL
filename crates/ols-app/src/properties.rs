@@ -500,8 +500,9 @@ pub fn ui(
                     ui.label(egui::RichText::new(h).small());
                 }
                 ui.end_row();
+                let shown = model.section_case(&section, case);
                 for (k, solved) in model.cases.iter().enumerate() {
-                    let name = if k == case {
+                    let name = if k == shown {
                         egui::RichText::new(&solved.case.name).strong()
                     } else {
                         egui::RichText::new(&solved.case.name)

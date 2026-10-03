@@ -30,11 +30,13 @@ pub enum Tool {
     AddString,
     /// Right-click strings in line order, Enter: a new section.
     StringWire,
+    /// Right-click the ground: a new alignment point there.
+    AddAlignment,
 }
 
 impl Tool {
     /// Every tool (the inventory).
-    pub const ALL: [Tool; 8] = [
+    pub const ALL: [Tool; 9] = [
         Tool::Select,
         Tool::Move,
         Tool::Delete,
@@ -43,6 +45,7 @@ impl Tool {
         Tool::AddStructure,
         Tool::AddString,
         Tool::StringWire,
+        Tool::AddAlignment,
     ];
 
     /// Name.
@@ -56,6 +59,7 @@ impl Tool {
             Tool::AddStructure => "Add structure",
             Tool::AddString => "Add string",
             Tool::StringWire => "String wire",
+            Tool::AddAlignment => "Add alignment point",
         }
     }
 
@@ -70,6 +74,7 @@ impl Tool {
             Tool::AddStructure => "‡",
             Tool::AddString => "⛓",
             Tool::StringWire => "≈",
+            Tool::AddAlignment => "⛶",
         }
     }
 
@@ -95,6 +100,9 @@ impl Tool {
             Tool::StringWire => {
                 "right-click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"
             }
+            Tool::AddAlignment => {
+                "right-click the ground: a new alignment point in the nearest segment (the profile follows)"
+            }
         }
     }
 
@@ -112,6 +120,11 @@ impl Tool {
         )
     }
 
+    /// Alignment points can be right-clicked while it is held.
+    pub fn picks_alignment(self) -> bool {
+        matches!(self, Tool::Delete | Tool::Edit | Tool::AddAlignment)
+    }
+
     /// Key for saving.
     pub fn key_name(self) -> &'static str {
         match self {
@@ -123,6 +136,7 @@ impl Tool {
             Tool::AddStructure => "add_structure",
             Tool::AddString => "add_string",
             Tool::StringWire => "string_wire",
+            Tool::AddAlignment => "add_alignment",
         }
     }
 }
@@ -405,6 +419,7 @@ mod tests {
     fn hold_scroll_and_empty_slots() {
         let mut h = Hotbar::default();
         assert_eq!(h.tool(), Tool::Select);
+        h.slots[8] = None;
         h.hold(Tool::Move);
         assert_eq!((h.active, h.tool()), (1, Tool::Move));
         h.scroll(-2);

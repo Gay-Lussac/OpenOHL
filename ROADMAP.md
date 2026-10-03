@@ -104,7 +104,8 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] Clearance violation display: Clearances tab (rule file, violations of the shown case re-checked after edits in the background, click to go there), red marks in 3D and plan *(reports: `ols line --clearance-csv`)*
 - [x] Library editors (wires, insulators, structure types, weather cases): fields with units, known fields to add, checked as typed, comments kept; files browsed or created anywhere (system file dialog) and used for the model; the model reads its libraries again on save
 - [x] Menu bar (Edit with Snap, View pages and layers, Tools, Checks on demand, Libraries, Tables; Plugins to come) and a customizable quick bar; pages closable and reopened from View
-- [x] Table editing: structures, sections, strings, jumpers, electrical systems, weather cases (written to the case file) — pending cells applied as one command, sorting, filter, select from a row *(paste from spreadsheets still open)*
+- [x] Table editing: structures, sections, strings, jumpers, electrical systems, alignment points, weather cases (written to the case file) — every value typed in, rows added and deleted (dependents confirmed), renames followed by what refers to them, section targets (tension or sag in its display case), per-section display weather case; one command per Apply, sorting, filter *(paste from spreadsheets still open)*
+- [x] Alignment points drawn in 3D and plan, selected, edited, deleted and added (tool and table); the profile follows
 - [ ] Plugin manager UI
 - [ ] Python scripting console inside the application
 - [ ] **Server mode (alpha)**: host a project, multiple users connect over LAN/Internet, live change broadcast, presence, soft locks, per-user undo, roles & permissions, admin rollback
