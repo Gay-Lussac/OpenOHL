@@ -94,7 +94,8 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] `ols-render` basics: wgpu lines (pixel widths), points, shaded surfaces with depth and anti-aliasing; origin-relative precision; orbit camera; headless images
 - [ ] `ols-render`: chunk streaming, render distance per layer, LOD (terrain quadtree, structure mesh LODs, adaptive wires), culling, instancing
 - [x] Plan view, profile view, 3D view with synchronised selection; properties of structures and spans in every weather case; layers; LiDAR points by class role and ground from LiDAR
-- [x] Live update while dragging (plan Move tool: the shown case re-solves the touched sections each frame; one command on release)
+- [x] Live update while editing (Move window: the shown case re-solves the touched sections as values change; one command on Apply)
+- [x] Tools as a Minecraft-style hotbar (1–9, wheel when captured) with an inventory (E, drag and drop), remembered
 - [x] 3D navigation: fly with W A S D, Space/Shift up/down, Ctrl faster; control schemes as data (Orbit; Minecraft creative with captured mouse, crosshair selection, Escape to free) — more schemes and editing later
 - [ ] Command palette, keyboard workflows, explainable results (click value → inputs & references)
 - [x] Editing through the session in the app: move (drag or typed position) and delete structures (confirmation listing what goes with them), undo/redo, incremental re-solve of every case

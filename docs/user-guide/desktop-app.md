@@ -38,11 +38,15 @@ A project (`.ols`) opened by a user with the designer or admin role (`--user`, d
 
 | Action | How |
 |---|---|
-| Move a structure | Move tool (**M** or the toolbar): drag it in the plan — the shown weather case is re-solved live while dragging, its base follows the ground; release applies one command, **Escape** cancels. Or type its position in its properties and press **Move**. |
-| Delete a structure | **Delete** / **Backspace**, or **Delete…** in its properties. When it takes other objects with it (sections, jumpers, routes…), a window lists them; **Delete all** applies it as one command. |
+| Move a structure | **M** (or the Move tool in the hotbar), then click a structure in any view: the **Move structure** window shows E, N, z (or "base on the ground"); the change is previewed live (the shown weather case re-solves the sections through it); **Apply** (Enter) makes one command, **Cancel** (Escape) puts it back. |
+| Delete a structure | **Delete** / **Backspace** for the selected structure, or the Delete tool and a click. When it takes other objects with it (sections, jumpers, routes…), a window lists them; **Delete all** applies it as one command. |
 | Undo / redo | **⌘Z** / **⇧⌘Z**, or the toolbar. |
 
 After an edit only the sections it touched are re-solved, in every weather case (incremental solving); the status bar reports what was re-solved and how long it took. Adding structures comes next.
+
+## Tools: hotbar and inventory
+
+As in Minecraft, the bottom of the window holds a **hotbar** of nine tool slots; the active tool says what a click on an object does (Select, Move structure, Delete structure; Go to structure opens its window). Choose a slot with **1–9**, by clicking it, or — while the mouse is captured in first person — with the **wheel** (Ctrl + wheel stays the speed). **E** opens the **inventory** with every tool: drag a tool onto a slot, drag a slot back to the inventory (or right-click it) to empty it. The arrangement is remembered. New tools are added to the inventory as they come.
 
 ## Controls
 

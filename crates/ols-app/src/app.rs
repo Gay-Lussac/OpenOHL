@@ -41,6 +41,22 @@ enum Message {
     Done(Result<Box<Model>, String>),
 }
 
+/// The "Move structure" window: the structure, where it was, where it is
+/// being moved (previewed live), whether its base stays on the ground.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MoveDialog {
+    /// Structure.
+    pub id: String,
+    /// Its position when the window opened.
+    pub start: [f64; 3],
+    /// The position typed.
+    pub position: [f64; 3],
+    /// The base follows the ground (z from the ground at E, N).
+    pub on_ground: bool,
+    /// The position shown (previewed) now.
+    pub shown: [f64; 3],
+}
+
 /// What is shown once the model is loaded.
 pub struct Ready {
     /// The model.
@@ -65,8 +81,16 @@ pub struct Ready {
     pub status: Option<(String, bool)>,
     /// A deletion waiting for its confirmation: what it takes with it.
     pub confirm: Option<Box<ols_session::Impact>>,
-    /// The Move tool (drag structures in the plan).
-    pub move_tool: bool,
+    /// Tools: the hotbar (the active tool says what a click does).
+    pub hotbar: crate::tools::Hotbar,
+    /// The inventory window is open.
+    pub inventory: bool,
+    /// The "Move structure" window, when open.
+    pub move_dialog: Option<MoveDialog>,
+    /// Wheel movement not yet a whole hotbar step.
+    wheel_rest: f32,
+    /// The slot before the Go to tool was chosen.
+    previous_slot: usize,
     /// A position being typed in the properties: (structure, position).
     pub edit_position: Option<(String, [f64; 3])>,
 }
@@ -90,7 +114,11 @@ impl Ready {
             goto: None,
             status: None,
             confirm: None,
-            move_tool: false,
+            hotbar: crate::tools::Hotbar::default(),
+            inventory: false,
+            move_dialog: None,
+            wheel_rest: 0.0,
+            previous_slot: 0,
             edit_position: None,
         }
     }
@@ -112,6 +140,8 @@ pub struct App {
     pub controls: crate::controls::Controls,
     /// What can be clicked, to start with.
     pub snaps: crate::selection::Snaps,
+    /// Hotbar to start with.
+    pub hotbar: crate::tools::Hotbar,
     state: State,
     dock: DockState<Tab>,
     render_state: Option<egui_wgpu::RenderState>,
@@ -157,6 +187,7 @@ impl App {
             render_state,
             controls: crate::controls::Controls::default(),
             snaps: crate::selection::Snaps::default(),
+            hotbar: crate::tools::Hotbar::default(),
         }
     }
 
@@ -170,6 +201,7 @@ impl App {
             render_state,
             controls: crate::controls::Controls::default(),
             snaps: crate::selection::Snaps::default(),
+            hotbar: crate::tools::Hotbar::default(),
         }
     }
 
@@ -233,16 +265,7 @@ impl TabViewer for Viewer<'_> {
                 &r.snaps,
             ),
             Tab::Plan => {
-                if let Some(a) = r.plan.ui(
-                    ui,
-                    &r.model,
-                    r.case,
-                    &mut r.selection,
-                    &r.snaps,
-                    r.move_tool && r.model.can_edit().is_ok(),
-                ) {
-                    r.perform(a);
-                }
+                r.plan.ui(ui, &r.model, r.case, &mut r.selection, &r.snaps);
             }
             Tab::Profile => r
                 .profile
@@ -265,11 +288,61 @@ impl TabViewer for Viewer<'_> {
         }
         if r.selection != before {
             r.view3d.dirty.insert(Layer::Selection);
+            // A click with the active tool.
+            if let Selection::Structure(id) = r.selection.clone() {
+                r.use_tool_on(ui.ctx(), &id);
+            }
         }
     }
 }
 
 impl Ready {
+    /// The active tool used on structure `id` (clicked in a view).
+    pub fn use_tool_on(&mut self, ctx: &egui::Context, id: &str) {
+        use crate::tools::Tool;
+        let tool = self.hotbar.tool();
+        if tool.edits()
+            && let Err(why) = self.model.can_edit()
+        {
+            self.status = Some((format!("{}: read-only — {why}", tool.name()), true));
+            return;
+        }
+        match tool {
+            Tool::Move => {
+                // A preview still open goes back first (it may be this one).
+                self.cancel_move_preview();
+                if let Some(p) = self.model.line.structure(id).map(|s| s.position) {
+                    // The window needs the mouse.
+                    if self.view3d.captured {
+                        crate::view3d::View3d::set_captured(&mut self.view3d.captured, ctx, false);
+                    }
+                    self.move_dialog = Some(MoveDialog {
+                        id: id.to_owned(),
+                        start: p,
+                        position: p,
+                        on_ground: false,
+                        shown: p,
+                    });
+                }
+            }
+            Tool::Delete => self.perform(crate::edit::Action::Delete {
+                kind: ols_session::Kind::Structure,
+                id: id.to_owned(),
+                confirm: false,
+            }),
+            Tool::Select | Tool::GoTo => {}
+        }
+    }
+
+    /// Ends a Move window's preview without moving.
+    fn cancel_move_preview(&mut self) {
+        if let Some(d) = self.move_dialog.take()
+            && d.shown != d.start
+        {
+            self.perform(crate::edit::Action::CancelPreview { id: d.id });
+        }
+    }
+
     /// Performs an edit and updates the views.
     pub fn perform(&mut self, action: crate::edit::Action) {
         use crate::edit::{Action, EditError};
@@ -369,7 +442,7 @@ impl Ready {
 /// G opens "Go to structure" (not while typing; a captured mouse is
 /// freed first); Enter goes, Escape closes.
 fn goto_window(ctx: &egui::Context, r: &mut Ready) {
-    let open_key = !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::G));
+    let open_key = !ctx.text_edit_focused() && ctx.input(|i| i.key_pressed(egui::Key::G));
     if open_key && r.goto.is_none() {
         if r.view3d.captured {
             crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
@@ -420,35 +493,66 @@ fn goto_window(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
-/// Edit shortcuts (not while typing): ⌘Z undo, ⇧⌘Z redo, Delete or
-/// Backspace deletes the selected structure, M toggles the Move tool; and
-/// the confirmation of a deletion that takes other objects with it.
+/// Shortcuts (not while typing in a text field): ⌘Z undo, ⇧⌘Z redo,
+/// Delete or Backspace deletes the selected structure, M holds the Move
+/// tool, E opens the inventory, 1–9 choose a hotbar slot; the wheel scrolls
+/// the hotbar while the mouse is captured. Then the windows: hotbar,
+/// inventory, Move structure, the confirmation of a deletion.
 fn edit_keys_and_windows(ctx: &egui::Context, r: &mut Ready) {
     use crate::edit::Action;
-    if !ctx.egui_wants_keyboard_input() && r.model.can_edit().is_ok() {
+    use crate::tools::Tool;
+    if !ctx.text_edit_focused() {
         // Redo first: ⇧⌘Z also matches ⌘Z when shift is ignored.
-        let (redo, undo, delete, move_tool) = ctx.input_mut(|i| {
+        let (redo, undo, delete, move_key, inventory, slot) = ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
             let redo = i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
             let undo = !redo && i.consume_key(Modifiers::COMMAND, Key::Z);
+            let digits = [
+                Key::Num1,
+                Key::Num2,
+                Key::Num3,
+                Key::Num4,
+                Key::Num5,
+                Key::Num6,
+                Key::Num7,
+                Key::Num8,
+                Key::Num9,
+            ];
             (
                 redo,
                 undo,
                 i.consume_key(Modifiers::NONE, Key::Delete)
                     || i.consume_key(Modifiers::NONE, Key::Backspace),
                 i.consume_key(Modifiers::NONE, Key::M),
+                i.consume_key(Modifiers::NONE, Key::E),
+                digits
+                    .iter()
+                    .position(|k| i.consume_key(Modifiers::NONE, *k)),
             )
         });
-        if undo {
+        let editable = r.model.can_edit().is_ok();
+        if undo && editable {
             r.perform(Action::Undo);
         }
-        if redo {
+        if redo && editable {
             r.perform(Action::Redo);
         }
-        if move_tool {
-            r.move_tool = !r.move_tool;
+        if move_key {
+            r.hotbar.hold(Tool::Move);
         }
-        if delete && let Selection::Structure(id) = r.selection.clone() {
+        if inventory {
+            r.inventory = !r.inventory;
+            if r.inventory && r.view3d.captured {
+                crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
+            }
+        }
+        if let Some(k) = slot {
+            r.hotbar.active = k;
+        }
+        if delete
+            && editable
+            && let Selection::Structure(id) = r.selection.clone()
+        {
             r.perform(Action::Delete {
                 kind: ols_session::Kind::Structure,
                 id,
@@ -456,6 +560,52 @@ fn edit_keys_and_windows(ctx: &egui::Context, r: &mut Ready) {
             });
         }
     }
+    // Captured mouse: the wheel (without Ctrl) scrolls the hotbar, wheel
+    // down to the next slot.
+    if r.view3d.captured {
+        let notches: f32 = ctx.input(|i| {
+            i.events
+                .iter()
+                .map(|e| match e {
+                    egui::Event::MouseWheel {
+                        unit,
+                        delta,
+                        modifiers,
+                        ..
+                    } if !modifiers.ctrl => match unit {
+                        egui::MouseWheelUnit::Point => delta.y / 40.0,
+                        _ => delta.y,
+                    },
+                    _ => 0.0,
+                })
+                .sum()
+        });
+        r.wheel_rest += notches;
+        let steps = r.wheel_rest.trunc();
+        if steps != 0.0 {
+            r.hotbar.scroll(-steps as i32);
+            r.wheel_rest -= steps;
+        }
+    }
+    // The Go to tool opens its window and gives the hand back.
+    if r.hotbar.tool() == Tool::GoTo {
+        r.hotbar.active = r.previous_slot;
+        if r.goto.is_none() {
+            r.goto = Some(
+                r.model
+                    .line
+                    .structures
+                    .first()
+                    .map(|s| s.id.clone())
+                    .unwrap_or_default(),
+            );
+        }
+    } else {
+        r.previous_slot = r.hotbar.active;
+    }
+    crate::tools::hotbar_ui(ctx, &mut r.hotbar);
+    crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
+    move_window(ctx, r);
     let Some(impact) = r.confirm.clone() else {
         return;
     };
@@ -503,6 +653,76 @@ fn edit_keys_and_windows(ctx: &egui::Context, r: &mut Ready) {
         Some(false) => r.confirm = None,
         None => {}
     }
+}
+
+/// The "Move structure" window: E, N, z (or on the ground), previewed
+/// live; Apply (Enter) moves it with one command, Cancel (Escape) puts it
+/// back.
+fn move_window(ctx: &egui::Context, r: &mut Ready) {
+    use crate::edit::Action;
+    let Some(mut d) = r.move_dialog.clone() else {
+        return;
+    };
+    let (mut apply, mut cancel) = (false, false);
+    egui::Window::new(format!("Move structure {}", d.id))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-20.0, 80.0))
+        .show(ctx, |ui| {
+            egui::Grid::new("move-grid").num_columns(3).show(ui, |ui| {
+                for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
+                    ui.label(name);
+                    let enabled = k < 2 || !d.on_ground;
+                    ui.add_enabled(
+                        enabled,
+                        egui::DragValue::new(&mut d.position[k])
+                            .speed(0.1)
+                            .max_decimals(3),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("Δ {:+.3} m", d.position[k] - d.start[k]))
+                            .small(),
+                    );
+                    ui.end_row();
+                }
+            });
+            ui.checkbox(&mut d.on_ground, "base on the ground");
+            let horizontal = (d.position[0] - d.start[0]).hypot(d.position[1] - d.start[1]);
+            ui.label(egui::RichText::new(format!("moved {horizontal:.3} m horizontally")).small());
+            ui.horizontal(|ui| {
+                apply |= ui.button("Apply").on_hover_text("Enter").clicked();
+                cancel |= ui.button("Cancel").on_hover_text("Escape").clicked();
+            });
+        });
+    if d.on_ground
+        && let Some(z) = r.model.ground_at(d.position[0], d.position[1])
+    {
+        d.position[2] = z;
+    }
+    apply |= ctx.input(|i| i.key_pressed(egui::Key::Enter));
+    cancel |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    if cancel {
+        r.cancel_move_preview();
+        return;
+    }
+    if apply {
+        r.move_dialog = None;
+        if d.position != d.start {
+            r.perform(Action::Move {
+                id: d.id,
+                position: d.position,
+            });
+        }
+        return;
+    }
+    if d.position != d.shown {
+        d.shown = d.position;
+        r.perform(Action::PreviewMove {
+            id: d.id.clone(),
+            position: d.position,
+        });
+    }
+    r.move_dialog = Some(d);
 }
 
 fn snap_panel(ui: &mut egui::Ui, snaps: &mut crate::selection::Snaps) {
@@ -638,10 +858,12 @@ impl eframe::App for App {
             State::Ready(r) => {
                 r.view3d.controls.save(storage);
                 r.snaps.save(storage);
+                r.hotbar.save(storage);
             }
             _ => {
                 self.controls.save(storage);
                 self.snaps.save(storage);
+                self.hotbar.save(storage);
             }
         }
     }
@@ -660,6 +882,7 @@ impl eframe::App for App {
                     let mut ready = Ready::new(*model);
                     ready.view3d.controls = self.controls.clone();
                     ready.snaps = self.snaps.clone();
+                    ready.hotbar = self.hotbar.clone();
                     self.state = State::Ready(Box::new(ready));
                 }
                 Some(Err(e)) => self.state = State::Failed(e),
@@ -751,14 +974,12 @@ impl eframe::App for App {
                         ui.separator();
                         let editable = ready.model.can_edit().is_ok();
                         ui.add_enabled_ui(editable, |ui| {
-                            if ui.button("↶ Undo").on_hover_text("⌘Z").clicked() {
+                            if ui.button("Undo").on_hover_text("⌘Z").clicked() {
                                 ready.perform(crate::edit::Action::Undo);
                             }
-                            if ui.button("↷ Redo").on_hover_text("⇧⌘Z").clicked() {
+                            if ui.button("Redo").on_hover_text("⇧⌘Z").clicked() {
                                 ready.perform(crate::edit::Action::Redo);
                             }
-                            ui.toggle_value(&mut ready.move_tool, "✥ Move (M)")
-                                .on_hover_text("Drag structures in the plan view");
                         });
                     });
                 });

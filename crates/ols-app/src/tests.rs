@@ -702,3 +702,157 @@ fn command_z_undoes_in_the_window() {
     assert_eq!(r.model.line.structure("T6").unwrap().position, p);
     assert!(r.status.as_ref().unwrap().0.starts_with("undo"));
 }
+
+fn press(h: &mut Harness<'_, App>, key: egui::Key, modifiers: egui::Modifiers) {
+    for pressed in [true, false] {
+        h.input_mut().events.push(egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers,
+        });
+    }
+    h.run();
+}
+
+/// G works after a click in the 3D view (which takes the keyboard focus
+/// for W A S D) — it did not.
+#[test]
+fn g_works_after_clicking_the_3d_view() {
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    let at = egui::pos2(620.0, 300.0);
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(at));
+    for pressed in [true, false] {
+        harness.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run();
+    press(&mut harness, egui::Key::G, egui::Modifiers::NONE);
+    assert!(harness.state_mut().ready().unwrap().goto.is_some());
+}
+
+/// M holds the Move tool; a structure clicked with it opens the Move
+/// window; typed values preview live; Enter applies one command; the
+/// hotbar takes 1–9; E opens the inventory.
+#[test]
+fn the_move_tool_and_the_hotbar() {
+    use crate::tools::Tool;
+    let model = synthetic_project("move-tool");
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if ols_render::headless_device().is_ok() {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    press(&mut harness, egui::Key::M, egui::Modifiers::NONE);
+    assert_eq!(
+        harness.state_mut().ready().unwrap().hotbar.tool(),
+        Tool::Move
+    );
+    let ctx = harness.ctx.clone();
+    let p = {
+        let r = harness.state_mut().ready().unwrap();
+        r.use_tool_on(&ctx, "T6");
+        r.move_dialog.as_ref().unwrap().start
+    };
+    harness.run();
+    harness.get_by_label("Move structure T6");
+    // Type 5 m east: previewed, not yet a command.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .move_dialog
+        .as_mut()
+        .unwrap()
+        .position[0] = p[0] + 5.0;
+    harness.run();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(
+            r.model.line.structure("T6").unwrap().position[0],
+            p[0] + 5.0
+        );
+        let log = r.model.editing.as_ref().unwrap().session.log().unwrap();
+        assert_eq!(log.len(), 1, "only the import so far");
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.move_dialog.is_none());
+        let log = r.model.editing.as_ref().unwrap().session.log().unwrap();
+        assert_eq!(log.len(), 2, "one move command");
+        assert_eq!(
+            r.model.line.structure("T6").unwrap().position[0],
+            p[0] + 5.0
+        );
+    }
+    // A cancelled window puts the structure back.
+    let q = {
+        let r = harness.state_mut().ready().unwrap();
+        r.use_tool_on(&ctx, "T2");
+        r.move_dialog.as_ref().unwrap().start
+    };
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .move_dialog
+        .as_mut()
+        .unwrap()
+        .position[1] = q[1] + 2.0;
+    harness.run();
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.move_dialog.is_none());
+        assert_eq!(r.model.line.structure("T2").unwrap().position, q);
+    }
+    // Hotbar keys and the inventory.
+    press(&mut harness, egui::Key::Num3, egui::Modifiers::NONE);
+    assert_eq!(
+        harness.state_mut().ready().unwrap().hotbar.tool(),
+        Tool::Delete
+    );
+    press(&mut harness, egui::Key::E, egui::Modifiers::NONE);
+    harness.get_by_label("Inventory — tools");
+    if ols_render::headless_device().is_ok()
+        && let Some(dir) = std::env::var_os("OLS_RENDER_PNG")
+    {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ols-cad-inventory.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+}
+
+#[test]
+fn the_hotbar_is_remembered() {
+    let mut h = crate::tools::Hotbar::default();
+    h.slots.swap(0, 4);
+    h.active = 2;
+    let mut storage = Memory::default();
+    h.save(&mut storage);
+    assert_eq!(crate::tools::Hotbar::load(&storage), Some(h));
+}

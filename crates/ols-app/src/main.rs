@@ -24,6 +24,7 @@ mod profile;
 mod properties;
 mod scene;
 mod selection;
+mod tools;
 mod view3d;
 
 #[cfg(test)]
@@ -138,6 +139,9 @@ fn main() -> std::process::ExitCode {
             log::info!("controls: {}", app.controls.name);
             if let Some(s) = cc.storage.and_then(selection::Snaps::load) {
                 app.snaps = s;
+            }
+            if let Some(h) = cc.storage.and_then(tools::Hotbar::load) {
+                app.hotbar = h;
             }
             Ok(Box::new(app))
         }),
