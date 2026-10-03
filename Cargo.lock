@@ -3287,6 +3287,7 @@ dependencies = [
  "ols-weather",
  "png",
  "rfd",
+ "serde",
  "serde_json",
  "toml_edit",
 ]

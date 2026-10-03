@@ -16,11 +16,13 @@ use clap::Parser;
 use eframe::egui;
 
 mod app;
+mod chunks;
 mod clearance;
 mod controls;
 mod edit;
 mod editors;
 mod library;
+mod lod;
 mod menu;
 mod model;
 mod plan;
@@ -152,6 +154,9 @@ fn main() -> std::process::ExitCode {
             }
             if let Some(h) = cc.storage.and_then(tools::Hotbar::load) {
                 app.hotbar = h;
+            }
+            if let Some(st) = cc.storage {
+                app.lod = lod::LodSettings::load(st);
             }
             if let Some(q) = cc.storage.and_then(menu::QuickBar::load) {
                 app.quickbar = q;

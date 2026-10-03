@@ -24,6 +24,7 @@ ols-pointcloud.workspace = true
 ols-session.workspace = true
 ols-clearance.workspace = true
 serde_json.workspace = true
+serde.workspace = true
 toml_edit = "0.25"
 # Native file dialogs (library files anywhere on the computer).
 rfd = "0.17"

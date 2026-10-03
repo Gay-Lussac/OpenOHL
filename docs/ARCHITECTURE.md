@@ -44,7 +44,7 @@
 | `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors |
 | `ols-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines |
 | `ols-io` | Import/export: format traits and registry, built-in formats (CSV, KML/KMZ), formats from WebAssembly plugins |
-| `ols-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; headless images |
+| `ols-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming (`lod`); headless images |
 | `ols-app` | Desktop application `ols-cad` (egui, ADR-0009): 3D, plan, profile, properties |
 | `ols-cables` | Cable/conductor library, stress-strain & creep models |
 | `ols-weather` | Weather cases, load case definitions (code-agnostic) |

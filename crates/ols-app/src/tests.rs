@@ -2414,3 +2414,137 @@ fn hidden_lidar_classes_are_not_drawn() {
     model.hidden_classes.insert(5);
     assert_eq!(drawn(&model), 0);
 }
+
+/// The chunks of a layer at level 0 together are the whole layer; levels
+/// 1 and 2 draw less (structures: a mast line each at level 2).
+#[test]
+fn chunks_at_full_detail_are_the_whole_layer_and_coarser_levels_less() {
+    use crate::chunks::ChunkIndex;
+    use crate::scene::Layer;
+    let model = synthetic();
+    let lod = crate::lod::LodSettings::default();
+    for layer in [
+        Layer::Structures,
+        Layer::Wires,
+        Layer::OtherCases,
+        Layer::Points,
+    ] {
+        let whole = crate::scene::layer(&model, layer, 0, &Selection::None).counts();
+        let index = ChunkIndex::new(&model, layer, 0);
+        let row = lod.row(layer);
+        let at = |level: usize| {
+            let mut sum = (0, 0, 0);
+            for (tile, _) in index.keys() {
+                let c = index.build(&model, layer, &tile, level, &row).counts();
+                sum = (sum.0 + c.0, sum.1 + c.1, sum.2 + c.2);
+            }
+            sum
+        };
+        assert_eq!(at(0), whole, "{layer:?}");
+        if whole.0 > 0 {
+            assert!(index.len() > 1, "{layer:?} in several chunks");
+            // Stick-drawn structures (no lattice) are the same at level 1.
+            if layer == Layer::Structures {
+                assert!(at(1).0 <= whole.0, "{layer:?} level 1");
+            } else {
+                assert!(at(1).0 < whole.0, "{layer:?} level 1");
+            }
+            assert!(at(2).0 < whole.0, "{layer:?} level 2");
+        }
+    }
+    // Terrain: level 0 every TIN triangle; levels 1 and 2 the surface on
+    // grids of 8 and 32 m, coarser and coarser.
+    let index = ChunkIndex::new(&model, Layer::Ground, 0);
+    let row = lod.row(Layer::Ground);
+    let triangles = |level: usize| -> usize {
+        index
+            .keys()
+            .map(|(t, _)| {
+                index
+                    .build(&model, Layer::Ground, &t, level, &row)
+                    .counts()
+                    .2
+            })
+            .sum()
+    };
+    let whole = crate::scene::layer(&model, Layer::Ground, 0, &Selection::None)
+        .counts()
+        .2;
+    assert!(whole > 0);
+    assert_eq!(triangles(0), whole);
+    let (one, two) = (triangles(1), triangles(2));
+    assert!(two > 0 && two < one, "{two} < {one}");
+    // Structures at level 2: one mast line (one segment) each.
+    let index = ChunkIndex::new(&model, Layer::Structures, 0);
+    let row = lod.row(Layer::Structures);
+    let segments: usize = index
+        .keys()
+        .map(|(t, _)| {
+            index
+                .build(&model, Layer::Structures, &t, 2, &row)
+                .counts()
+                .0
+        })
+        .sum();
+    assert_eq!(segments, model.line.structures.len());
+}
+
+/// Wires thinned keep their ends and the number of points asked.
+#[test]
+fn thinning_keeps_the_ends() {
+    let pts: Vec<[f64; 3]> = (0..65).map(|i| [f64::from(i), 0.0, 0.0]).collect();
+    let t = crate::scene::thin(&pts, 5);
+    assert_eq!(t.len(), 5);
+    assert_eq!(t[0], pts[0]);
+    assert_eq!(t[4], pts[64]);
+    assert_eq!(crate::scene::thin(&pts[..3], 5).len(), 3);
+}
+
+/// The 3D view draws the chunked layers chunk by chunk: they load over a
+/// few frames; a render distance of 0 draws none; other details rebuild.
+#[test]
+fn the_3d_view_draws_chunks_by_the_lod_table() {
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    use crate::scene::Layer;
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.state_mut().show_tab(crate::app::Tab::View3d);
+    for _ in 0..20 {
+        harness.step();
+    }
+    let stats = |h: &mut Harness<'_, App>, l: Layer| {
+        h.state_mut().ready().unwrap().view3d.lod_stats(l).unwrap()
+    };
+    let s = stats(&mut harness, Layer::Wires);
+    assert!(s.chunks > 1 && s.pending == 0, "{s:?}");
+    assert_eq!(
+        s.drawn.iter().sum::<usize>(),
+        s.chunks,
+        "the whole line in view"
+    );
+    // Render distance 0: nothing drawn.
+    let mut row = harness.state().lod.row(Layer::Wires);
+    row.render_distance = 0.0;
+    row.from = [0.0, 0.0];
+    harness.state_mut().lod.set(Layer::Wires, row).unwrap();
+    harness.step();
+    assert_eq!(stats(&mut harness, Layer::Wires).drawn, [0, 0, 0]);
+    // Everything at level 2 (from 0 m), with other details: rebuilt.
+    row.render_distance = 1e6;
+    row.detail = [8.0, 3.0];
+    harness.state_mut().lod.set(Layer::Wires, row).unwrap();
+    for _ in 0..20 {
+        harness.step();
+    }
+    let s = stats(&mut harness, Layer::Wires);
+    assert_eq!(s.drawn[2], s.chunks, "{s:?}");
+}

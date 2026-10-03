@@ -30,7 +30,7 @@ The **menu bar** holds what needs no view:
 |---|---|
 | File | the model's file, Save (⌘S / Ctrl+S), Quit |
 | Edit | Undo, Redo, Delete selected, Clear selection, Go to structure; **Snap: what can be clicked** |
-| View | Fit views; the pages to show (tick to open, untick to close); layers; Display weather cases; Customize the quick bar |
+| View | Fit views; the pages to show (tick to open, untick to close), among them **Level of detail** (see [Level of detail](#level-of-detail)); layers; Display weather cases; Customize the quick bar |
 | Lines | Project lines (saved states of the line to show next to the working line, or to make the working line), Create line, Delete line (see [Project lines](#project-lines)) |
 | Tools | the tool inventory (E); hold any tool |
 | Checks | calculations run **on demand** — they never change the model: Clearances (Run checks, also after every edit, rule file, Show results); more checks to come |
@@ -53,6 +53,23 @@ Under it, the **quick bar**: the line's name, **Weather: …** (the weather case
 - **Model** — layers, controls, sections or jumpers that failed to solve, by weather case (click one: that case is shown, the object selected and the views brought to it), what was loaded and how long it took.
 - **Clearances** — clearance violations of the shown weather case (see [Clearances](#clearances)).
 - **Properties** of the other kinds: an attachment point (string type, insulator and wire points, length, weight, spans and jumpers there), an alignment point (position, tied structure), a LiDAR point (position, class and roles).
+
+## Level of detail
+
+The 3D view draws the large layers — terrain, LiDAR points, structures, wires, other weather cases, other project lines — in **chunks**: the 256 m tiles of the project grid (the grid of the project file's spatial index). Every frame, each chunk in view is drawn at a **level of detail** from its distance to the eye; chunks outside the view or beyond the layer's render distance are not drawn, and those far beyond (1.5 × the render distance) leave the GPU. Missing chunks are built nearest first, a few milliseconds per frame, so the view never freezes: until a chunk's level is built, a level already built is drawn. An edit rebuilds the layers of the line, not the terrain and the LiDAR points.
+
+**View › Level of detail** (a page) is the table of these settings, a row per layer, every value typed in, remembered with the window layout:
+
+| Layer | Level 0 | Level 1 (default from) | Level 2 (default from) | Render distance |
+|---|---|---|---|---|
+| Terrain | every TIN triangle | the surface on an 8 m grid (1.5 km) | a 32 m grid (5 km) | 30 km |
+| LiDAR points | every point shown | 25 % of them (500 m) | 5 % (1.5 km) | 3 km |
+| Structures | lattice, arms, strings | mast, arms and strings (2 km) | the mast line (8 km) | 50 km |
+| Wires, other cases, project lines | every point; bundles as subconductors with their yokes | 16 points per span, one line per bundle (1.5 km) | 5 points per span (6 km) | 50 km |
+
+The last column of the table shows what was drawn in the last frame: the chunks at each level, of how many, and how many are still loading. On a 25 km line seen from 1.5 km, 5 million terrain triangles became 280 000 drawn, 1.5 million LiDAR points 24 000, and 190 000 wire segments 14 000; every chunk builds in under 2 ms.
+
+The level of detail changes what is **drawn** only: calculations, checks, the profile, the plan and picking always use the full model.
 
 ## Weather cases shown
 

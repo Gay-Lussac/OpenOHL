@@ -92,7 +92,8 @@ The open Phase 2 items above, grouped into four work packages:
 
 - [x] Application shell (`ols-cad`, egui + wgpu, ADR-0009): background loading and solving, dockable views sharing selection and weather case *(editing through `ols-session` commands next)*
 - [x] `ols-render` basics: wgpu lines (pixel widths), points, shaded surfaces with depth and anti-aliasing; origin-relative precision; orbit camera; headless images
-- [ ] `ols-render`: chunk streaming, render distance per layer, LOD (terrain quadtree, structure mesh LODs, adaptive wires), culling, instancing
+- [x] `ols-render`: chunks on the project grid streamed in and out by distance, render distance per layer, three levels of detail (terrain grids, LiDAR shares, structure simplification, thinned wires and bundles), frustum culling, a level-of-detail table per layer in the app
+- [ ] `ols-render`: GPU instancing of structures and hardware, occlusion culling, wires tessellated on the GPU from catenary parameters, structure mesh LODs from the library, labels
 - [x] Plan view, profile view, 3D view with synchronised selection; properties of structures and spans in every weather case; layers; LiDAR points by class role and ground from LiDAR
 - [x] Live update while editing (Move window: the shown case re-solves the touched sections as values change; one command on Apply)
 - [x] Tools as a Minecraft-style hotbar (1–9, wheel when captured) with an inventory (E, drag and drop), remembered

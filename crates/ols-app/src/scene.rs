@@ -185,12 +185,53 @@ fn rgba(c: [u8; 3], a: u8) -> [u8; 4] {
     [c[0], c[1], c[2], a]
 }
 
+/// A polyline to draw, with the levels of detail it is drawn at: the
+/// layers' common output, drawn whole ([`layer`]) or by chunk
+/// ([`crate::chunks`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Prim {
+    /// Where it belongs in plan (its chunk): a structure's position, a
+    /// span's middle.
+    pub anchor: [f64; 2],
+    /// Points.
+    pub points: Vec<[f64; 3]>,
+    /// Colour.
+    pub color: [u8; 4],
+    /// Width, pixels.
+    pub width: f32,
+    /// Lowest and highest level of detail it is drawn at.
+    pub levels: (usize, usize),
+    /// Thinned to the layer's points per span at levels 1 and 2 (wires).
+    pub thinned: bool,
+}
+
+impl Prim {
+    fn new(anchor: [f64; 3], points: Vec<[f64; 3]>, color: [u8; 4], width: f32) -> Self {
+        Self {
+            anchor: [anchor[0], anchor[1]],
+            points,
+            color,
+            width,
+            levels: (0, 0),
+            thinned: false,
+        }
+    }
+
+    fn at(mut self, lo: usize, hi: usize) -> Self {
+        self.levels = (lo, hi);
+        self
+    }
+}
+
 /// Structures of `line` (solved in `cases`), their strings drawn to the
 /// solved clamps in every weather case their section is shown in (strings
 /// swing with the wind, move with temperature); strings without a section
 /// hang as given. `tint`: one colour for everything (a project line).
-fn structures(
-    s: &mut Scene,
+///
+/// Levels of detail: 0 everything; 1 mast and arms (a lattice: a mast line
+/// up to its top attachment) and strings; 2 the mast line.
+pub fn structures(
+    out: &mut Vec<Prim>,
     model: &Model,
     line: &ols_line::Line,
     cases: &[crate::model::Solved],
@@ -218,13 +259,27 @@ fn structures(
     let steel = tint.map_or([215, 215, 220, 255], |c| rgba(c, 230));
     let blue = tint.map_or([120, 180, 255, 255], |c| rgba(c, 230));
     for st in &line.structures {
+        let at = st.position;
+        let lattice = !st.members.is_empty();
         for (part, pts) in structure_lines(st) {
-            let width = match part {
-                Part::Mast => 2.5,
-                Part::Member => 1.5,
+            let prim = match part {
+                // Stick drawings: the mast at every level, arms down to 1.
+                Part::Mast => Prim::new(at, pts, steel, 2.5).at(0, 2),
+                Part::Member if lattice => Prim::new(at, pts, steel, 1.5).at(0, 0),
+                Part::Member => Prim::new(at, pts, steel, 1.5).at(0, 1),
                 Part::Insulator => continue,
             };
-            s.polyline(&pts, steel, width);
+            out.push(prim);
+        }
+        if lattice {
+            // Levels 1 and 2 of a lattice: a mast line to its top.
+            let top = st
+                .attachments
+                .iter()
+                .map(|a| a.insulator_point[2])
+                .chain(st.members.iter().flatten().map(|p| p[2]))
+                .fold(at[2], f64::max);
+            out.push(Prim::new(at, vec![at, [at[0], at[1], top]], steel, 2.5).at(1, 2));
         }
         for a in &st.attachments {
             let solved = clamps.get(&(st.id.as_str(), a.set, a.phase));
@@ -236,22 +291,37 @@ fn structures(
                 match &a.legs {
                     Some(legs) => {
                         for l in legs {
-                            s.polyline(&[*l, end], blue, 2.0);
+                            out.push(Prim::new(at, vec![*l, end], blue, 2.0).at(0, 1));
                         }
                     }
-                    None => s.polyline(&[a.insulator_point, end], blue, 2.0),
+                    None => {
+                        out.push(Prim::new(at, vec![a.insulator_point, end], blue, 2.0).at(0, 1))
+                    }
                 }
             }
         }
     }
 }
 
+/// The middle of a polyline's plan extent (its chunk).
+fn middle(points: &[[f64; 3]]) -> [f64; 3] {
+    let (a, b) = (points[0], points[points.len() - 1]);
+    [
+        0.5 * (a[0] + b[0]),
+        0.5 * (a[1] + b[1]),
+        0.5 * (a[2] + b[2]),
+    ]
+}
+
 /// Wires of `line` solved in `cases`: each section in its own display
 /// cases, bundles as subconductors ending on the yokes, jumpers in the
 /// cases shown for the line. `shown`: the cases shown (else the others,
 /// faint). `tint`: one colour for everything (a project line).
-fn wires(
-    s: &mut Scene,
+///
+/// Levels of detail: 0 every subconductor and the yokes; 1 and 2 one line
+/// per bundle (the solved wire), thinned to the layer's points per span.
+pub fn wires(
+    out: &mut Vec<Prim>,
     model: &Model,
     line: &ols_line::Line,
     cases: &[crate::model::Solved],
@@ -264,15 +334,39 @@ fn wires(
         (true, Some(_)) => 230,
         (true, None) => 255,
     };
+    let colors: std::collections::HashMap<&str, [u8; 3]> = line
+        .sections
+        .iter()
+        .map(|sec| (sec.id.as_str(), rgb(&line.section_color(sec))))
+        .collect();
+    let wire = |out: &mut Vec<Prim>,
+                points: &[[f64; 3]],
+                lines: Vec<Vec<[f64; 3]>>,
+                color: [u8; 4],
+                w: [f32; 2]| {
+        if points.len() < 2 {
+            return;
+        }
+        let at = middle(points);
+        let bundle = lines.len() > 1;
+        for l in lines {
+            out.push(Prim::new(at, l, color, if bundle { w[0] } else { w[1] }).at(0, 0));
+        }
+        let mut centre = Prim::new(at, points.to_vec(), color, w[1]).at(1, 2);
+        centre.thinned = true;
+        out.push(centre);
+    };
     for (k, solved) in cases.iter().enumerate() {
         let this_case = shown == model.shown(case).contains(&k);
         for shape in &solved.shapes {
             if shown != model.section_cases(&shape.section, case).contains(&k) {
                 continue;
             }
-            let sec = line.sections.iter().find(|x| x.id == shape.section);
             let col = tint.unwrap_or_else(|| {
-                sec.map_or([176, 184, 192], |sec| rgb(&line.section_color(sec)))
+                colors
+                    .get(shape.section.as_str())
+                    .copied()
+                    .unwrap_or([176, 184, 192])
             });
             for (n, span) in shape.spans.iter().enumerate() {
                 // Bundles: each subconductor (one section, solved and
@@ -281,19 +375,13 @@ fn wires(
                     Some(l) => l.clone(),
                     None => vec![span.points.clone()],
                 };
-                let width = if lines.len() > 1 { 1.5 } else { 2.0 };
-                for l in &lines {
-                    s.polyline(l, rgba(col, alpha), width);
-                }
+                wire(out, &span.points, lines, rgba(col, alpha), [1.5, 2.0]);
             }
         }
         for j in solved.jumpers.iter().filter(|_| this_case) {
             let (col, lines) = jumper_lines(line, j, &solved.bundles);
             let col = tint.unwrap_or(col);
-            let width = if lines.len() > 1 { 1.2 } else { 1.5 };
-            for l in &lines {
-                s.polyline(l, rgba(col, alpha), width);
-            }
+            wire(out, &j.points, lines, rgba(col, alpha), [1.2, 1.5]);
         }
         // Yokes at the clamps (a bar, a triangle, a polygon), with their
         // section, in its cases.
@@ -310,9 +398,97 @@ fn wires(
             if y.len() > 2 {
                 ring.push(y[0]);
             }
-            s.polyline(&ring, rgba(steel, alpha), 2.0);
+            out.push(Prim::new(y[0], ring, rgba(steel, alpha), 2.0).at(0, 0));
         }
     }
+}
+
+/// The primitives of a layer drawn as primitives (structures, wires,
+/// other cases, project lines).
+pub fn prims(model: &Model, layer: Layer, case: usize) -> Vec<Prim> {
+    let mut out = Vec::new();
+    let line = &model.line;
+    match layer {
+        Layer::Structures => structures(&mut out, model, line, &model.cases, case, None),
+        Layer::Wires | Layer::OtherCases => {
+            wires(
+                &mut out,
+                model,
+                line,
+                &model.cases,
+                case,
+                layer == Layer::Wires,
+                None,
+            );
+        }
+        Layer::OtherLines => {
+            // Each project line shown drawn as the working line is (strings
+            // to their solved clamps, bundles, yokes, jumpers), in the same
+            // weather cases, in its colour.
+            for other in &model.other_lines {
+                let tint = Some(other.color);
+                structures(&mut out, model, &other.line, &other.cases, case, tint);
+                wires(&mut out, model, &other.line, &other.cases, case, true, tint);
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// Draws primitives at `level`, wires thinned to `per_span` points.
+pub fn draw_prims<'a>(
+    s: &mut Scene,
+    prims: impl IntoIterator<Item = &'a Prim>,
+    level: usize,
+    per_span: usize,
+) {
+    for p in prims {
+        if level < p.levels.0 || level > p.levels.1 {
+            continue;
+        }
+        if p.thinned && level > 0 {
+            s.polyline(&thin(&p.points, per_span), p.color, p.width);
+        } else {
+            s.polyline(&p.points, p.color, p.width);
+        }
+    }
+}
+
+/// `n` (≥ 2) points of a polyline, evenly by index, both ends kept.
+pub fn thin(points: &[[f64; 3]], n: usize) -> Vec<[f64; 3]> {
+    let n = n.max(2);
+    if points.len() <= n {
+        return points.to_vec();
+    }
+    let last = points.len() - 1;
+    (0..n)
+        .map(|i| points[(i * last + (n - 1) / 2) / (n - 1)])
+        .collect()
+}
+
+/// Shade of a ground triangle (light from the north-west, above).
+pub fn ground_color(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> [u8; 4] {
+    let light = {
+        let l = [-0.5f64, 0.5, 0.75];
+        let n = (l[0] * l[0] + l[1] * l[1] + l[2] * l[2]).sqrt();
+        l.map(|v| v / n)
+    };
+    let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    let mut n = [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ];
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
+    n = n.map(|x| x / len);
+    if n[2] < 0.0 {
+        n = n.map(|x| -x);
+    }
+    let lit = 0.4 + 0.6 * (n[0] * light[0] + n[1] * light[1] + n[2] * light[2]).max(0.0);
+    let col = [120.0, 108.0, 88.0].map(|x: f64| (x * lit * 1.3).min(255.0) as u8);
+    rgba(col, 255)
 }
 
 /// Builds one layer of `model` for weather case `case`.
@@ -323,30 +499,9 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         Layer::Ground => {
             if let Some(g) = &model.ground {
                 let (pts, tris) = g.mesh();
-                // Light from the north-west, above.
-                let light = {
-                    let l = [-0.5f64, 0.5, 0.75];
-                    let n = (l[0] * l[0] + l[1] * l[1] + l[2] * l[2]).sqrt();
-                    l.map(|v| v / n)
-                };
                 for t in tris {
                     let [a, b, c] = t.map(|i| pts[i]);
-                    let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-                    let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-                    let mut n = [
-                        u[1] * v[2] - u[2] * v[1],
-                        u[2] * v[0] - u[0] * v[2],
-                        u[0] * v[1] - u[1] * v[0],
-                    ];
-                    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
-                    n = n.map(|x| x / len);
-                    if n[2] < 0.0 {
-                        n = n.map(|x| -x);
-                    }
-                    let lit =
-                        0.4 + 0.6 * (n[0] * light[0] + n[1] * light[1] + n[2] * light[2]).max(0.0);
-                    let col = [120.0, 108.0, 88.0].map(|x: f64| (x * lit * 1.3).min(255.0) as u8);
-                    s.triangle([a, b, c], [rgba(col, 255); 3]);
+                    s.triangle([a, b, c], [ground_color(a, b, c); 3]);
                 }
             }
         }
@@ -396,27 +551,9 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                 }
             }
         }
-        Layer::Structures => structures(&mut s, model, line, &model.cases, case, None),
-        Layer::Wires | Layer::OtherCases => {
-            wires(
-                &mut s,
-                model,
-                line,
-                &model.cases,
-                case,
-                layer == Layer::Wires,
-                None,
-            );
-        }
-        Layer::OtherLines => {
-            // Each project line shown drawn as the working line is (strings
-            // to their solved clamps, bundles, yokes, jumpers), in the same
-            // weather cases, in its colour.
-            for other in &model.other_lines {
-                let tint = Some(other.color);
-                structures(&mut s, model, &other.line, &other.cases, case, tint);
-                wires(&mut s, model, &other.line, &other.cases, case, true, tint);
-            }
+        // Full detail (the chunks draw these by level: crate::chunks).
+        Layer::Structures | Layer::Wires | Layer::OtherCases | Layer::OtherLines => {
+            draw_prims(&mut s, &prims(model, layer, case), 0, usize::MAX);
         }
         // Drawn from the clearance report ([`marks`]).
         Layer::Clearances | Layer::Draft => {}

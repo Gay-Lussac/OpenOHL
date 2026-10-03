@@ -38,17 +38,20 @@ pub enum Tab {
     Library(crate::library::LibraryKind),
     /// A table of the line.
     Table(crate::tables::TableKind),
+    /// The level-of-detail table of the 3D view.
+    Lod,
 }
 
 impl Tab {
     /// The pages of the View menu (library pages: the Libraries menu).
-    pub const VIEWS: [Tab; 6] = [
+    pub const VIEWS: [Tab; 7] = [
         Tab::View3d,
         Tab::Plan,
         Tab::Profile,
         Tab::Properties,
         Tab::Model,
         Tab::Clearances,
+        Tab::Lod,
     ];
 
     /// Title on its tab.
@@ -62,6 +65,7 @@ impl Tab {
             Tab::Clearances => "Clearances",
             Tab::Library(k) => k.title(),
             Tab::Table(k) => k.title(),
+            Tab::Lod => "Level of detail",
         }
     }
 }
@@ -228,6 +232,8 @@ pub struct App {
     pub hotbar: crate::tools::Hotbar,
     /// The quick bar under the menus.
     pub quickbar: crate::menu::QuickBar,
+    /// Level of detail of the 3D view.
+    pub lod: crate::lod::LodSettings,
     /// The "Customize the quick bar" window is open.
     customize: bool,
     state: State,
@@ -277,6 +283,7 @@ impl App {
             snaps: crate::selection::Snaps::default(),
             hotbar: crate::tools::Hotbar::default(),
             quickbar: Default::default(),
+            lod: Default::default(),
             customize: false,
         }
     }
@@ -293,6 +300,7 @@ impl App {
             snaps: crate::selection::Snaps::default(),
             hotbar: crate::tools::Hotbar::default(),
             quickbar: Default::default(),
+            lod: Default::default(),
             customize: false,
         }
     }
@@ -318,6 +326,7 @@ impl App {
 struct Viewer<'a> {
     ready: &'a mut Ready,
     rs: Option<&'a egui_wgpu::RenderState>,
+    lod: &'a mut crate::lod::LodSettings,
 }
 
 impl TabViewer for Viewer<'_> {
@@ -376,6 +385,7 @@ impl TabViewer for Viewer<'_> {
                 &mut r.selection,
                 &r.visible,
                 &snaps,
+                self.lod,
             ),
             Tab::Plan => r.plan.ui(ui, &r.model, r.case, &mut r.selection, &snaps),
             Tab::Profile => r
@@ -402,6 +412,13 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Clearances => {
                 clearance_panel(ui, r);
+                None
+            }
+            Tab::Lod => {
+                let view3d = &r.view3d;
+                if self.lod.ui(ui, &|l| view3d.lod_stats(l)) {
+                    ui.ctx().request_repaint();
+                }
                 None
             }
             Tab::Table(kind) => {
@@ -1151,9 +1168,15 @@ impl Ready {
         done
     }
 
-    /// After the line changed: every 3D layer and the profile again.
+    /// After the line changed: the 3D layers of the line (not the ground
+    /// and the LiDAR points: an edit does not change them, and indexing
+    /// 5 million triangles took 0.3 s) and the profile again.
     fn refresh_views(&mut self) {
-        self.view3d.rebuild_all();
+        self.view3d.dirty.extend(
+            Layer::ALL
+                .into_iter()
+                .filter(|l| !matches!(l, Layer::Ground | Layer::Points)),
+        );
         self.profile.invalidate();
     }
 
@@ -2617,6 +2640,7 @@ impl eframe::App for App {
             }
         }
         self.quickbar.save(storage);
+        self.lod.save(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -2761,6 +2785,7 @@ impl eframe::App for App {
                                 &mut Viewer {
                                     ready,
                                     rs: self.render_state.as_ref(),
+                                    lod: &mut self.lod,
                                 },
                             );
                     });

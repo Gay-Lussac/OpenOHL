@@ -10,6 +10,8 @@ use std::collections::{HashMap, HashSet};
 
 use eframe::egui;
 use eframe::egui_wgpu;
+use ols_core::grid::Tile;
+use ols_render::lod::{ChunkSet, Frustum};
 use ols_render::{Camera, GpuScene, Renderer};
 
 use crate::controls::{Controls, Drag};
@@ -26,6 +28,9 @@ pub struct View3d {
     pub controls: Controls,
     renderer: Option<Renderer>,
     gpu: HashMap<Layer, GpuScene>,
+    /// Chunked layers: their index, chunks on the GPU, the row they were
+    /// built with ([`crate::lod`]).
+    chunks: HashMap<Layer, Chunked>,
     /// Layers to rebuild before the next frame.
     pub dirty: HashSet<Layer>,
     texture: Option<egui::TextureId>,
@@ -43,7 +48,23 @@ pub struct View3d {
     pub draft: Vec<[f64; 3]>,
 }
 
+/// A layer drawn in chunks.
+struct Chunked {
+    index: crate::chunks::ChunkIndex,
+    set: ChunkSet<Tile>,
+    row: crate::lod::LodRow,
+}
+
+/// Time for building chunks in one frame (the nearest first; the rest in
+/// the next frames).
+const BUILD_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
+
 impl View3d {
+    /// What a chunked layer drew in the last frame.
+    pub fn lod_stats(&self, layer: Layer) -> Option<ols_render::lod::PlanStats> {
+        self.chunks.get(&layer).map(|c| c.set.stats)
+    }
+
     /// Captures (`on`) or frees the mouse: captured, it is locked and
     /// hidden and moving it turns the view.
     pub fn set_captured(captured: &mut bool, ctx: &egui::Context, on: bool) {
@@ -74,6 +95,7 @@ impl View3d {
         selection: &mut Selection,
         visible: &HashSet<Layer>,
         snaps: &selection::Snaps,
+        lod: &crate::lod::LodSettings,
     ) -> Option<selection::Use> {
         let Some(rs) = rs else {
             ui.centered_and_justified(|ui| ui.label("3D view needs a GPU (wgpu)."));
@@ -276,6 +298,21 @@ impl View3d {
         // Upload changed layers, render, show.
         let device = &rs.device;
         for layer in self.dirty.drain() {
+            if crate::lod::CHUNKED.contains(&layer) {
+                // Indexed now, built by chunk as the view needs them.
+                let index = crate::chunks::ChunkIndex::new(model, layer, case);
+                let mut set = ChunkSet::default();
+                set.reset(index.keys());
+                self.chunks.insert(
+                    layer,
+                    Chunked {
+                        index,
+                        set,
+                        row: lod.row(layer),
+                    },
+                );
+                continue;
+            }
             let s = match layer {
                 Layer::Clearances => scene::marks(model.origin, &self.marks),
                 Layer::Draft => scene::draft(model.origin, &self.draft),
@@ -283,17 +320,68 @@ impl View3d {
             };
             self.gpu.insert(layer, GpuScene::new(device, &s));
         }
+        // Chunks: the level of each by its distance, the missing ones built
+        // nearest first within the frame's budget.
+        let aspect = f64::from(rect.width()) / f64::from(rect.height().max(1.0));
+        let frustum = Frustum::new(camera, aspect);
+        let mut wanted = Vec::new();
+        for layer in crate::lod::CHUNKED {
+            let Some(c) = self.chunks.get_mut(&layer) else {
+                continue;
+            };
+            if !visible.contains(&layer) {
+                c.set.stats = Default::default();
+                continue;
+            }
+            let row = lod.row(layer);
+            if row.detail != c.row.detail {
+                // Other details: the levels built go.
+                c.set.reset(c.index.keys());
+            }
+            c.row = row;
+            for w in c.set.plan(&frustum, &row.rule()) {
+                wanted.push((layer, w));
+            }
+        }
+        wanted.sort_by(|a, b| a.1.distance.total_cmp(&b.1.distance));
+        let started = std::time::Instant::now();
+        let mut built = HashSet::new();
+        let mut n_built = 0;
+        for (layer, w) in &wanted {
+            if n_built > 0 && started.elapsed() > BUILD_BUDGET {
+                break;
+            }
+            let Some(c) = self.chunks.get_mut(layer) else {
+                continue;
+            };
+            let s = c.index.build(model, *layer, &w.key, w.level, &c.row);
+            c.set.insert(&w.key, w.level, GpuScene::new(device, &s));
+            built.insert(*layer);
+            n_built += 1;
+        }
+        // What was built is drawn now; the rest in the next frames.
+        for layer in &built {
+            if let Some(c) = self.chunks.get_mut(layer) {
+                let rule = c.row.rule();
+                c.set.plan(&frustum, &rule);
+            }
+        }
+        if wanted.len() > n_built {
+            ui.ctx().request_repaint();
+        }
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));
         let ppp = ui.ctx().pixels_per_point();
         let px = [
             (rect.width() * ppp).round().max(1.0) as u32,
             (rect.height() * ppp).round().max(1.0) as u32,
         ];
-        let layers: Vec<&GpuScene> = Layer::ALL
-            .iter()
-            .filter(|l| visible.contains(l))
-            .filter_map(|l| self.gpu.get(l))
-            .collect();
+        let mut layers: Vec<&GpuScene> = Vec::new();
+        for l in Layer::ALL.iter().filter(|l| visible.contains(l)) {
+            match self.chunks.get(l) {
+                Some(c) => layers.extend(c.set.drawn()),
+                None => layers.extend(self.gpu.get(l)),
+            }
+        }
         let texture = renderer.render(device, &rs.queue, &layers, camera, px);
         // egui takes texture bytes as sRGB-encoded: a plain view of them.
         let view = texture.create_view(&eframe::wgpu::TextureViewDescriptor {

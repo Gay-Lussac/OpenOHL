@@ -15,8 +15,10 @@
 //! - A [`Camera`] orbits a target point: drag to turn, pan, zoom — and
 //!   projects points to the screen for picking ([`Camera::project`]).
 //!
-//! Chunk streaming and levels of detail come on top of this (ADR-0006,
-//! ADR-0008); the views stay the same.
+//! - Large layers are split into chunks with levels of detail, culled and
+//!   chosen by distance every frame ([`lod`]).
+
+pub mod lod;
 
 use nalgebra::{Matrix4, Point3, Vector3};
 use wgpu::util::DeviceExt;
