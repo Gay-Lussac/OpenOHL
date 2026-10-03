@@ -92,39 +92,9 @@ impl Wire {
         if self.bundle.len() <= 1 && self.bundle.first().is_none_or(|o| *o == [0.0, 0.0]) {
             return vec![q];
         }
-        let t = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-        let len = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
-        let (t, plan) = if len > 0.0 {
-            ([t[0] / len, t[1] / len, t[2] / len], t[0].hypot(t[1]))
-        } else {
-            ([1.0, 0.0, 0.0], 1.0)
-        };
-        // Across: horizontal, perpendicular to the wire in plan.
-        let across = if plan > 1e-12 {
-            let h = t[0].hypot(t[1]);
-            [t[1] / h, -t[0] / h, 0.0]
-        } else {
-            [1.0, 0.0, 0.0]
-        };
-        // Up: the vertical without its part along the wire.
-        let up = {
-            let u = [-t[2] * t[0], -t[2] * t[1], 1.0 - t[2] * t[2]];
-            let n = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
-            if n > 1e-12 {
-                [u[0] / n, u[1] / n, u[2] / n]
-            } else {
-                [0.0, 1.0, 0.0]
-            }
-        };
         self.bundle
             .iter()
-            .map(|o| {
-                [
-                    q[0] + o[0] * across[0] + o[1] * up[0],
-                    q[1] + o[0] * across[1] + o[1] * up[1],
-                    q[2] + o[0] * across[2] + o[1] * up[2],
-                ]
-            })
+            .map(|o| ols_line::bundle_point(q, a, b, *o))
             .collect()
     }
 

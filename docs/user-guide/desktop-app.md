@@ -20,11 +20,11 @@ cargo run --release -p ols-app -- project.ols          # with the project's poin
 | `--points` | Most LiDAR points shown (default 2 000 000). The ground surface is built from all ground points (lowest per 1 m cell) in the corridor. |
 | `--corridor` | Half width of the LiDAR corridor around the spans (default 60 m). |
 | `--controls` | Navigation scheme: `orbit` or `minecraft` (default: the one used last). |
-| `--screenshot FILE.png` (`--focus ID`) | Load, render the 3D view to an image and exit. |
+| `--screenshot FILE.png` (`--focus ID`, `--distance M`) | Load, render the 3D view to an image and exit (with `--focus`, looking at that structure's first attachment). |
 
 ## Views
 
-- **3D** — ground (shaded), LiDAR points coloured by class role (vegetation green, buildings red, water blue, wires yellow…), structures, insulator strings, wires in their phase colours, alignments. Navigation: see [Controls](#controls). Height exaggeration in the Model panel.
+- **3D** — ground (shaded), LiDAR points coloured by class role (vegetation green, buildings red, water blue, wires yellow…), structures, insulator strings, wires in their phase colours (bundles as their subconductors, `bundle_spacing` apart — one section, solved and selected as one), alignments. Navigation: see [Controls](#controls). Height exaggeration in the Model panel.
 - **Plan** — alignments, wires and structures from above, north up, with a scale bar. Drag, scroll at the pointer, double-click to centre.
 - **Profile** — per route: ground along the centreline, structures and wires by station; heights fit the visible stretch. Scroll zooms along the route, drag moves, double-click shows the whole route.
 - **Properties** — the selected structure (position, type, attachments, spans through it) or span (cable, circuit, electrical system and voltage, bundle, horizontal and maximum tension, sag and lowest point in every weather case). Links select related objects.

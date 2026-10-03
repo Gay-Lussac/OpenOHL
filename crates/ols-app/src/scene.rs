@@ -209,13 +209,19 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                 }
                 let alpha = if layer == Layer::Wires { 255 } else { 90 };
                 for shape in &solved.shapes {
-                    let col = line
-                        .sections
-                        .iter()
-                        .find(|x| x.id == shape.section)
-                        .map_or([176, 184, 192], |sec| rgb(&line.section_color(sec)));
+                    let sec = line.sections.iter().find(|x| x.id == shape.section);
+                    let col = sec.map_or([176, 184, 192], |sec| rgb(&line.section_color(sec)));
                     for span in &shape.spans {
-                        s.polyline(&span.points, rgba(col, alpha), 2.0);
+                        // Bundles: each subconductor (one section, solved
+                        // and selected as one).
+                        let lines = match sec {
+                            Some(sec) => sec.subconductor_polylines(&span.points),
+                            None => vec![span.points.clone()],
+                        };
+                        let width = if lines.len() > 1 { 1.5 } else { 2.0 };
+                        for l in &lines {
+                            s.polyline(l, rgba(col, alpha), width);
+                        }
                     }
                 }
                 for j in &solved.jumpers {
@@ -241,7 +247,14 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         .and_then(|c| c.shapes.iter().find(|x| &x.section == section))
                         && let Some(sp) = shape.spans.get(*span)
                     {
-                        s.polyline(&sp.points, hi, 5.0);
+                        let lines = match line.sections.iter().find(|x| &x.id == section) {
+                            Some(sec) => sec.subconductor_polylines(&sp.points),
+                            None => vec![sp.points.clone()],
+                        };
+                        let width = if lines.len() > 1 { 3.0 } else { 5.0 };
+                        for l in &lines {
+                            s.polyline(l, hi, width);
+                        }
                     }
                 }
                 Selection::None => {}

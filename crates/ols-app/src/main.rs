@@ -68,9 +68,12 @@ struct Args {
     /// one used last).
     #[arg(long)]
     controls: Option<String>,
-    /// With --screenshot: look at this structure from 250 m.
+    /// With --screenshot: look at this structure's first attachment.
     #[arg(long)]
     focus: Option<String>,
+    /// With --focus: from this distance, m.
+    #[arg(long, default_value_t = 250.0)]
+    distance: f64,
 }
 
 fn main() -> std::process::ExitCode {
@@ -94,7 +97,7 @@ fn main() -> std::process::ExitCode {
         corridor: args.corridor,
     };
     if let Some(path) = args.screenshot {
-        return match screenshot(sources, &path, args.focus.as_deref()) {
+        return match screenshot(sources, &path, args.focus.as_deref(), args.distance) {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -146,6 +149,7 @@ fn screenshot(
     sources: model::Sources,
     path: &std::path::Path,
     focus: Option<&str>,
+    distance: f64,
 ) -> Result<(), String> {
     let model = model::load(sources, &|m| eprintln!("{m}"))?;
     let sel = selection::Selection::None;
@@ -160,11 +164,13 @@ fn screenshot(
         .ok_or("nothing to show")?;
     let mut camera = ols_render::Camera::fit(&bounds);
     if let Some(id) = focus {
-        let sel = selection::Selection::Structure(id.to_owned());
-        camera.target = sel
-            .focus(&model, 0)
+        // Its first attachment's clamp (where the wires are).
+        let s = model
+            .line
+            .structure(id)
             .ok_or_else(|| format!("no structure {id}"))?;
-        camera.distance = 250.0;
+        camera.target = s.attachments.first().map_or(s.position, |a| a.wire_point);
+        camera.distance = distance;
         camera.pitch = 20f64.to_radians();
     }
     let refs: Vec<&ols_render::Scene> = scenes.iter().collect();

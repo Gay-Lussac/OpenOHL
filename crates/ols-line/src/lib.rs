@@ -346,7 +346,59 @@ fn one() -> u32 {
     1
 }
 
+/// The position of a subconductor at `offset` (across, up — see
+/// [`Section::bundle_offsets`]) from the centre-line point `q` of a wire
+/// running from `a` to `b`: across is horizontal, to the right looking from
+/// `a` to `b`; up is the vertical made square to the wire.
+pub fn bundle_point(q: Point, a: Point, b: Point, offset: [f64; 2]) -> Point {
+    let t = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let len = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
+    let t = if len > 0.0 {
+        t.map(|v| v / len)
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    let h = t[0].hypot(t[1]);
+    let across = if h > 1e-12 {
+        [t[1] / h, -t[0] / h, 0.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    let up = {
+        let u = [-t[2] * t[0], -t[2] * t[1], 1.0 - t[2] * t[2]];
+        let n = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
+        if n > 1e-12 {
+            u.map(|v| v / n)
+        } else {
+            [0.0, 1.0, 0.0]
+        }
+    };
+    [0, 1, 2].map(|k| q[k] + offset[0] * across[k] + offset[1] * up[k])
+}
+
 impl Section {
+    /// The polylines of the subconductors along a centre-line polyline of
+    /// this section (one polyline, the same points, for a single wire). At
+    /// each point the wire's direction is that between its neighbours.
+    pub fn subconductor_polylines(&self, points: &[Point]) -> Vec<Vec<Point>> {
+        let offsets = self.bundle_offsets();
+        if offsets.len() <= 1 {
+            return vec![points.to_vec()];
+        }
+        offsets
+            .iter()
+            .map(|o| {
+                (0..points.len())
+                    .map(|k| {
+                        let a = points[k.saturating_sub(1)];
+                        let b = points[(k + 1).min(points.len() - 1)];
+                        bundle_point(points[k], a, b, *o)
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
     /// Positions of the subconductors around the centre line, m: (across,
     /// up) in the plane across the wire — across to the right looking
     /// ahead, up away from the ground. On a circle of radius
@@ -784,6 +836,24 @@ mod tests {
         line.validate().unwrap();
         line.sections[0].bundle_spacing = Some(0.0);
         assert!(line.validate().is_err());
+        // Subconductor polylines along a level wire running north: a
+        // 2-bundle is 0.2 m east and west of it.
+        let mut sec = example().sections[0].clone();
+        sec.bundle = 2;
+        sec.bundle_spacing = Some(0.4);
+        let centre = [[0.0, 0.0, 10.0], [0.0, 50.0, 9.0], [0.0, 100.0, 10.0]];
+        let subs = sec.subconductor_polylines(&centre);
+        assert_eq!(subs.len(), 2);
+        for (k, p) in subs[0].iter().enumerate() {
+            assert!(
+                (p[0] - 0.2).abs() < 1e-9 && (p[1] - centre[k][1]).abs() < 1e-9,
+                "{p:?}"
+            );
+        }
+        assert!(subs[1].iter().all(|p| (p[0] + 0.2).abs() < 1e-9));
+        sec.bundle = 1;
+        sec.bundle_spacing = None;
+        assert_eq!(sec.subconductor_polylines(&centre), vec![centre.to_vec()]);
     }
 
     #[test]
