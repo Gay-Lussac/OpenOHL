@@ -15,45 +15,70 @@ use eframe::egui;
 pub enum Tool {
     /// Select objects and see their properties.
     Select,
-    /// Click a structure: a window to move it.
+    /// Right-click a structure: a window to move it.
     Move,
-    /// Click a structure: delete it (with confirmation).
+    /// Right-click a structure, a string, a span (its section) or a
+    /// jumper: delete it (with a confirmation listing what goes with it).
     Delete,
     /// Open the "Go to structure" window.
     GoTo,
+    /// Right-click a structure, a string or a span: its editor window.
+    Edit,
+    /// Right-click the ground: a new structure there.
+    AddStructure,
+    /// Right-click a structure: a new string on it.
+    AddString,
+    /// Right-click strings in line order, Enter: a new section.
+    StringWire,
 }
 
 impl Tool {
     /// Every tool (the inventory).
-    pub const ALL: [Tool; 4] = [Tool::Select, Tool::Move, Tool::Delete, Tool::GoTo];
+    pub const ALL: [Tool; 8] = [
+        Tool::Select,
+        Tool::Move,
+        Tool::Delete,
+        Tool::GoTo,
+        Tool::Edit,
+        Tool::AddStructure,
+        Tool::AddString,
+        Tool::StringWire,
+    ];
 
     /// Name.
     pub fn name(self) -> &'static str {
         match self {
             Tool::Select => "Select",
             Tool::Move => "Move structure",
-            Tool::Delete => "Delete structure",
+            Tool::Delete => "Delete",
             Tool::GoTo => "Go to structure",
+            Tool::Edit => "Edit",
+            Tool::AddStructure => "Add structure",
+            Tool::AddString => "Add string",
+            Tool::StringWire => "String wire",
         }
     }
 
-    /// Icon in a slot.
+    /// Icon in a slot (glyphs of egui's default fonts).
     pub fn icon(self) -> &'static str {
         match self {
             Tool::Select => "⬉",
             Tool::Move => "✋",
             Tool::Delete => "🗑",
             Tool::GoTo => "⤴",
+            Tool::Edit => "🖊",
+            Tool::AddStructure => "‡",
+            Tool::AddString => "⛓",
+            Tool::StringWire => "≈",
         }
     }
 
     /// Its shortcut key, if any.
     pub fn key(self) -> Option<&'static str> {
         match self {
-            Tool::Select => None,
             Tool::Move => Some("M"),
-            Tool::Delete => None,
             Tool::GoTo => Some("G"),
+            _ => None,
         }
     }
 
@@ -62,14 +87,29 @@ impl Tool {
         match self {
             Tool::Select => "right-click an object to select it",
             Tool::Move => "right-click a structure to move it",
-            Tool::Delete => "right-click a structure to delete it",
+            Tool::Delete => "right-click a structure, string, span or jumper to delete it",
             Tool::GoTo => "right-click to open the Go to window",
+            Tool::Edit => "right-click a structure, string or span to edit it",
+            Tool::AddStructure => "right-click the ground to add a structure there",
+            Tool::AddString => "right-click a structure to add a string to it",
+            Tool::StringWire => {
+                "right-click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"
+            }
         }
     }
 
     /// Whether it changes the model (needs editing rights).
     pub fn edits(self) -> bool {
-        matches!(self, Tool::Move | Tool::Delete)
+        !matches!(self, Tool::Select | Tool::GoTo)
+    }
+
+    /// Strings (attachment points) can be right-clicked while it is held,
+    /// whatever the Snap tab says.
+    pub fn picks_strings(self) -> bool {
+        matches!(
+            self,
+            Tool::Delete | Tool::Edit | Tool::AddString | Tool::StringWire
+        )
     }
 
     fn key_name(self) -> &'static str {
@@ -78,6 +118,10 @@ impl Tool {
             Tool::Move => "move",
             Tool::Delete => "delete",
             Tool::GoTo => "goto",
+            Tool::Edit => "edit",
+            Tool::AddStructure => "add_structure",
+            Tool::AddString => "add_string",
+            Tool::StringWire => "string_wire",
         }
     }
 }

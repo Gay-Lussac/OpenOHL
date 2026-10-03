@@ -81,8 +81,15 @@ pub struct Ready {
     pub goto: Option<String>,
     /// What the last edit did (or why it was not done: `true`).
     pub status: Option<(String, bool)>,
-    /// A deletion waiting for its confirmation: what it takes with it.
-    pub confirm: Option<Box<ols_session::Impact>>,
+    /// A deletion waiting for its confirmation: what it takes with it, and
+    /// the deletion confirmed.
+    pub confirm: Option<(Box<ols_session::Impact>, crate::edit::Action)>,
+    /// The editor window open (structure, string, section).
+    pub editor: Option<crate::editors::Form>,
+    /// String wire: the strings right-clicked so far.
+    pub chain: Vec<ols_line::SectionPoint>,
+    /// String wire: the section whose points are picked again.
+    pub restring: Option<String>,
     /// Tools: the hotbar (the active tool says what a click does).
     pub hotbar: crate::tools::Hotbar,
     /// The inventory window is open.
@@ -122,6 +129,9 @@ impl Ready {
             goto: None,
             status: None,
             confirm: None,
+            editor: None,
+            chain: Vec::new(),
+            restring: None,
             hotbar: crate::tools::Hotbar::default(),
             inventory: false,
             move_dialog: None,
@@ -271,6 +281,7 @@ impl TabViewer for Viewer<'_> {
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
         let r = &mut *self.ready;
         let before = r.selection.clone();
+        let snaps = r.effective_snaps();
         let used = match tab {
             Tab::View3d => r.view3d.ui(
                 ui,
@@ -279,12 +290,13 @@ impl TabViewer for Viewer<'_> {
                 r.case,
                 &mut r.selection,
                 &r.visible,
-                &r.snaps,
+                &snaps,
             ),
-            Tab::Plan => r.plan.ui(ui, &r.model, r.case, &mut r.selection, &r.snaps),
+            Tab::Plan => r.plan.ui(ui, &r.model, r.case, &mut r.selection, &snaps),
             Tab::Profile => r
                 .profile
-                .ui(ui, &r.model, r.case, &mut r.selection, &r.snaps),
+                .ui(ui, &r.model, r.case, &mut r.selection, &snaps)
+                .map(|target| crate::selection::Use { target, at: None }),
             Tab::Properties => {
                 let editable = r.model.can_edit().is_ok();
                 let action = crate::properties::ui(
@@ -323,19 +335,29 @@ impl TabViewer for Viewer<'_> {
 }
 
 impl Ready {
-    /// Uses the held tool on `target` (right-clicked in a view): Move
-    /// and Delete act on a structure, Go to opens its window (at the
-    /// structure, if one), Select selects.
-    pub fn use_tool(&mut self, target: Selection) {
+    /// What can be right-clicked now: the Snap tab's choice, and strings
+    /// while a tool that works on them is held.
+    pub fn effective_snaps(&self) -> crate::selection::Snaps {
+        let mut s = self.snaps.clone();
+        if self.hotbar.tool().picks_strings() {
+            s.0.insert(crate::selection::Snap::Attachment);
+        }
+        s
+    }
+
+    /// Uses the held tool on what was right-clicked in a view: Select
+    /// selects, Go to opens its window, the editing tools act on the object
+    /// (or, Add structure, on the ground point).
+    pub fn use_tool(&mut self, u: crate::selection::Use) {
         use crate::tools::Tool;
         let tool = self.hotbar.tool();
-        match (tool, &target) {
-            (Tool::Select, _) => {
-                self.selection = target;
-                self.view3d.dirty.insert(Layer::Selection);
+        let target = u.target;
+        match tool {
+            Tool::Select => {
+                self.select(target);
                 return;
             }
-            (Tool::GoTo, _) => {
+            Tool::GoTo => {
                 self.goto = Some(match &target {
                     Selection::Structure(id) => id.clone(),
                     _ => self
@@ -348,18 +370,160 @@ impl Ready {
                 });
                 return;
             }
-            (_, Selection::Structure(_)) => {}
-            _ => {
-                self.status = Some((format!("{}: right-click a structure", tool.name()), true));
-                return;
-            }
+            _ => {}
         }
-        let Selection::Structure(id) = target else {
+        if let Err(why) = self.model.can_edit() {
+            self.status = Some((format!("{}: read-only — {why}", tool.name()), true));
             return;
-        };
-        self.selection = Selection::Structure(id.clone());
+        }
+        use crate::editors::{Form, SectionForm, StringForm, StructureForm};
+        let model = &self.model;
+        match (tool, &target) {
+            (Tool::Move, Selection::Structure(id)) => {
+                let id = id.clone();
+                self.select(target);
+                self.use_tool_on(&id);
+            }
+            (Tool::Delete, _) => {
+                if let Some(action) = delete_action(&target) {
+                    self.select(target);
+                    self.perform(action);
+                } else {
+                    self.hint(tool);
+                }
+            }
+            (Tool::Edit, Selection::Structure(id)) => {
+                self.editor = StructureForm::of(model, id).map(Form::Structure);
+                self.select(target);
+            }
+            (
+                Tool::Edit,
+                Selection::Attachment {
+                    structure,
+                    set,
+                    phase,
+                },
+            ) => {
+                self.editor = StringForm::of(model, structure, *set, *phase).map(Form::String);
+                self.select(target);
+            }
+            (Tool::Edit, Selection::Span { section, .. }) => {
+                self.editor = SectionForm::of(model, section).map(Form::Section);
+                self.select(target);
+            }
+            (Tool::AddStructure, _) => match u.at {
+                Some(at) => {
+                    self.editor = Some(Form::Structure(StructureForm::new_at(model, at)));
+                }
+                None => {
+                    self.status = Some((
+                        "Add structure: right-click the ground (3D or plan view)".into(),
+                        true,
+                    ));
+                }
+            },
+            (
+                Tool::AddString,
+                Selection::Structure(id) | Selection::Attachment { structure: id, .. },
+            ) => {
+                self.editor = StringForm::new_on(model, id).map(Form::String);
+                self.select(Selection::Structure(id.clone()));
+            }
+            (
+                Tool::StringWire,
+                Selection::Attachment {
+                    structure,
+                    set,
+                    phase,
+                },
+            ) => {
+                let p = ols_line::SectionPoint {
+                    structure: structure.clone(),
+                    set: *set,
+                    phase: *phase,
+                };
+                if self.chain.last() == Some(&p) {
+                    return;
+                }
+                if self.chain.contains(&p) {
+                    self.status = Some((
+                        format!("String wire: {structure} {set}:{phase} is in the section already"),
+                        true,
+                    ));
+                    return;
+                }
+                self.chain.push(p);
+                self.update_draft();
+                self.status = Some((
+                    format!(
+                        "String wire: {} points — right-click the next string, Enter: section, Backspace: undo a point, Escape: cancel",
+                        self.chain.len()
+                    ),
+                    false,
+                ));
+            }
+            _ => self.hint(tool),
+        }
+    }
+
+    /// "Tool: what to right-click" in the status bar.
+    fn hint(&mut self, tool: crate::tools::Tool) {
+        self.status = Some((format!("{}: {}", tool.name(), tool.help()), true));
+    }
+
+    /// Selects `target`.
+    pub fn select(&mut self, target: Selection) {
+        self.selection = target;
         self.view3d.dirty.insert(Layer::Selection);
-        self.use_tool_on(&id);
+    }
+
+    /// The wire being strung, drawn.
+    pub fn update_draft(&mut self) {
+        self.view3d.draft = self
+            .chain
+            .iter()
+            .filter_map(|p| self.model.line.attachment(p).map(|a| a.wire_point))
+            .collect();
+        self.view3d.dirty.insert(Layer::Draft);
+    }
+
+    /// Ends the wire being strung: its section's window (a new section, or
+    /// the one whose points are picked again).
+    pub fn finish_chain(&mut self) {
+        use crate::editors::{Form, SectionForm};
+        if self.chain.len() < 2 {
+            self.status = Some(("String wire: right-click two strings or more".into(), true));
+            return;
+        }
+        let points = std::mem::take(&mut self.chain);
+        let form = match self.restring.take() {
+            Some(id) => SectionForm::of(&self.model, &id).map(|mut f| {
+                f.set_points(&self.model, self.case, points);
+                f
+            }),
+            None => {
+                let template = match &self.selection {
+                    Selection::Span { section, .. } => Some(section.clone()),
+                    _ => None,
+                };
+                Some(SectionForm::new_through(
+                    &self.model,
+                    self.case,
+                    points,
+                    template.as_deref(),
+                ))
+            }
+        };
+        self.editor = form.map(Form::Section);
+        self.update_draft();
+    }
+
+    /// Gives up the wire being strung.
+    pub fn cancel_chain(&mut self) {
+        self.chain.clear();
+        self.restring = None;
+        self.update_draft();
+        self.status = Some(("String wire: cancelled".into(), false));
     }
 
     /// The held Move or Delete tool used on structure `id`.
@@ -387,12 +551,14 @@ impl Ready {
                     });
                 }
             }
-            Tool::Delete => self.perform(crate::edit::Action::Delete {
-                kind: ols_session::Kind::Structure,
-                id: id.to_owned(),
-                confirm: false,
-            }),
-            Tool::Select | Tool::GoTo => {}
+            Tool::Delete => {
+                self.perform(crate::edit::Action::Delete {
+                    kind: ols_session::Kind::Structure,
+                    id: id.to_owned(),
+                    confirm: false,
+                });
+            }
+            _ => {}
         }
     }
 
@@ -405,20 +571,36 @@ impl Ready {
         }
     }
 
-    /// Performs an edit and updates the views.
-    pub fn perform(&mut self, action: crate::edit::Action) {
+    /// Performs an edit and updates the views; whether it was made.
+    pub fn perform(&mut self, action: crate::edit::Action) -> bool {
         use crate::edit::{Action, EditError};
+        let retry = action.confirmed();
         let result = match action {
             Action::PreviewMove { id, position } => {
                 self.model.preview_move(self.case, &id, position);
                 self.refresh_views();
-                return;
+                return true;
             }
             Action::CancelPreview { id } => {
                 self.model.cancel_preview(self.case, &id);
                 self.refresh_views();
-                return;
+                return true;
             }
+            Action::Command { what, command } => self.model.apply(&what, command),
+            Action::DeleteAttachment {
+                structure,
+                set,
+                phase,
+                confirm,
+            } => self.model.apply(
+                &format!("deleted string {set}:{phase} of {structure}"),
+                ols_session::Command::DeleteAttachment {
+                    structure,
+                    set,
+                    phase,
+                    confirm,
+                },
+            ),
             Action::Move { id, position } => self.model.apply(
                 &format!("moved {id}"),
                 ols_session::Command::MoveStructure {
@@ -433,24 +615,33 @@ impl Ready {
             Action::Undo => self.model.undo(),
             Action::Redo => self.model.redo(),
         };
-        match result {
+        let done = match result {
             Ok(report) => {
                 log::info!("{report}");
                 self.status = Some((report, false));
                 self.confirm = None;
                 self.clearances.stale = true;
+                true
             }
-            Err(EditError::NeedsConfirmation(impact)) => self.confirm = Some(impact),
+            Err(EditError::NeedsConfirmation(impact)) => {
+                self.confirm = retry.map(|a| (impact, a));
+                false
+            }
             Err(e) => {
                 log::warn!("{e}");
                 self.status = Some((e.to_string(), true));
+                false
             }
-        }
+        };
         self.edit_position = None;
         if !self.selection_exists() {
             self.selection = Selection::None;
         }
+        self.chain
+            .retain(|p| self.model.line.attachment(p).is_some());
+        self.update_draft();
         self.refresh_views();
+        done
     }
 
     /// After the line changed: every 3D layer and the profile again.
@@ -502,6 +693,34 @@ impl Ready {
     }
 }
 
+/// The deletion of a right-clicked object: a structure, a string, a span's
+/// section, a jumper.
+fn delete_action(target: &Selection) -> Option<crate::edit::Action> {
+    use crate::edit::Action;
+    use ols_session::Kind;
+    let del = |kind, id: &String| Action::Delete {
+        kind,
+        id: id.clone(),
+        confirm: false,
+    };
+    Some(match target {
+        Selection::Structure(id) => del(Kind::Structure, id),
+        Selection::Span { section, .. } => del(Kind::Section, section),
+        Selection::Jumper(id) => del(Kind::Jumper, id),
+        Selection::Attachment {
+            structure,
+            set,
+            phase,
+        } => Action::DeleteAttachment {
+            structure: structure.clone(),
+            set: *set,
+            phase: *phase,
+            confirm: false,
+        },
+        _ => return None,
+    })
+}
+
 /// G opens "Go to structure" (not while typing).
 fn goto_key(ctx: &egui::Context, r: &mut Ready) {
     let open_key = !ctx.text_edit_focused() && ctx.input(|i| i.key_pressed(egui::Key::G));
@@ -518,7 +737,8 @@ fn goto_key(ctx: &egui::Context, r: &mut Ready) {
 /// opens at the crosshair in first person (else at the mouse), and a
 /// captured mouse is freed — a window needs the cursor.
 fn popups(ctx: &egui::Context, r: &mut Ready) {
-    let open = r.goto.is_some() || r.move_dialog.is_some() || r.confirm.is_some();
+    let open =
+        r.goto.is_some() || r.move_dialog.is_some() || r.confirm.is_some() || r.editor.is_some();
     if open && !r.popup_open {
         let crosshair = r.view3d.rect.map(|x| x.center());
         let at = if r.view3d.captured {
@@ -589,8 +809,29 @@ fn goto_window(ctx: &egui::Context, r: &mut Ready) {
 /// tool, E opens the inventory, 1–9 choose a hotbar slot; the wheel scrolls
 /// the hotbar while the mouse is captured.
 fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
-    use crate::edit::Action;
     use crate::tools::Tool;
+    // The wire being strung: Enter ends it, Backspace takes the last point
+    // back, Escape (with a free mouse) gives it up.
+    let windows = r.editor.is_some() || r.goto.is_some() || r.move_dialog.is_some();
+    if !r.chain.is_empty() && !ctx.text_edit_focused() && !windows {
+        let captured = r.view3d.captured;
+        let (enter, back, escape) = ctx.input_mut(|i| {
+            use egui::{Key, Modifiers};
+            (
+                i.consume_key(Modifiers::NONE, Key::Enter),
+                i.consume_key(Modifiers::NONE, Key::Backspace),
+                !captured && i.consume_key(Modifiers::NONE, Key::Escape),
+            )
+        });
+        if enter {
+            r.finish_chain();
+        } else if escape {
+            r.cancel_chain();
+        } else if back {
+            r.chain.pop();
+            r.update_draft();
+        }
+    }
     if !ctx.text_edit_focused() {
         // Redo first: ⇧⌘Z also matches ⌘Z when shift is ignored.
         let (redo, undo, delete, move_key, inventory, slot) = ctx.input_mut(|i| {
@@ -622,10 +863,10 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         });
         let editable = r.model.can_edit().is_ok();
         if undo && editable {
-            r.perform(Action::Undo);
+            r.perform(crate::edit::Action::Undo);
         }
         if redo && editable {
-            r.perform(Action::Redo);
+            r.perform(crate::edit::Action::Redo);
         }
         if move_key {
             r.hotbar.hold(Tool::Move);
@@ -645,13 +886,9 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         }
         if delete
             && editable
-            && let Selection::Structure(id) = r.selection.clone()
+            && let Some(action) = delete_action(&r.selection)
         {
-            r.perform(Action::Delete {
-                kind: ols_session::Kind::Structure,
-                id,
-                confirm: false,
-            });
+            r.perform(action);
         }
     }
     // Captured mouse: the wheel (without Ctrl) scrolls the hotbar, wheel
@@ -684,9 +921,8 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
 }
 
 /// The tool windows: hotbar, inventory, Go to, Move structure, the
-/// confirmation of a deletion.
+/// editor, the confirmation of a deletion.
 fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
-    use crate::edit::Action;
     // At the bottom of the 3D view.
     let at = r
         .view3d
@@ -696,16 +932,12 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
     move_window(ctx, r);
-    let Some(impact) = r.confirm.clone() else {
+    editor_window(ctx, r);
+    let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
     };
     let mut decision: Option<bool> = None;
-    tool_window(
-        r,
-        "confirm",
-        format!("Delete {} {}?", impact.kind.as_str(), impact.id),
-    )
-    .show(ctx, |ui| {
+    tool_window(r, "confirm", format!("Delete {}?", impact.what())).show(ctx, |ui| {
         ui.label("This also deletes or changes:");
         egui::ScrollArea::vertical()
             .max_height(300.0)
@@ -734,13 +966,89 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
         decision = Some(false);
     }
     match decision {
-        Some(true) => r.perform(Action::Delete {
-            kind: impact.kind,
-            id: impact.id.clone(),
-            confirm: true,
-        }),
+        Some(true) => {
+            r.perform(confirmed);
+        }
         Some(false) => r.confirm = None,
         None => {}
+    }
+}
+
+/// The editor window (structure, string, section): Apply (Enter) makes one
+/// command and closes it — unless the session refuses it (the reason is
+/// shown, the window stays); Cancel (Escape) closes it.
+fn editor_window(ctx: &egui::Context, r: &mut Ready) {
+    use crate::editors::{Form, Outcome};
+    let Some(mut form) = r.editor.clone() else {
+        return;
+    };
+    let mut outcome = None;
+    tool_window(r, "editor", form.title()).show(ctx, |ui| {
+        outcome = form.ui(ui, &r.model);
+        if let Some((text, true)) = &r.status {
+            ui.colored_label(egui::Color32::LIGHT_RED, egui::RichText::new(text).small());
+        }
+    });
+    if outcome.is_none() {
+        outcome = ctx.input(|i| {
+            if i.key_pressed(egui::Key::Escape) {
+                Some(Outcome::Cancel)
+            } else if i.key_pressed(egui::Key::Enter) {
+                Some(Outcome::Apply)
+            } else {
+                None
+            }
+        });
+    }
+    let apply = |r: &mut Ready, form: Form, reset: bool| match form.command(&r.model, reset) {
+        Ok((what, command)) => {
+            if r.perform(crate::edit::Action::Command { what, command }) {
+                r.editor = None;
+                // Select what was made.
+                match &form {
+                    Form::Structure(f) if f.new => r.select(Selection::Structure(f.id.clone())),
+                    Form::Section(f) if f.new => r.select(Selection::Span {
+                        section: f.id.clone(),
+                        span: 0,
+                    }),
+                    Form::String(f) if f.new => r.select(Selection::Attachment {
+                        structure: f.structure.clone(),
+                        set: f.set,
+                        phase: f.phase,
+                    }),
+                    _ => {}
+                }
+            } else {
+                r.editor = Some(form);
+            }
+        }
+        Err(e) => {
+            r.status = Some((e, true));
+            r.editor = Some(form);
+        }
+    };
+    match outcome {
+        Some(Outcome::Apply) => apply(r, form, false),
+        Some(Outcome::ResetString) => apply(r, form, true),
+        Some(Outcome::PickPoints) => {
+            r.editor = None;
+            if let Form::Section(f) = &form
+                && !f.new
+            {
+                r.restring = Some(f.id.clone());
+            }
+            r.chain.clear();
+            r.hotbar.hold(crate::tools::Tool::StringWire);
+            r.status = Some((
+                "String wire: right-click the strings in line order, then Enter".into(),
+                false,
+            ));
+        }
+        Some(Outcome::Cancel) => {
+            r.editor = None;
+            r.status = None;
+        }
+        None => r.editor = Some(form),
     }
 }
 

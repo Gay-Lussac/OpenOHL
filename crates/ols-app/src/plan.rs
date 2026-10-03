@@ -65,7 +65,7 @@ impl PlanView {
         case: usize,
         selection: &mut Selection,
         snaps: &selection::Snaps,
-    ) -> Option<Selection> {
+    ) -> Option<selection::Use> {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         if self.centre.is_none() {
@@ -109,7 +109,7 @@ impl PlanView {
         let used = if response.secondary_clicked()
             && let Some(pos) = response.interact_pointer_pos()
         {
-            Some(selection::pick_in_model(
+            let target = selection::pick_in_model(
                 model,
                 case,
                 snaps,
@@ -119,7 +119,28 @@ impl PlanView {
                     let q = to_screen(p);
                     Some([f64::from(q.x), f64::from(q.y)])
                 },
-            ))
+            );
+            let (x, y) = (
+                c[0] + f64::from(pos.x - mid.x) / scale,
+                c[1] - f64::from(pos.y - mid.y) / scale,
+            );
+            // Without ground: the height of the nearest structure's base.
+            let z = model.ground_at(x, y).unwrap_or_else(|| {
+                model
+                    .line
+                    .structures
+                    .iter()
+                    .min_by(|a, b| {
+                        let d =
+                            |s: &&ols_line::Structure| (s.position[0] - x).hypot(s.position[1] - y);
+                        d(a).total_cmp(&d(b))
+                    })
+                    .map_or(model.origin[2], |s| s.position[2])
+            });
+            Some(selection::Use {
+                target,
+                at: Some([x, y, z]),
+            })
         } else {
             None
         };

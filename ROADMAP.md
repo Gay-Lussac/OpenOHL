@@ -99,8 +99,8 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] 3D navigation: fly with W A S D, Space/Shift up/down, Ctrl faster; control schemes as data (Orbit; Minecraft creative with captured mouse, crosshair selection, Escape to free) — more schemes and editing later
 - [ ] Command palette, keyboard workflows, explainable results (click value → inputs & references)
 - [x] Editing through the session in the app: move (drag or typed position) and delete structures (confirmation listing what goes with them), undo/redo, incremental re-solve of every case
-- [ ] Interactive structure spotting: add structures (type, attachments), spot on the profile
-- [ ] Wire stringing UI (sections, tension criteria, weather cases)
+- [x] Structures and strings in the app: Add structure (on the ground, type from the library), Add string, Edit (structure, string in the structure's axes, override of a type's string) and Delete (structures, strings, sections, jumpers) tools, one session command each *(spotting on the profile still open)*
+- [x] Wire stringing: String wire tool (strings in order → section window: cable, circuit, system, bundle, tension or unstressed lengths), sections edited and strung again through new points *(tension criteria by weather case still open)*
 - [x] Clearance violation display: Clearances tab (rule file, violations of the shown case re-checked after edits in the background, click to go there), red marks in 3D and plan *(reports: `ols line --clearance-csv`)*
 - [ ] Library editors (cables, insulators, structures, weather cases)
 - [ ] Plugin manager UI

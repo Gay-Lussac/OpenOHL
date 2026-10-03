@@ -27,13 +27,15 @@ pub enum Layer {
     /// Clearance violations: wire to target, red
     /// ([`View3d::marks`](crate::view3d::View3d::marks)).
     Clearances,
+    /// A wire being strung (String wire tool).
+    Draft,
     /// The selection, highlighted.
     Selection,
 }
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 8] = [
+    pub const ALL: [Layer; 9] = [
         Layer::Ground,
         Layer::Points,
         Layer::Alignment,
@@ -41,6 +43,7 @@ impl Layer {
         Layer::Wires,
         Layer::OtherCases,
         Layer::Clearances,
+        Layer::Draft,
         Layer::Selection,
     ];
 
@@ -54,6 +57,7 @@ impl Layer {
             Layer::Wires => "Wires (selected case)",
             Layer::OtherCases => "Wires (other cases)",
             Layer::Clearances => "Clearance violations",
+            Layer::Draft => "Wire being strung",
             Layer::Selection => "Selection",
         }
     }
@@ -296,7 +300,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
             }
         }
         // Drawn from the clearance report ([`marks`]).
-        Layer::Clearances => {}
+        Layer::Clearances | Layer::Draft => {}
         Layer::Selection => {
             let hi = [255, 255, 255, 255];
             match selection {
@@ -382,6 +386,18 @@ pub fn marks(origin: [f64; 3], marks: &[([f64; 3], [f64; 3])]) -> Scene {
         s.polyline(&[*at, *target], [255, 60, 50, 255], 2.5);
         s.point(*at, [255, 60, 50, 255], 9.0);
         s.point(*target, [255, 160, 60, 255], 6.0);
+    }
+    s
+}
+
+/// A wire being strung: its points joined, yellow.
+pub fn draft(origin: [f64; 3], points: &[[f64; 3]]) -> Scene {
+    let mut s = Scene::new(origin);
+    if points.len() > 1 {
+        s.polyline(points, [255, 220, 60, 255], 3.0);
+    }
+    for p in points {
+        s.point(*p, [255, 220, 60, 255], 11.0);
     }
     s
 }

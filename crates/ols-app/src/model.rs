@@ -246,15 +246,16 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
         &mut log,
     );
     let mut types = None;
-    if line.structures.iter().any(|s| s.structure_type.is_some()) {
-        let dir = sources.structures.clone().unwrap_or_else(|| {
-            let local = dir_of(&sources.file).join("Structures");
-            if local.is_dir() {
-                local
-            } else {
-                PathBuf::from("libraries/structures")
-            }
-        });
+    let dir = sources.structures.clone().unwrap_or_else(|| {
+        let local = dir_of(&sources.file).join("Structures");
+        if local.is_dir() {
+            local
+        } else {
+            PathBuf::from("libraries/structures")
+        }
+    });
+    // Also without typed structures, when there are types to add.
+    if line.structures.iter().any(|s| s.structure_type.is_some()) || dir.is_dir() {
         let structures =
             ols_structures::StructureLibrary::load_dir(&dir).map_err(|e| e.to_string())?;
         let insulators = ols_structures::InsulatorLibrary::load_dir(

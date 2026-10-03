@@ -19,6 +19,7 @@ mod app;
 mod clearance;
 mod controls;
 mod edit;
+mod editors;
 mod model;
 mod plan;
 mod profile;

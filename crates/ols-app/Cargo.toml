@@ -23,6 +23,7 @@ ols-lidar.workspace = true
 ols-pointcloud.workspace = true
 ols-session.workspace = true
 ols-clearance.workspace = true
+serde_json.workspace = true
 ols-drawing.workspace = true
 ols-render.workspace = true
 eframe.workspace = true

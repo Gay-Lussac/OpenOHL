@@ -42,6 +42,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `type` | no | Structure type id from the [structure library](structure-library.md); attachments are then generated. |
 | `extension` | no | Height extension of the type. |
 | `attachments` | yes, unless `type` | Attachment points (below); with a `type` they override the type's attachments with the same set and phase. |
+| `omit` | no | With a `type`: attachments of the type left out, as `[set, phase]` pairs (an explicit attachment with the same set and phase still counts). |
 
 ### Attachments
 

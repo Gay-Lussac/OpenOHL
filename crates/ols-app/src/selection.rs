@@ -46,6 +46,16 @@ pub enum Selection {
     LidarPoint(usize),
 }
 
+/// A right-click in a view: what is there, and the point on the ground
+/// under it (when the view knows one).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Use {
+    /// The object right-clicked (or nothing).
+    pub target: Selection,
+    /// The ground under the pointer (the crosshair in first person).
+    pub at: Option<[f64; 3]>,
+}
+
 /// What can be clicked (snapped to), switched on and off in the Snap tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Snap {

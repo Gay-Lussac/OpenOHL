@@ -174,6 +174,46 @@ impl Model {
         }
     }
 
+    /// The project's line as stored (structure types not resolved), when
+    /// it can be edited.
+    pub fn stored_line(&self) -> Option<&Line> {
+        self.editing.as_ref().ok().map(|e| e.session.line())
+    }
+
+    /// Where the ray from `a` along unit direction `d` first meets the
+    /// ground (within 20 km), else the horizontal plane through
+    /// `fallback_z` (when the ray goes down to it).
+    pub fn ground_hit(&self, a: [f64; 3], d: [f64; 3], fallback_z: f64) -> Option<[f64; 3]> {
+        let at = |t: f64| [a[0] + t * d[0], a[1] + t * d[1], a[2] + t * d[2]];
+        let below = |t: f64| {
+            let p = at(t);
+            self.ground_at(p[0], p[1]).map(|z| p[2] <= z)
+        };
+        if self.ground.is_some() {
+            // Steps growing with the distance (1 % of it, at least 0.5 m),
+            // then halving to 1 cm.
+            let (mut t0, mut t) = (0.0, 0.5);
+            while t < 20_000.0 {
+                if below(t) == Some(true) {
+                    let mut t1 = t;
+                    while t1 - t0 > 0.01 {
+                        let m = 0.5 * (t0 + t1);
+                        if below(m) == Some(true) {
+                            t1 = m;
+                        } else {
+                            t0 = m;
+                        }
+                    }
+                    let p = at(t1);
+                    return Some([p[0], p[1], self.ground_at(p[0], p[1]).unwrap_or(p[2])]);
+                }
+                t0 = t;
+                t += (0.01 * t).max(0.5);
+            }
+        }
+        (d[2] < -1e-9).then(|| at((fallback_z - a[2]) / d[2]))
+    }
+
     /// The ground height under (x, y), if there is ground there.
     pub fn ground_at(&self, x: f64, y: f64) -> Option<f64> {
         self.ground.as_ref().and_then(|g| g.height(x, y))
@@ -202,6 +242,25 @@ pub enum Action {
         /// Structure.
         id: String,
     },
+    /// Apply a session command (made by an editor window).
+    Command {
+        /// What it does, in words.
+        what: String,
+        /// The command.
+        command: Command,
+    },
+    /// Delete a structure's string (asks for a confirmation when sections
+    /// or jumpers go with it).
+    DeleteAttachment {
+        /// Structure.
+        structure: String,
+        /// Set.
+        set: u32,
+        /// Phase.
+        phase: u32,
+        /// Confirmed.
+        confirm: bool,
+    },
     /// Delete an object (asks for a confirmation when it takes others).
     Delete {
         /// Kind.
@@ -215,4 +274,29 @@ pub enum Action {
     Undo,
     /// Redo the user's last undo.
     Redo,
+}
+
+impl Action {
+    /// The same deletion, confirmed (`None` for other actions).
+    pub fn confirmed(&self) -> Option<Action> {
+        match self {
+            Action::Delete { kind, id, .. } => Some(Action::Delete {
+                kind: *kind,
+                id: id.clone(),
+                confirm: true,
+            }),
+            Action::DeleteAttachment {
+                structure,
+                set,
+                phase,
+                ..
+            } => Some(Action::DeleteAttachment {
+                structure: structure.clone(),
+                set: *set,
+                phase: *phase,
+                confirm: true,
+            }),
+            _ => None,
+        }
+    }
 }

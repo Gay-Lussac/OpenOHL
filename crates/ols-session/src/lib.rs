@@ -87,6 +87,9 @@ pub struct Impact {
     pub kind: Kind,
     /// Its id.
     pub id: String,
+    /// The part of it deleted, if not all of it (a structure's string:
+    /// `string 2:1`).
+    pub part: Option<String>,
     /// Its attachments with their insulators (structures):
     /// `set:phase label (insulator)`.
     pub attachments: Vec<String>,
@@ -109,6 +112,7 @@ impl Impact {
         Self {
             kind,
             id: id.to_owned(),
+            part: None,
             attachments: vec![],
             sections: vec![],
             jumpers: vec![],
@@ -147,9 +151,17 @@ impl Impact {
         ]
     }
 
+    /// What is deleted: `structure T3`, `structure T3 string 2:1`.
+    pub fn what(&self) -> String {
+        match &self.part {
+            Some(p) => format!("{} {} {p}", self.kind.as_str(), self.id),
+            None => format!("{} {}", self.kind.as_str(), self.id),
+        }
+    }
+
     /// A one-line summary for the log.
     pub fn summary(&self) -> String {
-        let mut parts = vec![format!("delete {} {}", self.kind.as_str(), self.id)];
+        let mut parts = vec![format!("delete {}", self.what())];
         for (title, items) in self.groups() {
             if !items.is_empty() {
                 parts.push(format!("{title}: {}", items.join(", ")));
@@ -350,6 +362,22 @@ pub enum Command {
         id: String,
         /// Confirms the listed deletions.
         #[serde(default)]
+        confirm: bool,
+    },
+    /// Delete a structure's string (attachment `set`:`phase`): an
+    /// explicit one is removed, one of the structure type is left out
+    /// ([`ols_line::Structure::omit`]). The sections through it and the
+    /// jumpers at it (or at those sections) go with it, after a
+    /// confirmation as for [`Command::Delete`].
+    DeleteAttachment {
+        /// Structure id.
+        structure: String,
+        /// Set.
+        set: u32,
+        /// Phase.
+        phase: u32,
+        /// Confirms the listed deletions.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         confirm: bool,
     },
     /// Several commands applied together (all or none).
@@ -1006,6 +1034,44 @@ impl Session {
                 notes,
                 user,
             )?,
+            Command::DeleteAttachment {
+                structure,
+                set,
+                phase,
+                confirm,
+            } => {
+                let impact = self.attachment_deletion(&structure, set, phase)?;
+                if user && impact.has_dependents() && !confirm {
+                    return Err(SessionError::NeedsConfirmation(Box::new(impact)));
+                }
+                let del = |kind, id: &String| Command::Delete {
+                    kind,
+                    id: id.clone(),
+                    confirm: false,
+                };
+                for j in &impact.jumpers {
+                    out.push(del(Kind::Jumper, j));
+                }
+                for sec in &impact.sections {
+                    out.push(del(Kind::Section, sec));
+                }
+                let mut s = self
+                    .line
+                    .structure(&structure)
+                    .expect("checked by the impact")
+                    .clone();
+                s.attachments.retain(|a| (a.set, a.phase) != (set, phase));
+                if s.structure_type.is_some() && !s.omit.contains(&[set, phase]) {
+                    s.omit.push([set, phase]);
+                }
+                out.push(Command::Put {
+                    kind: Kind::Structure,
+                    id: structure,
+                    value: json(&s),
+                    ord: None,
+                });
+                notes.push(impact.summary());
+            }
             Command::Batch { commands } => {
                 for c in commands {
                     self.primitives(c, out, notes, user)?;
@@ -1174,6 +1240,58 @@ impl Session {
                 }
             }
         }
+        Ok(impact)
+    }
+
+    /// What deleting string `set`:`phase` of structure `id` takes with it
+    /// (nothing is changed): the sections through it, the jumpers at it
+    /// and at those sections' points.
+    pub fn attachment_deletion(
+        &self,
+        id: &str,
+        set: u32,
+        phase: u32,
+    ) -> Result<Impact, SessionError> {
+        let s = self
+            .line
+            .structure(id)
+            .ok_or_else(|| refused(format!("no structure {id}")))?;
+        let explicit = s
+            .attachments
+            .iter()
+            .any(|a| (a.set, a.phase) == (set, phase));
+        if !explicit && s.structure_type.is_none() {
+            return Err(refused(format!(
+                "structure {id} has no string {set}:{phase}"
+            )));
+        }
+        let mut impact = Impact::new(Kind::Structure, id);
+        impact.part = Some(format!("string {set}:{phase}"));
+        let point = ols_line::SectionPoint {
+            structure: id.to_owned(),
+            set,
+            phase,
+        };
+        let sections: Vec<&ols_line::Section> = self
+            .line
+            .sections
+            .iter()
+            .filter(|sec| sec.points.contains(&point))
+            .collect();
+        impact.sections = sections.iter().map(|sec| sec.id.clone()).collect();
+        impact.jumpers = self
+            .line
+            .jumpers
+            .iter()
+            .filter(|j| {
+                j.from == point
+                    || j.to == point
+                    || sections
+                        .iter()
+                        .any(|sec| sec.points.contains(&j.from) || sec.points.contains(&j.to))
+            })
+            .map(|j| j.id.clone())
+            .collect();
         Ok(impact)
     }
 

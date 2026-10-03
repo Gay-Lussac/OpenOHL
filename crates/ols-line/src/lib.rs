@@ -215,6 +215,10 @@ pub struct Structure {
     /// type's attachments with the same set and phase).
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// Typed structures: attachments of the type left out, `[set, phase]`
+    /// (an explicit attachment with the same set and phase still counts).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub omit: Vec<[u32; 2]>,
     /// Stick drawing (polylines, metres): from the structure type when it
     /// is placed, or given; for views and drawings only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

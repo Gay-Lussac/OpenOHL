@@ -1032,3 +1032,265 @@ fn the_clearances_tab_checks_on_its_own() {
     );
     harness.get_by_label_contains("Check now");
 }
+
+/// Right-clicks `target` with `tool` held (as a view reports it).
+fn use_tool(
+    h: &mut Harness<'_, App>,
+    tool: crate::tools::Tool,
+    target: Selection,
+    at: Option<[f64; 3]>,
+) {
+    let r = h.state_mut().ready().unwrap();
+    r.hotbar.hold(tool);
+    r.use_tool(crate::selection::Use { target, at });
+    h.run();
+}
+
+fn string_at(structure: &str, set: u32, phase: u32) -> Selection {
+    Selection::Attachment {
+        structure: structure.into(),
+        set,
+        phase,
+    }
+}
+
+/// Add a structure on the ground, a string on it, string a wire to it from
+/// T5, change the section's tension and the string, then delete the
+/// string with the Delete tool (the section goes with it, after the
+/// confirmation): each step is one session command, solved at once.
+#[test]
+fn structures_strings_and_wires_are_added_edited_and_deleted() {
+    use crate::editors::{Form, StringingForm};
+    use crate::tools::Tool;
+    let model = synthetic_project("tools");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let enter = |h: &mut Harness<'_, App>| press(h, egui::Key::Enter, egui::Modifiers::NONE);
+    // Add structure: 150 m beyond T5, on the line's axis.
+    let (t4, t5) = {
+        let r = harness.state_mut().ready().unwrap();
+        let l = &r.model.line;
+        (
+            l.structure("T4").unwrap().position,
+            l.structure("T5").unwrap().position,
+        )
+    };
+    let at = [2.0 * t5[0] - t4[0], 2.0 * t5[1] - t4[1], t5[2]];
+    use_tool(&mut harness, Tool::AddStructure, Selection::None, Some(at));
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Structure(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert_eq!(f.id, "T8");
+        f.structure_type = None;
+        f.on_ground = false;
+    }
+    harness.get_by_label("Add structure");
+    enter(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        assert_eq!(r.model.line.structure("T8").unwrap().position, at);
+        assert_eq!(r.selection, Selection::Structure("T8".into()));
+    }
+    // Add string: T5's 1:1 copied in its own axes.
+    let t5_string =
+        crate::editors::StringForm::of(&harness.state_mut().ready().unwrap().model, "T5", 1, 1)
+            .unwrap();
+    use_tool(
+        &mut harness,
+        Tool::AddString,
+        Selection::Structure("T8".into()),
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::String(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert_eq!((f.set, f.phase), (1, 1));
+        f.top = t5_string.top;
+        f.bottom = t5_string.bottom;
+        f.weight = t5_string.weight;
+    }
+    enter(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let a = r
+            .model
+            .line
+            .attachment(&ols_line::SectionPoint {
+                structure: "T8".into(),
+                set: 1,
+                phase: 1,
+            })
+            .unwrap();
+        assert!((a.wire_point[2] - (at[2] + t5_string.bottom[2])).abs() < 1e-9);
+    }
+    // String wire: T5 1:1 → T8 1:1, Enter: the section window, like S1.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .select(Selection::Span {
+            section: "S1".into(),
+            span: 0,
+        });
+    use_tool(&mut harness, Tool::StringWire, string_at("T5", 1, 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T8", 1, 1), None);
+    assert_eq!(harness.state_mut().ready().unwrap().view3d.draft.len(), 2);
+    enter(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Section(f)) = &r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert!(f.new);
+        assert_eq!(f.id, "S4");
+        assert_eq!(f.cable, "acsr-drake-26-7");
+        assert!(r.chain.is_empty() && r.view3d.draft.is_empty());
+    }
+    enter(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        for c in &r.model.cases {
+            assert!(
+                c.shapes.iter().any(|s| s.section == "S4"),
+                "{}",
+                c.case.name
+            );
+            assert!(c.failed.is_empty(), "{:?}", c.failed);
+        }
+        assert_solved_fully(&r.model);
+    }
+    // Edit the section: a higher tension, less sag.
+    let sag = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        r.model.cases[0]
+            .shapes
+            .iter()
+            .find(|s| s.section == "S4")
+            .unwrap()
+            .spans[0]
+            .sag
+    };
+    let before = sag(&mut harness);
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::Span {
+            section: "S4".into(),
+            span: 0,
+        },
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Section(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        let StringingForm::Tension { h_kn, .. } = &mut f.stringing else {
+            panic!("{:?}", f.stringing);
+        };
+        *h_kn *= 1.5;
+    }
+    enter(&mut harness);
+    assert!(sag(&mut harness) < before * 0.8);
+    // Edit the string: 1 m shorter.
+    use_tool(&mut harness, Tool::Edit, string_at("T8", 1, 1), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::String(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        f.bottom[2] += 1.0;
+    }
+    enter(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let a = r
+            .model
+            .line
+            .attachment(&ols_line::SectionPoint {
+                structure: "T8".into(),
+                set: 1,
+                phase: 1,
+            })
+            .unwrap();
+        assert!((a.wire_point[2] - (at[2] + t5_string.bottom[2] + 1.0)).abs() < 1e-9);
+        assert_solved_fully(&r.model);
+    }
+    // Delete the string: S4 goes with it, after the confirmation.
+    use_tool(&mut harness, Tool::Delete, string_at("T8", 1, 1), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let (impact, _) = r.confirm.as_ref().unwrap();
+        assert_eq!(impact.sections, vec!["S4"]);
+    }
+    harness.get_by_label("Delete all").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.confirm.is_none());
+        assert!(r.model.line.structure("T8").unwrap().attachments.is_empty());
+        assert!(r.model.line.sections.iter().all(|s| s.id != "S4"));
+    }
+    // Undo brings both back.
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.line.sections.iter().any(|s| s.id == "S4"));
+    assert_solved_fully(&r.model);
+}
+
+/// A section's points picked again: one more structure in the middle;
+/// unstressed lengths for the old spans become a tension.
+#[test]
+fn a_section_is_strung_again_through_other_points() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project("restring");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // S3 (T3 2:1 → T6 → T7) without T6.
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::Span {
+            section: "S3".into(),
+            span: 0,
+        },
+        None,
+    );
+    harness.get_by_label("Pick points again").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none());
+        assert_eq!(r.restring.as_deref(), Some("S3"));
+        assert_eq!(r.hotbar.tool(), Tool::StringWire);
+    }
+    use_tool(&mut harness, Tool::StringWire, string_at("T3", 2, 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T7", 1, 1), None);
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Section(f)) = &r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert!(!f.new);
+        assert_eq!(f.points.len(), 2);
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_none(), "{:?}", r.status);
+    let s3 = r.model.line.sections.iter().find(|s| s.id == "S3").unwrap();
+    assert_eq!(s3.points.len(), 2);
+    assert_solved_fully(&r.model);
+}

@@ -37,6 +37,8 @@ pub struct View3d {
     swallow_release: bool,
     /// Clearance violations to draw: (on the wire, on the target).
     pub marks: Vec<([f64; 3], [f64; 3])>,
+    /// A wire being strung: its points so far.
+    pub draft: Vec<[f64; 3]>,
 }
 
 impl View3d {
@@ -70,7 +72,7 @@ impl View3d {
         selection: &mut Selection,
         visible: &HashSet<Layer>,
         snaps: &selection::Snaps,
-    ) -> Option<Selection> {
+    ) -> Option<selection::Use> {
         let Some(rs) = rs else {
             ui.centered_and_justified(|ui| ui.label("3D view needs a GPU (wgpu)."));
             return None;
@@ -240,9 +242,13 @@ impl View3d {
         let radius = if self.captured { 10.0 } else { 14.0 };
         let used = use_at.map(|at| {
             let project = camera.projector(size);
-            selection::pick_in_model(model, case, snaps, at, radius, |p| {
+            let target = selection::pick_in_model(model, case, snaps, at, radius, |p| {
                 project(p).map(|(q, _)| q)
-            })
+            });
+            let ground = camera
+                .ray(at, size)
+                .and_then(|(a, d)| model.ground_hit(a, d, camera.target[2]));
+            selection::Use { target, at: ground }
         });
         if let Some((at, double)) = pick_at {
             let cam = *camera;
@@ -269,6 +275,7 @@ impl View3d {
         for layer in self.dirty.drain() {
             let s = match layer {
                 Layer::Clearances => scene::marks(model.origin, &self.marks),
+                Layer::Draft => scene::draft(model.origin, &self.draft),
                 _ => scene::layer(model, layer, case, selection),
             };
             self.gpu.insert(layer, GpuScene::new(device, &s));

@@ -115,6 +115,7 @@ impl Line {
                 .collect();
             let mut merged: Vec<Attachment> = placed
                 .into_iter()
+                .filter(|p| !s.omit.contains(&[p.set, p.phase]))
                 .map(|p| Attachment {
                     set: p.set,
                     phase: p.phase,
@@ -435,6 +436,27 @@ mod tests {
         for result in crate::solve::solve_line(&resolved, &cables, &case) {
             assert!(result.is_ok(), "{result:?}");
         }
+    }
+
+    /// A typed structure leaves out the strings listed in `omit` (the
+    /// sections through them go first: the line would not be valid).
+    #[test]
+    fn omitted_strings_of_a_type_are_left_out() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+        let mut line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
+        line.sections.retain(|s| s.id != "S3");
+        line.jumpers.clear();
+        line.structures[2].omit.push([2, 1]);
+        let structures = StructureLibrary::load_dir(&root.join("Structures")).unwrap();
+        let resolved = line
+            .resolve(&structures, &InsulatorLibrary::default())
+            .unwrap();
+        let keys: Vec<(u32, u32)> = resolved.structures[2]
+            .attachments
+            .iter()
+            .map(|a| (a.set, a.phase))
+            .collect();
+        assert_eq!(keys, vec![(1, 1), (1, 2)]);
     }
 
     /// Free strain strings (from simple pylon files) with a marker ball

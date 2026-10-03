@@ -599,3 +599,68 @@ fn spatial_index_follows_every_command() {
     let counted: usize = s.home_tiles().values().flat_map(|m| m.values()).sum();
     assert_eq!(counted, spatial::object_bounds(s.line()).len());
 }
+
+#[test]
+fn deleting_a_string_takes_its_sections_and_jumpers() {
+    let (_, mut s) = project("string");
+    let del = |confirm| Command::DeleteAttachment {
+        structure: "T3".into(),
+        set: 2,
+        phase: 1,
+        confirm,
+    };
+    let Err(SessionError::NeedsConfirmation(i)) = s.apply("ben", del(false)) else {
+        panic!("confirmation expected");
+    };
+    assert_eq!(i.what(), "structure T3 string 2:1");
+    assert_eq!(i.sections, vec!["S3"]);
+    assert_eq!(i.jumpers, vec!["J-T3-branch"]);
+    let applied = s.apply("ben", del(true)).unwrap();
+    let t3 = s.line().structure("T3").unwrap();
+    assert!(!t3.attachments.iter().any(|a| (a.set, a.phase) == (2, 1)));
+    assert!(
+        t3.omit.is_empty(),
+        "an explicit string is removed, not omitted"
+    );
+    assert!(s.line().sections.iter().all(|x| x.id != "S3"));
+    assert!(s.line().jumpers.is_empty());
+    let note = s
+        .log()
+        .unwrap()
+        .into_iter()
+        .find(|e| e.seq == applied.seq)
+        .unwrap()
+        .note
+        .unwrap();
+    assert!(note.contains("string 2:1") && note.contains("S3"), "{note}");
+    s.undo("ben").unwrap();
+    assert_eq!(s.export(), example());
+    // A string nothing hangs on goes without a confirmation; one that is
+    // not there is refused.
+    s.apply("ben", del(true)).unwrap();
+    assert!(s.apply("ben", del(false)).is_err());
+}
+
+#[test]
+fn a_typed_structure_leaves_out_a_string_of_its_type() {
+    let dir = std::env::temp_dir().join(format!("ols-session-{}-typed", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.ols");
+    std::fs::remove_file(&path).ok();
+    let ex = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+    let line = Line::load(&ex.join("synthetic-line-typed.ols.json")).unwrap();
+    let mut s = Session::open(&path).unwrap();
+    s.import(&line, "ana").unwrap();
+    s.apply(
+        "ana",
+        Command::DeleteAttachment {
+            structure: "T3".into(),
+            set: 2,
+            phase: 1,
+            confirm: true,
+        },
+    )
+    .unwrap();
+    let t3 = s.line().structure("T3").unwrap();
+    assert_eq!(t3.omit, vec![[2, 1]]);
+}

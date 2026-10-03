@@ -198,6 +198,7 @@ impl Importer for StructuresCsv {
                     structure_type: optional(kind),
                     extension: optional(extension),
                     attachments: Vec::new(),
+                    omit: Vec::new(),
                     members: Vec::new(),
                 }),
             }

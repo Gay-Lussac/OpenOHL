@@ -334,6 +334,24 @@ impl Camera {
         self.projector(size)(p)
     }
 
+    /// The ray through screen position `at` (pixels from the top left of
+    /// a `size` view): its start on the near plane and its unit direction,
+    /// project coordinates (heights true, not exaggerated).
+    pub fn ray(&self, at: [f64; 2], size: [f64; 2]) -> Option<([f64; 3], [f64; 3])> {
+        let m = self.view_proj_f64(self.target, size[0] / size[1].max(1.0));
+        let inv = m.try_inverse()?;
+        let (x, y) = (at[0] / size[0] * 2.0 - 1.0, 1.0 - at[1] / size[1] * 2.0);
+        let t = self.target;
+        let point = |depth: f64| {
+            let v = inv * nalgebra::Vector4::new(x, y, depth, 1.0);
+            (v.w.abs() > 1e-12).then(|| [v.x / v.w + t[0], v.y / v.w + t[1], v.z / v.w + t[2]])
+        };
+        let (a, b) = (point(0.0)?, point(0.5)?);
+        let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        (n > 1e-12).then(|| (a, d.map(|v| v / n)))
+    }
+
     /// [`Camera::project`] for many points: the matrix is made once.
     pub fn projector(&self, size: [f64; 2]) -> impl Fn([f64; 3]) -> Option<([f64; 2], f64)> {
         let m = self.view_proj_f64(self.target, size[0] / size[1].max(1.0));

@@ -140,3 +140,22 @@ fn flying_and_looking() {
     );
     assert!((c.yaw - ((-90f64).to_radians() - 0.5)).abs() < 1e-12);
 }
+
+#[test]
+fn a_ray_goes_through_what_is_projected_there() {
+    let mut cam = Camera::fit(&Bounds {
+        min: at(0.0, 0.0, 0.0),
+        max: at(300.0, 100.0, 50.0),
+    });
+    cam.exaggeration = 3.0;
+    let size = [800.0, 600.0];
+    let p = at(100.0, 50.0, 10.0);
+    let (q, _) = cam.project(p, size).unwrap();
+    let (a, d) = cam.ray(q, size).unwrap();
+    // Where the ray passes p's plan position, it is at p's true height.
+    let t = ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / (d[0] * d[0] + d[1] * d[1]);
+    let on = [a[0] + t * d[0], a[1] + t * d[1], a[2] + t * d[2]];
+    for k in 0..3 {
+        assert!((on[k] - p[k]).abs() < 1e-3, "{on:?} vs {p:?}");
+    }
+}
