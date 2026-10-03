@@ -1768,18 +1768,30 @@ fn sections_get_a_target_sag_in_their_display_case() {
             .position(|c| c.case.name == "max temperature")
             .unwrap()
     };
+    // Two display cases: drawn in both, the first reported.
     set_cell(
         &mut harness,
         TableKind::Sections,
         "S1",
-        "display case",
-        "max temperature",
+        "display cases",
+        "max temperature; glaze ice",
     );
     apply_table(&mut harness, TableKind::Sections, false).unwrap();
     {
         let r = harness.state_mut().ready().unwrap();
+        let ice = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "glaze ice")
+            .unwrap();
+        assert_eq!(r.model.section_cases("S1", 0), vec![hot, ice]);
         assert_eq!(r.model.section_case("S1", 0), hot);
-        assert_eq!(r.model.section_case("S3", 0), 0);
+        assert_eq!(r.model.section_cases("S3", 0), vec![0]);
+        let shown = r.model.shapes_shown(0);
+        assert_eq!(shown.iter().filter(|x| x.section == "S1").count(), 2);
+        let rows = TableKind::Sections.rows(&r.model, 0);
+        assert!(rows[0].cells[TableKind::Sections.column("max sag m")].contains(" / "));
     }
     set_cell(&mut harness, TableKind::Sections, "S1", "max sag m", "12");
     apply_table(&mut harness, TableKind::Sections, false).unwrap();
@@ -1796,8 +1808,8 @@ fn sections_get_a_target_sag_in_their_display_case() {
     assert_eq!(r.model.shape("S1", 0).unwrap().section, "S1");
     let rows = TableKind::Sections.rows(&r.model, 0);
     assert_eq!(
-        rows[0].cells[TableKind::Sections.column("display case")],
-        "max temperature"
+        rows[0].cells[TableKind::Sections.column("display cases")],
+        "max temperature; glaze ice"
     );
 }
 
@@ -1881,6 +1893,7 @@ fn the_weather_case_table_writes_its_file() {
     let n = harness.state_mut().ready().unwrap().model.cases.len();
     set_cell(&mut harness, kind, "2", "ice mm", "20");
     set_cell(&mut harness, kind, "2", "tags", "clearance, loads, heavy");
+    set_cell(&mut harness, kind, "2", "wind from", "left");
     set_cell(&mut harness, kind, "0", "temp °C", "warm");
     assert!(apply_table(&mut harness, kind, false).is_err());
     set_cell(&mut harness, kind, "0", "temp °C", "10.0");
@@ -1907,6 +1920,7 @@ fn the_weather_case_table_writes_its_file() {
         .unwrap();
     assert!((glaze.case.ice_thickness.si() - 0.02).abs() < 1e-12);
     assert_eq!(glaze.case.tags, vec!["clearance", "loads", "heavy"]);
+    assert_eq!(glaze.case.wind_from, ols_weather::WindSide::Left);
     let written = std::fs::read_to_string(&path).unwrap();
     assert!(
         written.starts_with("# Example weather cases"),

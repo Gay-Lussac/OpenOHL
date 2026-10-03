@@ -277,7 +277,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                 let alpha = if layer == Layer::Wires { 255 } else { 90 };
                 for shape in &solved.shapes {
                     // Each section in its own display case.
-                    let shown = model.section_case(&shape.section, case) == k;
+                    let shown = model.section_cases(&shape.section, case).contains(&k);
                     if (layer == Layer::Wires) != shown {
                         continue;
                     }

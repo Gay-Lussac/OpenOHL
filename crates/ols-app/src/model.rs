@@ -169,9 +169,9 @@ pub struct Model {
     )>,
     /// The project to edit, or why the model is read-only.
     pub editing: Result<Editing, String>,
-    /// Sections drawn and reported in their own weather case (index),
-    /// instead of the case shown (Sections table).
-    pub display_cases: std::collections::BTreeMap<String, usize>,
+    /// Sections drawn in their own weather cases (indices; the first one
+    /// is reported and picked), instead of the case shown (Sections table).
+    pub display_cases: std::collections::BTreeMap<String, Vec<usize>>,
 }
 
 fn dir_of(file: &Path) -> PathBuf {
@@ -290,14 +290,26 @@ fn load_cases(sources: &Sources) -> Result<Vec<WeatherCase>, String> {
 }
 
 impl Model {
-    /// The weather case section `section` is shown in: its own display
-    /// case, else `case`.
-    pub fn section_case(&self, section: &str, case: usize) -> usize {
-        self.display_cases
+    /// The weather cases section `section` is drawn in: its own display
+    /// cases, else `case`.
+    pub fn section_cases(&self, section: &str, case: usize) -> Vec<usize> {
+        let own: Vec<usize> = self
+            .display_cases
             .get(section)
-            .copied()
-            .filter(|k| *k < self.cases.len())
-            .unwrap_or(case)
+            .map(|v| {
+                v.iter()
+                    .copied()
+                    .filter(|k| *k < self.cases.len())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if own.is_empty() { vec![case] } else { own }
+    }
+
+    /// The weather case section `section` is reported and picked in: its
+    /// first display case, else `case`.
+    pub fn section_case(&self, section: &str, case: usize) -> usize {
+        self.section_cases(section, case)[0]
     }
 
     /// Section `section` as shown (its display case, else `case`).
@@ -309,12 +321,21 @@ impl Model {
             .find(|s| s.section == section)
     }
 
-    /// Every section as shown, in line order.
+    /// Every section in each weather case it is drawn in, in line order.
     pub fn shapes_shown(&self, case: usize) -> Vec<SectionShape> {
         self.line
             .sections
             .iter()
-            .filter_map(|s| self.shape(&s.id, case).cloned())
+            .flat_map(|s| {
+                self.section_cases(&s.id, case).into_iter().filter_map(|k| {
+                    self.cases
+                        .get(k)?
+                        .shapes
+                        .iter()
+                        .find(|x| x.section == s.id)
+                        .cloned()
+                })
+            })
             .collect()
     }
 

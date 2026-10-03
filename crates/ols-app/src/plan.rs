@@ -191,12 +191,9 @@ impl PlanView {
             ));
         }
         {
-            // Each section in its display case.
-            for shape in line
-                .sections
-                .iter()
-                .filter_map(|s| model.shape(&s.id, case))
-            {
+            // Each section in each of its display cases.
+            let shapes = model.shapes_shown(case);
+            for shape in &shapes {
                 let col = line
                     .sections
                     .iter()

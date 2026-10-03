@@ -142,22 +142,22 @@ const SECTIONS: &[Column] = &[
         "structure set:phase, in order, separated by commas",
     ),
     (
-        "display case",
-        120.0,
+        "display cases",
+        160.0,
         Yes,
-        "weather case it is drawn and reported in (empty: the case shown)",
+        "weather cases it is drawn in, separated by ; (the first is reported; empty: the case shown)",
     ),
     (
         "H kN",
         65.0,
         Yes,
-        "horizontal tension of the first span in its display case — type a target: the condition giving it is found",
+        "horizontal tension of the first span in each display case — type a target (one number: in the first display case): the condition giving it is found",
     ),
     (
         "max sag m",
         75.0,
         Yes,
-        "largest sag of its spans in its display case — type a target: the condition giving it is found",
+        "largest sag of its spans in each display case — type a target (one number: in the first display case): the condition giving it is found",
     ),
 ];
 
@@ -304,6 +304,12 @@ const WEATHER: &[Column] = &[
         Yes,
         "wind pressure on the projected diameter",
     ),
+    (
+        "wind from",
+        70.0,
+        Yes,
+        "left or right, looking ahead along the line (each span from its back to its ahead point)",
+    ),
 ];
 
 /// One row: the object's key, what selecting it selects, the cells.
@@ -417,8 +423,8 @@ pub struct Changes {
     pub commands: Vec<(String, Command)>,
     /// A file to write (weather cases): path, text.
     pub file: Option<(PathBuf, String)>,
-    /// Sections' display weather case (none: the case shown).
-    pub display: Vec<(String, Option<usize>)>,
+    /// Sections' display weather cases (none: the case shown).
+    pub display: Vec<(String, Vec<usize>)>,
     /// What deletions take with them, to confirm.
     pub takes: Vec<String>,
 }
@@ -544,11 +550,18 @@ impl TableKind {
                             (format!("{} lengths", lengths.len()), String::new())
                         }
                     };
-                    let shown = model.section_case(&s.id, case);
-                    let shape = model
-                        .cases
-                        .get(shown)
-                        .and_then(|c| c.shapes.iter().find(|x| x.section == s.id));
+                    let shapes: Vec<&ols_line::solve::SectionShape> = model
+                        .section_cases(&s.id, case)
+                        .into_iter()
+                        .filter_map(|k| {
+                            model
+                                .cases
+                                .get(k)?
+                                .shapes
+                                .iter()
+                                .find(|x| x.section == s.id)
+                        })
+                        .collect();
                     Row {
                         key: s.id.clone(),
                         select: Selection::Span {
@@ -572,17 +585,25 @@ impl TableKind {
                             value,
                             f(s.stringing.temperature(), 1),
                             s.points.iter().map(point).collect::<Vec<_>>().join(", "),
-                            model
-                                .display_cases
-                                .get(&s.id)
-                                .and_then(|k| model.cases.get(*k))
-                                .map_or(String::new(), |c| c.case.name.clone()),
-                            shape
-                                .and_then(|x| x.spans.first())
-                                .map_or(String::new(), |sp| f(sp.horizontal_tension / 1000.0, 2)),
-                            shape.map_or(String::new(), |x| {
-                                f(x.spans.iter().map(|sp| sp.sag).fold(0.0, f64::max), 3)
+                            model.display_cases.get(&s.id).map_or(String::new(), |ks| {
+                                ks.iter()
+                                    .filter_map(|k| model.cases.get(*k))
+                                    .map(|c| c.case.name.clone())
+                                    .collect::<Vec<_>>()
+                                    .join("; ")
                             }),
+                            // One value per display case.
+                            shapes
+                                .iter()
+                                .filter_map(|x| x.spans.first())
+                                .map(|sp| f(sp.horizontal_tension / 1000.0, 2))
+                                .collect::<Vec<_>>()
+                                .join(" / "),
+                            shapes
+                                .iter()
+                                .map(|x| f(x.spans.iter().map(|sp| sp.sag).fold(0.0, f64::max), 3))
+                                .collect::<Vec<_>>()
+                                .join(" / "),
                         ],
                     }
                 })
@@ -715,6 +736,7 @@ impl TableKind {
                             w.ice_load.map_or(String::new(), |v| f(v.si(), 2)),
                             w.ice_density.map_or(String::new(), |v| f(v.si(), 0)),
                             f(w.wind_pressure.si(), 0),
+                            w.wind_from.as_str().into(),
                         ],
                     }
                 })
@@ -788,6 +810,7 @@ impl TableKind {
                 cells[4] = "15".into();
                 cells[5] = "0".into();
                 cells[8] = "0".into();
+                cells[9] = "right".into();
             }
         }
         cells
@@ -897,7 +920,7 @@ impl TableKind {
                 }
                 for key in page.edits.keys().filter(|k| !page.deleted.contains(*k)) {
                     let c = existing(key)?;
-                    let display = Some(TableKind::Sections.column("display case"));
+                    let display = Some(TableKind::Sections.column("display cases"));
                     let only_display = page
                         .edits
                         .get(key)
@@ -1218,17 +1241,20 @@ fn alignments(line: &ols_line::Line) -> Vec<(String, Vec<ols_line::AlignmentPoin
     }
 }
 
-fn display_case(model: &Model, name: &str) -> Result<Option<usize>, String> {
-    let n = name.trim();
-    if n.is_empty() {
-        return Ok(None);
-    }
-    model
-        .cases
-        .iter()
-        .position(|c| c.case.name == n)
-        .map(Some)
-        .ok_or_else(|| format!("no weather case \"{n}\""))
+/// "max temperature; glaze ice" → the cases' indices.
+fn display_case(model: &Model, names: &str) -> Result<Vec<usize>, String> {
+    names
+        .split(';')
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(|n| {
+            model
+                .cases
+                .iter()
+                .position(|c| c.case.name == n)
+                .ok_or_else(|| format!("no weather case \"{n}\" (separate cases with ;)"))
+        })
+        .collect()
 }
 
 fn structure_cells(
@@ -1708,6 +1734,15 @@ fn weather_file(
                 6 => ("ice_load", number("N/m")?),
                 7 => ("ice_density", number("kg/m³")?),
                 8 => ("wind_pressure", number("Pa")?),
+                9 => match v.to_lowercase().as_str() {
+                    "" | "right" => ("wind_from", None),
+                    "left" => ("wind_from", Some(toml_edit::value("left"))),
+                    other => {
+                        return Err(format!(
+                            "{name} wind from: \"{other}\" — write left or right"
+                        ));
+                    }
+                },
                 _ => continue,
             };
             match item {

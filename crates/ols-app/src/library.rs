@@ -97,6 +97,11 @@ const CASE: &[Field] = &[
         "\"400 Pa\"",
         "wind pressure on the projected diameter",
     ),
+    (
+        "wind_from",
+        "\"left\"",
+        "side the wind comes from, looking ahead along the line: left or right (default)",
+    ),
 ];
 
 const WEATHER_FILE: &[Field] = &[

@@ -39,6 +39,7 @@ wind_pressure = "200 Pa"
 | `ice_load` | no | Or: ice weight per length of wire (not both). |
 | `ice_density` | no | With a thickness: the ice weight (default glaze ice, 913 kg/m³). With a load: the iced diameter for the wind; without it, wind acts on the bare diameter. |
 | `wind_pressure` | no | Wind pressure on the projected (iced) diameter, perpendicular to each span. |
+| `wind_from` | no | `"right"` (default) or `"left"`: the side the wind comes from, looking ahead along the line (each span from its back point to its ahead point). From the right the wires are blown to the left. At line angles the two sides do not give the same swing. |
 
 Values take units (`"0.5 in"`, `"4 psf"`, `"1.2 lbf/ft"`, …).
 
@@ -62,6 +63,6 @@ ols line project.ols --weather cases.olswc --case "glaze*" --case "max temperatu
 
 Each case is solved and checked against the clearance rules in turn; the ground and LiDAR points are loaded once for all cases. The clearance CSV has a `case` column and ends with the envelope over all cases (lowest clearance and governing case per wire and rule; see [clearance rules](terrain.md#envelopes-over-weather-cases)). The plan and profile sheets draw every case's wires; the 3D viewer and the wire CSVs show the first case (with violation markers of all cases).
 
-Without `--weather`, one case comes from `--temperature`, `--wind-pressure` and `--ice-thickness` or `--ice-load` (with `--ice-density`).
+Without `--weather`, one case comes from `--temperature`, `--wind-pressure` (with `--wind-from left|right`) and `--ice-thickness` or `--ice-load` (with `--ice-density`).
 
 `ols sagtension` jobs use the same case fields in their `[[case]]` lists.

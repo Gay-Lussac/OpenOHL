@@ -67,6 +67,40 @@ pub struct WeatherCase {
     /// Wind pressure on the projected (iced) diameter (0 for no wind).
     #[serde(default)]
     pub wind_pressure: Stress,
+    /// Side the wind comes from, looking along the line (each span from
+    /// its back to its ahead point): from the right (default) it blows the
+    /// wires to the left.
+    #[serde(default)]
+    pub wind_from: WindSide,
+}
+
+/// Side of the line the wind comes from, looking ahead along it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindSide {
+    /// From the right: the wires are blown to the left.
+    #[default]
+    Right,
+    /// From the left: the wires are blown to the right.
+    Left,
+}
+
+impl WindSide {
+    /// `"left"` or `"right"`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WindSide::Right => "right",
+            WindSide::Left => "left",
+        }
+    }
+
+    /// Sign of the push to the left of the line: +1 from the right.
+    pub fn to_left(self) -> f64 {
+        match self {
+            WindSide::Right => 1.0,
+            WindSide::Left => -1.0,
+        }
+    }
 }
 
 impl WeatherCase {
@@ -81,6 +115,7 @@ impl WeatherCase {
             ice_load: None,
             ice_density: None,
             wind_pressure: Stress::ZERO,
+            wind_from: WindSide::Right,
         }
     }
 
@@ -160,7 +195,11 @@ impl WeatherCase {
             None => {}
         }
         if self.wind_pressure.si() > 0.0 {
-            parts.push(format!("wind {:.0} Pa", self.wind_pressure.pascals()));
+            parts.push(format!(
+                "wind {:.0} Pa from the {}",
+                self.wind_pressure.pascals(),
+                self.wind_from.as_str()
+            ));
         }
         parts.join(", ")
     }

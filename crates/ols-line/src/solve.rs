@@ -119,7 +119,9 @@ pub(crate) fn span_load(case: &WeatherCase, cable: &Cable, d: Vector3<f64>) -> V
     } else {
         Vector3::zeros()
     };
-    transverse * load.horizontal.si() - Vector3::new(0.0, 0.0, load.vertical.si())
+    // Wind from the right of the span blows it to the left.
+    transverse * (load.horizontal.si() * case.wind_from.to_left())
+        - Vector3::new(0.0, 0.0, load.vertical.si())
 }
 
 /// Stringing reference of a section: clamp positions and unstressed lengths
@@ -943,6 +945,23 @@ mod tests {
             shift > 1.0,
             "wind should blow the wire sideways, moved {shift} m"
         );
+        // From the right (default) to the left of the span; from the left,
+        // the same amount to the right.
+        let first = line.sections[0].points[..2]
+            .iter()
+            .map(|p| v(line.attachment(p).unwrap().wire_point))
+            .collect::<Vec<_>>();
+        let ahead = (first[1] - first[0]).xy();
+        let left_of = |d: Vector3<f64>| ahead.x * d.y - ahead.y * d.x;
+        let moved = mid(&blown[0]) - mid(&calm[0]);
+        assert!(left_of(moved) > 0.0, "from the right: blown to the left");
+        windy.wind_from = ols_weather::WindSide::Left;
+        let other = solve_line(&line, &lib, &windy);
+        let back = mid(&other[0]) - mid(&calm[0]);
+        assert!(left_of(back) < 0.0, "from the left: blown to the right");
+        // Not the same amount: at a line angle the strings already lean one
+        // way (6.26 m against 5.80 m here).
+        assert!(back.xy().norm() > 1.0);
         let _ = Length::ZERO;
     }
 

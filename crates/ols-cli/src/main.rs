@@ -135,6 +135,10 @@ struct LineArgs {
     /// Wind pressure on the wires, Pa (perpendicular to each span).
     #[arg(long, default_value_t = 0.0)]
     wind_pressure: f64,
+    /// Side the wind comes from, looking ahead along the line: left or
+    /// right.
+    #[arg(long, default_value = "right")]
+    wind_from: String,
     /// Radial ice thickness, mm.
     #[arg(long, default_value_t = 0.0)]
     ice_thickness: f64,
@@ -723,6 +727,7 @@ fn line(args: &LineArgs) -> ExitCode {
         insulators: insulator_dir,
         temperature,
         wind_pressure,
+        wind_from,
         ice_thickness,
         ice_load,
         ice_density,
@@ -817,6 +822,13 @@ fn line(args: &LineArgs) -> ExitCode {
                 }
                 let c = WeatherCase {
                     wind_pressure: Stress::from_pascals(*wind_pressure),
+                    wind_from: match wind_from.as_str() {
+                        "right" => ols_weather::WindSide::Right,
+                        "left" => ols_weather::WindSide::Left,
+                        other => {
+                            return Err(format!("--wind-from {other}: write left or right"));
+                        }
+                    },
                     ice_thickness: Length::from_millimeters(*ice_thickness),
                     ice_load: ice_load.map(ForcePerLength::from_newtons_per_meter),
                     ice_density: ice_density.map(Density::from_kilograms_per_cubic_meter),

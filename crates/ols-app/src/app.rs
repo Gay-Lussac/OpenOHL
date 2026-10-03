@@ -702,14 +702,11 @@ impl Ready {
             done = self.write_table_file(&path, &text);
         }
         if done && !display.is_empty() {
-            for (id, k) in display {
-                match k {
-                    Some(k) => {
-                        self.model.display_cases.insert(id, k);
-                    }
-                    None => {
-                        self.model.display_cases.remove(&id);
-                    }
+            for (id, cases) in display {
+                if cases.is_empty() {
+                    self.model.display_cases.remove(&id);
+                } else {
+                    self.model.display_cases.insert(id, cases);
                 }
             }
             if n == 0 {
