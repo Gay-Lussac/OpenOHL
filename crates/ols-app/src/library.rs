@@ -395,6 +395,13 @@ pub enum PageAction {
     UseForModel(PathBuf),
 }
 
+/// Whether the model reads `kind` from the project (its working copies).
+pub fn in_project(sources: &Sources, kind: LibraryKind) -> bool {
+    let at = kind.location(sources);
+    at.ancestors()
+        .any(|a| a.file_name().is_some_and(|n| n == "ols-cad-libraries"))
+}
+
 impl LibraryPage {
     /// A page for `kind`, with its first file open.
     pub fn new(kind: LibraryKind, sources: &Sources) -> Self {
@@ -504,6 +511,22 @@ impl LibraryPage {
         self.files = self.kind.files(sources);
         self.add_file(&path);
         Ok(())
+    }
+
+    /// A file browsed: in a project, copied into it (the copy, saved, to be
+    /// kept in the project); otherwise `None` (opened where it is).
+    pub fn import(&mut self, sources: &Sources, path: &Path) -> Result<Option<PathBuf>, String> {
+        if !in_project(sources, self.kind) {
+            return Ok(None);
+        }
+        let name = path.file_name().ok_or("no file name")?;
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        self.kind.check(path, &text)?;
+        let to = self.kind.new_file_dir(sources).join(name);
+        std::fs::write(&to, &text).map_err(|e| format!("{}: {e}", to.display()))?;
+        self.files = self.kind.files(sources);
+        self.add_file(&to);
+        Ok(Some(to))
     }
 
     /// Opens a file from anywhere (browsed), listing it with the others.
@@ -660,7 +683,11 @@ impl LibraryPage {
                     .set_directory(&start)
                     .pick_file()
             {
-                self.add_file(&p);
+                match self.import(sources, &p) {
+                    Ok(Some(copy)) => action = Some(PageAction::Saved(copy)),
+                    Ok(None) => self.add_file(&p),
+                    Err(e) => self.message = Some((e, true)),
+                }
             }
             if ui
                 .add_enabled(!dirty, egui::Button::new("New file…"))
@@ -671,9 +698,37 @@ impl LibraryPage {
                     .set_directory(&start)
                     .set_file_name(format!("new.{}", kind.extension()))
                     .save_file()
-                && let Err(e) = self.create_at(sources, &p)
             {
-                self.message = Some((e, true));
+                // In a project: the file goes into the project (its name).
+                let at = match (in_project(sources, kind), p.file_name()) {
+                    (true, Some(name)) => start.join(name),
+                    _ => p,
+                };
+                match self.create_at(sources, &at) {
+                    Ok(()) if in_project(sources, kind) => {
+                        action = Some(PageAction::Saved(at.with_extension(kind.extension())));
+                    }
+                    Ok(()) => {}
+                    Err(e) => self.message = Some((e, true)),
+                }
+            }
+            if let (Some(f), false) = (self.file.clone(), dirty)
+                && ui
+                    .button("Export…")
+                    .on_hover_text("Write a copy of this file where you choose (to share it)")
+                    .clicked()
+                && let Some(to) = rfd::FileDialog::new()
+                    .add_filter(filter.0, &filter.1)
+                    .set_file_name(
+                        f.file_name()
+                            .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+                    )
+                    .save_file()
+            {
+                self.message = Some(match std::fs::copy(&f, &to) {
+                    Ok(_) => (format!("written to {}", to.display()), false),
+                    Err(e) => (format!("{}: {e}", to.display()), true),
+                });
             }
             if let Some(f) = &self.file
                 && !kind.in_use(sources, f)
@@ -696,7 +751,11 @@ impl LibraryPage {
         ui.label(
             egui::RichText::new(format!(
                 "the model reads: {} — values with their units, e.g. \"28.1 mm\"; the file is checked as you type",
-                kind.location(sources).display()
+                if in_project(sources, kind) {
+                    "the project's own files (kept in the project; Export… to share one)".to_owned()
+                } else {
+                    kind.location(sources).display().to_string()
+                }
             ))
             .small()
             .weak(),

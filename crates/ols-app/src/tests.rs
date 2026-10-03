@@ -2064,19 +2064,44 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
     assert!((c[0] - a.wire_point[0]).hypot(c[1] - a.wire_point[1]) > 0.3);
 }
 
-/// The project remembers the weather case file it was solved in: opened
-/// again without one, it uses it.
+/// The project keeps its libraries: opened the first time, the wire
+/// library and weather case file it reads are copied into it; opened again
+/// without any library given, it reads its own (and the weather case file
+/// used last); a library file saved goes into it; Export writes them out.
 #[test]
-fn the_project_remembers_its_weather_case_file() {
-    let ex = root().join("examples/synthetic-line");
-    let first = synthetic_project("remember-weather");
+fn the_project_keeps_its_libraries() {
+    let first = synthetic_project("libraries-kept");
     let file = first.sources.file.clone();
-    assert!(first.sources.weather.is_some(), "the test project has one");
+    assert!(first.library_dir.is_some());
+    assert!(
+        first
+            .log
+            .iter()
+            .any(|l| l.contains("copied into the project")),
+        "{:?}",
+        first.log
+    );
+    let session = &first.editing.as_ref().unwrap().session;
+    let cables = session.library_files("cables").unwrap();
+    let weather = session.library_files("weather").unwrap();
+    assert!(!cables.is_empty() && weather.len() == 1);
+    let weather_name = weather[0].0.clone();
+    // A file of the working copy changed and saved: into the project.
+    let lib = first.sources.library.clone().unwrap();
+    let edited = lib.join(&cables[0].0);
+    let text = std::fs::read_to_string(&edited).unwrap();
+    std::fs::write(&edited, format!("# edited\n{text}")).unwrap();
+    assert!(first.store_libraries().unwrap() > cables.len());
+    let export = std::env::temp_dir().join(format!("ols-app-export-{}", std::process::id()));
+    std::fs::remove_dir_all(&export).ok();
+    let n = first.export_libraries(&export).unwrap();
+    assert!(n > cables.len());
+    assert!(export.join("weather").join(&weather_name).is_file());
     drop(first);
+    // Opened again with nothing given: its own libraries.
     let again = model::load(
         Sources {
             file,
-            library: Some(root().join("libraries/cables")),
             point_budget: 1000,
             corridor: 60.0,
             user: Some("tester".into()),
@@ -2085,14 +2110,19 @@ fn the_project_remembers_its_weather_case_file() {
         &|_| {},
     )
     .unwrap();
-    let used = std::fs::canonicalize(ex.join("weather-cases.olswc")).unwrap();
-    assert_eq!(again.sources.weather.as_deref(), Some(used.as_path()));
-    assert!(again.cases.len() > 1);
     assert!(
-        again.log.iter().any(|l| l.contains("used last")),
-        "{:?}",
-        again.log
+        again
+            .log
+            .iter()
+            .any(|l| l.contains("cables:") && l.contains("from the project"))
     );
+    let w = again.sources.weather.clone().unwrap();
+    assert_eq!(w.file_name().unwrap().to_string_lossy(), weather_name);
+    assert!(again.cases.len() > 1);
+    let lib = again.sources.library.clone().unwrap();
+    let text = std::fs::read_to_string(lib.join(&cables[0].0)).unwrap();
+    assert!(text.starts_with("# edited"), "the edit was kept");
+    assert_solved_fully(&again);
 }
 
 /// Lines: the working line saved as a project line, shown next to the

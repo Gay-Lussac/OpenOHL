@@ -715,7 +715,23 @@ impl Ready {
         action: crate::library::PageAction,
     ) {
         use crate::library::PageAction;
+        // The project keeps its libraries: the working copy saved goes in.
+        let in_project = match self.model.store_libraries() {
+            Ok(n) => n > 0,
+            Err(e) => {
+                self.status = Some((format!("keeping the libraries in the project: {e}"), true));
+                return;
+            }
+        };
         let (what, previous) = match action {
+            PageAction::Saved(p) if in_project => (
+                format!(
+                    "saved {} in the project",
+                    p.file_name()
+                        .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+                ),
+                None,
+            ),
             PageAction::Saved(p) => (format!("saved {}", p.display()), None),
             PageAction::UseForModel(p) => {
                 let before = self.model.sources.clone();
@@ -2209,6 +2225,30 @@ fn menus(
         ui.label(egui::RichText::new(r.model.sources.file.display().to_string()).small());
         ui.separator();
         item(ui, Command::Save, out);
+        ui.separator();
+        if ui
+            .add_enabled(
+                r.model.library_dir.is_some(),
+                egui::Button::new("Export libraries…"),
+            )
+            .on_hover_text(
+                "Write the project's libraries (wires, structure types, insulators, weather \
+                 cases) as files into a folder: to share them or compare them",
+            )
+            .clicked()
+        {
+            ui.close();
+            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                r.status = Some(match r.model.export_libraries(&dir) {
+                    Ok(n) => (
+                        format!("{n} library files written to {}", dir.display()),
+                        false,
+                    ),
+                    Err(e) => (format!("export: {e}"), true),
+                });
+            }
+        }
+        ui.separator();
         if ui.button("Quit").clicked() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }

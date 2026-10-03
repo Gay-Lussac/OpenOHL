@@ -201,6 +201,9 @@ pub struct Model {
     pub other_lines: Vec<OtherLine>,
     /// LiDAR classes not drawn (Terrain menu).
     pub hidden_classes: std::collections::BTreeSet<u8>,
+    /// Working folder of the project's libraries (the project holds them);
+    /// `None`: read from their files (a line file, or read-only).
+    pub library_dir: Option<PathBuf>,
 }
 
 fn dir_of(file: &Path) -> PathBuf {
@@ -310,11 +313,241 @@ fn load_types(
 /// Project setting holding the weather case file used.
 pub const WEATHER_SETTING: &str = "app.weather";
 
-/// Keeps the weather case file in the project's settings (absolute path).
+/// Keeps the weather case file in the project's settings: its name when
+/// it is one of the project's own files (in the libraries' working
+/// folder), else its absolute path.
 pub fn remember_weather(session: &ols_session::Session, path: &Path) {
     let p = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    if let Err(e) = session.set_setting(WEATHER_SETTING, Some(&p.display().to_string())) {
+    let own = p
+        .parent()
+        .is_some_and(|d| d.ends_with("weather") && d.starts_with(libraries_root()));
+    let value = match (own, p.file_name()) {
+        (true, Some(name)) => name.to_string_lossy().into_owned(),
+        _ => p.display().to_string(),
+    };
+    if let Err(e) = session.set_setting(WEATHER_SETTING, Some(&value)) {
         log::warn!("remembering the weather case file: {e}");
+    }
+}
+
+/// The libraries a project keeps: kind (in the project) and file extension.
+pub const PROJECT_LIBRARIES: [(&str, &str); 4] = [
+    ("cables", "olsw"),
+    ("structures", "olss"),
+    ("insulators", "olsi"),
+    ("weather", "olswc"),
+];
+
+/// Where the working copies of projects' libraries go.
+fn libraries_root() -> PathBuf {
+    let t = std::env::temp_dir();
+    std::fs::canonicalize(&t)
+        .unwrap_or(t)
+        .join("ols-cad-libraries")
+}
+
+/// The working folder of a project's libraries (one per project and
+/// process): the model reads them there; the project holds them.
+pub fn library_workdir(file: &Path) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let canon = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    canon.hash(&mut h);
+    let stem = file
+        .file_stem()
+        .map_or("project".into(), |s| s.to_string_lossy().into_owned());
+    libraries_root().join(format!(
+        "{stem}-{:012x}-{}",
+        h.finish() & 0xffff_ffff_ffff,
+        std::process::id()
+    ))
+}
+
+/// Files of `extension` at `at` (a file, or the files of a directory).
+fn files_at(at: &Path, extension: &str) -> Vec<PathBuf> {
+    if at.is_file() {
+        return vec![at.to_path_buf()];
+    }
+    let mut out: Vec<PathBuf> = std::fs::read_dir(at)
+        .map(|it| {
+            it.filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x == extension))
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
+}
+
+/// The project's libraries: each kind the project does not hold yet is
+/// copied into it from where the model would read it (given, next to the
+/// project, or the default folders); one given on the command line
+/// replaces the project's. Then they are written to a working folder and
+/// `sources` points there. Without the right to change the project, the
+/// libraries it lacks are read from their files as before.
+fn project_libraries(
+    sources: &mut Sources,
+    session: &ols_session::Session,
+    log: &mut dyn FnMut(String),
+) -> Result<PathBuf, String> {
+    let user = sources
+        .user
+        .clone()
+        .or_else(|| std::env::var("USER").ok())
+        .unwrap_or_default();
+    // The weather file used last, when none is given and it is a file.
+    let remembered = session.setting(WEATHER_SETTING).ok().flatten();
+    let work = library_workdir(&sources.file);
+    let _ = std::fs::remove_dir_all(&work);
+    for (kind, ext) in PROJECT_LIBRARIES {
+        let given = match kind {
+            "cables" => sources.library.is_some(),
+            "structures" => sources.structures.is_some(),
+            "insulators" => sources.insulators.is_some(),
+            _ => sources.weather.is_some(),
+        };
+        let stored = session.library_files(kind).map_err(|e| e.to_string())?;
+        let mut kept_in_files = false;
+        if stored.is_empty() || given {
+            let from: Option<PathBuf> = match kind {
+                "cables" => Some(library_path(sources)),
+                "structures" => Some(structures_dir(sources)),
+                "insulators" => Some(insulators_dir(sources)),
+                _ => sources.weather.clone().or_else(|| {
+                    remembered
+                        .as_deref()
+                        .map(PathBuf::from)
+                        .filter(|p| p.is_absolute() && p.is_file())
+                }),
+            };
+            let files = from
+                .as_deref()
+                .map(|f| files_at(f, ext))
+                .unwrap_or_default();
+            if !files.is_empty() {
+                let copy = || -> Result<(), String> {
+                    // Given: replaces the project's (weather: adds a file).
+                    if given && kind != "weather" {
+                        for (name, _) in &stored {
+                            session
+                                .delete_library_file(&user, kind, name)
+                                .map_err(|e| e.to_string())?;
+                        }
+                    }
+                    for f in &files {
+                        let text = std::fs::read_to_string(f)
+                            .map_err(|e| format!("{}: {e}", f.display()))?;
+                        let name = f.file_name().map(|n| n.to_string_lossy().into_owned());
+                        session
+                            .put_library_file(&user, kind, &name.unwrap_or_default(), &text)
+                            .map_err(|e| e.to_string())?;
+                    }
+                    Ok(())
+                };
+                match copy() {
+                    Ok(()) => log(format!(
+                        "{kind}: {} file(s) copied into the project from {}",
+                        files.len(),
+                        from.as_deref().unwrap_or(Path::new("")).display()
+                    )),
+                    Err(e) => {
+                        log(format!("{kind}: read from its files ({e})"));
+                        kept_in_files = true;
+                    }
+                }
+            }
+        }
+        if kept_in_files {
+            continue;
+        }
+        let stored = session.library_files(kind).map_err(|e| e.to_string())?;
+        if stored.is_empty() {
+            continue;
+        }
+        let dir = work.join(kind);
+        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        for (name, text) in &stored {
+            std::fs::write(dir.join(name), text).map_err(|e| format!("{name}: {e}"))?;
+        }
+        match kind {
+            "cables" => sources.library = Some(dir),
+            "structures" => sources.structures = Some(dir),
+            "insulators" => sources.insulators = Some(dir),
+            _ => {
+                // The file given, else the one used last, else the first.
+                let wanted = sources
+                    .weather
+                    .as_deref()
+                    .or(remembered.as_deref().map(Path::new))
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().into_owned());
+                let name = wanted
+                    .filter(|n| stored.iter().any(|(s, _)| s == n))
+                    .unwrap_or_else(|| stored[0].0.clone());
+                sources.weather = Some(dir.join(name));
+            }
+        }
+        log(format!("{kind}: {} file(s) from the project", stored.len()));
+    }
+    Ok(work)
+}
+
+impl Model {
+    /// Keeps the working copies of the project's libraries in the project
+    /// (after a library page or the weather case table saved one): every
+    /// file of the working folder put, files no longer there removed.
+    /// Nothing for a line file or libraries read from their files.
+    pub fn store_libraries(&self) -> Result<usize, String> {
+        let (Some(work), Ok(e)) = (&self.library_dir, &self.editing) else {
+            return Ok(0);
+        };
+        let mut n = 0;
+        for (kind, ext) in PROJECT_LIBRARIES {
+            let dir = work.join(kind);
+            if !dir.is_dir() {
+                continue;
+            }
+            let files = files_at(&dir, ext);
+            let names: Vec<String> = files
+                .iter()
+                .filter_map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .collect();
+            for (f, name) in files.iter().zip(&names) {
+                let text = std::fs::read_to_string(f).map_err(|e| format!("{name}: {e}"))?;
+                e.session
+                    .put_library_file(&e.user, kind, name, &text)
+                    .map_err(|e| e.to_string())?;
+                n += 1;
+            }
+            for (name, _) in e.session.library_files(kind).map_err(|e| e.to_string())? {
+                if !names.contains(&name) {
+                    e.session
+                        .delete_library_file(&e.user, kind, &name)
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        Ok(n)
+    }
+
+    /// Writes the project's libraries to `dir` (a folder per kind), to
+    /// share them or compare them with other data.
+    pub fn export_libraries(&self, dir: &Path) -> Result<usize, String> {
+        let e = self.editing.as_ref().map_err(Clone::clone)?;
+        let mut n = 0;
+        for (kind, _) in PROJECT_LIBRARIES {
+            let files = e.session.library_files(kind).map_err(|e| e.to_string())?;
+            if files.is_empty() {
+                continue;
+            }
+            let to = dir.join(kind);
+            std::fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            for (name, text) in files {
+                std::fs::write(to.join(&name), text).map_err(|e| format!("{name}: {e}"))?;
+                n += 1;
+            }
+        }
+        Ok(n)
     }
 }
 
@@ -497,22 +730,36 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         ),
         &mut log,
     );
+    // The project's own libraries.
+    let library_dir = match &session {
+        Some(s) => Some(project_libraries(&mut sources, s, &mut |m| {
+            step(m, &mut log)
+        })?),
+        None => None,
+    };
     let types = load_types(&sources, &line)?;
     if let Some((structures, insulators)) = &types {
         line = line
             .resolve(structures, insulators)
             .map_err(|e| e.to_string())?;
+        let dir = structures_dir(&sources);
         step(
-            format!(
-                "structure types from {}",
-                structures_dir(&sources).display()
-            ),
+            match &library_dir {
+                Some(w) if dir.starts_with(w) => "structure types from the project".to_owned(),
+                _ => format!("structure types from {}", dir.display()),
+            },
             &mut log,
         );
     }
     let lib_path = library_path(&sources);
     let library = ols_cables::Library::load(&lib_path).map_err(|e| e.to_string())?;
-    step(format!("wire library {}", lib_path.display()), &mut log);
+    step(
+        match &library_dir {
+            Some(w) if lib_path.starts_with(w) => "wire library from the project".to_owned(),
+            _ => format!("wire library {}", lib_path.display()),
+        },
+        &mut log,
+    );
     // The weather case file the project used last, when none is given.
     if sources.weather.is_none()
         && let Some(s) = &session
@@ -689,5 +936,6 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         shown_cases: vec![0],
         other_lines: Vec::new(),
         hidden_classes: Default::default(),
+        library_dir,
     })
 }

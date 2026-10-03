@@ -820,3 +820,35 @@ fn project_lines_are_saved_compared_and_made_the_working_line() {
     again.delete_snapshot("ben", "as built").unwrap();
     assert!(again.snapshots().unwrap().is_empty());
 }
+
+#[test]
+fn library_files_are_kept_in_the_project() {
+    let (path, s) = project("libraries");
+    assert!(s.library_files("cables").unwrap().is_empty());
+    s.put_library_file("ben", "cables", "a.olsw", "x = 1")
+        .unwrap();
+    s.put_library_file("ben", "cables", "b.olsw", "y = 2")
+        .unwrap();
+    s.put_library_file("ben", "cables", "a.olsw", "x = 3")
+        .unwrap();
+    s.put_library_file("ben", "weather", "w.olswc", "z = 4")
+        .unwrap();
+    // Viewers cannot; names are file names.
+    assert!(s.put_library_file("vic", "cables", "c.olsw", "").is_err());
+    assert!(
+        s.put_library_file("ben", "cables", "../c.olsw", "")
+            .is_err()
+    );
+    drop(s);
+    let s = Session::open(&path).unwrap();
+    assert_eq!(
+        s.library_files("cables").unwrap(),
+        vec![
+            ("a.olsw".to_owned(), "x = 3".to_owned()),
+            ("b.olsw".to_owned(), "y = 2".to_owned())
+        ]
+    );
+    s.delete_library_file("ben", "cables", "a.olsw").unwrap();
+    assert_eq!(s.library_files("cables").unwrap().len(), 1);
+    assert_eq!(s.library_files("weather").unwrap().len(), 1);
+}

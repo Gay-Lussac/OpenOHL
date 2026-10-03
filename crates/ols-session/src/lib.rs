@@ -673,7 +673,11 @@ impl Session {
                  undoes INTEGER, undone_by INTEGER, note TEXT);
              CREATE TABLE IF NOT EXISTS line_snapshot (
                  name TEXT PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                 user TEXT NOT NULL, note TEXT NOT NULL, json TEXT NOT NULL);",
+                 user TEXT NOT NULL, note TEXT NOT NULL, json TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS library_file (
+                 kind TEXT NOT NULL, name TEXT NOT NULL,
+                 time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                 user TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY (kind, name));",
         )?;
         // Added within schema 1 before its first release: add the column to
         // project files made by earlier builds.
@@ -924,6 +928,56 @@ impl Session {
         if n == 0 {
             return Err(refused(format!("no project line \"{name}\"")));
         }
+        Ok(())
+    }
+
+    /// The library files kept in the project of one kind (e.g. `cables`,
+    /// `structures`, `insulators`, `weather`): file name and text, by name.
+    pub fn library_files(&self, kind: &str) -> Result<Vec<(String, String)>, SessionError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name, text FROM library_file WHERE kind = ?1 ORDER BY name")?;
+        let rows = stmt.query_map(params![kind], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Keeps library file `name` of `kind` in the project (replacing one
+    /// of that name). Libraries are part of the project, not of the line:
+    /// not logged, not undone.
+    pub fn put_library_file(
+        &self,
+        user: &str,
+        kind: &str,
+        name: &str,
+        text: &str,
+    ) -> Result<(), SessionError> {
+        self.require(user, Role::Designer)?;
+        if kind.is_empty() || name.is_empty() || name.contains(['/', '\\']) {
+            return Err(refused(format!(
+                "library file \"{name}\" of \"{kind}\": bad name"
+            )));
+        }
+        self.conn.execute(
+            "INSERT INTO library_file (kind, name, user, text) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(kind, name) DO UPDATE SET text = excluded.text, user = excluded.user,
+                 time = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+            params![kind, name, user, text],
+        )?;
+        Ok(())
+    }
+
+    /// Removes library file `name` of `kind` from the project.
+    pub fn delete_library_file(
+        &self,
+        user: &str,
+        kind: &str,
+        name: &str,
+    ) -> Result<(), SessionError> {
+        self.require(user, Role::Designer)?;
+        self.conn.execute(
+            "DELETE FROM library_file WHERE kind = ?1 AND name = ?2",
+            params![kind, name],
+        )?;
         Ok(())
     }
 
