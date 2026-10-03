@@ -28,6 +28,8 @@ eframe.workspace = true
 egui_dock.workspace = true
 clap.workspace = true
 png = "0.18"
+log = "0.4"
+env_logger = "0.11"
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["wgpu", "eframe"] }

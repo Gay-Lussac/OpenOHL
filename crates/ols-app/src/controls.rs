@@ -170,6 +170,34 @@ impl Controls {
         ]
     }
 
+    /// The preset whose name starts with `name` (case-insensitive).
+    pub fn by_name(name: &str) -> Option<Controls> {
+        let wanted = name.trim().to_lowercase();
+        Self::presets()
+            .into_iter()
+            .find(|c| !wanted.is_empty() && c.name.to_lowercase().starts_with(&wanted))
+    }
+
+    /// Saves the scheme, speed and sensitivity.
+    pub fn save(&self, storage: &mut dyn eframe::Storage) {
+        storage.set_string("controls", self.name.to_owned());
+        storage.set_string("controls.speed", self.speed.to_string());
+        storage.set_string("controls.sensitivity", self.mouse_sensitivity.to_string());
+    }
+
+    /// The scheme saved by [`Controls::save`], if any.
+    pub fn load(storage: &dyn eframe::Storage) -> Option<Controls> {
+        let mut c = Self::by_name(&storage.get_string("controls")?)?;
+        let num = |key: &str| storage.get_string(key).and_then(|v| v.parse::<f64>().ok());
+        if let Some(v) = num("controls.speed").filter(|v| v.is_finite() && *v > 0.0) {
+            c.speed = v;
+        }
+        if let Some(v) = num("controls.sensitivity").filter(|v| v.is_finite() && *v > 0.0) {
+            c.mouse_sensitivity = v;
+        }
+        Some(c)
+    }
+
     /// The drag action for a pointer button.
     pub fn drag(&self, button: egui::PointerButton) -> Drag {
         match button {
@@ -213,7 +241,7 @@ impl Controls {
             out.push(("click 3D view".into(), "capture the mouse".into()));
             out.push(("mouse (captured)".into(), "look around".into()));
             out.push(("click (captured)".into(), "select at the crosshair".into()));
-            out.push(("wheel (captured)".into(), "speed".into()));
+            out.push(("Ctrl + wheel (captured)".into(), "speed".into()));
             out.push(("Esc".into(), "free the mouse".into()));
         }
         out.push(("left drag".into(), self.left.name().into()));

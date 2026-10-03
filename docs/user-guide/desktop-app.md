@@ -19,6 +19,7 @@ cargo run --release -p ols-app -- project.ols          # with the project's poin
 | `--pointcloud` | Point cloud in a project (`FILE.ols` or `FILE.ols#name`); default: the project's own. |
 | `--points` | Most LiDAR points shown (default 2 000 000). The ground surface is built from all ground points (lowest per 1 m cell) in the corridor. |
 | `--corridor` | Half width of the LiDAR corridor around the spans (default 60 m). |
+| `--controls` | Navigation scheme: `orbit` or `minecraft` (default: the one used last). |
 | `--screenshot FILE.png` (`--focus ID`) | Load, render the 3D view to an image and exit. |
 
 ## Views
@@ -46,9 +47,9 @@ The 3D view is navigated with the mouse and, while the pointer is over it, the k
 Two schemes, chosen in the Model panel (Controls):
 
 - **Orbit** — left drag turns the view around the point looked at.
-- **Minecraft creative** — first person, as in the game: clicking the 3D view captures the mouse (locked and hidden); moving it looks around (mouse down: look down); a crosshair marks the centre and a click selects what is under it (double-click flies to it); the wheel sets the speed. **Escape** frees the mouse to use the panels (switching to another application frees it too).
+- **Minecraft creative** — first person, as in the game: clicking the 3D view captures the mouse (locked and hidden); moving it looks around (mouse down: look down); a crosshair marks the centre and a click selects what is under it (double-click flies to it); **Ctrl + wheel** sets the speed (the wheel alone does nothing). **Escape** frees the mouse to use the panels (switching to another application frees it too).
 
-The speed (m/s) is set there too, and the list shows every key of the scheme. Schemes are data (`controls.rs`: actions bound to keys and mouse buttons), so schemes familiar from other software can be added as presets, and later edited and saved.
+The speed (m/s) and, for the first-person scheme, the look sensitivity are set there too, and the list shows every key of the scheme. The scheme, speed and sensitivity are remembered for the next start; `--controls orbit` or `--controls minecraft` chooses one at start. Schemes are data (`controls.rs`: actions bound to keys and mouse buttons), so schemes familiar from other software can be added as presets, and later edited and saved.
 
 Clicking an object in any view selects it everywhere. Tabs can be dragged to rearrange the window.
 

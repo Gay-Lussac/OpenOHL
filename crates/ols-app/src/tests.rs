@@ -248,3 +248,134 @@ fn first_person_capture_aim_and_escape() {
         "freed"
     );
 }
+
+/// A real click: press, move a few pixels, release in a later frame — it
+/// still captures the mouse, and its release selects nothing.
+#[test]
+fn a_wobbly_click_captures_the_mouse() {
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    harness.state_mut().ready().unwrap().view3d.controls = crate::controls::Controls::presets()
+        .into_iter()
+        .find(|c| c.capture)
+        .unwrap();
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let (a, b) = (egui::pos2(620.0, 300.0), egui::pos2(632.0, 306.0));
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(a));
+    harness.run();
+    harness.input_mut().events.push(button(a, true));
+    harness.step();
+    assert!(harness.state_mut().ready().unwrap().view3d.captured);
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(b));
+    harness.step();
+    harness.input_mut().events.push(button(b, false));
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.view3d.captured, "still captured after the release");
+    assert_eq!(r.selection, Selection::None);
+}
+
+/// While captured: the wheel alone leaves the speed; Ctrl + wheel sets it.
+#[test]
+fn ctrl_wheel_sets_the_speed() {
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    harness.state_mut().ready().unwrap().view3d.controls =
+        crate::controls::Controls::by_name("minecraft").unwrap();
+    let at = egui::pos2(620.0, 300.0);
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(at));
+    harness.run();
+    for pressed in [true, false] {
+        harness.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run();
+    assert!(harness.state_mut().ready().unwrap().view3d.captured);
+    let speed = |h: &mut Harness<'_, App>| h.state_mut().ready().unwrap().view3d.controls.speed;
+    let s0 = speed(&mut harness);
+    let wheel = |ctrl: bool| egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, 3.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: if ctrl {
+            egui::Modifiers::CTRL
+        } else {
+            egui::Modifiers::NONE
+        },
+    };
+    harness.input_mut().events.push(wheel(false));
+    harness.run();
+    assert_eq!(speed(&mut harness), s0, "the wheel alone leaves the speed");
+    harness.input_mut().events.push(wheel(true));
+    harness.run();
+    let s1 = speed(&mut harness);
+    assert!((s1 / s0 - 0.3f64.exp()).abs() < 1e-9, "{s0} → {s1}");
+}
+
+#[derive(Default)]
+struct Memory(std::collections::HashMap<String, String>);
+
+impl eframe::Storage for Memory {
+    fn get_string(&self, key: &str) -> Option<String> {
+        self.0.get(key).cloned()
+    }
+    fn set_string(&mut self, key: &str, value: String) {
+        self.0.insert(key.to_owned(), value);
+    }
+    fn remove_string(&mut self, key: &str) {
+        self.0.remove(key);
+    }
+    fn flush(&mut self) {}
+}
+
+#[test]
+fn the_scheme_is_remembered() {
+    let mut c = crate::controls::Controls::by_name("minecraft").unwrap();
+    c.speed = 123.0;
+    c.mouse_sensitivity = 0.002;
+    let mut storage = Memory::default();
+    c.save(&mut storage);
+    assert_eq!(crate::controls::Controls::load(&storage), Some(c));
+    assert_eq!(crate::controls::Controls::load(&Memory::default()), None);
+    assert!(crate::controls::Controls::by_name("nope").is_none());
+}

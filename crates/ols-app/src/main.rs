@@ -64,12 +64,23 @@ struct Args {
     /// file and exit (checks, documentation).
     #[arg(long)]
     screenshot: Option<PathBuf>,
+    /// Navigation scheme of the 3D view: orbit or minecraft (default: the
+    /// one used last).
+    #[arg(long)]
+    controls: Option<String>,
     /// With --screenshot: look at this structure from 250 m.
     #[arg(long)]
     focus: Option<String>,
 }
 
 fn main() -> std::process::ExitCode {
+    // Warnings (e.g. a cursor lock refused by the system) and `RUST_LOG`
+    // to the terminal.
+    env_logger::Builder::from_env(
+        env_logger::Env::default()
+            .default_filter_or("info,wgpu=warn,naga=warn,eframe=warn,egui_wgpu=warn"),
+    )
+    .init();
     let args = Args::parse();
     let sources = model::Sources {
         file: args.file,
@@ -91,6 +102,16 @@ fn main() -> std::process::ExitCode {
             }
         };
     }
+    let chosen = match &args.controls {
+        Some(name) => match controls::Controls::by_name(name) {
+            Some(c) => Some(c),
+            None => {
+                eprintln!("error: --controls {name}: use orbit or minecraft");
+                return std::process::ExitCode::FAILURE;
+            }
+        },
+        None => None,
+    };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("OLS CAD")
@@ -101,11 +122,13 @@ fn main() -> std::process::ExitCode {
         "OLS CAD",
         options,
         Box::new(move |cc| {
-            Ok(Box::new(app::App::new(
-                sources,
-                cc.wgpu_render_state.clone(),
-                &cc.egui_ctx,
-            )))
+            let mut app = app::App::new(sources, cc.wgpu_render_state.clone(), &cc.egui_ctx);
+            // Given, else the one used last, else the default.
+            app.controls = chosen
+                .or_else(|| cc.storage.and_then(controls::Controls::load))
+                .unwrap_or_default();
+            log::info!("controls: {}", app.controls.name);
+            Ok(Box::new(app))
         }),
     );
     match result {

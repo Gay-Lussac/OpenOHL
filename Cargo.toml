@@ -38,7 +38,7 @@ toml = "0.9"
 criterion = "0.8"
 nalgebra = "0.35"
 wgpu = "30"
-eframe = { version = "0.36", default-features = false, features = ["wgpu", "default_fonts", "accesskit", "x11"] }
+eframe = { version = "0.36", default-features = false, features = ["wgpu", "default_fonts", "accesskit", "x11", "persistence"] }
 egui_dock = "0.21"
 
 [workspace.lints.rust]

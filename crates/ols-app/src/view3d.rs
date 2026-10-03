@@ -31,6 +31,8 @@ pub struct View3d {
     texture: Option<egui::TextureId>,
     /// The mouse is captured (first person).
     pub captured: bool,
+    /// The release of the press that captured the mouse is not a click.
+    swallow_release: bool,
 }
 
 impl View3d {
@@ -38,6 +40,7 @@ impl View3d {
     /// hidden and moving it turns the view.
     pub fn set_captured(captured: &mut bool, ctx: &egui::Context, on: bool) {
         *captured = on;
+        log::info!("3D view: mouse {}", if on { "captured" } else { "freed" });
         let grab = if on {
             egui::CursorGrab::Locked
         } else {
@@ -104,6 +107,7 @@ impl View3d {
                 })
             });
             if d != egui::Vec2::ZERO {
+                log::trace!("3D view: mouse moved {d:?}");
                 let k = self.controls.mouse_sensitivity;
                 camera.look(f64::from(d.x) * k, -f64::from(d.y) * k);
             }
@@ -115,22 +119,65 @@ impl View3d {
                         .button_double_clicked(egui::PointerButton::Primary),
                 )
             });
-            if click || double {
+            if self.swallow_release {
+                if ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
+                    self.swallow_release = false;
+                }
+            } else if click || double {
                 pick_at = Some((centre, double));
             }
-            // The wheel sets the speed.
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll != 0.0 {
+            // Ctrl + wheel sets the speed (the wheel alone does nothing).
+            // Raw wheel events: egui turns Ctrl + wheel into a zoom.
+            let notches = ui.input(|i| {
+                i.events
+                    .iter()
+                    .map(|e| match e {
+                        egui::Event::MouseWheel {
+                            unit,
+                            delta,
+                            modifiers,
+                            ..
+                        } if modifiers.ctrl => {
+                            f64::from(delta.y)
+                                * match unit {
+                                    egui::MouseWheelUnit::Line => 1.0,
+                                    egui::MouseWheelUnit::Point => 1.0 / 40.0,
+                                    egui::MouseWheelUnit::Page => 10.0,
+                                }
+                        }
+                        _ => 0.0,
+                    })
+                    .sum::<f64>()
+            });
+            if notches != 0.0 {
                 self.controls.speed =
-                    (self.controls.speed * (f64::from(scroll) * 0.004).exp()).clamp(1.0, 2000.0);
+                    (self.controls.speed * (notches * 0.1).exp()).clamp(1.0, 2000.0);
             }
         } else {
             // Keys act while the pointer is over the view or it has focus.
             if response.clicked() || response.drag_started() {
                 response.request_focus();
             }
-            if self.controls.capture && response.clicked() {
+            // Capture on the press itself (a click that moves a little is
+            // a drag, not a click); the release of that press selects
+            // nothing.
+            let pressed_here = response.hovered()
+                && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
+            if pressed_here {
+                log::info!(
+                    "3D view: press (scheme {}, captures the mouse: {})",
+                    self.controls.name,
+                    self.controls.capture
+                );
+            }
+            if self.controls.capture && pressed_here {
                 Self::set_captured(&mut self.captured, ui.ctx(), true);
+                // Swallow its release, unless it came in the same frame.
+                self.swallow_release =
+                    !ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+                response.request_focus();
+            } else if self.controls.capture {
+                // Nothing else for the left button in this scheme.
             } else if (response.clicked() || response.double_clicked())
                 && let Some(pos) = response.interact_pointer_pos()
             {
@@ -267,7 +314,7 @@ impl View3d {
                 rect.center_top() + egui::vec2(0.0, 8.0),
                 egui::Align2::CENTER_TOP,
                 format!(
-                    "Esc: free the mouse · click: select at the crosshair · W A S D Space Shift · Ctrl faster · wheel: speed {:.0} m/s",
+                    "Esc: free the mouse · click: select at the crosshair · W A S D Space Shift · Ctrl faster · Ctrl + wheel: speed {:.0} m/s",
                     self.controls.speed
                 ),
                 egui::FontId::proportional(12.0),

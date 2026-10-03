@@ -88,6 +88,8 @@ enum State {
 /// The OLS CAD application.
 pub struct App {
     sources: Sources,
+    /// Navigation scheme to start with.
+    pub controls: crate::controls::Controls,
     state: State,
     dock: DockState<Tab>,
     render_state: Option<egui_wgpu::RenderState>,
@@ -131,6 +133,7 @@ impl App {
             },
             dock: default_dock(),
             render_state,
+            controls: crate::controls::Controls::default(),
         }
     }
 
@@ -142,6 +145,7 @@ impl App {
             state: State::Ready(Box::new(Ready::new(model))),
             dock: default_dock(),
             render_state,
+            controls: crate::controls::Controls::default(),
         }
     }
 
@@ -228,6 +232,7 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
             .show_ui(ui, |ui| {
                 for p in crate::controls::Controls::presets() {
                     if ui.selectable_label(c.name == p.name, p.name).clicked() {
+                        log::info!("controls: {}", p.name);
                         // Keep the chosen speed.
                         let speed = c.speed;
                         *c = p;
@@ -236,10 +241,24 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
                 }
             });
         ui.add(
-            egui::Slider::new(&mut c.speed, 1.0..=1000.0)
+            egui::Slider::new(&mut c.speed, 1.0..=2000.0)
                 .text("m/s")
                 .logarithmic(true),
         );
+        if c.capture {
+            // Shown ×1000 (milliradians per pixel) for a readable number.
+            let mut mrad = c.mouse_sensitivity * 1000.0;
+            if ui
+                .add(
+                    egui::Slider::new(&mut mrad, 0.3..=10.0)
+                        .text("look sensitivity")
+                        .logarithmic(true),
+                )
+                .changed()
+            {
+                c.mouse_sensitivity = mrad / 1000.0;
+            }
+        }
         egui::CollapsingHeader::new("keys and mouse")
             .id_salt("controls-list")
             .show(ui, |ui| {
@@ -281,6 +300,13 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
 }
 
 impl eframe::App for App {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        match &self.state {
+            State::Ready(r) => r.view3d.controls.save(storage),
+            _ => self.controls.save(storage),
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if let State::Loading { rx, progress } = &mut self.state {
             let mut done = None;
@@ -291,7 +317,11 @@ impl eframe::App for App {
                 }
             }
             match done {
-                Some(Ok(model)) => self.state = State::Ready(Box::new(Ready::new(*model))),
+                Some(Ok(model)) => {
+                    let mut ready = Ready::new(*model);
+                    ready.view3d.controls = self.controls.clone();
+                    self.state = State::Ready(Box::new(ready));
+                }
                 Some(Err(e)) => self.state = State::Failed(e),
                 None => {}
             }
