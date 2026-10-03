@@ -131,6 +131,9 @@ fn main() -> std::process::ExitCode {
                 .or_else(|| cc.storage.and_then(controls::Controls::load))
                 .unwrap_or_default();
             log::info!("controls: {}", app.controls.name);
+            if let Some(s) = cc.storage.and_then(selection::Snaps::load) {
+                app.snaps = s;
+            }
             Ok(Box::new(app))
         }),
     );

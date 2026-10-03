@@ -331,18 +331,21 @@ impl Camera {
     /// Screen position (pixels from the top left of a `size` view) and
     /// depth of a point, `None` behind the camera.
     pub fn project(&self, p: [f64; 3], size: [f64; 2]) -> Option<([f64; 2], f64)> {
+        self.projector(size)(p)
+    }
+
+    /// [`Camera::project`] for many points: the matrix is made once.
+    pub fn projector(&self, size: [f64; 2]) -> impl Fn([f64; 3]) -> Option<([f64; 2], f64)> {
         let m = self.view_proj_f64(self.target, size[0] / size[1].max(1.0));
-        let v = m * nalgebra::Vector4::new(
-            p[0] - self.target[0],
-            p[1] - self.target[1],
-            p[2] - self.target[2],
-            1.0,
-        );
-        if v.w <= 1e-9 {
-            return None;
+        let t = self.target;
+        move |p| {
+            let v = m * nalgebra::Vector4::new(p[0] - t[0], p[1] - t[1], p[2] - t[2], 1.0);
+            if v.w <= 1e-9 {
+                return None;
+            }
+            let (x, y) = (v.x / v.w, v.y / v.w);
+            Some(([(x + 1.0) * 0.5 * size[0], (1.0 - y) * 0.5 * size[1]], v.w))
         }
-        let (x, y) = (v.x / v.w, v.y / v.w);
-        Some(([(x + 1.0) * 0.5 * size[0], (1.0 - y) * 0.5 * size[1]], v.w))
     }
 }
 

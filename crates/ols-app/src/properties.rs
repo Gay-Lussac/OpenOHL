@@ -135,6 +135,160 @@ pub fn ui(ui: &mut egui::Ui, model: &Model, case: usize, selection: &mut Selecti
                 }
             }
         }
+        Selection::Attachment {
+            structure,
+            set,
+            phase,
+        } => {
+            let at = ols_line::SectionPoint {
+                structure: structure.clone(),
+                set,
+                phase,
+            };
+            let Some(a) = line.attachment(&at) else {
+                ui.label(format!(
+                    "{structure} set {set} phase {phase}: not in the line"
+                ));
+                return;
+            };
+            ui.heading(format!("{structure} set {set} phase {phase}"));
+            if ui.link(format!("structure {structure}")).clicked() {
+                next = Some(Selection::Structure(structure.clone()));
+            }
+            let d = [0, 1, 2].map(|k| a.wire_point[k] - a.insulator_point[k]);
+            let p3 = |p: [f64; 3]| format!("{:.3}, {:.3}, {:.3}", p[0], p[1], p[2]);
+            grid(
+                ui,
+                "attachment",
+                &[
+                    ("label", a.label.clone()),
+                    (
+                        "string",
+                        if a.legs.is_some() {
+                            "V-string".into()
+                        } else if a.strain_member {
+                            "strain string".into()
+                        } else {
+                            "I-string / fixed".into()
+                        },
+                    ),
+                    ("insulator point", p3(a.insulator_point)),
+                    ("wire point", p3(a.wire_point)),
+                    (
+                        "string length",
+                        format!("{:.3} m", (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()),
+                    ),
+                    ("weight", format!("{:.0} N", a.insulator_weight)),
+                    (
+                        "insulator assembly",
+                        a.insulator.clone().unwrap_or_else(|| "—".into()),
+                    ),
+                    (
+                        "top / bottom labels",
+                        format!("{} / {}", a.top_label, a.bottom_label),
+                    ),
+                ],
+            );
+            ui.separator();
+            ui.label(egui::RichText::new("Spans at this attachment").strong());
+            for sec in &line.sections {
+                for (k, w) in sec.points.windows(2).enumerate() {
+                    if (w[0] == at || w[1] == at)
+                        && ui
+                            .link(format!(
+                                "{} span {} ({} {})",
+                                sec.id,
+                                k + 1,
+                                sec.circuit,
+                                sec.phase_label
+                            ))
+                            .clicked()
+                    {
+                        next = Some(Selection::Span {
+                            section: sec.id.clone(),
+                            span: k,
+                        });
+                    }
+                }
+            }
+            for jp in &line.jumpers {
+                if (jp.from == at || jp.to == at) && ui.link(format!("jumper {}", jp.id)).clicked()
+                {
+                    next = Some(Selection::Jumper(jp.id.clone()));
+                }
+            }
+        }
+        Selection::AlignmentPoint { route, index } => {
+            ui.heading(format!("Route {route}, alignment point {}", index + 1));
+            let routes = line.effective_routes();
+            let r = routes.iter().find(|r| r.id == route);
+            let tied = r.and_then(|r| {
+                if r.alignment.is_empty() {
+                    // No alignment: the points are the route's structures.
+                    r.structures.get(index).cloned()
+                } else {
+                    r.alignment.get(index).and_then(|a| a.structure.clone())
+                }
+            });
+            match crate::selection::alignment_point(model, &route, index) {
+                Some(p) => grid(
+                    ui,
+                    "alignment",
+                    &[
+                        ("easting", format!("{:.3} m", p[0])),
+                        ("northing", format!("{:.3} m", p[1])),
+                        ("height", format!("{:.3} m", p[2])),
+                        (
+                            "points in the route",
+                            r.map_or(0, |r| r.centreline(line).len()).to_string(),
+                        ),
+                    ],
+                ),
+                None => {
+                    ui.label("not in the line");
+                }
+            }
+            match tied {
+                Some(st) => {
+                    if ui.link(format!("tied to structure {st}")).clicked() {
+                        next = Some(Selection::Structure(st));
+                    }
+                }
+                None => {
+                    ui.label("free (not tied to a structure)");
+                }
+            }
+        }
+        Selection::LidarPoint(k) => {
+            ui.heading(format!("LiDAR point {k}"));
+            let Some((q, class)) = model.points.get(k) else {
+                ui.label("not loaded");
+                return;
+            };
+            let p = crate::selection::lidar_xyz(model, q);
+            let def = model.scheme.class(*class);
+            grid(
+                ui,
+                "lidar",
+                &[
+                    ("easting", format!("{:.3} m", p[0])),
+                    ("northing", format!("{:.3} m", p[1])),
+                    ("height", format!("{:.3} m", p[2])),
+                    (
+                        "class",
+                        format!("{} {}", class, def.map_or("", |d| d.name.as_str())),
+                    ),
+                    ("roles", def.map_or(String::new(), |d| d.roles.join(", "))),
+                    ("scheme", model.scheme.name.clone()),
+                ],
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Shown points are a thinned subset of the cloud (see the Model tab).",
+                )
+                .small(),
+            );
+        }
         Selection::Jumper(id) => {
             let Some(j) = line.jumpers.iter().find(|j| j.id == id) else {
                 ui.label(format!("{id}: not in the line"));

@@ -319,6 +319,32 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         }
                     }
                 }
+                Selection::Attachment {
+                    structure,
+                    set,
+                    phase,
+                } => {
+                    if let Some(a) = line.attachment(&ols_line::SectionPoint {
+                        structure: structure.clone(),
+                        set: *set,
+                        phase: *phase,
+                    }) {
+                        s.polyline(&[a.insulator_point, a.wire_point], hi, 3.0);
+                        s.point(a.insulator_point, hi, 9.0);
+                        s.point(a.wire_point, hi, 11.0);
+                    }
+                }
+                Selection::AlignmentPoint { route, index } => {
+                    if let Some(p) = crate::selection::alignment_point(model, route, *index) {
+                        s.point(p, hi, 12.0);
+                        s.polyline(&[p, [p[0], p[1], p[2] + 30.0]], hi, 1.5);
+                    }
+                }
+                Selection::LidarPoint(k) => {
+                    if let Some((q, _)) = model.points.get(*k) {
+                        s.point(crate::selection::lidar_xyz(model, q), hi, 10.0);
+                    }
+                }
                 Selection::None => {}
             }
         }

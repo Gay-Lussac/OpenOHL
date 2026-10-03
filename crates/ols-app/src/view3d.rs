@@ -56,6 +56,7 @@ impl View3d {
     }
 
     /// Shows the view.
+    #[allow(clippy::too_many_arguments)]
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -64,6 +65,7 @@ impl View3d {
         case: usize,
         selection: &mut Selection,
         visible: &HashSet<Layer>,
+        snaps: &selection::Snaps,
     ) {
         let Some(rs) = rs else {
             ui.centered_and_justified(|ui| ui.label("3D view needs a GPU (wgpu)."));
@@ -222,10 +224,17 @@ impl View3d {
         }
         if let Some((at, double)) = pick_at {
             let cam = *camera;
-            let cands = selection::candidates(model, case);
             let radius = if self.captured { 10.0 } else { 14.0 };
-            let picked =
-                selection::pick(&cands, at, radius, |p| cam.project(p, size).map(|(q, _)| q));
+            let project = cam.projector(size);
+            let started = std::time::Instant::now();
+            let picked = selection::pick_in_model(model, case, snaps, at, radius, |p| {
+                project(p).map(|(q, _)| q)
+            });
+            log::info!(
+                "3D view: picked {} in {:.1?}",
+                picked.describe(),
+                started.elapsed()
+            );
             if picked != *selection {
                 *selection = picked;
             }

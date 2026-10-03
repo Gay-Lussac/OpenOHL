@@ -385,7 +385,7 @@ fn the_scheme_is_remembered() {
 #[test]
 fn jumpers_are_selectable() {
     let model = synthetic();
-    let cands = crate::selection::candidates(&model, 0);
+    let cands = crate::selection::candidates(&model, 0, &crate::selection::Snaps::default());
     assert!(
         cands
             .iter()
@@ -416,5 +416,110 @@ fn jumpers_are_selectable() {
             .query_all_by_label_contains("J-T3-branch: set 2")
             .next()
             .is_some()
+    );
+}
+
+/// Only the kinds switched on can be clicked; a point wins over the line
+/// it sits on.
+#[test]
+fn snaps_choose_what_can_be_clicked() {
+    use crate::selection::{Snap, Snaps, candidates, pick};
+    let model = synthetic();
+    let kinds = |snaps: &Snaps| {
+        candidates(&model, 0, snaps)
+            .iter()
+            .filter_map(|(s, _, _)| s.kind())
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(
+        kinds(&Snaps::default()),
+        [Snap::Structure, Snap::Span, Snap::Jumper]
+            .into_iter()
+            .collect()
+    );
+    let all = Snaps(Snap::ALL.into_iter().collect());
+    // The example has no LiDAR points; every other kind is there.
+    let mut expected: std::collections::BTreeSet<Snap> = Snap::ALL.into_iter().collect();
+    expected.remove(&Snap::LidarPoint);
+    assert_eq!(kinds(&all), expected);
+    assert!(candidates(&model, 0, &Snaps(Default::default())).is_empty());
+    // A plan projection (1 px per m): the clamp of T2's first attachment.
+    let a = model.line.structure("T2").unwrap().attachments[0].clone();
+    let project = |p: [f64; 3]| Some([p[0], -p[1]]);
+    let at = [a.wire_point[0], -a.wire_point[1]];
+    let with = |snaps: &Snaps| pick(&candidates(&model, 0, snaps), at, 5.0, project);
+    assert_eq!(with(&Snaps::default()), Selection::Structure("T2".into()));
+    assert_eq!(
+        with(&all),
+        Selection::Attachment {
+            structure: "T2".into(),
+            set: a.set,
+            phase: a.phase
+        }
+    );
+    // Saved and restored.
+    let mut storage = Memory::default();
+    all.save(&mut storage);
+    assert_eq!(Snaps::load(&storage), Some(all));
+    assert_eq!(Snaps::load(&Memory::default()), None);
+}
+
+/// The new kinds show their properties.
+#[test]
+fn attachment_and_alignment_point_properties() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    harness.state_mut().ready().unwrap().selection = Selection::Attachment {
+        structure: "T3".into(),
+        set: 2,
+        phase: 1,
+    };
+    harness.run();
+    // Top bar and properties.
+    assert_eq!(harness.query_all_by_label("T3 set 2 phase 1").count(), 2);
+    assert!(
+        harness
+            .query_all_by_label_contains("jumper J-T3-branch")
+            .next()
+            .is_some()
+    );
+    harness.state_mut().ready().unwrap().selection = Selection::AlignmentPoint {
+        route: "main".into(),
+        index: 1,
+    };
+    harness.run();
+    assert_eq!(
+        harness
+            .query_all_by_label("Route main, alignment point 2")
+            .count(),
+        1
+    );
+    harness.get_by_label("free (not tied to a structure)");
+    // The Snap tab (behind Model) lists every kind.
+    harness.state_mut().show_tab(crate::app::Tab::Snap);
+    harness.run();
+    harness.get_by_label("Attachment points");
+    harness.get_by_label("LiDAR points");
+}
+
+/// LiDAR points are picked straight from the model when switched on.
+#[test]
+fn lidar_points_can_be_picked() {
+    use crate::selection::{Snap, Snaps, pick_in_model};
+    let mut model = synthetic();
+    // A point 200 m east of the origin, 30 m up (in mm from the origin).
+    model.points.push(([200_000, 0, 30_000], 5));
+    let p = crate::selection::lidar_xyz(&model, &[200_000, 0, 30_000]);
+    let project = |q: [f64; 3]| Some([q[0], -q[2]]);
+    let at = [p[0] + 1.0, -p[2]];
+    let off = pick_in_model(&model, 0, &Snaps(Default::default()), at, 5.0, project);
+    assert_eq!(off, Selection::None);
+    let on = Snaps([Snap::LidarPoint].into_iter().collect());
+    assert_eq!(
+        pick_in_model(&model, 0, &on, at, 5.0, project),
+        Selection::LidarPoint(0)
     );
 }

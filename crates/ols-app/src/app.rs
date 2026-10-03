@@ -32,6 +32,8 @@ pub enum Tab {
     Properties,
     /// Layers, weather cases, load log.
     Model,
+    /// What can be clicked.
+    Snap,
 }
 
 enum Message {
@@ -47,6 +49,8 @@ pub struct Ready {
     pub case: usize,
     /// Selected object.
     pub selection: Selection,
+    /// What can be clicked.
+    pub snaps: crate::selection::Snaps,
     /// Visible 3D layers.
     pub visible: HashSet<Layer>,
     /// 3D view.
@@ -68,6 +72,7 @@ impl Ready {
             model,
             case: 0,
             selection: Selection::None,
+            snaps: crate::selection::Snaps::default(),
             visible,
             view3d,
             plan: PlanView::default(),
@@ -90,6 +95,8 @@ pub struct App {
     sources: Sources,
     /// Navigation scheme to start with.
     pub controls: crate::controls::Controls,
+    /// What can be clicked, to start with.
+    pub snaps: crate::selection::Snaps,
     state: State,
     dock: DockState<Tab>,
     render_state: Option<egui_wgpu::RenderState>,
@@ -101,7 +108,7 @@ pub fn default_dock() -> DockState<Tab> {
     let mut dock = DockState::new(vec![Tab::View3d, Tab::Plan]);
     let tree = dock.main_surface_mut();
     let [centre, _] = tree.split_right(NodeIndex::root(), 0.74, vec![Tab::Properties]);
-    let [centre, _] = tree.split_left(centre, 0.2, vec![Tab::Model]);
+    let [centre, _] = tree.split_left(centre, 0.2, vec![Tab::Model, Tab::Snap]);
     tree.split_below(centre, 0.66, vec![Tab::Profile]);
     dock
 }
@@ -134,6 +141,7 @@ impl App {
             dock: default_dock(),
             render_state,
             controls: crate::controls::Controls::default(),
+            snaps: crate::selection::Snaps::default(),
         }
     }
 
@@ -146,6 +154,15 @@ impl App {
             dock: default_dock(),
             render_state,
             controls: crate::controls::Controls::default(),
+            snaps: crate::selection::Snaps::default(),
+        }
+    }
+
+    /// Brings a tab to the front (tests).
+    #[cfg(test)]
+    pub fn show_tab(&mut self, tab: Tab) {
+        if let Some(path) = self.dock.find_tab(&tab) {
+            let _ = self.dock.set_active_tab(path);
         }
     }
 
@@ -174,6 +191,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Profile => "Profile",
             Tab::Properties => "Properties",
             Tab::Model => "Model",
+            Tab::Snap => "Snap",
         }
         .into()
     }
@@ -190,18 +208,59 @@ impl TabViewer for Viewer<'_> {
         let r = &mut *self.ready;
         let before = r.selection.clone();
         match tab {
-            Tab::View3d => r
-                .view3d
-                .ui(ui, self.rs, &r.model, r.case, &mut r.selection, &r.visible),
-            Tab::Plan => r.plan.ui(ui, &r.model, r.case, &mut r.selection),
-            Tab::Profile => r.profile.ui(ui, &r.model, r.case, &mut r.selection),
+            Tab::View3d => r.view3d.ui(
+                ui,
+                self.rs,
+                &r.model,
+                r.case,
+                &mut r.selection,
+                &r.visible,
+                &r.snaps,
+            ),
+            Tab::Plan => r.plan.ui(ui, &r.model, r.case, &mut r.selection, &r.snaps),
+            Tab::Profile => r
+                .profile
+                .ui(ui, &r.model, r.case, &mut r.selection, &r.snaps),
             Tab::Properties => crate::properties::ui(ui, &r.model, r.case, &mut r.selection),
             Tab::Model => model_panel(ui, r),
+            Tab::Snap => snap_panel(ui, &mut r.snaps),
         }
         if r.selection != before {
             r.view3d.dirty.insert(Layer::Selection);
         }
     }
+}
+
+fn snap_panel(ui: &mut egui::Ui, snaps: &mut crate::selection::Snaps) {
+    use crate::selection::Snap;
+    ui.label(egui::RichText::new("What can be clicked").strong());
+    for kind in Snap::ALL {
+        let mut on = snaps.on(kind);
+        if ui.checkbox(&mut on, kind.name()).changed() {
+            if on {
+                snaps.0.insert(kind);
+            } else {
+                snaps.0.remove(&kind);
+            }
+        }
+    }
+    ui.horizontal(|ui| {
+        if ui.button("All").clicked() {
+            snaps.0 = Snap::ALL.into_iter().collect();
+        }
+        if ui.button("None").clicked() {
+            snaps.0.clear();
+        }
+        if ui.button("Default").clicked() {
+            *snaps = crate::selection::Snaps::default();
+        }
+    });
+    ui.label(
+        egui::RichText::new(
+            "At about the same distance, points win over the lines they sit on, structures over wires.",
+        )
+        .small(),
+    );
 }
 
 fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
@@ -302,8 +361,14 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
 impl eframe::App for App {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         match &self.state {
-            State::Ready(r) => r.view3d.controls.save(storage),
-            _ => self.controls.save(storage),
+            State::Ready(r) => {
+                r.view3d.controls.save(storage);
+                r.snaps.save(storage);
+            }
+            _ => {
+                self.controls.save(storage);
+                self.snaps.save(storage);
+            }
         }
     }
 
@@ -320,6 +385,7 @@ impl eframe::App for App {
                 Some(Ok(model)) => {
                     let mut ready = Ready::new(*model);
                     ready.view3d.controls = self.controls.clone();
+                    ready.snaps = self.snaps.clone();
                     self.state = State::Ready(Box::new(ready));
                 }
                 Some(Err(e)) => self.state = State::Failed(e),

@@ -31,7 +31,14 @@ impl ProfileView {
     }
 
     /// Shows the view.
-    pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model, case: usize, selection: &mut Selection) {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        case: usize,
+        selection: &mut Selection,
+        snaps: &crate::selection::Snaps,
+    ) {
         let routes = model.line.effective_routes();
         if routes.is_empty() {
             ui.label("No route.");
@@ -236,7 +243,8 @@ impl ProfileView {
         {
             let mut best: Option<(f32, Selection)> = None;
             let mut consider = |d: f32, s: Selection| {
-                if d < 12.0 && best.as_ref().is_none_or(|b| d < b.0) {
+                let on = s.kind().is_some_and(|k| snaps.on(k));
+                if on && d < 12.0 && best.as_ref().is_none_or(|b| d < b.0) {
                     best = Some((d, s));
                 }
             };

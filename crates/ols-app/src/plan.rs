@@ -51,7 +51,14 @@ impl PlanView {
     }
 
     /// Shows the view.
-    pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model, case: usize, selection: &mut Selection) {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        case: usize,
+        selection: &mut Selection,
+        snaps: &selection::Snaps,
+    ) {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         if self.centre.is_none() {
@@ -94,11 +101,17 @@ impl PlanView {
         if (response.clicked() || response.double_clicked())
             && let Some(pos) = response.interact_pointer_pos()
         {
-            let cands = selection::candidates(model, case);
-            *selection = selection::pick(&cands, [f64::from(pos.x), f64::from(pos.y)], 12.0, |p| {
-                let q = to_screen(p);
-                Some([f64::from(q.x), f64::from(q.y)])
-            });
+            *selection = selection::pick_in_model(
+                model,
+                case,
+                snaps,
+                [f64::from(pos.x), f64::from(pos.y)],
+                12.0,
+                |p| {
+                    let q = to_screen(p);
+                    Some([f64::from(q.x), f64::from(q.y)])
+                },
+            );
             if response.double_clicked()
                 && let Some(f) = selection.focus(model, case)
             {

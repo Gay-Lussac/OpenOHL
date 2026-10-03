@@ -29,6 +29,8 @@ cargo run --release -p ols-app -- project.ols          # with the project's poin
 - **Profile** — per route: ground along the centreline, structures and wires by station; heights fit the visible stretch. Scroll zooms along the route, drag moves, double-click shows the whole route.
 - **Properties** — the selected structure (position, type, attachments, spans through it) or span (cable, circuit, electrical system and voltage, bundle, horizontal and maximum tension, sag and lowest point in every weather case). Links select related objects.
 - **Model** — layers, weather cases, what was loaded and how long it took.
+- **Snap** — what can be clicked.
+- **Properties** of the other kinds: an attachment point (string type, insulator and wire points, length, weight, spans and jumpers there), an alignment point (position, tied structure), a LiDAR point (position, class and roles).
 
 ## Controls
 
@@ -50,6 +52,8 @@ Two schemes, chosen in the Model panel (Controls):
 - **Minecraft creative** — first person, as in the game: clicking the 3D view captures the mouse (locked and hidden); moving it looks around (mouse down: look down); a crosshair marks the centre and a click selects what is under it (double-click flies to it); **Ctrl + wheel** sets the speed (the wheel alone does nothing). **Escape** frees the mouse to use the panels (switching to another application frees it too).
 
 The speed (m/s) and, for the first-person scheme, the look sensitivity are set there too, and the list shows every key of the scheme. The scheme, speed and sensitivity are remembered for the next start; `--controls orbit` or `--controls minecraft` chooses one at start. Schemes are data (`controls.rs`: actions bound to keys and mouse buttons), so schemes familiar from other software can be added as presets, and later edited and saved.
+
+The **Snap** tab (next to Model) chooses what can be clicked: structures, spans, jumpers, attachment points, alignment points, LiDAR points (more kinds will be added); by default structures, spans and jumpers. At about the same distance, a point wins over the line it sits on and a structure over a wire. The choice is remembered.
 
 Clicking an object in any view selects it everywhere: a structure anywhere along the lines it is drawn with (mast or stick drawing, arms, insulator strings), a span anywhere along its wire, a jumper anywhere along it (drawn as a bundle like its section). The properties of a jumper show its cable, section, bundle (and whether it is its own or its section's), length or sag, support string, and results in every weather case. Tabs can be dragged to rearrange the window.
 
