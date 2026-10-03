@@ -176,6 +176,17 @@ struct LineArgs {
     /// Half width of the plan view, m.
     #[arg(long, default_value_t = 40.0)]
     plan_width: f64,
+    /// Scale of the plan across the line (default: the horizontal scale).
+    #[arg(long)]
+    plan_scale: Option<f64>,
+    /// Split the drawings over sheets of this format, at structures: A0, A1,
+    /// A2, A3, A4 (landscape) or WIDTHxHEIGHT in mm.
+    #[arg(long)]
+    page: Option<String>,
+    /// Logo for the sheets' title block: FILE (SVG, PNG, JPEG) or
+    /// FILE:WIDTH_MM (repeatable).
+    #[arg(long)]
+    logo: Vec<String>,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -508,6 +519,9 @@ fn line(args: &LineArgs) -> ExitCode {
         vscale,
         side_offset,
         plan_width,
+        plan_scale,
+        page,
+        logo,
     } = args;
     let (temperature, wind_pressure, ice_thickness) =
         (*temperature, *wind_pressure, *ice_thickness);
@@ -668,6 +682,22 @@ fn line(args: &LineArgs) -> ExitCode {
         )?;
         if let Some(dir) = drawings {
             std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            let logos = logo
+                .iter()
+                .map(|spec| {
+                    let (file, width) = match spec.rsplit_once(':') {
+                        Some((f, w)) if w.parse::<f64>().is_ok() => (f, w.parse().unwrap_or(30.0)),
+                        _ => (spec.as_str(), 30.0),
+                    };
+                    ols_drawing::Logo::from_file(std::path::Path::new(file), width)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let page = match page {
+                Some(name) => Some(ols_drawing::page_format(name).ok_or_else(|| {
+                    format!("unknown page format \"{name}\" (A0–A4 or WIDTHxHEIGHT in mm)")
+                })?),
+                None => None,
+            };
             let options = ols_drawing::Options {
                 horizontal_scale: *hscale,
                 vertical_scale: *vscale,
@@ -678,6 +708,8 @@ fn line(args: &LineArgs) -> ExitCode {
                     line.name.clone(),
                     format!("{temperature} °C, wind {wind_pressure} Pa, ice {ice_thickness} mm"),
                 ],
+                plan_offset_scale: *plan_scale,
+                logos,
             };
             for route in line.effective_routes() {
                 let d = ols_drawing::build(
@@ -691,8 +723,30 @@ fn line(args: &LineArgs) -> ExitCode {
                 )?;
                 let svg_path = dir.join(format!("{}.svg", route.id));
                 let csv_path = dir.join(format!("{}-profile.csv", route.id));
-                std::fs::write(&svg_path, ols_drawing::svg(&d, &options))
-                    .map_err(|e| format!("{}: {e}", svg_path.display()))?;
+                match &page {
+                    None => std::fs::write(&svg_path, ols_drawing::svg(&d, &options))
+                        .map_err(|e| format!("{}: {e}", svg_path.display()))?,
+                    Some(page) => {
+                        let sheets = ols_drawing::sheets(&d, &options, page);
+                        for sheet in &sheets {
+                            let path =
+                                dir.join(format!("{}-sheet-{:02}.svg", route.id, sheet.number));
+                            std::fs::write(&path, &sheet.svg)
+                                .map_err(|e| format!("{}: {e}", path.display()))?;
+                            for w in &sheet.warnings {
+                                println!("  warning: sheet {}: {w}", sheet.number);
+                            }
+                        }
+                        println!(
+                            "  route {}: {} sheet(s) {} at 1:{} / 1:{}",
+                            route.id,
+                            sheets.len(),
+                            page.name,
+                            options.horizontal_scale,
+                            options.vertical_scale
+                        );
+                    }
+                }
                 std::fs::write(&csv_path, ols_drawing::profile_csv(&d))
                     .map_err(|e| format!("{}: {e}", csv_path.display()))?;
                 println!(
@@ -701,7 +755,13 @@ fn line(args: &LineArgs) -> ExitCode {
                     d.length,
                     d.structures.len(),
                     d.wires.len(),
-                    svg_path.display()
+                    match &page {
+                        None => svg_path.display().to_string(),
+                        Some(_) => dir
+                            .join(format!("{}-sheet-NN.svg", route.id))
+                            .display()
+                            .to_string(),
+                    }
                 );
             }
         }

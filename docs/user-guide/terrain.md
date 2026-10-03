@@ -39,7 +39,11 @@ ols line project.ols --pointcloud project.ols --temperature 80 --rules rules.ols
 
 - **Profile**: ground along the route centreline (exact TIN profile), side ground profiles at `--side-offset` (right positive), the required-clearance line (ground + `--clearance`), structures with their stations, the route's wires and jumpers coloured by phase, and violation markers.
 - **Plan**: straightened along the route (station × offset at true scale), aligned with the profile.
-- Scales `--hscale 2000 --vscale 200` (1:2000 / 1:200 by default), plan half width `--plan-width 40`.
+- Scales `--hscale 2000 --vscale 200` (1:2000 / 1:200 by default); the plan across the line `--plan-scale 1000` (default: the horizontal scale — along the line the plan always keeps the horizontal scale to stay aligned with the profile); plan half width `--plan-width 40`.
+- **Sheets**: `--page A1` (A0–A4 landscape, or `WIDTHxHEIGHT` in mm) splits each route **at structures** — as many whole spans as fit per sheet, the structure ending a sheet starting the next (match line) — into `ROUTE-sheet-NN.svg`, each with its own height range and a title block (line, route, sheet n/N, station range, structures, scales, format, weather case). A span longer than the sheet or a profile taller than it is drawn anyway and reported as a warning: change the scales or the format.
+- **Logos**: `--logo company.svg:30` (SVG, PNG or JPEG, width in mm; repeatable) in the title block.
+
+The sheet layout (title block, margins) is built in for now; company templates will come as a layout plugin.
 
 ## Clearance rules (`.olsr`)
 
