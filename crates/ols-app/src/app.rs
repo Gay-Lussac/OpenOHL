@@ -383,7 +383,15 @@ impl TabViewer for Viewer<'_> {
                     Some(crate::tables::TableAction::Apply(commands)) => {
                         r.apply_table(kind, commands);
                     }
-                    None => {}
+                    Some(crate::tables::TableAction::Write(path, text)) => {
+                        r.write_table_file(kind, &path, &text);
+                    }
+                    Some(crate::tables::TableAction::ShowCase(k))
+                        if k < r.model.cases.len() && k != r.case =>
+                    {
+                        r.set_case(k);
+                    }
+                    Some(crate::tables::TableAction::ShowCase(_)) | None => {}
                 }
                 None
             }
@@ -555,18 +563,49 @@ impl Ready {
         action: crate::library::PageAction,
     ) {
         use crate::library::PageAction;
-        let (what, previous_weather) = match action {
+        let (what, previous) = match action {
             PageAction::Saved(p) => (format!("saved {}", p.display()), None),
-            PageAction::UseWeather(p) => {
-                let before = self.model.sources.weather.replace(p.clone());
-                (format!("weather cases from {}", p.display()), Some(before))
+            PageAction::UseForModel(p) => {
+                let before = self.model.sources.clone();
+                kind.use_for(&mut self.model.sources, &p);
+                (
+                    format!("{} from {}", kind.title().to_lowercase(), p.display()),
+                    Some(before),
+                )
             }
         };
-        match self.model.reload_libraries() {
+        // A library chosen for the model must have the line's cables.
+        let reloaded = self.model.reload_libraries().and_then(|report| {
+            let line = &self.model.line;
+            let mut missing: Vec<&str> = line
+                .sections
+                .iter()
+                .map(|s| s.cable.as_str())
+                .chain(line.jumpers.iter().map(|j| j.cable.as_str()))
+                .filter(|c| self.model.library.get(c).is_none())
+                .collect();
+            missing.sort_unstable();
+            missing.dedup();
+            match (&previous, missing.is_empty()) {
+                (Some(_), false) => Err(format!(
+                    "the line's cables {} are not in it",
+                    missing.join(", ")
+                )),
+                _ => Ok(report),
+            }
+        });
+        match reloaded {
             Ok(report) => {
                 log::info!("{what}: {report}");
-                if previous_weather.is_some() {
+                if previous.is_some() && self.case >= self.model.cases.len() {
                     self.case = 0;
+                }
+                // The other pages list the files the model now reads.
+                let sources = self.model.sources.clone();
+                for (k, page) in self.libraries.iter_mut() {
+                    if *k != kind {
+                        page.files = k.files(&sources);
+                    }
                 }
                 if let Some(page) = self.libraries.get_mut(&kind) {
                     page.message = Some((format!("{what}; {report}"), false));
@@ -574,8 +613,12 @@ impl Ready {
                 self.status = Some((format!("{what}; {report}"), false));
             }
             Err(e) => {
-                if let Some(before) = previous_weather {
-                    self.model.sources.weather = before;
+                if let Some(before) = previous {
+                    self.model.sources = before;
+                    // Back to the libraries it had.
+                    if let Err(e) = self.model.reload_libraries() {
+                        log::warn!("reading the previous libraries again: {e}");
+                    }
                 }
                 let m = format!("{what}, but the model does not load with it: {e}");
                 log::warn!("{m}");
@@ -633,6 +676,44 @@ impl Ready {
                     .map(|(m, _)| (m, true))
                     .or(Some(("not applied".into(), true)));
             }
+        }
+    }
+
+    /// Writes a table's file (weather cases), then the model reads its
+    /// libraries again; an open editor page of that file reads it again.
+    pub fn write_table_file(
+        &mut self,
+        kind: crate::tables::TableKind,
+        path: &std::path::Path,
+        text: &str,
+    ) {
+        use crate::library::LibraryKind;
+        if let Err(e) = std::fs::write(path, text) {
+            if let Some(page) = self.tables.get_mut(&kind) {
+                page.message = Some((format!("{}: {e}", path.display()), true));
+            }
+            return;
+        }
+        let case = self.case;
+        self.library_saved(
+            LibraryKind::WeatherCases,
+            crate::library::PageAction::Saved(path.to_path_buf()),
+        );
+        if case < self.model.cases.len() {
+            self.set_case(case);
+        }
+        if let Some(page) = self.libraries.get_mut(&LibraryKind::WeatherCases)
+            && page.file.as_deref() == Some(path)
+            && !page.dirty()
+        {
+            page.open(path);
+        }
+        let error = self.status.as_ref().is_some_and(|s| s.1);
+        if let Some(page) = self.tables.get_mut(&kind) {
+            if !error {
+                page.edits.clear();
+            }
+            page.message = self.status.clone();
         }
     }
 

@@ -32,6 +32,8 @@ pub enum TableKind {
     Jumpers,
     /// Electrical systems.
     Systems,
+    /// Weather cases (of the model's weather case file).
+    WeatherCases,
 }
 
 /// A column: name, width (points), editable, help.
@@ -175,6 +177,38 @@ const SYSTEMS: &[Column] = &[
     ("sections", 70.0, false, "sections given this system"),
 ];
 
+const WEATHER: &[Column] = &[
+    ("#", 35.0, false, "order in the file; click: show this case"),
+    ("name", 170.0, true, "unique name"),
+    ("description", 200.0, true, "free text"),
+    (
+        "tags",
+        150.0,
+        true,
+        "comma separated, e.g. clearance, loads",
+    ),
+    ("temp °C", 70.0, true, "cable temperature"),
+    ("ice mm", 65.0, true, "radial ice thickness (0: none)"),
+    (
+        "ice N/m",
+        65.0,
+        true,
+        "or: ice load per length (empty: none)",
+    ),
+    (
+        "ice kg/m³",
+        75.0,
+        true,
+        "ice density (empty: glaze ice with a thickness, bare diameter with a load)",
+    ),
+    (
+        "wind Pa",
+        70.0,
+        true,
+        "wind pressure on the projected diameter",
+    ),
+];
+
 /// One row: the object's key, what selecting it selects, the cells.
 pub struct Row {
     /// Key of the object (id; structure and set:phase for strings).
@@ -220,12 +254,13 @@ fn opt(text: &str) -> Option<String> {
 
 impl TableKind {
     /// Every table (the Tables menu).
-    pub const ALL: [TableKind; 5] = [
+    pub const ALL: [TableKind; 6] = [
         TableKind::Structures,
         TableKind::Sections,
         TableKind::Strings,
         TableKind::Jumpers,
         TableKind::Systems,
+        TableKind::WeatherCases,
     ];
 
     /// Title of its page.
@@ -236,6 +271,7 @@ impl TableKind {
             TableKind::Strings => "Strings",
             TableKind::Jumpers => "Jumpers",
             TableKind::Systems => "Electrical systems",
+            TableKind::WeatherCases => "Weather cases",
         }
     }
 
@@ -247,6 +283,7 @@ impl TableKind {
             TableKind::Strings => "strings",
             TableKind::Jumpers => "jumpers",
             TableKind::Systems => "systems",
+            TableKind::WeatherCases => "weather",
         }
     }
 
@@ -258,6 +295,7 @@ impl TableKind {
             TableKind::Strings => STRINGS,
             TableKind::Jumpers => JUMPERS,
             TableKind::Systems => SYSTEMS,
+            TableKind::WeatherCases => WEATHER,
         }
     }
 
@@ -452,7 +490,104 @@ impl TableKind {
                     ],
                 })
                 .collect(),
+            TableKind::WeatherCases => model
+                .cases
+                .iter()
+                .enumerate()
+                .map(|(k, c)| {
+                    let w = &c.case;
+                    Row {
+                        key: k.to_string(),
+                        select: Selection::None,
+                        cells: vec![
+                            (k + 1).to_string(),
+                            w.name.clone(),
+                            w.description.clone(),
+                            w.tags.join(", "),
+                            f(w.temperature.celsius(), 1),
+                            f(w.ice_thickness.si() * 1000.0, 1),
+                            w.ice_load.map_or(String::new(), |v| f(v.si(), 2)),
+                            w.ice_density.map_or(String::new(), |v| f(v.si(), 0)),
+                            f(w.wind_pressure.si(), 0),
+                        ],
+                    }
+                })
+                .collect(),
         }
+    }
+
+    /// Weather cases: the model's case file with the `edits` written in
+    /// (comments and layout kept), checked; its path and new text.
+    pub fn weather_file(
+        model: &Model,
+        rows: &[Row],
+        edits: &BTreeMap<String, BTreeMap<usize, String>>,
+    ) -> Result<(std::path::PathBuf, String), String> {
+        let path = model
+            .sources
+            .weather
+            .clone()
+            .ok_or_else(|| "the model has no weather case file".to_owned())?;
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut doc: toml_edit::DocumentMut = text
+            .parse()
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        let cases = doc
+            .get_mut("case")
+            .and_then(toml_edit::Item::as_array_of_tables_mut)
+            .ok_or_else(|| format!("{}: no [[case]]", path.display()))?;
+        for (key, cells) in edits {
+            let row = rows
+                .iter()
+                .find(|r| &r.key == key)
+                .ok_or_else(|| format!("case {key} is no longer in the file"))?;
+            let k: usize = key.parse().map_err(|_| "bad row".to_owned())?;
+            let name = &row.cells[1];
+            let t = cases
+                .get_mut(k)
+                .ok_or_else(|| format!("case {name}: not in {}", path.display()))?;
+            for (&c, text) in cells {
+                let v = text.trim();
+                let number = |unit: &str| -> Result<Option<toml_edit::Item>, String> {
+                    if v.is_empty() {
+                        return Ok(None);
+                    }
+                    let x = num(v, &format!("{name} {}", WEATHER[c].0))?;
+                    Ok(Some(toml_edit::value(format!("{x} {unit}"))))
+                };
+                let (field, item) = match c {
+                    1 if v.is_empty() => return Err("a case needs a name".into()),
+                    1 => ("name", Some(toml_edit::value(v))),
+                    2 => ("description", (!v.is_empty()).then(|| toml_edit::value(v))),
+                    3 => {
+                        let mut a = toml_edit::Array::new();
+                        for tag in v.split(',').map(str::trim).filter(|t| !t.is_empty()) {
+                            a.push(tag);
+                        }
+                        ("tags", (!a.is_empty()).then(|| toml_edit::value(a)))
+                    }
+                    4 if v.is_empty() => return Err(format!("{name}: a temperature is needed")),
+                    4 => ("temperature", number("°C")?),
+                    5 => ("ice_thickness", number("mm")?),
+                    6 => ("ice_load", number("N/m")?),
+                    7 => ("ice_density", number("kg/m³")?),
+                    8 => ("wind_pressure", number("Pa")?),
+                    _ => continue,
+                };
+                match item {
+                    Some(i) => {
+                        t.insert(field, i);
+                    }
+                    None => {
+                        t.remove(field);
+                    }
+                }
+            }
+        }
+        let text = doc.to_string();
+        ols_weather::WeatherCases::parse(&text)?;
+        Ok((path, text))
     }
 
     /// The commands making the `edits` (row key → column → text), with
@@ -624,6 +759,9 @@ impl TableKind {
                     ));
                 }
             }
+            TableKind::WeatherCases => {
+                return Err("weather cases are written to their file".into());
+            }
             TableKind::Systems => {
                 let mut systems = stored.systems.clone();
                 for key in edits.keys() {
@@ -681,6 +819,10 @@ pub struct TablePage {
 pub enum TableAction {
     /// Apply these commands as one.
     Apply(Vec<(String, Command)>),
+    /// Write this file (weather cases) and read the libraries again.
+    Write(std::path::PathBuf, String),
+    /// Show weather case `k`.
+    ShowCase(usize),
     /// Select this object.
     Select(Selection),
 }
@@ -700,7 +842,11 @@ impl TablePage {
         case: usize,
         selection: &Selection,
     ) -> Option<TableAction> {
-        let editable = model.can_edit().is_ok();
+        // Weather cases are a file of the model, not part of the project.
+        let editable = match kind {
+            TableKind::WeatherCases => model.sources.weather.is_some(),
+            _ => model.can_edit().is_ok(),
+        };
         let columns = kind.columns();
         let rows = kind.rows(model, case);
         let mut action = None;
@@ -720,8 +866,15 @@ impl TablePage {
                 .on_hover_text("One command for all of them (one undo)")
                 .clicked()
             {
-                match kind.commands(model, &rows, &self.edits) {
-                    Ok(c) => action = Some(TableAction::Apply(c)),
+                let done = match kind {
+                    TableKind::WeatherCases => TableKind::weather_file(model, &rows, &self.edits)
+                        .map(|(p, t)| TableAction::Write(p, t)),
+                    _ => kind
+                        .commands(model, &rows, &self.edits)
+                        .map(TableAction::Apply),
+                };
+                match done {
+                    Ok(a) => action = Some(a),
                     Err(e) => self.message = Some((e, true)),
                 }
             }
@@ -738,6 +891,19 @@ impl TablePage {
                 ui.label(egui::RichText::new("read-only").small().weak());
             }
         });
+        if kind == TableKind::WeatherCases {
+            ui.label(
+                egui::RichText::new(match &model.sources.weather {
+                    Some(p) => format!(
+                        "{} — Apply writes the file (comments kept) and solves the model again; add or remove cases in Libraries › Weather cases",
+                        p.display()
+                    ),
+                    None => "The model uses a default case (15 °C): make a case file in Libraries › Weather cases and choose Use for the model".into(),
+                })
+                .small()
+                .weak(),
+            );
+        }
         if let Some((m, error)) = &self.message {
             let t = egui::RichText::new(m).small();
             if *error {
@@ -809,8 +975,13 @@ impl TablePage {
                             for (c, col) in columns.iter().enumerate() {
                                 let original = &row.cells[c];
                                 if c == 0 {
-                                    let selected =
-                                        *selection == row.select && row.select != Selection::None;
+                                    let selected = match kind {
+                                        TableKind::WeatherCases => row.key == case.to_string(),
+                                        _ => {
+                                            *selection == row.select
+                                                && row.select != Selection::None
+                                        }
+                                    };
                                     if ui
                                         .add_sized(
                                             [col.1, row_height],
@@ -818,7 +989,12 @@ impl TablePage {
                                         )
                                         .clicked()
                                     {
-                                        action = Some(TableAction::Select(row.select.clone()));
+                                        action = Some(match kind {
+                                            TableKind::WeatherCases => {
+                                                TableAction::ShowCase(row.key.parse().unwrap_or(0))
+                                            }
+                                            _ => TableAction::Select(row.select.clone()),
+                                        });
                                     }
                                     continue;
                                 }

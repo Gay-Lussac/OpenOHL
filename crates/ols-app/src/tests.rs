@@ -1579,3 +1579,80 @@ fn tables_edit_the_line_in_one_command_each() {
     assert_eq!(r.model.line.systems[0].voltage_kv, 230.0, "{:?}", r.status);
     assert_solved_fully(&r.model);
 }
+
+/// The weather case table writes the model's case file (comments kept),
+/// and the model is solved again in the changed cases.
+#[test]
+fn the_weather_case_table_writes_its_file() {
+    use crate::tables::TableKind;
+    let mut model = synthetic_project("weather-table");
+    let path = model.sources.file.parent().unwrap().join("cases.olswc");
+    std::fs::copy(
+        root().join("examples/synthetic-line/weather-cases.olswc"),
+        &path,
+    )
+    .unwrap();
+    model.sources.weather = Some(path.clone());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let kind = TableKind::WeatherCases;
+    let col = |name: &str| kind.columns().iter().position(|x| x.0 == name).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let rows = kind.rows(&r.model, 0);
+    assert_eq!(rows[2].cells[1], "glaze ice");
+    let page = r.tables.entry(kind).or_default();
+    let e = page.edits.entry("2".into()).or_default();
+    e.insert(col("ice mm"), "20".into());
+    e.insert(col("wind Pa"), "150".into());
+    e.insert(col("tags"), "clearance, loads, heavy".into());
+    // A cell that does not read: nothing written.
+    page.edits
+        .entry("0".into())
+        .or_default()
+        .insert(col("temp °C"), "warm".into());
+    let edits = page.edits.clone();
+    assert!(TableKind::weather_file(&r.model, &rows, &edits).is_err());
+    r.tables.get_mut(&kind).unwrap().edits.remove("0");
+    let edits = r.tables[&kind].edits.clone();
+    let (p, text) = TableKind::weather_file(&r.model, &rows, &edits).unwrap();
+    r.write_table_file(kind, &p, &text);
+    assert!(r.tables[&kind].edits.is_empty(), "{:?}", r.status);
+    let glaze = &r.model.cases[2].case;
+    assert!((glaze.ice_thickness.si() - 0.02).abs() < 1e-12);
+    assert!((glaze.wind_pressure.si() - 150.0).abs() < 1e-9);
+    assert_eq!(glaze.tags, vec!["clearance", "loads", "heavy"]);
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        written.starts_with("# Example weather cases"),
+        "comments kept"
+    );
+    assert_solved_fully(&r.model);
+}
+
+/// "Use for the model" with a browsed wire file: one without the line's
+/// cables does not load — the model keeps its wires; a good one is used.
+#[test]
+fn a_browsed_library_is_used_for_the_model_only_when_it_loads() {
+    use crate::library::{LibraryKind, PageAction};
+    let model = synthetic_project("use-library");
+    let dir = model.sources.file.parent().unwrap().to_path_buf();
+    let before = model.sources.library.clone();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let theirs = dir.join("theirs.olsw");
+    std::fs::write(&theirs, LibraryKind::Cables.template("theirs")).unwrap();
+    r.library_saved(LibraryKind::Cables, PageAction::UseForModel(theirs));
+    assert!(r.status.as_ref().unwrap().1, "{:?}", r.status);
+    assert_eq!(r.model.sources.library, before, "kept");
+    let good = dir.join("good.olsw");
+    std::fs::copy(root().join("libraries/cables/acsr-examples.olsw"), &good).unwrap();
+    r.library_saved(LibraryKind::Cables, PageAction::UseForModel(good.clone()));
+    assert!(!r.status.as_ref().unwrap().1, "{:?}", r.status);
+    assert_eq!(r.model.sources.library, Some(good));
+    assert_solved_fully(&r.model);
+}

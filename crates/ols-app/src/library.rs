@@ -290,6 +290,24 @@ impl LibraryKind {
         }
     }
 
+    /// Points `sources` at `path`: the wire library or the weather cases
+    /// file itself; the folder of an insulator or structure type file.
+    pub fn use_for(self, sources: &mut Sources, path: &Path) {
+        let folder = || path.parent().map(Path::to_path_buf);
+        match self {
+            LibraryKind::Cables => sources.library = Some(path.to_path_buf()),
+            LibraryKind::WeatherCases => sources.weather = Some(path.to_path_buf()),
+            LibraryKind::Insulators => sources.insulators = folder(),
+            LibraryKind::StructureTypes => sources.structures = folder(),
+        }
+    }
+
+    /// Whether the model already reads `path`.
+    pub fn in_use(self, sources: &Sources, path: &Path) -> bool {
+        let at = self.location(sources);
+        at == path || (at.is_dir() && path.parent() == Some(at.as_path()))
+    }
+
     /// Checks a file's text with the library's own reader.
     pub fn check(self, path: &Path, text: &str) -> Result<(), String> {
         use ols_structures::LibraryItem;
@@ -359,8 +377,6 @@ pub struct LibraryPage {
     pub error: Option<String>,
     /// What happened last (saved, reloaded…).
     pub message: Option<(String, bool)>,
-    /// Name typed for a new file.
-    new_name: String,
     /// Fields being typed, by path (a number half typed does not parse).
     buffers: HashMap<String, String>,
 }
@@ -369,8 +385,9 @@ pub struct LibraryPage {
 pub enum PageAction {
     /// A file was saved: read the libraries again.
     Saved(PathBuf),
-    /// Use this weather case file for the model.
-    UseWeather(PathBuf),
+    /// Use this file (or, for libraries kept one per file, its folder) for
+    /// the model.
+    UseForModel(PathBuf),
 }
 
 impl LibraryPage {
@@ -386,7 +403,6 @@ impl LibraryPage {
             item: 0,
             error: None,
             message: None,
-            new_name: String::new(),
             buffers: HashMap::new(),
         };
         let first = match kind {
@@ -457,37 +473,40 @@ impl LibraryPage {
         Ok(path)
     }
 
-    /// Creates a new file named `name` in the library's directory.
-    pub fn create(&mut self, sources: &Sources, name: &str) -> Result<(), String> {
-        let stem = name
-            .trim()
-            .trim_end_matches(&format!(".{}", self.kind.extension()));
-        if stem.is_empty()
-            || !stem
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-        {
-            return Err("a file name of letters, digits, - _ and .".into());
-        }
-        let path = self
-            .kind
-            .new_file_dir(sources)
-            .join(format!("{stem}.{}", self.kind.extension()));
-        if path.exists() {
-            return Err(format!("{} exists already", path.display()));
-        }
-        let text = self.kind.template(stem);
+    /// Creates a new file at `path` (anywhere), from the kind's template,
+    /// and opens it.
+    pub fn create_at(&mut self, sources: &Sources, path: &Path) -> Result<(), String> {
+        let path = path.with_extension(self.kind.extension());
+        let stem = path
+            .file_stem()
+            .map_or("new".into(), |s| s.to_string_lossy().into_owned());
+        let id: String = stem
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || "-_.".contains(c) {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        let text = self.kind.template(&id);
         self.kind.check(&path, &text)?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
         std::fs::write(&path, &text).map_err(|e| e.to_string())?;
         self.files = self.kind.files(sources);
-        if !self.files.contains(&path) {
-            self.files.push(path.clone());
-        }
-        self.open(&path);
+        self.add_file(&path);
         Ok(())
+    }
+
+    /// Opens a file from anywhere (browsed), listing it with the others.
+    pub fn add_file(&mut self, path: &Path) {
+        if !self.files.iter().any(|f| f == path) {
+            self.files.push(path.to_path_buf());
+        }
+        self.open(path);
     }
 
     /// The items of a several-per-file kind: (label, index).
@@ -622,39 +641,56 @@ impl LibraryPage {
                 ui.colored_label(egui::Color32::YELLOW, "* unsaved");
             }
             ui.separator();
-            ui.add(
-                egui::TextEdit::singleline(&mut self.new_name)
-                    .hint_text("new file name")
-                    .desired_width(120.0),
-            );
+            let filter = (kind.title(), [kind.extension()]);
+            let start = kind.new_file_dir(sources);
             if ui
-                .add_enabled(
-                    !dirty && !self.new_name.trim().is_empty(),
-                    egui::Button::new("New file"),
-                )
+                .add_enabled(!dirty, egui::Button::new("Browse…"))
+                .on_hover_text(format!(
+                    "Open a .{} file from anywhere on the computer",
+                    kind.extension()
+                ))
                 .clicked()
+                && let Some(p) = rfd::FileDialog::new()
+                    .add_filter(filter.0, &filter.1)
+                    .set_directory(&start)
+                    .pick_file()
             {
-                let name = std::mem::take(&mut self.new_name);
-                if let Err(e) = self.create(sources, &name) {
-                    self.message = Some((e, true));
-                    self.new_name = name;
-                }
+                self.add_file(&p);
             }
-            if kind == LibraryKind::WeatherCases
-                && let Some(f) = &self.file
-                && sources.weather.as_ref() != Some(f)
+            if ui
+                .add_enabled(!dirty, egui::Button::new("New file…"))
+                .on_hover_text("Create a file (where you choose) from a template")
+                .clicked()
+                && let Some(p) = rfd::FileDialog::new()
+                    .add_filter(filter.0, &filter.1)
+                    .set_directory(&start)
+                    .set_file_name(format!("new.{}", kind.extension()))
+                    .save_file()
+                && let Err(e) = self.create_at(sources, &p)
+            {
+                self.message = Some((e, true));
+            }
+            if let Some(f) = &self.file
+                && !kind.in_use(sources, f)
                 && !dirty
                 && ui
                     .button("Use for the model")
-                    .on_hover_text("Solve the model in these weather cases")
+                    .on_hover_text(match kind {
+                        LibraryKind::Cables => "Read the model's wires from this file",
+                        LibraryKind::WeatherCases => "Solve the model in these weather cases",
+                        LibraryKind::Insulators => "Read the insulators from this file's folder",
+                        LibraryKind::StructureTypes => {
+                            "Read the structure types from this file's folder"
+                        }
+                    })
                     .clicked()
             {
-                action = Some(PageAction::UseWeather(f.clone()));
+                action = Some(PageAction::UseForModel(f.clone()));
             }
         });
         ui.label(
             egui::RichText::new(format!(
-                "{} — values with their units, e.g. \"28.1 mm\"; the file is checked as you type",
+                "the model reads: {} — values with their units, e.g. \"28.1 mm\"; the file is checked as you type",
                 kind.location(sources).display()
             ))
             .small()
@@ -1082,7 +1118,8 @@ mod tests {
         };
         let mut page = LibraryPage::new(LibraryKind::Cables, &sources);
         assert!(page.files.is_empty());
-        page.create(&sources, "my-wires").unwrap();
+        page.create_at(&sources, &dir.join("my-wires.olsw"))
+            .unwrap();
         assert_eq!(page.files, vec![dir.join("my-wires.olsw")]);
         page.add_item(true);
         assert_eq!(page.items(), vec!["my-wires", "my-wires-1"]);
@@ -1090,6 +1127,15 @@ mod tests {
         page.save().unwrap();
         let lib = ols_cables::Library::load(&dir).unwrap();
         assert!(lib.get("my-wires-1").is_some());
-        assert!(page.create(&sources, "my-wires").is_err(), "exists");
+        // Browsed from elsewhere: listed and opened; used for the model.
+        let other = temp("wires-elsewhere").join("theirs.olsw");
+        std::fs::write(&other, LibraryKind::Cables.template("theirs")).unwrap();
+        page.add_file(&other);
+        assert_eq!(page.file.as_deref(), Some(other.as_path()));
+        assert!(page.files.contains(&other));
+        let mut s = sources.clone();
+        assert!(!LibraryKind::Cables.in_use(&s, &other));
+        LibraryKind::Cables.use_for(&mut s, &other);
+        assert!(LibraryKind::Cables.in_use(&s, &other));
     }
 }
