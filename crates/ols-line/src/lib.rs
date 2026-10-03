@@ -29,6 +29,7 @@ pub mod export;
 pub mod incremental;
 pub mod jumper;
 pub mod library;
+mod rod;
 pub mod route;
 pub mod solve;
 
@@ -129,6 +130,21 @@ pub struct Jumper {
     /// Optional jumper support string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub support: Option<JumperSupport>,
+    /// Bending stiffness EI of the cable, N·m²: the jumper leaves a
+    /// section's end clamp along the conductor's axis and bends away from
+    /// it, instead of hanging from a hinge. Default: an estimate from the
+    /// cable ([`jumper::estimated_bending_stiffness`]); 0: hinged ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bending_stiffness: Option<f64>,
+    /// Angle at which the jumper leaves the clamp at `from`, below the
+    /// conductor's axis, degrees (0: straight on along the conductor;
+    /// negative: up); default [`jumper::DEFAULT_TERMINAL_ANGLE_DEG`]. Used
+    /// where `from` is a section's end clamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle_from_deg: Option<f64>,
+    /// The same at `to`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle_to_deg: Option<f64>,
     /// Display colour (`#rrggbb`); default: the colour of the section at
     /// `from`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -945,6 +961,18 @@ impl Line {
                 (Some(l), None) if l > 0.0 => {}
                 (None, Some(s)) if s > 0.0 => {}
                 _ => return bad("give either a positive length or a positive sag"),
+            }
+            if j.bending_stiffness
+                .is_some_and(|e| !(e >= 0.0 && e.is_finite()))
+            {
+                return bad("bending stiffness must be ≥ 0");
+            }
+            if [j.angle_from_deg, j.angle_to_deg]
+                .into_iter()
+                .flatten()
+                .any(|a| !(-90.0..=90.0).contains(&a))
+            {
+                return bad("clamp exit angles must be between −90° and 90°");
             }
             if let Some(support) = &j.support {
                 if j.length.is_none() {

@@ -185,6 +185,136 @@ fn rgba(c: [u8; 3], a: u8) -> [u8; 4] {
     [c[0], c[1], c[2], a]
 }
 
+/// Structures of `line` (solved in `cases`), their strings drawn to the
+/// solved clamps in every weather case their section is shown in (strings
+/// swing with the wind, move with temperature); strings without a section
+/// hang as given. `tint`: one colour for everything (a project line).
+fn structures(
+    s: &mut Scene,
+    model: &Model,
+    line: &ols_line::Line,
+    cases: &[crate::model::Solved],
+    case: usize,
+    tint: Option<[u8; 3]>,
+) {
+    let mut clamps: std::collections::HashMap<(&str, u32, u32), Vec<[f64; 3]>> =
+        std::collections::HashMap::new();
+    for sec in &line.sections {
+        for k in model.section_cases(&sec.id, case) {
+            let Some(shape) = cases
+                .get(k)
+                .and_then(|c| c.shapes.iter().find(|x| x.section == sec.id))
+            else {
+                continue;
+            };
+            for (p, c) in sec.points.iter().zip(&shape.clamps) {
+                clamps
+                    .entry((p.structure.as_str(), p.set, p.phase))
+                    .or_default()
+                    .push(*c);
+            }
+        }
+    }
+    let steel = tint.map_or([215, 215, 220, 255], |c| rgba(c, 230));
+    let blue = tint.map_or([120, 180, 255, 255], |c| rgba(c, 230));
+    for st in &line.structures {
+        for (part, pts) in structure_lines(st) {
+            let width = match part {
+                Part::Mast => 2.5,
+                Part::Member => 1.5,
+                Part::Insulator => continue,
+            };
+            s.polyline(&pts, steel, width);
+        }
+        for a in &st.attachments {
+            let solved = clamps.get(&(st.id.as_str(), a.set, a.phase));
+            let ends: Vec<[f64; 3]> = match solved {
+                Some(c) if !c.is_empty() => c.clone(),
+                _ => vec![a.wire_point],
+            };
+            for end in ends {
+                match &a.legs {
+                    Some(legs) => {
+                        for l in legs {
+                            s.polyline(&[*l, end], blue, 2.0);
+                        }
+                    }
+                    None => s.polyline(&[a.insulator_point, end], blue, 2.0),
+                }
+            }
+        }
+    }
+}
+
+/// Wires of `line` solved in `cases`: each section in its own display
+/// cases, bundles as subconductors ending on the yokes, jumpers in the
+/// cases shown for the line. `shown`: the cases shown (else the others,
+/// faint). `tint`: one colour for everything (a project line).
+fn wires(
+    s: &mut Scene,
+    model: &Model,
+    line: &ols_line::Line,
+    cases: &[crate::model::Solved],
+    case: usize,
+    shown: bool,
+    tint: Option<[u8; 3]>,
+) {
+    let alpha = match (shown, tint) {
+        (false, _) => 90,
+        (true, Some(_)) => 230,
+        (true, None) => 255,
+    };
+    for (k, solved) in cases.iter().enumerate() {
+        let this_case = shown == model.shown(case).contains(&k);
+        for shape in &solved.shapes {
+            if shown != model.section_cases(&shape.section, case).contains(&k) {
+                continue;
+            }
+            let sec = line.sections.iter().find(|x| x.id == shape.section);
+            let col = tint.unwrap_or_else(|| {
+                sec.map_or([176, 184, 192], |sec| rgb(&line.section_color(sec)))
+            });
+            for (n, span) in shape.spans.iter().enumerate() {
+                // Bundles: each subconductor (one section, solved and
+                // selected as one), ending on the yokes.
+                let lines = match solved.bundles.spans.get(&(shape.section.clone(), n)) {
+                    Some(l) => l.clone(),
+                    None => vec![span.points.clone()],
+                };
+                let width = if lines.len() > 1 { 1.5 } else { 2.0 };
+                for l in &lines {
+                    s.polyline(l, rgba(col, alpha), width);
+                }
+            }
+        }
+        for j in solved.jumpers.iter().filter(|_| this_case) {
+            let (col, lines) = jumper_lines(line, j, &solved.bundles);
+            let col = tint.unwrap_or(col);
+            let width = if lines.len() > 1 { 1.2 } else { 1.5 };
+            for l in &lines {
+                s.polyline(l, rgba(col, alpha), width);
+            }
+        }
+        // Yokes at the clamps (a bar, a triangle, a polygon), with their
+        // section, in its cases.
+        let steel = tint.unwrap_or([205, 205, 210]);
+        for y in solved
+            .bundles
+            .yokes
+            .iter()
+            .zip(&solved.bundles.yoke_sections)
+            .filter(|(_, sec)| shown == model.section_cases(sec, case).contains(&k))
+            .map(|(y, _)| y)
+        {
+            let mut ring = y.clone();
+            if y.len() > 2 {
+                ring.push(y[0]);
+            }
+            s.polyline(&ring, rgba(steel, alpha), 2.0);
+        }
+    }
+}
+
 /// Builds one layer of `model` for weather case `case`.
 pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) -> Scene {
     let line = &model.line;
@@ -263,135 +393,26 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                 }
             }
         }
-        Layer::Structures => {
-            // Where each string's clamp is solved, in every weather case its
-            // section is shown in (strings swing with the wind, move with
-            // temperature); strings without a section hang as given.
-            let mut clamps: std::collections::HashMap<(&str, u32, u32), Vec<[f64; 3]>> =
-                std::collections::HashMap::new();
-            for sec in &line.sections {
-                for k in model.section_cases(&sec.id, case) {
-                    let Some(shape) = model
-                        .cases
-                        .get(k)
-                        .and_then(|c| c.shapes.iter().find(|x| x.section == sec.id))
-                    else {
-                        continue;
-                    };
-                    for (p, c) in sec.points.iter().zip(&shape.clamps) {
-                        clamps
-                            .entry((p.structure.as_str(), p.set, p.phase))
-                            .or_default()
-                            .push(*c);
-                    }
-                }
-            }
-            for st in &line.structures {
-                for (part, pts) in structure_lines(st) {
-                    let (col, width) = match part {
-                        Part::Mast => ([215, 215, 220, 255], 2.5),
-                        Part::Member => ([215, 215, 220, 255], 1.5),
-                        Part::Insulator => continue,
-                    };
-                    s.polyline(&pts, col, width);
-                }
-                let blue = [120, 180, 255, 255];
-                for a in &st.attachments {
-                    let solved = clamps.get(&(st.id.as_str(), a.set, a.phase));
-                    let ends: Vec<[f64; 3]> = match solved {
-                        Some(c) if !c.is_empty() => c.clone(),
-                        _ => vec![a.wire_point],
-                    };
-                    for end in ends {
-                        match &a.legs {
-                            Some(legs) => {
-                                for l in legs {
-                                    s.polyline(&[*l, end], blue, 2.0);
-                                }
-                            }
-                            None => s.polyline(&[a.insulator_point, end], blue, 2.0),
-                        }
-                    }
-                }
-            }
-        }
+        Layer::Structures => structures(&mut s, model, line, &model.cases, case, None),
         Layer::Wires | Layer::OtherCases => {
-            for (k, solved) in model.cases.iter().enumerate() {
-                // Jumpers in the cases shown for the line.
-                let this_case = (layer == Layer::Wires) == model.shown(case).contains(&k);
-                let alpha = if layer == Layer::Wires { 255 } else { 90 };
-                for shape in &solved.shapes {
-                    // Each section in its own display case.
-                    let shown = model.section_cases(&shape.section, case).contains(&k);
-                    if (layer == Layer::Wires) != shown {
-                        continue;
-                    }
-                    let sec = line.sections.iter().find(|x| x.id == shape.section);
-                    let col = sec.map_or([176, 184, 192], |sec| rgb(&line.section_color(sec)));
-                    for (k, span) in shape.spans.iter().enumerate() {
-                        // Bundles: each subconductor (one section, solved
-                        // and selected as one), ending on the yokes.
-                        let lines = match solved.bundles.spans.get(&(shape.section.clone(), k)) {
-                            Some(l) => l.clone(),
-                            None => vec![span.points.clone()],
-                        };
-                        let width = if lines.len() > 1 { 1.5 } else { 2.0 };
-                        for l in &lines {
-                            s.polyline(l, rgba(col, alpha), width);
-                        }
-                    }
-                }
-                for j in solved.jumpers.iter().filter(|_| this_case) {
-                    let (col, lines) = jumper_lines(line, j, &solved.bundles);
-                    let width = if lines.len() > 1 { 1.2 } else { 1.5 };
-                    for l in &lines {
-                        s.polyline(l, rgba(col, alpha), width);
-                    }
-                }
-                // Yokes at the clamps: a bar, a triangle, a polygon.
-                // Yokes with their section, in its cases.
-                for y in solved
-                    .bundles
-                    .yokes
-                    .iter()
-                    .zip(&solved.bundles.yoke_sections)
-                    .filter(|(_, sec)| {
-                        (layer == Layer::Wires) == model.section_cases(sec, case).contains(&k)
-                    })
-                    .map(|(y, _)| y)
-                {
-                    let mut ring = y.clone();
-                    if y.len() > 2 {
-                        ring.push(y[0]);
-                    }
-                    s.polyline(&ring, [205, 205, 210, alpha], 2.0);
-                }
-            }
+            wires(
+                &mut s,
+                model,
+                line,
+                &model.cases,
+                case,
+                layer == Layer::Wires,
+                None,
+            );
         }
         Layer::OtherLines => {
-            // Structures and wires of each project line shown, in the cases
-            // shown for the line, in its colour.
+            // Each project line shown drawn as the working line is (strings
+            // to their solved clamps, bundles, yokes, jumpers), in the same
+            // weather cases, in its colour.
             for other in &model.other_lines {
-                let col = rgba(other.color, 230);
-                for st in &other.line.structures {
-                    for (part, pts) in structure_lines(st) {
-                        let width = if part == Part::Mast { 2.5 } else { 1.5 };
-                        s.polyline(&pts, col, width);
-                    }
-                }
-                for k in model.shown(case) {
-                    let Some(solved) = other.cases.get(k) else {
-                        continue;
-                    };
-                    for shape in &solved.shapes {
-                        for span in &shape.spans {
-                            s.polyline(&span.points, col, 1.5);
-                        }
-                    }
-                    for j in &solved.jumpers {
-                        s.polyline(&j.points, col, 1.2);
-                    }
-                }
+                let tint = Some(other.color);
+                structures(&mut s, model, &other.line, &other.cases, case, tint);
+                wires(&mut s, model, &other.line, &other.cases, case, true, tint);
             }
         }
         // Drawn from the clearance report ([`marks`]).

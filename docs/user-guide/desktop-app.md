@@ -64,7 +64,7 @@ The model's **weather case file** is remembered with the project (`--weather`, o
 A project keeps, next to the **working line** (the one edited), **project lines**: frozen states of the line — e.g. *as built* before the works and *as planned* — to compare later, or to draw the actual and the planned state.
 
 - **Lines › Create line…** saves the working line as it is now, with a name and a note (kept in the project file; not undone with ⌘Z).
-- **Lines › Project lines** lists them: tick one or several to **show** them next to the working line in the 3D view (layer "Other project lines") and the plan, each in its colour, solved in the weather cases shown. **make it the working line…** replaces the working line by it — one command, so ⌘Z brings the working line back (save it first with Create line to keep it).
+- **Lines › Project lines** lists them: tick one or several to **show** them next to the working line in the 3D view (layer "Other project lines") and the plan, each in its colour and drawn as the working line is: structures, insulator strings to their solved clamps, bundles as their subconductors with their yokes, jumpers — every section in the same display weather cases as in the working line. **make it the working line…** replaces the working line by it — one command, so ⌘Z brings the working line back (save it first with Create line to keep it).
 - **Lines › Delete line** deletes a project line (the working line is not touched).
 
 ## Saving
@@ -111,7 +111,7 @@ Rules for other lines and rules across pairs of weather cases are run by `ols li
 | Structures | id, type, extension, orientation, E, N, z · *strings, sections* |
 | Sections | id, cable, circuit, phase, system, bundle, spacing, status (in the blocks / clipped in), condition (tension · sag, ruling span · sag, span N), value (kN or m), temperature, points (`T1 1:1, T2 1:1, …`), display cases, H kN, max sag m |
 | Strings | structure (new rows), set:phase, label, insulator point and wire point (across, along, up from the base, in the structure's axes), length, weight, insulator, strain · *sections* |
-| Jumpers | id, from, to (`T3 2:1`), cable, length or sag, temperature, bundle and spacing (empty: its section's) |
+| Jumpers | id, from, to (`T3 2:1`), cable, length or sag, temperature, bundle and spacing (empty: its section's), bending stiffness EI (empty: estimated from the cable; 0: hinged ends), the angles at which it leaves its clamps at from and to, below the conductor (empty: 30°) — see [Jumpers](line-file.md#jumpers) |
 | Electrical systems | id, name, AC/DC, kV, Hz, phases (`L1 L2 L3`; angles kept by position) · *sections* |
 | Alignment points | route (new rows), #, E, N, z, structure (tied under it, following it; empty: free) |
 | Weather cases | #, name, description, tags, temperature, ice thickness, ice load, ice density, wind, wind from (left or right, looking ahead along the line) |

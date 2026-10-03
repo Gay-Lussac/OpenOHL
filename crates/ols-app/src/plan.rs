@@ -231,11 +231,22 @@ impl PlanView {
         // Other project lines, in their colours.
         for other in &model.other_lines {
             let col = color(other.color);
-            for k in model.shown(case) {
-                for shape in other.cases.get(k).map_or(&[][..], |c| &c.shapes[..]) {
+            // As the working line: each section in its display cases,
+            // jumpers in the cases shown.
+            for (k, solved) in other.cases.iter().enumerate() {
+                for shape in &solved.shapes {
+                    if !model.section_cases(&shape.section, case).contains(&k) {
+                        continue;
+                    }
                     for span in &shape.spans {
                         let pts: Vec<egui::Pos2> =
                             span.points.iter().map(|p| to_screen(*p)).collect();
+                        painter.add(egui::Shape::line(pts, egui::Stroke::new(1.5, col)));
+                    }
+                }
+                if model.shown(case).contains(&k) {
+                    for j in &solved.jumpers {
+                        let pts: Vec<egui::Pos2> = j.points.iter().map(|p| to_screen(*p)).collect();
                         painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, col)));
                     }
                 }

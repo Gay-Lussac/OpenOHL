@@ -393,6 +393,26 @@ pub fn ui(
                         },
                     ),
                     (
+                        "bending stiffness",
+                        match (j.bending_stiffness, model.library.get(&j.cable)) {
+                            (Some(0.0), _) => "0 (hinged ends)".into(),
+                            (Some(e), _) => format!("{e:.1} N·m² (set on the jumper)"),
+                            (None, Some(c)) => format!(
+                                "{:.1} N·m² (estimated from the cable)",
+                                ols_line::jumper::estimated_bending_stiffness(c)
+                            ),
+                            (None, None) => "—".into(),
+                        },
+                    ),
+                    ("leaves its clamps", {
+                        let d = ols_line::jumper::DEFAULT_TERMINAL_ANGLE_DEG;
+                        format!(
+                            "{:.0}° / {:.0}° below the conductor",
+                            j.angle_from_deg.unwrap_or(d),
+                            j.angle_to_deg.unwrap_or(d)
+                        )
+                    }),
+                    (
                         "support string",
                         j.support.as_ref().map_or("none".into(), |s| {
                             format!("{:.2} m, {:.0} N", s.length, s.weight)

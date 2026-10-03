@@ -2103,6 +2103,23 @@ fn project_lines_are_created_shown_and_made_the_working_line() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
+    {
+        // A twin bundle, to see it drawn in the project line too.
+        let r = harness.state_mut().ready().unwrap();
+        let mut s = r.model.line.sections[0].clone();
+        (s.bundle, s.bundle_spacing) = (2, Some(0.4));
+        let (id, value) = (s.id.clone(), serde_json::to_value(&s).unwrap());
+        r.perform(crate::edit::Action::Command {
+            what: "twin bundle".into(),
+            command: ols_session::Command::Put {
+                kind: ols_session::Kind::Section,
+                id,
+                value,
+                ord: None,
+            },
+        });
+        assert_eq!(r.model.line.sections[0].bundle, 2, "{:?}", r.status);
+    }
     harness.get_by_label("Lines").click();
     harness.run();
     harness.get_by_label("Create line…").click();
@@ -2121,6 +2138,17 @@ fn project_lines_are_created_shown_and_made_the_working_line() {
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.lines_window.is_none(), "{:?}", r.status);
+        // Shown as it is, it is drawn exactly as the working line: every
+        // structure, string, subconductor, yoke and jumper.
+        r.model.show_line("as built").unwrap();
+        let count = |l: crate::scene::Layer| {
+            crate::scene::layer(&r.model, l, 0, &Selection::None)
+                .counts()
+                .0
+        };
+        let working = count(crate::scene::Layer::Structures) + count(crate::scene::Layer::Wires);
+        assert_eq!(count(crate::scene::Layer::OtherLines), working);
+        r.model.other_lines.clear();
         r.perform(crate::edit::Action::Delete {
             kind: ols_session::Kind::Structure,
             id: "T7".into(),

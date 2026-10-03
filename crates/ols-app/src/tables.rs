@@ -228,6 +228,24 @@ const JUMPERS: &[Column] = &[
         Yes,
         "subconductor spacing (empty: its section's)",
     ),
+    (
+        "EI N·m²",
+        70.0,
+        Yes,
+        "bending stiffness (empty: estimated from the cable; 0: hinged ends)",
+    ),
+    (
+        "angle from °",
+        75.0,
+        Yes,
+        "leaves the clamp at from this far below the conductor (empty: 30)",
+    ),
+    (
+        "angle to °",
+        75.0,
+        Yes,
+        "leaves the clamp at to this far below the conductor (empty: 30)",
+    ),
 ];
 
 const SYSTEMS: &[Column] = &[
@@ -662,6 +680,9 @@ impl TableKind {
                         f(j.temperature, 1),
                         j.bundle.map_or(String::new(), |v| v.to_string()),
                         j.bundle_spacing.map_or(String::new(), |v| f(v, 3)),
+                        j.bending_stiffness.map_or(String::new(), |v| f(v, 1)),
+                        j.angle_from_deg.map_or(String::new(), |v| f(v, 1)),
+                        j.angle_to_deg.map_or(String::new(), |v| f(v, 1)),
                     ],
                 })
                 .collect(),
@@ -1669,6 +1690,9 @@ fn jumper_cells(
     j.temperature = opt_num(&c.get(6), &format!("{name} temperature"))?.unwrap_or(15.0);
     j.bundle = opt_num(&c.get(7), &format!("{name} bundle"))?.map(|v| v as u32);
     j.bundle_spacing = opt_num(&c.get(8), &format!("{name} spacing"))?;
+    j.bending_stiffness = opt_num(&c.get(9), &format!("{name} EI"))?;
+    j.angle_from_deg = opt_num(&c.get(10), &format!("{name} angle from"))?;
+    j.angle_to_deg = opt_num(&c.get(11), &format!("{name} angle to"))?;
     Ok(())
 }
 

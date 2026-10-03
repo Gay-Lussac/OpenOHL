@@ -20,6 +20,16 @@
 //!   jumper is then two elements and the clamp is found by the Newton
 //!   solver of `ols-wirefe`.
 //!
+//! - **Bending stiffness** (default): where a jumper leaves the end clamp
+//!   of a section, the clamp holds it along the conductor's axis (the
+//!   span's tangent at the clamp, continued) and the cable's bending
+//!   stiffness carries that direction into the jumper; the jumper then
+//!   cannot swing in the wind as if hinged at its ends. Solved as an
+//!   inextensible elastic rod (`rod`); the support string, if any, is
+//!   rigid. An end that is not a section's end (a tap on a through wire)
+//!   stays hinged; with both ends hinged, or EI = 0, the jumper is the
+//!   catenary element above.
+//!
 //! A jumper's tension (a few hundred N) is negligible for the sections it
 //! connects, so sections are solved first and jumpers between their
 //! solved ends.
@@ -31,6 +41,7 @@ use ols_weather::WeatherCase;
 use ols_wirefe::catenary_element::default_element_budget;
 use ols_wirefe::{CableElement, CableProperties, Model, Node, TrussElement, default_fe_budget};
 
+use crate::rod::{Rod, RodSupport};
 use crate::solve::{DEFAULT_INSULATOR_STIFFNESS, SectionShape, p, span_load, v};
 use crate::{Jumper, Line, LineError, Point, SectionPoint};
 
@@ -73,6 +84,94 @@ fn end_position(
     line.attachment(point)
         .map(|a| v(a.wire_point))
         .ok_or_else(|| LineError::Invalid(format!("no attachment {point:?}")))
+}
+
+/// Angle of a jumper terminal below the conductor's axis when the jumper
+/// gives none, degrees. Terminals angled down are usual on dead-end
+/// clamps; a terminal straight on along a span rising to the structure
+/// points the jumper upwards, and the jumper then swings further in the
+/// wind than a hinged one (the bend at the clamps eases as it swings).
+pub const DEFAULT_TERMINAL_ANGLE_DEG: f64 = 30.0;
+
+/// The direction a section's end clamp holds the jumper in: the
+/// conductor's axis out of the section (the span's tangent at the clamp,
+/// continued), turned down by the terminal angle; `None` when `point` is
+/// not the end of a solved section.
+fn clamp_direction(
+    line: &Line,
+    shapes: &[SectionShape],
+    point: &SectionPoint,
+    terminal_deg: f64,
+) -> Option<Vector3<f64>> {
+    let axis = conductor_axis(line, shapes, point)?;
+    let flat = axis.xy().norm();
+    if flat < 1e-9 {
+        return Some(axis);
+    }
+    let down = axis.z.atan2(flat) - terminal_deg.to_radians();
+    let h = axis.xy() / flat;
+    Some(Vector3::new(h.x * down.cos(), h.y * down.cos(), down.sin()))
+}
+
+/// The conductor's axis at a section's end clamp, out of the section (the
+/// span's tangent at the clamp, continued).
+fn conductor_axis(
+    line: &Line,
+    shapes: &[SectionShape],
+    point: &SectionPoint,
+) -> Option<Vector3<f64>> {
+    for shape in shapes {
+        let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
+            continue;
+        };
+        let Some(k) = section.points.iter().position(|q| q == point) else {
+            continue;
+        };
+        let n = shape.spans.len();
+        let d = if k == 0 {
+            let p = &shape.spans.first()?.points;
+            v(p[0]) - v(*p.get(1)?)
+        } else if k == n {
+            let p = &shape.spans.last()?.points;
+            v(*p.last()?) - v(p[p.len().checked_sub(2)?])
+        } else {
+            return None;
+        };
+        return (d.norm() > 0.0).then(|| d.normalize());
+    }
+    None
+}
+
+/// Bending stiffness EI of a cable, N·m², when the jumper gives none: the
+/// stiffness of its wires bending each on its own (they slip on each
+/// other), \( \sum E A d^2 / 16 \), with a wire diameter d of a sixth of
+/// the cable's (the wires' sizes are not in the wire library). Drake
+/// 26/7: ~48 N·m² (from its real wires: ~37 N·m²); a cable bent with its
+/// wires stuck together is up to tens of times stiffer.
+pub fn estimated_bending_stiffness(cable: &Cable) -> f64 {
+    let d = cable.diameter.si() / 6.0;
+    cable.axial_stiffness().si() * d * d / 16.0
+}
+
+/// Points at equal distances along a polyline (`n + 1` of them).
+fn resample(points: &[Vector3<f64>], n: usize) -> Vec<Vector3<f64>> {
+    let mut along = vec![0.0];
+    for w in points.windows(2) {
+        along.push(along.last().copied().unwrap_or(0.0) + (w[1] - w[0]).norm());
+    }
+    let total = along.last().copied().unwrap_or(0.0);
+    let mut k = 0;
+    (0..=n)
+        .map(|i| {
+            let s = total * i as f64 / n as f64;
+            while k + 2 < points.len() && along[k + 1] < s {
+                k += 1;
+            }
+            let span = (along[k + 1] - along[k]).max(1e-12);
+            let t = ((s - along[k]) / span).clamp(0.0, 1.0);
+            points[k] + (points[k + 1] - points[k]) * t
+        })
+        .collect()
 }
 
 /// Largest vertical distance of `points` below the chord from `a` to `b`
@@ -162,6 +261,140 @@ fn length_for_sag(
     Ok(0.5 * (low + high))
 }
 
+/// How a stiff jumper is solved: its ends' clamp directions, EI, pieces.
+struct Stiff {
+    start: Option<Vector3<f64>>,
+    end: Option<Vector3<f64>>,
+    ei: f64,
+}
+
+impl Stiff {
+    /// Pieces for a jumper of `length`: ~0.12 m, 16 to 40.
+    fn pieces(length: f64) -> usize {
+        ((length / 0.12).ceil() as usize).clamp(16, 40)
+    }
+
+    /// Solves the rod of `length` under `load` between `a` and `b` (a
+    /// support string at a fraction of the length),
+    /// starting from the hinged catenary; if that does not converge, the
+    /// bending stiffness is brought in in steps.
+    fn solve(
+        &self,
+        a: Vector3<f64>,
+        b: Vector3<f64>,
+        length: f64,
+        load: Vector3<f64>,
+        support: Option<(RodSupport, f64)>,
+        ea: f64,
+    ) -> Result<crate::rod::RodShape, String> {
+        let n = Self::pieces(length);
+        let props = CableProperties {
+            unstressed_length: length,
+            axial_stiffness: ea,
+            load,
+        };
+        let hinged = element_shape(&props, a, b - a)?.0;
+        let mut start: Vec<Vector3<f64>> = resample(&hinged, n)
+            .windows(2)
+            .map(|w| w[1] - w[0])
+            .collect();
+        // The string's node: the nearest to its fraction of the length.
+        let support = support.map(|(s, fraction)| RodSupport {
+            node: (fraction * n as f64).round().clamp(1.0, (n - 1) as f64) as usize,
+            ..s
+        });
+        let rod = |ei: f64| Rod {
+            a,
+            b,
+            length,
+            n,
+            q: load,
+            ei,
+            start: self.start,
+            end: self.end,
+            support,
+        };
+        let budget = Budget::new()
+            .max_iterations(150)
+            .time_limit(std::time::Duration::from_secs(2));
+        match rod(self.ei).solve(&start, &budget) {
+            Ok(shape) => Ok(shape),
+            Err(first) => {
+                for f in [0.0, 0.05, 0.2, 0.5, 1.0] {
+                    let shape = rod(self.ei * f)
+                        .solve(&start, &budget)
+                        .map_err(|e| format!("{first}; with EI in steps: {e}"))?;
+                    start = shape.directions.clone();
+                    if f == 1.0 {
+                        return Ok(shape);
+                    }
+                }
+                unreachable!("the last step returns")
+            }
+        }
+    }
+}
+
+/// Unstressed length giving a stiff jumper `sag` in still air, by the
+/// Illinois method from the hinged jumper's length.
+///
+/// Expected cost: ~5–15 rod solves (~1 ms each in release); exit clauses:
+/// 40 iterations, a 20× chord upper bound.
+fn stiff_length_for_sag(
+    stiff: &Stiff,
+    still: CableProperties,
+    a: Vector3<f64>,
+    b: Vector3<f64>,
+    sag: f64,
+    hinged: f64,
+) -> Result<f64, String> {
+    let chord = (b - a).norm();
+    let f = |l0: f64| -> Result<f64, String> {
+        let shape = stiff.solve(a, b, l0, still.load, None, still.axial_stiffness)?;
+        Ok(sag_below_chord(&shape.points, a, b) - sag)
+    };
+    let (mut lo, mut hi) = (chord * (1.0 + 1e-4), hinged);
+    let (mut flo, mut fhi) = (f(lo)?, f(hi)?);
+    if flo >= 0.0 {
+        return Err(format!(
+            "a sag of {sag} m is less than the taut jumper's ({:.3} m)",
+            flo + sag
+        ));
+    }
+    while fhi < 0.0 {
+        (lo, flo) = (hi, fhi);
+        hi *= 1.3;
+        if hi > 20.0 * chord {
+            return Err(format!(
+                "a sag of {sag} m needs more than 20× the chord length"
+            ));
+        }
+        fhi = f(hi)?;
+    }
+    let mut side = 0;
+    for _ in 0..40 {
+        let mid = (lo * fhi - hi * flo) / (fhi - flo);
+        let fm = f(mid)?;
+        if fm.abs() < 1e-8 || hi - lo < 1e-12 * chord {
+            return Ok(mid);
+        }
+        if fm < 0.0 {
+            (lo, flo) = (mid, fm);
+            if side == -1 {
+                fhi /= 2.0;
+            }
+            side = -1;
+        } else {
+            (hi, fhi) = (mid, fm);
+            if side == 1 {
+                flo /= 2.0;
+            }
+            side = 1;
+        }
+    }
+    Err(format!("sag {sag} m: no length found in 40 iterations"))
+}
+
 /// Solves one jumper in a weather case, between the solved section ends.
 pub fn solve_jumper(
     line: &Line,
@@ -186,11 +419,38 @@ pub fn solve_jumper(
         axial_stiffness: ea,
         load: Vector3::new(0.0, 0.0, -cable.weight().si()),
     };
+    let ei = jumper
+        .bending_stiffness
+        .unwrap_or_else(|| estimated_bending_stiffness(cable));
+    let stiff = Stiff {
+        start: clamp_direction(
+            line,
+            shapes,
+            &jumper.from,
+            jumper.angle_from_deg.unwrap_or(DEFAULT_TERMINAL_ANGLE_DEG),
+        ),
+        // Arriving at the clamp: against the direction it holds.
+        end: clamp_direction(
+            line,
+            shapes,
+            &jumper.to,
+            jumper.angle_to_deg.unwrap_or(DEFAULT_TERMINAL_ANGLE_DEG),
+        )
+        .map(|d| -d),
+        ei,
+    };
+    let stiff = (ei > 0.0 && (stiff.start.is_some() || stiff.end.is_some())).then_some(stiff);
     let reference = match (jumper.length, jumper.sag) {
         (Some(length), _) => length,
         (None, Some(sag)) => {
             let budget = Budget::new().max_iterations(200);
-            length_for_sag(still, a, b, sag, &budget).map_err(invalid)?
+            let hinged = length_for_sag(still, a, b, sag, &budget).map_err(invalid)?;
+            match &stiff {
+                Some(stiff) => {
+                    stiff_length_for_sag(stiff, still, a, b, sag, hinged).map_err(invalid)?
+                }
+                None => hinged,
+            }
         }
         (None, None) => return Err(invalid("needs a length or a sag".into())),
     };
@@ -204,6 +464,35 @@ pub fn solve_jumper(
     };
 
     let bundle = line.jumper_bundle(jumper).count.max(1);
+    if let Some(stiff) = &stiff {
+        // Half the string's weight per wire on the jumper.
+        let support = jumper.support.as_ref().map(|s| {
+            let string = RodSupport {
+                top: v(s.point),
+                length: s.length,
+                node: 0,
+                weight: s.weight / f64::from(bundle) / 2.0,
+            };
+            (string, s.fraction)
+        });
+        let shape = stiff.solve(a, b, l0, load, support, ea).map_err(invalid)?;
+        let low = *shape
+            .points
+            .iter()
+            .min_by(|x, y| x.z.total_cmp(&y.z))
+            .expect("points");
+        return Ok(JumperShape {
+            jumper: jumper.id.clone(),
+            sag: sag_below_chord(&shape.points, a, b),
+            points: shape.points.iter().map(|q| p(*q)).collect(),
+            unstressed_length: l0,
+            low_point: p(low),
+            max_tension: shape.max_tension,
+            support: shape
+                .support
+                .map(|(clamp, force)| (s_point(jumper), p(clamp), force * f64::from(bundle))),
+        });
+    }
     let (points, max_tension, support) = match &jumper.support {
         None => {
             let (points, t) = element_shape(&props, a, d).map_err(invalid)?;
@@ -283,6 +572,10 @@ pub fn solve_jumper(
         max_tension,
         support,
     })
+}
+
+fn s_point(jumper: &Jumper) -> Point {
+    jumper.support.as_ref().map_or([0.0; 3], |s| s.point)
 }
 
 /// Solves every jumper of the line between the solved sections `shapes`.
@@ -378,13 +671,13 @@ mod tests {
         let mut line = crate::tests::example();
         let (_, free) = solve_all(&line, &still(15.0));
         let length = free[0].unstressed_length;
-        // A 1 m string 2 m above the free jumper's half-length point (the
-        // 32nd of 64 points of its single element), holding it there: the
+        // A 1 m string 2 m above the free jumper's half-length point (its
+        // middle point: pieces of equal length), holding it there: the
         // string lifts that point by 1 m. (Above the lowest point instead,
         // which is nearer the lower end, the fraction-0.5 point could not
         // reach without stretching the far half by 23 %: the first version
         // of this test did that.)
-        let low = free[0].points[32];
+        let low = free[0].points[free[0].points.len() / 2];
         line.jumpers[0].sag = None;
         line.jumpers[0].length = Some(length);
         line.jumpers[0].support = Some(JumperSupport {
@@ -409,7 +702,7 @@ mod tests {
         // heavy: the same shape (per subconductor), 3 × the string force.
         let mut line = crate::tests::example();
         let (_, free) = solve_all(&line, &still(15.0));
-        let low = free[0].points[32];
+        let low = free[0].points[free[0].points.len() / 2];
         line.jumpers[0].sag = None;
         line.jumpers[0].length = Some(free[0].unstressed_length);
         line.jumpers[0].support = Some(JumperSupport {
@@ -448,5 +741,42 @@ mod tests {
             .collect();
         let err = solve_jumpers(&line, &lib, &still(15.0), &shapes).remove(0);
         assert!(err.unwrap_err().to_string().contains("taut"));
+    }
+
+    /// The example's dead-end jumper leaves its clamp at the set angle
+    /// below the conductor and swings less in the wind than with hinged
+    /// ends (EI = 0, the jumper before bending stiffness).
+    #[test]
+    fn a_stiff_jumper_leaves_its_clamp_at_its_angle_and_swings_less() {
+        let mut line = crate::tests::example();
+        let mut windy = still(15.0);
+        windy.wind_pressure = Stress::from_pascals(500.0);
+        let moved = |line: &Line| {
+            let (_, a) = solve_all(line, &still(15.0));
+            let (_, b) = solve_all(line, &windy);
+            let m = a[0].points.len() / 2;
+            (v(b[0].points[m]) - v(a[0].points[m])).norm()
+        };
+        line.jumpers[0].angle_from_deg = Some(45.0);
+        line.jumpers[0].angle_to_deg = Some(45.0);
+        line.validate().unwrap();
+        let (shapes, jumpers) = solve_all(&line, &still(15.0));
+        let axis = conductor_axis(&line, &shapes, &line.jumpers[0].from).unwrap();
+        // The tangent at the clamp, from the first two pieces.
+        let p = &jumpers[0].points;
+        let (d0, d1) = (
+            (v(p[1]) - v(p[0])).normalize(),
+            (v(p[2]) - v(p[1])).normalize(),
+        );
+        let first = d0 * 1.5 - d1 * 0.5;
+        let elevation = |d: Vector3<f64>| d.z.atan2(d.xy().norm()).to_degrees();
+        let below = elevation(axis) - elevation(first);
+        assert!((below - 45.0).abs() < 3.0, "{below}");
+        let stiff = moved(&line);
+        line.jumpers[0].bending_stiffness = Some(0.0);
+        let hinged = moved(&line);
+        // One clamped end (the other a tap on a through wire) on a 10.8 m
+        // jumper: ~10 % less (1.31 m against 1.45 m when written).
+        assert!(stiff < 0.95 * hinged, "{stiff} vs {hinged}");
     }
 }
