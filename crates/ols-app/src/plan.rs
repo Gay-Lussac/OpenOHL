@@ -151,7 +151,7 @@ impl PlanView {
         if let Some(solved) = model.cases.get(case) {
             for j in &solved.jumpers {
                 let selected = matches!(selection, Selection::Jumper(id) if *id == j.jumper);
-                let (col, _) = crate::scene::jumper_lines(line, j);
+                let (col, _) = crate::scene::jumper_lines(line, j, &solved.bundles);
                 let pts: Vec<egui::Pos2> = j.points.iter().map(|p| to_screen(*p)).collect();
                 let (w, col) = if selected {
                     (4.0, egui::Color32::WHITE)

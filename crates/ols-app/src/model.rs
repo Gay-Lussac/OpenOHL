@@ -53,6 +53,8 @@ pub struct Solved {
     pub jumpers: Vec<JumperShape>,
     /// Sections or jumpers that failed, with why.
     pub failed: Vec<String>,
+    /// Subconductors joined up at the clamps (yokes), for drawing.
+    pub bundles: ols_line::bundles::BundleLines,
 }
 
 /// A LiDAR point: millimetres from the model origin, class.
@@ -204,11 +206,13 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
             ),
             &mut log,
         );
+        let bundles = ols_line::bundles::BundleLines::new(&line, &shapes, &jumpers);
         solved.push(Solved {
             case,
             shapes,
             jumpers,
             failed,
+            bundles,
         });
     }
     let origin = line.structures.first().map_or([0.0; 3], |s| s.position);

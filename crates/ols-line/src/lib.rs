@@ -23,6 +23,7 @@
 //! [`solve`] turns a section into a finite-element model (exact catenary
 //! elements, insulator strings) and solves it in any weather state.
 
+pub mod bundles;
 pub mod electrical;
 pub mod export;
 pub mod incremental;

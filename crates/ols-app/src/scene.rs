@@ -103,10 +103,12 @@ pub fn structure_lines(st: &ols_line::Structure) -> Vec<(Part, Vec<[f64; 3]>)> {
 }
 
 /// A solved jumper's colour (its own, else its section's) and its
-/// subconductor polylines ([`ols_line::Line::jumper_bundle`]).
+/// subconductor polylines, ending on the yokes at its ends
+/// ([`ols_line::bundles`]).
 pub fn jumper_lines(
     line: &ols_line::Line,
     j: &ols_line::jumper::JumperShape,
+    bundles: &ols_line::bundles::BundleLines,
 ) -> ([u8; 3], Vec<Vec<[f64; 3]>>) {
     let def = line.jumpers.iter().find(|d| d.id == j.jumper);
     let col = def
@@ -116,9 +118,10 @@ pub fn jumper_lines(
                 .map(|s| line.section_color(s))
         })
         .map_or([200, 200, 200], |c| rgb(&c));
-    let lines = match def {
-        Some(d) => line.jumper_bundle(d).polylines(&j.points),
-        None => vec![j.points.clone()],
+    let lines = match (bundles.jumpers.get(&j.jumper), def) {
+        (Some(l), _) => l.clone(),
+        (None, Some(d)) => line.jumper_bundle(d).polylines(&j.points),
+        (None, None) => vec![j.points.clone()],
     };
     (col, lines)
 }
@@ -257,11 +260,11 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                 for shape in &solved.shapes {
                     let sec = line.sections.iter().find(|x| x.id == shape.section);
                     let col = sec.map_or([176, 184, 192], |sec| rgb(&line.section_color(sec)));
-                    for span in &shape.spans {
+                    for (k, span) in shape.spans.iter().enumerate() {
                         // Bundles: each subconductor (one section, solved
-                        // and selected as one).
-                        let lines = match sec {
-                            Some(sec) => sec.subconductor_polylines(&span.points),
+                        // and selected as one), ending on the yokes.
+                        let lines = match solved.bundles.spans.get(&(shape.section.clone(), k)) {
+                            Some(l) => l.clone(),
                             None => vec![span.points.clone()],
                         };
                         let width = if lines.len() > 1 { 1.5 } else { 2.0 };
@@ -271,11 +274,19 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 for j in &solved.jumpers {
-                    let (col, lines) = jumper_lines(line, j);
+                    let (col, lines) = jumper_lines(line, j, &solved.bundles);
                     let width = if lines.len() > 1 { 1.2 } else { 1.5 };
                     for l in &lines {
                         s.polyline(l, rgba(col, alpha), width);
                     }
+                }
+                // Yokes at the clamps: a bar, a triangle, a polygon.
+                for y in &solved.bundles.yokes {
+                    let mut ring = y.clone();
+                    if y.len() > 2 {
+                        ring.push(y[0]);
+                    }
+                    s.polyline(&ring, [205, 205, 210, alpha], 2.0);
                 }
             }
         }
@@ -297,8 +308,12 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         .and_then(|c| c.shapes.iter().find(|x| &x.section == section))
                         && let Some(sp) = shape.spans.get(*span)
                     {
-                        let lines = match line.sections.iter().find(|x| &x.id == section) {
-                            Some(sec) => sec.subconductor_polylines(&sp.points),
+                        let lines = match model.cases[case]
+                            .bundles
+                            .spans
+                            .get(&(section.clone(), *span))
+                        {
+                            Some(l) => l.clone(),
                             None => vec![sp.points.clone()],
                         };
                         let width = if lines.len() > 1 { 3.0 } else { 5.0 };
@@ -313,7 +328,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         .get(case)
                         .and_then(|c| c.jumpers.iter().find(|x| &x.jumper == id))
                     {
-                        let (_, lines) = jumper_lines(line, j);
+                        let (_, lines) = jumper_lines(line, j, &model.cases[case].bundles);
                         for l in &lines {
                             s.polyline(l, hi, 3.0);
                         }
