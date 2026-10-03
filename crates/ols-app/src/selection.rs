@@ -354,7 +354,10 @@ pub fn pick_in_model(
     let mut best = pick_scored(&candidates(model, case, snaps), at, radius, &project);
     if snaps.on(Snap::LidarPoint) {
         let bonus = Snap::LidarPoint.priority();
-        for (k, (q, _)) in model.points.iter().enumerate() {
+        for (k, (q, class)) in model.points.iter().enumerate() {
+            if model.hidden_classes.contains(class) {
+                continue;
+            }
             let Some(s) = project(lidar_xyz(model, q)) else {
                 continue;
             };

@@ -199,6 +199,8 @@ pub struct Model {
     pub shown_cases: Vec<usize>,
     /// Saved project lines shown next to the working line (Lines menu).
     pub other_lines: Vec<OtherLine>,
+    /// LiDAR classes not drawn (Terrain menu).
+    pub hidden_classes: std::collections::BTreeSet<u8>,
 }
 
 fn dir_of(file: &Path) -> PathBuf {
@@ -686,5 +688,6 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         display_cases: Default::default(),
         shown_cases: vec![0],
         other_lines: Vec::new(),
+        hidden_classes: Default::default(),
     })
 }

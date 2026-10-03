@@ -1524,6 +1524,82 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
 /// The Lines menu: the project lines (frozen states of the line, e.g. as
 /// built and as planned) to show next to the working line, to make the
 /// working line; create and delete them.
+/// The Terrain menu: the ground surface (TIN) and the LiDAR points, with
+/// the classes drawn.
+fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
+    let layer = |ui: &mut egui::Ui, layer: Layer, name: &str, r: &mut Ready| {
+        let mut on = r.visible.contains(&layer);
+        if ui.checkbox(&mut on, name).changed() {
+            if on {
+                r.visible.insert(layer);
+            } else {
+                r.visible.remove(&layer);
+            }
+        }
+    };
+    ui.label(egui::RichText::new("Ground surface").small().weak());
+    if r.model.ground.is_some() {
+        layer(ui, Layer::Ground, "TIN (ground surface)", r);
+    } else {
+        ui.add_enabled(false, egui::Button::new("TIN: none loaded"));
+    }
+    ui.separator();
+    ui.label(egui::RichText::new("Survey data").small().weak());
+    if r.model.points.is_empty() {
+        ui.add_enabled(false, egui::Button::new("LiDAR: no point cloud"));
+        return;
+    }
+    layer(ui, Layer::Points, "LiDAR points", r);
+    ui.menu_button("LiDAR classes shown", |ui| {
+        let mut counts: std::collections::BTreeMap<u8, usize> = Default::default();
+        for (_, c) in &r.model.points {
+            *counts.entry(*c).or_default() += 1;
+        }
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            if ui.small_button("All").clicked() {
+                r.model.hidden_classes.clear();
+                changed = true;
+            }
+            if ui.small_button("None").clicked() {
+                r.model.hidden_classes = counts.keys().copied().collect();
+                changed = true;
+            }
+        });
+        for (code, n) in &counts {
+            let name = r
+                .model
+                .scheme
+                .class(*code)
+                .map_or_else(|| "unknown".to_owned(), |c| c.name.clone());
+            let drawable = crate::scene::class_color(&r.model.scheme, *code).is_some();
+            let mut on = !r.model.hidden_classes.contains(code);
+            let label = format!(
+                "{code} {name} — {n} points{}",
+                if drawable {
+                    ""
+                } else {
+                    " (noise: never drawn)"
+                }
+            );
+            if ui
+                .add_enabled(drawable, egui::Checkbox::new(&mut on, label))
+                .changed()
+            {
+                if on {
+                    r.model.hidden_classes.remove(code);
+                } else {
+                    r.model.hidden_classes.insert(*code);
+                }
+                changed = true;
+            }
+        }
+        if changed {
+            r.view3d.dirty.insert(Layer::Points);
+        }
+    });
+}
+
 fn lines_menu(ui: &mut egui::Ui, r: &mut Ready) {
     let snapshots = match &r.model.editing {
         Ok(e) => e.session.snapshots().map_err(|e| e.to_string()),
@@ -2236,15 +2312,33 @@ fn menus(
         ui.add_enabled(false, egui::Button::new("Tension limits (to come)"));
         ui.add_enabled(false, egui::Button::new("Insulator swing (to come)"));
     });
-    ui.menu_button("Libraries", |ui| {
-        for k in crate::library::LibraryKind::ALL {
-            item(ui, Command::Library(k), out);
-        }
+    ui.menu_button("Terrain", |ui| terrain_menu(ui, r));
+    ui.menu_button("Structures", |ui| {
+        use crate::library::LibraryKind;
+        use crate::tables::TableKind;
+        ui.label(egui::RichText::new("Libraries").small().weak());
+        item(ui, Command::Library(LibraryKind::StructureTypes), out);
+        item(ui, Command::Library(LibraryKind::Insulators), out);
+        ui.separator();
+        ui.label(egui::RichText::new("Tables").small().weak());
+        item(ui, Command::Table(TableKind::Structures), out);
+        item(ui, Command::Table(TableKind::Strings), out);
+        item(ui, Command::Table(TableKind::Alignments), out);
     });
-    ui.menu_button("Tables", |ui| {
-        for k in crate::tables::TableKind::ALL {
-            item(ui, Command::Table(k), out);
-        }
+    ui.menu_button("Sections", |ui| {
+        use crate::library::LibraryKind;
+        use crate::tables::TableKind;
+        ui.label(egui::RichText::new("Libraries").small().weak());
+        item(ui, Command::Library(LibraryKind::Cables), out);
+        item(ui, Command::Library(LibraryKind::WeatherCases), out);
+        ui.separator();
+        ui.label(egui::RichText::new("Tables").small().weak());
+        item(ui, Command::Table(TableKind::Sections), out);
+        item(ui, Command::Table(TableKind::Jumpers), out);
+        item(ui, Command::Table(TableKind::Systems), out);
+        item(ui, Command::Table(TableKind::WeatherCases), out);
+        ui.separator();
+        item(ui, Command::DisplayCases, out);
     });
     ui.menu_button("Plugins", |ui| {
         ui.add_enabled(false, egui::Button::new("Plugin manager (to come)"));

@@ -352,6 +352,9 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         }
         Layer::Points => {
             for (q, c) in &model.points {
+                if model.hidden_classes.contains(c) {
+                    continue;
+                }
                 if let Some(col) = class_color(&model.scheme, *c) {
                     let p = [0, 1, 2].map(|k| model.origin[k] + f64::from(q[k]) / 1000.0);
                     s.point(p, rgba(col, 255), 2.0);

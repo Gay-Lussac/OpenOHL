@@ -1398,7 +1398,7 @@ fn a_saved_library_reaches_the_model() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Libraries").click();
+    harness.get_by_label("Sections").click();
     harness.run();
     harness.get_by_label("Weather cases library").click();
     harness.run();
@@ -1502,7 +1502,10 @@ fn tables_edit_the_line_in_one_command_each() {
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     // Opened from the menu.
-    harness.get_by_label("Tables").click();
+    // The menu button (the Model page has a "Structures" layer too).
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Structures")
+        .click();
     harness.run();
     harness.get_by_label("Structures table").click();
     harness.run();
@@ -2358,4 +2361,26 @@ fn tables_show_defaults_and_leave_them_unset() {
     let j = r.model.line.jumpers.iter().find(|j| j.id == key).unwrap();
     assert_eq!(j.angle_to_deg, Some(10.0));
     assert!(j.bending_stiffness.is_none() && ei > 0.0);
+}
+
+/// Terrain › LiDAR classes shown: a class hidden is neither drawn nor
+/// picked.
+#[test]
+fn hidden_lidar_classes_are_not_drawn() {
+    let mut model = synthetic();
+    // Ground (2) and high vegetation (5) points.
+    model.points = vec![([0, 0, 0], 2), ([1000, 0, 0], 5), ([2000, 0, 0], 5)];
+    let drawn = |m: &model::Model| {
+        crate::scene::layer(m, crate::scene::Layer::Points, 0, &Selection::None)
+            .counts()
+            .1
+    };
+    let all = drawn(&model);
+    let class = model.points[0].1;
+    let of_class = model.points.iter().filter(|p| p.1 == class).count();
+    assert_eq!(all, 3);
+    model.hidden_classes.insert(class);
+    assert_eq!(drawn(&model), all - of_class);
+    model.hidden_classes.insert(5);
+    assert_eq!(drawn(&model), 0);
 }

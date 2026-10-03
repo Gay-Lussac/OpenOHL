@@ -34,8 +34,9 @@ The **menu bar** holds what needs no view:
 | Lines | Project lines (saved states of the line to show next to the working line, or to make the working line), Create line, Delete line (see [Project lines](#project-lines)) |
 | Tools | the tool inventory (E); hold any tool |
 | Checks | calculations run **on demand** — they never change the model: Clearances (Run checks, also after every edit, rule file, Show results); more checks to come |
-| Libraries | the library editors: wires, insulators, structure types, weather cases (see [Library editors](#library-editors)) |
-| Tables | the line as tables: structures, sections, strings, jumpers, electrical systems (see [Tables](#tables)) |
+| Terrain | the ground surface (TIN) shown or not; the survey data: LiDAR points shown or not and **LiDAR classes shown** (tick each class, with its point count; a hidden class is neither drawn nor clicked; All / None) |
+| Structures | libraries: structure types, insulators (see [Library editors](#library-editors)); tables: structures, strings, alignment points (see [Tables](#tables)) |
+| Sections | libraries: wires, weather cases; tables: sections, jumpers, electrical systems, weather cases; Display weather cases |
 | Plugins | to come (the plugin manager) |
 | Help | version, keys and mouse |
 
