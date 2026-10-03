@@ -54,6 +54,54 @@ impl Layer {
     }
 }
 
+/// What a line of a structure drawing is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Part {
+    /// The mast drawn when there is no stick drawing.
+    Mast,
+    /// A member: of the stick drawing, or an arm to an insulator.
+    Member,
+    /// An insulator string (or a V-string leg).
+    Insulator,
+}
+
+/// The lines a structure is drawn with (and picked by): its stick drawing,
+/// or a mast up to the highest attachment and arms out to the insulators;
+/// then the insulator strings (V-strings: both legs).
+pub fn structure_lines(st: &ols_line::Structure) -> Vec<(Part, Vec<[f64; 3]>)> {
+    let mut out = Vec::new();
+    if st.members.is_empty() {
+        let top = st
+            .attachments
+            .iter()
+            .map(|a| a.insulator_point[2])
+            .fold(st.position[2], f64::max);
+        let mast = |z: f64| [st.position[0], st.position[1], z];
+        out.push((Part::Mast, vec![st.position, mast(top)]));
+        for a in &st.attachments {
+            out.push((
+                Part::Member,
+                vec![mast(a.insulator_point[2]), a.insulator_point],
+            ));
+        }
+    } else {
+        for m in &st.members {
+            out.push((Part::Member, m.clone()));
+        }
+    }
+    for a in &st.attachments {
+        match &a.legs {
+            Some(legs) => {
+                for l in legs {
+                    out.push((Part::Insulator, vec![*l, a.wire_point]));
+                }
+            }
+            None => out.push((Part::Insulator, vec![a.insulator_point, a.wire_point])),
+        }
+    }
+    out
+}
+
 /// `#rrggbb` → sRGB bytes (grey if not a colour).
 pub fn rgb(hex: &str) -> [u8; 3] {
     let h = hex.trim_start_matches('#');
@@ -168,37 +216,14 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
             }
         }
         Layer::Structures => {
-            let grey = [215, 215, 220, 255];
             for st in &line.structures {
-                if st.members.is_empty() {
-                    // No stick drawing: a mast up to the highest attachment
-                    // and arms out to the insulators.
-                    let top = st
-                        .attachments
-                        .iter()
-                        .map(|a| a.insulator_point[2])
-                        .fold(st.position[2], f64::max);
-                    let mast = |z: f64| [st.position[0], st.position[1], z];
-                    s.polyline(&[st.position, mast(top)], grey, 2.5);
-                    for a in &st.attachments {
-                        s.polyline(&[mast(a.insulator_point[2]), a.insulator_point], grey, 1.5);
-                    }
-                } else {
-                    for m in &st.members {
-                        s.polyline(m, grey, 1.5);
-                    }
-                }
-                // Insulator strings (V-strings: both legs).
-                for a in &st.attachments {
-                    let ins = [120, 180, 255, 255];
-                    match &a.legs {
-                        Some(legs) => {
-                            for l in legs {
-                                s.polyline(&[*l, a.wire_point], ins, 2.0);
-                            }
-                        }
-                        None => s.polyline(&[a.insulator_point, a.wire_point], ins, 2.0),
-                    }
+                for (part, pts) in structure_lines(st) {
+                    let (col, width) = match part {
+                        Part::Mast => ([215, 215, 220, 255], 2.5),
+                        Part::Member => ([215, 215, 220, 255], 1.5),
+                        Part::Insulator => ([120, 180, 255, 255], 2.0),
+                    };
+                    s.polyline(&pts, col, width);
                 }
             }
         }

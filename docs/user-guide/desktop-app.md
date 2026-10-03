@@ -51,6 +51,6 @@ Two schemes, chosen in the Model panel (Controls):
 
 The speed (m/s) and, for the first-person scheme, the look sensitivity are set there too, and the list shows every key of the scheme. The scheme, speed and sensitivity are remembered for the next start; `--controls orbit` or `--controls minecraft` chooses one at start. Schemes are data (`controls.rs`: actions bound to keys and mouse buttons), so schemes familiar from other software can be added as presets, and later edited and saved.
 
-Clicking an object in any view selects it everywhere. Tabs can be dragged to rearrange the window.
+Clicking an object in any view selects it everywhere: a structure anywhere along the lines it is drawn with (mast or stick drawing, arms, insulator strings), a span anywhere along its wire. Tabs can be dragged to rearrange the window.
 
 Loading runs in the background. On a real 25 km line with 99.6 million LiDAR points stored in its project, the window is ready in about 8 s (release build): 84 million points decoded in the corridor, 1.5 million shown, a 5-million-triangle ground surface.
