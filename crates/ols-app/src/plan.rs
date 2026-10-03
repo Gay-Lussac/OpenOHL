@@ -49,6 +49,12 @@ impl PlanView {
         self.scale = (f64::from(size.x) / w).min(f64::from(size.y) / h);
     }
 
+    /// Pixels per metre (0 before the first fit).
+    #[cfg(test)]
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
+
     /// Fits the line again on the next frame.
     pub fn refit(&mut self) {
         self.centre = None;
@@ -71,8 +77,20 @@ impl PlanView {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         self.drawn = Some(rect);
-        if self.centre.is_none() {
+        // Not yet scaled (scale 0): fit, keeping a centre asked for before
+        // (selecting in the 3D view centres the plan; before the plan was
+        // first shown that left it at scale 0, every object on one point —
+        // an empty-looking plan).
+        let unscaled = !(self.scale.is_finite() && self.scale > 0.0);
+        if (self.centre.is_none() || unscaled) && rect.width() > 1.0 && rect.height() > 1.0 {
+            let wanted = self.centre.filter(|_| unscaled);
             self.fit(model, rect.size());
+            if let Some(c) = wanted {
+                self.centre = Some(c);
+            }
+        }
+        if self.centre.is_none() || self.scale.is_nan() || self.scale <= 0.0 {
+            return None;
         }
         let mid = rect.center();
         if response.dragged() {

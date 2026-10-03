@@ -49,7 +49,7 @@ Under it, the **quick bar**: the line's name, **Weather: …** (the weather case
 - **Plan** — alignments, wires and structures from above, north up, with a scale bar. Drag, scroll at the pointer, double-click to centre.
 - **Profile** — per route: ground along the centreline, structures and wires by station; heights fit the visible stretch. Scroll zooms along the route, drag moves, double-click shows the whole route.
 - **Properties** — the selected structure (position, type, attachments, spans through it) or span (cable, circuit, electrical system and voltage, bundle, horizontal and maximum tension, sag and lowest point in every weather case). Links select related objects.
-- **Model** — layers, controls, sections or jumpers that failed to solve, what was loaded and how long it took.
+- **Model** — layers, controls, sections or jumpers that failed to solve, by weather case (click one: that case is shown, the object selected and the views brought to it), what was loaded and how long it took.
 - **Clearances** — clearance violations of the shown weather case (see [Clearances](#clearances)).
 - **Properties** of the other kinds: an attachment point (string type, insulator and wire points, length, weight, spans and jumpers there), an alignment point (position, tied structure), a LiDAR point (position, class and roles).
 
@@ -104,7 +104,7 @@ Rules for other lines and rules across pairs of weather cases are run by `ols li
 
 ## Tables
 
-**Tables** shows the line one object per row, in a floating window (each table a page): structures, sections, strings, jumpers, electrical systems, alignment points, weather cases. **Every value shown can be typed in**, except counts derived from other rows (shown dimmed) and what a string or an alignment point belongs to (typed in new rows):
+**Tables** shows the line one object per row, in a floating window (each table a page): structures, sections, strings, jumpers, electrical systems, alignment points, weather cases. **Every value shown can be typed in**, except counts derived from other rows (shown dimmed) and what a string or an alignment point belongs to (typed in new rows). Where an object leaves a value to its **default**, the value used is shown, dimmed (hover: "default"): a jumper's bundle and spacing (its section's), bending stiffness (estimated from its cable) and clamp exit angles (30°); a section's electrical system (from its conductor path; "earthed") and the weather cases it is drawn in (those shown); a strain string's weight estimated from its position (strings given without a weight). Applying other changes leaves defaults unset; typing over one sets it on the object:
 
 | Table | Columns |
 |---|---|

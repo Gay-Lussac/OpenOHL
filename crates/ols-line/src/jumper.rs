@@ -464,6 +464,18 @@ pub fn solve_jumper(
     };
 
     let bundle = line.jumper_bundle(jumper).count.max(1);
+    // Clamps swung apart further than the jumper is long (free strain
+    // strings in the wind: 0.6 m on a real line at 650 Pa): it would be
+    // taut and hold them back, and the pull of a jumper on its clamps is
+    // not modelled — sections are solved first. Said so, instead of a
+    // stretched jumper at hundreds of kN or a solver that cannot settle.
+    if d.norm() >= l0 * (1.0 - 1e-3) {
+        return Err(invalid(format!(
+            "taut: {l0:.2} m long between clamps {:.2} m apart in this weather case (the \
+             clamps swing apart; a jumper holding them back is not modelled yet)",
+            d.norm()
+        )));
+    }
     if let Some(stiff) = &stiff {
         // Half the string's weight per wire on the jumper.
         let support = jumper.support.as_ref().map(|s| {

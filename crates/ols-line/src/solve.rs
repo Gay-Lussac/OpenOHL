@@ -96,6 +96,10 @@ pub struct SectionShape {
     /// N (tension positive; the whole bundle's): empty for fixed points, one value for I-strings
     /// and strain assemblies, two for V-string legs (0 = slack leg).
     pub insulators: Vec<Vec<f64>>,
+    /// Weight estimated for each strain assembly given without one (the
+    /// whole bundle's, N), at every point of the section (`None`: given or
+    /// not a strain assembly).
+    pub estimated_weights: Vec<Option<f64>>,
     /// Newton iterations used.
     pub iterations: u64,
 }
@@ -431,12 +435,13 @@ fn estimate_strain_weights(
     mut layout: Vec<Clamp>,
     cable: &Cable,
     budget: &Budget,
-) -> Result<Vec<Clamp>, LineError> {
+) -> Result<(Vec<Clamp>, Vec<Option<f64>>), LineError> {
+    let mut estimated = vec![None; layout.len()];
     if !layout
         .iter()
         .any(|c| matches!(c, Clamp::Strain { estimate: true, .. }))
     {
-        return Ok(layout);
+        return Ok((layout, estimated));
     }
     let held: Vec<Clamp> = layout
         .iter()
@@ -482,9 +487,10 @@ fn estimate_strain_weights(
             let force = pull.dot(&r.normalize()) + *weight / 2.0 * (-r.z / r.norm());
             *length /= 1.0 + force.max(0.0) / DEFAULT_INSULATOR_STIFFNESS;
             *estimate = false;
+            estimated[k] = Some(*weight * f64::from(section.bundle.max(1)));
         }
     }
-    Ok(layout)
+    Ok((layout, estimated))
 }
 
 /// Stringing reference. For a tension, every span is sagged to that
@@ -844,7 +850,7 @@ pub fn clip_lengths(
     cable: &Cable,
 ) -> Result<(Vec<f64>, f64), LineError> {
     let budget = default_fe_budget();
-    let layout = estimate_strain_weights(section, clamps_of(line, section)?, cable, &budget)?;
+    let (layout, _) = estimate_strain_weights(section, clamps_of(line, section)?, cable, &budget)?;
     let r = reference(section, &layout, cable, &budget)?;
     Ok((r.lengths, r.temperature))
 }
@@ -860,7 +866,8 @@ pub fn solve_section(
     case: &WeatherCase,
     budget: &Budget,
 ) -> Result<SectionShape, LineError> {
-    let layout = estimate_strain_weights(section, clamps_of(line, section)?, cable, budget)?;
+    let (layout, estimated_weights) =
+        estimate_strain_weights(section, clamps_of(line, section)?, cable, budget)?;
     let mut reference = reference(section, &layout, cable, budget)?;
     if !section.stringing.clipped() && reference.lengths.len() > 1 {
         reference = rolled(section, &layout, &reference, cable, case, budget)?;
@@ -931,6 +938,7 @@ pub fn solve_section(
             })
             .collect(),
         iterations: solution.iterations,
+        estimated_weights,
     })
 }
 

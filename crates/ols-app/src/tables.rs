@@ -338,6 +338,9 @@ pub struct Row {
     pub select: Selection,
     /// Cell texts.
     pub cells: Vec<String>,
+    /// Cells showing a default (not stored on the object; drawn dimmed,
+    /// left unset on Apply unless typed in); missing: none.
+    pub defaulted: Vec<bool>,
 }
 
 fn f(v: f64, decimals: usize) -> String {
@@ -419,14 +422,19 @@ fn retarget(command: Command, new_id: &str) -> Command {
 struct Cells<'a> {
     row: &'a [String],
     typed: Option<&'a BTreeMap<usize, String>>,
+    /// Cells showing a default: read as empty unless typed in.
+    defaulted: &'a [bool],
 }
 
 impl Cells<'_> {
     fn get(&self, c: usize) -> String {
-        self.typed
-            .and_then(|e| e.get(&c))
-            .cloned()
-            .unwrap_or_else(|| self.row[c].clone())
+        if let Some(t) = self.typed.and_then(|e| e.get(&c)) {
+            return t.clone();
+        }
+        if self.defaulted.get(c).copied().unwrap_or(false) {
+            return String::new();
+        }
+        self.row[c].clone()
     }
 
     fn changed(&self, c: usize) -> bool {
@@ -445,6 +453,114 @@ pub struct Changes {
     pub display: Vec<(String, Vec<usize>)>,
     /// What deletions take with them, to confirm.
     pub takes: Vec<String>,
+}
+
+/// Shows the values used where an object leaves a value to its default
+/// (dimmed; left unset on Apply unless typed in): a section's electrical
+/// system from its conductor path and the weather cases it is drawn in, a
+/// strain string's estimated weight, a jumper's bundle (from its section),
+/// bending stiffness (estimated from its cable) and clamp exit angles.
+fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
+    let line = &model.line;
+    let set = |row: &mut Row, c: usize, text: String| {
+        if row.cells[c].is_empty() || row.defaulted.get(c).copied().unwrap_or(false) {
+            row.cells[c] = text;
+            row.defaulted.resize(row.cells.len(), false);
+            row.defaulted[c] = true;
+        }
+    };
+    match kind {
+        TableKind::Sections => {
+            // The system of a conductor path: that of any of its sections.
+            let mut system: std::collections::HashMap<&str, String> =
+                std::collections::HashMap::new();
+            for path in ols_line::electrical::conductor_paths(line) {
+                let given = path.iter().find_map(|id| {
+                    line.sections
+                        .iter()
+                        .find(|s| &s.id == id)
+                        .and_then(|s| s.system.clone())
+                });
+                if let Some(g) = given {
+                    for id in &path {
+                        if let Some(s) = line.sections.iter().find(|s| &s.id == id) {
+                            system.insert(s.id.as_str(), g.clone());
+                        }
+                    }
+                }
+            }
+            let shown: Vec<String> = model
+                .shown(case)
+                .iter()
+                .filter_map(|k| model.cases.get(*k))
+                .map(|c| c.case.name.clone())
+                .collect();
+            for row in rows.iter_mut() {
+                set(
+                    row,
+                    4,
+                    system
+                        .get(row.key.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| "earthed".into()),
+                );
+                set(row, 12, shown.join("; "));
+            }
+        }
+        TableKind::Strings => {
+            let mut weight: std::collections::HashMap<(&str, u32, u32), f64> =
+                std::collections::HashMap::new();
+            if let Some(solved) = model.cases.get(case) {
+                for shape in &solved.shapes {
+                    let Some(sec) = line.sections.iter().find(|s| s.id == shape.section) else {
+                        continue;
+                    };
+                    for (p, w) in sec.points.iter().zip(&shape.estimated_weights) {
+                        if let Some(w) = w {
+                            weight.insert((p.structure.as_str(), p.set, p.phase), *w);
+                        }
+                    }
+                }
+            }
+            for row in rows.iter_mut() {
+                let (structure, sp) = row.key.split_once('\t').unwrap_or((&row.key, ""));
+                let Some((set_no, phase)) = sp
+                    .split_once(':')
+                    .and_then(|(a, b)| Some((a.parse().ok()?, b.parse().ok()?)))
+                else {
+                    continue;
+                };
+                if let Some(w) = weight.get(&(structure, set_no, phase)).copied() {
+                    let w = f(w, 1);
+                    row.cells[10].clear();
+                    set(row, 10, w);
+                }
+            }
+        }
+        TableKind::Jumpers => {
+            for row in rows.iter_mut() {
+                let Some(j) = line.jumpers.iter().find(|j| j.id == row.key) else {
+                    continue;
+                };
+                let b = line.jumper_bundle(j);
+                set(row, 7, b.count.to_string());
+                if b.count > 1 {
+                    set(row, 8, b.spacing.map_or(String::new(), |v| f(v, 3)));
+                }
+                if let Some(c) = model.library.get(&j.cable) {
+                    set(
+                        row,
+                        9,
+                        f(ols_line::jumper::estimated_bending_stiffness(c), 1),
+                    );
+                }
+                let angle = f(ols_line::jumper::DEFAULT_TERMINAL_ANGLE_DEG, 1);
+                set(row, 10, angle.clone());
+                set(row, 11, angle);
+            }
+        }
+        _ => {}
+    }
 }
 
 impl TableKind {
@@ -526,11 +642,12 @@ impl TableKind {
                 *at_structure.entry(id).or_default() += 1;
             }
         }
-        match self {
+        let mut rows: Vec<Row> = match self {
             TableKind::Structures => line
                 .structures
                 .iter()
                 .map(|s| Row {
+                    defaulted: Vec::new(),
                     key: s.id.clone(),
                     select: Selection::Structure(s.id.clone()),
                     cells: vec![
@@ -581,6 +698,7 @@ impl TableKind {
                         })
                         .collect();
                     Row {
+                        defaulted: Vec::new(),
                         key: s.id.clone(),
                         select: Selection::Span {
                             section: s.id.clone(),
@@ -634,6 +752,7 @@ impl TableKind {
                     s.attachments.iter().filter_map(move |a| {
                         let form = StringForm::of(model, &s.id, a.set, a.phase)?;
                         Some(Row {
+                            defaulted: Vec::new(),
                             key: format!("{}\t{}:{}", s.id, a.set, a.phase),
                             select: Selection::Attachment {
                                 structure: s.id.clone(),
@@ -668,6 +787,7 @@ impl TableKind {
                 .jumpers
                 .iter()
                 .map(|j| Row {
+                    defaulted: Vec::new(),
                     key: j.id.clone(),
                     select: Selection::Jumper(j.id.clone()),
                     cells: vec![
@@ -690,6 +810,7 @@ impl TableKind {
                 .systems
                 .iter()
                 .map(|s| Row {
+                    defaulted: Vec::new(),
                     key: s.id.clone(),
                     select: Selection::None,
                     cells: vec![
@@ -718,6 +839,7 @@ impl TableKind {
                 .into_iter()
                 .flat_map(|(route, points)| {
                     points.into_iter().enumerate().map(move |(k, p)| Row {
+                        defaulted: Vec::new(),
                         key: format!("{route}\t{k}"),
                         select: Selection::AlignmentPoint {
                             route: if route == "line" {
@@ -745,6 +867,7 @@ impl TableKind {
                 .map(|(k, c)| {
                     let w = &c.case;
                     Row {
+                        defaulted: Vec::new(),
                         key: k.to_string(),
                         select: Selection::None,
                         cells: vec![
@@ -762,7 +885,9 @@ impl TableKind {
                     }
                 })
                 .collect(),
-        }
+        };
+        defaults(self, model, case, &mut rows);
+        rows
     }
 
     /// A new row's cells, before anything is typed.
@@ -865,9 +990,11 @@ impl TableKind {
                 .ok_or_else(|| format!("{key} is no longer in the line"))
         };
         let existing = |key: &String| -> Result<Cells<'_>, String> {
+            let row = row_of(key)?;
             Ok(Cells {
-                row: &row_of(key)?.cells,
+                row: &row.cells,
                 typed: page.edits.get(key),
+                defaulted: &row.defaulted,
             })
         };
         let mut out = Changes::default();
@@ -912,6 +1039,7 @@ impl TableKind {
                     let c = Cells {
                         row: cells,
                         typed: None,
+                        defaulted: &[],
                     };
                     let id = c.get(0).trim().to_owned();
                     let mut form = StructureForm::new_at(model, [0.0; 3]);
@@ -974,6 +1102,7 @@ impl TableKind {
                     let c = Cells {
                         row: cells,
                         typed: None,
+                        defaulted: &[],
                     };
                     let id = c.get(0).trim().to_owned();
                     let mut form = SectionForm::new_through(model, case, Vec::new(), None);
@@ -1020,6 +1149,7 @@ impl TableKind {
                     let c = Cells {
                         row: cells,
                         typed: None,
+                        defaulted: &[],
                     };
                     let s = c.get(0).trim().to_owned();
                     if s.is_empty() {
@@ -1138,6 +1268,7 @@ impl TableKind {
                     let c = Cells {
                         row: cells,
                         typed: None,
+                        defaulted: &[],
                     };
                     let id = c.get(0).trim().to_owned();
                     let mut j: ols_line::Jumper = serde_json::from_value(serde_json::json!({
@@ -1213,6 +1344,7 @@ impl TableKind {
                     let c = Cells {
                         row: cells,
                         typed: None,
+                        defaulted: &[],
                     };
                     let id = c.get(0).trim().to_owned();
                     let mut s: ols_line::electrical::System =
@@ -1779,6 +1911,7 @@ fn alignment_commands(
         let c = Cells {
             row: &row.cells,
             typed: page.edits.get(&row.key),
+            defaulted: &row.defaulted,
         };
         let name = format!("{route} #{}", row.cells[1]);
         let order = num(&c.get(1), &format!("{name} #"))?;
@@ -1791,6 +1924,7 @@ fn alignment_commands(
         let c = Cells {
             row: cells,
             typed: None,
+            defaulted: &[],
         };
         let route = c.get(0).trim().to_owned();
         if !alignments(stored).iter().any(|(r, _)| *r == route) {
@@ -1929,6 +2063,7 @@ fn weather_file(
         let c = Cells {
             row: &row.cells,
             typed: page.edits.get(&row.key),
+            defaulted: &row.defaulted,
         };
         write(&mut t, &c, false)?;
         cases.push((num(&c.get(0), &format!("{} #", row.cells[1]))?, t));
@@ -1937,6 +2072,7 @@ fn weather_file(
         let c = Cells {
             row: cells,
             typed: None,
+            defaulted: &[],
         };
         let mut t = toml_edit::Table::new();
         write(&mut t, &c, true)?;
@@ -2315,8 +2451,16 @@ impl TablePage {
                                 }
                                 let edited = self.edits.get(&row.key).and_then(|e| e.get(&c));
                                 let mut text = edited.cloned().unwrap_or_else(|| original.clone());
+                                // A default shown (not stored): dimmed until typed over.
+                                let default = edited.is_none()
+                                    && row.defaulted.get(c).copied().unwrap_or(false);
+                                let dim = ui.visuals().weak_text_color();
                                 if let Some(list) = choices(kind, c, model, &row.cells) {
-                                    let color = edited.map(|_| egui::Color32::YELLOW);
+                                    let color = match (edited, default) {
+                                        (Some(_), _) => Some(egui::Color32::YELLOW),
+                                        (None, true) => Some(dim),
+                                        _ => None,
+                                    };
                                     if choice_cell(
                                         ui,
                                         (kind, &row.key, c),
@@ -2332,10 +2476,17 @@ impl TablePage {
                                 let mut edit = egui::TextEdit::singleline(&mut text);
                                 if edited.is_some() {
                                     edit = edit.text_color(egui::Color32::YELLOW);
+                                } else if default {
+                                    edit = edit.text_color(dim);
                                 }
+                                let hover = if default {
+                                    format!("default (not set on it; type to set it) — {}", col.3)
+                                } else {
+                                    col.3.to_owned()
+                                };
                                 if ui
                                     .add_sized([col.1, row_height], edit)
-                                    .on_hover_text(col.3)
+                                    .on_hover_text(hover)
                                     .changed()
                                 {
                                     self.set(&row.key, c, &text, original);

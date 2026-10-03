@@ -2285,3 +2285,77 @@ fn command_s_saves_and_the_hotbar_follows_the_view_in_front() {
         .unwrap();
     assert!(plan.contains_rect(bar), "{bar:?} in {plan:?}");
 }
+
+/// Going to an object (from the 3D view, a table, a failure) before the
+/// plan was ever shown centred it without a scale: shown later, it was
+/// empty (every object on one point). It fits its scale, keeping that
+/// centre.
+#[test]
+fn the_plan_shows_the_line_after_a_go_to_before_it_was_shown() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().show_tab(crate::app::Tab::View3d);
+    harness.run();
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .go_to(Selection::Structure("T3".into()));
+    harness.state_mut().show_tab(crate::app::Tab::Plan);
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.plan.scale() > 0.0, "{}", r.plan.scale());
+    // Zoomed in on the line, not out to a point.
+    let rect = r.plan.drawn.unwrap();
+    assert!(r.plan.scale() * 100.0 < f64::from(rect.width()));
+}
+
+/// Tables show the values used where an object leaves them to a default
+/// (a jumper's bundle, EI and clamp angles; a section's system and display
+/// cases), marked as defaults; Apply leaves them unset unless typed in.
+#[test]
+fn tables_show_defaults_and_leave_them_unset() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("defaults");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (key, ei) = {
+        let r = harness.state_mut().ready().unwrap();
+        let j = r.model.line.jumpers[0].clone();
+        assert!(j.bending_stiffness.is_none() && j.angle_from_deg.is_none());
+        let rows = TableKind::Jumpers.rows(&r.model, r.case);
+        let row = rows.iter().find(|x| x.key == j.id).unwrap();
+        let c = |name| TableKind::Jumpers.column(name);
+        let cable = r.model.library.get(&j.cable).unwrap();
+        let ei = ols_line::jumper::estimated_bending_stiffness(cable);
+        assert_eq!(row.cells[c("EI N·m²")], format!("{ei:.1}"));
+        assert_eq!(row.cells[c("angle from °")], "30.0");
+        assert_eq!(row.cells[c("bundle")], "1");
+        assert!(row.defaulted[c("EI N·m²")] && row.defaulted[c("angle to °")]);
+        let sections = TableKind::Sections.rows(&r.model, r.case);
+        let s = TableKind::Sections.column("display cases");
+        assert!(!sections[0].cells[s].is_empty() && sections[0].defaulted[s]);
+        (j.id, ei)
+    };
+    // Another value typed in: the defaults stay unset.
+    set_cell(&mut harness, TableKind::Jumpers, &key, "temp °C", "20");
+    apply_table(&mut harness, TableKind::Jumpers, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let j = r.model.line.jumpers.iter().find(|j| j.id == key).unwrap();
+        assert_eq!(j.temperature, 20.0);
+        assert!(j.bending_stiffness.is_none() && j.angle_from_deg.is_none() && j.bundle.is_none());
+    }
+    // A default typed over is set.
+    set_cell(&mut harness, TableKind::Jumpers, &key, "angle to °", "10");
+    apply_table(&mut harness, TableKind::Jumpers, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let j = r.model.line.jumpers.iter().find(|j| j.id == key).unwrap();
+    assert_eq!(j.angle_to_deg, Some(10.0));
+    assert!(j.bending_stiffness.is_none() && ei > 0.0);
+}

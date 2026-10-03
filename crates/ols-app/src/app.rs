@@ -1171,6 +1171,40 @@ impl Ready {
 
     /// Selects structure `id` and brings every view to it: the 3D camera
     /// within 150 m, the plan centred on it.
+    /// Shows weather case `k` and goes to section or jumper `id` that
+    /// failed in it: selected, the views brought to it (to its structure
+    /// when it has no shape in that case).
+    pub fn go_to_failure(&mut self, k: usize, id: &str) {
+        if k != self.case && k < self.model.cases.len() {
+            self.set_case(k);
+        }
+        let line = &self.model.line;
+        let (target, structure) = if let Some(j) = line.jumpers.iter().find(|j| j.id == id) {
+            (Selection::Jumper(j.id.clone()), j.from.structure.clone())
+        } else if let Some(s) = line.sections.iter().find(|s| s.id == id) {
+            (
+                Selection::Span {
+                    section: s.id.clone(),
+                    span: 0,
+                },
+                s.points
+                    .first()
+                    .map(|p| p.structure.clone())
+                    .unwrap_or_default(),
+            )
+        } else {
+            return;
+        };
+        if self.selection_focus(&target).is_none() {
+            self.go_to_structure(&structure);
+        }
+        self.go_to(target);
+    }
+
+    fn selection_focus(&self, target: &Selection) -> Option<[f64; 3]> {
+        target.focus(&self.model, self.case)
+    }
+
     pub fn go_to_structure(&mut self, id: &str) {
         self.selection = Selection::Structure(id.to_owned());
         self.view3d.dirty.insert(Layer::Selection);
@@ -2391,15 +2425,39 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
         ui.separator();
         // Failures by weather case (the cases are chosen with Display
         // weather cases).
-        for c in r.model.cases.iter().filter(|c| !c.failed.is_empty()) {
-            ui.colored_label(
-                egui::Color32::LIGHT_RED,
-                format!(
+        // Each one a link: that weather case is shown and the views go to
+        // the section or jumper (to its structure when it has no shape).
+        let mut clicked: Option<(usize, String)> = None;
+        for (k, c) in r.model.cases.iter().enumerate() {
+            if c.failed.is_empty() {
+                continue;
+            }
+            egui::CollapsingHeader::new(
+                egui::RichText::new(format!(
                     "{}: {} sections or jumpers failed",
                     c.case.name,
                     c.failed.len()
-                ),
-            );
+                ))
+                .color(egui::Color32::LIGHT_RED),
+            )
+            .id_salt(("failed", k))
+            .default_open(c.failed.len() <= 10)
+            .show(ui, |ui| {
+                for f in &c.failed {
+                    let (id, why) = f.split_once(": ").unwrap_or((f.as_str(), ""));
+                    if ui
+                        .link(egui::RichText::new(id).small())
+                        .on_hover_text(why)
+                        .clicked()
+                    {
+                        clicked = Some((k, id.to_owned()));
+                    }
+                    ui.label(egui::RichText::new(why).small().weak());
+                }
+            });
+        }
+        if let Some((k, id)) = clicked {
+            r.go_to_failure(k, &id);
         }
         ui.separator();
         ui.label(egui::RichText::new("Loaded").strong());
