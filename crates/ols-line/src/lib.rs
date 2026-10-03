@@ -277,24 +277,67 @@ pub struct SectionPoint {
     pub phase: u32,
 }
 
-/// How a section is strung.
+/// How a section is strung, and its status.
+///
+/// `tension` and `sag` are sagging conditions of a section **in the
+/// blocks** (unclipped): the wire rolls over the suspension clamps, so in
+/// every weather case all its spans carry the same horizontal tension and
+/// share the section's unstressed length (ruling-span behaviour); moving a
+/// structure sags it again to its condition. `unstressed_lengths` is a
+/// section **clipped in**: each span keeps its own unstressed length, so a
+/// structure moved changes the spans next to it and the suspension strings
+/// swing to balance them (the effect fades along the section).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Stringing {
-    /// Horizontal tension of every span at a temperature, insulators plumb.
+    /// In the blocks: horizontal tension of every span at a temperature
+    /// (still air).
     Tension {
         /// Horizontal tension per wire, N.
         horizontal_tension: f64,
         /// Cable temperature, °C.
         temperature: f64,
     },
-    /// Unstressed length of each span (per wire), at a temperature.
+    /// In the blocks: sagged to a sag at a temperature (still air) — in
+    /// the ruling span (no `span`), or in span `span` (0 = first) — with
+    /// the same horizontal tension in every span.
+    Sag {
+        /// Sag, m (largest vertical distance from the chord).
+        sag: f64,
+        /// Cable temperature, °C.
+        temperature: f64,
+        /// The span sagged (index); none: the ruling span.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        span: Option<usize>,
+    },
+    /// Clipped in: the unstressed length of each span (per wire), at a
+    /// temperature.
     UnstressedLengths {
         /// One length per span, metres.
         lengths: Vec<f64>,
         /// Temperature at which the lengths apply, °C.
         temperature: f64,
+        /// The condition it was sagged to before clipping in (to go back
+        /// to the blocks).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sagged: Option<Box<Stringing>>,
     },
+}
+
+impl Stringing {
+    /// Whether the section is clipped in (else it is in the blocks).
+    pub fn clipped(&self) -> bool {
+        matches!(self, Stringing::UnstressedLengths { .. })
+    }
+
+    /// Temperature of the condition, °C.
+    pub fn temperature(&self) -> f64 {
+        match self {
+            Stringing::Tension { temperature, .. }
+            | Stringing::Sag { temperature, .. }
+            | Stringing::UnstressedLengths { temperature, .. } => *temperature,
+        }
+    }
 }
 
 /// A point load in a span.
@@ -834,6 +877,20 @@ impl Line {
                     sec.id,
                     lengths.len()
                 ));
+            }
+            if let Stringing::Sag { sag, span, .. } = &sec.stringing {
+                if sag.is_nan() || *sag <= 0.0 {
+                    return invalid(format!("section {}: sag must be above 0", sec.id));
+                }
+                if let Some(k) = span
+                    && *k >= spans
+                {
+                    return invalid(format!(
+                        "section {}: sag in span {} of {spans}",
+                        sec.id,
+                        k + 1
+                    ));
+                }
             }
             if let Some(l) = sec
                 .loads

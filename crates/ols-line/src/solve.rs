@@ -19,8 +19,12 @@
 //!   swings differently in every span.
 //!
 //! Unstressed lengths come from the stringing: given lengths (scaled by
-//! \\( e^{\alpha \Delta t} \\)), or a horizontal tension at which every span
-//! is sagged with the strings plumb.
+//! \\( e^{\alpha \Delta t} \\)) of a section clipped in, or the condition
+//! of a section in the blocks — a horizontal tension, or a sag in the ruling
+//! span or in one span — at which every span is sagged with the strings
+//! plumb. A section in the blocks then **rolls**: in each weather case its
+//! unstressed length is shared out so that every span has the same
+//! horizontal tension.
 
 use nalgebra::Vector3;
 use ols_cables::Cable;
@@ -416,95 +420,345 @@ fn reference(
 ) -> Result<Reference, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let mut clamps: Vec<Vector3<f64>> = layout.iter().map(plumb).collect();
-    match &section.stringing {
+    let (horizontal_tension, temperature) = match &section.stringing {
         Stringing::UnstressedLengths {
             lengths,
             temperature,
-        } => Ok(Reference {
-            clamps,
-            lengths: lengths.clone(),
-            temperature: *temperature,
-        }),
+            ..
+        } => {
+            return Ok(Reference {
+                clamps,
+                lengths: lengths.clone(),
+                temperature: *temperature,
+            });
+        }
         Stringing::Tension {
             horizontal_tension,
             temperature,
-        } => {
-            let ea = cable.axial_stiffness().si();
-            let gravity = Vector3::new(0.0, 0.0, -cable.weight().si());
-            let case = WeatherCase::still(
-                "stringing",
-                ols_core::units::Temperature::from_celsius(*temperature),
-            );
-            for _ in 0..20 {
-                let lengths = (0..clamps.len() - 1)
-                    .map(|s| {
-                        CableProperties::unstressed_length_for_tension(
-                            clamps[s + 1] - clamps[s],
-                            *horizontal_tension,
-                            ea,
-                            gravity,
-                            budget,
-                        )
-                        .map_err(|e| invalid(format!("span {s}: {e}")))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let reference = Reference {
-                    clamps: clamps.clone(),
-                    lengths,
-                    temperature: *temperature,
-                };
-                let (built, solved) =
-                    solve_built(section, layout, &reference, cable, &case, false, budget)
-                        .map_err(|e| invalid(format!("stringing: {e}")))?;
-                let n = clamps.len();
-                let previous = clamps.clone();
-                clamps = (0..n)
-                    .map(|k| {
-                        let position = solved.positions[built.clamps[k]];
-                        // Line direction at the clamp (horizontal bisector).
-                        let along = (clamps[(k + 1).min(n - 1)] - clamps[k.saturating_sub(1)]).xy();
-                        let along = Vector3::new(along.x, along.y, 0.0).normalize();
-                        match &layout[k] {
-                            Clamp::Suspension { top, .. } => {
-                                let swing = position - top;
-                                let transverse_only = swing - along * swing.dot(&along);
-                                top + transverse_only * (swing.norm() / transverse_only.norm())
-                            }
-                            // A V-string swings freely along the line, about
-                            // the axis through its leg tops: the same neutral
-                            // direction, removed by rotating the clamp about
-                            // that axis back into the plane across the line.
-                            Clamp::VString { tops, .. } => {
-                                let axis = (tops[1] - tops[0]).normalize();
-                                let centre = (tops[0] + tops[1]) / 2.0;
-                                let r = position - centre;
-                                let radial = r - axis * r.dot(&axis);
-                                let along = (along - axis * along.dot(&axis)).normalize();
-                                let across = radial - along * radial.dot(&along);
-                                centre
-                                    + axis * r.dot(&axis)
-                                    + across * (radial.norm() / across.norm())
-                            }
-                            _ => position,
-                        }
-                    })
-                    .collect();
-                // Converged when the clamps used for the next pass (after the
-                // transverse-only projection) stop moving.
-                let moved = clamps
-                    .iter()
-                    .zip(&previous)
-                    .map(|(new, old)| (new - old).norm())
-                    .fold(0.0, f64::max);
-                if moved < 1e-6 {
-                    return Ok(reference);
-                }
-            }
-            Err(invalid(
-                "stringing equilibrium did not settle in 20 passes".into(),
-            ))
+        } => (*horizontal_tension, *temperature),
+        Stringing::Sag {
+            sag,
+            temperature,
+            span,
+        } => (
+            tension_for_sag(&clamps, *span, *sag, cable.weight().si())
+                .map_err(|m| invalid(format!("sag {sag} m: {m}")))?,
+            *temperature,
+        ),
+    };
+    let ea = cable.axial_stiffness().si();
+    let gravity = Vector3::new(0.0, 0.0, -cable.weight().si());
+    let case = WeatherCase::still(
+        "stringing",
+        ols_core::units::Temperature::from_celsius(temperature),
+    );
+    for _ in 0..20 {
+        let lengths = (0..clamps.len() - 1)
+            .map(|s| {
+                CableProperties::unstressed_length_for_tension(
+                    clamps[s + 1] - clamps[s],
+                    horizontal_tension,
+                    ea,
+                    gravity,
+                    budget,
+                )
+                .map_err(|e| invalid(format!("span {s}: {e}")))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let reference = Reference {
+            clamps: clamps.clone(),
+            lengths,
+            temperature,
+        };
+        let (built, solved) = solve_built(section, layout, &reference, cable, &case, false, budget)
+            .map_err(|e| invalid(format!("stringing: {e}")))?;
+        let previous = clamps.clone();
+        clamps = settled(layout, &clamps, |k| solved.positions[built.clamps[k]]);
+        // Converged when the clamps used for the next pass (after the
+        // transverse-only projection) stop moving.
+        let moved = clamps
+            .iter()
+            .zip(&previous)
+            .map(|(new, old)| (new - old).norm())
+            .fold(0.0, f64::max);
+        if moved < 1e-6 {
+            return Ok(reference);
         }
     }
+    Err(invalid(
+        "stringing equilibrium did not settle in 20 passes".into(),
+    ))
+}
+
+/// The clamps for the next pass of a fixed point: the solved positions,
+/// with suspension and V-strings swung back across the line — along it the
+/// pulls of equal tensions cancel at any position (a neutral direction the
+/// iteration would creep along), and the crew clamps in plumb along it.
+fn settled(
+    layout: &[Clamp],
+    clamps: &[Vector3<f64>],
+    solved: impl Fn(usize) -> Vector3<f64>,
+) -> Vec<Vector3<f64>> {
+    let n = clamps.len();
+    (0..n)
+        .map(|k| {
+            let position = solved(k);
+            // Line direction at the clamp: the bisector of the two spans'
+            // horizontal directions (where their equal pulls cancel).
+            let unit = |a: usize, b: usize| {
+                let d = (clamps[b] - clamps[a]).xy();
+                if d.norm() > 0.0 { d.normalize() } else { d }
+            };
+            let along = unit(k.saturating_sub(1), k) + unit(k, (k + 1).min(n - 1));
+            let along = Vector3::new(along.x, along.y, 0.0).normalize();
+            match &layout[k] {
+                Clamp::Suspension { top, .. } => {
+                    let swing = position - top;
+                    let transverse_only = swing - along * swing.dot(&along);
+                    top + transverse_only * (swing.norm() / transverse_only.norm())
+                }
+                // A V-string swings freely along the line, about the axis
+                // through its leg tops: the same neutral direction, removed
+                // by rotating the clamp about that axis back into the plane
+                // across the line.
+                Clamp::VString { tops, .. } => {
+                    let axis = (tops[1] - tops[0]).normalize();
+                    let centre = (tops[0] + tops[1]) / 2.0;
+                    let r = position - centre;
+                    let radial = r - axis * r.dot(&axis);
+                    let along = (along - axis * along.dot(&axis)).normalize();
+                    let across = radial - along * radial.dot(&along);
+                    centre + axis * r.dot(&axis) + across * (radial.norm() / across.norm())
+                }
+                _ => position,
+            }
+        })
+        .collect()
+}
+
+/// Sag of a catenary of parameter `c` (H / w) over a span of horizontal
+/// length `s` and rise `h`: the largest vertical distance below the chord.
+fn catenary_sag(c: f64, s: f64, h: f64) -> f64 {
+    // y(x) = c·cosh((x − x0)/c) through (0, 0) and (s, h).
+    let x0 = s / 2.0 - c * (h / (2.0 * c * (s / (2.0 * c)).sinh())).asinh();
+    let y = |x: f64| c * (((x - x0) / c).cosh() - (x0 / c).cosh());
+    // Deepest below the chord where the slope equals the chord's.
+    let x = (x0 + c * (h / s).asinh()).clamp(0.0, s);
+    h * x / s - y(x)
+}
+
+/// The horizontal tension giving sag `sag` (m) in span `span` between the
+/// `clamps` (none: in the ruling span \\( \sqrt{\sum S^3 / \sum S} \\), level),
+/// for weight `w` (N/m). Bisection on the tension; exit clause: 200 steps.
+pub(crate) fn tension_for_sag(
+    clamps: &[Vector3<f64>],
+    span: Option<usize>,
+    sag: f64,
+    w: f64,
+) -> Result<f64, String> {
+    let spans: Vec<(f64, f64)> = clamps
+        .windows(2)
+        .map(|c| ((c[1] - c[0]).xy().norm(), c[1].z - c[0].z))
+        .collect();
+    let (s, h) = match span {
+        Some(k) => *spans.get(k).ok_or_else(|| format!("no span {}", k + 1))?,
+        None => {
+            let (cubes, sum) = spans
+                .iter()
+                .fold((0.0, 0.0), |(c, t), (s, _)| (c + s * s * s, t + s));
+            ((cubes / sum).sqrt(), 0.0)
+        }
+    };
+    if !(s > 0.0 && sag > 0.0) {
+        return Err("span and sag must be above 0".into());
+    }
+    let sag_for = |hh: f64| catenary_sag(hh / w, s, h);
+    // Parabola estimate, then bracket and bisect (sag falls as H grows).
+    let estimate = w * s * s / (8.0 * sag);
+    let (mut lo, mut hi) = (estimate / 2.0, estimate * 2.0);
+    let mut steps = 0;
+    let mut step = || {
+        steps += 1;
+        if steps > 200 {
+            Err("no tension found in 200 steps".to_owned())
+        } else {
+            Ok(())
+        }
+    };
+    while sag_for(lo) <= sag {
+        step()?;
+        lo /= 2.0;
+    }
+    while sag_for(hi) >= sag {
+        step()?;
+        hi *= 2.0;
+    }
+    while hi - lo > 1e-10 * hi {
+        step()?;
+        let mid = 0.5 * (lo + hi);
+        if sag_for(mid) > sag {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(0.5 * (lo + hi))
+}
+
+/// A section in the blocks in a weather case: its unstressed length (the
+/// sum of the reference lengths) shared out between the spans so that all
+/// have the same horizontal tension — the wire rolls over the suspension
+/// clamps (point loads are left out of the sharing). Bisection on the
+/// tension; exit clause: 200 steps.
+fn rolled(
+    section: &Section,
+    layout: &[Clamp],
+    reference: &Reference,
+    cable: &Cable,
+    case: &WeatherCase,
+    budget: &Budget,
+) -> Result<Reference, LineError> {
+    // The clamps settle where the shared-out lengths put them (strings
+    // swing across the line more under ice or wind at line angles, which
+    // changes the chords): fixed point, exit clause 20 passes.
+    // First guess 20 kN: the bracket widens from there; later passes start
+    // from the tension found.
+    let (mut r, mut h) = shared_out(
+        section,
+        reference,
+        &reference.clamps,
+        cable,
+        case,
+        20_000.0,
+        budget,
+    )?;
+    for _ in 0..20 {
+        let (built, solved) = solve_built(section, layout, &r, cable, case, false, budget)?;
+        let clamps = settled(layout, &r.clamps, |k| solved.positions[built.clamps[k]]);
+        let moved = clamps
+            .iter()
+            .zip(&r.clamps)
+            .map(|(a, b)| (a - b).norm())
+            .fold(0.0, f64::max);
+        if moved < 1e-6 {
+            return Ok(r);
+        }
+        (r, h) = shared_out(section, reference, &clamps, cable, case, h, budget)?;
+    }
+    Err(LineError::Invalid(format!(
+        "section {}: rolling did not settle in 20 passes",
+        section.id
+    )))
+}
+
+/// The reference's unstressed length shared out between the spans between
+/// `clamps` so that all have the same horizontal tension in `case` (found
+/// from `guess`, N); with that tension.
+fn shared_out(
+    section: &Section,
+    reference: &Reference,
+    clamps: &[Vector3<f64>],
+    cable: &Cable,
+    case: &WeatherCase,
+    guess: f64,
+    budget: &Budget,
+) -> Result<(Reference, f64), LineError> {
+    let invalid = |m: String| LineError::Invalid(format!("section {}: rolling: {m}", section.id));
+    let ea = cable.axial_stiffness().si();
+    let thermal =
+        (cable.thermal_expansion() * (case.temperature.celsius() - reference.temperature)).exp();
+    let total: f64 = reference.lengths.iter().sum();
+    let chords: Vec<Vector3<f64>> = clamps.windows(2).map(|c| c[1] - c[0]).collect();
+    // Unstressed lengths at the reference temperature for tension `h`.
+    let lengths = |h: f64| -> Result<Vec<f64>, LineError> {
+        chords
+            .iter()
+            .enumerate()
+            .map(|(s, d)| {
+                CableProperties::unstressed_length_for_tension(
+                    *d,
+                    h,
+                    ea,
+                    span_load(case, cable, *d),
+                    budget,
+                )
+                .map(|l| l / thermal)
+                .map_err(|e| invalid(format!("span {s}: {e}")))
+            })
+            .collect()
+    };
+    let excess = |h: f64| -> Result<f64, LineError> { Ok(lengths(h)?.iter().sum::<f64>() - total) };
+    // Longer wire for a lower tension: bracket around the guess, then a
+    // bracketed secant (Illinois): a few steps instead of ~45 halvings.
+    let mut steps = 0;
+    let mut step = || {
+        steps += 1;
+        if steps > 200 {
+            Err(invalid("no common tension found in 200 steps".into()))
+        } else {
+            Ok(())
+        }
+    };
+    let (mut lo, mut hi) = (guess / 1.2, guess * 1.2);
+    let mut f_lo = excess(lo)?;
+    while f_lo < 0.0 {
+        step()?;
+        (hi, lo) = (lo, lo / 2.0);
+        f_lo = excess(lo)?;
+    }
+    let mut f_hi = excess(hi)?;
+    while f_hi > 0.0 {
+        step()?;
+        (lo, f_lo, hi) = (hi, f_hi, hi * 2.0);
+        f_hi = excess(hi)?;
+    }
+    let mut side = 0;
+    let mut h = 0.5 * (lo + hi);
+    while hi - lo > 1e-9 * hi {
+        step()?;
+        h = (lo * f_hi - hi * f_lo) / (f_hi - f_lo);
+        if !(lo < h && h < hi) {
+            h = 0.5 * (lo + hi);
+        }
+        let f = excess(h)?;
+        if f.abs() < 1e-12 * total {
+            break;
+        }
+        if f > 0.0 {
+            (lo, f_lo) = (h, f);
+            if side == 1 {
+                f_hi /= 2.0;
+            }
+            side = 1;
+        } else {
+            (hi, f_hi) = (h, f);
+            if side == -1 {
+                f_lo /= 2.0;
+            }
+            side = -1;
+        }
+    }
+    Ok((
+        Reference {
+            clamps: clamps.to_vec(),
+            lengths: lengths(h)?,
+            temperature: reference.temperature,
+        },
+        h,
+    ))
+}
+
+/// The unstressed length of each span (m) and their temperature (°C) at
+/// the section's stringing condition, on the current geometry: what a
+/// section in the blocks is clipped in with.
+pub fn clip_lengths(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+) -> Result<(Vec<f64>, f64), LineError> {
+    let layout = clamps_of(line, section)?;
+    let r = reference(section, &layout, cable, &default_fe_budget())?;
+    Ok((r.lengths, r.temperature))
 }
 
 /// Solves one section of a line in a weather case.
@@ -519,7 +773,10 @@ pub fn solve_section(
     budget: &Budget,
 ) -> Result<SectionShape, LineError> {
     let layout = clamps_of(line, section)?;
-    let reference = reference(section, &layout, cable, budget)?;
+    let mut reference = reference(section, &layout, cable, budget)?;
+    if !section.stringing.clipped() && reference.lengths.len() > 1 {
+        reference = rolled(section, &layout, &reference, cable, case, budget)?;
+    }
     let (built, solution) = solve_built(section, &layout, &reference, cable, case, true, budget)?;
     let pos = &solution.positions;
     let mut spans = Vec::with_capacity(built.span_elements.len());
@@ -810,5 +1067,105 @@ mod tests {
                 span.horizontal_tension
             );
         }
+    }
+
+    #[test]
+    fn catenary_sag_matches_the_parabola_for_a_shallow_span() {
+        // Level 300 m span, c = 2000 m: sag ≈ S²/(8c) = 5.625 m (+0.04 %).
+        let sag = super::catenary_sag(2000.0, 300.0, 0.0);
+        assert!((sag - 5.625).abs() < 0.01, "{sag}");
+        // Inclined: the sag from the chord is about the same.
+        let inclined = super::catenary_sag(2000.0, 300.0, 30.0);
+        assert!((inclined - sag).abs() < 0.05, "{inclined}");
+    }
+
+    /// Sagged to 8 m in its second span: solving in the stringing state
+    /// gives that sag there, and the same tension in every span.
+    #[test]
+    fn sag_stringing_reproduces_its_sag() {
+        let mut line = crate::tests::example();
+        line.sections[0].stringing = Stringing::Sag {
+            sag: 8.0,
+            temperature: 15.0,
+            span: Some(1),
+        };
+        line.sections[0].loads.clear();
+        let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let shape = solve_line(&line, &library(), &case).remove(0).unwrap();
+        assert!(
+            (shape.spans[1].sag - 8.0).abs() < 0.02,
+            "{}",
+            shape.spans[1].sag
+        );
+        let h0 = shape.spans[0].horizontal_tension;
+        for span in &shape.spans {
+            assert!((span.horizontal_tension - h0).abs() < 0.002 * h0);
+        }
+    }
+
+    /// In the blocks the spans keep one tension in every weather case;
+    /// clipped in, with the same lengths at stringing, they do not under
+    /// ice; a structure moved changes the tension of a clipped section, not
+    /// the stringing tension of one in the blocks.
+    #[test]
+    fn sections_in_the_blocks_roll_clipped_ones_do_not() {
+        let lib = library();
+        let mut line = crate::tests::example();
+        line.sections[0].loads.clear();
+        line.sections[0].stringing = Stringing::Tension {
+            horizontal_tension: 25_000.0,
+            temperature: 15.0,
+        };
+        let cable = lib.get(&line.sections[0].cable).unwrap().clone();
+        let (lengths, temperature) = clip_lengths(&line, &line.sections[0], &cable).unwrap();
+        let mut clipped = line.clone();
+        clipped.sections[0].stringing = Stringing::UnstressedLengths {
+            lengths,
+            temperature,
+            sagged: Some(Box::new(line.sections[0].stringing.clone())),
+        };
+        let still = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let mut iced = WeatherCase::still("ice", Temperature::from_celsius(-5.0));
+        iced.ice_thickness = ols_core::units::Length::from_si(0.02);
+        let spread = |l: &Line, c: &WeatherCase| {
+            let shape = solve_line(l, &lib, c).remove(0).unwrap();
+            let h: Vec<f64> = shape.spans.iter().map(|s| s.horizontal_tension).collect();
+            let (lo, hi) = h
+                .iter()
+                .fold((f64::MAX, 0.0f64), |(a, b), x| (a.min(*x), b.max(*x)));
+            (lo, hi)
+        };
+        // At stringing both are the same.
+        let (a, b) = spread(&line, &still);
+        let (c, d) = spread(&clipped, &still);
+        assert!(
+            (a - c).abs() < 30.0 && (b - d).abs() < 30.0,
+            "{a} {b} {c} {d}"
+        );
+        // Iced: one tension rolling; clipped, the strings swing to balance
+        // the spans but not fully (0.1 % here).
+        let (lo, hi) = spread(&line, &iced);
+        let (clo, chi) = spread(&clipped, &iced);
+        println!("iced: rolling {lo}–{hi}, clipped {clo}–{chi}");
+        assert!(
+            hi - lo < 0.2 * (chi - clo),
+            "rolling {lo}–{hi}, clipped {clo}–{chi}"
+        );
+        assert!(chi - clo > 0.0005 * chi, "clipped {clo}–{chi}");
+        // T3 moved 20 m along the line.
+        let moved = |l: &Line| {
+            let mut l = l.clone();
+            let k = l.structures.iter().position(|s| s.id == "T3").unwrap();
+            let (p, q) = (l.structures[k - 1].position, l.structures[k].position);
+            let d = [q[0] - p[0], q[1] - p[1]];
+            let n = d[0].hypot(d[1]);
+            l.structures[k] =
+                l.structures[k].moved_to([q[0] + 20.0 * d[0] / n, q[1] + 20.0 * d[1] / n, q[2]]);
+            l
+        };
+        let (lo, hi) = spread(&moved(&line), &still);
+        assert!((lo - 25_000.0).abs() < 50.0 && (hi - 25_000.0).abs() < 50.0);
+        let (lo, hi) = spread(&moved(&clipped), &still);
+        assert!(hi - lo > 500.0, "clipped after the move {lo}–{hi}");
     }
 }

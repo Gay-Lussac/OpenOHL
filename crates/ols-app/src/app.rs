@@ -984,7 +984,7 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready) {
     };
     let mut outcome = None;
     tool_window(r, "editor", form.title()).show(ctx, |ui| {
-        outcome = form.ui(ui, &r.model);
+        outcome = form.ui(ui, &r.model, r.case);
         if let Some((text, true)) = &r.status {
             ui.colored_label(egui::Color32::LIGHT_RED, egui::RichText::new(text).small());
         }

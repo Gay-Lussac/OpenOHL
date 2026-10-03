@@ -87,25 +87,6 @@ pub struct StringForm {
     pub overrides_type: bool,
 }
 
-/// How a section is strung, as typed.
-#[derive(Debug, Clone, PartialEq)]
-pub enum StringingForm {
-    /// Horizontal tension, kN, at a temperature, °C.
-    Tension {
-        /// kN.
-        h_kn: f64,
-        /// °C.
-        temperature: f64,
-    },
-    /// Unstressed length of each span, m, at a temperature.
-    Lengths {
-        /// m.
-        lengths: Vec<f64>,
-        /// °C.
-        temperature: f64,
-    },
-}
-
 /// A section being added or changed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SectionForm {
@@ -129,8 +110,8 @@ pub struct SectionForm {
     pub rotation: f64,
     /// Attachments in line order.
     pub points: Vec<SectionPoint>,
-    /// Stringing.
-    pub stringing: StringingForm,
+    /// Stringing: the condition in the blocks, or the lengths clipped in.
+    pub stringing: Stringing,
     /// Why the stringing was changed (points changed with lengths given).
     pub note: Option<String>,
 }
@@ -402,22 +383,7 @@ impl SectionForm {
             spacing: s.bundle_spacing.unwrap_or(0.4),
             rotation: s.bundle_rotation_deg.unwrap_or(0.0),
             points: s.points.clone(),
-            stringing: match &s.stringing {
-                Stringing::Tension {
-                    horizontal_tension,
-                    temperature,
-                } => StringingForm::Tension {
-                    h_kn: horizontal_tension / 1000.0,
-                    temperature: *temperature,
-                },
-                Stringing::UnstressedLengths {
-                    lengths,
-                    temperature,
-                } => StringingForm::Lengths {
-                    lengths: lengths.clone(),
-                    temperature: *temperature,
-                },
-            },
+            stringing: s.stringing.clone(),
             note: None,
         })
     }
@@ -464,31 +430,18 @@ impl SectionForm {
                 spacing: 0.4,
                 rotation: 0.0,
                 points: Vec::new(),
-                stringing: StringingForm::Tension {
-                    h_kn: 20.0,
+                stringing: Stringing::Tension {
+                    horizontal_tension: 20_000.0,
                     temperature: 15.0,
                 },
                 note: None,
             },
         };
-        // The template's tension (as solved in the shown case) for the new
-        // spans: lengths belong to its own spans.
-        if let StringingForm::Lengths { temperature, .. } = f.stringing {
-            let h = like
-                .and_then(|s| {
-                    model
-                        .cases
-                        .get(case)?
-                        .shapes
-                        .iter()
-                        .find(|x| x.section == s.id)
-                })
-                .and_then(|x| x.spans.first())
-                .map_or(20.0, |sp| sp.horizontal_tension / 1000.0);
-            f.stringing = StringingForm::Tension {
-                h_kn: (h * 10.0).round() / 10.0,
-                temperature,
-            };
+        // In the blocks (rolling) by default: a clipped template's
+        // condition, or its tension as solved in the shown case — its
+        // lengths belong to its own spans.
+        if f.stringing.clipped() {
+            f.stringing = f.unclipped(model, case);
         }
         f.new = true;
         f.id = id;
@@ -497,33 +450,88 @@ impl SectionForm {
         f
     }
 
-    /// Sets new points; unstressed lengths for other spans become the
-    /// tension of the first span solved in case `case`.
-    pub fn set_points(&mut self, model: &Model, case: usize, points: Vec<SectionPoint>) {
-        let spans = points.len().saturating_sub(1);
-        if let StringingForm::Lengths {
+    /// The condition to go back to the blocks with: the one it was sagged
+    /// to before clipping in, else its tension as solved in case `case`
+    /// (first span), at the clipping temperature.
+    pub fn unclipped(&self, model: &Model, case: usize) -> Stringing {
+        match &self.stringing {
+            Stringing::UnstressedLengths {
+                sagged: Some(s), ..
+            } => (**s).clone(),
+            Stringing::UnstressedLengths { temperature, .. } => {
+                let h = model
+                    .cases
+                    .get(case)
+                    .and_then(|c| c.shapes.iter().find(|x| x.section == self.id))
+                    .and_then(|x| x.spans.first())
+                    .map_or(20_000.0, |sp| sp.horizontal_tension);
+                Stringing::Tension {
+                    horizontal_tension: (h / 10.0).round() * 10.0,
+                    temperature: *temperature,
+                }
+            }
+            other => other.clone(),
+        }
+    }
+
+    /// Clips in: each span's unstressed length at the condition, on the
+    /// current geometry.
+    pub fn clip_in(&mut self, model: &Model) -> Result<(), String> {
+        if self.stringing.clipped() {
+            return Ok(());
+        }
+        let cable = model
+            .library
+            .get(&self.cable)
+            .ok_or_else(|| format!("cable {} is not in the wire library", self.cable))?;
+        let section = self.section(None);
+        let (lengths, temperature) = ols_line::solve::clip_lengths(&model.line, &section, cable)
+            .map_err(|e| e.to_string())?;
+        self.stringing = Stringing::UnstressedLengths {
             lengths,
             temperature,
-        } = &self.stringing
+            sagged: Some(Box::new(self.stringing.clone())),
+        };
+        Ok(())
+    }
+
+    /// Sets new points; a clipped section with another number of spans
+    /// goes back to the blocks.
+    pub fn set_points(&mut self, model: &Model, case: usize, points: Vec<SectionPoint>) {
+        let spans = points.len().saturating_sub(1);
+        if let Stringing::UnstressedLengths { lengths, .. } = &self.stringing
             && lengths.len() != spans
         {
-            let h = model
-                .cases
-                .get(case)
-                .and_then(|c| c.shapes.iter().find(|x| x.section == self.id))
-                .and_then(|x| x.spans.first())
-                .map_or(20.0, |sp| sp.horizontal_tension / 1000.0);
+            let n = lengths.len();
+            self.stringing = self.unclipped(model, case);
             self.note = Some(format!(
-                "{} spans now: strung by tension ({h:.1} kN as solved) instead of {} unstressed lengths",
-                spans,
-                lengths.len()
+                "{spans} spans now instead of {n}: back in the blocks, to be clipped in again"
             ));
-            self.stringing = StringingForm::Tension {
-                h_kn: (h * 10.0).round() / 10.0,
-                temperature: *temperature,
-            };
+        }
+        if let Stringing::Sag { span: Some(k), .. } = &mut self.stringing
+            && *k >= spans
+        {
+            *k = spans.saturating_sub(1);
         }
         self.points = points;
+    }
+
+    /// The section as typed (loads and colour kept from `old`).
+    fn section(&self, old: Option<&Section>) -> Section {
+        Section {
+            id: self.id.trim().to_owned(),
+            cable: self.cable.clone(),
+            circuit: self.circuit.clone(),
+            phase_label: self.phase_label.clone(),
+            system: self.system.clone(),
+            bundle: self.bundle.max(1),
+            bundle_spacing: (self.bundle > 1).then_some(self.spacing),
+            bundle_rotation_deg: (self.bundle > 1 && self.rotation != 0.0).then_some(self.rotation),
+            points: self.points.clone(),
+            stringing: self.stringing.clone(),
+            loads: old.map_or_else(Vec::new, |o| o.loads.clone()),
+            color: old.and_then(|o| o.color.clone()),
+        }
     }
 
     fn command(&self, stored: Option<&Line>) -> Result<(String, Command), String> {
@@ -538,38 +546,18 @@ impl SectionForm {
         if self.new && old.is_some() {
             return Err(format!("section {id} exists already"));
         }
-        let stringing = match &self.stringing {
-            StringingForm::Tension { h_kn, temperature } => {
-                if *h_kn <= 0.0 {
-                    return Err("the tension must be above 0".into());
-                }
-                Stringing::Tension {
-                    horizontal_tension: h_kn * 1000.0,
-                    temperature: *temperature,
-                }
+        match &self.stringing {
+            Stringing::Tension {
+                horizontal_tension, ..
+            } if *horizontal_tension <= 0.0 => {
+                return Err("the tension must be above 0".into());
             }
-            StringingForm::Lengths {
-                lengths,
-                temperature,
-            } => Stringing::UnstressedLengths {
-                lengths: lengths.clone(),
-                temperature: *temperature,
-            },
-        };
-        let s = Section {
-            id: id.clone(),
-            cable: self.cable.clone(),
-            circuit: self.circuit.clone(),
-            phase_label: self.phase_label.clone(),
-            system: self.system.clone(),
-            bundle: self.bundle.max(1),
-            bundle_spacing: (self.bundle > 1).then_some(self.spacing),
-            bundle_rotation_deg: (self.bundle > 1 && self.rotation != 0.0).then_some(self.rotation),
-            points: self.points.clone(),
-            stringing,
-            loads: old.map_or_else(Vec::new, |o| o.loads.clone()),
-            color: old.and_then(|o| o.color.clone()),
-        };
+            Stringing::Sag { sag, .. } if *sag <= 0.0 => {
+                return Err("the sag must be above 0".into());
+            }
+            _ => {}
+        }
+        let s = self.section(old);
         Ok((
             if self.new {
                 format!("strung section {id}")
@@ -625,7 +613,7 @@ impl Form {
     }
 
     /// The window's content; what was asked for.
-    pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<Outcome> {
+    pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model, case: usize) -> Option<Outcome> {
         let mut out = None;
         match self {
             Form::Structure(f) => structure_ui(ui, f, model),
@@ -635,7 +623,7 @@ impl Form {
                 }
             }
             Form::Section(f) => {
-                if section_ui(ui, f, model) {
+                if section_ui(ui, f, model, case) {
                     out = Some(Outcome::PickPoints);
                 }
             }
@@ -807,7 +795,28 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
 }
 
 /// Returns true when "pick points again" is clicked.
-fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model) -> bool {
+/// A sagging condition in words.
+pub fn describe(s: &Stringing) -> String {
+    match s {
+        Stringing::Tension {
+            horizontal_tension,
+            temperature,
+        } => format!("{:.1} kN at {temperature} °C", horizontal_tension / 1000.0),
+        Stringing::Sag {
+            sag,
+            temperature,
+            span,
+        } => format!(
+            "a sag of {sag:.2} m in {} at {temperature} °C",
+            span.map_or("the ruling span".into(), |k| format!("span {}", k + 1))
+        ),
+        Stringing::UnstressedLengths { lengths, .. } => {
+            format!("{} unstressed lengths", lengths.len())
+        }
+    }
+}
+
+fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize) -> bool {
     let line = &model.line;
     egui::Grid::new("section-form")
         .num_columns(2)
@@ -865,61 +874,110 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model) -> bool {
             ui.end_row();
         });
     ui.separator();
-    let mut lengths = matches!(f.stringing, StringingForm::Lengths { .. });
+    // Status: in the blocks (rolling) or clipped in.
+    let mut clipped = f.stringing.clipped();
     ui.horizontal(|ui| {
-        ui.label("strung by");
-        let spans = f.points.len().saturating_sub(1);
-        let was = lengths;
-        ui.radio_value(&mut lengths, false, "tension");
-        ui.radio_value(&mut lengths, true, "unstressed lengths");
-        if lengths != was {
-            let temperature = match &f.stringing {
-                StringingForm::Tension { temperature, .. }
-                | StringingForm::Lengths { temperature, .. } => *temperature,
-            };
-            f.stringing = if lengths {
-                // The solved lengths are not kept: start from the spans'
-                // chords.
-                let chords: Vec<f64> = f
-                    .points
-                    .windows(2)
-                    .map(|w| {
-                        let p = |q: &SectionPoint| {
-                            line.attachment(q).map_or([0.0; 3], |a| a.wire_point)
-                        };
-                        let (a, b) = (p(&w[0]), p(&w[1]));
-                        ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2) + (b[2] - a[2]).powi(2))
-                            .sqrt()
-                    })
-                    .collect();
-                debug_assert_eq!(chords.len(), spans);
-                StringingForm::Lengths {
-                    lengths: chords,
-                    temperature,
-                }
-            } else {
-                StringingForm::Tension {
-                    h_kn: 20.0,
-                    temperature,
-                }
-            };
-        }
+        ui.label("status");
+        ui.radio_value(&mut clipped, false, "in the blocks")
+            .on_hover_text("Unclipped: the wire rolls over the suspension clamps — one horizontal tension in all spans in every weather case; moving a structure sags it again to its condition");
+        ui.radio_value(&mut clipped, true, "clipped in")
+            .on_hover_text("Each span keeps its unstressed length: a structure moved changes the spans next to it, the suspension strings swing to balance them");
     });
-    match &mut f.stringing {
-        StringingForm::Tension { h_kn, temperature } => {
-            ui.horizontal(|ui| {
-                ui.label("horizontal tension");
-                value(ui, h_kn, 0.1, " kN");
-                ui.label("at");
-                value(ui, temperature, 0.5, " °C");
-            });
+    if clipped != f.stringing.clipped() {
+        if clipped {
+            if let Err(e) = f.clip_in(model) {
+                f.note = Some(format!("cannot clip in: {e}"));
+            } else {
+                f.note = None;
+            }
+        } else {
+            f.stringing = f.unclipped(model, case);
+            f.note = None;
         }
-        StringingForm::Lengths {
+    }
+    let spans = f.points.len().saturating_sub(1);
+    match &mut f.stringing {
+        Stringing::Tension { .. } | Stringing::Sag { .. } => {
+            // The sagging condition: a tension, or a sag.
+            let temperature = f.stringing.temperature();
+            let mut by_sag = matches!(f.stringing, Stringing::Sag { .. });
+            ui.horizontal(|ui| {
+                ui.label("sagged to");
+                ui.radio_value(&mut by_sag, false, "a tension");
+                ui.radio_value(&mut by_sag, true, "a sag");
+            });
+            if by_sag != matches!(f.stringing, Stringing::Sag { .. }) {
+                f.stringing = if by_sag {
+                    Stringing::Sag {
+                        sag: 10.0,
+                        temperature,
+                        span: None,
+                    }
+                } else {
+                    Stringing::Tension {
+                        horizontal_tension: 20_000.0,
+                        temperature,
+                    }
+                };
+            }
+            match &mut f.stringing {
+                Stringing::Tension {
+                    horizontal_tension,
+                    temperature,
+                } => {
+                    let mut kn = *horizontal_tension / 1000.0;
+                    ui.horizontal(|ui| {
+                        ui.label("horizontal tension");
+                        if value(ui, &mut kn, 0.1, " kN").changed() {
+                            *horizontal_tension = kn * 1000.0;
+                        }
+                        ui.label("at");
+                        value(ui, temperature, 0.5, " °C");
+                    });
+                }
+                Stringing::Sag {
+                    sag,
+                    temperature,
+                    span,
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label("sag");
+                        value(ui, sag, 0.01, " m");
+                        ui.label("at");
+                        value(ui, temperature, 0.5, " °C");
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("in");
+                        egui::ComboBox::from_id_salt("sag-span")
+                            .selected_text(
+                                span.map_or("the ruling span".into(), |k| {
+                                    format!("span {}", k + 1)
+                                }),
+                            )
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(span, None, "the ruling span");
+                                for k in 0..spans {
+                                    ui.selectable_value(span, Some(k), format!("span {}", k + 1));
+                                }
+                            });
+                    });
+                }
+                Stringing::UnstressedLengths { .. } => {}
+            }
+            ui.label(
+                egui::RichText::new(
+                    "Still air, strings plumb; the same horizontal tension in every span.",
+                )
+                .small(),
+            );
+        }
+        Stringing::UnstressedLengths {
             lengths,
             temperature,
+            sagged,
         } => {
             ui.horizontal(|ui| {
-                ui.label("at");
+                ui.label("unstressed lengths at");
                 value(ui, temperature, 0.5, " °C");
             });
             egui::Grid::new("section-lengths").show(ui, |ui| {
@@ -929,6 +987,12 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model) -> bool {
                     ui.end_row();
                 }
             });
+            if let Some(c) = sagged {
+                ui.label(
+                    egui::RichText::new(format!("clipped in after sagging to {}", describe(c)))
+                        .small(),
+                );
+            }
         }
     }
     if let Some(n) = &f.note {

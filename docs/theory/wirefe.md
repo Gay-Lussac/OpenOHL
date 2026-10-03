@@ -31,6 +31,8 @@ Unknowns: positions of the free nodes. Each iteration assembles the stiffness of
 
 A section (dead-end to dead-end, suspension I-strings or V-strings) is built as in the field: every span is sagged at the stringing tension with the strings **plumb** (at their stretched length under the clamp load), which fixes each span's unstressed length. Any other state — temperature (\\( L_0 e^{\alpha\Delta t} \\)), ice, wind on cable and insulators, point loads at predefined sites, broken spans — is then solved with insulator swing, unequal span tensions and 3D blowout.
 
+In a line model (`ols-line`) this is a section **clipped in**. A section still **in the blocks** (the default while designing) rolls instead: in each weather case its total unstressed length, from the sagging condition (a tension, or a sag in the ruling span or in one span), is shared out between the spans so that all have the same horizontal tension — the length of each span for a tension \( H \) under the case's load is found exactly, and \( H \) is the root of \( \sum_i L_{0,i}(H) = L_0 \) (bracketed secant). The clamps settle where the strings put them (swung across the line at angles, plumb along it, where equal tensions cancel); the sharing is repeated until they stop moving (≤ 1 µm, 20 passes at most). Point loads are left out of the sharing.
+
 What this shows that the equal-tension (ruling span) model cannot: in the example job, support 3 is a **valley structure** (a 25 m descent into it, a 40 m rise out of it). Its weight span is only ~55 m, so in high wind its string swings ~89° — a real design issue (V-string, hold-down weights or a taller structure).
 
 ## Not yet included

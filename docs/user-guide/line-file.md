@@ -91,17 +91,32 @@ Wires are drawn in the section's `color`, else the line's `display.phase_colors`
 "display": { "phase_colors": { "L1": "#8b4513", "L2": "#202020", "L3": "#808080" } }
 ```
 
-### Stringing
+### Stringing and status
+
+A section is **in the blocks** (unclipped, the default for new sections) or **clipped in**. The `kind` says which.
+
+In the blocks, the wire rolls over the suspension clamps (running blocks): in every weather case its unstressed length is shared out so that all its spans carry the **same horizontal tension** — ruling-span behaviour, computed exactly in 3D (point loads are left out of the sharing). Moving or changing a structure sags the section again to its condition. Two conditions:
 
 ```json
 { "kind": "tension", "horizontal_tension": 25000.0, "temperature": 15.0 }
 ```
-Every span is sagged to this horizontal tension (per subconductor) at this temperature, with suspension clamps at their equilibrium position (swung sideways at line angles, plumb along the line).
+Sagged to this horizontal tension (per subconductor) at this temperature, still air.
 
 ```json
-{ "kind": "unstressed_lengths", "lengths": [306.07, 330.73], "temperature": 15.0 }
+{ "kind": "sag", "sag": 7.5, "temperature": 15.0 }
+{ "kind": "sag", "sag": 9.2, "temperature": 15.0, "span": 2 }
 ```
-Unstressed length of each span (per subconductor) at a temperature — e.g. from a previous design or another program.
+Sagged to a sag (largest vertical distance below the chord, m) at a temperature, still air: in the ruling span \\( \sqrt{\sum S^3 / \sum S} \\) (level) without `span`, or in span `span` (0 = first). The tension giving that sag is used in every span.
+
+In both, suspension clamps sit at their equilibrium position: swung across the line at line angles, plumb along it.
+
+Clipped in, each span keeps its own unstressed length (per subconductor) at a temperature — the state after clipping in, or lengths from a previous design or another program:
+
+```json
+{ "kind": "unstressed_lengths", "lengths": [306.07, 330.73], "temperature": 15.0,
+  "sagged": { "kind": "sag", "sag": 7.5, "temperature": 15.0 } }
+```
+In each weather case the suspension strings swing along the line to balance the spans, so tensions differ a little between spans. A structure moved changes the spans next to it; the strings beyond take up part of it, less and less along the section. `sagged` (optional) keeps the condition it was sagged to, to go back to the blocks. In the app, a section's window switches between *in the blocks* and *clipped in* (clipping in computes the lengths of its condition on the current geometry).
 
 ## Jumpers
 

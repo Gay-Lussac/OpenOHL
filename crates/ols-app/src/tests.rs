@@ -1060,7 +1060,7 @@ fn string_at(structure: &str, set: u32, phase: u32) -> Selection {
 /// confirmation): each step is one session command, solved at once.
 #[test]
 fn structures_strings_and_wires_are_added_edited_and_deleted() {
-    use crate::editors::{Form, StringingForm};
+    use crate::editors::Form;
     use crate::tools::Tool;
     let model = synthetic_project("tools");
     let mut harness = Harness::builder()
@@ -1194,10 +1194,13 @@ fn structures_strings_and_wires_are_added_edited_and_deleted() {
         let Some(Form::Section(f)) = &mut r.editor else {
             panic!("{:?}", r.editor);
         };
-        let StringingForm::Tension { h_kn, .. } = &mut f.stringing else {
+        let ols_line::Stringing::Tension {
+            horizontal_tension, ..
+        } = &mut f.stringing
+        else {
             panic!("{:?}", f.stringing);
         };
-        *h_kn *= 1.5;
+        *horizontal_tension *= 1.5;
     }
     enter(&mut harness);
     assert!(sag(&mut harness) < before * 0.8);
@@ -1293,4 +1296,65 @@ fn a_section_is_strung_again_through_other_points() {
     let s3 = r.model.line.sections.iter().find(|s| s.id == "S3").unwrap();
     assert_eq!(s3.points.len(), 2);
     assert_solved_fully(&r.model);
+}
+
+/// A section sagged to a sag in the ruling span, clipped in (lengths of
+/// that condition, which it remembers), then back in the blocks.
+#[test]
+fn a_section_is_sagged_clipped_in_and_back_in_the_blocks() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    use ols_line::Stringing;
+    let model = synthetic_project("clip");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let s2 = Selection::Span {
+        section: "S2".into(),
+        span: 0,
+    };
+    let sag = Stringing::Sag {
+        sag: 7.5,
+        temperature: 15.0,
+        span: None,
+    };
+    let edit = |h: &mut Harness<'_, App>,
+                change: &dyn Fn(&mut crate::editors::SectionForm, &model::Model)| {
+        use_tool(h, Tool::Edit, s2.clone(), None);
+        {
+            let r = h.state_mut().ready().unwrap();
+            let Some(Form::Section(mut f)) = r.editor.clone() else {
+                panic!("{:?}", r.editor);
+            };
+            change(&mut f, &r.model);
+            r.editor = Some(Form::Section(f));
+        }
+        press(h, egui::Key::Enter, egui::Modifiers::NONE);
+        let r = h.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        r.model
+            .line
+            .sections
+            .iter()
+            .find(|s| s.id == "S2")
+            .unwrap()
+            .stringing
+            .clone()
+    };
+    let st = edit(&mut harness, &|f, _| f.stringing = sag.clone());
+    assert_eq!(st, sag);
+    let st = edit(&mut harness, &|f, m| f.clip_in(m).unwrap());
+    let Stringing::UnstressedLengths {
+        lengths, sagged, ..
+    } = &st
+    else {
+        panic!("{st:?}");
+    };
+    assert_eq!(lengths.len(), 4);
+    assert_eq!(sagged.as_deref(), Some(&sag));
+    // The same shape at stringing as in the blocks, solved fully.
+    assert_solved_fully(&harness.state_mut().ready().unwrap().model);
+    let st = edit(&mut harness, &|f, m| f.stringing = f.unclipped(m, 0));
+    assert_eq!(st, sag);
 }

@@ -100,7 +100,7 @@ The open Phase 2 items above, grouped into four work packages:
 - [ ] Command palette, keyboard workflows, explainable results (click value → inputs & references)
 - [x] Editing through the session in the app: move (drag or typed position) and delete structures (confirmation listing what goes with them), undo/redo, incremental re-solve of every case
 - [x] Structures and strings in the app: Add structure (on the ground, type from the library), Add string, Edit (structure, string in the structure's axes, override of a type's string) and Delete (structures, strings, sections, jumpers) tools, one session command each *(spotting on the profile still open)*
-- [x] Wire stringing: String wire tool (strings in order → section window: cable, circuit, system, bundle, tension or unstressed lengths), sections edited and strung again through new points *(tension criteria by weather case still open)*
+- [x] Wire stringing: String wire tool (strings in order → section window: cable, circuit, system, bundle), sections edited and strung again through new points; sagged to a tension or a sag (ruling span or chosen span); status in the blocks (rolling: equal tension in all spans in every case, default) or clipped in (unstressed lengths per span) *(tension criteria by weather case still open)*
 - [x] Clearance violation display: Clearances tab (rule file, violations of the shown case re-checked after edits in the background, click to go there), red marks in 3D and plan *(reports: `ols line --clearance-csv`)*
 - [ ] Library editors (cables, insulators, structures, weather cases)
 - [ ] Plugin manager UI

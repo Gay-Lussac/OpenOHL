@@ -330,19 +330,39 @@ impl CableProperties {
             })?;
             hi = chord + 2.0 * (hi - chord);
         }
+        // Bracketed secant on H(L0) − h (Illinois): superlinear, never
+        // leaves the bracket.
+        let (mut f_lo, mut f_hi) = (horizontal_for(lo)? - h, horizontal_for(hi)? - h);
+        let mut side = 0;
+        let mut l0 = 0.5 * (lo + hi);
         while hi - lo > 1e-13 * chord {
             run.step().map_err(|stop| ElementError::NotConverged {
                 stop,
                 residual: hi - lo,
             })?;
-            let mid = 0.5 * (lo + hi);
-            if horizontal_for(mid)? > h {
-                lo = mid;
+            l0 = (lo * f_hi - hi * f_lo) / (f_hi - f_lo);
+            if !(lo < l0 && l0 < hi) {
+                l0 = 0.5 * (lo + hi);
+            }
+            let f = horizontal_for(l0)? - h;
+            if f.abs() <= 1e-12 * h {
+                break;
+            }
+            if f > 0.0 {
+                (lo, f_lo) = (l0, f);
+                if side == 1 {
+                    f_hi /= 2.0;
+                }
+                side = 1;
             } else {
-                hi = mid;
+                (hi, f_hi) = (l0, f);
+                if side == -1 {
+                    f_lo /= 2.0;
+                }
+                side = -1;
             }
         }
-        Ok(0.5 * (lo + hi))
+        Ok(l0)
     }
 }
 
