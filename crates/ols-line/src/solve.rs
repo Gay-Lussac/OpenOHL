@@ -7,7 +7,13 @@
 //! Each section becomes an [`ols_wirefe::Model`]:
 //!
 //! - the first and last points, and middle points whose wire point is not
-//!   below the insulator point, are **fixed** at their wire point (strain);
+//!   below the insulator point, are **strain assemblies**: a free clamp on
+//!   a member from the (fixed) insulator point, lined up with its
+//!   conductor by equilibrium, so it moves with every weather case; a
+//!   string without a weight (geometry only, e.g. imported) gets the weight
+//!   that holds it where the data puts it in the stringing state
+//!   (`estimate_strain_weights`); a point whose wire and insulator points
+//!   coincide is **fixed** there;
 //! - middle points whose wire point hangs below the insulator point are
 //!   **suspension strings**: a free clamp on a truss of that length from the
 //!   (fixed) insulator point;
@@ -134,6 +140,7 @@ struct Reference {
 
 /// Clamp layout of a section: fixed points, suspension strings, strain
 /// assemblies. Section ends are always strain points (or fixed).
+#[derive(Clone)]
 enum Clamp {
     /// Wire fixed at a point (no insulator length).
     Fixed(Vector3<f64>),
@@ -152,6 +159,8 @@ enum Clamp {
         length: f64,
         weight: f64,
         initial: Vector3<f64>,
+        /// No weight given: estimated from `initial`.
+        estimate: bool,
     },
     /// V-string: free clamp on two tension-only legs from `tops`; `plumb`
     /// is the still-air clamp position from the data.
@@ -192,18 +201,21 @@ fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
                     length: (wire - ins).norm(),
                     weight: a.insulator_weight / f64::from(section.bundle.max(1)),
                 }
-            } else if (a.insulator.is_some() || a.strain_member) && (wire - ins).norm() > 0.01 {
-                // A library strain assembly is modelled as a free member (it
-                // needs its weight). Attachments given only as geometry keep
-                // their clamp where the data puts it: imported clamp positions
-                // already are the source's equilibrium, and freeing them
-                // without weights made a 930-span comparison worse (median
-                // 1.1 → 4.2 cm).
+            } else if (wire - ins).norm() > 0.01 {
+                // A strain assembly is a free member, so it moves with the
+                // weather. One given only as geometry, without a weight,
+                // would line up with its conductor and lose the droop the
+                // data shows (freed without weights, a 930-span comparison
+                // got worse: median 1.1 → 4.2 cm): its weight is estimated
+                // from where the data puts it.
                 Clamp::Strain {
                     top: ins,
                     length: (wire - ins).norm(),
                     weight: a.insulator_weight / f64::from(section.bundle.max(1)),
                     initial: wire,
+                    estimate: a.insulator.is_none()
+                        && !a.strain_member
+                        && a.insulator_weight == 0.0,
                 }
             } else {
                 Clamp::Fixed(wire)
@@ -400,6 +412,79 @@ fn solve_built(
         .solve(budget)
         .map_err(|e| LineError::Invalid(format!("section {}: {e}", section.id)))?;
     Ok((built, solution))
+}
+
+/// Weights of the strain assemblies given without one: in the stringing
+/// state (still air at the stringing temperature) with those clamps held
+/// where the data puts them, the weight W at which each member is in
+/// equilibrium there, pinned at its top: the moment of the wires' pull F at
+/// the clamp balances that of W at the member's middle,
+/// \\( r \\times F + \\tfrac{r}{2} \\times (0, 0, -W) = 0 \\), r from top to
+/// clamp (least squares; never below 0). Its unstressed length is the
+/// data's less its stretch under that pull. Freed, the member stays where
+/// the data puts it in that state and moves with the weather in the others.
+///
+/// Expected cost: one more stringing reference and one section solve
+/// (a few ms); only for sections with such strings.
+fn estimate_strain_weights(
+    section: &Section,
+    mut layout: Vec<Clamp>,
+    cable: &Cable,
+    budget: &Budget,
+) -> Result<Vec<Clamp>, LineError> {
+    if !layout
+        .iter()
+        .any(|c| matches!(c, Clamp::Strain { estimate: true, .. }))
+    {
+        return Ok(layout);
+    }
+    let held: Vec<Clamp> = layout
+        .iter()
+        .map(|c| match c {
+            Clamp::Strain {
+                estimate: true,
+                initial,
+                ..
+            } => Clamp::Fixed(*initial),
+            other => other.clone(),
+        })
+        .collect();
+    let reference = reference(section, &held, cable, budget)?;
+    let case = WeatherCase::still(
+        "stringing",
+        ols_core::units::Temperature::from_celsius(reference.temperature),
+    );
+    let (built, solution) = solve_built(section, &held, &reference, cable, &case, true, budget)?;
+    for (k, clamp) in layout.iter_mut().enumerate() {
+        if let Clamp::Strain {
+            top,
+            length,
+            weight,
+            initial,
+            estimate: estimate @ true,
+        } = clamp
+        {
+            // The wires' pull on the clamp: the support's reaction, reversed.
+            let pull = -solution.reactions[built.clamps[k]];
+            let r = *initial - *top;
+            let moment = r.cross(&pull);
+            let per_newton = (r / 2.0).cross(&Vector3::new(0.0, 0.0, -1.0));
+            let norm = per_newton.norm_squared();
+            *weight = if norm > 0.0 {
+                (-moment.dot(&per_newton) / norm).max(0.0)
+            } else {
+                0.0
+            };
+            // The data's length is the loaded one: unstressed, the member
+            // is shorter by its stretch (5 mm on a 5 m string at 50 kN;
+            // left in, the slack cut short tight spans' tension by up to
+            // 4 % on a real line).
+            let force = pull.dot(&r.normalize()) + *weight / 2.0 * (-r.z / r.norm());
+            *length /= 1.0 + force.max(0.0) / DEFAULT_INSULATOR_STIFFNESS;
+            *estimate = false;
+        }
+    }
+    Ok(layout)
 }
 
 /// Stringing reference. For a tension, every span is sagged to that
@@ -758,8 +843,9 @@ pub fn clip_lengths(
     section: &Section,
     cable: &Cable,
 ) -> Result<(Vec<f64>, f64), LineError> {
-    let layout = clamps_of(line, section)?;
-    let r = reference(section, &layout, cable, &default_fe_budget())?;
+    let budget = default_fe_budget();
+    let layout = estimate_strain_weights(section, clamps_of(line, section)?, cable, &budget)?;
+    let r = reference(section, &layout, cable, &budget)?;
     Ok((r.lengths, r.temperature))
 }
 
@@ -774,7 +860,7 @@ pub fn solve_section(
     case: &WeatherCase,
     budget: &Budget,
 ) -> Result<SectionShape, LineError> {
-    let layout = clamps_of(line, section)?;
+    let layout = estimate_strain_weights(section, clamps_of(line, section)?, cable, budget)?;
     let mut reference = reference(section, &layout, cable, budget)?;
     if !section.stringing.clipped() && reference.lengths.len() > 1 {
         reference = rolled(section, &layout, &reference, cable, case, budget)?;
@@ -1037,7 +1123,8 @@ mod tests {
             "{:?}",
             calm.insulators[1]
         );
-        assert!(calm.insulators[0].is_empty());
+        // The section's end: a strain assembly (one member) or a fixed point.
+        assert!(calm.insulators[0].len() <= 1);
         // Strung at 25 kN with the V clamped plumb: 25 kN at stringing.
         for span in &calm.spans {
             assert!(
@@ -1203,5 +1290,54 @@ mod tests {
         assert!((lo - 25_000.0).abs() < 50.0 && (hi - 25_000.0).abs() < 50.0);
         let (lo, hi) = spread(&moved(&clipped), &still);
         assert!(hi - lo > 500.0, "clipped after the move {lo}–{hi}");
+    }
+
+    /// A dead-end string given as geometry only (no weight): its weight is
+    /// estimated so that it stays where the data puts it in the stringing
+    /// state (S2: clipped in at 15 °C), and it moves with the weather.
+    #[test]
+    fn weightless_strain_strings_stay_put_at_stringing_and_move_with_the_weather() {
+        let lib = library();
+        let mut line = crate::tests::example();
+        // The example's dead-end strings droop less (5.7°) than the wire
+        // pulls them down (8.4°): no weight holds them there (estimated 0;
+        // freed, they drop 0.23 m). Drooping 12°, as a weight can hold them:
+        for (structure, drop) in [("T1", 1.06), ("T5", 1.07)] {
+            let st = line
+                .structures
+                .iter_mut()
+                .find(|s| s.id == structure)
+                .unwrap();
+            let a = st.attachments.iter_mut().find(|a| a.phase == 2).unwrap();
+            a.wire_point[2] = a.insulator_point[2] - drop;
+        }
+        let s2 = line.sections.iter().find(|s| s.id == "S2").unwrap();
+        let cable = lib.get(&s2.cable).unwrap();
+        let solve = |case: &WeatherCase| {
+            solve_section(&line, s2, cable, case, &default_fe_budget()).unwrap()
+        };
+        let data = v(line.attachment(&s2.points[0]).unwrap().wire_point);
+        let at = |s: &SectionShape| v(s.clamps[0]);
+        let stringing = solve(&WeatherCase::still("15", Temperature::from_celsius(15.0)));
+        // Within a few mm: the member stretches under the wire's pull (1.6 mm
+        // at 16 kN), and the data's string is not quite in line with it.
+        assert!(
+            (at(&stringing) - data).norm() < 5e-3,
+            "{}",
+            at(&stringing) - data
+        );
+        // A member: its force is about the conductor's tension.
+        assert_eq!(stringing.insulators[0].len(), 1);
+        // Hot: less tension, the string droops; wind: it swings sideways.
+        let hot = solve(&WeatherCase::still("80", Temperature::from_celsius(80.0)));
+        assert!(
+            at(&hot).z < at(&stringing).z - 0.005,
+            "{}",
+            at(&hot).z - at(&stringing).z
+        );
+        let mut windy = WeatherCase::still("wind", Temperature::from_celsius(15.0));
+        windy.wind_pressure = Stress::from_pascals(600.0);
+        let blown = solve(&windy);
+        assert!((at(&blown) - at(&stringing)).xy().norm() > 0.01);
     }
 }

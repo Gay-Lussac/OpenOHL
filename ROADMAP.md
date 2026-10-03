@@ -109,6 +109,7 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] Project lines: frozen states of the line (as built, as planned) saved in the project, shown next to the working line in 3D and plan, made the working line (one undoable command) *(in the profile and in drawings still open)*
 - [x] Add jumper tool (missing jumpers at a structure, or between two strings); ⌘S / Ctrl+S saves
 - [x] Jumpers held by their clamps: bending stiffness (estimated from the cable or set) and the angle each end leaves its clamp at; solved as an inextensible elastic rod; project lines drawn like the working line (bundles, yokes, strings, jumpers)
+- [x] Strain assemblies always free members (move with the weather, in the calculation); weights of geometry-only strings estimated from their data position in the stringing state
 - [ ] Plugin manager UI
 - [ ] Python scripting console inside the application
 - [ ] **Server mode (alpha)**: host a project, multiple users connect over LAN/Internet, live change broadcast, presence, soft locks, per-user undo, roles & permissions, admin rollback
