@@ -1249,3 +1249,95 @@ fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
     }
     ui.label(egui::RichText::new("The profile view follows the alignment points.").small());
 }
+
+/// A new jumper from `from` to `to`: the cable of the section at `from`,
+/// a sag of 15 % of the distance (0.3–3 m) at 15 °C, the next free id.
+pub fn new_jumper(
+    model: &Model,
+    from: &SectionPoint,
+    to: &SectionPoint,
+    taken: &[String],
+) -> Result<ols_line::Jumper, String> {
+    let line = &model.line;
+    if from == to {
+        return Err("a jumper joins two different strings".into());
+    }
+    let (a, b) = (
+        line.attachment(from)
+            .ok_or_else(|| format!("no string {} {}:{}", from.structure, from.set, from.phase))?,
+        line.attachment(to)
+            .ok_or_else(|| format!("no string {} {}:{}", to.structure, to.set, to.phase))?,
+    );
+    let d = [0, 1, 2].map(|k| b.wire_point[k] - a.wire_point[k]);
+    let chord = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    let cable = line
+        .sections
+        .iter()
+        .find(|s| s.points.contains(from))
+        .or_else(|| line.sections.iter().find(|s| s.points.contains(to)))
+        .map(|s| s.cable.clone())
+        .or_else(|| model.library.iter().next().map(|c| c.id.clone()))
+        .ok_or("no cable for the jumper")?;
+    let like = line.jumpers.last().map_or("J0", |j| j.id.as_str());
+    let id = next_id(
+        line.jumpers
+            .iter()
+            .map(|j| j.id.as_str())
+            .chain(taken.iter().map(String::as_str)),
+        like,
+    );
+    serde_json::from_value(serde_json::json!({
+        "id": id,
+        "cable": cable,
+        "from": from,
+        "to": to,
+        "sag": ((0.15 * chord).clamp(0.3, 3.0) * 100.0).round() / 100.0,
+        "temperature": 15.0,
+    }))
+    .map_err(|e| e.to_string())
+}
+
+/// The jumpers missing at structure `id`: between the ends of two
+/// sections there (their first or last point) of the same circuit and
+/// phase, where no jumper is yet. Also what could not be paired.
+pub fn missing_jumpers(model: &Model, id: &str) -> (Vec<ols_line::Jumper>, Vec<String>) {
+    let line = &model.line;
+    let jumpered = |p: &SectionPoint| line.jumpers.iter().any(|j| &j.from == p || &j.to == p);
+    // (circuit, phase) → the free section ends at this structure.
+    let mut ends: std::collections::BTreeMap<(String, String), Vec<(String, SectionPoint)>> =
+        std::collections::BTreeMap::new();
+    for s in &line.sections {
+        let (Some(first), Some(last)) = (s.points.first(), s.points.last()) else {
+            continue;
+        };
+        for p in [first, last] {
+            if p.structure == id && !jumpered(p) {
+                ends.entry((s.circuit.clone(), s.phase_label.clone()))
+                    .or_default()
+                    .push((s.id.clone(), p.clone()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut unpaired = Vec::new();
+    for ((circuit, phase), list) in ends {
+        let mut list = list;
+        list.dedup_by(|a, b| a.1 == b.1);
+        if list.len() == 2 && list[0].0 != list[1].0 {
+            let taken: Vec<String> = out
+                .iter()
+                .map(|j: &ols_line::Jumper| j.id.clone())
+                .collect();
+            match new_jumper(model, &list[0].1, &list[1].1, &taken) {
+                Ok(j) => out.push(j),
+                Err(e) => unpaired.push(e),
+            }
+        } else if list.len() > 1 {
+            unpaired.push(format!(
+                "{circuit} {phase}: {} section ends — join them string by string",
+                list.len()
+            ));
+        }
+    }
+    (out, unpaired)
+}

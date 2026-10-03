@@ -412,11 +412,31 @@ pub enum Command {
         /// New id.
         new_id: String,
     },
+    /// Replace the whole line by `line` (e.g. a saved project line made
+    /// the working line again): objects not in it are deleted, the others
+    /// put — one log entry, undone at once.
+    ReplaceLine {
+        /// The new line.
+        line: Box<Line>,
+    },
     /// Several commands applied together (all or none).
     Batch {
         /// The commands.
         commands: Vec<Command>,
     },
+}
+
+/// A project line saved: a frozen state of the line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snapshot {
+    /// Name, e.g. `as built 2026`.
+    pub name: String,
+    /// When it was saved (UTC).
+    pub time: String,
+    /// Who saved it.
+    pub user: String,
+    /// Note.
+    pub note: String,
 }
 
 /// One entry of the operation log.
@@ -650,7 +670,10 @@ impl Session {
                  seq INTEGER PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                  user TEXT NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL, inverse TEXT NOT NULL,
                  objects TEXT NOT NULL, sections TEXT NOT NULL,
-                 undoes INTEGER, undone_by INTEGER, note TEXT);",
+                 undoes INTEGER, undone_by INTEGER, note TEXT);
+             CREATE TABLE IF NOT EXISTS line_snapshot (
+                 name TEXT PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                 user TEXT NOT NULL, note TEXT NOT NULL, json TEXT NOT NULL);",
         )?;
         // Added within schema 1 before its first release: add the column to
         // project files made by earlier builds.
@@ -836,6 +859,79 @@ impl Session {
              ON CONFLICT(name) DO UPDATE SET role = excluded.role",
             params![name, role.as_str()],
         )?;
+        Ok(())
+    }
+
+    /// The project lines saved (frozen states of the line, e.g. as built
+    /// and as planned), oldest first.
+    pub fn snapshots(&self) -> Result<Vec<Snapshot>, SessionError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name, time, user, note FROM line_snapshot ORDER BY time, name")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Snapshot {
+                name: r.get(0)?,
+                time: r.get(1)?,
+                user: r.get(2)?,
+                note: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Saves the working line as project line `name` (a new name).
+    pub fn save_snapshot(&self, user: &str, name: &str, note: &str) -> Result<(), SessionError> {
+        self.require(user, Role::Designer)?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(refused("a project line needs a name"));
+        }
+        let exists: bool = self
+            .conn
+            .prepare("SELECT 1 FROM line_snapshot WHERE name = ?1")?
+            .exists(params![name])?;
+        if exists {
+            return Err(refused(format!("a project line \"{name}\" exists already")));
+        }
+        let text = serde_json::to_string(&self.line).map_err(|e| refused(e.to_string()))?;
+        self.conn.execute(
+            "INSERT INTO line_snapshot (name, user, note, json) VALUES (?1, ?2, ?3, ?4)",
+            params![name, user, note, text],
+        )?;
+        Ok(())
+    }
+
+    /// Project line `name`.
+    pub fn snapshot(&self, name: &str) -> Result<Line, SessionError> {
+        let text: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT json FROM line_snapshot WHERE name = ?1",
+                params![name],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let text = text.ok_or_else(|| refused(format!("no project line \"{name}\"")))?;
+        serde_json::from_str(&text).map_err(|e| refused(format!("project line {name}: {e}")))
+    }
+
+    /// Deletes project line `name` (the working line is not touched).
+    pub fn delete_snapshot(&self, user: &str, name: &str) -> Result<(), SessionError> {
+        self.require(user, Role::Designer)?;
+        let n = self
+            .conn
+            .execute("DELETE FROM line_snapshot WHERE name = ?1", params![name])?;
+        if n == 0 {
+            return Err(refused(format!("no project line \"{name}\"")));
+        }
+        Ok(())
+    }
+
+    /// Writes everything into the project file itself (no change is ever
+    /// waiting: every command is stored as it is applied).
+    pub fn checkpoint(&self) -> Result<(), SessionError> {
+        self.conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
         Ok(())
     }
 
@@ -1366,6 +1462,36 @@ impl Session {
                     }
                 }
                 notes.push(format!("rename system {id} to {new_id}"));
+            }
+            Command::ReplaceLine { line } => {
+                let new = objects_of(&line);
+                let keep: std::collections::BTreeSet<(Kind, String)> =
+                    new.iter().map(|(k, id, _)| (*k, id.clone())).collect();
+                for (k, id) in self.objects.keys() {
+                    if !keep.contains(&(*k, id.clone())) {
+                        out.push(Command::Delete {
+                            kind: *k,
+                            id: id.clone(),
+                            confirm: false,
+                        });
+                    }
+                }
+                for (kind, id, value) in new {
+                    if self
+                        .objects
+                        .get(&(kind, id.clone()))
+                        .is_some_and(|o| o.value == value)
+                    {
+                        continue;
+                    }
+                    out.push(Command::Put {
+                        kind,
+                        id,
+                        value,
+                        ord: None,
+                    });
+                }
+                notes.push(format!("replace the line by \"{}\"", line.name));
             }
             Command::Batch { commands } => {
                 for c in commands {

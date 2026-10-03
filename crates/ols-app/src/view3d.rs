@@ -33,6 +33,8 @@ pub struct View3d {
     pub captured: bool,
     /// Where the view is on the screen (its centre is the crosshair).
     pub rect: Option<egui::Rect>,
+    /// It was drawn in the last frame (its page is in front).
+    pub drawn: bool,
     /// The release of the press that captured the mouse is not a click.
     swallow_release: bool,
     /// Clearance violations to draw: (on the wire, on the target).
@@ -80,6 +82,7 @@ impl View3d {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         self.rect = Some(rect);
+        self.drawn = true;
         let camera = self.camera.get_or_insert_with(|| {
             let mut s = scene::layer(model, Layer::Structures, case, selection);
             if s.bounds().is_none() {

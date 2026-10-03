@@ -106,6 +106,8 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] Menu bar (Edit with Snap, View pages and layers, Tools, Checks on demand, Libraries, Tables; Plugins to come) and a customizable quick bar; pages closable and reopened from View
 - [x] Table editing: structures, sections, strings, jumpers, electrical systems, alignment points, weather cases (written to the case file) — every value typed in, rows added and deleted (dependents confirmed), renames followed by what refers to them, section targets (tension or sag in its display case), per-section display weather case; one command per Apply, sorting, filter *(paste from spreadsheets still open)*
 - [x] Alignment points drawn in 3D and plan, selected, edited, deleted and added (tool and table); the profile follows
+- [x] Project lines: frozen states of the line (as built, as planned) saved in the project, shown next to the working line in 3D and plan, made the working line (one undoable command) *(in the profile and in drawings still open)*
+- [x] Add jumper tool (missing jumpers at a structure, or between two strings); ⌘S / Ctrl+S saves
 - [ ] Plugin manager UI
 - [ ] Python scripting console inside the application
 - [ ] **Server mode (alpha)**: host a project, multiple users connect over LAN/Internet, live change broadcast, presence, soft locks, per-user undo, roles & permissions, admin rollback

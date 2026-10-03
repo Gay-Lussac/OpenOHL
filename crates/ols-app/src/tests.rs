@@ -2091,3 +2091,169 @@ fn the_project_remembers_its_weather_case_file() {
         again.log
     );
 }
+
+/// Lines: the working line saved as a project line, shown next to the
+/// working line after a change, then made the working line again (one
+/// command: ⌘Z brings the change back).
+#[test]
+fn project_lines_are_created_shown_and_made_the_working_line() {
+    use crate::app::LinesWindow;
+    let model = synthetic_project("lines");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Lines").click();
+    harness.run();
+    harness.get_by_label("Create line…").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(LinesWindow::Create(name, note)) = &mut r.lines_window else {
+            panic!("{:?}", r.lines_window);
+        };
+        *name = "as built".into();
+        *note = "before the works".into();
+    }
+    harness.run();
+    harness.get_by_label("Create").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.lines_window.is_none(), "{:?}", r.status);
+        r.perform(crate::edit::Action::Delete {
+            kind: ols_session::Kind::Structure,
+            id: "T7".into(),
+            confirm: true,
+        });
+        assert!(r.model.line.structure("T7").is_none());
+        // Shown next to the working line: it still has T7.
+        r.model.show_line("as built").unwrap();
+        let other = &r.model.other_lines[0];
+        assert!(other.line.structure("T7").is_some());
+        assert_eq!(other.cases.len(), r.model.cases.len());
+        let drawn = crate::scene::layer(
+            &r.model,
+            crate::scene::Layer::OtherLines,
+            0,
+            &Selection::None,
+        );
+        assert!(drawn.counts().0 > 0);
+        r.lines_window = Some(LinesWindow::Restore("as built".into()));
+    }
+    harness.run();
+    harness.get_by_label("Make it the working line").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.model.line.structure("T7").is_some(), "{:?}", r.status);
+        assert_solved_fully(&r.model);
+    }
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.line.structure("T7").is_none(), "one undo");
+}
+
+/// Add jumper: on a structure, the jumper missing between two section
+/// ends of the same circuit and phase; between two strings right-clicked.
+#[test]
+fn jumpers_are_added_where_none_are() {
+    use crate::tools::Tool;
+    let model = synthetic_project("jumpers");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // S2 given S1's circuit and phase: their ends at T1 are to be joined.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s1 = r.model.line.sections[0].clone();
+        let mut s2 = r.model.stored_line().unwrap().sections[1].clone();
+        s2.circuit = s1.circuit.clone();
+        s2.phase_label = s1.phase_label.clone();
+        assert!(r.perform(crate::edit::Action::Command {
+            what: "same phase".into(),
+            command: ols_session::Command::Put {
+                kind: ols_session::Kind::Section,
+                id: s2.id.clone(),
+                value: serde_json::to_value(&s2).unwrap(),
+                ord: None,
+            },
+        }));
+    }
+    let n = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .jumpers
+        .len();
+    use_tool(
+        &mut harness,
+        Tool::AddJumper,
+        Selection::Structure("T1".into()),
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        // T1 and T5: both ends of S1 and S2 — at T1 here.
+        assert_eq!(r.model.line.jumpers.len(), n + 1, "{:?}", r.status);
+        let j = r.model.line.jumpers.last().unwrap();
+        assert_eq!(j.from.structure, "T1");
+        assert_eq!(j.to.structure, "T1");
+        assert!(j.sag.is_some());
+        assert_solved_fully(&r.model);
+    }
+    // Again: none missing.
+    use_tool(
+        &mut harness,
+        Tool::AddJumper,
+        Selection::Structure("T1".into()),
+        None,
+    );
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .line
+            .jumpers
+            .len(),
+        n + 1
+    );
+    // Two strings.
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1, 1), None);
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1, 2), None);
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.line.jumpers.len(), n + 2, "{:?}", r.status);
+    assert!(matches!(r.selection, Selection::Jumper(_)));
+}
+
+/// ⌘S writes the project file through and says so; the hotbar sits on the
+/// plan when the plan is in front.
+#[test]
+fn command_s_saves_and_the_hotbar_follows_the_view_in_front() {
+    let model = synthetic_project("save");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    press(&mut harness, egui::Key::S, egui::Modifiers::COMMAND);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let (text, error) = r.status.clone().unwrap();
+        assert!(text.starts_with("saved: project file"), "{text}");
+        assert!(!error);
+    }
+    harness.state_mut().show_tab(crate::app::Tab::Plan);
+    harness.run();
+    harness.run();
+    let plan = harness.state_mut().ready().unwrap().plan.drawn.unwrap();
+    let bar = harness
+        .ctx
+        .memory(|m| m.area_rect(egui::Id::new("hotbar")))
+        .unwrap();
+    assert!(plan.contains_rect(bar), "{bar:?} in {plan:?}");
+}

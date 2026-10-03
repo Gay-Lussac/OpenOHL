@@ -21,6 +21,8 @@ pub struct PlanView {
     scale: f64,
     /// Clearance violations to mark (points on the wires).
     pub marks: Vec<[f64; 3]>,
+    /// Where it was drawn in the last frame (its page in front), if it was.
+    pub drawn: Option<egui::Rect>,
 }
 
 fn color(c: [u8; 3]) -> egui::Color32 {
@@ -68,6 +70,7 @@ impl PlanView {
     ) -> Option<selection::Use> {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
+        self.drawn = Some(rect);
         if self.centre.is_none() {
             self.fit(model, rect.size());
         }
@@ -225,6 +228,22 @@ impl PlanView {
                 painter.add(egui::Shape::line(pts, egui::Stroke::new(w, col)));
             }
         }
+        // Other project lines, in their colours.
+        for other in &model.other_lines {
+            let col = color(other.color);
+            for k in model.shown(case) {
+                for shape in other.cases.get(k).map_or(&[][..], |c| &c.shapes[..]) {
+                    for span in &shape.spans {
+                        let pts: Vec<egui::Pos2> =
+                            span.points.iter().map(|p| to_screen(*p)).collect();
+                        painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, col)));
+                    }
+                }
+            }
+            for st in &other.line.structures {
+                painter.circle_stroke(to_screen(st.position), 4.0, egui::Stroke::new(1.5, col));
+            }
+        }
         let labels = scale > 0.08;
         for s in &line.structures {
             let p = to_screen(s.position);
@@ -284,7 +303,7 @@ impl PlanView {
         painter.text(
             rect.right_top() + egui::vec2(-10.0, 10.0),
             egui::Align2::RIGHT_TOP,
-            "N ↑",
+            "N",
             egui::FontId::proportional(13.0),
             egui::Color32::from_gray(200),
         );

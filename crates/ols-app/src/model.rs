@@ -136,6 +136,28 @@ impl std::fmt::Debug for Editing {
     }
 }
 
+/// A saved project line shown for comparison: resolved and solved in
+/// every weather case of the model.
+#[derive(Debug)]
+pub struct OtherLine {
+    /// Its name.
+    pub name: String,
+    /// The line (structure types resolved).
+    pub line: Line,
+    /// Solved in each weather case of the model (same order).
+    pub cases: Vec<Solved>,
+    /// Display colour.
+    pub color: [u8; 3],
+}
+
+/// Colours of the other project lines, in turn.
+const OTHER_COLORS: [[u8; 3]; 4] = [
+    [230, 120, 230],
+    [120, 230, 140],
+    [240, 170, 60],
+    [120, 200, 255],
+];
+
 /// A LiDAR point: millimetres from the model origin, class.
 pub type LidarPoint = ([i32; 3], u8);
 
@@ -175,6 +197,8 @@ pub struct Model {
     /// The weather cases shown for the whole line (Display weather cases;
     /// empty: the case passed to the views).
     pub shown_cases: Vec<usize>,
+    /// Saved project lines shown next to the working line (Lines menu).
+    pub other_lines: Vec<OtherLine>,
 }
 
 fn dir_of(file: &Path) -> PathBuf {
@@ -369,6 +393,44 @@ impl Model {
             .collect()
     }
 
+    /// Shows saved project line `name` next to the working line (solved
+    /// in every weather case).
+    pub fn show_line(&mut self, name: &str) -> Result<String, String> {
+        if self.other_lines.iter().any(|o| o.name == name) {
+            return Ok(String::new());
+        }
+        let started = Instant::now();
+        let e = self.editing.as_ref().map_err(Clone::clone)?;
+        let stored = e.session.snapshot(name).map_err(|e| e.to_string())?;
+        let line = match &self.types {
+            Some((s, i)) => stored.resolve(s, i).map_err(|e| e.to_string())?,
+            None => stored,
+        };
+        let cases: Vec<Solved> = self
+            .cases
+            .iter()
+            .map(|c| Solved::new(&line, &self.library, c.case.clone()))
+            .collect();
+        let color = OTHER_COLORS[self.other_lines.len() % OTHER_COLORS.len()];
+        let failed: usize = cases.iter().map(|c| c.failed.len()).sum();
+        self.other_lines.push(OtherLine {
+            name: name.to_owned(),
+            line,
+            cases,
+            color,
+        });
+        Ok(format!(
+            "project line \"{name}\" shown, solved in {} weather cases in {:.1?}{}",
+            self.cases.len(),
+            started.elapsed(),
+            if failed > 0 {
+                format!(" — {failed} sections or jumpers failed")
+            } else {
+                String::new()
+            }
+        ))
+    }
+
     /// Reads the libraries again (wires, structure types, insulators,
     /// weather cases) after one was edited, resolves the line again and
     /// solves every case. Nothing changes when one does not load.
@@ -390,10 +452,17 @@ impl Model {
             .into_iter()
             .map(|c| Solved::new(&line, &library, c))
             .collect();
+        // Project lines shown: solved again in the new cases.
+        let others: Vec<String> = self.other_lines.drain(..).map(|o| o.name).collect();
         self.line = line;
         self.library = library;
         self.types = types;
         let failed: usize = self.cases.iter().map(|c| c.failed.len()).sum();
+        for name in others {
+            if let Err(e) = self.show_line(&name) {
+                log::warn!("project line {name}: {e}");
+            }
+        }
         Ok(format!(
             "libraries read again, {} weather cases solved in {:.1?}{}",
             self.cases.len(),
@@ -616,5 +685,6 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         editing,
         display_cases: Default::default(),
         shown_cases: vec![0],
+        other_lines: Vec::new(),
     })
 }

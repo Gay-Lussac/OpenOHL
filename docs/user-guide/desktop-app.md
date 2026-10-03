@@ -28,9 +28,10 @@ The **menu bar** holds what needs no view:
 
 | Menu | |
 |---|---|
-| File | the model's file, Quit |
+| File | the model's file, Save (⌘S / Ctrl+S), Quit |
 | Edit | Undo, Redo, Delete selected, Clear selection, Go to structure; **Snap: what can be clicked** |
 | View | Fit views; the pages to show (tick to open, untick to close); layers; Display weather cases; Customize the quick bar |
+| Lines | Project lines (saved states of the line to show next to the working line, or to make the working line), Create line, Delete line (see [Project lines](#project-lines)) |
 | Tools | the tool inventory (E); hold any tool |
 | Checks | calculations run **on demand** — they never change the model: Clearances (Run checks, also after every edit, rule file, Show results); more checks to come |
 | Libraries | the library editors: wires, insulators, structure types, weather cases (see [Library editors](#library-editors)) |
@@ -58,6 +59,18 @@ Under it, the **quick bar**: the line's name, **Weather: …** (the weather case
 
 The model's **weather case file** is remembered with the project (`--weather`, or Libraries › Weather cases › Use for the model): opened again without `--weather`, the project uses the file it used last.
 
+## Project lines
+
+A project keeps, next to the **working line** (the one edited), **project lines**: frozen states of the line — e.g. *as built* before the works and *as planned* — to compare later, or to draw the actual and the planned state.
+
+- **Lines › Create line…** saves the working line as it is now, with a name and a note (kept in the project file; not undone with ⌘Z).
+- **Lines › Project lines** lists them: tick one or several to **show** them next to the working line in the 3D view (layer "Other project lines") and the plan, each in its colour, solved in the weather cases shown. **make it the working line…** replaces the working line by it — one command, so ⌘Z brings the working line back (save it first with Create line to keep it).
+- **Lines › Delete line** deletes a project line (the working line is not touched).
+
+## Saving
+
+Every edit is stored in the project file as it is made (the operation log), so nothing is lost when the app stops. **⌘S** (Ctrl+S on Windows and Linux, or File › Save) writes the project file through, saves the library pages with changes that read (the model reads them again) and says which table changes are still pending (Apply makes them). **⌘Z** / **Shift+⌘Z** (Ctrl+Z / Shift+Ctrl+Z) undo and redo, outside text fields.
+
 ## Editing
 
 A project (`.ols`) opened by a user with the designer or admin role (`--user`, default the login name) can be edited; every edit is a command in the project's log, undoable per user (ADR-0005). A line file, or a user without a role, opens read-only — the status bar says why.
@@ -70,7 +83,8 @@ A project (`.ols`) opened by a user with the designer or admin role (`--user`, d
 | Add a structure | The **Add structure** tool and a right-click on the ground (3D view, under the crosshair in first person; or the plan view): the window proposes the next id, the type and orientation of the nearest structure, the base on the ground. Without a type, give it strings with **Add string**. |
 | Add a string | The **Add string** tool and a right-click on a structure: the next free set, phase 1, hanging 3 m from the top; set the points in the structure's axes. |
 | String a wire | The **String wire** tool: right-click the strings in line order (a yellow line joins them), **Enter** opens the new section's window — like the selected span's section, or the one through the first string, in the blocks with its condition (or its tension as solved) —, **Backspace** takes the last point back, **Escape** gives up. **Pick points again** in a section's window strings it again through new points (a clipped section with a different number of spans goes back to the blocks). |
-| Undo / redo | **⌘Z** / **Shift+⌘Z**, the Edit menu or the quick bar. |
+| Add a jumper | The **Add jumper** tool: right-click a structure — the jumpers missing there are added, between two section ends (first or last points) of the same circuit and phase that no jumper joins yet (sag 15 % of the distance, at 15 °C; ends that cannot be paired are named); or right-click two strings — a jumper between them (the same string again cancels). Edit on a jumper opens its row in the Jumpers table. |
+| Undo / redo | **⌘Z** / **Shift+⌘Z** (Ctrl on Windows and Linux), the Edit menu or the quick bar. |
 
 Every window applies one command (**Apply** or Enter; **Cancel** or Escape); when the session refuses it (an id taken, a line that would not be valid…), the window stays open with the reason. While Delete, Edit, Add string or String wire is held, strings can be right-clicked whatever Edit › Snap says.
 
@@ -78,7 +92,7 @@ After an edit only the sections it touched are re-solved, in every weather case 
 
 ## Tools: hotbar and inventory
 
-As in Minecraft, the bottom of the 3D view holds a **hotbar** of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair): Select, Move structure (M), Delete, Go to structure (G), Edit, Add structure, Add string, String wire, Add alignment point (see [Editing](#editing) and [Alignments](#alignments)). A left click always selects; a right-*drag* still pans. A window opened by a tool (Move, an editor, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person); it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come.
+As in Minecraft, the bottom of the 3D view (or of the plan when the plan is in front) holds a **hotbar** of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair): Select, Move structure (M), Delete, Go to structure (G), Edit, Add structure, Add string, String wire, Add alignment point, Add jumper (see [Editing](#editing) and [Alignments](#alignments)). A left click always selects; a right-*drag* still pans. A window opened by a tool (Move, an editor, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person); it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come.
 
 ## Clearances
 

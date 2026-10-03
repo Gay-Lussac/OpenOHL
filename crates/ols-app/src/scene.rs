@@ -24,6 +24,9 @@ pub enum Layer {
     Wires,
     /// Wires of the other weather cases (faded).
     OtherCases,
+    /// Saved project lines shown for comparison (Lines menu), each in its
+    /// colour.
+    OtherLines,
     /// Clearance violations: wire to target, red
     /// ([`View3d::marks`](crate::view3d::View3d::marks)).
     Clearances,
@@ -35,13 +38,14 @@ pub enum Layer {
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 9] = [
+    pub const ALL: [Layer; 10] = [
         Layer::Ground,
         Layer::Points,
         Layer::Alignment,
         Layer::Structures,
         Layer::Wires,
         Layer::OtherCases,
+        Layer::OtherLines,
         Layer::Clearances,
         Layer::Draft,
         Layer::Selection,
@@ -56,6 +60,7 @@ impl Layer {
             Layer::Structures => "Structures",
             Layer::Wires => "Wires (selected case)",
             Layer::OtherCases => "Wires (other cases)",
+            Layer::OtherLines => "Other project lines",
             Layer::Clearances => "Clearance violations",
             Layer::Draft => "Wire being strung",
             Layer::Selection => "Selection",
@@ -360,6 +365,32 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         ring.push(y[0]);
                     }
                     s.polyline(&ring, [205, 205, 210, alpha], 2.0);
+                }
+            }
+        }
+        Layer::OtherLines => {
+            // Structures and wires of each project line shown, in the cases
+            // shown for the line, in its colour.
+            for other in &model.other_lines {
+                let col = rgba(other.color, 230);
+                for st in &other.line.structures {
+                    for (part, pts) in structure_lines(st) {
+                        let width = if part == Part::Mast { 2.5 } else { 1.5 };
+                        s.polyline(&pts, col, width);
+                    }
+                }
+                for k in model.shown(case) {
+                    let Some(solved) = other.cases.get(k) else {
+                        continue;
+                    };
+                    for shape in &solved.shapes {
+                        for span in &shape.spans {
+                            s.polyline(&span.points, col, 1.5);
+                        }
+                    }
+                    for j in &solved.jumpers {
+                        s.polyline(&j.points, col, 1.2);
+                    }
                 }
             }
         }

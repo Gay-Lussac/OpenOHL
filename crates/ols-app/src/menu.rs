@@ -15,6 +15,8 @@ use crate::tools::Tool;
 /// A command of the menus and the quick bar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Command {
+    /// Save: the project file, library pages with changes.
+    Save,
     /// Undo the user's last edit.
     Undo,
     /// Redo.
@@ -45,6 +47,7 @@ impl Command {
     /// Every command that can go on the quick bar.
     pub fn catalog() -> Vec<Command> {
         let mut out = vec![
+            Command::Save,
             Command::Undo,
             Command::Redo,
             Command::FitViews,
@@ -74,6 +77,7 @@ impl Command {
     /// Name on a button and in the menus.
     pub fn name(self) -> String {
         match self {
+            Command::Save => "Save".into(),
             Command::Undo => "Undo".into(),
             Command::Redo => "Redo".into(),
             Command::FitViews => "Fit views".into(),
@@ -90,14 +94,23 @@ impl Command {
     }
 
     /// Its shortcut, if any.
-    pub fn shortcut(self) -> Option<&'static str> {
+    pub fn shortcut(self) -> Option<String> {
+        // ⌘ on a Mac, Ctrl elsewhere (egui's command modifier).
+        let cmd = |k: &str| {
+            if cfg!(target_os = "macos") {
+                format!("⌘{k}")
+            } else {
+                format!("Ctrl+{k}")
+            }
+        };
         match self {
-            Command::Undo => Some("⌘Z"),
-            Command::Redo => Some("Shift+⌘Z"),
-            Command::DeleteSelected => Some("Delete"),
-            Command::GoTo => Some("G"),
-            Command::Inventory => Some("E"),
-            Command::Hold(t) => t.key(),
+            Command::Save => Some(cmd("S")),
+            Command::Undo => Some(cmd("Z")),
+            Command::Redo => Some(format!("Shift+{}", cmd("Z"))),
+            Command::DeleteSelected => Some("Delete".into()),
+            Command::GoTo => Some("G".into()),
+            Command::Inventory => Some("E".into()),
+            Command::Hold(t) => t.key().map(str::to_owned),
             _ => None,
         }
     }
@@ -105,6 +118,7 @@ impl Command {
     /// Key for saving.
     pub fn key(self) -> String {
         match self {
+            Command::Save => "save".into(),
             Command::Undo => "undo".into(),
             Command::Redo => "redo".into(),
             Command::FitViews => "fit".into(),

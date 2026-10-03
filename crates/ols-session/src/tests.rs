@@ -771,3 +771,52 @@ fn settings_are_kept_with_the_project() {
     assert_eq!(again.setting("app.weather").unwrap(), None);
     assert_eq!(again.export(), example(), "not part of the line");
 }
+
+#[test]
+fn project_lines_are_saved_compared_and_made_the_working_line() {
+    let (path, mut s) = project("snapshots");
+    s.save_snapshot("ben", "as built", "before the works")
+        .unwrap();
+    assert!(
+        s.save_snapshot("ben", "as built", "").is_err(),
+        "names are unique"
+    );
+    assert!(
+        s.save_snapshot("vic", "viewer", "").is_err(),
+        "viewers may not"
+    );
+    // The working line changes; the saved one does not.
+    s.apply(
+        "ben",
+        Command::DeleteStructure {
+            id: "T7".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(s.snapshot("as built").unwrap(), example());
+    let list = s.snapshots().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(
+        (list[0].name.as_str(), list[0].user.as_str()),
+        ("as built", "ben")
+    );
+    // Made the working line again: one entry, undone at once.
+    let back = s.snapshot("as built").unwrap();
+    s.apply(
+        "ben",
+        Command::ReplaceLine {
+            line: Box::new(back),
+        },
+    )
+    .unwrap();
+    assert_eq!(s.export(), example());
+    s.undo("ben").unwrap();
+    assert!(s.line().structure("T7").is_none());
+    s.checkpoint().unwrap();
+    drop(s);
+    let again = Session::open(&path).unwrap();
+    assert_eq!(again.snapshots().unwrap().len(), 1);
+    again.delete_snapshot("ben", "as built").unwrap();
+    assert!(again.snapshots().unwrap().is_empty());
+}

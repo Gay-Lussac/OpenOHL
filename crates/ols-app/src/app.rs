@@ -87,6 +87,17 @@ pub struct MoveDialog {
     pub shown: [f64; 3],
 }
 
+/// A window of the Lines menu.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LinesWindow {
+    /// Save the working line as a project line: name, note.
+    Create(String, String),
+    /// Delete a project line.
+    Delete(String),
+    /// Make a project line the working line.
+    Restore(String),
+}
+
 /// What is shown once the model is loaded.
 pub struct Ready {
     /// The model.
@@ -142,6 +153,12 @@ pub struct Ready {
         std::collections::BTreeMap<crate::library::LibraryKind, crate::library::LibraryPage>,
     /// The "Display weather cases" window, when open: a tick per case.
     pub display_window: Option<Vec<bool>>,
+    /// A window of the Lines menu, when open.
+    pub lines_window: Option<LinesWindow>,
+    /// Add jumper: the first string right-clicked.
+    pub jumper_from: Option<ols_line::SectionPoint>,
+    /// A page to bring to the front (with a table filter), from a tool.
+    pub open_page: Option<(Tab, Option<String>)>,
     /// Table pages opened.
     pub tables: std::collections::BTreeMap<crate::tables::TableKind, crate::tables::TablePage>,
 }
@@ -179,6 +196,9 @@ impl Ready {
             libraries: Default::default(),
             tables: Default::default(),
             display_window: None,
+            lines_window: None,
+            jumper_from: None,
+            open_page: None,
             clearances: crate::clearance::Clearances::new(
                 &model.sources.file,
                 model.sources.rules.as_deref(),
@@ -274,6 +294,14 @@ impl App {
             hotbar: crate::tools::Hotbar::default(),
             quickbar: Default::default(),
             customize: false,
+        }
+    }
+
+    /// Brings a page to the front (tests).
+    #[cfg(test)]
+    pub fn show_tab(&mut self, tab: Tab) {
+        if let Some(path) = self.dock.find_tab(&tab) {
+            let _ = self.dock.set_active_tab(path);
         }
     }
 
@@ -504,6 +532,100 @@ impl Ready {
                     ));
                 }
                 self.select(target);
+            }
+            (Tool::Edit, Selection::Jumper(id)) => {
+                // No window: its row in the Jumpers table.
+                self.open_page = Some((
+                    Tab::Table(crate::tables::TableKind::Jumpers),
+                    Some(id.clone()),
+                ));
+                self.select(target);
+            }
+            (Tool::AddJumper, Selection::Structure(id)) => {
+                let (jumpers, unpaired) = crate::editors::missing_jumpers(model, id);
+                let id = id.clone();
+                if jumpers.is_empty() {
+                    self.status = Some((
+                        format!(
+                            "Add jumper: none missing at {id}{}",
+                            if unpaired.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" ({})", unpaired.join("; "))
+                            }
+                        ),
+                        !unpaired.is_empty(),
+                    ));
+                    return;
+                }
+                let n = jumpers.len();
+                let commands = jumpers
+                    .iter()
+                    .map(|j| ols_session::Command::Put {
+                        kind: ols_session::Kind::Jumper,
+                        id: j.id.clone(),
+                        value: serde_json::to_value(j).expect("a jumper"),
+                        ord: None,
+                    })
+                    .collect();
+                if self.perform(crate::edit::Action::Command {
+                    what: format!("added {n} jumpers at {id}"),
+                    command: ols_session::Command::Batch { commands },
+                }) && !unpaired.is_empty()
+                {
+                    self.status = Some((
+                        format!(
+                            "added {n} jumpers at {id}; not joined: {}",
+                            unpaired.join("; ")
+                        ),
+                        false,
+                    ));
+                }
+            }
+            (
+                Tool::AddJumper,
+                Selection::Attachment {
+                    structure,
+                    set,
+                    phase,
+                },
+            ) => {
+                let p = ols_line::SectionPoint {
+                    structure: structure.clone(),
+                    set: *set,
+                    phase: *phase,
+                };
+                match self.jumper_from.take() {
+                    None => {
+                        self.status = Some((
+                            format!(
+                                "Add jumper from {structure} {set}:{phase}: right-click the other string (the same one again: cancel)"
+                            ),
+                            false,
+                        ));
+                        self.jumper_from = Some(p);
+                    }
+                    Some(from) if from == p => {
+                        self.status = Some(("Add jumper: cancelled".into(), false));
+                    }
+                    Some(from) => match crate::editors::new_jumper(model, &from, &p, &[]) {
+                        Ok(j) => {
+                            let id = j.id.clone();
+                            if self.perform(crate::edit::Action::Command {
+                                what: format!("added jumper {id}"),
+                                command: ols_session::Command::Put {
+                                    kind: ols_session::Kind::Jumper,
+                                    id: id.clone(),
+                                    value: serde_json::to_value(&j).expect("a jumper"),
+                                    ord: None,
+                                },
+                            }) {
+                                self.select(Selection::Jumper(id));
+                            }
+                        }
+                        Err(e) => self.status = Some((e, true)),
+                    },
+                }
             }
             (Tool::AddAlignment, _) => match u.at {
                 Some(at) => match crate::editors::insert_alignment_point(model, at) {
@@ -756,6 +878,58 @@ impl Ready {
             page.open(path);
         }
         !self.status.as_ref().is_some_and(|s| s.1)
+    }
+
+    /// ⌘S / Ctrl+S: library pages with changes that read are saved (the
+    /// model reads them again), the project file is written through; table
+    /// changes stay pending (Apply makes them).
+    pub fn save_all(&mut self) {
+        let mut parts = Vec::new();
+        let mut problems = Vec::new();
+        let kinds: Vec<crate::library::LibraryKind> = self
+            .libraries
+            .iter()
+            .filter(|(_, p)| p.dirty())
+            .map(|(k, _)| *k)
+            .collect();
+        for k in kinds {
+            let page = self.libraries.get_mut(&k).expect("listed");
+            match page.save() {
+                Ok(path) => {
+                    parts.push(format!("{}", path.display()));
+                    self.library_saved(k, crate::library::PageAction::Saved(path));
+                }
+                Err(e) => problems.push(format!("{}: {e}", k.title())),
+            }
+        }
+        match &self.model.editing {
+            Ok(e) => match e.session.checkpoint() {
+                Ok(()) => parts.insert(0, "project file".into()),
+                Err(err) => problems.push(format!("project file: {err}")),
+            },
+            Err(_) => problems.push("a line file is not saved here (open a project)".into()),
+        }
+        let pending: usize = self.tables.values().map(|p| p.pending()).sum();
+        if pending > 0 {
+            problems.push(format!(
+                "{pending} table changes still pending — Apply them in their tables"
+            ));
+        }
+        let text = format!(
+            "saved: {}{}",
+            if parts.is_empty() {
+                "nothing".into()
+            } else {
+                parts.join(", ")
+            },
+            if problems.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", problems.join("; "))
+            }
+        );
+        log::info!("{text}");
+        self.status = Some((text, !problems.is_empty()));
     }
 
     /// Shows weather case `k`.
@@ -1065,7 +1239,8 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         || r.move_dialog.is_some()
         || r.confirm.is_some()
         || r.editor.is_some()
-        || r.display_window.is_some();
+        || r.display_window.is_some()
+        || r.lines_window.is_some();
     if open && !r.popup_open {
         let crosshair = r.view3d.rect.map(|x| x.center());
         let at = if r.view3d.captured {
@@ -1161,8 +1336,9 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
     }
     if !ctx.text_edit_focused() {
         // Redo first: Shift+⌘Z also matches ⌘Z when shift is ignored.
-        let (redo, undo, delete, move_key, inventory, slot) = ctx.input_mut(|i| {
+        let (save, redo, undo, delete, move_key, inventory, slot) = ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
+            let save = i.consume_key(Modifiers::COMMAND, Key::S);
             let redo = i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
             let undo = !redo && i.consume_key(Modifiers::COMMAND, Key::Z);
             let digits = [
@@ -1177,6 +1353,7 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
                 Key::Num9,
             ];
             (
+                save,
                 redo,
                 undo,
                 i.consume_key(Modifiers::NONE, Key::Delete)
@@ -1189,6 +1366,9 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
             )
         });
         let editable = r.model.can_edit().is_ok();
+        if save {
+            r.save_all();
+        }
         if undo && editable {
             r.perform(crate::edit::Action::Undo);
         }
@@ -1250,17 +1430,22 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
 /// The tool windows: hotbar, inventory, Go to, Move structure, the
 /// editor, the confirmation of a deletion.
 fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
-    // At the bottom of the 3D view.
-    let at = r
-        .view3d
-        .rect
-        .map_or(ctx.content_rect().center_bottom(), |v| v.center_bottom());
+    // At the bottom of the 3D view, else of the plan (the view in front).
+    let view = match (r.view3d.drawn, r.plan.drawn) {
+        (true, _) => r.view3d.rect,
+        (false, Some(p)) => Some(p),
+        (false, None) => r.view3d.rect,
+    };
+    r.view3d.drawn = false;
+    r.plan.drawn = None;
+    let at = view.map_or(ctx.content_rect().center_bottom(), |v| v.center_bottom());
     crate::tools::hotbar_ui(ctx, &mut r.hotbar, at, r.inventory);
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
     move_window(ctx, r);
     editor_window(ctx, r);
     display_window(ctx, r);
+    lines_window(ctx, r);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
     };
@@ -1299,6 +1484,197 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
         }
         Some(false) => r.confirm = None,
         None => {}
+    }
+}
+
+/// The Lines menu: the project lines (frozen states of the line, e.g. as
+/// built and as planned) to show next to the working line, to make the
+/// working line; create and delete them.
+fn lines_menu(ui: &mut egui::Ui, r: &mut Ready) {
+    let snapshots = match &r.model.editing {
+        Ok(e) => e.session.snapshots().map_err(|e| e.to_string()),
+        Err(why) => Err(format!("read-only: {why}")),
+    };
+    let snapshots = match snapshots {
+        Ok(s) => s,
+        Err(e) => {
+            ui.label(egui::RichText::new(e).small());
+            return;
+        }
+    };
+    ui.menu_button("Project lines", |ui| {
+        ui.label(
+            egui::RichText::new(format!("{} — the working line (edited)", r.model.line.name))
+                .strong(),
+        );
+        if snapshots.is_empty() {
+            ui.label(egui::RichText::new("No saved line yet: Lines › Create line…").small());
+        }
+        let mut toggle: Option<(String, bool)> = None;
+        for s in &snapshots {
+            ui.horizontal(|ui| {
+                let mut on = r.model.other_lines.iter().any(|o| o.name == s.name);
+                let colour = r
+                    .model
+                    .other_lines
+                    .iter()
+                    .find(|o| o.name == s.name)
+                    .map(|o| egui::Color32::from_rgb(o.color[0], o.color[1], o.color[2]));
+                let mut text = egui::RichText::new(&s.name);
+                if let Some(c) = colour {
+                    text = text.color(c);
+                }
+                if ui
+                    .checkbox(&mut on, text)
+                    .on_hover_text(format!(
+                        "saved {} by {}{}\ntick: show it next to the working line",
+                        s.time.get(..16).unwrap_or(&s.time).replace('T', " "),
+                        s.user,
+                        if s.note.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" — {}", s.note)
+                        }
+                    ))
+                    .changed()
+                {
+                    toggle = Some((s.name.clone(), on));
+                }
+                if ui.small_button("make it the working line…").clicked() {
+                    r.lines_window = Some(LinesWindow::Restore(s.name.clone()));
+                    ui.close();
+                }
+            });
+        }
+        if let Some((name, on)) = toggle {
+            if on {
+                match r.model.show_line(&name) {
+                    Ok(m) => r.status = Some((m, false)),
+                    Err(e) => r.status = Some((e, true)),
+                }
+            } else {
+                r.model.other_lines.retain(|o| o.name != name);
+            }
+            r.view3d.dirty.insert(Layer::OtherLines);
+        }
+    });
+    ui.separator();
+    if ui
+        .button("Create line…")
+        .on_hover_text(
+            "Freeze the working line as it is now (e.g. as built), to compare or draw later",
+        )
+        .clicked()
+    {
+        let name = crate::editors::next_id(snapshots.iter().map(|s| s.name.as_str()), "line 0");
+        r.lines_window = Some(LinesWindow::Create(name, String::new()));
+        ui.close();
+    }
+    ui.add_enabled_ui(!snapshots.is_empty(), |ui| {
+        ui.menu_button("Delete line", |ui| {
+            for s in &snapshots {
+                if ui.button(&s.name).clicked() {
+                    r.lines_window = Some(LinesWindow::Delete(s.name.clone()));
+                    ui.close();
+                }
+            }
+        });
+    });
+}
+
+/// The windows of the Lines menu.
+fn lines_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(mut w) = r.lines_window.clone() else {
+        return;
+    };
+    let (mut ok, mut cancel) = (false, false);
+    let title = match &w {
+        LinesWindow::Create(..) => "Create project line".to_owned(),
+        LinesWindow::Delete(n) => format!("Delete project line {n}?"),
+        LinesWindow::Restore(n) => format!("Make {n} the working line?"),
+    };
+    tool_window(r, "lines", title).show(ctx, |ui| {
+        match &mut w {
+            LinesWindow::Create(name, note) => {
+                ui.label("Saves the working line as it is now, to show next to it later (e.g. as built, as planned) or to draw.");
+                egui::Grid::new("create-line").num_columns(2).show(ui, |ui| {
+                    ui.label("name");
+                    ui.text_edit_singleline(name);
+                    ui.end_row();
+                    ui.label("note");
+                    ui.text_edit_singleline(note);
+                    ui.end_row();
+                });
+            }
+            LinesWindow::Delete(_) => {
+                ui.label("The project line is deleted; the working line is not touched. This is not undone with ⌘Z.");
+            }
+            LinesWindow::Restore(_) => {
+                ui.label("The working line is replaced by this project line — one log entry: ⌘Z (Undo) brings the working line back. To keep the working line as it is now, Create line first.");
+            }
+        }
+        ui.horizontal(|ui| {
+            ok |= ui
+                .button(match &w {
+                    LinesWindow::Create(..) => "Create",
+                    LinesWindow::Delete(_) => "Delete",
+                    LinesWindow::Restore(_) => "Make it the working line",
+                })
+                .clicked();
+            cancel |= ui.button("Cancel").on_hover_text("Escape").clicked();
+        });
+    });
+    cancel |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    if cancel {
+        r.lines_window = None;
+        return;
+    }
+    if !ok {
+        r.lines_window = Some(w);
+        return;
+    }
+    let Ok(e) = &r.model.editing else {
+        r.status = Some(("read-only: open a project to edit".into(), true));
+        r.lines_window = None;
+        return;
+    };
+    let result = match &w {
+        LinesWindow::Create(name, note) => e
+            .session
+            .save_snapshot(&e.user, name, note)
+            .map(|()| format!("project line \"{}\" saved", name.trim())),
+        LinesWindow::Delete(name) => e
+            .session
+            .delete_snapshot(&e.user, name)
+            .map(|()| format!("project line \"{name}\" deleted")),
+        LinesWindow::Restore(name) => match e.session.snapshot(name) {
+            Ok(line) => {
+                // One command: undone with the others.
+                r.perform(crate::edit::Action::Command {
+                    what: format!("made project line {name} the working line"),
+                    command: ols_session::Command::ReplaceLine {
+                        line: Box::new(line),
+                    },
+                });
+                r.lines_window = None;
+                return;
+            }
+            Err(e) => Err(e),
+        },
+    };
+    match result {
+        Ok(m) => {
+            if let LinesWindow::Delete(name) = &w {
+                r.model.other_lines.retain(|o| &o.name != name);
+                r.view3d.dirty.insert(Layer::OtherLines);
+            }
+            r.status = Some((m, false));
+            r.lines_window = None;
+        }
+        Err(e) => {
+            r.status = Some((e.to_string(), true));
+            r.lines_window = Some(w);
+        }
     }
 }
 
@@ -1722,6 +2098,7 @@ fn menus(
     ui.menu_button("File", |ui| {
         ui.label(egui::RichText::new(r.model.sources.file.display().to_string()).small());
         ui.separator();
+        item(ui, Command::Save, out);
         if ui.button("Quit").clicked() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
@@ -1774,6 +2151,7 @@ fn menus(
             ui.close();
         }
     });
+    ui.menu_button("Lines", |ui| lines_menu(ui, r));
     ui.menu_button("Tools", |ui| {
         item(ui, Command::Inventory, out);
         ui.separator();
@@ -1896,6 +2274,7 @@ fn run_command(
             open_page(dock, Tab::Clearances);
         }
         Command::Library(k) => open_page(dock, Tab::Library(k)),
+        Command::Save => r.save_all(),
         Command::DisplayCases => {
             let shown = r.model.shown(r.case);
             r.display_window = Some(
@@ -2164,6 +2543,12 @@ impl eframe::App for App {
                 });
                 for c in commands {
                     run_command(ui.ctx(), ready, &mut self.dock, c);
+                }
+                if let Some((tab, filter)) = ready.open_page.take() {
+                    open_page(&mut self.dock, tab);
+                    if let (Tab::Table(k), Some(f)) = (tab, filter) {
+                        ready.tables.entry(k).or_default().filter = f;
+                    }
                 }
                 if self.customize {
                     let mut open = true;
