@@ -468,14 +468,23 @@ pub fn check(
         });
     }
     let reach = rules.iter().map(Rule::reach).fold(0.0, f64::max);
-    let set = WireSet::new(wires.clone(), reach);
-    // Point rules (those applying to this case) from the points in memory.
-    let mut point_checks: Vec<Option<PointCheck>> = rules
+    // The parts of the wires each rule checks (exclusion zones), indexed.
+    let parts: Vec<Vec<Wire>> = rules
         .iter()
-        .filter(|r| matches!(r.target, Target::Points { .. }))
+        .map(|r| ols_clearance::checks::checked_parts(r, &wires))
+        .collect();
+    let sets: Vec<WireSet> = parts
+        .iter()
+        .map(|w| WireSet::new(w.clone(), reach))
+        .collect();
+    // Point rules (those applying to this case) from the points in memory.
+    let mut point_checks: Vec<Option<(usize, PointCheck)>> = rules
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| matches!(r.target, Target::Points { .. }))
         .zip(&p.point_classes)
-        .map(|(rule, classes)| {
-            applies(rule, &case.name).then(|| PointCheck::new(rule, classes, &set))
+        .map(|((ri, rule), classes)| {
+            applies(rule, &case.name).then(|| (ri, PointCheck::new(rule, classes, &sets[ri])))
         })
         .collect();
     if point_checks.iter().any(Option::is_some) {
@@ -485,8 +494,8 @@ pub fn check(
                 p.origin[1] + q[1] as f64 / 1000.0,
                 p.origin[2] + q[2] as f64 / 1000.0,
             );
-            for check in point_checks.iter_mut().flatten() {
-                check.visit(&set, x, y, z, *c);
+            for (ri, check) in point_checks.iter_mut().flatten() {
+                check.visit(&sets[*ri], x, y, z, *c);
             }
         }
     }
@@ -514,9 +523,14 @@ pub fn check(
     let mut rows = String::new();
     for (ri, rule) in rules.iter().enumerate() {
         let point_check = match rule.target {
-            Target::Points { .. } => point_checks.next().expect("one slot per point rule"),
+            Target::Points { .. } => point_checks
+                .next()
+                .expect("one slot per point rule")
+                .map(|(_, check)| check),
             _ => None,
         };
+        // This rule's parts of the wires (exclusion zones).
+        let (wires, set) = (&parts[ri], &sets[ri]);
         if !applies(rule, &case.name) {
             continue;
         }
@@ -528,7 +542,7 @@ pub fn check(
             Target::Ground | Target::Points { .. } => {
                 let results: Vec<WireResult> = match &rule.target {
                     Target::Ground => match &p.ground {
-                        Some(g) => ols_clearance::checks::ground_check(rule, &wires, g),
+                        Some(g) => ols_clearance::checks::ground_check(rule, wires, g),
                         None => {
                             println!("  no ground: give --terrain, --lidar or --pointcloud");
                             continue;
@@ -572,22 +586,22 @@ pub fn check(
             Target::SameLine { include_same_phase } => {
                 let pairs = ols_clearance::checks::wire_pairs(
                     rule,
-                    &wires,
-                    &set,
+                    wires,
+                    set,
                     PairMode::SameLine {
                         include_same_phase: *include_same_phase,
                     },
                 );
                 report_pairs(
-                    ri, rule, &case.name, &wires, &set.wires, &pairs, &mut rows, extras, env,
+                    ri, rule, &case.name, wires, &set.wires, &pairs, &mut rows, extras, env,
                 );
             }
             Target::OtherLines => match &other_set {
                 Some(os) => {
                     let pairs =
-                        ols_clearance::checks::wire_pairs(rule, &wires, os, PairMode::OtherLines);
+                        ols_clearance::checks::wire_pairs(rule, wires, os, PairMode::OtherLines);
                     report_pairs(
-                        ri, rule, &case.name, &wires, &os.wires, &pairs, &mut rows, extras, env,
+                        ri, rule, &case.name, wires, &os.wires, &pairs, &mut rows, extras, env,
                     );
                 }
                 None => println!("  no other line: give --other-line FILE"),
@@ -634,19 +648,24 @@ pub fn cross_cases(
                     let label = format!("{} × {}", a.case, b.case);
                     println!("{} — {label}", rule_header(rule, p));
                     let mut rows = String::new();
+                    // This rule's parts of the wires (exclusion zones).
+                    let a_parts = ols_clearance::checks::checked_parts(rule, &a.wires);
                     match &rule.target {
                         Target::SameLine { include_same_phase } => {
-                            let set = WireSet::new(b.wires.clone(), reach);
+                            let set = WireSet::new(
+                                ols_clearance::checks::checked_parts(rule, &b.wires),
+                                reach,
+                            );
                             let pairs = ols_clearance::checks::wire_pairs(
                                 rule,
-                                &a.wires,
+                                &a_parts,
                                 &set,
                                 PairMode::SameLineOtherCase {
                                     include_same_phase: *include_same_phase,
                                 },
                             );
                             report_pairs(
-                                ri, rule, &label, &a.wires, &set.wires, &pairs, &mut rows, extras,
+                                ri, rule, &label, &a_parts, &set.wires, &pairs, &mut rows, extras,
                                 env,
                             );
                         }
@@ -657,12 +676,12 @@ pub fn cross_cases(
                             let set = WireSet::new(b.other.clone(), reach);
                             let pairs = ols_clearance::checks::wire_pairs(
                                 rule,
-                                &a.wires,
+                                &a_parts,
                                 &set,
                                 PairMode::OtherLines,
                             );
                             report_pairs(
-                                ri, rule, &label, &a.wires, &set.wires, &pairs, &mut rows, extras,
+                                ri, rule, &label, &a_parts, &set.wires, &pairs, &mut rows, extras,
                                 env,
                             );
                         }

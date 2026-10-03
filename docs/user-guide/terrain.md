@@ -92,6 +92,8 @@ radial = "4.5 m"
 | `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
 | `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
 | `cases` | Weather cases the rule applies to, by name (`*` `?` wildcards); default: all cases run. |
+| `exclude_near_ends` | Exclusion zone: the wire within this horizontal distance of its ends (clamps) is not checked, e.g. `"10 m"` — where wires converge at supports by design. |
+| `exclude_spans_at` | Exclusion zone: spans ending at these structures are not checked, e.g. `["con_*"]` for down-leads into cable terminations (wildcards). |
 | `case_pairs` | Wire rules: `[["glaze ice", "max temperature"]]` — the first wire in the first case, the second wire in the second (e.g. an iced upper wire sagging towards a hot lower one); checked after all cases are solved. |
 
 ### Envelopes over weather cases

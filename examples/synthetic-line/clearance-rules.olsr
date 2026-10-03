@@ -33,3 +33,9 @@ name = "Ground at maximum temperature"
 target = "ground"
 vertical = "7.5 m"
 cases = ["max temperature"]
+
+[[rule]]
+name = "Ground away from the supports"
+target = "ground"
+vertical = "7 m"
+exclude_near_ends = "15 m"

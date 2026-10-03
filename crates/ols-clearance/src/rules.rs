@@ -48,6 +48,11 @@
 //! - `case_pairs = [["glaze ice", "everyday"]]` (wire rules): the first
 //!   wire in the first case, the second wire in the second — e.g. an iced
 //!   upper wire sagging onto a lower wire without ice.
+//! - Exclusion zones, where wires come close by design (at supports, down
+//!   to cable terminations): `exclude_near_ends = "10 m"` leaves out the
+//!   wire within that horizontal distance of its ends;
+//!   `exclude_spans_at = ["con_*"]` leaves out spans ending at those
+//!   structures.
 
 use std::path::Path;
 
@@ -103,6 +108,12 @@ pub struct Rule {
     /// case, the second wire in the second (e.g. an iced upper wire over a
     /// cold lower one). Empty: both wires in the same case.
     pub case_pairs: Vec<[String; 2]>,
+    /// Exclusion zone: the wire within this horizontal distance of each of
+    /// its ends (the clamps) is not checked, m (0: none).
+    pub exclude_near_ends: f64,
+    /// Exclusion zone: spans ending at these structures (names, `*` `?`
+    /// wildcards) are not checked — e.g. down-leads to cable terminations.
+    pub exclude_spans_at: Vec<String>,
 }
 
 impl Rule {
@@ -150,6 +161,10 @@ struct RawRule {
     cases: Vec<String>,
     #[serde(default)]
     case_pairs: Vec<[String; 2]>,
+    #[serde(default)]
+    exclude_near_ends: Option<Length>,
+    #[serde(default)]
+    exclude_spans_at: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -245,6 +260,8 @@ impl RuleSet {
                     search_margin: r.search_margin.map_or(DEFAULT_SEARCH_MARGIN, |l| l.si()),
                     cases: r.cases,
                     case_pairs: r.case_pairs,
+                    exclude_near_ends: r.exclude_near_ends.map_or(0.0, |l| l.si().max(0.0)),
+                    exclude_spans_at: r.exclude_spans_at,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -273,6 +290,8 @@ impl RuleSet {
                 search_margin: DEFAULT_SEARCH_MARGIN,
                 cases: Vec::new(),
                 case_pairs: Vec::new(),
+                exclude_near_ends: 0.0,
+                exclude_spans_at: Vec::new(),
             }],
         }
     }

@@ -214,30 +214,8 @@ pub fn name_matches(pattern: &str, name: &str) -> bool {
     matches(pattern, name)
 }
 
-/// `*` (any text) and `?` (one character) wildcards, case-insensitive.
 fn matches(pattern: &str, text: &str) -> bool {
-    let (p, t): (Vec<char>, Vec<char>) = (
-        pattern.to_lowercase().chars().collect(),
-        text.to_lowercase().chars().collect(),
-    );
-    let (mut i, mut j, mut star, mut mark) = (0, 0, None, 0);
-    while j < t.len() {
-        if i < p.len() && (p[i] == '?' || p[i] == t[j]) {
-            i += 1;
-            j += 1;
-        } else if i < p.len() && p[i] == '*' {
-            star = Some(i);
-            mark = j;
-            i += 1;
-        } else if let Some(s) = star {
-            i = s + 1;
-            mark += 1;
-            j = mark;
-        } else {
-            return false;
-        }
-    }
-    p[i..].iter().all(|c| *c == '*')
+    ols_core::pattern::matches(pattern, text)
 }
 
 impl WeatherCases {

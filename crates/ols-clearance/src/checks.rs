@@ -90,6 +90,71 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
     wires
 }
 
+/// The structure of an attachment key `structure:set:phase`.
+fn structure_of(key: &str) -> &str {
+    key.rsplitn(3, ':').last().unwrap_or(key)
+}
+
+/// The parts of `wires` that `rule` checks, in the same order (a wire left
+/// out entirely has no points): without spans ending at a structure of
+/// `exclude_spans_at`, and without the wire within `exclude_near_ends`
+/// (horizontal distance along the wire) of its ends — cut at the exact
+/// distance.
+pub fn checked_parts(rule: &Rule, wires: &[Wire]) -> Vec<Wire> {
+    let d = rule.exclude_near_ends;
+    wires
+        .iter()
+        .map(|w| {
+            let mut part = w.clone();
+            let excluded = w.ends.iter().any(|e| {
+                rule.exclude_spans_at
+                    .iter()
+                    .any(|p| ols_core::pattern::matches(p, structure_of(e)))
+            });
+            if excluded {
+                part.points.clear();
+                return part;
+            }
+            if d <= 0.0 || w.points.len() < 2 {
+                return part;
+            }
+            // Horizontal distance along the wire at every point.
+            let mut along = vec![0.0];
+            for s in w.points.windows(2) {
+                let last = *along.last().expect("starts with 0");
+                along.push(last + (s[1][0] - s[0][0]).hypot(s[1][1] - s[0][1]));
+            }
+            let total = *along.last().expect("points");
+            if total <= 2.0 * d {
+                part.points.clear();
+                return part;
+            }
+            let at = |t: f64| {
+                let k = along.partition_point(|&a| a < t).clamp(1, along.len() - 1);
+                let (a0, a1) = (along[k - 1], along[k]);
+                let f = if a1 > a0 { (t - a0) / (a1 - a0) } else { 0.0 };
+                let (p, q) = (w.points[k - 1], w.points[k]);
+                [
+                    p[0] + (q[0] - p[0]) * f,
+                    p[1] + (q[1] - p[1]) * f,
+                    p[2] + (q[2] - p[2]) * f,
+                ]
+            };
+            let mut pts = vec![at(d)];
+            pts.extend(
+                w.points
+                    .iter()
+                    .zip(&along)
+                    .filter(|(_, a)| **a > d && **a < total - d)
+                    .map(|(p, _)| *p),
+            );
+            pts.push(at(total - d));
+            part.points = pts;
+            part
+        })
+        .collect()
+}
+
 /// Wires with a plan grid of their segments, each segment listed in every
 /// cell within `reach` of it.
 #[derive(Debug, Clone)]
@@ -531,6 +596,43 @@ mod tests {
 
     fn rule(text: &str) -> Rule {
         RuleSet::parse(text).unwrap().rules.remove(0)
+    }
+
+    #[test]
+    fn exclusion_zones() {
+        let mut w = straight("S1", "L1", [0.0, 0.0, 20.0], [100.0, 0.0, 30.0]);
+        w.ends = vec!["T1:1:1".into(), "con_7:2:1".into()];
+        let other = Wire {
+            ends: vec!["T2:1:1".into(), "T3:1:1".into()],
+            ..straight("S2", "L1", [0.0, 5.0, 20.0], [100.0, 5.0, 20.0])
+        };
+        let near = rule(
+            "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 1.0\nexclude_near_ends = \"10 m\"",
+        );
+        let parts = checked_parts(&near, &[w.clone(), other.clone()]);
+        // Cut 10 m in from each end, exactly (heights interpolated).
+        let (first, last) = (parts[0].points[0], *parts[0].points.last().unwrap());
+        assert!(
+            (first[0] - 10.0).abs() < 1e-9 && (first[2] - 21.0).abs() < 1e-9,
+            "{first:?}"
+        );
+        assert!(
+            (last[0] - 90.0).abs() < 1e-9 && (last[2] - 29.0).abs() < 1e-9,
+            "{last:?}"
+        );
+        assert!(
+            parts[0]
+                .points
+                .iter()
+                .all(|p| p[0] >= 10.0 - 1e-9 && p[0] <= 90.0 + 1e-9)
+        );
+        // Spans at a cable termination: left out entirely.
+        let at = rule(
+            "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 1.0\nexclude_spans_at = [\"CON_*\"]",
+        );
+        let parts = checked_parts(&at, &[w, other]);
+        assert!(parts[0].points.is_empty());
+        assert_eq!(parts[1].points.len(), 51);
     }
 
     #[test]
