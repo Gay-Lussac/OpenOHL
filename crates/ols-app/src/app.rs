@@ -59,6 +59,8 @@ pub struct Ready {
     pub plan: PlanView,
     /// Profile view.
     pub profile: ProfileView,
+    /// The "Go to structure" window, when open: the structure chosen.
+    pub goto: Option<String>,
 }
 
 impl Ready {
@@ -77,6 +79,7 @@ impl Ready {
             view3d,
             plan: PlanView::default(),
             profile: ProfileView::default(),
+            goto: None,
         }
     }
 }
@@ -228,6 +231,76 @@ impl TabViewer for Viewer<'_> {
         if r.selection != before {
             r.view3d.dirty.insert(Layer::Selection);
         }
+    }
+}
+
+impl Ready {
+    /// Selects structure `id` and brings every view to it: the 3D camera
+    /// within 150 m, the plan centred on it.
+    pub fn go_to_structure(&mut self, id: &str) {
+        self.selection = Selection::Structure(id.to_owned());
+        self.view3d.dirty.insert(Layer::Selection);
+        if let Some(f) = self.selection.focus(&self.model, self.case) {
+            if let Some(cam) = self.view3d.camera.as_mut() {
+                cam.target = f;
+                cam.distance = cam.distance.min(150.0);
+            }
+            self.plan.centre_on(f);
+        }
+    }
+}
+
+/// G opens "Go to structure" (not while typing; a captured mouse is
+/// freed first); Enter goes, Escape closes.
+fn goto_window(ctx: &egui::Context, r: &mut Ready) {
+    let open_key = !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::G));
+    if open_key && r.goto.is_none() {
+        if r.view3d.captured {
+            crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
+        }
+        let current = match &r.selection {
+            Selection::Structure(id) => Some(id.clone()),
+            _ => None,
+        };
+        r.goto = current.or_else(|| r.model.line.structures.first().map(|s| s.id.clone()));
+    }
+    let Some(mut chosen) = r.goto.clone() else {
+        return;
+    };
+    let mut go = false;
+    let mut close = false;
+    egui::Window::new("Go to structure")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
+        .show(ctx, |ui| {
+            egui::ComboBox::from_id_salt("goto-structure")
+                .selected_text(&chosen)
+                .width(220.0)
+                .height(400.0)
+                .show_ui(ui, |ui| {
+                    for s in &r.model.line.structures {
+                        let text = match &s.structure_type {
+                            Some(t) => format!("{}  ({t})", s.id),
+                            None => s.id.clone(),
+                        };
+                        ui.selectable_value(&mut chosen, s.id.clone(), text);
+                    }
+                });
+            ui.horizontal(|ui| {
+                go |= ui.button("Go").clicked();
+                close |= ui.button("Close").clicked();
+            });
+        });
+    go |= ctx.input(|i| i.key_pressed(egui::Key::Enter));
+    close |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    if go {
+        r.go_to_structure(&chosen);
+        r.goto = None;
+    } else if close {
+        r.goto = None;
+    } else {
+        r.goto = Some(chosen);
     }
 }
 
@@ -410,6 +483,7 @@ impl eframe::App for App {
                 });
             }
             State::Ready(ready) => {
+                goto_window(ui.ctx(), ready);
                 egui::Panel::top("top").show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.strong("OLS CAD");

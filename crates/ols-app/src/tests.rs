@@ -523,3 +523,53 @@ fn lidar_points_can_be_picked() {
         Selection::LidarPoint(0)
     );
 }
+
+/// G opens "Go to structure"; Enter goes there (selection, 3D camera),
+/// Escape closes without going.
+#[test]
+fn g_goes_to_a_structure() {
+    let model = synthetic();
+    let gpu = ols_render::headless_device().is_ok();
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    let key = |h: &mut Harness<'_, App>, key| {
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        h.run();
+    };
+    key(&mut harness, egui::Key::G);
+    assert_eq!(
+        harness.state_mut().ready().unwrap().goto.as_deref(),
+        Some("T1")
+    );
+    harness.get_by_label("Go to structure");
+    // Escape closes it.
+    key(&mut harness, egui::Key::Escape);
+    assert!(harness.state_mut().ready().unwrap().goto.is_none());
+    // Again, choose T6, Enter.
+    key(&mut harness, egui::Key::G);
+    harness.state_mut().ready().unwrap().goto = Some("T6".into());
+    harness.run();
+    key(&mut harness, egui::Key::Enter);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.goto.is_none());
+    assert_eq!(r.selection, Selection::Structure("T6".into()));
+    if gpu {
+        let cam = r.view3d.camera.unwrap();
+        let f = r.selection.focus(&r.model, 0).unwrap();
+        assert_eq!(cam.target, f);
+        assert!(cam.distance <= 150.0);
+    }
+}

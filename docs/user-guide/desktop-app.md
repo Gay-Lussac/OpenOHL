@@ -45,6 +45,7 @@ The 3D view is navigated with the mouse and, while the pointer is over it, the k
 | scroll | zoom |
 | right or middle drag | pan |
 | double-click | fly to the object |
+| G | go to a structure: a window with every structure in a list; Enter goes (selects it, brings the 3D view within 150 m and centres the plan), Escape closes |
 
 Two schemes, chosen in the Model panel (Controls):
 
