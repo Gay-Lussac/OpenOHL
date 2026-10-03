@@ -11,10 +11,82 @@
 //! polyline (the closest segment); the offset is positive to the right
 //! looking ahead. Without PIs, the alignment is the polyline through the
 //! route's structures.
+//!
+//! The alignment is the base of the plan and profile drawings, kept apart
+//! from the line design: its points ([`AlignmentPoint`]) are usually placed
+//! under the structures and **tied** to them (they follow when a structure
+//! moves), and each can be moved or detached on its own.
 
 use serde::{Deserialize, Serialize};
 
 use crate::{Line, LineError, Point};
+
+/// A point of an alignment (PI).
+///
+/// In files a free point is `[x, y, z]`; a point tied to a structure is
+/// `{"position": [x, y, z], "structure": "T12"}` and must lie under it (in
+/// plan, within 1 mm).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "AlignmentRepr", into = "AlignmentRepr")]
+pub struct AlignmentPoint {
+    /// Position.
+    pub position: Point,
+    /// Structure it is tied to (it follows the structure when it moves).
+    pub structure: Option<String>,
+}
+
+impl AlignmentPoint {
+    /// A free point.
+    pub fn free(position: Point) -> Self {
+        Self {
+            position,
+            structure: None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum AlignmentRepr {
+    Free(Point),
+    Tied {
+        position: Point,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        structure: Option<String>,
+    },
+}
+
+impl From<AlignmentRepr> for AlignmentPoint {
+    fn from(r: AlignmentRepr) -> Self {
+        match r {
+            AlignmentRepr::Free(position) => Self::free(position),
+            AlignmentRepr::Tied {
+                position,
+                structure,
+            } => Self {
+                position,
+                structure,
+            },
+        }
+    }
+}
+
+impl From<AlignmentPoint> for AlignmentRepr {
+    fn from(a: AlignmentPoint) -> Self {
+        match a.structure {
+            None => Self::Free(a.position),
+            Some(s) => Self::Tied {
+                position: a.position,
+                structure: Some(s),
+            },
+        }
+    }
+}
+
+/// Positions of alignment points.
+pub fn positions(alignment: &[AlignmentPoint]) -> Vec<Point> {
+    alignment.iter().map(|a| a.position).collect()
+}
 
 /// A route through the line.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -27,7 +99,7 @@ pub struct Route {
     pub name: String,
     /// Alignment points (PIs) in order; empty = through the structures.
     #[serde(default)]
-    pub alignment: Vec<Point>,
+    pub alignment: Vec<AlignmentPoint>,
     /// Structure ids in order along the route.
     pub structures: Vec<String>,
 }
@@ -105,7 +177,7 @@ impl Route {
     /// when it has none.
     pub fn centreline(&self, line: &Line) -> Vec<Point> {
         if self.alignment.len() >= 2 {
-            self.alignment.clone()
+            positions(&self.alignment)
         } else {
             self.structures
                 .iter()
@@ -125,8 +197,9 @@ impl Route {
                 })
             })
             .collect::<Result<_, _>>()?;
+        let pis = self::positions(&self.alignment);
         let alignment = if self.alignment.len() >= 2 {
-            &self.alignment
+            &pis
         } else {
             &positions
         };
@@ -173,6 +246,20 @@ impl Line {
             alignment: self.alignment.clone(),
             structures: self.structures.iter().map(|s| s.id.clone()).collect(),
         }]
+    }
+
+    /// Alignment points tied to each structure, under it: one per
+    /// structure of the route (the usual starting alignment).
+    pub fn alignment_under_structures(&self, route: &Route) -> Vec<AlignmentPoint> {
+        route
+            .structures
+            .iter()
+            .filter_map(|id| self.structure(id))
+            .map(|s| AlignmentPoint {
+                position: s.position,
+                structure: Some(s.id.clone()),
+            })
+            .collect()
     }
 
     /// Routes a structure belongs to.

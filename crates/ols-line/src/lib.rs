@@ -29,7 +29,7 @@ pub mod library;
 pub mod route;
 pub mod solve;
 
-pub use route::{Route, Station};
+pub use route::{AlignmentPoint, Route, Station};
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -71,7 +71,7 @@ pub struct Line {
     /// Alignment points (PIs) of the implicit single route, used when
     /// `routes` is empty (files written before routes existed).
     #[serde(default)]
-    pub alignment: Vec<Point>,
+    pub alignment: Vec<AlignmentPoint>,
     /// Routes (alignments with their structures); see [`route`].
     #[serde(default)]
     pub routes: Vec<Route>,
@@ -380,6 +380,25 @@ impl Line {
         }
     }
 
+    /// Tied alignment points must be under an existing structure.
+    fn check_alignment(&self, what: &str, alignment: &[AlignmentPoint]) -> Result<(), LineError> {
+        for (k, a) in alignment.iter().enumerate() {
+            let Some(id) = &a.structure else { continue };
+            let Some(s) = self.structure(id) else {
+                return Err(LineError::Invalid(format!(
+                    "{what}: alignment point {k} is tied to unknown structure {id}"
+                )));
+            };
+            let d = (a.position[0] - s.position[0]).hypot(a.position[1] - s.position[1]);
+            if d > 0.001 {
+                return Err(LineError::Invalid(format!(
+                    "{what}: alignment point {k} is tied to {id} but {d:.3} m away from it (detach it to move it)"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Checks references and basic consistency.
     pub fn validate(&self) -> Result<(), LineError> {
         let invalid = |m: String| Err(LineError::Invalid(m));
@@ -436,6 +455,7 @@ impl Line {
                 }
             }
         }
+        self.check_alignment("line alignment", &self.alignment)?;
         let mut route_ids = BTreeMap::new();
         for r in &self.routes {
             if route_ids.insert(r.id.as_str(), ()).is_some() {
@@ -450,6 +470,7 @@ impl Line {
                     r.id
                 ));
             }
+            self.check_alignment(&format!("route {}", r.id), &r.alignment)?;
             if let Some(s) = r.structures.iter().find(|s| self.structure(s).is_none()) {
                 return invalid(format!("route {}: unknown structure {s}", r.id));
             }

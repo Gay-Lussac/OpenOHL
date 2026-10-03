@@ -41,16 +41,17 @@ pub enum ProjectCommand {
         /// Command, e.g. '{"op": "move_structure", "id": "T4", "position": [x, y, z]}'.
         command: String,
     },
-    /// Delete a structure. Without --confirm, lists everything that would
-    /// be deleted with it (attachments and insulators, sections, jumpers,
-    /// routes) and changes nothing.
-    DeleteStructure {
+    /// Delete an object (structure, section, jumper, route). When it takes
+    /// others with it, lists them and changes nothing unless --confirm.
+    Delete {
         /// Project file.
         project: PathBuf,
         /// User name.
         #[arg(long)]
         user: String,
-        /// Structure id.
+        /// Kind: structure, section, jumper or route.
+        kind: String,
+        /// Id.
         id: String,
         /// Delete it with everything listed.
         #[arg(long)]
@@ -160,32 +161,32 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             let mut s = open(&project)?;
             report(&s.apply(&user, command).map_err(|e| e.to_string())?);
         }
-        ProjectCommand::DeleteStructure {
+        ProjectCommand::Delete {
             project,
             user,
+            kind,
             id,
             confirm,
         } => {
+            let kind: ols_session::Kind =
+                serde_json::from_value(serde_json::Value::String(kind.clone())).map_err(|_| {
+                    format!("unknown kind \"{kind}\" (structure, section, jumper, route)")
+                })?;
             let mut s = open(&project)?;
-            match s.apply(&user, Command::DeleteStructure { id, confirm }) {
+            match s.apply(&user, Command::Delete { kind, id, confirm }) {
                 Ok(a) => report(&a),
                 Err(ols_session::SessionError::NeedsConfirmation(i)) => {
-                    let list = |title: &str, v: &[String]| {
-                        if !v.is_empty() {
+                    println!("Deleting {} {} would also affect:", i.kind.as_str(), i.id);
+                    for (title, items) in i.groups() {
+                        if !items.is_empty() {
                             println!("  {title}:");
-                            for x in v {
+                            for x in items {
                                 println!("    - {x}");
                             }
                         }
-                    };
-                    println!("Deleting structure {} would also delete:", i.structure);
-                    list("attachments and insulators", &i.attachments);
-                    list("sections through it", &i.sections);
-                    list("jumpers at it", &i.jumpers);
-                    list("routes (fewer than two structures left)", &i.routes_deleted);
-                    list("and take it out of routes", &i.routes_changed);
+                    }
                     println!(
-                        "Nothing was changed. Repeat with --confirm to delete all of this (it is logged and can be undone)."
+                        "Nothing was changed. Repeat with --confirm to apply all of this (it is logged and can be undone)."
                     );
                     return Err("confirmation needed".into());
                 }

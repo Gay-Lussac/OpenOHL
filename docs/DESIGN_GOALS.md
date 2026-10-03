@@ -165,6 +165,16 @@ A line can have **several routes**. A route is an alignment (PIs) plus the order
 - **Wire sections are independent of routes**: they reference structures by id, so a section can run along one route, cross onto another at a shared structure, or follow a parallel route.
 - Stationing, line angles and offsets are computed **per route**; a shared structure has one station per route it belongs to.
 - Lines without explicit routes have one implicit route through all structures in file order (backwards compatible).
+- **Alignments are independent of the line design.** The alignment drives the plan and profile drawings; its points are usually placed under the pylons and **tied** to them (they follow when a pylon moves), but each point can be moved, detached, inserted or removed on its own, so drawings and stationing do not have to change with every design change.
+
+## 9a. Deleting objects
+
+One rule for every deletion: when an object takes others with it, the deletion is **refused with the full list** of what would go (or be changed) and must be confirmed; then everything is deleted as **one logged command** with a note, undoable as a whole.
+
+- A **structure** takes its attachments and insulators, the sections through it (a section cannot lose a point), the jumpers at its attachments or at points of those sections; it is taken out of routes (routes left with fewer than two structures are deleted), and alignment points tied to it are detached (they stay in place).
+- A **section** takes the jumpers at its points.
+- Jumpers and routes take nothing else; the line settings cannot be deleted.
+- Undo, redo and rollback replay exactly what was recorded (no new cascade), and restore objects in their original order.
 
 ## 10. Structure library (`.olss`)
 

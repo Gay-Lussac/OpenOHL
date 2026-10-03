@@ -25,27 +25,51 @@ none.
 | `op` | Fields | Effect |
 |---|---|---|
 | `put` | `kind`, `id`, `value` | Create or replace an object: `meta` (id `line`: `{name, crs, alignment, display}`), `route`, `structure` (with its attachments), `section` (with stringing and loads), `jumper` — `value` as in the line file. |
-| `delete` | `kind`, `id` | Delete an object. |
+| `delete` | `kind`, `id`, `confirm` | Delete an object; when it takes others with it, `confirm` is needed — see below. |
 | `move_structure` | `id`, `position` | Move a structure; its attachments move with it. |
 | `set_stringing` | `section`, `stringing` | Change a section's stringing. |
-| `delete_structure` | `id`, `confirm` | Delete a structure with everything that depends on it — see below. |
+| `delete_structure` | `id`, `confirm` | Same as `delete` with kind `structure`. |
+| `align_under_structures` | `route` | Replace a route's alignment by points tied under each of its structures. |
+| `move_alignment_point` | `route`, `index`, `position` | Move an alignment point (`route: "line"` for the line's own alignment); a tied point is detached. |
+| `insert_alignment_point` / `remove_alignment_point` | `route`, `index` (`position`) | Add a free point before `index`, or remove one. |
+| `tie_alignment_point` / `detach_alignment_point` | `route`, `index` (`structure`) | Tie a point under a structure (it then follows it), or detach it (it stays in place). |
 | `batch` | `commands` | Several commands together. |
 
-### Deleting a structure
+### Deleting objects
 
-A structure cannot disappear alone: its attachments and insulators go with it, a section cannot lose one of its points, jumpers hang on its attachments, routes list it. `delete_structure` without `confirm` changes nothing and answers with the full list:
+One rule for every deletion: an object that takes others with it is not deleted until confirmed. Without `confirm` nothing changes and the answer lists everything that would go or change:
 
 ```text
-$ ols project delete-structure project.ols --user ana T3
-Deleting structure T3 would also delete:
-  attachments and insulators: 1:1 suspension, 1:2 suspension, 2:1 branch dead-end
-  sections through it: S1, S2, S3
-  jumpers at it: J-T3-branch
-  and take it out of routes: main, branch
-Nothing was changed. Repeat with --confirm to delete all of this (it is logged and can be undone).
+$ ols project delete project.ols --user ana structure T7
+Deleting structure T7 would also affect:
+  attachments and insulators:
+    - 1:1 dead-end
+  sections:
+    - S3
+  jumpers:
+    - J-T3-branch
+  taken out of routes:
+    - branch
+  alignment points detached (they stay in place):
+    - branch #2
+Nothing was changed. Repeat with --confirm to apply all of this (it is logged and can be undone).
 ```
 
-With `--confirm` (`"confirm": true`) everything listed is deleted as **one log entry** with a note of what went; routes left with fewer than two structures are deleted, others lose the structure. Undo (or an admin rollback) restores all of it, in its original order.
+- **structure**: its attachments and insulators, the sections through it (a section cannot lose a point), jumpers at its attachments or at points of those sections; routes lose it (or are deleted when fewer than two structures are left); tied alignment points are detached.
+- **section**: the jumpers at its points.
+- **jumper**, **route**: nothing else — deleted directly (still logged).
+
+With `--confirm` (`"confirm": true`) everything listed is applied as **one log entry** with a note of what went. Undo (or an admin rollback) restores all of it, in its original order.
+
+### Alignments
+
+The alignment of a route is the base of its plan and profile drawings, kept apart from the line design. Usually its points sit under the pylons, **tied** to them: they follow when a pylon moves. Any point can be moved (which detaches it), detached, re-tied, inserted or removed:
+
+```bash
+ols project apply project.ols --user ana '{"op": "align_under_structures", "route": "main"}'
+ols project apply project.ols --user ana '{"op": "move_alignment_point", "route": "main", "index": 3, "position": [2600410.0, 1200125.0, 0.0]}'
+ols project apply project.ols --user ana '{"op": "tie_alignment_point", "route": "main", "index": 3, "structure": "T4"}'
+```
 
 Each applied command is logged with the user, the time, its inverse, the
 objects it changed and the **sections to recalculate** (changed sections,

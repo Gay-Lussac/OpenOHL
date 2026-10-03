@@ -71,10 +71,12 @@ fn commands_are_validated_and_report_dirty_sections() {
             Command::Delete {
                 kind: Kind::Structure,
                 id: "T2".into(),
+                confirm: false,
             },
         )
         .unwrap_err();
-    assert!(matches!(err, SessionError::Refused(_)), "{err}");
+    // It takes sections with it: a confirmation is asked, nothing changes.
+    assert!(matches!(err, SessionError::NeedsConfirmation(_)), "{err}");
     assert_eq!(s.export(), before);
     // A viewer may not edit.
     assert!(
@@ -82,7 +84,8 @@ fn commands_are_validated_and_report_dirty_sections() {
             "vic",
             Command::Delete {
                 kind: Kind::Jumper,
-                id: "J-T3-branch".into()
+                id: "J-T3-branch".into(),
+                confirm: false,
             }
         )
         .unwrap_err()
@@ -103,6 +106,7 @@ fn commands_are_validated_and_report_dirty_sections() {
             Command::Delete {
                 kind: Kind::Structure,
                 id: "T1".into(),
+                confirm: false,
             },
         ],
     };
@@ -236,6 +240,7 @@ fn put_and_delete_objects() {
         Command::Delete {
             kind: Kind::Jumper,
             id: "J2".into(),
+            confirm: false,
         },
     )
     .unwrap();
@@ -337,4 +342,157 @@ fn deleting_the_last_structures_of_a_route_deletes_the_route() {
     )
     .unwrap();
     assert_eq!(s.line().routes.len(), 1);
+}
+
+#[test]
+fn deleting_a_section_takes_its_jumpers() {
+    let (_, mut s) = project("section");
+    let del = |confirm| Command::Delete {
+        kind: Kind::Section,
+        id: "S3".into(),
+        confirm,
+    };
+    let Err(SessionError::NeedsConfirmation(i)) = s.apply("ben", del(false)) else {
+        panic!("confirmation expected");
+    };
+    assert_eq!(i.jumpers, vec!["J-T3-branch"]);
+    assert!(i.sections.is_empty() && i.attachments.is_empty());
+    s.apply("ben", del(true)).unwrap();
+    assert!(s.line().jumpers.is_empty() && s.line().sections.len() == 2);
+    // A section without jumpers goes without confirmation (still logged).
+    let a = s
+        .apply(
+            "ben",
+            Command::Delete {
+                kind: Kind::Section,
+                id: "S2".into(),
+                confirm: false,
+            },
+        )
+        .unwrap();
+    let note = s
+        .log()
+        .unwrap()
+        .into_iter()
+        .find(|e| e.seq == a.seq)
+        .unwrap()
+        .note;
+    assert_eq!(note.as_deref(), Some("delete section S2"));
+    s.undo("ben").unwrap();
+    s.undo("ben").unwrap();
+    assert_eq!(s.export(), example());
+}
+
+#[test]
+fn alignment_points_follow_their_structure_until_detached() {
+    let (_, mut s) = project("alignment");
+    // Points under the branch's structures, tied.
+    s.apply(
+        "ben",
+        Command::AlignUnderStructures {
+            route: "branch".into(),
+        },
+    )
+    .unwrap();
+    let branch = |s: &Session| {
+        s.line()
+            .routes
+            .iter()
+            .find(|r| r.id == "branch")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(branch(&s).alignment.len(), 3);
+    assert_eq!(branch(&s).alignment[1].structure.as_deref(), Some("T6"));
+    // Moving T6 moves its point.
+    let p = position(&s, "T6");
+    let moved = [p[0] + 4.0, p[1], p[2]];
+    s.apply(
+        "ben",
+        Command::MoveStructure {
+            id: "T6".into(),
+            position: moved,
+        },
+    )
+    .unwrap();
+    assert_eq!(branch(&s).alignment[1].position, moved);
+    // Moving the point detaches it; then T6 moves alone.
+    let a = s
+        .apply(
+            "ben",
+            Command::MoveAlignmentPoint {
+                route: "branch".into(),
+                index: 1,
+                position: [moved[0] + 10.0, moved[1], moved[2]],
+            },
+        )
+        .unwrap();
+    assert!(branch(&s).alignment[1].structure.is_none());
+    let note = s
+        .log()
+        .unwrap()
+        .into_iter()
+        .find(|e| e.seq == a.seq)
+        .unwrap()
+        .note
+        .unwrap();
+    assert!(note.contains("detached from T6"), "{note}");
+    s.apply(
+        "ben",
+        Command::MoveStructure {
+            id: "T6".into(),
+            position: p,
+        },
+    )
+    .unwrap();
+    assert_eq!(branch(&s).alignment[1].position[0], moved[0] + 10.0);
+    // Tie it again: back under T6.
+    s.apply(
+        "ben",
+        Command::TieAlignmentPoint {
+            route: "branch".into(),
+            index: 1,
+            structure: "T6".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(branch(&s).alignment[1].position, p);
+    // A tied point away from its structure is invalid.
+    let mut r = branch(&s);
+    r.alignment[1].position[0] += 1.0;
+    let err = s
+        .apply(
+            "ben",
+            Command::Put {
+                kind: Kind::Route,
+                id: "branch".into(),
+                value: serde_json::to_value(&r).unwrap(),
+                ord: None,
+            },
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("tied to T6"), "{err}");
+    // Deleting T7: its point is detached (listed), the branch keeps T3–T6.
+    let impact = s.structure_deletion("T7").unwrap();
+    assert_eq!(impact.alignment_detached, vec!["branch #2"]);
+    s.apply(
+        "ben",
+        Command::DeleteStructure {
+            id: "T7".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    let b = branch(&s);
+    assert_eq!(b.structures, vec!["T3", "T6"]);
+    assert_eq!(b.alignment.len(), 3);
+    assert!(b.alignment[2].structure.is_none());
+    // Files: free points as arrays, tied ones as objects.
+    let text = serde_json::to_string(&b.alignment).unwrap();
+    assert!(
+        text.starts_with(r#"[{"position""#) && text.contains(r#""structure":"T3""#),
+        "{text}"
+    );
+    // T3 and T6 tied (T6 was re-tied above), T7's former point free.
+    assert!(text.ends_with(r#"},[640.0,560.0,496.0]]"#), "{text}");
 }

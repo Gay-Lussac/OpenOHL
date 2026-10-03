@@ -73,65 +73,89 @@ impl fmt::Display for SessionError {
 
 impl std::error::Error for SessionError {}
 
-/// What deleting a structure takes with it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// What deleting an object takes with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Impact {
-    /// The structure.
-    pub structure: String,
-    /// Its attachments with their insulators: `set:phase label (insulator)`.
+    /// Kind of the object deleted.
+    pub kind: Kind,
+    /// Its id.
+    pub id: String,
+    /// Its attachments with their insulators (structures):
+    /// `set:phase label (insulator)`.
     pub attachments: Vec<String>,
-    /// Sections through it (deleted: a section cannot lose a point).
+    /// Sections deleted with it (a section cannot lose a point).
     pub sections: Vec<String>,
-    /// Jumpers at its attachments (deleted).
+    /// Jumpers deleted with it (at its attachments, or at the points of
+    /// deleted sections).
     pub jumpers: Vec<String>,
     /// Routes it is taken out of.
     pub routes_changed: Vec<String>,
     /// Routes deleted (fewer than two structures left).
     pub routes_deleted: Vec<String>,
+    /// Alignment points tied to it, detached (they stay where they are):
+    /// `route #index`.
+    pub alignment_detached: Vec<String>,
+}
+
+impl Impact {
+    fn new(kind: Kind, id: &str) -> Self {
+        Self {
+            kind,
+            id: id.to_owned(),
+            attachments: vec![],
+            sections: vec![],
+            jumpers: vec![],
+            routes_changed: vec![],
+            routes_deleted: vec![],
+            alignment_detached: vec![],
+        }
+    }
+
+    /// Whether the deletion takes anything else with it (then it needs a
+    /// confirmation).
+    pub fn has_dependents(&self) -> bool {
+        !(self.attachments.is_empty()
+            && self.sections.is_empty()
+            && self.jumpers.is_empty()
+            && self.routes_changed.is_empty()
+            && self.routes_deleted.is_empty()
+            && self.alignment_detached.is_empty())
+    }
+
+    /// The dependents as (heading, items), for listing.
+    pub fn groups(&self) -> Vec<(&'static str, &[String])> {
+        vec![
+            ("attachments and insulators", &self.attachments[..]),
+            ("sections", &self.sections[..]),
+            ("jumpers", &self.jumpers[..]),
+            (
+                "routes deleted (fewer than two structures left)",
+                &self.routes_deleted[..],
+            ),
+            ("taken out of routes", &self.routes_changed[..]),
+            (
+                "alignment points detached (they stay in place)",
+                &self.alignment_detached[..],
+            ),
+        ]
+    }
+
+    /// A one-line summary for the log.
+    pub fn summary(&self) -> String {
+        let mut parts = vec![format!("delete {} {}", self.kind.as_str(), self.id)];
+        for (title, items) in self.groups() {
+            if !items.is_empty() {
+                parts.push(format!("{title}: {}", items.join(", ")));
+            }
+        }
+        parts.join("; ")
+    }
 }
 
 impl fmt::Display for Impact {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let list = |v: &[String]| {
-            if v.is_empty() {
-                "none".to_owned()
-            } else {
-                v.join(", ")
-            }
-        };
-        write!(
-            f,
-            "deleting structure {} also deletes its attachments and insulators [{}], sections [{}], jumpers [{}], routes [{}], and takes it out of routes [{}]",
-            self.structure,
-            list(&self.attachments),
-            list(&self.sections),
-            list(&self.jumpers),
-            list(&self.routes_deleted),
-            list(&self.routes_changed)
-        )
-    }
-}
-
-impl Impact {
-    /// A one-line summary for the log.
-    pub fn summary(&self) -> String {
-        format!(
-            "delete structure {} with {} attachment(s), section(s) [{}], jumper(s) [{}]{}{}",
-            self.structure,
-            self.attachments.len(),
-            self.sections.join(", "),
-            self.jumpers.join(", "),
-            if self.routes_deleted.is_empty() {
-                String::new()
-            } else {
-                format!(", route(s) deleted [{}]", self.routes_deleted.join(", "))
-            },
-            if self.routes_changed.is_empty() {
-                String::new()
-            } else {
-                format!(", out of route(s) [{}]", self.routes_changed.join(", "))
-            }
-        )
+        write!(f, "{} also affects — ", self.summary())?;
+        write!(f, "repeat with confirmation to apply")
     }
 }
 
@@ -162,7 +186,8 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn as_str(self) -> &'static str {
+    /// Name as in commands (`structure`, `section`…).
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Meta => "meta",
             Self::Route => "route",
@@ -235,12 +260,19 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ord: Option<i64>,
     },
-    /// Delete an object.
+    /// Delete an object. When it takes others with it (a structure's
+    /// attachments, sections and jumpers; a section's jumpers; routes and
+    /// alignment points), the command is refused with the list
+    /// ([`SessionError::NeedsConfirmation`]) unless `confirm` is set; then
+    /// everything listed is deleted (or detached) as one log entry.
     Delete {
         /// Kind.
         kind: Kind,
         /// Id.
         id: String,
+        /// Confirms the listed dependent deletions.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        confirm: bool,
     },
     /// Move a structure (its attachments move with it).
     MoveStructure {
@@ -256,10 +288,56 @@ pub enum Command {
         /// New stringing.
         stringing: Stringing,
     },
-    /// Delete a structure with everything that depends on it (its
-    /// attachments and insulators, sections through it, jumpers at it; it
-    /// is taken out of routes). Without `confirm` the command is refused
-    /// with the list ([`SessionError::NeedsConfirmation`]).
+    /// Move an alignment point (of route `route`, or `"line"` for the
+    /// line's own alignment). A point tied to a structure is detached.
+    MoveAlignmentPoint {
+        /// Route id (`"line"`: the line alignment).
+        route: String,
+        /// Point index.
+        index: usize,
+        /// New position.
+        position: Point,
+    },
+    /// Insert a free alignment point before `index` (= length: at the end).
+    InsertAlignmentPoint {
+        /// Route id.
+        route: String,
+        /// Index.
+        index: usize,
+        /// Position.
+        position: Point,
+    },
+    /// Remove an alignment point.
+    RemoveAlignmentPoint {
+        /// Route id.
+        route: String,
+        /// Index.
+        index: usize,
+    },
+    /// Tie an alignment point to a structure: it moves under it and then
+    /// follows it.
+    TieAlignmentPoint {
+        /// Route id.
+        route: String,
+        /// Index.
+        index: usize,
+        /// Structure id.
+        structure: String,
+    },
+    /// Detach an alignment point from its structure (it stays in place).
+    DetachAlignmentPoint {
+        /// Route id.
+        route: String,
+        /// Index.
+        index: usize,
+    },
+    /// Replace a route's alignment by points tied under each of its
+    /// structures.
+    AlignUnderStructures {
+        /// Route id.
+        route: String,
+    },
+    /// Same as `delete` with kind `structure`.
     DeleteStructure {
         /// Structure id.
         id: String,
@@ -319,7 +397,7 @@ struct Meta {
     #[serde(default)]
     crs: String,
     #[serde(default)]
-    alignment: Vec<Point>,
+    alignment: Vec<ols_line::AlignmentPoint>,
     #[serde(default)]
     display: ols_line::Display,
 }
@@ -693,18 +771,164 @@ impl Session {
         self.apply_as(user, command, "do", None, false)
     }
 
-    /// Expands convenience commands into puts and deletes.
+    /// The alignment of route `route` (`"line"`: the line's own).
+    fn alignment_of(&self, route: &str) -> Result<Vec<ols_line::AlignmentPoint>, SessionError> {
+        if route == "line" {
+            return Ok(self.line.alignment.clone());
+        }
+        self.line
+            .routes
+            .iter()
+            .find(|r| r.id == route)
+            .map(|r| r.alignment.clone())
+            .ok_or_else(|| refused(format!("no route {route}")))
+    }
+
+    /// A put replacing the alignment of `route`.
+    fn put_alignment(
+        &self,
+        route: &str,
+        alignment: Vec<ols_line::AlignmentPoint>,
+    ) -> Result<Command, SessionError> {
+        if route == "line" {
+            let meta = Meta {
+                name: self.line.name.clone(),
+                crs: self.line.crs.clone(),
+                alignment,
+                display: self.line.display.clone(),
+            };
+            return Ok(Command::Put {
+                kind: Kind::Meta,
+                id: "line".into(),
+                value: json(&meta),
+                ord: None,
+            });
+        }
+        let mut r = self
+            .line
+            .routes
+            .iter()
+            .find(|r| r.id == route)
+            .ok_or_else(|| refused(format!("no route {route}")))?
+            .clone();
+        r.alignment = alignment;
+        Ok(Command::Put {
+            kind: Kind::Route,
+            id: route.to_owned(),
+            value: json(&r),
+            ord: None,
+        })
+    }
+
+    /// Expands commands into puts and deletes. `user`: a command given by
+    /// a user (deletions cascade, with confirmation); otherwise a replayed
+    /// inverse (applied as recorded).
     fn primitives(
         &self,
         command: Command,
         out: &mut Vec<Command>,
         notes: &mut Vec<String>,
+        user: bool,
     ) -> Result<(), SessionError> {
+        let point = |alignment: &[ols_line::AlignmentPoint], index: usize, route: &str| {
+            if index < alignment.len() {
+                Ok(())
+            } else {
+                Err(refused(format!(
+                    "route {route} has no alignment point {index} ({} points)",
+                    alignment.len()
+                )))
+            }
+        };
         match command {
-            Command::Put { .. } | Command::Delete { .. } => out.push(command),
+            Command::Put { .. } => out.push(command),
+            Command::Delete { kind, id, confirm } => {
+                if !user {
+                    out.push(Command::Delete {
+                        kind,
+                        id,
+                        confirm: false,
+                    });
+                    return Ok(());
+                }
+                let impact = self.deletion_impact(kind, &id)?;
+                if impact.has_dependents() && !confirm {
+                    return Err(SessionError::NeedsConfirmation(Box::new(impact)));
+                }
+                let del = |kind, id: &String| Command::Delete {
+                    kind,
+                    id: id.clone(),
+                    confirm: false,
+                };
+                for j in &impact.jumpers {
+                    out.push(del(Kind::Jumper, j));
+                }
+                for sec in &impact.sections {
+                    out.push(del(Kind::Section, sec));
+                }
+                for r in &impact.routes_deleted {
+                    out.push(del(Kind::Route, r));
+                }
+                // Routes kept: without the structure, tied points detached.
+                let mut touched: Vec<String> = impact.routes_changed.clone();
+                if kind == Kind::Structure {
+                    for r in &self.line.routes {
+                        if !touched.contains(&r.id)
+                            && !impact.routes_deleted.contains(&r.id)
+                            && r.alignment
+                                .iter()
+                                .any(|a| a.structure.as_deref() == Some(&id))
+                        {
+                            touched.push(r.id.clone());
+                        }
+                    }
+                    if self
+                        .line
+                        .alignment
+                        .iter()
+                        .any(|a| a.structure.as_deref() == Some(&id))
+                    {
+                        touched.push("line".into());
+                    }
+                }
+                for r in &touched {
+                    let mut alignment = self.alignment_of(r)?;
+                    for a in &mut alignment {
+                        if a.structure.as_deref() == Some(&id) {
+                            a.structure = None;
+                        }
+                    }
+                    let mut put = self.put_alignment(r, alignment)?;
+                    if let Command::Put { value, .. } = &mut put
+                        && r != "line"
+                    {
+                        let mut route: Route =
+                            serde_json::from_value(value.clone()).expect("route serialises");
+                        route.structures.retain(|s| *s != id);
+                        *value = json(&route);
+                    }
+                    out.push(put);
+                }
+                out.push(del(kind, &id));
+                if impact.has_dependents() {
+                    notes.push(impact.summary());
+                } else {
+                    notes.push(format!("delete {} {id}", kind.as_str()));
+                }
+            }
+            Command::DeleteStructure { id, confirm } => self.primitives(
+                Command::Delete {
+                    kind: Kind::Structure,
+                    id,
+                    confirm,
+                },
+                out,
+                notes,
+                user,
+            )?,
             Command::Batch { commands } => {
                 for c in commands {
-                    self.primitives(c, out, notes)?;
+                    self.primitives(c, out, notes, user)?;
                 }
             }
             Command::MoveStructure { id, position } => {
@@ -733,55 +957,39 @@ impl Session {
                 }
                 out.push(Command::Put {
                     kind: Kind::Structure,
-                    id,
+                    id: id.clone(),
                     value: json(&moved),
                     ord: None,
                 });
-            }
-            Command::DeleteStructure { id, confirm } => {
-                let impact = self.structure_deletion(&id)?;
-                if !confirm {
-                    return Err(SessionError::NeedsConfirmation(Box::new(impact)));
+                // Alignment points tied to it follow.
+                let mut routes: Vec<String> = self
+                    .line
+                    .routes
+                    .iter()
+                    .filter(|r| {
+                        r.alignment
+                            .iter()
+                            .any(|a| a.structure.as_deref() == Some(&id))
+                    })
+                    .map(|r| r.id.clone())
+                    .collect();
+                if self
+                    .line
+                    .alignment
+                    .iter()
+                    .any(|a| a.structure.as_deref() == Some(&id))
+                {
+                    routes.push("line".into());
                 }
-                for j in &impact.jumpers {
-                    out.push(Command::Delete {
-                        kind: Kind::Jumper,
-                        id: j.clone(),
-                    });
+                for r in routes {
+                    let mut alignment = self.alignment_of(&r)?;
+                    for a in &mut alignment {
+                        if a.structure.as_deref() == Some(&id) {
+                            a.position = position;
+                        }
+                    }
+                    out.push(self.put_alignment(&r, alignment)?);
                 }
-                for s in &impact.sections {
-                    out.push(Command::Delete {
-                        kind: Kind::Section,
-                        id: s.clone(),
-                    });
-                }
-                for r in &impact.routes_deleted {
-                    out.push(Command::Delete {
-                        kind: Kind::Route,
-                        id: r.clone(),
-                    });
-                }
-                for r in &impact.routes_changed {
-                    let mut route = self
-                        .line
-                        .routes
-                        .iter()
-                        .find(|x| &x.id == r)
-                        .expect("listed from the line")
-                        .clone();
-                    route.structures.retain(|s| *s != id);
-                    out.push(Command::Put {
-                        kind: Kind::Route,
-                        id: r.clone(),
-                        value: json(&route),
-                        ord: None,
-                    });
-                }
-                out.push(Command::Delete {
-                    kind: Kind::Structure,
-                    id: id.clone(),
-                });
-                notes.push(impact.summary());
             }
             Command::SetStringing { section, stringing } => {
                 let mut s = self
@@ -799,8 +1007,112 @@ impl Session {
                     ord: None,
                 });
             }
+            Command::MoveAlignmentPoint {
+                route,
+                index,
+                position,
+            } => {
+                let mut alignment = self.alignment_of(&route)?;
+                point(&alignment, index, &route)?;
+                if let Some(s) = alignment[index].structure.take() {
+                    notes.push(format!(
+                        "route {route}: alignment point {index} detached from {s} and moved"
+                    ));
+                }
+                alignment[index].position = position;
+                out.push(self.put_alignment(&route, alignment)?);
+            }
+            Command::InsertAlignmentPoint {
+                route,
+                index,
+                position,
+            } => {
+                let mut alignment = self.alignment_of(&route)?;
+                if index > alignment.len() {
+                    return Err(refused(format!(
+                        "route {route}: index {index} beyond the end"
+                    )));
+                }
+                alignment.insert(index, ols_line::AlignmentPoint::free(position));
+                out.push(self.put_alignment(&route, alignment)?);
+            }
+            Command::RemoveAlignmentPoint { route, index } => {
+                let mut alignment = self.alignment_of(&route)?;
+                point(&alignment, index, &route)?;
+                alignment.remove(index);
+                out.push(self.put_alignment(&route, alignment)?);
+            }
+            Command::TieAlignmentPoint {
+                route,
+                index,
+                structure,
+            } => {
+                let mut alignment = self.alignment_of(&route)?;
+                point(&alignment, index, &route)?;
+                let s = self
+                    .line
+                    .structure(&structure)
+                    .ok_or_else(|| refused(format!("no structure {structure}")))?;
+                alignment[index] = ols_line::AlignmentPoint {
+                    position: s.position,
+                    structure: Some(structure),
+                };
+                out.push(self.put_alignment(&route, alignment)?);
+            }
+            Command::DetachAlignmentPoint { route, index } => {
+                let mut alignment = self.alignment_of(&route)?;
+                point(&alignment, index, &route)?;
+                alignment[index].structure = None;
+                out.push(self.put_alignment(&route, alignment)?);
+            }
+            Command::AlignUnderStructures { route } => {
+                let r = self
+                    .line
+                    .routes
+                    .iter()
+                    .find(|r| r.id == route)
+                    .ok_or_else(|| refused(format!("no route {route}")))?;
+                let alignment = self.line.alignment_under_structures(r);
+                out.push(self.put_alignment(&route, alignment)?);
+            }
         }
         Ok(())
+    }
+
+    /// What deleting object `kind`/`id` takes with it (nothing is
+    /// changed).
+    pub fn deletion_impact(&self, kind: Kind, id: &str) -> Result<Impact, SessionError> {
+        let mut impact = Impact::new(kind, id);
+        match kind {
+            Kind::Meta => return Err(refused("the line settings cannot be deleted")),
+            Kind::Structure => return self.structure_deletion(id),
+            Kind::Section => {
+                let sec = self
+                    .line
+                    .sections
+                    .iter()
+                    .find(|s| s.id == id)
+                    .ok_or_else(|| refused(format!("no section {id}")))?;
+                impact.jumpers = self
+                    .line
+                    .jumpers
+                    .iter()
+                    .filter(|j| sec.points.contains(&j.from) || sec.points.contains(&j.to))
+                    .map(|j| j.id.clone())
+                    .collect();
+            }
+            Kind::Route => {
+                if !self.line.routes.iter().any(|r| r.id == id) {
+                    return Err(refused(format!("no route {id}")));
+                }
+            }
+            Kind::Jumper => {
+                if !self.line.jumpers.iter().any(|j| j.id == id) {
+                    return Err(refused(format!("no jumper {id}")));
+                }
+            }
+        }
+        Ok(impact)
     }
 
     /// What deleting structure `id` takes with it (nothing is changed).
@@ -809,7 +1121,8 @@ impl Session {
             .line
             .structure(id)
             .ok_or_else(|| refused(format!("no structure {id}")))?;
-        let attachments = s
+        let mut impact = Impact::new(Kind::Structure, id);
+        impact.attachments = s
             .attachments
             .iter()
             .map(|a| {
@@ -825,38 +1138,47 @@ impl Session {
                 t
             })
             .collect();
-        let sections = self
+        let sections: Vec<&ols_line::Section> = self
             .line
             .sections
             .iter()
             .filter(|sec| sec.points.iter().any(|p| p.structure == id))
-            .map(|sec| sec.id.clone())
             .collect();
-        let jumpers = self
+        impact.sections = sections.iter().map(|sec| sec.id.clone()).collect();
+        // Jumpers at its attachments, and at points of the deleted sections.
+        impact.jumpers = self
             .line
             .jumpers
             .iter()
-            .filter(|j| j.from.structure == id || j.to.structure == id)
+            .filter(|j| {
+                j.from.structure == id
+                    || j.to.structure == id
+                    || sections
+                        .iter()
+                        .any(|sec| sec.points.contains(&j.from) || sec.points.contains(&j.to))
+            })
             .map(|j| j.id.clone())
             .collect();
-        let (mut routes_changed, mut routes_deleted) = (Vec::new(), Vec::new());
         for r in &self.line.routes {
             if r.structures.iter().any(|x| x == id) {
                 if r.structures.iter().filter(|x| *x != id).count() < 2 {
-                    routes_deleted.push(r.id.clone());
-                } else {
-                    routes_changed.push(r.id.clone());
+                    impact.routes_deleted.push(r.id.clone());
+                    continue;
+                }
+                impact.routes_changed.push(r.id.clone());
+            }
+            for (k, a) in r.alignment.iter().enumerate() {
+                if a.structure.as_deref() == Some(id) {
+                    impact.alignment_detached.push(format!("{} #{k}", r.id));
                 }
             }
         }
-        Ok(Impact {
-            structure: id.to_owned(),
-            attachments,
-            sections,
-            jumpers,
-            routes_changed,
-            routes_deleted,
-        })
+        for (k, a) in self.line.alignment.iter().enumerate() {
+            if a.structure.as_deref() == Some(id) {
+                impact.alignment_detached.push(format!("line #{k}"));
+            }
+        }
+        Ok(impact)
     }
 
     /// Applies `command` (validated, atomic), logs it as `entry_kind`.
@@ -870,7 +1192,7 @@ impl Session {
     ) -> Result<Applied, SessionError> {
         let mut prims = Vec::new();
         let mut notes = Vec::new();
-        self.primitives(command, &mut prims, &mut notes)?;
+        self.primitives(command, &mut prims, &mut notes, entry_kind == "do")?;
         let note = (!notes.is_empty()).then(|| notes.join("; "));
         if prims.is_empty() {
             return Err(refused("empty command"));
@@ -911,6 +1233,7 @@ impl Session {
                             inverse.push(Command::Delete {
                                 kind: *kind,
                                 id: id.clone(),
+                                confirm: false,
                             });
                             let ord = wanted.unwrap_or_else(|| next_ord(&objects, *kind));
                             objects.insert(
@@ -925,7 +1248,7 @@ impl Session {
                     }
                     changed.push((*kind, id.clone()));
                 }
-                Command::Delete { kind, id } => {
+                Command::Delete { kind, id, .. } => {
                     let key = (*kind, id.clone());
                     let old = objects
                         .remove(&key)
@@ -1092,7 +1415,7 @@ impl Session {
                     } => {
                         left.insert((kind, id), Some(value));
                     }
-                    Command::Delete { kind, id } => {
+                    Command::Delete { kind, id, .. } => {
                         left.insert((kind, id), None);
                     }
                     _ => {}
@@ -1197,7 +1520,7 @@ impl Session {
                             let ord = ord.or_else(|| target.get(&key).and_then(|t| t.1));
                             target.insert(key, (value, ord));
                         }
-                        Command::Delete { kind, id } => {
+                        Command::Delete { kind, id, .. } => {
                             target.remove(&(kind, id));
                         }
                         _ => {}
@@ -1218,6 +1541,7 @@ impl Session {
                 None => diff.push(Command::Delete {
                     kind: key.0,
                     id: key.1.clone(),
+                    confirm: false,
                 }),
             }
         }
