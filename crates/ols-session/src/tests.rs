@@ -496,3 +496,106 @@ fn alignment_points_follow_their_structure_until_detached() {
     // T3 and T6 tied (T6 was re-tied above), T7's former point free.
     assert!(text.ends_with(r#"},[640.0,560.0,496.0]]"#), "{text}");
 }
+
+/// What a query must return: every object whose bounds touch the area.
+fn brute_force(s: &Session, area: &Bounds) -> Vec<(Kind, String)> {
+    spatial::object_bounds(s.line())
+        .into_iter()
+        .filter(|(_, b)| b.intersects(area))
+        .map(|(k, _)| k)
+        .collect()
+}
+
+fn queried(s: &Session, area: &Bounds) -> Vec<(Kind, String)> {
+    s.objects_in(area)
+        .unwrap()
+        .into_iter()
+        .map(|(k, id, _)| (k, id))
+        .collect()
+}
+
+#[test]
+fn spatial_index_follows_every_command() {
+    let (path, mut s) = project("spatial");
+    let areas = |s: &Session| {
+        // A sweep of small and large areas over the line and around it.
+        let mut v = Vec::new();
+        for x in (-200..1400).step_by(150) {
+            for y in (-200..700).step_by(150) {
+                let (x, y) = (x as f64, y as f64);
+                v.push(Bounds::new([x, y], [x + 20.0, y + 20.0]));
+                v.push(Bounds::new([x, y], [x + 400.0, y + 90.0]));
+            }
+        }
+        for a in &v {
+            assert_eq!(queried(s, a), brute_force(s, a), "{a:?}");
+        }
+    };
+    areas(&s);
+    // Near T6 (640, 280): T6, the branch section S3, the branch route.
+    let near_t6 = Bounds::new([630.0, 270.0], [650.0, 290.0]);
+    assert_eq!(
+        queried(&s, &near_t6),
+        [
+            (Kind::Route, "branch".to_owned()),
+            (Kind::Structure, "T6".to_owned()),
+            (Kind::Section, "S3".to_owned()),
+        ]
+    );
+    // Home tiles: pylons at level 0, the 1.25 km main sections higher.
+    assert_eq!(
+        s.spatial_entry(Kind::Structure, "T6").unwrap().tile.level,
+        0
+    );
+    assert_eq!(s.spatial_entry(Kind::Section, "S1").unwrap().tile.level, 3);
+
+    // Moving T6 away moves its section's bounds and the route's with it.
+    let p = position(&s, "T6");
+    s.apply(
+        "ben",
+        Command::MoveStructure {
+            id: "T6".into(),
+            position: [p[0] + 300.0, p[1], p[2]],
+        },
+    )
+    .unwrap();
+    // T6 has left; S3 and the route still touch by their bounds (now
+    // x 640–940): queries select by bounds, callers test exact geometry.
+    assert_eq!(
+        queried(&s, &near_t6),
+        [
+            (Kind::Route, "branch".to_owned()),
+            (Kind::Section, "S3".to_owned()),
+        ]
+    );
+    let moved = Bounds::new([930.0, 270.0], [950.0, 290.0]);
+    assert!(queried(&s, &moved).contains(&(Kind::Section, "S3".to_owned())));
+    areas(&s);
+    // Undo, delete: still in step with the line.
+    s.undo("ben").unwrap();
+    areas(&s);
+    s.apply(
+        "ana",
+        Command::Delete {
+            kind: Kind::Section,
+            id: "S3".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert!(s.spatial_entry(Kind::Section, "S3").is_none());
+    areas(&s);
+
+    // The index is in the file: reopened, and rebuilt when missing.
+    drop(s);
+    let s = Session::open(&path).unwrap();
+    areas(&s);
+    s.conn.execute("DELETE FROM spatial_index", []).unwrap();
+    drop(s);
+    let s = Session::open(&path).unwrap();
+    assert!(!s.objects_in(&near_t6).unwrap().is_empty());
+    areas(&s);
+    assert_eq!(s.grid().size, Grid::DEFAULT_SIZE);
+    let counted: usize = s.home_tiles().values().flat_map(|m| m.values()).sum();
+    assert_eq!(counted, spatial::object_bounds(s.line()).len());
+}

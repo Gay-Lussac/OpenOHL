@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
-use ols_session::{Applied, Command, Role, Session};
+use ols_session::{Applied, Command, Kind, Role, Session};
 
 #[derive(Subcommand)]
 pub enum ProjectCommand {
@@ -100,6 +100,26 @@ pub enum ProjectCommand {
     Log {
         /// Project file.
         project: PathBuf,
+    },
+    /// Tiles of the project's chunk grid: objects touching each tile and
+    /// stored points per tile.
+    Tiles {
+        /// Project file.
+        project: PathBuf,
+        /// Grid level (0 = base tiles, 256 m; 1 = 512 m; -1 = 128 m …).
+        #[arg(long, default_value_t = 0, allow_hyphen_values = true)]
+        level: i8,
+    },
+    /// Objects in an area, from the project's spatial index.
+    Query {
+        /// Project file.
+        project: PathBuf,
+        /// Area XMIN,YMIN,XMAX,YMAX (m, project coordinates).
+        #[arg(long, allow_hyphen_values = true, conflicts_with = "tile")]
+        area: Option<String>,
+        /// Or a tile LEVEL/X/Y (as listed by `ols project tiles`).
+        #[arg(long, allow_hyphen_values = true)]
+        tile: Option<String>,
     },
     /// Admin: add a user or change a role (viewer, designer, admin).
     User {
@@ -263,6 +283,12 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 report(&s.rollback(&user, seq).map_err(|e| e.to_string())?);
             }
         }
+        ProjectCommand::Tiles { project, level } => tiles(&project, level)?,
+        ProjectCommand::Query {
+            project,
+            area,
+            tile,
+        } => query(&project, area.as_deref(), tile.as_deref())?,
         ProjectCommand::Log { project } => {
             let s = open(&project)?;
             println!(
@@ -333,4 +359,162 @@ pub fn load_line(path: &Path) -> Result<ols_line::Line, String> {
     } else {
         ols_line::Line::load(path).map_err(|e| e.to_string())
     }
+}
+
+fn kind_name(k: Kind) -> &'static str {
+    k.as_str()
+}
+
+/// `ols project tiles`.
+fn tiles(path: &Path, level: i8) -> Result<(), String> {
+    use ols_core::grid::{Bounds, Grid, Tile};
+    use std::collections::BTreeMap;
+    if !(Grid::MIN_LEVEL..=Grid::MAX_LEVEL).contains(&level) {
+        return Err(format!(
+            "level {level}: from {} to {}",
+            Grid::MIN_LEVEL,
+            Grid::MAX_LEVEL
+        ));
+    }
+    let started = std::time::Instant::now();
+    let s = open(path)?;
+    let grid = *s.grid();
+    let homes = s.home_tiles();
+    let mut by_level: BTreeMap<i8, usize> = BTreeMap::new();
+    for (t, kinds) in &homes {
+        *by_level.entry(t.level).or_default() += kinds.values().sum::<usize>();
+    }
+    println!(
+        "grid: {} m tiles at level 0; level {level}: {} m",
+        grid.size,
+        grid.tile_size(level)
+    );
+    println!(
+        "objects by home level: {}",
+        by_level
+            .iter()
+            .map(|(l, n)| format!("{l}: {n}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    // Objects touching each tile of the level.
+    let all = ols_session::spatial::object_bounds(s.line());
+    // Per tile: objects by kind, points by cloud.
+    type Row = (BTreeMap<Kind, usize>, Vec<(String, u64)>);
+    let mut rows: BTreeMap<Tile, Row> = BTreeMap::new();
+    if let Some(extent) = all.values().copied().reduce(|a, b| a.union(&b)) {
+        let range = grid.covering(&extent, level);
+        if range.len() > 100_000 {
+            return Err(format!(
+                "{} tiles at level {level}: choose a coarser level",
+                range.len()
+            ));
+        }
+        // Tiles touched by an object (the line's own alignment, `meta`,
+        // spans the whole line and is not listed).
+        for (_, b) in all.iter().filter(|((k, _), _)| *k != Kind::Meta) {
+            for t in grid.covering(b, level).tiles() {
+                rows.entry(t).or_default();
+            }
+        }
+        for (t, row) in rows.iter_mut() {
+            for (k, _, _) in s.objects_in(&grid.bounds(t)).map_err(|e| e.to_string())? {
+                *row.0.entry(k).or_default() += 1;
+            }
+        }
+    }
+    // Stored point clouds in the same file.
+    let store = ols_pointcloud::Store::open(path).map_err(|e| e.to_string())?;
+    let clouds = store.clouds().map_err(|e| e.to_string())?;
+    for c in &clouds {
+        let counts = store.tiles(c, &grid, level).map_err(|e| e.to_string())?;
+        if !counts.exact {
+            println!(
+                "point cloud {}: {} m chunks do not nest in {} m tiles (counted by chunk centre)",
+                c.name,
+                c.chunk_size,
+                grid.tile_size(level)
+            );
+        }
+        for (t, n) in counts.tiles {
+            rows.entry(t).or_default().1.push((c.name.clone(), n));
+        }
+    }
+    let kinds = [Kind::Structure, Kind::Section, Kind::Jumper, Kind::Route];
+    print!("  {:<20} {:>16} {:>16}", "tile", "x min", "y min");
+    for k in kinds {
+        print!(" {:>10}", format!("{}s", kind_name(k)));
+    }
+    if !clouds.is_empty() {
+        print!("  points");
+    }
+    println!();
+    for (t, (objects, points)) in &rows {
+        let b: Bounds = grid.bounds(t);
+        print!(
+            "  {:<20} {:>16.1} {:>16.1}",
+            t.to_string(),
+            b.min[0],
+            b.min[1]
+        );
+        for k in kinds {
+            print!(" {:>10}", objects.get(&k).copied().unwrap_or(0));
+        }
+        for (name, n) in points {
+            print!("  {name}: {n}");
+        }
+        println!();
+    }
+    println!("{} tiles in {:.1?}", rows.len(), started.elapsed());
+    Ok(())
+}
+
+/// `ols project query`.
+fn query(path: &Path, area: Option<&str>, tile: Option<&str>) -> Result<(), String> {
+    use ols_core::grid::{Bounds, Tile};
+    let s = open(path)?;
+    let area = match (area, tile) {
+        (Some(text), _) => {
+            let v: Vec<f64> = text
+                .split(',')
+                .map(|x| x.trim().parse::<f64>())
+                .collect::<Result<_, _>>()
+                .map_err(|_| format!("--area \"{text}\": use XMIN,YMIN,XMAX,YMAX"))?;
+            let [x0, y0, x1, y1] = v[..] else {
+                return Err(format!("--area \"{text}\": use XMIN,YMIN,XMAX,YMAX"));
+            };
+            Bounds::new([x0, y0], [x1, y1])
+        }
+        (None, Some(key)) => s.grid().bounds(&Tile::parse(key)?),
+        (None, None) => return Err("give --area or --tile".into()),
+    };
+    let started = std::time::Instant::now();
+    let found = s.objects_in(&area).map_err(|e| e.to_string())?;
+    let elapsed = started.elapsed();
+    println!(
+        "area {:.1},{:.1} – {:.1},{:.1}: {} objects ({elapsed:.1?})",
+        area.min[0],
+        area.min[1],
+        area.max[0],
+        area.max[1],
+        found.len()
+    );
+    println!(
+        "  {:<10} {:<20} {:<16} plan bounds",
+        "kind", "id", "home tile"
+    );
+    for (k, id, e) in found {
+        let b = e.bounds;
+        println!(
+            "  {:<10} {:<20} {:<16} {:.1},{:.1} – {:.1},{:.1}",
+            kind_name(k),
+            id,
+            e.tile.to_string(),
+            b.min[0],
+            b.min[1],
+            b.max[0],
+            b.max[1]
+        );
+    }
+    Ok(())
 }

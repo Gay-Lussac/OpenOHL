@@ -33,6 +33,7 @@
   - [ADR-0005 Collaboration](adr/0005-collaboration-session-model.md)
   - [ADR-0006 Rendering, LOD & streaming](adr/0006-rendering-lod-streaming.md)
   - [ADR-0007 Point clouds in the project](adr/0007-point-clouds-in-the-project.md)
+  - [ADR-0008 Spatial chunk index](adr/0008-spatial-chunk-index.md)
 
 # Development
 

@@ -169,3 +169,55 @@ fn several_clouds_and_newer_schema() {
     assert!(Store::open(&db).unwrap_err().0.contains("newer"));
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn points_per_grid_tile() {
+    let dir = scratch("gridtiles");
+    // Points over x 0–120 m, y 0–40 m (a tile of 120 × 40 m).
+    write_tile(&dir.join("a.laz"), 0.0, 120.0);
+    let tiles = ols_lidar::tiles_in(&dir).unwrap();
+    let db = dir.join("p.ols");
+    let mut store = Store::open(&db).unwrap();
+    let (cloud, _) = store
+        .import_tiles(
+            "survey",
+            &tiles,
+            "",
+            None,
+            DEFAULT_CHUNK,
+            0.001,
+            &Budget::new(),
+            |_, _, _| {},
+        )
+        .unwrap();
+    let grid = ols_core::grid::Grid::new(128.0).unwrap();
+    // Level 0 (128 m): one tile with every point, chunks nested.
+    let t = store.tiles(&cloud, &grid, 0).unwrap();
+    assert!(t.exact);
+    assert_eq!(t.tiles.len(), 1);
+    assert_eq!(t.tiles[0].1, cloud.points);
+    // Level −1 (64 m, the chunk size): two tiles along x, still exact.
+    let t = store.tiles(&cloud, &grid, -1).unwrap();
+    assert!(t.exact);
+    assert_eq!(t.tiles.iter().map(|x| x.0.x).collect::<Vec<_>>(), [0, 1]);
+    assert_eq!(t.tiles.iter().map(|x| x.1).sum::<u64>(), cloud.points);
+    // Finer than the chunks: counted by chunk centre, not exact.
+    assert!(!store.tiles(&cloud, &grid, -2).unwrap().exact);
+    // A corridor reads only its chunks' blocks.
+    let source = CloudSource::open(&db, None).unwrap();
+    let corridor = Corridor::new(&[vec![[100.0, 5.0], [110.0, 5.0]]], 2.0);
+    let stats = source
+        .visit(Some(&corridor), None, &Budget::new(), &mut |x, _, _, _| {
+            assert!((98.0..=112.0).contains(&x))
+        })
+        .unwrap();
+    let blocks: usize = store
+        .conn
+        .query_row("SELECT COUNT(*) FROM pointcloud_block", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap() as usize;
+    assert_eq!(stats.read + stats.skipped, blocks);
+    assert!(stats.read < blocks, "{stats:?}");
+    std::fs::remove_dir_all(dir).ok();
+}

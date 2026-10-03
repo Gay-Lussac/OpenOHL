@@ -35,12 +35,19 @@
 //! model_object(kind, id, ord, version, json, PRIMARY KEY(kind, id))
 //! oplog(seq PRIMARY KEY, time, user, kind, command, inverse, objects,
 //!       sections, undoes, undone_by)
+//! spatial_index(kind, id, level, tx, ty, xmin, ymin, xmax, ymax)  -- [`spatial`]
 //! ```
+//!
+//! The **spatial index** ([`spatial`], ADR-0008) gives every object its
+//! plan bounds and home tile of the project's chunk grid, updated with
+//! every command: [`Session::objects_in`] answers "what is in this area"
+//! from the file, the basis for partial loading and streaming.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
 
+use ols_core::grid::{Bounds, Grid, Tile};
 use ols_line::{Jumper, Line, Point, Route, Section, Stringing, Structure};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -431,6 +438,8 @@ pub struct Session {
     conn: Connection,
     objects: BTreeMap<(Kind, String), Object>,
     line: Line,
+    grid: Grid,
+    spatial: BTreeMap<(Kind, String), spatial::Entry>,
 }
 
 impl fmt::Debug for Session {
@@ -587,6 +596,30 @@ impl Session {
         if !has_note {
             conn.execute("ALTER TABLE oplog ADD COLUMN note TEXT", [])?;
         }
+        conn.execute_batch(spatial::SCHEMA)?;
+        // The chunk grid is fixed when the project is created.
+        let grid_size: Option<String> = conn
+            .query_row(
+                "SELECT value FROM ols_meta WHERE key = 'grid_size'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let grid = match grid_size {
+            Some(text) => text
+                .parse::<f64>()
+                .map_err(|e| e.to_string())
+                .and_then(Grid::new)
+                .map_err(|e| SessionError::Store(format!("grid_size \"{text}\": {e}")))?,
+            None => {
+                let g = Grid::default();
+                conn.execute(
+                    "INSERT INTO ols_meta (key, value) VALUES ('grid_size', ?1)",
+                    params![g.size.to_string()],
+                )?;
+                g
+            }
+        };
         let version: Option<String> = conn
             .query_row(
                 "SELECT value FROM ols_meta WHERE key = 'session_schema'",
@@ -651,16 +684,63 @@ impl Session {
         } else {
             line_of(&objects)?
         };
+        // Bring the index up to date (project files from builds before it,
+        // or edited outside a session); unchanged rows are not written.
+        let stored = spatial::load(&conn)?;
+        let current = spatial::entries(&line, &grid);
+        if stored != current {
+            let tx = conn.unchecked_transaction()?;
+            spatial::write_diff(&tx, &stored, &current)?;
+            tx.commit()?;
+        }
         Ok(Self {
             conn,
             objects,
             line,
+            grid,
+            spatial: current,
         })
     }
 
     /// The current line.
     pub fn line(&self) -> &Line {
         &self.line
+    }
+
+    /// The project's chunk grid.
+    pub fn grid(&self) -> &Grid {
+        &self.grid
+    }
+
+    /// The spatial index entry of an object (bounds and home tile).
+    pub fn spatial_entry(&self, kind: Kind, id: &str) -> Option<spatial::Entry> {
+        self.spatial.get(&(kind, id.to_owned())).copied()
+    }
+
+    /// Objects whose plan bounds touch `area`, from the index in the
+    /// project file (by tile ranges, without reading the objects).
+    pub fn objects_in(
+        &self,
+        area: &Bounds,
+    ) -> Result<Vec<(Kind, String, spatial::Entry)>, SessionError> {
+        spatial::query(&self.conn, &self.grid, area)
+    }
+
+    /// Objects whose plan bounds touch a tile (any level).
+    pub fn objects_in_tile(
+        &self,
+        tile: &Tile,
+    ) -> Result<Vec<(Kind, String, spatial::Entry)>, SessionError> {
+        self.objects_in(&self.grid.bounds(tile))
+    }
+
+    /// Number of objects of each kind by home tile.
+    pub fn home_tiles(&self) -> BTreeMap<Tile, BTreeMap<Kind, usize>> {
+        let mut out: BTreeMap<Tile, BTreeMap<Kind, usize>> = BTreeMap::new();
+        for ((kind, _), e) in &self.spatial {
+            *out.entry(e.tile).or_default().entry(*kind).or_default() += 1;
+        }
+        out
     }
 
     /// Whether the project holds a line.
@@ -1274,6 +1354,9 @@ impl Session {
         } else {
             affected_sections([&self.line, &line], &changed)
         };
+        // Moved structures move their sections, jumpers and routes too:
+        // the index is recomputed from the line, only differences written.
+        let spatial = spatial::entries(&line, &self.grid);
 
         // Persist atomically: objects and log entry.
         let tx = self.conn.transaction()?;
@@ -1327,9 +1410,11 @@ impl Session {
                 params![seq, u],
             )?;
         }
+        spatial::write_diff(&tx, &self.spatial, &spatial)?;
         tx.commit()?;
         self.objects = objects;
         self.line = line;
+        self.spatial = spatial;
         Ok(Applied {
             seq,
             objects: changed,
@@ -1574,6 +1659,7 @@ impl Session {
 }
 
 pub mod live;
+pub mod spatial;
 
 pub use live::Live;
 

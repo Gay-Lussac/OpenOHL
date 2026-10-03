@@ -115,7 +115,7 @@ ols line project.ols --pointcloud project.ols --rules rules.olsr
 ```
 
 LAS/LAZ tiles are only the way in: points are stored in the project in
-blocks of one 50 m chunk × one class (coordinates in mm relative to the
+blocks of one 64 m chunk (a quarter of a grid tile, below) × one class (coordinates in mm relative to the
 chunk, delta-encoded, byte-shuffled, zstd), with the class scheme. A check
 then reads only the blocks of the classes it needs inside its corridor,
 decompressed in parallel.
@@ -129,3 +129,28 @@ buildings, other lines' wires, phase-to-phase) 25 s from the project against
 `--pointcloud FILE#name` chooses a cloud when the project has several. Other
 point sources (a point database, a web service) will be plugins implementing
 the same point-source interface.
+
+## Spatial index and tiles
+
+The plan of a project is divided into a fixed grid of square tiles (256 m
+at level 0; level 1 tiles are 512 m, level −1 128 m, and so on; ADR-0008).
+Every structure, section, jumper and route is indexed in the project file by
+its plan bounds and its *home tile* — the finest level whose tiles are as
+wide as the object — and the index follows every command. This is what
+partial loading, the viewer and the server stream by.
+
+```bash
+ols project tiles project.ols --level 2        # objects and points per 1 km tile
+ols project query project.ols --area 2585600,1114880,2585856,1115136
+ols project query project.ols --tile 0/10100/4355
+```
+
+`tiles` lists, for each tile of the level, how many objects touch it and
+how many points each stored point cloud has there. `query` lists the objects
+whose bounds touch an area or tile, with their home tile and bounds, read
+from the index (no model loading needed for the search). Bounds are those of
+the model (attachment points); wires swinging out under wind can reach a few
+metres further.
+
+On the real 25 km line (633 objects, 99.6 million points): an area query
+takes 0.3 ms; listing the 53 level-2 tiles with object and point counts 80 ms.

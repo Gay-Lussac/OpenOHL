@@ -182,6 +182,19 @@ impl Corridor {
         })
     }
 
+    /// Plan bounds of the corridor (`min`, `max`); `None` without
+    /// segments.
+    pub fn bounds(&self) -> Option<([f64; 2], [f64; 2])> {
+        let r = self.half_width;
+        self.segments.iter().flatten().fold(None, |b, p| {
+            let (lo, hi) = b.unwrap_or(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]));
+            Some((
+                [lo[0].min(p[0] - r), lo[1].min(p[1] - r)],
+                [hi[0].max(p[0] + r), hi[1].max(p[1] + r)],
+            ))
+        })
+    }
+
     /// Whether the corridor may reach into the plan box `min`–`max`
     /// (conservative: compares bounding boxes).
     pub fn touches(&self, min: [f64; 2], max: [f64; 2]) -> bool {

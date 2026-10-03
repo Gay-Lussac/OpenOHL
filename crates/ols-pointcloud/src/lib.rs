@@ -42,8 +42,9 @@ use crate::codec::Columns;
 
 /// Schema version of the point-cloud tables.
 pub const SCHEMA_VERSION: u32 = 1;
-/// Default chunk size, m.
-pub const DEFAULT_CHUNK: f64 = 50.0;
+/// Default chunk size, m: 64 m, a quarter of the default grid tile
+/// (ADR-0008), so blocks nest in the tiles of the project's chunk grid.
+pub const DEFAULT_CHUNK: f64 = 64.0;
 /// Default coordinate scale, m (1 mm).
 pub const DEFAULT_SCALE: f64 = 0.001;
 
@@ -101,6 +102,16 @@ pub struct Stats {
     pub points_read: u64,
     /// Points passed to the visitor.
     pub points_visited: u64,
+}
+
+/// Points per grid tile ([`Store::tiles`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TileCounts {
+    /// Tiles holding points, with their point counts.
+    pub tiles: Vec<(ols_core::grid::Tile, u64)>,
+    /// Whether the cloud's chunks nest in the tiles (else each chunk
+    /// counts in the tile of its centre).
+    pub exact: bool,
 }
 
 /// Anything that delivers points by area and class: a stored cloud, LAS/LAZ
@@ -258,6 +269,46 @@ impl Store {
             Ok((r.get::<_, i64>(0)? as u8, r.get::<_, i64>(1)? as u64))
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Points per tile of `level` of the project's chunk grid — what a
+    /// viewer or a server streams by (ADR-0008). Each block counts in the
+    /// tile holding its chunk's centre; `exact` tells whether the chunks
+    /// nest in the tiles (the tile width a whole multiple of the chunk
+    /// size, origins on the chunk grid — true for the default 64 m chunks
+    /// and tiles from 64 m up).
+    pub fn tiles(
+        &self,
+        cloud: &CloudInfo,
+        grid: &ols_core::grid::Grid,
+        level: i8,
+    ) -> Result<TileCounts, StoreError> {
+        let c = cloud.chunk_size;
+        let whole = |v: f64| (v - v.round()).abs() < 1e-9;
+        let ratio = grid.tile_size(level) / c;
+        let exact =
+            ratio >= 1.0 && whole(ratio) && whole(grid.origin[0] / c) && whole(grid.origin[1] / c);
+        let mut stmt = self.conn.prepare(
+            "SELECT cx, cy, SUM(count) FROM pointcloud_block WHERE cloud = ?1 GROUP BY cx, cy",
+        )?;
+        let rows = stmt.query_map(params![cloud.id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })?;
+        let mut counts: std::collections::BTreeMap<ols_core::grid::Tile, u64> =
+            std::collections::BTreeMap::new();
+        for row in rows {
+            let (cx, cy, n) = row?;
+            let centre = [(cx as f64 + 0.5) * c, (cy as f64 + 0.5) * c];
+            *counts.entry(grid.tile_at(level, centre)).or_default() += n as u64;
+        }
+        Ok(TileCounts {
+            tiles: counts.into_iter().collect(),
+            exact,
+        })
     }
 
     /// Imports LAS/LAZ tiles into the cloud `name` (created if missing,
@@ -431,11 +482,28 @@ impl Store {
                 wanted[c as usize] = true;
             }
         }
-        // Block list without the data.
+        let c = cloud.chunk_size;
+        // Block list without the data, only the chunks of the area's
+        // bounds (a range on the block index: large clouds are not
+        // scanned).
+        let (cx, cy) = match area.and_then(Corridor::bounds) {
+            Some((lo, hi)) => (
+                [(lo[0] / c).floor() as i64, (hi[0] / c).floor() as i64],
+                [(lo[1] / c).floor() as i64, (hi[1] / c).floor() as i64],
+            ),
+            None if area.is_some() => ([1, 0], [1, 0]), // empty corridor
+            None => ([i64::MIN, i64::MAX], [i64::MIN, i64::MAX]),
+        };
+        let total: usize = self.conn.query_row(
+            "SELECT COUNT(*) FROM pointcloud_block WHERE cloud = ?1",
+            params![cloud.id],
+            |r| r.get::<_, i64>(0),
+        )? as usize;
         let mut stmt = self.conn.prepare(
-            "SELECT id, cx, cy, class, count, z0 FROM pointcloud_block WHERE cloud = ?1",
+            "SELECT id, cx, cy, class, count, z0 FROM pointcloud_block
+             WHERE cloud = ?1 AND cx BETWEEN ?2 AND ?3 AND cy BETWEEN ?4 AND ?5",
         )?;
-        let rows = stmt.query_map(params![cloud.id], |r| {
+        let rows = stmt.query_map(params![cloud.id, cx[0], cx[1], cy[0], cy[1]], |r| {
             Ok((
                 r.get::<_, i64>(0)?,
                 r.get::<_, i64>(1)?,
@@ -445,7 +513,6 @@ impl Store {
                 r.get::<_, i64>(5)?,
             ))
         })?;
-        let c = cloud.chunk_size;
         let mut stats = Stats::default();
         let mut selected = Vec::new();
         // The corridor near each chunk (shared by its class blocks): the
@@ -478,6 +545,8 @@ impl Store {
             };
             selected.push((id, cx, cy, class, count, z0, local));
         }
+        // Blocks outside the area's chunk range were not even listed.
+        stats.skipped = total - selected.len();
         let units = (cloud.chunk_size / cloud.scale).round() as i64;
         let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
         let mut blob_stmt = self
