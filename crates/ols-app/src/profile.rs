@@ -38,11 +38,11 @@ impl ProfileView {
         case: usize,
         selection: &mut Selection,
         snaps: &crate::selection::Snaps,
-    ) {
+    ) -> Option<Selection> {
         let routes = model.line.effective_routes();
         if routes.is_empty() {
             ui.label("No route.");
-            return;
+            return None;
         }
         self.route = self.route.min(routes.len() - 1);
         ui.horizontal(|ui| {
@@ -79,7 +79,7 @@ impl ProfileView {
                 Ok(d) => self.drawing = Some((key, d)),
                 Err(e) => {
                     ui.label(format!("profile: {e}"));
-                    return;
+                    return None;
                 }
             }
         }
@@ -237,10 +237,9 @@ impl ProfileView {
             egui::FontId::proportional(11.0),
             egui::Color32::from_gray(150),
         );
-        // Picking: structures by station, wires by nearest point.
-        if response.clicked()
-            && let Some(pos) = response.interact_pointer_pos()
-        {
+        // Picking: structures by station, wires by nearest point. A left
+        // click selects; a right-click uses the held tool.
+        let pick = |pos: egui::Pos2| -> Selection {
             let mut best: Option<(f32, Selection)> = None;
             let mut consider = |d: f32, s: Selection| {
                 let on = s.kind().is_some_and(|k| snaps.on(k));
@@ -267,8 +266,19 @@ impl ProfileView {
                     .fold(f32::INFINITY, f32::min);
                 consider(dmin, sel);
             }
-            *selection = best.map_or(Selection::None, |b| b.1);
+            best.map_or(Selection::None, |b| b.1)
+        };
+        if response.clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            *selection = pick(pos);
         }
+        if response.secondary_clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            return Some(pick(pos));
+        }
+        None
     }
 }
 

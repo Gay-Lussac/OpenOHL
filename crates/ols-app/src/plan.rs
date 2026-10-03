@@ -58,7 +58,7 @@ impl PlanView {
         case: usize,
         selection: &mut Selection,
         snaps: &selection::Snaps,
-    ) {
+    ) -> Option<Selection> {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         if self.centre.is_none() {
@@ -97,6 +97,24 @@ impl PlanView {
                 mid.x + ((p[0] - c[0]) * scale) as f32,
                 mid.y - ((p[1] - c[1]) * scale) as f32,
             )
+        };
+        // A right-click uses the held tool on what is there.
+        let used = if response.secondary_clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            Some(selection::pick_in_model(
+                model,
+                case,
+                snaps,
+                [f64::from(pos.x), f64::from(pos.y)],
+                12.0,
+                |p| {
+                    let q = to_screen(p);
+                    Some([f64::from(q.x), f64::from(q.y)])
+                },
+            ))
+        } else {
+            None
         };
         if (response.clicked() || response.double_clicked())
             && let Some(pos) = response.interact_pointer_pos()
@@ -214,5 +232,6 @@ impl PlanView {
             egui::FontId::proportional(13.0),
             egui::Color32::from_gray(200),
         );
+        used
     }
 }

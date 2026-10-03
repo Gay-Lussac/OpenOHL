@@ -3,8 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Tools, the hotbar and the inventory (as in Minecraft): every tool is in
-//! the inventory; the hotbar holds nine of them; the active tool says what
-//! a click on an object does. Tools are data, so new ones are added to
+//! the inventory; the hotbar holds nine of them; choosing a slot only holds
+//! its tool — a right-click on an object uses it (a left click always
+//! selects). Tools are data, so new ones are added to
 //! [`Tool::ALL`] and appear in the inventory.
 
 use eframe::egui;
@@ -59,10 +60,10 @@ impl Tool {
     /// What a click does with it.
     pub fn help(self) -> &'static str {
         match self {
-            Tool::Select => "click an object to select it",
-            Tool::Move => "click a structure to move it",
-            Tool::Delete => "click a structure to delete it",
-            Tool::GoTo => "opens the Go to window",
+            Tool::Select => "right-click an object to select it",
+            Tool::Move => "right-click a structure to move it",
+            Tool::Delete => "right-click a structure to delete it",
+            Tool::GoTo => "right-click to open the Go to window",
         }
     }
 

@@ -856,3 +856,70 @@ fn the_hotbar_is_remembered() {
     h.save(&mut storage);
     assert_eq!(crate::tools::Hotbar::load(&storage), Some(h));
 }
+
+/// Choosing a slot only holds the tool; a right-click uses it.
+#[test]
+fn tools_act_on_a_right_click_only() {
+    use crate::tools::Tool;
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    let model = synthetic_project("right-click");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    // Holding Go to (slot 4) opens nothing.
+    press(&mut harness, egui::Key::Num4, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.hotbar.tool(), Tool::GoTo);
+        assert!(r.goto.is_none());
+    }
+    // First person, crosshair on T3's first insulator point, Move held:
+    // a left click selects, a right-click opens the Move window.
+    harness.state_mut().ready().unwrap().view3d.controls =
+        crate::controls::Controls::by_name("minecraft").unwrap();
+    press(&mut harness, egui::Key::M, egui::Modifiers::NONE);
+    let at = egui::pos2(620.0, 300.0);
+    let click = |h: &mut Harness<'_, App>, button| {
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        h.run();
+    };
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(at));
+    harness.run();
+    click(&mut harness, egui::PointerButton::Primary); // captures
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.view3d.captured);
+        let p = r.model.line.structure("T3").unwrap().attachments[0].insulator_point;
+        let cam = r.view3d.camera.as_mut().unwrap();
+        cam.target = p;
+        cam.distance = 80.0;
+    }
+    click(&mut harness, egui::PointerButton::Primary);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.selection, Selection::Structure("T3".into()));
+        assert!(r.move_dialog.is_none(), "a left click only selects");
+    }
+    click(&mut harness, egui::PointerButton::Secondary);
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.move_dialog.as_ref().map(|d| d.id.as_str()), Some("T3"));
+    assert!(!r.view3d.captured, "the window frees the mouse");
+}

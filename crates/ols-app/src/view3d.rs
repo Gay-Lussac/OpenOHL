@@ -66,10 +66,10 @@ impl View3d {
         selection: &mut Selection,
         visible: &HashSet<Layer>,
         snaps: &selection::Snaps,
-    ) {
+    ) -> Option<Selection> {
         let Some(rs) = rs else {
             ui.centered_and_justified(|ui| ui.label("3D view needs a GPU (wgpu)."));
-            return;
+            return None;
         };
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -100,6 +100,8 @@ impl View3d {
             }
         }
         let mut pick_at: Option<([f64; 2], bool)> = None;
+        // A right-click uses the held tool on what is there.
+        let mut use_at: Option<[f64; 2]> = None;
         if self.captured {
             // Raw mouse movement turns the view (mouse down: look down).
             let d = ui.input(|i| {
@@ -127,6 +129,9 @@ impl View3d {
                 }
             } else if click || double {
                 pick_at = Some((centre, double));
+            }
+            if ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary)) {
+                use_at = Some(centre);
             }
             // Ctrl + wheel sets the speed (the wheel alone does nothing).
             // Raw wheel events: egui turns Ctrl + wheel into a zoom.
@@ -185,6 +190,11 @@ impl View3d {
             {
                 pick_at = Some((local(pos), response.double_clicked()));
             }
+            if response.secondary_clicked()
+                && let Some(pos) = response.interact_pointer_pos()
+            {
+                use_at = Some(local(pos));
+            }
             if response.dragged() {
                 let d = response.drag_delta();
                 let (dx, dy) = (f64::from(d.x), f64::from(d.y));
@@ -222,9 +232,15 @@ impl View3d {
                 ui.ctx().request_repaint();
             }
         }
+        let radius = if self.captured { 10.0 } else { 14.0 };
+        let used = use_at.map(|at| {
+            let project = camera.projector(size);
+            selection::pick_in_model(model, case, snaps, at, radius, |p| {
+                project(p).map(|(q, _)| q)
+            })
+        });
         if let Some((at, double)) = pick_at {
             let cam = *camera;
-            let radius = if self.captured { 10.0 } else { 14.0 };
             let project = cam.projector(size);
             let started = std::time::Instant::now();
             let picked = selection::pick_in_model(model, case, snaps, at, radius, |p| {
@@ -347,5 +363,6 @@ impl View3d {
             egui::FontId::proportional(11.0),
             egui::Color32::from_gray(150),
         );
+        used
     }
 }

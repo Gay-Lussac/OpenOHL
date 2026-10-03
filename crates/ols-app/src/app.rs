@@ -89,8 +89,7 @@ pub struct Ready {
     pub move_dialog: Option<MoveDialog>,
     /// Wheel movement not yet a whole hotbar step.
     wheel_rest: f32,
-    /// The slot before the Go to tool was chosen.
-    previous_slot: usize,
+
     /// A position being typed in the properties: (structure, position).
     pub edit_position: Option<(String, [f64; 3])>,
 }
@@ -118,7 +117,7 @@ impl Ready {
             inventory: false,
             move_dialog: None,
             wheel_rest: 0.0,
-            previous_slot: 0,
+
             edit_position: None,
         }
     }
@@ -254,7 +253,7 @@ impl TabViewer for Viewer<'_> {
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
         let r = &mut *self.ready;
         let before = r.selection.clone();
-        match tab {
+        let used = match tab {
             Tab::View3d => r.view3d.ui(
                 ui,
                 self.rs,
@@ -264,9 +263,7 @@ impl TabViewer for Viewer<'_> {
                 &r.visible,
                 &r.snaps,
             ),
-            Tab::Plan => {
-                r.plan.ui(ui, &r.model, r.case, &mut r.selection, &r.snaps);
-            }
+            Tab::Plan => r.plan.ui(ui, &r.model, r.case, &mut r.selection, &r.snaps),
             Tab::Profile => r
                 .profile
                 .ui(ui, &r.model, r.case, &mut r.selection, &r.snaps),
@@ -282,22 +279,71 @@ impl TabViewer for Viewer<'_> {
                 if let Some(a) = action {
                     r.perform(a);
                 }
+                None
             }
-            Tab::Model => model_panel(ui, r),
-            Tab::Snap => snap_panel(ui, &mut r.snaps),
-        }
+            Tab::Model => {
+                model_panel(ui, r);
+                None
+            }
+            Tab::Snap => {
+                snap_panel(ui, &mut r.snaps);
+                None
+            }
+        };
         if r.selection != before {
             r.view3d.dirty.insert(Layer::Selection);
-            // A click with the active tool.
-            if let Selection::Structure(id) = r.selection.clone() {
-                r.use_tool_on(ui.ctx(), &id);
-            }
+        }
+        // A right-click uses the held tool on what is there.
+        if let Some(target) = used {
+            r.use_tool(ui.ctx(), target);
         }
     }
 }
 
 impl Ready {
-    /// The active tool used on structure `id` (clicked in a view).
+    /// Uses the held tool on `target` (right-clicked in a view): Move
+    /// and Delete act on a structure, Go to opens its window (at the
+    /// structure, if one), Select selects.
+    pub fn use_tool(&mut self, ctx: &egui::Context, target: Selection) {
+        use crate::tools::Tool;
+        let tool = self.hotbar.tool();
+        match (tool, &target) {
+            (Tool::Select, _) => {
+                self.selection = target;
+                self.view3d.dirty.insert(Layer::Selection);
+                return;
+            }
+            (Tool::GoTo, _) => {
+                if self.view3d.captured {
+                    crate::view3d::View3d::set_captured(&mut self.view3d.captured, ctx, false);
+                }
+                self.goto = Some(match &target {
+                    Selection::Structure(id) => id.clone(),
+                    _ => self
+                        .model
+                        .line
+                        .structures
+                        .first()
+                        .map(|s| s.id.clone())
+                        .unwrap_or_default(),
+                });
+                return;
+            }
+            (_, Selection::Structure(_)) => {}
+            _ => {
+                self.status = Some((format!("{}: right-click a structure", tool.name()), true));
+                return;
+            }
+        }
+        let Selection::Structure(id) = target else {
+            return;
+        };
+        self.selection = Selection::Structure(id.clone());
+        self.view3d.dirty.insert(Layer::Selection);
+        self.use_tool_on(ctx, &id);
+    }
+
+    /// The held Move or Delete tool used on structure `id`.
     pub fn use_tool_on(&mut self, ctx: &egui::Context, id: &str) {
         use crate::tools::Tool;
         let tool = self.hotbar.tool();
@@ -586,22 +632,6 @@ fn edit_keys_and_windows(ctx: &egui::Context, r: &mut Ready) {
             r.hotbar.scroll(-steps as i32);
             r.wheel_rest -= steps;
         }
-    }
-    // The Go to tool opens its window and gives the hand back.
-    if r.hotbar.tool() == Tool::GoTo {
-        r.hotbar.active = r.previous_slot;
-        if r.goto.is_none() {
-            r.goto = Some(
-                r.model
-                    .line
-                    .structures
-                    .first()
-                    .map(|s| s.id.clone())
-                    .unwrap_or_default(),
-            );
-        }
-    } else {
-        r.previous_slot = r.hotbar.active;
     }
     crate::tools::hotbar_ui(ctx, &mut r.hotbar);
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);

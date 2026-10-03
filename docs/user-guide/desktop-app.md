@@ -38,15 +38,15 @@ A project (`.ols`) opened by a user with the designer or admin role (`--user`, d
 
 | Action | How |
 |---|---|
-| Move a structure | **M** (or the Move tool in the hotbar), then click a structure in any view: the **Move structure** window shows E, N, z (or "base on the ground"); the change is previewed live (the shown weather case re-solves the sections through it); **Apply** (Enter) makes one command, **Cancel** (Escape) puts it back. |
-| Delete a structure | **Delete** / **Backspace** for the selected structure, or the Delete tool and a click. When it takes other objects with it (sections, jumpers, routes…), a window lists them; **Delete all** applies it as one command. |
+| Move a structure | **M** (or the Move tool in the hotbar), then right-click a structure in any view: the **Move structure** window shows E, N, z (or "base on the ground"); the change is previewed live (the shown weather case re-solves the sections through it); **Apply** (Enter) makes one command, **Cancel** (Escape) puts it back. |
+| Delete a structure | **Delete** / **Backspace** for the selected structure, or the Delete tool and a right-click. When it takes other objects with it (sections, jumpers, routes…), a window lists them; **Delete all** applies it as one command. |
 | Undo / redo | **⌘Z** / **⇧⌘Z**, or the toolbar. |
 
 After an edit only the sections it touched are re-solved, in every weather case (incremental solving); the status bar reports what was re-solved and how long it took. Adding structures comes next.
 
 ## Tools: hotbar and inventory
 
-As in Minecraft, the bottom of the window holds a **hotbar** of nine tool slots; the active tool says what a click on an object does (Select, Move structure, Delete structure; Go to structure opens its window). Choose a slot with **1–9**, by clicking it, or — while the mouse is captured in first person — with the **wheel** (Ctrl + wheel stays the speed). **E** opens the **inventory** with every tool: drag a tool onto a slot, drag a slot back to the inventory (or right-click it) to empty it. The arrangement is remembered. New tools are added to the inventory as they come.
+As in Minecraft, the bottom of the window holds a **hotbar** of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person (Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair): Move opens the Move window for the structure, Delete deletes it (with the confirmation), Go to opens the Go to window, Select selects. A left click always selects; a right-*drag* still pans. **E** opens the **inventory** with every tool: drag a tool onto a slot, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come.
 
 ## Controls
 
