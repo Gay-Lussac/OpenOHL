@@ -56,7 +56,7 @@ Guiding principles:
 - [x] Point clouds in the project file (`ols-pointcloud`, ADR-0007): import from LAS/LAZ, chunk × class blocks, point-source interface (database link as a plugin later)
 - [ ] Spatial chunk index (quadtree tile grid) (basis for streaming and LOD)
 - [x] Routes (DESIGN_GOALS §9): several alignments per line, structures shared between routes (Y pylons, parallel routes rejoining), stationing, offsets and line angles per route
-- [ ] Coordinate systems (EPSG via PROJ), transformations for imports/exports
+- [x] Coordinate systems (`ols-crs`, pure Rust proj4rs + EPSG registry): points and whole lines (`ols crs`), LV95 ↔ WGS84 matching swisstopo REFRAME to < 1 mm *(grid-based datum shifts via a PROJ plugin later)*
 - [x] `ols-terrain`: survey point import (CSV/XYZ, named columns incl. PNEZD), feature codes, breaklines, constrained-Delaunay TIN, ground heights, exact profiles along segments *(route centreline + side profiles come with the drawings)*
 - [x] Structure library v1 (`.olss`, DESIGN_GOALS §10): one file per type, local attachment points, default insulator per set, extensions, placement (position, rotation, extension), derive types from an existing line
 - [x] Insulator library basics (`.olsi`, DESIGN_GOALS §11): suspension, V-string, strain assemblies used by the solver (V-strings solved in lines with tension-only legs and slack-leg reporting)

@@ -30,6 +30,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(ChangeOfState));
     registry.register(Box::new(GoverningTension));
     registry.register(Box::new(WeatherWireLoad));
+    registry.register(Box::new(CrsTransform));
     registry.register(Box::new(Section));
     registry.register(Box::new(LoadedShape));
     registry.register(Box::new(LoadedChangeOfState));
@@ -282,6 +283,28 @@ impl Calculation for GoverningTension {
             out.insert(format!("utilisation_{i}"), c.utilisation);
         }
         Ok(out)
+    }
+}
+
+/// `crs.transform`: a point from one coordinate system to another.
+struct CrsTransform;
+
+impl Calculation for CrsTransform {
+    fn id(&self) -> &'static str {
+        "crs.transform"
+    }
+
+    fn description(&self) -> &'static str {
+        "Coordinate transformation (inputs: from, to — EPSG:<code> or proj4; x, y; geographic \
+         in degrees, longitude first); outputs x, y"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let from = ols_crs::Crs::parse(string_input(inputs, "from")?)?;
+        let to = ols_crs::Crs::parse(string_input(inputs, "to")?)?;
+        let t = ols_crs::Transformation::new(&from, &to, ols_crs::Heights::Keep);
+        let p = t.point([float_input(inputs, "x")?, float_input(inputs, "y")?, 0.0])?;
+        Ok(outputs([("x", p[0]), ("y", p[1])]))
     }
 }
 

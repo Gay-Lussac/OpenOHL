@@ -1,0 +1,123 @@
+# Coordinate transformations.
+# LV95 (EPSG:2056) <-> WGS84 (EPSG:4326): reference values from swisstopo's
+# official transformation service REFRAME (https://geodesy.geo.admin.ch/reframe/,
+# lv95towgs84, altitude 0), queried 2026-10-03. Tolerance 1e-7 degrees (~1 cm).
+# UTM 32N: exact by definition (central meridian 9 deg E -> E 500 000 m; at
+# 45 deg N on it, N = 0.9996 x WGS84 meridian arc 4 984 944.378 m).
+
+[[case]]
+id = "crs-001"
+title = "LV95 E 2600000 N 1200000 to WGS84"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84"
+inputs = { from = "EPSG:2056", to = "EPSG:4326", x = 2600000.0, y = 1200000.0 }
+expected.x = { value = 7.438632420871814, abs_tol = 1e-7 }
+expected.y = { value = 46.9510827728495, abs_tol = 1e-7 }
+
+[[case]]
+id = "crs-002"
+title = "LV95 E 2500000 N 1120000 to WGS84"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84"
+inputs = { from = "EPSG:2056", to = "EPSG:4326", x = 2500000.0, y = 1120000.0 }
+expected.x = { value = 6.1425255108907235, abs_tol = 1e-7 }
+expected.y = { value = 46.223995742656356, abs_tol = 1e-7 }
+
+[[case]]
+id = "crs-003"
+title = "LV95 E 2830000 N 1290000 to WGS84"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84"
+inputs = { from = "EPSG:2056", to = "EPSG:4326", x = 2830000.0, y = 1290000.0 }
+expected.x = { value = 10.504611639663038, abs_tol = 1e-7 }
+expected.y = { value = 47.72014215910416, abs_tol = 1e-7 }
+
+[[case]]
+id = "crs-004"
+title = "LV95 E 2490000 N 1290000 to WGS84"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84"
+inputs = { from = "EPSG:2056", to = "EPSG:4326", x = 2490000.0, y = 1290000.0 }
+expected.x = { value = 5.971694009386793, abs_tol = 1e-7 }
+expected.y = { value = 47.75129645806702, abs_tol = 1e-7 }
+
+[[case]]
+id = "crs-005"
+title = "LV95 E 2830000 N 1080000 to WGS84"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84"
+inputs = { from = "EPSG:2056", to = "EPSG:4326", x = 2830000.0, y = 1080000.0 }
+expected.x = { value = 10.399014105425751, abs_tol = 1e-7 }
+expected.y = { value = 45.83258086667149, abs_tol = 1e-7 }
+
+[[case]]
+id = "crs-006"
+title = "LV95 E 2700000 N 1250000 to WGS84"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84"
+inputs = { from = "EPSG:2056", to = "EPSG:4326", x = 2700000.0, y = 1250000.0 }
+expected.x = { value = 8.763207927151976, abs_tol = 1e-7 }
+expected.y = { value = 47.393232220228654, abs_tol = 1e-7 }
+
+[[case]]
+id = "crs-007"
+title = "LV95 E 2598500 N 1120600 to WGS84"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84"
+inputs = { from = "EPSG:2056", to = "EPSG:4326", x = 2598500.0, y = 1120600.0 }
+expected.x = { value = 7.419199346413073, abs_tol = 1e-7 }
+expected.y = { value = 46.23683808183613, abs_tol = 1e-7 }
+
+[[case]]
+id = "crs-008"
+title = "LV95 E 2560000 N 1180000 to WGS84"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84"
+inputs = { from = "EPSG:2056", to = "EPSG:4326", x = 2560000.0, y = 1180000.0 }
+expected.x = { value = 6.91495346539894, abs_tol = 1e-7 }
+expected.y = { value = 46.76997078433277, abs_tol = 1e-7 }
+
+[[case]]
+id = "crs-009"
+title = "LV95 E 2750000 N 1150000 to WGS84"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84"
+inputs = { from = "EPSG:2056", to = "EPSG:4326", x = 2750000.0, y = 1150000.0 }
+expected.x = { value = 9.392286411581303, abs_tol = 1e-7 }
+expected.y = { value = 46.484515062688246, abs_tol = 1e-7 }
+
+[[case]]
+id = "crs-010"
+title = "WGS84 to LV95 E 2600000 N 1200000"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84 (reverse)"
+inputs = { from = "EPSG:4326", to = "EPSG:2056", x = 7.438632420871814, y = 46.9510827728495 }
+expected.x = { value = 2600000.0, abs_tol = 0.01 }
+expected.y = { value = 1200000.0, abs_tol = 0.01 }
+
+[[case]]
+id = "crs-011"
+title = "WGS84 to LV95 E 2500000 N 1120000"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84 (reverse)"
+inputs = { from = "EPSG:4326", to = "EPSG:2056", x = 6.1425255108907235, y = 46.223995742656356 }
+expected.x = { value = 2500000.0, abs_tol = 0.01 }
+expected.y = { value = 1120000.0, abs_tol = 0.01 }
+
+[[case]]
+id = "crs-012"
+title = "WGS84 to LV95 E 2830000 N 1290000"
+calculation = "crs.transform"
+reference = "swisstopo REFRAME lv95towgs84 (reverse)"
+inputs = { from = "EPSG:4326", to = "EPSG:2056", x = 10.504611639663038, y = 47.72014215910416 }
+expected.x = { value = 2830000.0, abs_tol = 0.01 }
+expected.y = { value = 1290000.0, abs_tol = 0.01 }
+
+[[case]]
+id = "crs-013"
+title = "WGS84 to UTM 32N at 45 deg N on the central meridian"
+calculation = "crs.transform"
+reference = "Definition of UTM; WGS84 meridian arc to 45 deg (4 984 944.378 m)"
+inputs = { from = "EPSG:4326", to = "EPSG:32632", x = 9.0, y = 45.0 }
+expected.x = { value = 500000.0, abs_tol = 1e-6 }
+expected.y = { value = 4982950.4, abs_tol = 0.01 }

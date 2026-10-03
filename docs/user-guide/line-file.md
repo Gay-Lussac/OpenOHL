@@ -23,7 +23,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `format` | no (`"ols-line"`) | File identifier. |
 | `version` | no (`1`) | Format version; newer versions are rejected. |
 | `name` | yes | Line name. |
-| `crs` | no | Coordinate system, informative (e.g. `"EPSG:2056"`). |
+| `crs` | no | Coordinate system, e.g. `"EPSG:2056"` (see [coordinate systems](coordinates.md)); used by `ols crs line` and exports. |
 | `routes` | no | Routes: `{ "id", "name", "alignment": [points…], "structures": [ids…] }`. A structure may belong to several routes (Y pylons, parallel routes rejoining). Without routes, one implicit route runs through all structures in file order along `alignment`. Alignment points are `[x, y, z]` (free) or `{ "position": [x, y, z], "structure": "T12" }` (tied under a structure: it follows the structure; it must lie under it in plan, within 1 mm). |
 | `alignment` | no | Alignment points (PIs) of the implicit route (files without `routes`). |
 | `structures` | yes | List of structures. |

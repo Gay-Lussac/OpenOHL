@@ -42,6 +42,7 @@
 | `ols-session` | Project file (`.ols`), commands, operation log, per-user undo/redo, admin rollback, roles, dirty tracking; later sync protocol, server & client |
 | `ols-pointcloud` | Point clouds in the project file (chunk × class blocks), point-source interface |
 | `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors |
+| `ols-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines |
 | `ols-cables` | Cable/conductor library, stress-strain & creep models |
 | `ols-weather` | Weather cases, load case definitions (code-agnostic) |
 | `ols-wireloads` | Additional loads on wires: point loads (N) and distributed loads (N/m), permanent or per load case |

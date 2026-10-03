@@ -345,6 +345,79 @@ impl fmt::Display for LineError {
 impl std::error::Error for LineError {}
 
 impl Line {
+    /// Moves every coordinate of the line with `transform` (all points at
+    /// once): structure positions, attachment, leg and stick points,
+    /// alignments, jumper supports. Structure orientations follow the
+    /// rotation of the grid (meridian convergence between projections),
+    /// from a point 1 m along each structure's local x axis.
+    pub fn transform_coordinates(
+        &mut self,
+        transform: impl FnOnce(&mut [Point]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let mut points: Vec<Point> = Vec::new();
+        // Gather in a fixed order; write back in the same order.
+        for s in &self.structures {
+            let r = s.orientation_deg.to_radians();
+            points.push(s.position);
+            points.push([
+                s.position[0] + r.cos(),
+                s.position[1] + r.sin(),
+                s.position[2],
+            ]);
+            for a in &s.attachments {
+                points.push(a.insulator_point);
+                points.push(a.wire_point);
+                points.extend(a.legs.iter().flatten());
+            }
+            points.extend(s.members.iter().flatten());
+        }
+        for r in &self.routes {
+            points.extend(r.alignment.iter().map(|a| a.position));
+        }
+        points.extend(self.alignment.iter().map(|a| a.position));
+        for j in &self.jumpers {
+            points.extend(j.support.iter().map(|sp| sp.point));
+        }
+        transform(&mut points)?;
+        let mut it = points.into_iter();
+        let mut next = || it.next().expect("as many points as gathered");
+        for s in &mut self.structures {
+            s.position = next();
+            let x = next();
+            s.orientation_deg = (x[1] - s.position[1])
+                .atan2(x[0] - s.position[0])
+                .to_degrees();
+            for a in &mut s.attachments {
+                a.insulator_point = next();
+                a.wire_point = next();
+                if let Some(legs) = &mut a.legs {
+                    for l in legs.iter_mut() {
+                        *l = next();
+                    }
+                }
+            }
+            for m in &mut s.members {
+                for q in m.iter_mut() {
+                    *q = next();
+                }
+            }
+        }
+        for r in &mut self.routes {
+            for a in &mut r.alignment {
+                a.position = next();
+            }
+        }
+        for a in &mut self.alignment {
+            a.position = next();
+        }
+        for j in &mut self.jumpers {
+            if let Some(sp) = &mut j.support {
+                sp.point = next();
+            }
+        }
+        Ok(())
+    }
+
     /// Reads and validates a `.ols.json` file.
     pub fn load(path: &Path) -> Result<Self, LineError> {
         let text = std::fs::read_to_string(path)
@@ -627,6 +700,48 @@ mod tests {
         let mut line = example();
         line.version = 99;
         assert!(line.validate().unwrap_err().to_string().contains("newer"));
+    }
+
+    #[test]
+    fn transforming_coordinates_moves_everything_and_turns_orientations() {
+        let original = example();
+        let mut line = original.clone();
+        // A 30° rotation about the origin plus a shift.
+        let (sn, cs) = 30f64.to_radians().sin_cos();
+        line.transform_coordinates(|pts| {
+            for p in pts.iter_mut() {
+                *p = [
+                    cs * p[0] - sn * p[1] + 1000.0,
+                    sn * p[0] + cs * p[1] - 500.0,
+                    p[2],
+                ];
+            }
+            Ok(())
+        })
+        .unwrap();
+        line.validate().unwrap();
+        for (a, b) in original.structures.iter().zip(&line.structures) {
+            let turned =
+                (b.orientation_deg - a.orientation_deg - 30.0 + 540.0).rem_euclid(360.0) - 180.0;
+            assert!(
+                turned.abs() < 1e-9,
+                "{} {}",
+                a.orientation_deg,
+                b.orientation_deg
+            );
+            // Distances inside a structure are kept.
+            let d = |s: &Structure| {
+                let (p, q) = (
+                    s.attachments[0].insulator_point,
+                    s.attachments[0].wire_point,
+                );
+                ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2)).sqrt()
+            };
+            assert!((d(a) - d(b)).abs() < 1e-9);
+        }
+        assert!((line.routes[0].alignment[0].position[0] - 1000.0).abs() < 1e-9);
+        // A failing transformation leaves an error.
+        assert!(line.transform_coordinates(|_| Err("no".into())).is_err());
     }
 
     #[test]

@@ -69,6 +69,11 @@ enum Command {
         #[command(subcommand)]
         command: project::ProjectCommand,
     },
+    /// Coordinate systems: describe, transform points or a whole line.
+    Crs {
+        #[command(subcommand)]
+        command: CrsCommand,
+    },
     /// Point clouds stored in a project file.
     Pointcloud {
         #[command(subcommand)]
@@ -252,6 +257,49 @@ enum LidarCommand {
 }
 
 #[derive(Subcommand)]
+enum CrsCommand {
+    /// What a coordinate system is (EPSG:<code> or a proj4 string).
+    Info {
+        /// Coordinate system.
+        spec: String,
+    },
+    /// Transform points: X Y [Z] … (geographic: longitude latitude, degrees).
+    Transform {
+        /// From (e.g. EPSG:2056).
+        #[arg(long)]
+        from: String,
+        /// To (e.g. EPSG:4326).
+        #[arg(long)]
+        to: String,
+        /// Heights are ellipsoidal and go through the datum shift (default:
+        /// kept as they are).
+        #[arg(long)]
+        ellipsoidal: bool,
+        /// Coordinates: X Y (Z defaults to 0), repeated for more points
+        /// with --points 3.
+        #[arg(allow_hyphen_values = true, num_args = 2..)]
+        values: Vec<f64>,
+        /// Values per point: 2 (X Y) or 3 (X Y Z).
+        #[arg(long, default_value_t = 2)]
+        points: usize,
+    },
+    /// Move a whole line into another projected coordinate system.
+    Line {
+        /// Line file (.ols.json).
+        file: PathBuf,
+        /// Its coordinate system (default: the line's `crs`).
+        #[arg(long)]
+        from: Option<String>,
+        /// Target coordinate system (projected, metres).
+        #[arg(long)]
+        to: String,
+        /// Output line file.
+        #[arg(long)]
+        out: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
 enum PointcloudCommand {
     /// Import LAS/LAZ tiles into a project file (created if missing).
     Import {
@@ -311,6 +359,13 @@ fn main() -> ExitCode {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
         Some(Command::Pointcloud { command }) => pointcloud(command),
+        Some(Command::Crs { command }) => match crs(command) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            }
+        },
         Some(Command::Project { command }) => match project::run(command) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
@@ -485,6 +540,87 @@ fn pointcloud(command: PointcloudCommand) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn crs(command: CrsCommand) -> Result<(), String> {
+    use ols_crs::{Crs, Heights, Transformation};
+    match command {
+        CrsCommand::Info { spec } => {
+            let c = Crs::parse(&spec)?;
+            println!("{}", c.name());
+            println!("  {}", c.definition());
+            println!(
+                "  {}",
+                if c.is_geographic() {
+                    "geographic: longitude, latitude in degrees"
+                } else {
+                    "projected"
+                }
+            );
+        }
+        CrsCommand::Transform {
+            from,
+            to,
+            ellipsoidal,
+            values,
+            points,
+        } => {
+            if !(points == 2 || points == 3) || values.len() % points != 0 {
+                return Err(format!("give the coordinates as groups of {points} values"));
+            }
+            let t = Transformation::new(
+                &Crs::parse(&from)?,
+                &Crs::parse(&to)?,
+                if ellipsoidal {
+                    Heights::Ellipsoidal
+                } else {
+                    Heights::Keep
+                },
+            );
+            let mut pts: Vec<[f64; 3]> = values
+                .chunks(points)
+                .map(|c| [c[0], c[1], c.get(2).copied().unwrap_or(0.0)])
+                .collect();
+            t.points(&mut pts)?;
+            for p in pts {
+                if points == 3 {
+                    println!("{:.9} {:.9} {:.4}", p[0], p[1], p[2]);
+                } else {
+                    println!("{:.9} {:.9}", p[0], p[1]);
+                }
+            }
+        }
+        CrsCommand::Line {
+            file,
+            from,
+            to,
+            out,
+        } => {
+            let mut line = ols_line::Line::load(&file).map_err(|e| e.to_string())?;
+            let from = Crs::parse(from.as_deref().unwrap_or(&line.crs))
+                .map_err(|e| format!("{e} (the line's crs is \"{}\"; give --from)", line.crs))?;
+            let to = Crs::parse(&to)?;
+            if from.is_geographic() || to.is_geographic() {
+                return Err(
+                    "lines are designed in a projected coordinate system in metres; choose projected systems"
+                        .into(),
+                );
+            }
+            let t = Transformation::new(&from, &to, Heights::Keep);
+            line.transform_coordinates(|pts| t.points(pts))?;
+            line.crs = to.name().to_owned();
+            line.validate().map_err(|e| e.to_string())?;
+            std::fs::write(&out, line.to_json()).map_err(|e| format!("{}: {e}", out.display()))?;
+            println!(
+                "{} → {}: {} structures moved; wrote {} (grid distances change with the projection's scale: check spans and stringing)",
+                from.name(),
+                to.name(),
+                line.structures.len(),
+                out.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn print_info() {

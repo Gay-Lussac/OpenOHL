@@ -10,6 +10,7 @@
 - [Weather cases (.olswc)](user-guide/weather.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
 - [Terrain and ground clearance](user-guide/terrain.md)
+- [Coordinate systems](user-guide/coordinates.md)
 - [Project files and point clouds (.ols)](user-guide/project.md)
 
 # Theory manual
