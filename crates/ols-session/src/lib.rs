@@ -54,6 +54,9 @@ pub const SCHEMA_VERSION: u32 = 1;
 pub enum SessionError {
     /// The command was refused (invalid result, conflict, permission).
     Refused(String),
+    /// The command would delete more than its object: it lists everything
+    /// that would go with it and must be repeated with `confirm: true`.
+    NeedsConfirmation(Impact),
     /// The project file could not be used.
     Store(String),
 }
@@ -62,12 +65,75 @@ impl fmt::Display for SessionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refused(m) => write!(f, "refused: {m}"),
+            Self::NeedsConfirmation(i) => write!(f, "confirmation needed: {i}"),
             Self::Store(m) => write!(f, "project file: {m}"),
         }
     }
 }
 
 impl std::error::Error for SessionError {}
+
+/// What deleting a structure takes with it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Impact {
+    /// The structure.
+    pub structure: String,
+    /// Its attachments with their insulators: `set:phase label (insulator)`.
+    pub attachments: Vec<String>,
+    /// Sections through it (deleted: a section cannot lose a point).
+    pub sections: Vec<String>,
+    /// Jumpers at its attachments (deleted).
+    pub jumpers: Vec<String>,
+    /// Routes it is taken out of.
+    pub routes_changed: Vec<String>,
+    /// Routes deleted (fewer than two structures left).
+    pub routes_deleted: Vec<String>,
+}
+
+impl fmt::Display for Impact {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let list = |v: &[String]| {
+            if v.is_empty() {
+                "none".to_owned()
+            } else {
+                v.join(", ")
+            }
+        };
+        write!(
+            f,
+            "deleting structure {} also deletes its attachments and insulators [{}], sections [{}], jumpers [{}], routes [{}], and takes it out of routes [{}]",
+            self.structure,
+            list(&self.attachments),
+            list(&self.sections),
+            list(&self.jumpers),
+            list(&self.routes_deleted),
+            list(&self.routes_changed)
+        )
+    }
+}
+
+impl Impact {
+    /// A one-line summary for the log.
+    pub fn summary(&self) -> String {
+        format!(
+            "delete structure {} with {} attachment(s), section(s) [{}], jumper(s) [{}]{}{}",
+            self.structure,
+            self.attachments.len(),
+            self.sections.join(", "),
+            self.jumpers.join(", "),
+            if self.routes_deleted.is_empty() {
+                String::new()
+            } else {
+                format!(", route(s) deleted [{}]", self.routes_deleted.join(", "))
+            },
+            if self.routes_changed.is_empty() {
+                String::new()
+            } else {
+                format!(", out of route(s) [{}]", self.routes_changed.join(", "))
+            }
+        )
+    }
+}
 
 impl From<rusqlite::Error> for SessionError {
     fn from(e: rusqlite::Error) -> Self {
@@ -164,6 +230,10 @@ pub enum Command {
         id: String,
         /// The object.
         value: Value,
+        /// Position among the objects of its kind (when re-creating a
+        /// deleted object in its place; new objects go last).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ord: Option<i64>,
     },
     /// Delete an object.
     Delete {
@@ -185,6 +255,17 @@ pub enum Command {
         section: String,
         /// New stringing.
         stringing: Stringing,
+    },
+    /// Delete a structure with everything that depends on it (its
+    /// attachments and insulators, sections through it, jumpers at it; it
+    /// is taken out of routes). Without `confirm` the command is refused
+    /// with the list ([`SessionError::NeedsConfirmation`]).
+    DeleteStructure {
+        /// Structure id.
+        id: String,
+        /// Confirms the listed deletions.
+        #[serde(default)]
+        confirm: bool,
     },
     /// Several commands applied together (all or none).
     Batch {
@@ -214,6 +295,9 @@ pub struct LogEntry {
     pub undoes: Option<i64>,
     /// Entry that reversed this one.
     pub undone_by: Option<i64>,
+    /// What the command was, in words (e.g. a structure deletion and what
+    /// went with it).
+    pub note: Option<String>,
 }
 
 /// Result of an applied command.
@@ -241,7 +325,7 @@ struct Meta {
 }
 
 /// A raw log row: seq, time, user, kind, command, inverse, objects,
-/// sections, undoes, undone_by.
+/// sections, undoes, undone_by, note.
 type EntryRow = (
     i64,
     String,
@@ -253,6 +337,7 @@ type EntryRow = (
     String,
     Option<i64>,
     Option<i64>,
+    Option<String>,
 );
 
 /// One object of the model.
@@ -420,8 +505,16 @@ impl Session {
                  seq INTEGER PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                  user TEXT NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL, inverse TEXT NOT NULL,
                  objects TEXT NOT NULL, sections TEXT NOT NULL,
-                 undoes INTEGER, undone_by INTEGER);",
+                 undoes INTEGER, undone_by INTEGER, note TEXT);",
         )?;
+        // Added within schema 1 before its first release: add the column to
+        // project files made by earlier builds.
+        let has_note: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('oplog') WHERE name = 'note'")?
+            .exists([])?;
+        if !has_note {
+            conn.execute("ALTER TABLE oplog ADD COLUMN note TEXT", [])?;
+        }
         let version: Option<String> = conn
             .query_row(
                 "SELECT value FROM ols_meta WHERE key = 'session_schema'",
@@ -579,7 +672,12 @@ impl Session {
         self.require(user, Role::Designer)?;
         let commands = objects_of(line)
             .into_iter()
-            .map(|(kind, id, value)| Command::Put { kind, id, value })
+            .map(|(kind, id, value)| Command::Put {
+                kind,
+                id,
+                value,
+                ord: None,
+            })
             .collect();
         self.apply_as(user, Command::Batch { commands }, "import", None, true)
     }
@@ -596,12 +694,17 @@ impl Session {
     }
 
     /// Expands convenience commands into puts and deletes.
-    fn primitives(&self, command: Command, out: &mut Vec<Command>) -> Result<(), SessionError> {
+    fn primitives(
+        &self,
+        command: Command,
+        out: &mut Vec<Command>,
+        notes: &mut Vec<String>,
+    ) -> Result<(), SessionError> {
         match command {
             Command::Put { .. } | Command::Delete { .. } => out.push(command),
             Command::Batch { commands } => {
                 for c in commands {
-                    self.primitives(c, out)?;
+                    self.primitives(c, out, notes)?;
                 }
             }
             Command::MoveStructure { id, position } => {
@@ -632,7 +735,53 @@ impl Session {
                     kind: Kind::Structure,
                     id,
                     value: json(&moved),
+                    ord: None,
                 });
+            }
+            Command::DeleteStructure { id, confirm } => {
+                let impact = self.structure_deletion(&id)?;
+                if !confirm {
+                    return Err(SessionError::NeedsConfirmation(impact));
+                }
+                for j in &impact.jumpers {
+                    out.push(Command::Delete {
+                        kind: Kind::Jumper,
+                        id: j.clone(),
+                    });
+                }
+                for s in &impact.sections {
+                    out.push(Command::Delete {
+                        kind: Kind::Section,
+                        id: s.clone(),
+                    });
+                }
+                for r in &impact.routes_deleted {
+                    out.push(Command::Delete {
+                        kind: Kind::Route,
+                        id: r.clone(),
+                    });
+                }
+                for r in &impact.routes_changed {
+                    let mut route = self
+                        .line
+                        .routes
+                        .iter()
+                        .find(|x| &x.id == r)
+                        .expect("listed from the line")
+                        .clone();
+                    route.structures.retain(|s| *s != id);
+                    out.push(Command::Put {
+                        kind: Kind::Route,
+                        id: r.clone(),
+                        value: json(&route),
+                        ord: None,
+                    });
+                }
+                out.push(Command::Delete {
+                    kind: Kind::Structure,
+                    id: id.clone(),
+                });
+                notes.push(impact.summary());
             }
             Command::SetStringing { section, stringing } => {
                 let mut s = self
@@ -647,10 +796,67 @@ impl Session {
                     kind: Kind::Section,
                     id: section,
                     value: json(&s),
+                    ord: None,
                 });
             }
         }
         Ok(())
+    }
+
+    /// What deleting structure `id` takes with it (nothing is changed).
+    pub fn structure_deletion(&self, id: &str) -> Result<Impact, SessionError> {
+        let s = self
+            .line
+            .structure(id)
+            .ok_or_else(|| refused(format!("no structure {id}")))?;
+        let attachments = s
+            .attachments
+            .iter()
+            .map(|a| {
+                let mut t = format!("{}:{}", a.set, a.phase);
+                if !a.label.is_empty() {
+                    t.push_str(&format!(" {}", a.label));
+                }
+                if let Some(i) = &a.insulator {
+                    t.push_str(&format!(" ({i})"));
+                } else if a.legs.is_some() {
+                    t.push_str(" (V-string)");
+                }
+                t
+            })
+            .collect();
+        let sections = self
+            .line
+            .sections
+            .iter()
+            .filter(|sec| sec.points.iter().any(|p| p.structure == id))
+            .map(|sec| sec.id.clone())
+            .collect();
+        let jumpers = self
+            .line
+            .jumpers
+            .iter()
+            .filter(|j| j.from.structure == id || j.to.structure == id)
+            .map(|j| j.id.clone())
+            .collect();
+        let (mut routes_changed, mut routes_deleted) = (Vec::new(), Vec::new());
+        for r in &self.line.routes {
+            if r.structures.iter().any(|x| x == id) {
+                if r.structures.iter().filter(|x| *x != id).count() < 2 {
+                    routes_deleted.push(r.id.clone());
+                } else {
+                    routes_changed.push(r.id.clone());
+                }
+            }
+        }
+        Ok(Impact {
+            structure: id.to_owned(),
+            attachments,
+            sections,
+            jumpers,
+            routes_changed,
+            routes_deleted,
+        })
     }
 
     /// Applies `command` (validated, atomic), logs it as `entry_kind`.
@@ -663,7 +869,9 @@ impl Session {
         import: bool,
     ) -> Result<Applied, SessionError> {
         let mut prims = Vec::new();
-        self.primitives(command, &mut prims)?;
+        let mut notes = Vec::new();
+        self.primitives(command, &mut prims, &mut notes)?;
+        let note = (!notes.is_empty()).then(|| notes.join("; "));
         if prims.is_empty() {
             return Err(refused("empty command"));
         }
@@ -681,7 +889,12 @@ impl Session {
         };
         for p in &prims {
             match p {
-                Command::Put { kind, id, value } => {
+                Command::Put {
+                    kind,
+                    id,
+                    value,
+                    ord: wanted,
+                } => {
                     let key = (*kind, id.clone());
                     match objects.get_mut(&key) {
                         Some(o) => {
@@ -689,6 +902,7 @@ impl Session {
                                 kind: *kind,
                                 id: id.clone(),
                                 value: o.value.clone(),
+                                ord: None,
                             });
                             o.value = value.clone();
                             o.version += 1;
@@ -698,7 +912,7 @@ impl Session {
                                 kind: *kind,
                                 id: id.clone(),
                             });
-                            let ord = next_ord(&objects, *kind);
+                            let ord = wanted.unwrap_or_else(|| next_ord(&objects, *kind));
                             objects.insert(
                                 key,
                                 Object {
@@ -716,10 +930,12 @@ impl Session {
                     let old = objects
                         .remove(&key)
                         .ok_or_else(|| refused(format!("no {} {id}", kind.as_str())))?;
+                    // Re-created in its place by the inverse.
                     inverse.push(Command::Put {
                         kind: *kind,
                         id: id.clone(),
                         value: old.value,
+                        ord: Some(old.ord),
                     });
                     changed.push((*kind, id.clone()));
                 }
@@ -769,7 +985,7 @@ impl Session {
             })
             .collect();
         tx.execute(
-            "INSERT INTO oplog (user, kind, command, inverse, objects, sections, undoes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO oplog (user, kind, command, inverse, objects, sections, undoes, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 user,
                 entry_kind,
@@ -777,7 +993,8 @@ impl Session {
                 serde_json::to_string(&inverse).expect("serialises"),
                 serde_json::to_string(&after).expect("serialises"),
                 serde_json::to_string(&sections).expect("serialises"),
-                undoes
+                undoes,
+                note
             ],
         )?;
         let seq = tx.last_insert_rowid();
@@ -809,18 +1026,20 @@ impl Session {
             r.get(7)?,
             r.get(8)?,
             r.get(9)?,
+            r.get(10)?,
         ))
     }
 
     /// The operation log, oldest first.
     pub fn log(&self) -> Result<Vec<LogEntry>, SessionError> {
         let mut stmt = self.conn.prepare(
-            "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by FROM oplog ORDER BY seq",
+            "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note FROM oplog ORDER BY seq",
         )?;
         let rows = stmt.query_map([], Self::entry_row)?;
         let store = |e: serde_json::Error| SessionError::Store(e.to_string());
         rows.map(|r| {
-            let (seq, time, user, kind, command, _, objects, sections, undoes, undone_by) = r?;
+            let (seq, time, user, kind, command, _, objects, sections, undoes, undone_by, note) =
+                r?;
             let objects: Vec<(Kind, String, i64)> =
                 serde_json::from_str(&objects).map_err(store)?;
             Ok(LogEntry {
@@ -833,6 +1052,7 @@ impl Session {
                 sections: serde_json::from_str(&sections).map_err(store)?,
                 undoes,
                 undone_by,
+                note,
             })
         })
         .collect()
@@ -845,13 +1065,13 @@ impl Session {
         let row = self
             .conn
             .query_row(
-                "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by FROM oplog WHERE seq = ?1",
+                "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note FROM oplog WHERE seq = ?1",
                 params![seq],
                 Self::entry_row,
             )
             .optional()?
             .ok_or_else(|| refused(format!("no log entry {seq}")))?;
-        let (_, _, _, entry_kind, command, inverse, _, _, _, undone_by) = row;
+        let (_, _, _, entry_kind, command, inverse, _, _, _, undone_by, _) = row;
         if entry_kind == "import" {
             return Err(refused("the import cannot be undone"));
         }
@@ -867,7 +1087,9 @@ impl Session {
         if let Command::Batch { commands } = command {
             for c in commands {
                 match c {
-                    Command::Put { kind, id, value } => {
+                    Command::Put {
+                        kind, id, value, ..
+                    } => {
                         left.insert((kind, id), Some(value));
                     }
                     Command::Delete { kind, id } => {
@@ -887,7 +1109,13 @@ impl Session {
             }
         }
         let inverse: Command = serde_json::from_str(&inverse).map_err(store)?;
-        self.apply_as(user, inverse, kind, Some(seq), false)
+        let applied = self.apply_as(user, inverse, kind, Some(seq), false)?;
+        // Say what was reversed.
+        self.conn.execute(
+            "UPDATE oplog SET note = 'reverses ' || ?2 || COALESCE(': ' || (SELECT note FROM oplog WHERE seq = ?2), '') WHERE seq = ?1",
+            params![applied.seq, seq],
+        )?;
+        Ok(applied)
     }
 
     /// Undoes `user`'s last command that is not undone yet.
@@ -950,17 +1178,24 @@ impl Session {
             .collect::<Result<_, _>>()?;
         drop(stmt);
         let store = |e: serde_json::Error| SessionError::Store(e.to_string());
-        let mut target: BTreeMap<(Kind, String), Value> = self
+        let mut target: BTreeMap<(Kind, String), (Value, Option<i64>)> = self
             .objects
             .iter()
-            .map(|(k, o)| (k.clone(), o.value.clone()))
+            .map(|(k, o)| (k.clone(), (o.value.clone(), Some(o.ord))))
             .collect();
         for text in inverses {
             if let Command::Batch { commands } = serde_json::from_str(&text).map_err(store)? {
                 for c in commands {
                     match c {
-                        Command::Put { kind, id, value } => {
-                            target.insert((kind, id), value);
+                        Command::Put {
+                            kind,
+                            id,
+                            value,
+                            ord,
+                        } => {
+                            let key = (kind, id);
+                            let ord = ord.or_else(|| target.get(&key).and_then(|t| t.1));
+                            target.insert(key, (value, ord));
                         }
                         Command::Delete { kind, id } => {
                             target.remove(&(kind, id));
@@ -973,11 +1208,12 @@ impl Session {
         let mut diff = Vec::new();
         for (key, o) in &self.objects {
             match target.get(key) {
-                Some(v) if *v == o.value => {}
-                Some(v) => diff.push(Command::Put {
+                Some((v, _)) if *v == o.value => {}
+                Some((v, _)) => diff.push(Command::Put {
                     kind: key.0,
                     id: key.1.clone(),
                     value: v.clone(),
+                    ord: None,
                 }),
                 None => diff.push(Command::Delete {
                     kind: key.0,
@@ -985,12 +1221,13 @@ impl Session {
                 }),
             }
         }
-        for (key, v) in &target {
+        for (key, (v, ord)) in &target {
             if !self.objects.contains_key(key) {
                 diff.push(Command::Put {
                     kind: key.0,
                     id: key.1.clone(),
                     value: v.clone(),
+                    ord: *ord,
                 });
             }
         }

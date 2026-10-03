@@ -41,6 +41,21 @@ pub enum ProjectCommand {
         /// Command, e.g. '{"op": "move_structure", "id": "T4", "position": [x, y, z]}'.
         command: String,
     },
+    /// Delete a structure. Without --confirm, lists everything that would
+    /// be deleted with it (attachments and insulators, sections, jumpers,
+    /// routes) and changes nothing.
+    DeleteStructure {
+        /// Project file.
+        project: PathBuf,
+        /// User name.
+        #[arg(long)]
+        user: String,
+        /// Structure id.
+        id: String,
+        /// Delete it with everything listed.
+        #[arg(long)]
+        confirm: bool,
+    },
     /// Undo the user's last command.
     Undo {
         /// Project file.
@@ -145,6 +160,38 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             let mut s = open(&project)?;
             report(&s.apply(&user, command).map_err(|e| e.to_string())?);
         }
+        ProjectCommand::DeleteStructure {
+            project,
+            user,
+            id,
+            confirm,
+        } => {
+            let mut s = open(&project)?;
+            match s.apply(&user, Command::DeleteStructure { id, confirm }) {
+                Ok(a) => report(&a),
+                Err(ols_session::SessionError::NeedsConfirmation(i)) => {
+                    let list = |title: &str, v: &[String]| {
+                        if !v.is_empty() {
+                            println!("  {title}:");
+                            for x in v {
+                                println!("    - {x}");
+                            }
+                        }
+                    };
+                    println!("Deleting structure {} would also delete:", i.structure);
+                    list("attachments and insulators", &i.attachments);
+                    list("sections through it", &i.sections);
+                    list("jumpers at it", &i.jumpers);
+                    list("routes (fewer than two structures left)", &i.routes_deleted);
+                    list("and take it out of routes", &i.routes_changed);
+                    println!(
+                        "Nothing was changed. Repeat with --confirm to delete all of this (it is logged and can be undone)."
+                    );
+                    return Err("confirmation needed".into());
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
         ProjectCommand::Undo { project, user } => {
             report(&open(&project)?.undo(&user).map_err(|e| e.to_string())?);
         }
@@ -204,6 +251,9 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                         String::new()
                     }
                 );
+                if let Some(note) = &e.note {
+                    println!("{:>7}{note}", "");
+                }
             }
         }
         ProjectCommand::User {

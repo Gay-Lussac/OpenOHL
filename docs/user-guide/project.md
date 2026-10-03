@@ -28,7 +28,24 @@ none.
 | `delete` | `kind`, `id` | Delete an object. |
 | `move_structure` | `id`, `position` | Move a structure; its attachments move with it. |
 | `set_stringing` | `section`, `stringing` | Change a section's stringing. |
+| `delete_structure` | `id`, `confirm` | Delete a structure with everything that depends on it — see below. |
 | `batch` | `commands` | Several commands together. |
+
+### Deleting a structure
+
+A structure cannot disappear alone: its attachments and insulators go with it, a section cannot lose one of its points, jumpers hang on its attachments, routes list it. `delete_structure` without `confirm` changes nothing and answers with the full list:
+
+```text
+$ ols project delete-structure project.ols --user ana T3
+Deleting structure T3 would also delete:
+  attachments and insulators: 1:1 suspension, 1:2 suspension, 2:1 branch dead-end
+  sections through it: S1, S2, S3
+  jumpers at it: J-T3-branch
+  and take it out of routes: main, branch
+Nothing was changed. Repeat with --confirm to delete all of this (it is logged and can be undone).
+```
+
+With `--confirm` (`"confirm": true`) everything listed is deleted as **one log entry** with a note of what went; routes left with fewer than two structures are deleted, others lose the structure. Undo (or an admin rollback) restores all of it, in its original order.
 
 Each applied command is logged with the user, the time, its inverse, the
 objects it changed and the **sections to recalculate** (changed sections,

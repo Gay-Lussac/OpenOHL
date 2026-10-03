@@ -212,6 +212,7 @@ fn put_and_delete_objects() {
             kind: Kind::Jumper,
             id: "J2".into(),
             value: serde_json::to_value(&j).unwrap(),
+            ord: None,
         },
     )
     .unwrap();
@@ -225,6 +226,7 @@ fn put_and_delete_objects() {
                 kind: Kind::Jumper,
                 id: "J3".into(),
                 value: serde_json::to_value(&j).unwrap(),
+                ord: None,
             },
         )
         .unwrap_err();
@@ -244,4 +246,95 @@ fn put_and_delete_objects() {
         serde_json::from_str(r#"{"op": "delete", "kind": "jumper", "id": "J2"}"#).unwrap();
     s.apply("ben", c).unwrap();
     assert_eq!(s.line().jumpers.len(), 1);
+}
+
+#[test]
+fn deleting_a_structure_lists_what_goes_with_it_and_is_logged() {
+    let (_, mut s) = project("delete");
+    let delete = |confirm| Command::DeleteStructure {
+        id: "T3".into(),
+        confirm,
+    };
+    // Without confirmation: refused, with the full list, nothing changed.
+    let err = s.apply("ben", delete(false)).unwrap_err();
+    let SessionError::NeedsConfirmation(impact) = &err else {
+        panic!("{err}");
+    };
+    assert_eq!(impact.sections, vec!["S1", "S2", "S3"]);
+    assert_eq!(impact.jumpers, vec!["J-T3-branch"]);
+    assert_eq!(impact.attachments.len(), 3);
+    // T3 is the Y pylon: main keeps 4 structures, the branch keeps T6–T7.
+    assert_eq!(impact.routes_changed, vec!["main", "branch"]);
+    assert!(impact.routes_deleted.is_empty());
+    assert!(err.to_string().contains("S3") && err.to_string().contains("J-T3-branch"));
+    assert_eq!(s.export(), example());
+    // A viewer gets the permission error, not the list.
+    assert!(!matches!(
+        s.apply("vic", delete(false)),
+        Err(SessionError::NeedsConfirmation(_))
+    ));
+
+    // Confirmed: everything goes in one logged entry.
+    let applied = s.apply("ben", delete(true)).unwrap();
+    assert!(s.line().structure("T3").is_none());
+    assert!(s.line().sections.is_empty() && s.line().jumpers.is_empty());
+    assert!(
+        s.line()
+            .routes
+            .iter()
+            .all(|r| !r.structures.contains(&"T3".to_owned()))
+    );
+    let entry = s
+        .log()
+        .unwrap()
+        .into_iter()
+        .find(|e| e.seq == applied.seq)
+        .unwrap();
+    let note = entry.note.unwrap();
+    assert!(
+        note.contains("delete structure T3") && note.contains("S1, S2, S3"),
+        "{note}"
+    );
+    assert_eq!(entry.user, "ben");
+
+    // Undo restores all of it.
+    let undo = s.undo("ben").unwrap();
+    assert_eq!(s.export(), example());
+    let note = s
+        .log()
+        .unwrap()
+        .into_iter()
+        .find(|e| e.seq == undo.seq)
+        .unwrap()
+        .note
+        .unwrap();
+    assert!(
+        note.starts_with(&format!("reverses {}", applied.seq)),
+        "{note}"
+    );
+}
+
+#[test]
+fn deleting_the_last_structures_of_a_route_deletes_the_route() {
+    let (_, mut s) = project("route");
+    // The branch is T3–T6–T7; without T7 and T6 it would have one structure.
+    s.apply(
+        "ben",
+        Command::DeleteStructure {
+            id: "T7".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    let impact = s.structure_deletion("T6").unwrap();
+    assert_eq!(impact.routes_deleted, vec!["branch"]);
+    s.apply(
+        "ben",
+        Command::DeleteStructure {
+            id: "T6".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(s.line().routes.len(), 1);
 }
