@@ -770,10 +770,9 @@ fn the_move_tool_and_the_hotbar() {
         harness.state_mut().ready().unwrap().hotbar.tool(),
         Tool::Move
     );
-    let ctx = harness.ctx.clone();
     let p = {
         let r = harness.state_mut().ready().unwrap();
-        r.use_tool_on(&ctx, "T6");
+        r.use_tool_on("T6");
         r.move_dialog.as_ref().unwrap().start
     };
     harness.run();
@@ -812,7 +811,7 @@ fn the_move_tool_and_the_hotbar() {
     // A cancelled window puts the structure back.
     let q = {
         let r = harness.state_mut().ready().unwrap();
-        r.use_tool_on(&ctx, "T2");
+        r.use_tool_on("T2");
         r.move_dialog.as_ref().unwrap().start
     };
     harness
@@ -919,7 +918,30 @@ fn tools_act_on_a_right_click_only() {
         assert!(r.move_dialog.is_none(), "a left click only selects");
     }
     click(&mut harness, egui::PointerButton::Secondary);
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.move_dialog.as_ref().map(|d| d.id.as_str()), Some("T3"));
+        assert!(!r.view3d.captured, "the window frees the mouse");
+        // It opens at the crosshair (the 3D view's centre).
+        assert_eq!(r.popup_at, r.view3d.rect.unwrap().center());
+    }
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    assert!(harness.state_mut().ready().unwrap().move_dialog.is_none());
+    // Delete held, first person again: the confirmation opens with the
+    // mouse freed; Escape then cancels the deletion, nothing else.
+    press(&mut harness, egui::Key::Num3, egui::Modifiers::NONE);
+    click(&mut harness, egui::PointerButton::Primary); // captures again
+    assert!(harness.state_mut().ready().unwrap().view3d.captured);
+    click(&mut harness, egui::PointerButton::Secondary);
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.confirm.is_some(), "T3 takes sections with it");
+        assert!(!r.view3d.captured, "the confirmation frees the mouse");
+    }
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
     let r = harness.state_mut().ready().unwrap();
-    assert_eq!(r.move_dialog.as_ref().map(|d| d.id.as_str()), Some("T3"));
-    assert!(!r.view3d.captured, "the window frees the mouse");
+    assert!(r.confirm.is_none());
+    assert!(r.model.line.structure("T3").is_some(), "not deleted");
 }

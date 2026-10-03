@@ -89,6 +89,12 @@ pub struct Ready {
     pub move_dialog: Option<MoveDialog>,
     /// Wheel movement not yet a whole hotbar step.
     wheel_rest: f32,
+    /// Where tool windows open (the crosshair, or the mouse).
+    pub popup_at: egui::Pos2,
+    /// Counts the windows opened: a new one opens at `popup_at` again.
+    popup_serial: u64,
+    /// A tool window is open.
+    popup_open: bool,
 
     /// A position being typed in the properties: (structure, position).
     pub edit_position: Option<(String, [f64; 3])>,
@@ -117,6 +123,9 @@ impl Ready {
             inventory: false,
             move_dialog: None,
             wheel_rest: 0.0,
+            popup_at: egui::pos2(400.0, 200.0),
+            popup_serial: 0,
+            popup_open: false,
 
             edit_position: None,
         }
@@ -295,7 +304,7 @@ impl TabViewer for Viewer<'_> {
         }
         // A right-click uses the held tool on what is there.
         if let Some(target) = used {
-            r.use_tool(ui.ctx(), target);
+            r.use_tool(target);
         }
     }
 }
@@ -304,7 +313,7 @@ impl Ready {
     /// Uses the held tool on `target` (right-clicked in a view): Move
     /// and Delete act on a structure, Go to opens its window (at the
     /// structure, if one), Select selects.
-    pub fn use_tool(&mut self, ctx: &egui::Context, target: Selection) {
+    pub fn use_tool(&mut self, target: Selection) {
         use crate::tools::Tool;
         let tool = self.hotbar.tool();
         match (tool, &target) {
@@ -314,9 +323,6 @@ impl Ready {
                 return;
             }
             (Tool::GoTo, _) => {
-                if self.view3d.captured {
-                    crate::view3d::View3d::set_captured(&mut self.view3d.captured, ctx, false);
-                }
                 self.goto = Some(match &target {
                     Selection::Structure(id) => id.clone(),
                     _ => self
@@ -340,11 +346,11 @@ impl Ready {
         };
         self.selection = Selection::Structure(id.clone());
         self.view3d.dirty.insert(Layer::Selection);
-        self.use_tool_on(ctx, &id);
+        self.use_tool_on(&id);
     }
 
     /// The held Move or Delete tool used on structure `id`.
-    pub fn use_tool_on(&mut self, ctx: &egui::Context, id: &str) {
+    pub fn use_tool_on(&mut self, id: &str) {
         use crate::tools::Tool;
         let tool = self.hotbar.tool();
         if tool.edits()
@@ -358,10 +364,7 @@ impl Ready {
                 // A preview still open goes back first (it may be this one).
                 self.cancel_move_preview();
                 if let Some(p) = self.model.line.structure(id).map(|s| s.position) {
-                    // The window needs the mouse.
-                    if self.view3d.captured {
-                        crate::view3d::View3d::set_captured(&mut self.view3d.captured, ctx, false);
-                    }
+                    // The window frees the mouse when it opens ([`popups`]).
                     self.move_dialog = Some(MoveDialog {
                         id: id.to_owned(),
                         start: p,
@@ -485,48 +488,76 @@ impl Ready {
     }
 }
 
-/// G opens "Go to structure" (not while typing; a captured mouse is
-/// freed first); Enter goes, Escape closes.
-fn goto_window(ctx: &egui::Context, r: &mut Ready) {
+/// G opens "Go to structure" (not while typing).
+fn goto_key(ctx: &egui::Context, r: &mut Ready) {
     let open_key = !ctx.text_edit_focused() && ctx.input(|i| i.key_pressed(egui::Key::G));
     if open_key && r.goto.is_none() {
-        if r.view3d.captured {
-            crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
-        }
         let current = match &r.selection {
             Selection::Structure(id) => Some(id.clone()),
             _ => None,
         };
         r.goto = current.or_else(|| r.model.line.structures.first().map(|s| s.id.clone()));
     }
+}
+
+/// When a tool window opens (Go to, Move, a deletion's confirmation): it
+/// opens at the crosshair in first person (else at the mouse), and a
+/// captured mouse is freed — a window needs the cursor.
+fn popups(ctx: &egui::Context, r: &mut Ready) {
+    let open = r.goto.is_some() || r.move_dialog.is_some() || r.confirm.is_some();
+    if open && !r.popup_open {
+        let crosshair = r.view3d.rect.map(|x| x.center());
+        let at = if r.view3d.captured {
+            crosshair
+        } else {
+            ctx.pointer_latest_pos().or(crosshair)
+        };
+        r.popup_at = at.unwrap_or(egui::pos2(400.0, 200.0));
+        r.popup_serial += 1;
+        if r.view3d.captured {
+            crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
+        }
+    }
+    r.popup_open = open;
+}
+
+/// A tool window: opens next to [`Ready::popup_at`] (again each time it
+/// opens), can be dragged anywhere, also partly off the screen.
+fn tool_window(r: &Ready, key: &str, title: impl Into<egui::WidgetText>) -> egui::Window<'static> {
+    egui::Window::new(title)
+        .id(egui::Id::new((key.to_owned(), r.popup_serial)))
+        .default_pos(r.popup_at + egui::vec2(16.0, 16.0))
+        .collapsible(false)
+        .resizable(false)
+        .constrain(false)
+}
+
+/// The Go to window: Enter goes, Escape closes.
+fn goto_window(ctx: &egui::Context, r: &mut Ready) {
     let Some(mut chosen) = r.goto.clone() else {
         return;
     };
     let mut go = false;
     let mut close = false;
-    egui::Window::new("Go to structure")
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
-        .show(ctx, |ui| {
-            egui::ComboBox::from_id_salt("goto-structure")
-                .selected_text(&chosen)
-                .width(220.0)
-                .height(400.0)
-                .show_ui(ui, |ui| {
-                    for s in &r.model.line.structures {
-                        let text = match &s.structure_type {
-                            Some(t) => format!("{}  ({t})", s.id),
-                            None => s.id.clone(),
-                        };
-                        ui.selectable_value(&mut chosen, s.id.clone(), text);
-                    }
-                });
-            ui.horizontal(|ui| {
-                go |= ui.button("Go").clicked();
-                close |= ui.button("Close").clicked();
+    tool_window(r, "goto", "Go to structure").show(ctx, |ui| {
+        egui::ComboBox::from_id_salt("goto-structure")
+            .selected_text(&chosen)
+            .width(220.0)
+            .height(400.0)
+            .show_ui(ui, |ui| {
+                for s in &r.model.line.structures {
+                    let text = match &s.structure_type {
+                        Some(t) => format!("{}  ({t})", s.id),
+                        None => s.id.clone(),
+                    };
+                    ui.selectable_value(&mut chosen, s.id.clone(), text);
+                }
             });
+        ui.horizontal(|ui| {
+            go |= ui.button("Go").clicked();
+            close |= ui.button("Close").clicked();
         });
+    });
     go |= ctx.input(|i| i.key_pressed(egui::Key::Enter));
     close |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
     if go {
@@ -542,9 +573,8 @@ fn goto_window(ctx: &egui::Context, r: &mut Ready) {
 /// Shortcuts (not while typing in a text field): ⌘Z undo, ⇧⌘Z redo,
 /// Delete or Backspace deletes the selected structure, M holds the Move
 /// tool, E opens the inventory, 1–9 choose a hotbar slot; the wheel scrolls
-/// the hotbar while the mouse is captured. Then the windows: hotbar,
-/// inventory, Move structure, the confirmation of a deletion.
-fn edit_keys_and_windows(ctx: &egui::Context, r: &mut Ready) {
+/// the hotbar while the mouse is captured.
+fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
     use crate::edit::Action;
     use crate::tools::Tool;
     if !ctx.text_edit_focused() {
@@ -633,44 +663,50 @@ fn edit_keys_and_windows(ctx: &egui::Context, r: &mut Ready) {
             r.wheel_rest -= steps;
         }
     }
+}
+
+/// The tool windows: hotbar, inventory, Go to, Move structure, the
+/// confirmation of a deletion.
+fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
+    use crate::edit::Action;
     crate::tools::hotbar_ui(ctx, &mut r.hotbar);
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
+    goto_window(ctx, r);
     move_window(ctx, r);
     let Some(impact) = r.confirm.clone() else {
         return;
     };
     let mut decision: Option<bool> = None;
-    egui::Window::new(format!("Delete {} {}?", impact.kind.as_str(), impact.id))
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .show(ctx, |ui| {
-            ui.label("This also deletes or changes:");
-            egui::ScrollArea::vertical()
-                .max_height(300.0)
-                .show(ui, |ui| {
-                    for (title, items) in impact.groups() {
-                        if items.is_empty() {
-                            continue;
-                        }
-                        ui.label(
-                            egui::RichText::new(format!("{title} ({})", items.len())).strong(),
-                        );
-                        for it in items {
-                            ui.label(egui::RichText::new(format!("  {it}")).small());
-                        }
+    tool_window(
+        r,
+        "confirm",
+        format!("Delete {} {}?", impact.kind.as_str(), impact.id),
+    )
+    .show(ctx, |ui| {
+        ui.label("This also deletes or changes:");
+        egui::ScrollArea::vertical()
+            .max_height(300.0)
+            .show(ui, |ui| {
+                for (title, items) in impact.groups() {
+                    if items.is_empty() {
+                        continue;
                     }
-                });
-            ui.label("It is one log entry: undo brings everything back.");
-            ui.horizontal(|ui| {
-                if ui.button("Delete all").clicked() {
-                    decision = Some(true);
-                }
-                if ui.button("Cancel").clicked() {
-                    decision = Some(false);
+                    ui.label(egui::RichText::new(format!("{title} ({})", items.len())).strong());
+                    for it in items {
+                        ui.label(egui::RichText::new(format!("  {it}")).small());
+                    }
                 }
             });
+        ui.label("It is one log entry: undo brings everything back.");
+        ui.horizontal(|ui| {
+            if ui.button("Delete all").clicked() {
+                decision = Some(true);
+            }
+            if ui.button("Cancel").clicked() {
+                decision = Some(false);
+            }
         });
+    });
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         decision = Some(false);
     }
@@ -694,36 +730,31 @@ fn move_window(ctx: &egui::Context, r: &mut Ready) {
         return;
     };
     let (mut apply, mut cancel) = (false, false);
-    egui::Window::new(format!("Move structure {}", d.id))
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-20.0, 80.0))
-        .show(ctx, |ui| {
-            egui::Grid::new("move-grid").num_columns(3).show(ui, |ui| {
-                for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
-                    ui.label(name);
-                    let enabled = k < 2 || !d.on_ground;
-                    ui.add_enabled(
-                        enabled,
-                        egui::DragValue::new(&mut d.position[k])
-                            .speed(0.1)
-                            .max_decimals(3),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("Δ {:+.3} m", d.position[k] - d.start[k]))
-                            .small(),
-                    );
-                    ui.end_row();
-                }
-            });
-            ui.checkbox(&mut d.on_ground, "base on the ground");
-            let horizontal = (d.position[0] - d.start[0]).hypot(d.position[1] - d.start[1]);
-            ui.label(egui::RichText::new(format!("moved {horizontal:.3} m horizontally")).small());
-            ui.horizontal(|ui| {
-                apply |= ui.button("Apply").on_hover_text("Enter").clicked();
-                cancel |= ui.button("Cancel").on_hover_text("Escape").clicked();
-            });
+    tool_window(r, "move", format!("Move structure {}", d.id)).show(ctx, |ui| {
+        egui::Grid::new("move-grid").num_columns(3).show(ui, |ui| {
+            for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
+                ui.label(name);
+                let enabled = k < 2 || !d.on_ground;
+                ui.add_enabled(
+                    enabled,
+                    egui::DragValue::new(&mut d.position[k])
+                        .speed(0.1)
+                        .max_decimals(3),
+                );
+                ui.label(
+                    egui::RichText::new(format!("Δ {:+.3} m", d.position[k] - d.start[k])).small(),
+                );
+                ui.end_row();
+            }
         });
+        ui.checkbox(&mut d.on_ground, "base on the ground");
+        let horizontal = (d.position[0] - d.start[0]).hypot(d.position[1] - d.start[1]);
+        ui.label(egui::RichText::new(format!("moved {horizontal:.3} m horizontally")).small());
+        ui.horizontal(|ui| {
+            apply |= ui.button("Apply").on_hover_text("Enter").clicked();
+            cancel |= ui.button("Cancel").on_hover_text("Escape").clicked();
+        });
+    });
     if d.on_ground
         && let Some(z) = r.model.ground_at(d.position[0], d.position[1])
     {
@@ -937,8 +968,10 @@ impl eframe::App for App {
                 });
             }
             State::Ready(ready) => {
-                goto_window(ui.ctx(), ready);
-                edit_keys_and_windows(ui.ctx(), ready);
+                goto_key(ui.ctx(), ready);
+                edit_keys(ui.ctx(), ready);
+                popups(ui.ctx(), ready);
+                tool_windows(ui.ctx(), ready);
                 egui::Panel::bottom("status").show(ui, |ui| {
                     ui.horizontal(|ui| {
                         match ready.model.can_edit() {

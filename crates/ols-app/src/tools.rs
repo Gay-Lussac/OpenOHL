@@ -259,11 +259,13 @@ pub fn hotbar_ui(ctx: &egui::Context, hotbar: &mut Hotbar) {
 /// drag a slot here to empty it.
 pub fn inventory_ui(ctx: &egui::Context, open: &mut bool, hotbar: &mut Hotbar) {
     let mut keep = *open;
+    let screen = ctx.content_rect();
     egui::Window::new("Inventory — tools")
         .open(&mut keep)
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -110.0))
+        .constrain(false)
+        .default_pos(screen.center_bottom() + egui::vec2(-200.0, -300.0))
         .show(ctx, |ui| {
             ui.label("Drag a tool onto a hotbar slot; drag a slot here to empty it.");
             let (_, dropped) =
