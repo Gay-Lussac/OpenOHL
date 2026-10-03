@@ -38,7 +38,7 @@ Guiding principles:
 - [x] `ols-sagtension`: exact catenary, parabola approximation, inclined spans, sag/tension/length/slack
 - [x] Change-of-state equation; initial / final-after-creep / final-after-load conditions
 - [x] Ruling-span (equivalent span) method for tension sections, plus exact equal-H section solution
-- [x] Weather cases (temperature, wind, ice, combined) and tension limit criteria (% RTS, catenary constant, H/w)
+- [x] Weather cases (temperature, wind, ice, combined) and tension limit criteria (% RTS, catenary constant, H/w); ice as radial thickness + density or as a load per length (density → wind diameter); case files (`.olswc`) with tags, cases chosen per run
 - [x] `ols-wireloads`: additional loads on wires — point loads (N, 3D vector) and distributed loads (N/m, full span or sub-interval), permanent or per load case
 - [x] Segmented-catenary solution for spans with point loads / partial distributed loads *(vertical plane; transverse components → FE wire model, Phase 4)*
 - [x] Stringing charts output (CSV; PDF later with drafting)

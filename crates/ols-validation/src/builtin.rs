@@ -300,11 +300,13 @@ impl Calculation for WeatherWireLoad {
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
         let case = WeatherCase {
-            name: "validation".into(),
-            temperature: quantity_input::<Temperature>(inputs, "temperature")?,
             ice_thickness: quantity_input::<Length>(inputs, "ice_thickness")?,
-            ice_density: quantity_input::<Density>(inputs, "ice_density")?,
+            ice_density: Some(quantity_input::<Density>(inputs, "ice_density")?),
             wind_pressure: quantity_input::<Stress>(inputs, "wind_pressure")?,
+            ..WeatherCase::still(
+                "validation",
+                quantity_input::<Temperature>(inputs, "temperature")?,
+            )
         };
         let weight = quantity_input::<MassPerLength>(inputs, "weight")?.weight();
         let load = case.wire_load(quantity_input::<Length>(inputs, "diameter")?, weight);

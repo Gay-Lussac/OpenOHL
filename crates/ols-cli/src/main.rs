@@ -104,6 +104,24 @@ struct LineArgs {
     /// Radial ice thickness, mm.
     #[arg(long, default_value_t = 0.0)]
     ice_thickness: f64,
+    /// Or: ice load, N/m (instead of a thickness).
+    #[arg(long)]
+    ice_load: Option<f64>,
+    /// Ice density, kg/m³ (with a thickness: default 913; with a load: the
+    /// iced diameter for the wind, none = bare diameter).
+    #[arg(long)]
+    ice_density: Option<f64>,
+    /// Weather case file (.olswc): solve and check its cases (all, or those
+    /// chosen with --case / --tag) instead of the single case of
+    /// --temperature, --wind-pressure and the ice options.
+    #[arg(long)]
+    weather: Option<PathBuf>,
+    /// Weather case to run, by name (`*` and `?` wildcards; repeatable).
+    #[arg(long)]
+    case: Vec<String>,
+    /// Weather cases to run, by tag (repeatable).
+    #[arg(long)]
+    tag: Vec<String>,
     /// Write a standalone 3D viewer (HTML).
     #[arg(long)]
     html: Option<PathBuf>,
@@ -498,6 +516,11 @@ fn line(args: &LineArgs) -> ExitCode {
         temperature,
         wind_pressure,
         ice_thickness,
+        ice_load,
+        ice_density,
+        weather,
+        case,
+        tag,
         html,
         csv,
         spans_csv,
@@ -523,10 +546,8 @@ fn line(args: &LineArgs) -> ExitCode {
         page,
         logo,
     } = args;
-    let (temperature, wind_pressure, ice_thickness) =
-        (*temperature, *wind_pressure, *ice_thickness);
-    use ols_core::units::{Length, Stress, Temperature};
-    use ols_weather::WeatherCase;
+    use ols_core::units::{Density, ForcePerLength, Length, Stress, Temperature};
+    use ols_weather::{WeatherCase, WeatherCases};
 
     let run = || -> Result<(), String> {
         let mut line = project::load_line(file)?;
@@ -540,9 +561,40 @@ fn line(args: &LineArgs) -> ExitCode {
                 .map_err(|e| e.to_string())?;
         }
         let library = ols_cables::Library::load(library).map_err(|e| e.to_string())?;
-        let mut case = WeatherCase::still("state", Temperature::from_celsius(temperature));
-        case.wind_pressure = Stress::from_pascals(wind_pressure);
-        case.ice_thickness = Length::from_millimeters(ice_thickness);
+        let cases: Vec<WeatherCase> = match weather {
+            Some(path) => {
+                let set = WeatherCases::load(path)?;
+                let chosen = set.select(case, tag)?;
+                println!(
+                    "weather: {} — {} of {} cases",
+                    if set.name.is_empty() {
+                        path.display().to_string()
+                    } else {
+                        set.name.clone()
+                    },
+                    chosen.len(),
+                    set.cases.len()
+                );
+                chosen
+            }
+            None => {
+                if !case.is_empty() || !tag.is_empty() {
+                    return Err("--case and --tag choose cases of a --weather file".into());
+                }
+                let c = WeatherCase {
+                    wind_pressure: Stress::from_pascals(*wind_pressure),
+                    ice_thickness: Length::from_millimeters(*ice_thickness),
+                    ice_load: ice_load.map(ForcePerLength::from_newtons_per_meter),
+                    ice_density: ice_density.map(Density::from_kilograms_per_cubic_meter),
+                    ..WeatherCase::still("command line", Temperature::from_celsius(*temperature))
+                };
+                c.validate()?;
+                vec![c]
+            }
+        };
+        if cases.is_empty() {
+            return Err("no weather case to run".into());
+        }
         if *stations {
             for route in line.effective_routes() {
                 println!("Route {} {}", route.id, route.name);
@@ -570,98 +622,8 @@ fn line(args: &LineArgs) -> ExitCode {
                 }
             }
         }
-        let started = std::time::Instant::now();
-        let results = ols_line::solve::solve_line(&line, &library, &case);
-        let elapsed = started.elapsed();
-        println!(
-            "{}: {} structures, {} sections — {temperature} °C, wind {wind_pressure} Pa, ice {ice_thickness} mm",
-            line.name,
-            line.structures.len(),
-            line.sections.len()
-        );
-        println!(
-            "  {:<12} {:<22} {:>5} {:>12} {:>10} {:>6}",
-            "section", "circuit / phase", "spans", "max T (kN)", "max sag", "iter"
-        );
-        let mut shapes = Vec::new();
-        let mut failed = 0;
-        for (section, result) in line.sections.iter().zip(results) {
-            match result {
-                Ok(shape) => {
-                    let max_t = shape
-                        .spans
-                        .iter()
-                        .map(|s| s.max_tension)
-                        .fold(0.0, f64::max);
-                    let max_sag = shape.spans.iter().map(|s| s.sag).fold(0.0, f64::max);
-                    println!(
-                        "  {:<12} {:<22} {:>5} {:>12.2} {:>8.2} m {:>6}",
-                        section.id,
-                        format!("{} {}", section.circuit, section.phase_label),
-                        shape.spans.len(),
-                        max_t / 1e3,
-                        max_sag,
-                        shape.iterations
-                    );
-                    // Slack V-string legs: the clamp hangs on one leg.
-                    for (point, forces) in section.points.iter().zip(&shape.insulators) {
-                        if forces.len() == 2 && forces.contains(&0.0) {
-                            println!(
-                                "  {:<12}   slack V-string leg at {} set {} phase {}",
-                                "", point.structure, point.set, point.phase
-                            );
-                        }
-                    }
-                    shapes.push(shape);
-                }
-                Err(error) => {
-                    failed += 1;
-                    println!("  {:<12} error: {error}", section.id);
-                }
-            }
-        }
-        println!(
-            "solved {} of {} sections in {elapsed:.1?}",
-            shapes.len(),
-            line.sections.len()
-        );
-        let mut extras = ols_line::export::ViewerExtras::default();
-        if !line.jumpers.is_empty() {
-            println!(
-                "  {:<16} {:>10} {:>9} {:>11}",
-                "jumper", "length m", "sag m", "max T (N)"
-            );
-            for (jumper, result) in line.jumpers.iter().zip(ols_line::jumper::solve_jumpers(
-                &line, &library, &case, &shapes,
-            )) {
-                match result {
-                    Ok(shape) => {
-                        println!(
-                            "  {:<16} {:>10.3} {:>9.3} {:>11.0}{}",
-                            jumper.id,
-                            shape.unstressed_length,
-                            shape.sag,
-                            shape.max_tension,
-                            match shape.support {
-                                Some((_, _, f)) => format!("   support string {f:.0} N"),
-                                None => String::new(),
-                            }
-                        );
-                        extras.jumpers.push(shape);
-                    }
-                    Err(error) => {
-                        failed += 1;
-                        println!("  {:<16} error: {error}", jumper.id);
-                    }
-                }
-            }
-        }
-        let ground = clearance_run::run(
+        let prepared = clearance_run::prepare(
             &line,
-            &library,
-            &case,
-            &shapes,
-            &extras.jumpers.clone(),
             &clearance_run::Options {
                 terrain: terrain.as_deref(),
                 lidar: lidar.as_deref(),
@@ -673,13 +635,140 @@ fn line(args: &LineArgs) -> ExitCode {
                 thin: *thin,
                 rules: rules.as_deref(),
                 clearance: *clearance,
-                clearance_csv: clearance_csv.as_deref(),
                 other_lines: other_line,
                 structures: structure_dir,
                 insulators: insulator_dir,
             },
-            &mut extras,
         )?;
+        let mut clearance_rows = String::from(clearance_run::CSV_HEADER);
+        // Outputs (viewer, CSV, drawings) show the first case.
+        let mut first: Option<(WeatherCase, Vec<ols_line::solve::SectionShape>)> = None;
+        let mut extras = ols_line::export::ViewerExtras::default();
+        let mut failed = 0;
+        for case in &cases {
+            let started = std::time::Instant::now();
+            let results = ols_line::solve::solve_line(&line, &library, case);
+            let elapsed = started.elapsed();
+            println!(
+                "{}: {} structures, {} sections — case \"{}\": {}",
+                line.name,
+                line.structures.len(),
+                line.sections.len(),
+                case.name,
+                case.summary()
+            );
+            println!(
+                "  {:<12} {:<22} {:>5} {:>12} {:>10} {:>6}",
+                "section", "circuit / phase", "spans", "max T (kN)", "max sag", "iter"
+            );
+            let mut shapes = Vec::new();
+            for (section, result) in line.sections.iter().zip(results) {
+                match result {
+                    Ok(shape) => {
+                        let max_t = shape
+                            .spans
+                            .iter()
+                            .map(|s| s.max_tension)
+                            .fold(0.0, f64::max);
+                        let max_sag = shape.spans.iter().map(|s| s.sag).fold(0.0, f64::max);
+                        println!(
+                            "  {:<12} {:<22} {:>5} {:>12.2} {:>8.2} m {:>6}",
+                            section.id,
+                            format!("{} {}", section.circuit, section.phase_label),
+                            shape.spans.len(),
+                            max_t / 1e3,
+                            max_sag,
+                            shape.iterations
+                        );
+                        // Slack V-string legs: the clamp hangs on one leg.
+                        for (point, forces) in section.points.iter().zip(&shape.insulators) {
+                            if forces.len() == 2 && forces.contains(&0.0) {
+                                println!(
+                                    "  {:<12}   slack V-string leg at {} set {} phase {}",
+                                    "", point.structure, point.set, point.phase
+                                );
+                            }
+                        }
+                        shapes.push(shape);
+                    }
+                    Err(error) => {
+                        failed += 1;
+                        println!("  {:<12} error: {error}", section.id);
+                    }
+                }
+            }
+            println!(
+                "solved {} of {} sections in {elapsed:.1?}",
+                shapes.len(),
+                line.sections.len()
+            );
+            let mut jumpers = Vec::new();
+            if !line.jumpers.is_empty() {
+                println!(
+                    "  {:<16} {:>10} {:>9} {:>11}",
+                    "jumper", "length m", "sag m", "max T (N)"
+                );
+                for (jumper, result) in line.jumpers.iter().zip(ols_line::jumper::solve_jumpers(
+                    &line, &library, case, &shapes,
+                )) {
+                    match result {
+                        Ok(shape) => {
+                            println!(
+                                "  {:<16} {:>10.3} {:>9.3} {:>11.0}{}",
+                                jumper.id,
+                                shape.unstressed_length,
+                                shape.sag,
+                                shape.max_tension,
+                                match shape.support {
+                                    Some((_, _, f)) => format!("   support string {f:.0} N"),
+                                    None => String::new(),
+                                }
+                            );
+                            jumpers.push(shape);
+                        }
+                        Err(error) => {
+                            failed += 1;
+                            println!("  {:<16} error: {error}", jumper.id);
+                        }
+                    }
+                }
+            }
+            clearance_run::check(
+                &line,
+                &library,
+                case,
+                &shapes,
+                &jumpers,
+                &prepared,
+                &mut clearance_rows,
+                &mut extras,
+            )?;
+            if first.is_none() {
+                extras.jumpers = jumpers;
+                first = Some((case.clone(), shapes));
+            }
+        }
+        let (first_case, shapes) = first.expect("at least one case");
+        if cases.len() > 1
+            && (drawings.is_some() || html.is_some() || csv.is_some() || spans_csv.is_some())
+        {
+            println!(
+                "drawings, viewer and wire CSV show the first case, \"{}\" (violation markers of all cases)",
+                first_case.name
+            );
+        }
+        if let Some(path) = clearance_csv {
+            std::fs::write(path, &clearance_rows)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        if let Some(g) = prepared
+            .ground
+            .as_ref()
+            .filter(|g| g.num_triangles() <= ols_line::export::MAX_VIEWER_TRIANGLES)
+        {
+            extras.ground = Some(g.mesh());
+        }
+        let ground = prepared.ground.as_ref();
         if let Some(dir) = drawings {
             std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
             let logos = logo
@@ -706,7 +795,7 @@ fn line(args: &LineArgs) -> ExitCode {
                 plan_half_width: *plan_width,
                 title: vec![
                     line.name.clone(),
-                    format!("{temperature} °C, wind {wind_pressure} Pa, ice {ice_thickness} mm"),
+                    format!("{}: {}", first_case.name, first_case.summary()),
                 ],
                 plan_offset_scale: *plan_scale,
                 logos,
@@ -717,7 +806,7 @@ fn line(args: &LineArgs) -> ExitCode {
                     &route,
                     &shapes,
                     &extras.jumpers,
-                    ground.as_ref(),
+                    ground,
                     &extras.markers,
                     &options,
                 )?;

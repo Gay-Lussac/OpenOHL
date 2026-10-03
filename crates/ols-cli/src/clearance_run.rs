@@ -2,9 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Clearance checks of `ols line`: ground from a survey or LiDAR, rules
-//! from a file (or `--clearance` as a vertical ground rule), point rules
-//! fed from the same LiDAR pass, other lines solved in the same weather.
+//! Clearance checks of `ols line`, for one or several weather cases.
+//!
+//! [`prepare`] runs once: rules (from a file, and `--clearance` as a
+//! vertical ground rule), the class scheme, the ground surface (survey,
+//! LiDAR tiles or a project's point cloud), the points of the classes the
+//! rules need inside a corridor around the line's spans (kept in memory as
+//! whole millimetres, exact for LiDAR), and the other lines. [`check`] then
+//! runs per weather case: wires of this case against all of that.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -16,6 +21,7 @@ use ols_line::Line;
 use ols_line::export::ViewerExtras;
 use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;
+use ols_terrain::Terrain;
 use ols_weather::WeatherCase;
 
 /// Options of the clearance check.
@@ -31,10 +37,23 @@ pub struct Options<'a> {
     pub thin: Option<f64>,
     pub rules: Option<&'a Path>,
     pub clearance: Option<f64>,
-    pub clearance_csv: Option<&'a Path>,
     pub other_lines: &'a [PathBuf],
     pub structures: &'a Path,
     pub insulators: &'a Path,
+}
+
+/// What every weather case is checked against.
+pub struct Prepared {
+    rules: Vec<Rule>,
+    scheme: ols_lidar::ClassScheme,
+    /// Ground surface, if any.
+    pub ground: Option<Terrain>,
+    /// Points of the point rules' classes: millimetres from `origin`, class.
+    points: Vec<([i32; 3], u8)>,
+    origin: [f64; 3],
+    /// Classes of each point rule (in rule order).
+    point_classes: Vec<Vec<u8>>,
+    other_lines: Vec<Line>,
 }
 
 /// Lines of the report for one result.
@@ -139,17 +158,8 @@ fn marker(extras: &mut ViewerExtras, rule: &Rule, label: String, r: &WireResult)
     }
 }
 
-/// Runs the clearance checks and prints the report; returns the ground
-/// surface used, if any (for drawings).
-pub fn run(
-    line: &Line,
-    library: &ols_cables::Library,
-    case: &WeatherCase,
-    shapes: &[SectionShape],
-    jumpers: &[JumperShape],
-    o: &Options,
-    extras: &mut ViewerExtras,
-) -> Result<Option<ols_terrain::Terrain>, String> {
+/// Loads everything the checks need, once.
+pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
     let mut rules = match o.rules {
         Some(path) => RuleSet::load(path)?.rules,
         None => Vec::new(),
@@ -157,17 +167,11 @@ pub fn run(
     if let Some(v) = o.clearance {
         rules.extend(RuleSet::ground(v).rules);
     }
-    if rules.is_empty() {
-        if o.clearance_csv.is_some() {
-            return Err("--clearance-csv needs --rules or --clearance".into());
-        }
+    if rules.is_empty() && (o.terrain.is_some() || o.lidar.is_some() || o.pointcloud.is_some()) {
         // Ground only: still report the lowest ground clearance.
-        if o.terrain.is_none() && o.lidar.is_none() {
-            return Ok(None);
-        }
-        rules = RuleSet::ground(0.0).rules;
-        rules[0].vertical = None;
-        rules[0].radial = None;
+        let mut r = RuleSet::ground(0.0).rules;
+        r[0].vertical = None;
+        rules = r;
     }
     // Points: a project's point cloud or LAS/LAZ tiles, one interface.
     let source: Option<Box<dyn ols_pointcloud::PointSource>> = match (o.pointcloud, o.lidar) {
@@ -196,12 +200,7 @@ pub fn run(
         (None, Some(text)) => ols_lidar::ClassScheme::parse(&text)?,
         (None, None) => ols_lidar::ClassScheme::asprs(),
     };
-    let wires = wires_of(line, shapes, jumpers);
-    let reach = rules.iter().map(Rule::reach).fold(0.0, f64::max);
-    let set = WireSet::new(wires.clone(), reach);
-
-    // Point rules: their classes from the scheme.
-    let mut point_checks: Vec<PointCheck> = Vec::new();
+    let mut point_classes = Vec::new();
     for rule in rules
         .iter()
         .filter(|r| matches!(r.target, Target::Points { .. }))
@@ -213,17 +212,17 @@ pub fn run(
                 rule.name, scheme.name
             ));
         }
-        point_checks.push(PointCheck::new(rule, &classes, &set));
+        point_classes.push(classes);
     }
-    if !point_checks.is_empty() && source.is_none() {
+    if !point_classes.is_empty() && source.is_none() {
         return Err("point rules need --pointcloud or --lidar".into());
     }
 
-    // Ground surface, and one pass over the points for ground and point
-    // rules (only the classes needed).
+    let origin = line.structures.first().map_or([0.0; 3], |s| s.position);
+    let mut points: Vec<([i32; 3], u8)> = Vec::new();
     let started = std::time::Instant::now();
     let ground = match (o.terrain, &source) {
-        (Some(path), _) => Some(ols_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
+        (Some(path), _) => Some(Terrain::load(path).map_err(|e| e.to_string())?),
         (None, Some(source)) => {
             let ground_classes = scheme.codes_with_role(o.ground_role);
             if ground_classes.is_empty() {
@@ -232,33 +231,41 @@ pub fn run(
                     scheme.name, o.ground_role
                 ));
             }
-            let mut is_ground = [false; 256];
+            let (mut is_ground, mut is_needed) = ([false; 256], [false; 256]);
             for &c in &ground_classes {
                 is_ground[c as usize] = true;
             }
-            let polylines: Vec<Vec<[f64; 2]>> = wires
+            for &c in point_classes.iter().flatten() {
+                is_needed[c as usize] = true;
+            }
+            let mut wanted: Vec<u8> = (0..=255u8)
+                .filter(|&c| is_ground[c as usize] || is_needed[c as usize])
+                .collect();
+            wanted.dedup();
+            // Corridor around the spans' chords (attachment to attachment):
+            // the same for every weather case.
+            let polylines: Vec<Vec<[f64; 2]>> = line
+                .sections
                 .iter()
-                .map(|w| w.points.iter().map(|p| [p[0], p[1]]).collect())
+                .map(|s| {
+                    s.points
+                        .iter()
+                        .filter_map(|p| line.attachment(p))
+                        .map(|a| [a.wire_point[0], a.wire_point[1]])
+                        .collect()
+                })
                 .collect();
             let corridor = ols_lidar::Corridor::new(&polylines, o.corridor);
-            let mut needed: Vec<u8> = ground_classes.clone();
-            for rule in rules
-                .iter()
-                .filter(|r| matches!(r.target, Target::Points { .. }))
-            {
-                needed.extend(rule.point_classes(|role| scheme.codes_with_role(role)));
-            }
-            needed.sort_unstable();
-            needed.dedup();
             // Exit clause: ~1 min per 10⁸ points from LAZ; 30 min is far beyond.
             let budget =
                 ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(1800));
             let mut ground_points: Vec<[f64; 3]> = Vec::new();
             let mut cells: std::collections::HashMap<(i64, i64), usize> =
                 std::collections::HashMap::new();
+            let mm = |v: f64, k: usize| ((v - origin[k]) * 1000.0).round() as i32;
             let stats = source.visit(
                 Some(&corridor),
-                Some(&needed),
+                Some(&wanted),
                 &budget,
                 &mut |x, y, z, c| {
                     if is_ground[c as usize] {
@@ -277,13 +284,13 @@ pub fn run(
                             }
                         }
                     }
-                    for check in &mut point_checks {
-                        check.visit(&set, x, y, z, c);
+                    if is_needed[c as usize] {
+                        points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
                     }
                 },
             )?;
             println!(
-                "points: {} — {} read, {} skipped (other classes or outside the ±{} m corridor); {} points decoded, {} used; classes: {}; ground classes {ground_classes:?}: {} points ({:.1?})",
+                "points: {} — {} read, {} skipped (other classes or outside the ±{} m corridor); {} decoded, {} used; classes: {}; ground {ground_classes:?}: {} points; for point rules: {} points",
                 source.describe(),
                 stats.read,
                 stats.skipped,
@@ -292,12 +299,9 @@ pub fn run(
                 stats.points_visited,
                 scheme.name,
                 ground_points.len(),
-                started.elapsed()
+                points.len()
             );
-            Some(
-                ols_terrain::Terrain::from_xyz(&ground_points, Some(o.max_edge))
-                    .map_err(|e| e.to_string())?,
-            )
+            Some(Terrain::from_xyz(&ground_points, Some(o.max_edge)).map_err(|e| e.to_string())?)
         }
         (None, None) => None,
     };
@@ -309,11 +313,9 @@ pub fn run(
             started.elapsed()
         );
     }
-
-    // Other lines, solved in the same weather.
-    let mut other_wires: Vec<Wire> = Vec::new();
+    let mut other_lines = Vec::new();
     for path in o.other_lines {
-        let mut other = Line::load(path).map_err(|e| e.to_string())?;
+        let mut other = crate::project::load_line(path)?;
         if other.structures.iter().any(|s| s.structure_type.is_some()) {
             let structures = ols_structures::StructureLibrary::load_dir(o.structures)
                 .map_err(|e| e.to_string())?;
@@ -323,29 +325,82 @@ pub fn run(
                 .resolve(&structures, &insulators)
                 .map_err(|e| e.to_string())?;
         }
-        let shapes: Vec<SectionShape> = ols_line::solve::solve_line(&other, library, case)
+        other_lines.push(other);
+    }
+    Ok(Prepared {
+        rules,
+        scheme,
+        ground,
+        points,
+        origin,
+        point_classes,
+        other_lines,
+    })
+}
+
+/// The CSV header of [`check`]'s rows.
+pub const CSV_HEADER: &str = "case,rule,measure,section,span,other_section,other_span,clearance_m,required_m,violations,wire_x,wire_y,wire_z,target_x,target_y,target_z,class\n";
+
+/// Checks one weather case: prints the report, appends CSV rows, marks
+/// violations for the viewer.
+#[allow(clippy::too_many_arguments)]
+pub fn check(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    shapes: &[SectionShape],
+    jumpers: &[JumperShape],
+    p: &Prepared,
+    csv: &mut String,
+    extras: &mut ViewerExtras,
+) -> Result<(), String> {
+    if p.rules.is_empty() {
+        return Ok(());
+    }
+    let rules = &p.rules;
+    let wires = wires_of(line, shapes, jumpers);
+    let reach = rules.iter().map(Rule::reach).fold(0.0, f64::max);
+    let set = WireSet::new(wires.clone(), reach);
+    // Point rules from the points in memory.
+    let mut point_checks: Vec<PointCheck> = rules
+        .iter()
+        .filter(|r| matches!(r.target, Target::Points { .. }))
+        .zip(&p.point_classes)
+        .map(|(rule, classes)| PointCheck::new(rule, classes, &set))
+        .collect();
+    for (q, c) in &p.points {
+        let (x, y, z) = (
+            p.origin[0] + q[0] as f64 / 1000.0,
+            p.origin[1] + q[1] as f64 / 1000.0,
+            p.origin[2] + q[2] as f64 / 1000.0,
+        );
+        for check in &mut point_checks {
+            check.visit(&set, x, y, z, *c);
+        }
+    }
+    // Other lines in this weather case.
+    let mut other_wires: Vec<Wire> = Vec::new();
+    for other in &p.other_lines {
+        let shapes: Vec<SectionShape> = ols_line::solve::solve_line(other, library, case)
             .into_iter()
             .collect::<Result<_, _>>()
-            .map_err(|e| format!("{}: {e}", path.display()))?;
+            .map_err(|e| format!("{}: {e}", other.name))?;
         let jumpers: Vec<JumperShape> =
-            ols_line::jumper::solve_jumpers(&other, library, case, &shapes)
+            ols_line::jumper::solve_jumpers(other, library, case, &shapes)
                 .into_iter()
                 .collect::<Result<_, _>>()
-                .map_err(|e| format!("{}: {e}", path.display()))?;
-        let mut w = wires_of(&other, &shapes, &jumpers);
+                .map_err(|e| format!("{}: {e}", other.name))?;
+        let mut w = wires_of(other, &shapes, &jumpers);
         for wire in &mut w {
             wire.section = format!("{}:{}", other.name, wire.section);
         }
-        println!("other line {}: {} wires", other.name, w.len());
         other_wires.extend(w);
     }
     let other_set = (!other_wires.is_empty()).then(|| WireSet::new(other_wires, reach));
 
-    let mut csv = String::from(
-        "rule,measure,section,span,other_section,other_span,clearance_m,required_m,violations,wire_x,wire_y,wire_z,target_x,target_y,target_z,class\n",
-    );
     let mut point_checks = point_checks.into_iter();
-    for rule in &rules {
+    let mut rows = String::new();
+    for rule in rules {
         let required = |r: Option<f64>| r.map_or("-".to_owned(), |v| format!("{v:.2} m"));
         println!(
             "rule \"{}\" ({}): required vertical {}, radial {}",
@@ -354,7 +409,7 @@ pub fn run(
                 Target::Ground => "ground".to_owned(),
                 Target::Points { .. } => format!(
                     "points of classes {:?}",
-                    rule.point_classes(|role| scheme.codes_with_role(role))
+                    rule.point_classes(|role| p.scheme.codes_with_role(role))
                 ),
                 Target::SameLine { .. } => "other wires of this line".to_owned(),
                 Target::OtherLines => "wires of other lines".to_owned(),
@@ -365,10 +420,10 @@ pub fn run(
         match &rule.target {
             Target::Ground | Target::Points { .. } => {
                 let results: Vec<WireResult> = match &rule.target {
-                    Target::Ground => match &ground {
+                    Target::Ground => match &p.ground {
                         Some(g) => ols_clearance::checks::ground_check(rule, &wires, g),
                         None => {
-                            println!("  no ground: give --terrain or --lidar");
+                            println!("  no ground: give --terrain, --lidar or --pointcloud");
                             continue;
                         }
                     },
@@ -400,10 +455,15 @@ pub fn run(
                     println!("    {:<24} {}", wire_name(&wires[*w]), describe(r, rule));
                 }
                 for (w, r) in &bad {
-                    marker(extras, rule, wire_name(&wires[*w]), r);
+                    marker(
+                        extras,
+                        rule,
+                        format!("{} ({})", wire_name(&wires[*w]), case.name),
+                        r,
+                    );
                 }
                 for (w, r) in results.iter().enumerate() {
-                    csv_rows(&mut csv, rule, &wires[w], None, r);
+                    csv_rows(&mut rows, rule, &wires[w], None, r);
                 }
             }
             Target::SameLine { .. } | Target::OtherLines => {
@@ -437,36 +497,43 @@ pub fn run(
                 let bad: Vec<&PairResult> =
                     pairs.iter().filter(|p| p.result.violates(rule)).collect();
                 println!("  pairs below the requirement: {}", bad.len());
-                for p in bad.iter().take(20) {
+                for pr in bad.iter().take(20) {
                     println!(
                         "    {:<24} – {:<24} {}",
-                        wire_name(&wires[p.a]),
-                        wire_name(&b_wires[p.b]),
-                        describe(&p.result, rule)
+                        wire_name(&wires[pr.a]),
+                        wire_name(&b_wires[pr.b]),
+                        describe(&pr.result, rule)
                     );
                 }
-                for p in &bad {
+                for pr in &bad {
                     marker(
                         extras,
                         rule,
-                        format!("{} – {}", wire_name(&wires[p.a]), wire_name(&b_wires[p.b])),
-                        &p.result,
+                        format!(
+                            "{} – {} ({})",
+                            wire_name(&wires[pr.a]),
+                            wire_name(&b_wires[pr.b]),
+                            case.name
+                        ),
+                        &pr.result,
                     );
                 }
-                for p in &pairs {
-                    csv_rows(&mut csv, rule, &wires[p.a], Some(&b_wires[p.b]), &p.result);
+                for pr in &pairs {
+                    csv_rows(
+                        &mut rows,
+                        rule,
+                        &wires[pr.a],
+                        Some(&b_wires[pr.b]),
+                        &pr.result,
+                    );
                 }
             }
         }
     }
-    if let Some(path) = o.clearance_csv {
-        std::fs::write(path, csv).map_err(|e| format!("{}: {e}", path.display()))?;
+    // Prefix the rows with the case name.
+    let name = case.name.replace(',', ";");
+    for row in rows.lines() {
+        let _ = writeln!(csv, "{name},{row}");
     }
-    if let Some(g) = ground
-        .as_ref()
-        .filter(|g| g.num_triangles() <= ols_line::export::MAX_VIEWER_TRIANGLES)
-    {
-        extras.ground = Some(g.mesh());
-    }
-    Ok(ground)
+    Ok(())
 }

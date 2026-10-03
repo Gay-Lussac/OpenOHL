@@ -1,0 +1,40 @@
+# Example weather cases for the synthetic line (invented values, not a
+# design code). Ice either as a radial thickness with a density, or as a
+# load per metre — with a density it also widens the wind diameter.
+# Choose cases per run: ols line ... --weather weather-cases.olswc --tag clearance
+format = "ols-weather-cases"
+version = 1
+name = "Synthetic example cases"
+
+[[case]]
+name = "everyday"
+tags = ["stringing"]
+temperature = "10 °C"
+
+[[case]]
+name = "max temperature"
+description = "maximum conductor temperature"
+tags = ["clearance"]
+temperature = "80 °C"
+
+[[case]]
+name = "glaze ice"
+tags = ["clearance", "loads"]
+temperature = "-5 °C"
+ice_thickness = "12.7 mm"
+ice_density = "913 kg/m³"
+
+[[case]]
+name = "rime ice + wind"
+description = "ice given as a load; its density sets the iced diameter for the wind"
+tags = ["loads"]
+temperature = "-5 °C"
+ice_load = "20 N/m"
+ice_density = "500 kg/m³"
+wind_pressure = "200 Pa"
+
+[[case]]
+name = "high wind"
+tags = ["loads", "blowout"]
+temperature = "15 °C"
+wind_pressure = "600 Pa"
