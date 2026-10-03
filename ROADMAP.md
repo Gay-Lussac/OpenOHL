@@ -102,7 +102,8 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] Structures and strings in the app: Add structure (on the ground, type from the library), Add string, Edit (structure, string in the structure's axes, override of a type's string) and Delete (structures, strings, sections, jumpers) tools, one session command each *(spotting on the profile still open)*
 - [x] Wire stringing: String wire tool (strings in order → section window: cable, circuit, system, bundle), sections edited and strung again through new points; sagged to a tension or a sag (ruling span or chosen span); status in the blocks (rolling: equal tension in all spans in every case, default) or clipped in (unstressed lengths per span) *(tension criteria by weather case still open)*
 - [x] Clearance violation display: Clearances tab (rule file, violations of the shown case re-checked after edits in the background, click to go there), red marks in 3D and plan *(reports: `ols line --clearance-csv`)*
-- [ ] Library editors (cables, insulators, structures, weather cases)
+- [x] Library editors (wires, insulators, structure types, weather cases): fields with units, known fields to add, checked as typed, comments kept; the model reads its libraries again on save
+- [x] Menu bar (Edit with Snap, View pages and layers, Tools, Checks on demand, Libraries; Tables and Plugins to come) and a customizable quick bar; pages closable and reopened from View
 - [ ] Plugin manager UI
 - [ ] Python scripting console inside the application
 - [ ] **Server mode (alpha)**: host a project, multiple users connect over LAN/Internet, live change broadcast, presence, soft locks, per-user undo, roles & permissions, admin rollback

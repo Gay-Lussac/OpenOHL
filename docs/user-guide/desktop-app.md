@@ -22,6 +22,25 @@ cargo run --release -p ols-app -- project.ols          # with the project's poin
 | `--controls` | Navigation scheme: `orbit` or `minecraft` (default: the one used last). |
 | `--screenshot FILE.png` (`--focus ID`, `--distance M`) | Load, render the 3D view to an image and exit (with `--focus`, looking at that structure's first attachment). |
 
+## Menus, quick bar and pages
+
+The **menu bar** holds what needs no view:
+
+| Menu | |
+|---|---|
+| File | the model's file, Quit |
+| Edit | Undo, Redo, Delete selected, Clear selection, Go to structure; **Snap: what can be clicked** |
+| View | Fit views; the pages to show (tick to open, untick to close); layers; weather case; Customize the quick bar |
+| Tools | the tool inventory (E); hold any tool |
+| Checks | calculations run **on demand** — they never change the model: Clearances (Run checks, also after every edit, rule file, Show results); more checks to come |
+| Libraries | the library editors: wires, insulators, structure types, weather cases (see [Library editors](#library-editors)) |
+| Tables, Plugins | to come (table editing of structures, sections, strings…; the plugin manager) |
+| Help | version, keys and mouse |
+
+Under it, the **quick bar**: the line's name, the weather case, the selection, then the commands chosen for it (default Undo, Redo, Fit views, Run checks). **⚙** (or View › Customize the quick bar) adds any command of the menus — commands, library editors, tools — removes and orders them; the bar is remembered.
+
+**Pages** work like browser tabs: each has a tab with a close button; drag a tab to rearrange, or out of the window to make a floating, resizable window with its own row of tabs (drop more pages on it). Closed pages come back from View. Library editors open together in a floating window.
+
 ## Views
 
 - **3D** — ground (shaded), LiDAR points coloured by class role (vegetation green, buildings red, water blue, wires yellow…), structures, insulator strings, wires in their phase colours (bundles as their subconductors, `bundle_spacing` apart — one section, solved and selected as one — held at every clamp by a yoke: a bar for two, a triangle for three, a polygon for more; the back and ahead spans and the jumpers end on its corners), alignments. Navigation: see [Controls](#controls). Height exaggeration in the Model panel.
@@ -29,7 +48,6 @@ cargo run --release -p ols-app -- project.ols          # with the project's poin
 - **Profile** — per route: ground along the centreline, structures and wires by station; heights fit the visible stretch. Scroll zooms along the route, drag moves, double-click shows the whole route.
 - **Properties** — the selected structure (position, type, attachments, spans through it) or span (cable, circuit, electrical system and voltage, bundle, horizontal and maximum tension, sag and lowest point in every weather case). Links select related objects.
 - **Model** — layers, weather cases, what was loaded and how long it took.
-- **Snap** — what can be clicked.
 - **Clearances** — clearance violations of the shown weather case (see [Clearances](#clearances)).
 - **Properties** of the other kinds: an attachment point (string type, insulator and wire points, length, weight, spans and jumpers there), an alignment point (position, tied structure), a LiDAR point (position, class and roles).
 
@@ -45,9 +63,9 @@ A project (`.ols`) opened by a user with the designer or admin role (`--user`, d
 | Add a structure | The **Add structure** tool and a right-click on the ground (3D view, under the crosshair in first person; or the plan view): the window proposes the next id, the type and orientation of the nearest structure, the base on the ground. Without a type, give it strings with **Add string**. |
 | Add a string | The **Add string** tool and a right-click on a structure: the next free set, phase 1, hanging 3 m from the top; set the points in the structure's axes. |
 | String a wire | The **String wire** tool: right-click the strings in line order (a yellow line joins them), **Enter** opens the new section's window — like the selected span's section, or the one through the first string, in the blocks with its condition (or its tension as solved) —, **Backspace** takes the last point back, **Escape** gives up. **Pick points again** in a section's window strings it again through new points (a clipped section with a different number of spans goes back to the blocks). |
-| Undo / redo | **⌘Z** / **⇧⌘Z**, or the toolbar. |
+| Undo / redo | **⌘Z** / **Shift+⌘Z**, the Edit menu or the quick bar. |
 
-Every window applies one command (**Apply** or Enter; **Cancel** or Escape); when the session refuses it (an id taken, a line that would not be valid…), the window stays open with the reason. While Delete, Edit, Add string or String wire is held, strings can be right-clicked whatever the Snap tab says.
+Every window applies one command (**Apply** or Enter; **Cancel** or Escape); when the session refuses it (an id taken, a line that would not be valid…), the window stays open with the reason. While Delete, Edit, Add string or String wire is held, strings can be right-clicked whatever Edit › Snap says.
 
 After an edit only the sections it touched are re-solved, in every weather case (incremental solving); the status bar reports what was re-solved and how long it took (about 0.1 s on the 25 km line), and the Clearances tab checks again.
 
@@ -59,9 +77,17 @@ As in Minecraft, the bottom of the 3D view holds a **hotbar** of nine tool slots
 
 The **Clearances** tab checks the shown weather case with a rule file (`.olsr`, the format of `ols line --rules`; see [Clearance rules](terrain.md#clearance-rules-olsr)): the wires against the ground surface, against the LiDAR points of the rules' classes, and against the line's other wires, with the requirements by voltage of each section's electrical system. Rule files are listed from `--rules FILE`, the `.olsr` files next to the model and `libraries/clearance-rules`; the one given or the only one found is chosen at start.
 
-The check runs in the background and again after every edit and change of weather case (untick "after every edit" to check only with **Check now**). LiDAR points are read again from the project's point cloud each time, only those of the rules' classes in a corridor around the spans, so nothing more is kept in memory: on the 25 km line with 18.8 million such points a check takes a few seconds. The list shows each violation, worst first: wire (span or jumper, and the other wire for wire rules), rule, vertical or radial clearance against the requirement, the LiDAR class, how many points are too close. Clicking one selects the wire and brings the views to it. The violations are drawn in red in the 3D view (a line from the wire to the point too close; layer "Clearance violations") and circled in the plan.
+Checks run **on demand**: **Run checks** (Checks menu or quick bar) or **Check now** in the tab; tick "after every edit" to check again after each edit and change of weather case. The check runs in the background. LiDAR points are read again from the project's point cloud each time, only those of the rules' classes in a corridor around the spans, so nothing more is kept in memory: on the 25 km line with 18.8 million such points a check takes a few seconds. The list shows each violation, worst first: wire (span or jumper, and the other wire for wire rules), rule, vertical or radial clearance against the requirement, the LiDAR class, how many points are too close. Clicking one selects the wire and brings the views to it. The violations are drawn in red in the 3D view (a line from the wire to the point too close; layer "Clearance violations") and circled in the plan.
 
 Rules for other lines and rules across pairs of weather cases are run by `ols line` only; the tab says so.
+
+## Library editors
+
+**Libraries** opens an editor for the wire library (`.olsw`), insulator assemblies (`.olsi`), structure types (`.olss`) or weather cases (`.olswc`) — the files the model uses: the wire library given or next to the model, `Structures/` next to it, the insulator directory, the weather case file. Choose a file (or type a name and **New file**); for wires and weather cases the list on the left holds the items (**Add**, **Duplicate**, **Delete**).
+
+Every field is shown as written in the file, with its units (`"28.1 mm"`, `"55 GPa"`, `"-5 °C"`); numbers and lists as TOML (`23e-6`, `["clearance", "loads"]`). **add a field…** offers the fields of that kind not yet given, with an example and their meaning; 🗑 removes one. A structure type's attachments, extensions and body lines are listed below its fields (add, duplicate, remove). Comments and layout of the file are kept.
+
+The file is checked as you type with the library's own reader; the error is shown and **Save** waits until it reads. After saving, the model reads its libraries again, resolves the structure types and solves every weather case; a page with unsaved changes shows ● and does not close. **Use for the model** (weather cases) solves the model in another case file.
 
 ## Controls
 
@@ -85,7 +111,7 @@ Two schemes, chosen in the Model panel (Controls):
 
 The speed (m/s) and, for the first-person scheme, the look sensitivity are set there too, and the list shows every key of the scheme. The scheme, speed and sensitivity are remembered for the next start; `--controls orbit` or `--controls minecraft` chooses one at start. Schemes are data (`controls.rs`: actions bound to keys and mouse buttons), so schemes familiar from other software can be added as presets, and later edited and saved.
 
-The **Snap** tab (next to Model) chooses what can be clicked: structures, spans, jumpers, attachment points, alignment points, LiDAR points (more kinds will be added); by default structures, spans and jumpers. At about the same distance, a point wins over the line it sits on and a structure over a wire. The choice is remembered.
+**Edit › Snap: what can be clicked** chooses what can be clicked: structures, spans, jumpers, attachment points, alignment points, LiDAR points (more kinds will be added); by default structures, spans and jumpers. At about the same distance, a point wins over the line it sits on and a structure over a wire. The choice is remembered.
 
 Clicking an object in any view selects it everywhere: a structure anywhere along the lines it is drawn with (mast or stick drawing, arms, insulator strings), a span anywhere along its wire, a jumper anywhere along it (drawn as a bundle like its section). The properties of a jumper show its cable, section, bundle (and whether it is its own or its section's), length or sag, support string, and results in every weather case. Tabs can be dragged to rearrange the window.
 

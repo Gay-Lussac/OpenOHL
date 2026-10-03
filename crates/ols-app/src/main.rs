@@ -20,6 +20,8 @@ mod clearance;
 mod controls;
 mod edit;
 mod editors;
+mod library;
+mod menu;
 mod model;
 mod plan;
 mod profile;
@@ -149,6 +151,9 @@ fn main() -> std::process::ExitCode {
             }
             if let Some(h) = cc.storage.and_then(tools::Hotbar::load) {
                 app.hotbar = h;
+            }
+            if let Some(q) = cc.storage.and_then(menu::QuickBar::load) {
+                app.quickbar = q;
             }
             Ok(Box::new(app))
         }),

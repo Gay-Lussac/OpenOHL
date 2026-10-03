@@ -180,7 +180,7 @@ fn dir_of(file: &Path) -> PathBuf {
 
 /// The wire library: given, else the `*.olsw` files next to the model,
 /// else `libraries/cables`.
-fn library_path(s: &Sources) -> PathBuf {
+pub fn library_path(s: &Sources) -> PathBuf {
     if let Some(p) = &s.library {
         return p.clone();
     }
@@ -226,6 +226,105 @@ fn editing(session: Option<ols_session::Session>, user: Option<&str>) -> Result<
     }
 }
 
+/// The structure types' directory: given, else `Structures/` next to the
+/// model, else `libraries/structures`.
+pub fn structures_dir(sources: &Sources) -> PathBuf {
+    sources.structures.clone().unwrap_or_else(|| {
+        let local = dir_of(&sources.file).join("Structures");
+        if local.is_dir() {
+            local
+        } else {
+            PathBuf::from("libraries/structures")
+        }
+    })
+}
+
+/// The insulator assemblies' directory.
+pub fn insulators_dir(sources: &Sources) -> PathBuf {
+    sources
+        .insulators
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("libraries/insulators"))
+}
+
+/// The directory next to the model.
+pub fn model_dir(sources: &Sources) -> PathBuf {
+    dir_of(&sources.file)
+}
+
+/// Structure and insulator libraries: when the line has typed structures,
+/// or there are types to add.
+#[allow(clippy::type_complexity)]
+fn load_types(
+    sources: &Sources,
+    line: &Line,
+) -> Result<
+    Option<(
+        ols_structures::StructureLibrary,
+        ols_structures::InsulatorLibrary,
+    )>,
+    String,
+> {
+    let dir = structures_dir(sources);
+    if !(line.structures.iter().any(|s| s.structure_type.is_some()) || dir.is_dir()) {
+        return Ok(None);
+    }
+    let structures = ols_structures::StructureLibrary::load_dir(&dir).map_err(|e| e.to_string())?;
+    let insulators = ols_structures::InsulatorLibrary::load_dir(&insulators_dir(sources))
+        .map_err(|e| e.to_string())?;
+    Ok(Some((structures, insulators)))
+}
+
+/// The weather cases: from the file given, else still air at 15 °C.
+fn load_cases(sources: &Sources) -> Result<Vec<WeatherCase>, String> {
+    Ok(match &sources.weather {
+        Some(p) => WeatherCases::load(p)?.cases,
+        None => vec![WeatherCase::still(
+            "15 °C",
+            ols_core::units::Temperature::from_celsius(15.0),
+        )],
+    })
+}
+
+impl Model {
+    /// Reads the libraries again (wires, structure types, insulators,
+    /// weather cases) after one was edited, resolves the line again and
+    /// solves every case. Nothing changes when one does not load.
+    pub fn reload_libraries(&mut self) -> Result<String, String> {
+        let started = Instant::now();
+        let stored = match &self.editing {
+            Ok(e) => e.session.export(),
+            Err(_) => load_line(&self.sources.file)?.0,
+        };
+        let types = load_types(&self.sources, &stored)?;
+        let line = match &types {
+            Some((s, i)) => stored.resolve(s, i).map_err(|e| e.to_string())?,
+            None => stored,
+        };
+        let library =
+            ols_cables::Library::load(&library_path(&self.sources)).map_err(|e| e.to_string())?;
+        let cases = load_cases(&self.sources)?;
+        self.cases = cases
+            .into_iter()
+            .map(|c| Solved::new(&line, &library, c))
+            .collect();
+        self.line = line;
+        self.library = library;
+        self.types = types;
+        let failed: usize = self.cases.iter().map(|c| c.failed.len()).sum();
+        Ok(format!(
+            "libraries read again, {} weather cases solved in {:.1?}{}",
+            self.cases.len(),
+            started.elapsed(),
+            if failed > 0 {
+                format!(" — {failed} sections or jumpers failed")
+            } else {
+                String::new()
+            }
+        ))
+    }
+}
+
 /// Loads and solves everything; `progress` gets a line per step.
 pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String> {
     let mut log = Vec::new();
@@ -245,42 +344,23 @@ pub fn load(sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String
         ),
         &mut log,
     );
-    let mut types = None;
-    let dir = sources.structures.clone().unwrap_or_else(|| {
-        let local = dir_of(&sources.file).join("Structures");
-        if local.is_dir() {
-            local
-        } else {
-            PathBuf::from("libraries/structures")
-        }
-    });
-    // Also without typed structures, when there are types to add.
-    if line.structures.iter().any(|s| s.structure_type.is_some()) || dir.is_dir() {
-        let structures =
-            ols_structures::StructureLibrary::load_dir(&dir).map_err(|e| e.to_string())?;
-        let insulators = ols_structures::InsulatorLibrary::load_dir(
-            sources
-                .insulators
-                .as_deref()
-                .unwrap_or(Path::new("libraries/insulators")),
-        )
-        .map_err(|e| e.to_string())?;
+    let types = load_types(&sources, &line)?;
+    if let Some((structures, insulators)) = &types {
         line = line
-            .resolve(&structures, &insulators)
+            .resolve(structures, insulators)
             .map_err(|e| e.to_string())?;
-        step(format!("structure types from {}", dir.display()), &mut log);
-        types = Some((structures, insulators));
+        step(
+            format!(
+                "structure types from {}",
+                structures_dir(&sources).display()
+            ),
+            &mut log,
+        );
     }
     let lib_path = library_path(&sources);
     let library = ols_cables::Library::load(&lib_path).map_err(|e| e.to_string())?;
     step(format!("wire library {}", lib_path.display()), &mut log);
-    let cases: Vec<WeatherCase> = match &sources.weather {
-        Some(p) => WeatherCases::load(p)?.cases,
-        None => vec![WeatherCase::still(
-            "15 °C",
-            ols_core::units::Temperature::from_celsius(15.0),
-        )],
-    };
+    let cases = load_cases(&sources)?;
     let mut solved = Vec::new();
     for case in cases {
         let t = Instant::now();

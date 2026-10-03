@@ -19,8 +19,8 @@ use crate::scene::Layer;
 use crate::selection::Selection;
 use crate::view3d::View3d;
 
-/// The tabs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The pages (tabs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tab {
     /// 3D view.
     View3d,
@@ -32,10 +32,35 @@ pub enum Tab {
     Properties,
     /// Layers, weather cases, load log.
     Model,
-    /// What can be clicked.
-    Snap,
     /// Clearance violations.
     Clearances,
+    /// A library editor.
+    Library(crate::library::LibraryKind),
+}
+
+impl Tab {
+    /// The pages of the View menu (library pages: the Libraries menu).
+    pub const VIEWS: [Tab; 6] = [
+        Tab::View3d,
+        Tab::Plan,
+        Tab::Profile,
+        Tab::Properties,
+        Tab::Model,
+        Tab::Clearances,
+    ];
+
+    /// Title on its tab.
+    pub fn title(self) -> &'static str {
+        match self {
+            Tab::View3d => "3D",
+            Tab::Plan => "Plan",
+            Tab::Profile => "Profile",
+            Tab::Properties => "Properties",
+            Tab::Model => "Model",
+            Tab::Clearances => "Clearances",
+            Tab::Library(k) => k.title(),
+        }
+    }
 }
 
 enum Message {
@@ -109,6 +134,9 @@ pub struct Ready {
     pub edit_position: Option<(String, [f64; 3])>,
     /// Clearance checks.
     pub clearances: crate::clearance::Clearances,
+    /// Library editor pages opened.
+    pub libraries:
+        std::collections::BTreeMap<crate::library::LibraryKind, crate::library::LibraryPage>,
 }
 
 impl Ready {
@@ -141,6 +169,7 @@ impl Ready {
             popup_open: false,
 
             edit_position: None,
+            libraries: Default::default(),
             clearances: crate::clearance::Clearances::new(
                 &model.sources.file,
                 model.sources.rules.as_deref(),
@@ -168,6 +197,10 @@ pub struct App {
     pub snaps: crate::selection::Snaps,
     /// Hotbar to start with.
     pub hotbar: crate::tools::Hotbar,
+    /// The quick bar under the menus.
+    pub quickbar: crate::menu::QuickBar,
+    /// The "Customize the quick bar" window is open.
+    customize: bool,
     state: State,
     dock: DockState<Tab>,
     render_state: Option<egui_wgpu::RenderState>,
@@ -179,7 +212,7 @@ pub fn default_dock() -> DockState<Tab> {
     let mut dock = DockState::new(vec![Tab::View3d, Tab::Plan]);
     let tree = dock.main_surface_mut();
     let [centre, _] = tree.split_right(NodeIndex::root(), 0.74, vec![Tab::Properties]);
-    let [centre, _] = tree.split_left(centre, 0.2, vec![Tab::Model, Tab::Snap, Tab::Clearances]);
+    let [centre, _] = tree.split_left(centre, 0.2, vec![Tab::Model, Tab::Clearances]);
     tree.split_below(centre, 0.66, vec![Tab::Profile]);
     dock
 }
@@ -214,6 +247,8 @@ impl App {
             controls: crate::controls::Controls::default(),
             snaps: crate::selection::Snaps::default(),
             hotbar: crate::tools::Hotbar::default(),
+            quickbar: Default::default(),
+            customize: false,
         }
     }
 
@@ -228,14 +263,8 @@ impl App {
             controls: crate::controls::Controls::default(),
             snaps: crate::selection::Snaps::default(),
             hotbar: crate::tools::Hotbar::default(),
-        }
-    }
-
-    /// Brings a tab to the front (tests).
-    #[cfg(test)]
-    pub fn show_tab(&mut self, tab: Tab) {
-        if let Some(path) = self.dock.find_tab(&tab) {
-            let _ = self.dock.set_active_tab(path);
+            quickbar: Default::default(),
+            customize: false,
         }
     }
 
@@ -258,24 +287,35 @@ impl TabViewer for Viewer<'_> {
     type Tab = Tab;
 
     fn title(&mut self, tab: &mut Tab) -> egui::WidgetText {
-        match tab {
-            Tab::View3d => "3D",
-            Tab::Plan => "Plan",
-            Tab::Profile => "Profile",
-            Tab::Properties => "Properties",
-            Tab::Model => "Model",
-            Tab::Snap => "Snap",
-            Tab::Clearances => "Clearances",
+        let dirty = match tab {
+            Tab::Library(k) => self.ready.libraries.get(k).is_some_and(|p| p.dirty()),
+            _ => false,
+        };
+        if dirty {
+            format!("{} ●", tab.title()).into()
+        } else {
+            tab.title().into()
         }
-        .into()
     }
 
     fn id(&mut self, tab: &mut Tab) -> egui::Id {
-        egui::Id::new(*tab as u8)
+        egui::Id::new(*tab)
     }
 
     fn closeable(&mut self, _tab: &mut Tab) -> bool {
-        false
+        true
+    }
+
+    fn on_close(&mut self, tab: &mut Tab) -> egui_dock::tab_viewer::OnCloseResponse {
+        // A library page with unsaved changes stays open.
+        if let Tab::Library(k) = tab
+            && let Some(p) = self.ready.libraries.get_mut(k)
+            && p.dirty()
+        {
+            p.message = Some(("Save or discard the changes before closing".into(), true));
+            return egui_dock::tab_viewer::OnCloseResponse::Ignore;
+        }
+        egui_dock::tab_viewer::OnCloseResponse::Close
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
@@ -315,12 +355,20 @@ impl TabViewer for Viewer<'_> {
                 model_panel(ui, r);
                 None
             }
-            Tab::Snap => {
-                snap_panel(ui, &mut r.snaps);
-                None
-            }
             Tab::Clearances => {
                 clearance_panel(ui, r);
+                None
+            }
+            Tab::Library(kind) => {
+                let kind = *kind;
+                let sources = r.model.sources.clone();
+                let page = r
+                    .libraries
+                    .entry(kind)
+                    .or_insert_with(|| crate::library::LibraryPage::new(kind, &sources));
+                if let Some(action) = page.ui(ui, &sources) {
+                    r.library_saved(kind, action);
+                }
                 None
             }
         };
@@ -335,7 +383,7 @@ impl TabViewer for Viewer<'_> {
 }
 
 impl Ready {
-    /// What can be right-clicked now: the Snap tab's choice, and strings
+    /// What can be right-clicked now: the Snap menu's choice, and strings
     /// while a tool that works on them is held.
     pub fn effective_snaps(&self) -> crate::selection::Snaps {
         let mut s = self.snaps.clone();
@@ -469,6 +517,61 @@ impl Ready {
     /// "Tool: what to right-click" in the status bar.
     fn hint(&mut self, tool: crate::tools::Tool) {
         self.status = Some((format!("{}: {}", tool.name(), tool.help()), true));
+    }
+
+    /// After a library page saved a file (or chose the weather cases): the
+    /// model reads its libraries again and solves.
+    pub fn library_saved(
+        &mut self,
+        kind: crate::library::LibraryKind,
+        action: crate::library::PageAction,
+    ) {
+        use crate::library::PageAction;
+        let (what, previous_weather) = match action {
+            PageAction::Saved(p) => (format!("saved {}", p.display()), None),
+            PageAction::UseWeather(p) => {
+                let before = self.model.sources.weather.replace(p.clone());
+                (format!("weather cases from {}", p.display()), Some(before))
+            }
+        };
+        match self.model.reload_libraries() {
+            Ok(report) => {
+                log::info!("{what}: {report}");
+                if previous_weather.is_some() {
+                    self.case = 0;
+                }
+                if let Some(page) = self.libraries.get_mut(&kind) {
+                    page.message = Some((format!("{what}; {report}"), false));
+                }
+                self.status = Some((format!("{what}; {report}"), false));
+            }
+            Err(e) => {
+                if let Some(before) = previous_weather {
+                    self.model.sources.weather = before;
+                }
+                let m = format!("{what}, but the model does not load with it: {e}");
+                log::warn!("{m}");
+                if let Some(page) = self.libraries.get_mut(&kind) {
+                    page.message = Some((m.clone(), true));
+                }
+                self.status = Some((m, true));
+            }
+        }
+        if !self.selection_exists() {
+            self.selection = Selection::None;
+        }
+        self.clearances.stale = true;
+        self.refresh_views();
+    }
+
+    /// Shows weather case `k`.
+    pub fn set_case(&mut self, k: usize) {
+        self.case = k;
+        self.clearances.stale = true;
+        self.view3d
+            .dirty
+            .extend([Layer::Wires, Layer::OtherCases, Layer::Selection]);
+        self.profile.invalidate();
     }
 
     /// Selects `target`.
@@ -804,7 +907,7 @@ fn goto_window(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
-/// Shortcuts (not while typing in a text field): ⌘Z undo, ⇧⌘Z redo,
+/// Shortcuts (not while typing in a text field): ⌘Z undo, Shift+⌘Z redo,
 /// Delete or Backspace deletes the selected structure, M holds the Move
 /// tool, E opens the inventory, 1–9 choose a hotbar slot; the wheel scrolls
 /// the hotbar while the mouse is captured.
@@ -833,7 +936,7 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         }
     }
     if !ctx.text_edit_focused() {
-        // Redo first: ⇧⌘Z also matches ⌘Z when shift is ignored.
+        // Redo first: Shift+⌘Z also matches ⌘Z when shift is ignored.
         let (redo, undo, delete, move_key, inventory, slot) = ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
             let redo = i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
@@ -1126,8 +1229,9 @@ fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
         r.plan.marks = f.iter().map(|f| f.at).collect();
         r.view3d.dirty.insert(Layer::Clearances);
     }
-    let first = r.clearances.report.is_none();
-    if r.clearances.stale && (r.clearances.auto || first) {
+    // Checks run on demand (Check now, Checks menu), or after every edit
+    // when asked.
+    if r.clearances.stale && r.clearances.auto && r.clearances.report.is_some() {
         start_clearance_check(ctx, r);
     }
 }
@@ -1285,6 +1389,251 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     }
 }
 
+/// Shows `tab`: brings it to the front if it is open; library pages open
+/// together in a floating window, the other pages next to the first one.
+pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
+    if let Some(path) = dock.find_tab(&tab) {
+        let _ = dock.set_active_tab(path);
+        return;
+    }
+    if matches!(tab, Tab::Library(_)) {
+        if let Some(path) = dock.find_tab_from(|t| matches!(t, Tab::Library(_))) {
+            dock.set_focused_node_and_surface(path.node_path());
+            dock.push_to_focused_leaf(tab);
+        } else {
+            let surface = dock.add_window(vec![tab]);
+            if let Some(w) = dock.get_window_state_mut(surface) {
+                w.set_position(egui::pos2(140.0, 110.0));
+                w.set_size(egui::vec2(900.0, 620.0));
+            }
+        }
+        return;
+    }
+    dock.push_to_first_leaf(tab);
+}
+
+/// Closes `tab` if it is open.
+fn close_page(dock: &mut DockState<Tab>, tab: Tab) {
+    if let Some(path) = dock.find_tab(&tab) {
+        dock.remove_tab(path);
+    }
+}
+
+/// The menus: File, Edit (with Snap), View (pages, layers, cases), Tools,
+/// Checks, Libraries, Tables, Plugins, Help. Commands go to `out`.
+fn menus(
+    ui: &mut egui::Ui,
+    r: &mut Ready,
+    dock: &mut DockState<Tab>,
+    out: &mut Vec<crate::menu::Command>,
+    customize: &mut bool,
+) {
+    use crate::menu::Command;
+    let item = |ui: &mut egui::Ui, c: Command, out: &mut Vec<Command>| {
+        if c.menu_item(ui) {
+            out.push(c);
+            ui.close();
+        }
+    };
+    ui.menu_button("File", |ui| {
+        ui.label(egui::RichText::new(r.model.sources.file.display().to_string()).small());
+        ui.separator();
+        if ui.button("Quit").clicked() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    });
+    ui.menu_button("Edit", |ui| {
+        let editable = r.model.can_edit().is_ok();
+        ui.add_enabled_ui(editable, |ui| {
+            item(ui, Command::Undo, out);
+            item(ui, Command::Redo, out);
+            item(ui, Command::DeleteSelected, out);
+        });
+        item(ui, Command::ClearSelection, out);
+        item(ui, Command::GoTo, out);
+        ui.separator();
+        ui.menu_button("Snap: what can be clicked", |ui| {
+            snap_panel(ui, &mut r.snaps)
+        });
+    });
+    ui.menu_button("View", |ui| {
+        item(ui, Command::FitViews, out);
+        ui.separator();
+        ui.label(egui::RichText::new("Pages").small().weak());
+        for tab in Tab::VIEWS {
+            let mut open = dock.find_tab(&tab).is_some();
+            if ui.checkbox(&mut open, tab.title()).changed() {
+                if open {
+                    open_page(dock, tab);
+                } else {
+                    close_page(dock, tab);
+                }
+            }
+        }
+        ui.separator();
+        ui.menu_button("Layers", |ui| {
+            for layer in Layer::ALL {
+                let mut on = r.visible.contains(&layer);
+                if ui.checkbox(&mut on, layer.name()).changed() {
+                    if on {
+                        r.visible.insert(layer);
+                    } else {
+                        r.visible.remove(&layer);
+                    }
+                }
+            }
+        });
+        ui.menu_button("Weather case", |ui| {
+            let mut chosen = None;
+            for (k, c) in r.model.cases.iter().enumerate() {
+                if ui.radio(r.case == k, &c.case.name).clicked() {
+                    chosen = Some(k);
+                }
+            }
+            if let Some(k) = chosen
+                && k != r.case
+            {
+                r.set_case(k);
+            }
+        });
+        ui.separator();
+        if ui.button("Customize the quick bar…").clicked() {
+            *customize = true;
+            ui.close();
+        }
+    });
+    ui.menu_button("Tools", |ui| {
+        item(ui, Command::Inventory, out);
+        ui.separator();
+        for t in crate::tools::Tool::ALL {
+            let held = r.hotbar.tool() == t;
+            let mut b = egui::Button::selectable(held, format!("{} {}", t.icon(), t.name()));
+            if let Some(k) = t.key() {
+                b = b.shortcut_text(k);
+            }
+            if ui.add(b).on_hover_text(t.help()).clicked() {
+                out.push(Command::Hold(t));
+                ui.close();
+            }
+        }
+    });
+    ui.menu_button("Checks", |ui| {
+        ui.label(
+            egui::RichText::new("Run on demand; the model is not changed")
+                .small()
+                .weak(),
+        );
+        ui.separator();
+        ui.label(egui::RichText::new("Clearances").strong());
+        item(ui, Command::RunChecks, out);
+        let c = &mut r.clearances;
+        ui.checkbox(&mut c.auto, "also after every edit");
+        if !c.files.is_empty() {
+            ui.menu_button("Rule file", |ui| {
+                let mut chosen = None;
+                for (k, p) in c.files.iter().enumerate() {
+                    let name = p
+                        .file_name()
+                        .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+                    if ui.radio(c.chosen == Some(k), name).clicked() {
+                        chosen = Some(k);
+                    }
+                }
+                if let Some(k) = chosen {
+                    c.choose(k);
+                }
+            });
+        }
+        if ui.button("Show results").clicked() {
+            open_page(dock, Tab::Clearances);
+            ui.close();
+        }
+        ui.separator();
+        ui.add_enabled(false, egui::Button::new("Tension limits (to come)"));
+        ui.add_enabled(false, egui::Button::new("Insulator swing (to come)"));
+    });
+    ui.menu_button("Libraries", |ui| {
+        for k in crate::library::LibraryKind::ALL {
+            item(ui, Command::Library(k), out);
+        }
+    });
+    ui.menu_button("Tables", |ui| {
+        for t in [
+            "Structures",
+            "Sections",
+            "Strings",
+            "Jumpers",
+            "Electrical systems",
+        ] {
+            ui.add_enabled(false, egui::Button::new(format!("{t} (to come)")));
+        }
+    });
+    ui.menu_button("Plugins", |ui| {
+        ui.add_enabled(false, egui::Button::new("Plugin manager (to come)"));
+    });
+    ui.menu_button("Help", |ui| {
+        ui.label(format!("OLS CAD {}", env!("CARGO_PKG_VERSION")));
+        if ui
+            .button("Keys and mouse")
+            .on_hover_text("In the Model page: the 3D controls and every key")
+            .clicked()
+        {
+            open_page(dock, Tab::Model);
+            ui.close();
+        }
+    });
+}
+
+/// Runs a command of the menus or the quick bar.
+fn run_command(
+    ctx: &egui::Context,
+    r: &mut Ready,
+    dock: &mut DockState<Tab>,
+    c: crate::menu::Command,
+) {
+    use crate::edit::Action;
+    use crate::menu::Command;
+    let editable = r.model.can_edit().is_ok();
+    match c {
+        Command::Undo if editable => {
+            r.perform(Action::Undo);
+        }
+        Command::Redo if editable => {
+            r.perform(Action::Redo);
+        }
+        Command::Undo | Command::Redo => {}
+        Command::FitViews => {
+            r.view3d.camera = None;
+            r.plan.refit();
+        }
+        Command::ClearSelection => r.select(Selection::None),
+        Command::DeleteSelected => {
+            if editable && let Some(a) = delete_action(&r.selection) {
+                r.perform(a);
+            }
+        }
+        Command::GoTo => {
+            r.goto = match &r.selection {
+                Selection::Structure(id) => Some(id.clone()),
+                _ => r.model.line.structures.first().map(|s| s.id.clone()),
+            };
+        }
+        Command::Inventory => {
+            r.inventory = true;
+            if r.view3d.captured {
+                crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
+            }
+        }
+        Command::RunChecks => {
+            r.clearances.stale = true;
+            start_clearance_check(ctx, r);
+            open_page(dock, Tab::Clearances);
+        }
+        Command::Library(k) => open_page(dock, Tab::Library(k)),
+        Command::Hold(t) => r.hotbar.hold(t),
+    }
+}
+
 fn snap_panel(ui: &mut egui::Ui, snaps: &mut crate::selection::Snaps) {
     use crate::selection::Snap;
     ui.label(egui::RichText::new("What can be clicked").strong());
@@ -1387,15 +1736,11 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
             });
         ui.separator();
         ui.label(egui::RichText::new("Weather cases").strong());
+        let mut chosen = None;
         for (k, c) in r.model.cases.iter().enumerate() {
             let text = format!("{} — {}", c.case.name, c.case.summary());
             if ui.radio(r.case == k, text).clicked() && r.case != k {
-                r.case = k;
-                r.clearances.stale = true;
-                r.view3d
-                    .dirty
-                    .extend([Layer::Wires, Layer::OtherCases, Layer::Selection]);
-                r.profile.invalidate();
+                chosen = Some(k);
             }
             if !c.failed.is_empty() {
                 ui.colored_label(
@@ -1403,6 +1748,9 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
                     format!("{} sections or jumpers failed", c.failed.len()),
                 );
             }
+        }
+        if let Some(k) = chosen {
+            r.set_case(k);
         }
         ui.separator();
         ui.label(egui::RichText::new("Loaded").strong());
@@ -1427,6 +1775,7 @@ impl eframe::App for App {
                 self.hotbar.save(storage);
             }
         }
+        self.quickbar.save(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -1498,10 +1847,19 @@ impl eframe::App for App {
                         }
                     });
                 });
+                let mut commands: Vec<crate::menu::Command> = Vec::new();
                 egui::Panel::top("top").show(ui, |ui| {
+                    egui::MenuBar::new().ui(ui, |ui| {
+                        menus(
+                            ui,
+                            ready,
+                            &mut self.dock,
+                            &mut commands,
+                            &mut self.customize,
+                        );
+                    });
                     ui.horizontal(|ui| {
-                        ui.strong("OLS CAD");
-                        ui.label(&ready.model.line.name);
+                        ui.strong(&ready.model.line.name);
                         ui.separator();
                         let case_name = ready
                             .model
@@ -1517,42 +1875,39 @@ impl eframe::App for App {
                                 }
                             });
                         if case != ready.case {
-                            ready.case = case;
-                            ready.clearances.stale = true;
-                            ready.view3d.dirty.extend([
-                                Layer::Wires,
-                                Layer::OtherCases,
-                                Layer::Selection,
-                            ]);
-                            ready.profile.invalidate();
+                            ready.set_case(case);
                         }
                         ui.separator();
                         ui.label(ready.selection.describe());
-                        if ui.button("Fit views").clicked() {
-                            ready.view3d.camera = None;
-                            ready.plan.refit();
-                        }
-                        if ready.selection != Selection::None && ui.button("Clear").clicked() {
-                            ready.selection = Selection::None;
-                            ready.view3d.dirty.insert(Layer::Selection);
-                        }
                         ui.separator();
-                        let editable = ready.model.can_edit().is_ok();
-                        ui.add_enabled_ui(editable, |ui| {
-                            if ui.button("Undo").on_hover_text("⌘Z").clicked() {
-                                ready.perform(crate::edit::Action::Undo);
-                            }
-                            if ui.button("Redo").on_hover_text("⇧⌘Z").clicked() {
-                                ready.perform(crate::edit::Action::Redo);
-                            }
-                        });
+                        if let Some(c) = self.quickbar.ui(ui) {
+                            commands.push(c);
+                        }
+                        if ui
+                            .small_button("⚙")
+                            .on_hover_text("Customize the quick bar")
+                            .clicked()
+                        {
+                            self.customize = true;
+                        }
                     });
                 });
+                for c in commands {
+                    run_command(ui.ctx(), ready, &mut self.dock, c);
+                }
+                if self.customize {
+                    let mut open = true;
+                    egui::Window::new("Customize the quick bar")
+                        .open(&mut open)
+                        .collapsible(false)
+                        .show(ui.ctx(), |ui| self.quickbar.customize_ui(ui));
+                    self.customize = open;
+                }
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
                     .show(ui, |ui| {
                         DockArea::new(&mut self.dock)
-                            .show_close_buttons(false)
+                            .show_close_buttons(true)
                             .show_leaf_close_all_buttons(false)
                             .show_inside(
                                 ui,

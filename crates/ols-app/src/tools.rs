@@ -104,7 +104,7 @@ impl Tool {
     }
 
     /// Strings (attachment points) can be right-clicked while it is held,
-    /// whatever the Snap tab says.
+    /// whatever the Snap menu says.
     pub fn picks_strings(self) -> bool {
         matches!(
             self,
@@ -112,7 +112,8 @@ impl Tool {
         )
     }
 
-    fn key_name(self) -> &'static str {
+    /// Key for saving.
+    pub fn key_name(self) -> &'static str {
         match self {
             Tool::Select => "select",
             Tool::Move => "move",
@@ -256,7 +257,8 @@ pub fn hotbar_ui(ctx: &egui::Context, hotbar: &mut Hotbar, at: egui::Pos2, arran
     egui::Area::new(egui::Id::new("hotbar"))
         .pivot(egui::Align2::CENTER_BOTTOM)
         .fixed_pos(at - egui::vec2(0.0, 8.0))
-        .order(egui::Order::Foreground)
+        // Above the views, under floating windows (library pages…).
+        .order(egui::Order::Middle)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 3.0;

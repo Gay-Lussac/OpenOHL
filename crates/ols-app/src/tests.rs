@@ -498,11 +498,15 @@ fn attachment_and_alignment_point_properties() {
         1
     );
     harness.get_by_label("free (not tied to a structure)");
-    // The Snap tab (behind Model) lists every kind.
-    harness.state_mut().show_tab(crate::app::Tab::Snap);
+    // Edit › Snap lists every kind.
+    harness.get_by_label("Edit").click();
+    harness.run();
+    harness
+        .get_by_label_contains("Snap: what can be clicked")
+        .click();
     harness.run();
     harness.get_by_label("Attachment points");
-    harness.get_by_label("LiDAR points");
+    harness.get_by_label("Spans (wires)");
 }
 
 /// LiDAR points are picked straight from the model when switched on.
@@ -1001,18 +1005,36 @@ fn clearance_violations_of_the_shown_case() {
     assert_eq!(low.rules.len(), 1);
 }
 
-/// The Clearances tab finds the example rules next to the model and checks
-/// the shown case on its own; the violations are drawn.
+/// The Clearances tab finds the example rules next to the model; checks run
+/// on demand (Checks › Run checks), not at start; the violations are drawn.
 #[test]
-fn the_clearances_tab_checks_on_its_own() {
+fn the_checks_menu_runs_the_clearance_check() {
     let model = synthetic();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
-    harness.state_mut().show_tab(crate::app::Tab::Clearances);
+    harness.run();
+    harness.run();
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .clearances
+            .report
+            .is_none()
+    );
+    harness.get_by_label("Checks").click();
+    harness.run();
+    // The menu's (the quick bar has one too).
+    harness
+        .query_all_by_label("Run checks")
+        .last()
+        .unwrap()
+        .click();
     let started = std::time::Instant::now();
     loop {
-        harness.run();
+        harness.step();
         let r = harness.state_mut().ready().unwrap();
         if r.clearances.report.is_some() && !r.clearances.running() {
             break;
@@ -1357,4 +1379,49 @@ fn a_section_is_sagged_clipped_in_and_back_in_the_blocks() {
     assert_solved_fully(&harness.state_mut().ready().unwrap().model);
     let st = edit(&mut harness, &|f, m| f.stringing = f.unclipped(m, 0));
     assert_eq!(st, sag);
+}
+
+/// Libraries › Weather cases opens its page in a floating window; a saved
+/// change reaches the model (solved again in the new cases).
+#[test]
+fn a_saved_library_reaches_the_model() {
+    use crate::library::{LibraryKind, PageAction};
+    let mut model = synthetic_project("library");
+    let dir = model.sources.file.parent().unwrap().to_path_buf();
+    let weather = dir.join("cases.olswc");
+    std::fs::write(
+        &weather,
+        "format = \"ols-weather-cases\"\nversion = 1\n\n[[case]]\nname = \"cold\"\ntemperature = \"-10 °C\"\n",
+    )
+    .unwrap();
+    model.sources.weather = Some(weather.clone());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Libraries").click();
+    harness.run();
+    harness.get_by_label("Weather cases library").click();
+    harness.run();
+    harness.run();
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .libraries
+            .contains_key(&LibraryKind::WeatherCases)
+    );
+    harness.get_by_label("Save");
+    // A second case written, as the page saves it.
+    std::fs::write(
+        &weather,
+        "format = \"ols-weather-cases\"\nversion = 1\n\n[[case]]\nname = \"cold\"\ntemperature = \"-10 °C\"\n\n[[case]]\nname = \"hot\"\ntemperature = \"60 °C\"\n",
+    )
+    .unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    r.library_saved(LibraryKind::WeatherCases, PageAction::Saved(weather));
+    assert_eq!(r.model.cases.len(), 2, "{:?}", r.status);
+    assert_eq!(r.model.cases[1].case.name, "hot");
+    assert_solved_fully(&r.model);
 }

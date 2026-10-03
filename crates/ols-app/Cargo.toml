@@ -24,6 +24,7 @@ ols-pointcloud.workspace = true
 ols-session.workspace = true
 ols-clearance.workspace = true
 serde_json.workspace = true
+toml_edit = "0.25"
 ols-drawing.workspace = true
 ols-render.workspace = true
 eframe.workspace = true

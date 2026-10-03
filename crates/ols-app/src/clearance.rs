@@ -383,7 +383,6 @@ impl Clearances {
         let chosen = (given.is_some() || files.len() == 1).then_some(0);
         let mut c = Self {
             files,
-            auto: true,
             ..Self::default()
         };
         if let Some(k) = chosen {

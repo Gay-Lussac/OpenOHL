@@ -56,7 +56,7 @@ pub struct Use {
     pub at: Option<[f64; 3]>,
 }
 
-/// What can be clicked (snapped to), switched on and off in the Snap tab.
+/// What can be clicked (snapped to), switched on and off in the Snap menu (Edit).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Snap {
     /// Structures (anywhere along their drawing).
@@ -74,7 +74,7 @@ pub enum Snap {
 }
 
 impl Snap {
-    /// Every kind, in the order of the Snap tab.
+    /// Every kind, in the order of the Snap menu.
     pub const ALL: [Snap; 6] = [
         Snap::Structure,
         Snap::Span,
@@ -84,7 +84,7 @@ impl Snap {
         Snap::LidarPoint,
     ];
 
-    /// Name in the Snap tab.
+    /// Name in the Snap menu (Edit).
     pub fn name(self) -> &'static str {
         match self {
             Snap::Structure => "Structures",
