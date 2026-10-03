@@ -95,7 +95,7 @@ The open Phase 2 items above, grouped into four work packages:
 - [ ] `ols-render`: chunk streaming, render distance per layer, LOD (terrain quadtree, structure mesh LODs, adaptive wires), culling, instancing
 - [x] Plan view, profile view, 3D view with synchronised selection; properties of structures and spans in every weather case; layers; LiDAR points by class role and ground from LiDAR
 - [ ] Live update while dragging
-- [x] 3D navigation: fly with W A S D, Space/Shift up/down, Ctrl faster; control schemes as data (Orbit, Minecraft creative) — more schemes and editing later
+- [x] 3D navigation: fly with W A S D, Space/Shift up/down, Ctrl faster; control schemes as data (Orbit; Minecraft creative with captured mouse, crosshair selection, Escape to free) — more schemes and editing later
 - [ ] Command palette, keyboard workflows, explainable results (click value → inputs & references)
 - [ ] Interactive structure spotting (add/move/delete structures on profile)
 - [ ] Wire stringing UI (sections, tension criteria, weather cases)

@@ -43,10 +43,10 @@ The 3D view is navigated with the mouse and, while the pointer is over it, the k
 | right or middle drag | pan |
 | double-click | fly to the object |
 
-Two schemes, chosen in the Model panel (Controls), differ in the left drag:
+Two schemes, chosen in the Model panel (Controls):
 
-- **Orbit** — turns the view around the point looked at.
-- **Minecraft creative** — looks around from where you stand.
+- **Orbit** — left drag turns the view around the point looked at.
+- **Minecraft creative** — first person, as in the game: clicking the 3D view captures the mouse (locked and hidden); moving it looks around (mouse down: look down); a crosshair marks the centre and a click selects what is under it (double-click flies to it); the wheel sets the speed. **Escape** frees the mouse to use the panels (switching to another application frees it too).
 
 The speed (m/s) is set there too, and the list shows every key of the scheme. Schemes are data (`controls.rs`: actions bound to keys and mouse buttons), so schemes familiar from other software can be added as presets, and later edited and saved.
 

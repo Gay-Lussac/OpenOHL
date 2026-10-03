@@ -115,6 +115,11 @@ pub struct Controls {
     pub speed: f64,
     /// Speed factor while sprinting.
     pub sprint: f64,
+    /// Clicking the 3D view captures the mouse (first person, crosshair,
+    /// Escape frees it).
+    pub capture: bool,
+    /// Mouse movement while captured, radians per pixel.
+    pub mouse_sensitivity: f64,
 }
 
 /// W A S D, Space up, Shift down, Ctrl sprint (Minecraft creative).
@@ -148,6 +153,8 @@ impl Controls {
                 middle: Drag::Pan,
                 speed: 30.0,
                 sprint: 4.0,
+                capture: false,
+                mouse_sensitivity: 0.003,
             },
             Controls {
                 name: "Minecraft creative",
@@ -157,6 +164,8 @@ impl Controls {
                 middle: Drag::Pan,
                 speed: 30.0,
                 sprint: 4.0,
+                capture: true,
+                mouse_sensitivity: 0.003,
             },
         ]
     }
@@ -200,6 +209,13 @@ impl Controls {
             .iter()
             .map(|(m, i)| (i.name(), m.name().to_owned()))
             .collect();
+        if self.capture {
+            out.push(("click 3D view".into(), "capture the mouse".into()));
+            out.push(("mouse (captured)".into(), "look around".into()));
+            out.push(("click (captured)".into(), "select at the crosshair".into()));
+            out.push(("wheel (captured)".into(), "speed".into()));
+            out.push(("Esc".into(), "free the mouse".into()));
+        }
         out.push(("left drag".into(), self.left.name().into()));
         out.push(("right drag".into(), self.right.name().into()));
         out.push(("middle drag".into(), self.middle.name().into()));

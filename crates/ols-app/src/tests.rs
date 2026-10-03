@@ -150,3 +150,101 @@ fn keys_fly_the_camera() {
     harness.step();
     assert_eq!(cam(&mut harness).target, after.target);
 }
+
+/// Minecraft scheme: a click captures the mouse, moving it looks around,
+/// a click selects at the crosshair, Escape frees the mouse.
+#[test]
+fn first_person_capture_aim_and_escape() {
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    harness.state_mut().ready().unwrap().view3d.controls = crate::controls::Controls::presets()
+        .into_iter()
+        .find(|c| c.name == "Minecraft creative")
+        .unwrap();
+    let click = |h: &mut Harness<'_, App>, pos: egui::Pos2| {
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        h.run();
+    };
+    let at = egui::pos2(620.0, 300.0);
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(at));
+    harness.run();
+    click(&mut harness, at);
+    assert!(
+        harness.state_mut().ready().unwrap().view3d.captured,
+        "captured"
+    );
+    assert_eq!(
+        harness.state_mut().ready().unwrap().selection,
+        Selection::None
+    );
+    // Mouse to the right: the view turns right (yaw decreases).
+    let yaw0 = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .view3d
+        .camera
+        .unwrap()
+        .yaw;
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::MouseMoved(egui::vec2(50.0, 0.0)));
+    harness.run();
+    let yaw1 = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .view3d
+        .camera
+        .unwrap()
+        .yaw;
+    assert!(yaw1 < yaw0, "{yaw0} → {yaw1}");
+    // Aim at T3's first insulator point and click anywhere: T3 selected.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let p = r.model.line.structure("T3").unwrap().attachments[0].insulator_point;
+        let cam = r.view3d.camera.as_mut().unwrap();
+        cam.target = p;
+        cam.distance = 80.0;
+    }
+    click(&mut harness, egui::pos2(300.0, 200.0));
+    assert_eq!(
+        harness.state_mut().ready().unwrap().selection,
+        Selection::Structure("T3".into())
+    );
+    // Escape frees the mouse.
+    harness.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run();
+    assert!(
+        !harness.state_mut().ready().unwrap().view3d.captured,
+        "freed"
+    );
+}

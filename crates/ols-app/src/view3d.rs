@@ -29,9 +29,24 @@ pub struct View3d {
     /// Layers to rebuild before the next frame.
     pub dirty: HashSet<Layer>,
     texture: Option<egui::TextureId>,
+    /// The mouse is captured (first person).
+    pub captured: bool,
 }
 
 impl View3d {
+    /// Captures (`on`) or frees the mouse: captured, it is locked and
+    /// hidden and moving it turns the view.
+    pub fn set_captured(captured: &mut bool, ctx: &egui::Context, on: bool) {
+        *captured = on;
+        let grab = if on {
+            egui::CursorGrab::Locked
+        } else {
+            egui::CursorGrab::None
+        };
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(grab));
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(!on));
+    }
+
     /// Marks every layer for rebuilding.
     pub fn rebuild_all(&mut self) {
         self.dirty.extend(Layer::ALL);
@@ -68,29 +83,85 @@ impl View3d {
         });
         // Input.
         let size = [f64::from(rect.width()), f64::from(rect.height())];
-        // Keys act while the pointer is over the view or it has focus.
-        if response.clicked() || response.drag_started() {
-            response.request_focus();
-        }
-        if response.dragged() {
-            let d = response.drag_delta();
-            let (dx, dy) = (f64::from(d.x), f64::from(d.y));
-            let action = [
-                egui::PointerButton::Primary,
-                egui::PointerButton::Secondary,
-                egui::PointerButton::Middle,
-            ]
-            .into_iter()
-            .find(|b| response.dragged_by(*b))
-            .map_or(Drag::None, |b| self.controls.drag(b));
-            match action {
-                Drag::Orbit => camera.orbit(dx * 0.008, dy * 0.008),
-                Drag::Look => camera.look(dx * 0.004, dy * 0.004),
-                Drag::Pan => camera.pan(dx, dy, size[1]),
-                Drag::None => {}
+        let local = |p: egui::Pos2| [f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y)];
+        let centre = [0.5 * size[0], 0.5 * size[1]];
+        // Mouse capture (first person): released by Escape, by losing the
+        // window's focus, or by a scheme without capture.
+        if self.captured {
+            let release = ui.input(|i| i.key_pressed(egui::Key::Escape) || !i.focused)
+                || !self.controls.capture;
+            if release {
+                Self::set_captured(&mut self.captured, ui.ctx(), false);
             }
         }
-        if response.hovered() || response.has_focus() {
+        let mut pick_at: Option<([f64; 2], bool)> = None;
+        if self.captured {
+            // Raw mouse movement turns the view (mouse down: look down).
+            let d = ui.input(|i| {
+                i.events.iter().fold(egui::Vec2::ZERO, |acc, e| match e {
+                    egui::Event::MouseMoved(d) => acc + *d,
+                    _ => acc,
+                })
+            });
+            if d != egui::Vec2::ZERO {
+                let k = self.controls.mouse_sensitivity;
+                camera.look(f64::from(d.x) * k, -f64::from(d.y) * k);
+            }
+            // Clicks aim with the crosshair.
+            let (click, double) = ui.input(|i| {
+                (
+                    i.pointer.button_clicked(egui::PointerButton::Primary),
+                    i.pointer
+                        .button_double_clicked(egui::PointerButton::Primary),
+                )
+            });
+            if click || double {
+                pick_at = Some((centre, double));
+            }
+            // The wheel sets the speed.
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0 {
+                self.controls.speed =
+                    (self.controls.speed * (f64::from(scroll) * 0.004).exp()).clamp(1.0, 2000.0);
+            }
+        } else {
+            // Keys act while the pointer is over the view or it has focus.
+            if response.clicked() || response.drag_started() {
+                response.request_focus();
+            }
+            if self.controls.capture && response.clicked() {
+                Self::set_captured(&mut self.captured, ui.ctx(), true);
+            } else if (response.clicked() || response.double_clicked())
+                && let Some(pos) = response.interact_pointer_pos()
+            {
+                pick_at = Some((local(pos), response.double_clicked()));
+            }
+            if response.dragged() {
+                let d = response.drag_delta();
+                let (dx, dy) = (f64::from(d.x), f64::from(d.y));
+                let action = [
+                    egui::PointerButton::Primary,
+                    egui::PointerButton::Secondary,
+                    egui::PointerButton::Middle,
+                ]
+                .into_iter()
+                .find(|b| response.dragged_by(*b))
+                .map_or(Drag::None, |b| self.controls.drag(b));
+                match action {
+                    Drag::Orbit => camera.orbit(dx * 0.008, dy * 0.008),
+                    Drag::Look => camera.look(dx * 0.004, -dy * 0.004),
+                    Drag::Pan => camera.pan(dx, dy, size[1]),
+                    Drag::None => {}
+                }
+            }
+            if response.hovered() {
+                let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+                if scroll != 0.0 {
+                    camera.zoom((-f64::from(scroll) * 0.002).exp());
+                }
+            }
+        }
+        if self.captured || response.hovered() || response.has_focus() {
             let (v, sprint, dt) = ui.input(|i| {
                 let (v, sprint) = self.controls.held(i);
                 (v, sprint, f64::from(i.stable_dt).min(0.1))
@@ -102,27 +173,16 @@ impl View3d {
                 ui.ctx().request_repaint();
             }
         }
-        if response.hovered() {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll != 0.0 {
-                camera.zoom((-f64::from(scroll) * 0.002).exp());
-            }
-        }
-        let local = |p: egui::Pos2| [f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y)];
-        if (response.clicked() || response.double_clicked())
-            && let Some(pos) = response.interact_pointer_pos()
-        {
+        if let Some((at, double)) = pick_at {
             let cam = *camera;
             let cands = selection::candidates(model, case);
-            let picked = selection::pick(&cands, local(pos), 14.0, |p| {
-                cam.project(p, size).map(|(q, _)| q)
-            });
+            let radius = if self.captured { 10.0 } else { 14.0 };
+            let picked =
+                selection::pick(&cands, at, radius, |p| cam.project(p, size).map(|(q, _)| q));
             if picked != *selection {
                 *selection = picked;
             }
-            if response.double_clicked()
-                && let Some(f) = selection.focus(model, case)
-            {
+            if double && let Some(f) = selection.focus(model, case) {
                 camera.target = f;
                 camera.distance = camera.distance.min(150.0);
             }
@@ -191,16 +251,41 @@ impl View3d {
                 egui::Color32::WHITE,
             );
         }
+        if self.captured {
+            let c = rect.center();
+            for (a, b) in [
+                (egui::vec2(-9.0, 0.0), egui::vec2(9.0, 0.0)),
+                (egui::vec2(0.0, -9.0), egui::vec2(0.0, 9.0)),
+            ] {
+                painter.line_segment(
+                    [c + a, c + b],
+                    egui::Stroke::new(4.0, egui::Color32::from_black_alpha(160)),
+                );
+                painter.line_segment([c + a, c + b], egui::Stroke::new(2.0, egui::Color32::WHITE));
+            }
+            painter.text(
+                rect.center_top() + egui::vec2(0.0, 8.0),
+                egui::Align2::CENTER_TOP,
+                format!(
+                    "Esc: free the mouse · click: select at the crosshair · W A S D Space Shift · Ctrl faster · wheel: speed {:.0} m/s",
+                    self.controls.speed
+                ),
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE,
+            );
+        }
         painter.text(
             rect.left_bottom() + egui::vec2(8.0, -8.0),
             egui::Align2::LEFT_BOTTOM,
             format!(
-                "{}: W A S D move · Space up · Shift down · Ctrl faster · drag: {} · right-drag: pan · scroll: zoom · double-click: fly to",
+                "{}: W A S D move · Space up · Shift down · Ctrl faster · {} · right-drag: pan · scroll: zoom · double-click: fly to",
                 self.controls.name,
-                if self.controls.left == Drag::Look {
-                    "look around"
+                if self.controls.capture {
+                    "click: capture the mouse (Esc frees it)"
+                } else if self.controls.left == Drag::Look {
+                    "drag: look around"
                 } else {
-                    "turn"
+                    "drag: turn"
                 }
             ),
             egui::FontId::proportional(11.0),
