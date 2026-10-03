@@ -53,9 +53,19 @@
       ]
     }
   ],
+  "systems": [
+    {
+      "id": "x110",
+      "name": "110 kV crossing system",
+      "voltage_kv": 110,
+      "frequency_hz": 50,
+      "phases": [{ "label": "L1" }, { "label": "L2" }, { "label": "L3" }]
+    }
+  ],
   "sections": [
     {
       "id": "X1",
+      "system": "x110",
       "cable": "acsr-drake-26-7",
       "circuit": "Crossing",
       "phase_label": "L1",

@@ -284,9 +284,24 @@
       ]
     }
   ],
+  "systems": [
+    {
+      "id": "ex220",
+      "name": "220 kV example system",
+      "kind": "ac",
+      "voltage_kv": 220,
+      "frequency_hz": 50,
+      "phases": [
+        { "label": "L1", "angle_deg": 0 },
+        { "label": "L2", "angle_deg": -120 },
+        { "label": "L3", "angle_deg": 120 }
+      ]
+    }
+  ],
   "sections": [
     {
       "id": "S1",
+      "system": "ex220",
       "cable": "acsr-drake-26-7",
       "circuit": "Example 1",
       "phase_label": "L1",
@@ -334,6 +349,7 @@
     },
     {
       "id": "S2",
+      "system": "ex220",
       "cable": "acsr-drake-26-7",
       "circuit": "Example 1",
       "phase_label": "L2",

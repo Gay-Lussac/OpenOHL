@@ -407,6 +407,8 @@ struct Meta {
     alignment: Vec<ols_line::AlignmentPoint>,
     #[serde(default)]
     display: ols_line::Display,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    systems: Vec<ols_line::electrical::System>,
 }
 
 /// A raw log row: seq, time, user, kind, command, inverse, objects,
@@ -464,6 +466,7 @@ fn objects_of(line: &Line) -> Vec<(Kind, String, Value)> {
             crs: line.crs.clone(),
             alignment: line.alignment.clone(),
             display: line.display.clone(),
+            systems: line.systems.clone(),
         }),
     )];
     out.extend(
@@ -510,6 +513,7 @@ fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionEr
         sections: vec![],
         jumpers: vec![],
         display: meta.display,
+        systems: meta.systems,
     };
     for ((kind, id), o) in ordered {
         let v = o.value.clone();
@@ -680,6 +684,7 @@ impl Session {
                 sections: vec![],
                 jumpers: vec![],
                 display: ols_line::Display::default(),
+                systems: vec![],
             }
         } else {
             line_of(&objects)?
@@ -870,6 +875,7 @@ impl Session {
                 crs: self.line.crs.clone(),
                 alignment,
                 display: self.line.display.clone(),
+                systems: self.line.systems.clone(),
             };
             return Ok(Command::Put {
                 kind: Kind::Meta,

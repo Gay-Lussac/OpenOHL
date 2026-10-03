@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::checks::{Hit, WireResult};
-use crate::rules::Rule;
+use crate::rules::Required;
 
 /// The envelope of one wire (or wire pair) under one rule.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -27,6 +27,8 @@ pub struct EnvelopeEntry {
     pub radial: Option<(Hit, String)>,
     /// Cases in which a requirement of the rule is not met.
     pub violated_in: BTreeSet<String>,
+    /// The requirements (by the wire's or pair's voltage).
+    pub required: Required,
 }
 
 impl EnvelopeEntry {
@@ -50,15 +52,7 @@ pub struct Envelope {
 impl Envelope {
     /// Adds the result of rule `rule_index` for wire `a` (and `b`) in
     /// `case`.
-    pub fn add(
-        &mut self,
-        rule_index: usize,
-        rule: &Rule,
-        case: &str,
-        a: &str,
-        b: Option<&str>,
-        r: &WireResult,
-    ) {
+    pub fn add(&mut self, rule_index: usize, case: &str, a: &str, b: Option<&str>, r: &WireResult) {
         self.cases.insert(case.to_owned());
         let entry = self
             .rules
@@ -68,6 +62,7 @@ impl Envelope {
             .or_insert_with(|| EnvelopeEntry {
                 a: a.to_owned(),
                 b: b.map(str::to_owned),
+                required: r.required,
                 ..EnvelopeEntry::default()
             });
         let lower = |slot: &mut Option<(Hit, String)>, hit: Option<Hit>| {
@@ -79,7 +74,7 @@ impl Envelope {
         };
         lower(&mut entry.vertical, r.vertical);
         lower(&mut entry.radial, r.radial);
-        if r.violates(rule) {
+        if r.violates() {
             entry.violated_in.insert(case.to_owned());
         }
     }
@@ -134,12 +129,12 @@ mod tests {
         let result = |v: f64, r: f64| WireResult {
             vertical: Some(hit(v)),
             radial: Some(hit(r)),
-            ..WireResult::default()
+            ..WireResult::with(rule.required(None))
         };
-        env.add(0, &rule, "cold", "S1 span 0", None, &result(12.0, 11.0));
-        env.add(0, &rule, "hot", "S1 span 0", None, &result(6.5, 6.2));
-        env.add(0, &rule, "ice", "S1 span 0", None, &result(8.0, 5.5));
-        env.add(0, &rule, "hot", "S1 span 1", None, &result(20.0, 19.0));
+        env.add(0, "cold", "S1 span 0", None, &result(12.0, 11.0));
+        env.add(0, "hot", "S1 span 0", None, &result(6.5, 6.2));
+        env.add(0, "ice", "S1 span 0", None, &result(8.0, 5.5));
+        env.add(0, "hot", "S1 span 1", None, &result(20.0, 19.0));
         let e = &env.violations(0)[0];
         assert_eq!(e.a, "S1 span 0");
         assert_eq!(

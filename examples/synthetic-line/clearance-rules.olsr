@@ -14,13 +14,16 @@ radial = "6.5 m"
 [[rule]]
 name = "Phase to phase"
 target = "same_line"
-radial = "4 m"
+# By the voltage between the two conductors (phase angles of the system).
+radial = { by_voltage = [[0, "2 m"], [150, "3 m"], [245, "4 m"]] }
+pair_voltage = "difference"
 
 [[rule]]
 name = "Crossed lines"
 target = "other_lines"
-vertical = "4.5 m"
-radial = "4.5 m"
+# By the higher voltage of the two wires ([up to kV, distance]).
+vertical = { by_voltage = [[0, "3 m"], [150, "4 m"], [245, "4.5 m"], [420, "5.5 m"]] }
+radial = { by_voltage = [[0, "3 m"], [150, "4 m"], [245, "4.5 m"], [420, "5.5 m"]] }
 
 [[rule]]
 name = "Iced wire over a hot wire"

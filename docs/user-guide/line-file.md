@@ -29,6 +29,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `structures` | yes | List of structures. |
 | `sections` | yes | List of wire sections. |
 | `jumpers` | no | Jumpers between attachment points (below). |
+| `systems` | no | Electrical systems: phases or poles with their voltage ([below](#electrical-systems)). |
 | `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … } }` — wire colours (`#rrggbb`) by section `phase_label`. |
 
 ## Structures
@@ -72,6 +73,7 @@ A V-string holds its clamp across the line while both legs are in tension; when 
 | `id` | yes | Unique id. |
 | `cable` | yes | Cable id from the wire libraries. |
 | `circuit`, `phase_label` | no | Labels. |
+| `system` | no | Electrical system (id in `systems`) whose phase `phase_label` the section carries. Give it once per conductor path: sections joined by jumpers (or sharing an attachment) follow. None on the whole path: earthed (earth wire, OPGW). Independent of the cable. |
 | `bundle` | no (1) | Subconductors per phase; geometry and tension are per subconductor. |
 | `points` | yes | `{ "structure": id, "set": n, "phase": n }` in line order; spans are between consecutive points. |
 | `stringing` | yes | See below. |
@@ -123,6 +125,38 @@ A jumper is a slack cable joining two attachment points: the ends of two section
 | `color` | no | Display colour; default: the colour of the section through `from`. |
 
 Each end is the **solved clamp** of the section through that attachment (so the jumper follows strain assemblies and swung suspension clamps), or the attachment's `wire_point` if no section uses it. The jumper is one exact catenary element (two with a support string) carrying the weather case's weight, ice and wind (horizontal, perpendicular to the jumper's chord); its length scales with \\( e^{\alpha \Delta t} \\) from `temperature`. Sections are solved first: a jumper's tension (a few hundred N) does not change them. `ols line` prints each jumper's length, sag and tension, includes jumpers in the ground clearance check (as `jumper:<id>`) and draws them in the viewer. Clearance from jumpers to the structure body comes with structure outlines.
+
+## Electrical systems
+
+The electrical model is kept apart from the physical wires: a **system** is a group of phases (AC) or poles (DC) with its voltage, and sections point to it.
+
+```json
+"systems": [
+  { "id": "380-1", "name": "380 kV Alpha–Beta 1", "kind": "ac",
+    "voltage_kv": 380, "frequency_hz": 50,
+    "phases": [{ "label": "L1", "angle_deg": 0 }, { "label": "L2", "angle_deg": -120 },
+               { "label": "L3", "angle_deg": 120 }] },
+  { "id": "sbb", "name": "132 kV railway", "voltage_kv": 132, "frequency_hz": 16.7,
+    "phases": [{ "label": "UU", "angle_deg": 0 }, { "label": "VV", "angle_deg": 180 }] },
+  { "id": "hvdc", "kind": "dc", "voltage_kv": 500,
+    "phases": [{ "label": "+", "polarity": 1 }, { "label": "-", "polarity": -1 },
+               { "label": "MR", "polarity": 0 }] }
+]
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `id`, `name` | id | Sections refer to the id. |
+| `kind` | no (`ac`) | `ac` or `dc`. |
+| `voltage_kv` | yes | AC: nominal voltage between phases (rms). DC: pole voltage to earth. |
+| `frequency_hz` | no | AC frequency (50, 60, 16.7…). Systems of different frequencies are not synchronous. |
+| `phases` | yes | `label` (matched with the sections' `phase_label`); AC `angle_deg` (default evenly spread: 0°, −120°, +120°; two phases 0°, 180°); DC `polarity` +1, −1 or 0 (default in that order). |
+
+**Conductor paths.** Sections joined by jumpers, or sharing an attachment point, form one conductor path. Setting `system` on one section of the path assigns the whole path to that system's phase `phase_label`; two sections of a path naming different phases is an error that names them. A path without a system is earthed.
+
+**Voltages.** With `n` phases evenly spread, a phase is at `U / (2·sin(π/n))` to earth (`U/√3` for three phases, `U/2` for two). Between two conductors: the phasor difference for AC of the same frequency (`U` between two phases of a system, 0 between the same phase of two parallel systems), the difference of pole voltages for DC, and the sum of the voltages to earth otherwise (different frequencies, AC with DC). Clearance rules can use the nominal voltage or this voltage between conductors ([clearances by voltage](terrain.md#clearances-by-voltage)).
+
+Electrical properties of the cables (resistance, ampacity data) belong to the [wire library](wire-library.md), linked through each section's `cable`.
 
 ## How a section is solved
 

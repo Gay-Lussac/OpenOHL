@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 
 use ols_line::Line;
+use ols_line::electrical::Potential;
 use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;
 use ols_terrain::Terrain;
@@ -25,7 +26,7 @@ use crate::geometry::{
     P3, closest_between_segments, closest_on_segment, closest_on_triangle, crossing_in_plan,
     distance, over_in_plan,
 };
-use crate::rules::Rule;
+use crate::rules::{Required, Rule};
 
 /// Spacing of wire samples for the radial distance to the ground, m: the
 /// distance is over-estimated by at most s²/(8d) — 3 mm at d = 10 m.
@@ -45,6 +46,8 @@ pub struct Wire {
     pub circuit: String,
     /// Phase label.
     pub phase: String,
+    /// Electrical potential of its section (none: earthed wire).
+    pub potential: Option<Potential>,
     /// Points along the wire.
     pub points: Vec<P3>,
     /// The attachments it hangs on (`structure:set:phase`): wires sharing
@@ -52,13 +55,24 @@ pub struct Wire {
     pub ends: Vec<String>,
 }
 
+impl Wire {
+    /// Nominal voltage of its system, kV (none: earthed).
+    pub fn kv(&self) -> Option<f64> {
+        self.potential.map(|p| p.nominal_kv)
+    }
+}
+
 fn key(p: &ols_line::SectionPoint) -> String {
     format!("{}:{}:{}", p.structure, p.set, p.phase)
 }
 
 /// The wires of a solved line: every span of every section, and every
-/// jumper (with the circuit and phase of the section at its `from` end).
+/// jumper (with the circuit, phase and potential of the section at its
+/// `from` end).
 pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -> Vec<Wire> {
+    // A valid line has potentials; an invalid one is checked as earthed.
+    let potentials = line.potentials().unwrap_or_default();
+    let potential = |id: &str| potentials.get(id).copied().flatten();
     let mut wires = Vec::new();
     for shape in shapes {
         let section = line.sections.iter().find(|s| s.id == shape.section);
@@ -68,6 +82,7 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
                 span: k,
                 circuit: section.map_or(String::new(), |s| s.circuit.clone()),
                 phase: section.map_or(String::new(), |s| s.phase_label.clone()),
+                potential: potential(&shape.section),
                 points: span.points.clone(),
                 ends: section.map_or(Vec::new(), |s| {
                     s.points.iter().skip(k).take(2).map(key).collect()
@@ -83,6 +98,7 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
             span: 0,
             circuit: from.map_or(String::new(), |s| s.circuit.clone()),
             phase: from.map_or(String::new(), |s| s.phase_label.clone()),
+            potential: from.and_then(|s| potential(&s.id)),
             points: j.points.clone(),
             ends: def.map_or(Vec::new(), |d| vec![key(&d.from), key(&d.to)]),
         });
@@ -248,28 +264,38 @@ pub struct WireResult {
     pub vertical_violations: u64,
     /// Below the required radial clearance, counted the same way.
     pub radial_violations: u64,
+    /// The requirements that applied (by the wire's or pair's voltage).
+    pub required: Required,
 }
 
 impl WireResult {
-    fn vertical(&mut self, hit: Hit, required: Option<f64>) -> bool {
+    /// An empty result with these requirements.
+    pub fn with(required: Required) -> Self {
+        Self {
+            required,
+            ..Self::default()
+        }
+    }
+
+    fn vertical(&mut self, hit: Hit) -> bool {
         if self.vertical.is_none_or(|h| hit.distance < h.distance) {
             self.vertical = Some(hit);
         }
-        required.is_some_and(|r| hit.distance < r)
+        self.required.vertical.is_some_and(|r| hit.distance < r)
     }
 
-    fn radial(&mut self, hit: Hit, required: Option<f64>) -> bool {
+    fn radial(&mut self, hit: Hit) -> bool {
         if self.radial.is_none_or(|h| hit.distance < h.distance) {
             self.radial = Some(hit);
         }
-        required.is_some_and(|r| hit.distance < r)
+        self.required.radial.is_some_and(|r| hit.distance < r)
     }
 
-    /// Whether a requirement of `rule` is not met.
-    pub fn violates(&self, rule: &Rule) -> bool {
+    /// Whether a requirement is not met.
+    pub fn violates(&self) -> bool {
         let below =
             |hit: Option<Hit>, req: Option<f64>| hit.zip(req).is_some_and(|(h, r)| h.distance < r);
-        below(self.vertical, rule.vertical) || below(self.radial, rule.radial)
+        below(self.vertical, self.required.vertical) || below(self.radial, self.required.radial)
     }
 }
 
@@ -295,7 +321,11 @@ impl PointCheck {
         Self {
             rule: rule.clone(),
             classes: mask,
-            results: vec![WireResult::default(); wires.wires.len()],
+            results: wires
+                .wires
+                .iter()
+                .map(|w| WireResult::with(rule.required(w.kv())))
+                .collect(),
             seen: Vec::new(),
         }
     }
@@ -311,7 +341,6 @@ impl PointCheck {
             return;
         }
         let p = [x, y, z];
-        let reach = self.rule.reach().min(wires.reach);
         // Wires this point violates (each counted once per point).
         let mut vertical_bad: Vec<usize> = Vec::new();
         let mut radial_bad: Vec<usize> = Vec::new();
@@ -321,6 +350,7 @@ impl PointCheck {
             let (q, _) = closest_on_segment(p, a, b);
             let d = distance(p, q);
             let result = &mut self.results[w];
+            let reach = (result.required.largest() + self.rule.search_margin).min(wires.reach);
             if d <= reach {
                 let hit = Hit {
                     distance: d,
@@ -328,7 +358,7 @@ impl PointCheck {
                     target: p,
                     class: Some(class),
                 };
-                if result.radial(hit, self.rule.radial) && !radial_bad.contains(&w) {
+                if result.radial(hit) && !radial_bad.contains(&w) {
                     radial_bad.push(w);
                 }
             }
@@ -341,10 +371,7 @@ impl PointCheck {
                     target: p,
                     class: Some(class),
                 };
-                if hit.distance <= reach
-                    && result.vertical(hit, self.rule.vertical)
-                    && !vertical_bad.contains(&w)
-                {
+                if hit.distance <= reach && result.vertical(hit) && !vertical_bad.contains(&w) {
                     vertical_bad.push(w);
                 }
             }
@@ -365,11 +392,11 @@ impl PointCheck {
 /// rule's reach below the wire (the radial distance is never larger than
 /// the vertical one).
 pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireResult> {
-    let reach = rule.reach();
     wires
         .iter()
         .map(|wire| {
-            let mut result = WireResult::default();
+            let mut result = WireResult::with(rule.required(wire.kv()));
+            let reach = result.required.largest() + rule.search_margin;
             for s in wire.points.windows(2) {
                 let (a, b) = (s[0], s[1]);
                 let (mut vertical_bad, mut radial_bad) = (false, false);
@@ -382,11 +409,11 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
                             target: g.point,
                             class: None,
                         };
-                        vertical_bad |= result.vertical(hit, rule.vertical);
+                        vertical_bad |= result.vertical(hit);
                     }
                 }
                 result.vertical_violations += u64::from(vertical_bad);
-                if rule.radial.is_none() {
+                if result.required.radial.is_none() {
                     continue;
                 }
                 let n = ((distance(a, b) / GROUND_STEP).ceil() as usize).max(1);
@@ -420,7 +447,7 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
                             target: q,
                             class: None,
                         };
-                        radial_bad |= result.radial(hit, rule.radial);
+                        radial_bad |= result.radial(hit);
                     }
                 }
                 result.radial_violations += u64::from(radial_bad);
@@ -484,7 +511,6 @@ pub enum PairMode {
 /// connected — adjacent spans, a jumper and its sections — and not checked
 /// against each other.
 pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<PairResult> {
-    let reach = rule.reach().min(b.reach);
     let mut pairs: HashMap<(usize, usize), WireResult> = HashMap::new();
     for (i, wire) in a.iter().enumerate() {
         for s in wire.points.windows(2) {
@@ -519,10 +545,15 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                 let (on_a, on_b) = closest_between_segments(p, q, c, d);
                 let dist = distance(on_a, on_b);
                 let crossing = crossing_in_plan(p, q, c, d);
+                let required = rule
+                    .required(rule.pair_voltage(wire.potential.as_ref(), other.potential.as_ref()));
+                let reach = (required.largest() + rule.search_margin).min(b.reach);
                 if dist > reach && crossing.is_none() {
                     continue;
                 }
-                let result = pairs.entry((i, j)).or_default();
+                let result = pairs
+                    .entry((i, j))
+                    .or_insert_with(|| WireResult::with(required));
                 let mut radial_bad = false;
                 if dist <= reach {
                     let hit = Hit {
@@ -531,7 +562,7 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                         target: on_b,
                         class: None,
                     };
-                    radial_bad = result.radial(hit, rule.radial);
+                    radial_bad = result.radial(hit);
                 }
                 let mut vertical_bad = false;
                 if let Some((x, y)) = crossing {
@@ -542,7 +573,7 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                         target: y,
                         class: None,
                     };
-                    vertical_bad = result.vertical(hit, rule.vertical);
+                    vertical_bad = result.vertical(hit);
                 }
                 match bad.iter_mut().find(|e| e.0 == j) {
                     Some(e) => {
@@ -591,6 +622,17 @@ mod tests {
                 })
                 .collect(),
             ends: vec![],
+            potential: None,
+        }
+    }
+
+    /// Phase L1 of a three-phase system of `kv`.
+    fn ac(kv: f64) -> Potential {
+        Potential {
+            nominal_kv: kv,
+            kind: ols_line::electrical::SystemKind::Ac,
+            frequency_hz: Some(50.0),
+            to_earth: [kv / 3f64.sqrt(), 0.0],
         }
     }
 
@@ -704,7 +746,7 @@ mod tests {
         assert!((v.distance - 3.0).abs() < 1e-9 && v.target[2] == 23.0);
         assert!((res.radial.unwrap().distance - 3.0f64.hypot(0.3)).abs() < 1e-9);
         assert_eq!((res.vertical_violations, res.radial_violations), (1, 2));
-        assert!(res.violates(&r));
+        assert!(res.violates());
     }
 
     #[test]
@@ -735,6 +777,89 @@ mod tests {
     }
 
     #[test]
+    fn requirements_follow_each_wires_voltage() {
+        // Flat ground at z = 0; three wires 6.5 m above it: 132 kV, 380 kV
+        // and an earth wire (no voltage).
+        let mut points = Vec::new();
+        for i in 0..=10 {
+            for j in -10..=10 {
+                points.push(SurveyPoint {
+                    x: i as f64 * 10.0,
+                    y: j as f64 * 5.0,
+                    z: 0.0,
+                    code: String::new(),
+                    line: String::new(),
+                });
+            }
+        }
+        let terrain = Terrain::from_points(&points, None).unwrap();
+        let wire = |name: &str, y: f64, kv: Option<f64>| Wire {
+            potential: kv.map(ac),
+            ..straight(name, "L1", [10.0, y, 6.5], [90.0, y, 6.5])
+        };
+        let wires = vec![
+            wire("S132", -10.0, Some(132.0)),
+            wire("S380", 0.0, Some(380.0)),
+            wire("EW", 10.0, None),
+        ];
+        let r = rule(
+            "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = { by_voltage = [[0, 5.0], [150, 6.0], [420, 7.0]] }",
+        );
+        let res = ground_check(&r, &wires, &terrain);
+        let req: Vec<Option<f64>> = res.iter().map(|x| x.required.vertical).collect();
+        assert_eq!(req, [Some(6.0), Some(7.0), Some(5.0)]);
+        let bad: Vec<bool> = res.iter().map(WireResult::violates).collect();
+        assert_eq!(bad, [false, true, false]);
+        assert!(res[1].vertical_violations > 0 && res[0].vertical_violations == 0);
+
+        // A point 6.8 m from each wire: below the 380 kV radial
+        // requirement only (formula 5 m + 0.01 m/kV above 110 kV).
+        let pr = rule(
+            "[[rule]]\nname = \"v\"\ntarget = \"points\"\nclasses = [5]\nradial = { base = 5.0, per_kv = 0.01, above_kv = 110 }",
+        );
+        let set = WireSet::new(wires.clone(), 20.0);
+        let mut pc = PointCheck::new(&pr, &[5], &set);
+        for y in [-10.0, 0.0, 10.0] {
+            pc.visit(&set, 50.0, y, 6.5 - 6.8, 5);
+        }
+        let req: Vec<Option<f64>> = pc.results.iter().map(|x| x.required.radial).collect();
+        assert!((req[0].unwrap() - 5.22).abs() < 1e-12);
+        assert!((req[1].unwrap() - 7.7).abs() < 1e-12);
+        assert_eq!(req[2], Some(5.0));
+        let bad: Vec<bool> = pc.results.iter().map(WireResult::violates).collect();
+        assert_eq!(bad, [false, true, false]);
+
+        // Wire pairs: the higher voltage of the pair decides.
+        let x = rule(
+            "[[rule]]\nname = \"x\"\ntarget = \"other_lines\"\nradial = { by_voltage = [[150, 3.0], [420, 4.0]] }",
+        );
+        let other = WireSet::new(
+            vec![Wire {
+                potential: Some(ac(110.0)),
+                ..straight("O", "L1", [50.0, -13.5, 6.5], [50.0, 13.5, 6.5])
+            }],
+            20.0,
+        );
+        let a = vec![
+            Wire {
+                potential: Some(ac(132.0)),
+                ..straight("A", "L1", [0.0, -3.5, 10.0], [100.0, -3.5, 10.0])
+            },
+            Wire {
+                potential: Some(ac(380.0)),
+                ..straight("B", "L1", [0.0, 3.5, 10.0], [100.0, 3.5, 10.0])
+            },
+        ];
+        // Both 3.5 m above the other line's wire where they cross.
+        let pairs = wire_pairs(&x, &a, &other, PairMode::OtherLines);
+        let got: Vec<(Option<f64>, bool)> = pairs
+            .iter()
+            .map(|p| (p.result.required.radial, p.result.violates()))
+            .collect();
+        assert_eq!(got, [(Some(3.0), false), (Some(4.0), true)]);
+    }
+
+    #[test]
     fn wires_of_the_same_line_and_other_lines() {
         // Two phases 4 m apart in the same span; a crossing wire 5 m below.
         let line = vec![
@@ -756,7 +881,7 @@ mod tests {
         assert_eq!(pairs.len(), 2, "{pairs:?}"); // S1–S2, S2–S3; not S1–S3
         let s1s2 = pairs.iter().find(|p| (p.a, p.b) == (0, 1)).unwrap();
         assert!((s1s2.result.radial.unwrap().distance - 4.0).abs() < 1e-9);
-        assert!(s1s2.result.violates(&pp));
+        assert!(s1s2.result.violates());
         // With same-phase pairs included, S1–S3 is still skipped: they
         // meet end to end (connected).
         assert_eq!(
@@ -790,7 +915,7 @@ mod tests {
             // Counted per wire segment: the crossing is at a polyline
             // vertex of the line's wire here, so both segments touch it.
             assert!((1..=2).contains(&p.result.vertical_violations));
-            assert!(p.result.violates(&cross));
+            assert!(p.result.violates());
         }
         assert!(matches!(cross.target, Target::OtherLines));
         // A crossing far below (30 m, beyond the reach) is still reported.

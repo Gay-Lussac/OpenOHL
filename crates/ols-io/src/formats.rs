@@ -157,6 +157,7 @@ impl Importer for StructuresCsv {
             sections: Vec::new(),
             jumpers: Vec::new(),
             display: Default::default(),
+            systems: Vec::new(),
         });
         for (n, row) in rows {
             let f = csv_fields(row);

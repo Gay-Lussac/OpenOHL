@@ -39,6 +39,10 @@ pub struct ExportWire {
     pub phase: String,
     /// Display colour `#rrggbb`.
     pub color: String,
+    /// Electrical system id (none: earthed wire).
+    pub system: Option<String>,
+    /// Nominal voltage of the system, kV (none: earthed wire).
+    pub voltage: Option<f64>,
     /// Points in the line's coordinate system.
     pub points: Vec<[f64; 3]>,
 }
@@ -70,6 +74,17 @@ impl ExportModel {
         line: &Line,
         cases: &[(String, String, Vec<SectionShape>, Vec<JumperShape>)],
     ) -> Self {
+        // A valid line has its systems resolved; else wires count as earthed.
+        let phases = line.section_phases().unwrap_or_default();
+        let system = |id: &str| -> (Option<String>, Option<f64>) {
+            match phases.get(id).copied().flatten() {
+                Some((k, _)) => (
+                    Some(line.systems[k].id.clone()),
+                    Some(line.systems[k].voltage_kv),
+                ),
+                None => (None, None),
+            }
+        };
         let cases = cases
             .iter()
             .map(|(name, summary, shapes, jumpers)| {
@@ -86,6 +101,8 @@ impl ExportModel {
                             circuit: section.map_or(String::new(), |s| s.circuit.clone()),
                             phase: section.map_or(String::new(), |s| s.phase_label.clone()),
                             color: color.clone(),
+                            system: system(&shape.section).0,
+                            voltage: system(&shape.section).1,
                             points: span.points.clone(),
                         });
                     }
@@ -103,6 +120,8 @@ impl ExportModel {
                             .and_then(|d| d.color.clone())
                             .or_else(|| from.map(|s| line.section_color(s)))
                             .unwrap_or_else(|| ols_line::NEUTRAL_COLOR.to_owned()),
+                        system: from.and_then(|s| system(&s.id).0),
+                        voltage: from.and_then(|s| system(&s.id).1),
                         points: j.points.clone(),
                     });
                 }
@@ -122,7 +141,8 @@ impl ExportModel {
     /// The model as JSON for plugins:
     /// `{"format": "ols-export-model", "version": 1, "crs": …, "line": <line
     /// file>, "cases": [{"name", "summary", "wires": [{"section", "span",
-    /// "circuit", "phase", "color", "points": [[x, y, z], …]}]}]}`.
+    /// "circuit", "phase", "color", "system", "voltage_kv", "points":
+    /// [[x, y, z], …]}]}]}`.
     pub fn to_json(&self) -> String {
         let line = serde_json::to_value(&self.line).expect("the line serialises");
         let cases: Vec<serde_json::Value> = self
@@ -138,6 +158,8 @@ impl ExportModel {
                         "circuit": w.circuit,
                         "phase": w.phase,
                         "color": w.color,
+                        "system": w.system,
+                        "voltage_kv": w.voltage,
                         "points": w.points,
                     })).collect::<Vec<_>>(),
                 })

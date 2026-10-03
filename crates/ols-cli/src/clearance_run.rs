@@ -18,6 +18,7 @@ use ols_clearance::{
     PairMode, PairResult, PointCheck, Rule, RuleSet, Target, Wire, WireResult, WireSet, wires_of,
 };
 use ols_line::Line;
+use ols_line::electrical::{Potential, SystemKind};
 use ols_line::export::ViewerExtras;
 use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;
@@ -54,16 +55,72 @@ pub struct Prepared {
     /// Classes of each point rule (in rule order).
     point_classes: Vec<Vec<u8>>,
     other_lines: Vec<Line>,
+    /// Section potentials of this line and of the other lines.
+    voltages: Vec<Option<Potential>>,
+    other_voltages: Vec<Option<Potential>>,
+}
+
+impl Prepared {
+    fn reach(&self, rule: &Rule) -> f64 {
+        rule.reach(&self.voltages, &self.other_voltages)
+    }
+}
+
+/// The distinct potentials of a line's sections (earthed: `None`).
+fn voltages_of(line: &Line) -> Result<Vec<Option<Potential>>, String> {
+    let mut v: Vec<Option<Potential>> = Vec::new();
+    for p in line.potentials().map_err(|e| e.to_string())?.into_values() {
+        if !v.contains(&p) {
+            v.push(p);
+        }
+    }
+    Ok(v)
+}
+
+/// "380-1 (AC 380 kV, 50 Hz): 126 sections, …, earthed: 47 sections".
+fn voltage_summary(line: &Line) -> Result<String, String> {
+    let phases = line.section_phases().map_err(|e| e.to_string())?;
+    let mut counts: Vec<(Option<usize>, usize)> = Vec::new();
+    for a in phases.values() {
+        let k = a.map(|(k, _)| k);
+        match counts.iter_mut().find(|c| c.0 == k) {
+            Some(c) => c.1 += 1,
+            None => counts.push((k, 1)),
+        }
+    }
+    counts.sort_by_key(|c| c.0.unwrap_or(usize::MAX));
+    Ok(counts
+        .iter()
+        .map(|(k, n)| match k {
+            Some(k) => {
+                let s = &line.systems[*k];
+                format!(
+                    "{} ({} {} kV{}): {n}",
+                    s.id,
+                    match s.kind {
+                        SystemKind::Ac => "AC",
+                        SystemKind::Dc => "DC",
+                    },
+                    s.voltage_kv,
+                    s.frequency_hz
+                        .map_or(String::new(), |f| format!(", {f} Hz"))
+                )
+            }
+            None => format!("earthed (0 kV): {n}"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+        + " sections")
 }
 
 /// Lines of the report for one result.
-fn describe(r: &WireResult, rule: &Rule) -> String {
+fn describe(r: &WireResult) -> String {
     let mut parts = Vec::new();
     if let Some(h) = r.vertical {
         parts.push(format!(
             "vertical {:.2} m{}",
             h.distance,
-            match (rule.vertical, r.vertical_violations) {
+            match (r.required.vertical, r.vertical_violations) {
                 (Some(_), n) if n > 0 => format!(" ({n} below)"),
                 _ => String::new(),
             }
@@ -73,7 +130,7 @@ fn describe(r: &WireResult, rule: &Rule) -> String {
         parts.push(format!(
             "radial {:.2} m{}",
             h.distance,
-            match (rule.radial, r.radial_violations) {
+            match (r.required.radial, r.radial_violations) {
                 (Some(_), n) if n > 0 => format!(" ({n} below)"),
                 _ => String::new(),
             }
@@ -93,8 +150,13 @@ fn wire_name(w: &Wire) -> String {
 /// One row per result and measure for the CSV.
 fn csv_rows(out: &mut String, rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireResult) {
     for (kind, hit, required, count) in [
-        ("vertical", r.vertical, rule.vertical, r.vertical_violations),
-        ("radial", r.radial, rule.radial, r.radial_violations),
+        (
+            "vertical",
+            r.vertical,
+            r.required.vertical,
+            r.vertical_violations,
+        ),
+        ("radial", r.radial, r.required.radial, r.radial_violations),
     ] {
         let Some(h) = hit else { continue };
         let _ = writeln!(
@@ -327,6 +389,29 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
         }
         other_lines.push(other);
     }
+    // Voltages: every rule must have a requirement for each one it meets.
+    let voltages = voltages_of(line)?;
+    let mut other_voltages: Vec<Option<Potential>> = Vec::new();
+    for other in &other_lines {
+        for p in voltages_of(other)? {
+            if !other_voltages.contains(&p) {
+                other_voltages.push(p);
+            }
+        }
+    }
+    if rules.iter().any(Rule::by_voltage) {
+        println!("systems: {}", voltage_summary(line)?);
+        for (other, path) in other_lines.iter().zip(o.other_lines) {
+            println!(
+                "  other line {}: {}",
+                path.display(),
+                voltage_summary(other)?
+            );
+        }
+    }
+    for rule in &rules {
+        rule.check_voltages(&voltages, &other_voltages)?;
+    }
     Ok(Prepared {
         rules,
         scheme,
@@ -335,6 +420,8 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
         origin,
         point_classes,
         other_lines,
+        voltages,
+        other_voltages,
     })
 }
 
@@ -353,7 +440,9 @@ fn applies(rule: &Rule, case: &str) -> bool {
 }
 
 fn rule_header(rule: &Rule, p: &Prepared) -> String {
-    let required = |r: Option<f64>| r.map_or("-".to_owned(), |v| format!("{v:.2} m"));
+    let required = |r: &Option<ols_clearance::Requirement>| {
+        r.as_ref().map_or("-".to_owned(), |v| v.to_string())
+    };
     format!(
         "rule \"{}\" ({}): required vertical {}, radial {}",
         rule.name,
@@ -366,8 +455,8 @@ fn rule_header(rule: &Rule, p: &Prepared) -> String {
             Target::SameLine { .. } => "other wires of this line".to_owned(),
             Target::OtherLines => "wires of other lines".to_owned(),
         },
-        required(rule.vertical),
-        required(rule.radial)
+        required(&rule.vertical),
+        required(&rule.radial)
     )
 }
 
@@ -399,14 +488,14 @@ fn report_pairs(
         pairs.len(),
         lowest(pairs.iter().map(|p| &p.result))
     );
-    let bad: Vec<&PairResult> = pairs.iter().filter(|p| p.result.violates(rule)).collect();
+    let bad: Vec<&PairResult> = pairs.iter().filter(|p| p.result.violates()).collect();
     println!("  pairs below the requirement: {}", bad.len());
     for pr in bad.iter().take(20) {
         println!(
             "    {:<24} – {:<24} {}",
             wire_name(&a_wires[pr.a]),
             wire_name(&b_wires[pr.b]),
-            describe(&pr.result, rule)
+            describe(&pr.result)
         );
     }
     for pr in &bad {
@@ -425,7 +514,6 @@ fn report_pairs(
         csv_rows(rows, rule, &a_wires[pr.a], Some(&b_wires[pr.b]), &pr.result);
         env.add(
             rule_index,
-            rule,
             label,
             &wire_name(&a_wires[pr.a]),
             Some(&wire_name(&b_wires[pr.b])),
@@ -467,7 +555,7 @@ pub fn check(
             other: Vec::new(),
         });
     }
-    let reach = rules.iter().map(Rule::reach).fold(0.0, f64::max);
+    let reach = rules.iter().map(|r| p.reach(r)).fold(0.0, f64::max);
     // The parts of the wires each rule checks (exclusion zones), indexed.
     let parts: Vec<Vec<Wire>> = rules
         .iter()
@@ -554,7 +642,7 @@ pub fn check(
                 let mut bad: Vec<(usize, &WireResult)> = results
                     .iter()
                     .enumerate()
-                    .filter(|(_, r)| r.violates(rule))
+                    .filter(|(_, r)| r.violates())
                     .collect();
                 bad.sort_by(|x, y| {
                     let key = |r: &WireResult| {
@@ -568,7 +656,7 @@ pub fn check(
                 });
                 println!("  wires below the requirement: {}", bad.len());
                 for (w, r) in bad.iter().take(20) {
-                    println!("    {:<24} {}", wire_name(&wires[*w]), describe(r, rule));
+                    println!("    {:<24} {}", wire_name(&wires[*w]), describe(r));
                 }
                 for (w, r) in &bad {
                     marker(
@@ -580,7 +668,7 @@ pub fn check(
                 }
                 for (w, r) in results.iter().enumerate() {
                     csv_rows(&mut rows, rule, &wires[w], None, r);
-                    env.add(ri, rule, &case.name, &wire_name(&wires[w]), None, r);
+                    env.add(ri, &case.name, &wire_name(&wires[w]), None, r);
                 }
             }
             Target::SameLine { include_same_phase } => {
@@ -625,7 +713,7 @@ pub fn cross_cases(
     extras: &mut ViewerExtras,
     env: &mut ols_clearance::Envelope,
 ) {
-    let reach = p.rules.iter().map(Rule::reach).fold(0.0, f64::max);
+    let reach = p.rules.iter().map(|r| p.reach(r)).fold(0.0, f64::max);
     for (ri, rule) in p.rules.iter().enumerate() {
         for [ca, cb] in &rule.case_pairs {
             let firsts: Vec<&CaseWires> = all
@@ -759,8 +847,8 @@ pub fn envelope_report(p: &Prepared, env: &ols_clearance::Envelope, csv: &mut St
         }
         for e in entries {
             for (measure, value, required) in [
-                ("vertical", &e.vertical, rule.vertical),
-                ("radial", &e.radial, rule.radial),
+                ("vertical", &e.vertical, e.required.vertical),
+                ("radial", &e.radial, e.required.radial),
             ] {
                 let Some((h, c)) = value else { continue };
                 let _ = writeln!(

@@ -23,6 +23,7 @@
 //! [`solve`] turns a section into a finite-element model (exact catenary
 //! elements, insulator strings) and solves it in any weather state.
 
+pub mod electrical;
 pub mod export;
 pub mod incremental;
 pub mod jumper;
@@ -83,6 +84,10 @@ pub struct Line {
     /// Jumpers between attachment points.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub jumpers: Vec<Jumper>,
+    /// Electrical systems (phases or poles with their voltage); sections
+    /// refer to them ([`electrical`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub systems: Vec<electrical::System>,
     /// Display settings (phase colours).
     #[serde(default, skip_serializing_if = "Display::is_default")]
     pub display: Display,
@@ -304,6 +309,12 @@ pub struct Section {
     /// Phase label.
     #[serde(default)]
     pub phase_label: String,
+    /// Electrical system (id in the line's `systems`) whose phase
+    /// `phase_label` this section carries — given once per conductor path
+    /// (sections joined by jumpers follow). None on the whole path: earthed
+    /// (earth wire, OPGW). See [`electrical`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
     /// Subconductors per phase (1 = single wire). Each subconductor carries
     /// the same tension; geometry is that of one wire.
     #[serde(default = "one")]
@@ -545,6 +556,8 @@ impl Line {
             }
         }
         self.check_alignment("line alignment", &self.alignment)?;
+        // Systems, and one system phase per conductor path.
+        self.section_phases()?;
         let mut route_ids = BTreeMap::new();
         for r in &self.routes {
             if route_ids.insert(r.id.as_str(), ()).is_some() {

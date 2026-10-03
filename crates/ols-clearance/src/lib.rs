@@ -29,7 +29,7 @@ pub mod rules;
 
 pub use checks::{Hit, PairMode, PairResult, PointCheck, Wire, WireResult, WireSet, wires_of};
 pub use envelope::{Envelope, EnvelopeEntry};
-pub use rules::{Rule, RuleSet, Target};
+pub use rules::{PairVoltage, Required, Requirement, Rule, RuleSet, Target};
 
 use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;

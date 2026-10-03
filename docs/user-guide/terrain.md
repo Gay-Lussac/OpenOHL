@@ -87,7 +87,8 @@ radial = "4.5 m"
 |---|---|
 | `target` | `ground`, `points`, `same_line` or `other_lines`. |
 | `roles`, `classes` | Points rules: classes by role (resolved with `--lidar-classes`) and/or by number. |
-| `vertical`, `radial` | Required clearances (at least one). |
+| `vertical`, `radial` | Required clearances (at least one): a distance, or depending on the voltage (below). |
+| `pair_voltage` | Wire rules: the voltage of a pair of wires is the `higher` of the two systems' nominal voltages (default), their `sum`, or the `difference` — the actual voltage between the two conductors from phase angles and DC polarities. |
 | `vertical_band` | Points count for vertical clearance within this horizontal distance of the wire (default 0.5 m). |
 | `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
 | `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
@@ -95,6 +96,23 @@ radial = "4.5 m"
 | `exclude_near_ends` | Exclusion zone: the wire within this horizontal distance of its ends (clamps) is not checked, e.g. `"10 m"` — where wires converge at supports by design. |
 | `exclude_spans_at` | Exclusion zone: spans ending at these structures are not checked, e.g. `["con_*"]` for down-leads into cable terminations (wildcards). |
 | `case_pairs` | Wire rules: `[["glaze ice", "max temperature"]]` — the first wire in the first case, the second wire in the second (e.g. an iced upper wire sagging towards a hot lower one); checked after all cases are solved. |
+
+### Clearances by voltage
+
+Each section belongs to an electrical system ([systems](line-file.md#electrical-systems): AC or DC, voltage, phase angles) through its conductor path, independent of the cable; its spans and jumpers are checked with the requirement for the system's nominal voltage. `vertical` and `radial` can be a distance, a table by voltage, or a formula:
+
+```toml
+[[rule]]
+name = "Buildings"
+target = "points"
+roles = ["building"]
+# Rows [up to kV, distance]: the first row whose voltage is not exceeded.
+vertical = { by_voltage = [[0, "5 m"], [150, "6 m"], [245, "6.5 m"], [420, "7.5 m"]] }
+# base + per_kv · (U − above_kv) above above_kv, else base.
+radial = { base = "5 m", per_kv = "0.01 m", above_kv = 50 }
+```
+
+With one rule per group of LiDAR classes (vegetation, buildings, roads, railways…), each with its own voltage table, the requirement follows both the class and the voltage. Earthed sections (no system: earth wires, OPGW) are checked as 0 kV — give a `0` row for them. Between wires, `pair_voltage = "difference"` uses the voltage actually between the two conductors: two phases of a 380 kV system meet the 380 kV row, the same phase of two parallel systems the 0 kV row, a phase and an earth wire 219 kV. A voltage above a table's last row stops the run with an error naming the rule, before any check. The report prints the voltages found; the CSV's `required_m` and the envelope rows give the requirement of each wire or pair.
 
 ### Envelopes over weather cases
 

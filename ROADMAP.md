@@ -60,13 +60,16 @@ Guiding principles:
 - [x] `ols-terrain`: survey point import (CSV/XYZ, named columns incl. PNEZD), feature codes, breaklines, constrained-Delaunay TIN, ground heights, exact profiles along segments *(route centreline + side profiles come with the drawings)*
 - [x] Structure library v1 (`.olss`, DESIGN_GOALS §10): one file per type, local attachment points, default insulator per set, extensions, placement (position, rotation, extension), derive types from an existing line
 - [x] Insulator library basics (`.olsi`, DESIGN_GOALS §11): suspension, V-string, strain assemblies used by the solver (V-strings solved in lines with tension-only legs and slack-leg reporting)
-- [ ] Insulator assembly model (graph of nodes and elements): suspension (I), V-string, tension/strain (single & multiple), post; **linked strings** via shared nodes (yokes, jumpers, jumper support strings) — see DESIGN_GOALS §6
+- [ ] *(deferred until 3D pylons)* Insulator assembly model (graph of nodes and elements): suspension (I), V-string, tension/strain (single & multiple), post; **linked strings** via shared nodes (yokes, jumpers, jumper support strings) — see DESIGN_GOALS §6
 - [x] Multi-span sections solved in 3D (FE with suspension strings, wind per span, point loads); `ols line` with 3D HTML viewer and CSV exports — checked against a real PLS-CADD line (930 spans, median 1.1 cm)
 - [x] Insulator behaviour in the 3D solve: I-string swing, V-string leg forces & slack detection, strain assembly geometry *(from the FE solve; closed-form checks still to add as validation cases)*
 - [x] `ols-clearance` v1: vertical ground clearance of every solved span per weather case, violations in `ols line --terrain --clearance` and in the viewer
 - [x] `ols-clearance` v2 (DESIGN_GOALS §13): vertical **and** radial clearances; rule files (`.olsr`) per target — ground, LiDAR classes/roles, other lines, other wires of the same line (same span and between spans)
 - [x] Clearance envelopes over several weather cases (lowest clearance and governing case per wire and rule), different cases per wire in wire-to-wire checks (`case_pairs`), rules limited to cases; sheets draw every case
 - [x] Exclusion zones in clearance rules: near the wire ends (`exclude_near_ends`) and spans at given structures (`exclude_spans_at`, e.g. cable terminations)
+- [x] Electrical systems (`systems`: AC/DC, voltage, frequency, phase angles or pole polarities) assigned once per conductor path (sections joined by jumpers); clearances by voltage — tables or formulas per rule (so per LiDAR class group), pair voltage higher / sum / actual difference between conductors; unknown voltages refused before checking
+- [ ] Bundled conductors: subconductors on a circle with a set spacing (e.g. 4 × 400 mm), clearances to the nearest subconductor
+- [ ] Electrical cable data (resistance, ampacity data…) in the wire library, imported from PLS-CADD `.wir` files
 - [ ] Rule editor tool (per LiDAR class)
 - [x] Plan & profile views per route (`ols-drawing`, `ols line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures, title block with logos, separate plan scale across the line *(DXF and layout templates as plugins still to come)*
 - [x] Exporter/importer plugin interface (first formats: CSV, KML/KMZ; GeoJSON example plugin)
