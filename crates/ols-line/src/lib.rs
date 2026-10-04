@@ -98,6 +98,14 @@ pub struct Line {
     /// (Criteria › Creep-Stretch), by name.
     #[serde(default, skip_serializing_if = "condition::CreepStretch::is_empty")]
     pub creep_stretch: condition::CreepStretch,
+    /// What the outer strands of bimetallic cables do above the transition
+    /// temperature, for the cables that leave it to the criteria
+    /// (Criteria › Bimetallic conductor model).
+    #[serde(
+        default,
+        skip_serializing_if = "ols_cables::BimetallicModel::is_default"
+    )]
+    pub bimetallic: ols_cables::BimetallicModel,
     /// Those weather cases themselves, given by the program solving the
     /// line ([`crate::Line::set_weather_cases`]); not stored.
     #[serde(skip)]

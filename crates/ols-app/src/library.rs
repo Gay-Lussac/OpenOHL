@@ -49,9 +49,8 @@ const COMPONENT: &[Field] = &[
          on the total cable area (basis = \"total\": actual values × component area / total \
          area) or its own (\"component\"); initial a0…a4, creep c0…c4, final_modulus per strain \
          unit, the temperature the strand data were obtained at. Bimetallic cables: give the \
-         outer and the core their own. max_compression (outer layers, above the transition \
-         temperature): 0 none (aluminium unloads onto the core), a stress for limited \
-         compression, absent unlimited",
+         outer and the core their own (what the outer strands do above the transition \
+         temperature: the cable's bimetallic options)",
     ),
 ];
 
@@ -103,6 +102,19 @@ const CABLE: &[Field] = &[
         "\"25 kN\"",
         "linear_creep_tension: the creep weather case tension at which the stretch equals the \
          temperature shift (scaled by the tension)",
+    ),
+    (
+        "bimetallic_behavior",
+        "\"criteria\"",
+        "bimetallic cables, above the transition temperature: criteria (Criteria › Bimetallic \
+         conductor model), bird_cage (the outer strands take no compression) or compression \
+         (they can go into compression)",
+    ),
+    (
+        "max_virtual_compression",
+        "\"68947.4 MPa\"",
+        "bimetallic_behavior = compression: the largest virtual compressive stress of the outer \
+         strands (actual stress × outer area / total area)",
     ),
 ];
 
@@ -927,9 +939,52 @@ pub const CABLE_MODELS: [(&str, &str); 3] = [
     ),
 ];
 
-/// Example curves of a core (steel-like, on the total area, no creep):
-/// to be replaced by the cable's data.
-const CORE_CURVES: &str = "{ stress_unit = \"MPa\", strain = \"percent\", basis = \"total\", initial = [0.0, 250.0, 0.0, 0.0, 0.0], final_modulus = 250.0, reference_temperature = \"20 °C\" }";
+/// Example curves of a core (steel-like, on the total area; the creep
+/// curve as the initial one: no creep): to be replaced by the cable's
+/// data.
+const CORE_CURVES: &str = "{ stress_unit = \"MPa\", strain = \"percent\", basis = \"total\", initial = [0.0, 250.0, 0.0, 0.0, 0.0], creep = [0.0, 250.0, 0.0, 0.0, 0.0], final_modulus = 250.0, reference_temperature = \"20 °C\" }";
+
+/// The bimetallic options (`bimetallic_behavior` of a cable): key, name.
+pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 3] = [
+    (
+        "criteria",
+        "Use the behaviour from Criteria › Bimetallic conductor model",
+    ),
+    (
+        "bird_cage",
+        "Outer strands do not take compression at high temperature (bird cage)",
+    ),
+    (
+        "compression",
+        "Outer strands can go into compression at high temperature",
+    ),
+];
+
+/// A cable's bimetallic option (default `criteria`).
+fn bimetallic_behavior(table: &Table) -> String {
+    table
+        .get("bimetallic_behavior")
+        .and_then(Item::as_str)
+        .unwrap_or("criteria")
+        .to_owned()
+}
+
+/// A component's curves (inline or a section), and whether it has its
+/// creep curve.
+fn curves_of(component: Option<&Item>) -> Option<bool> {
+    match component? {
+        Item::Table(t) => match t.get("stress_strain")? {
+            Item::Table(c) => Some(c.contains_key("creep")),
+            Item::Value(Value::InlineTable(c)) => Some(c.contains_key("creep")),
+            _ => Some(true),
+        },
+        Item::Value(Value::InlineTable(t)) => match t.get("stress_strain")? {
+            Value::InlineTable(c) => Some(c.contains_key("creep")),
+            _ => Some(true),
+        },
+        _ => Some(true),
+    }
+}
 
 /// A cable's model (default `nonlinear`).
 fn cable_model(table: &Table) -> String {
@@ -958,17 +1013,24 @@ fn missing_for_model(table: &Table, model: &str) -> Vec<String> {
     );
     if model == "nonlinear" {
         for c in ["outer", "core"] {
-            let has = match table.get(c) {
-                None if c == "core" => true,
-                None => false,
-                Some(Item::Table(t)) => t.contains_key("stress_strain"),
-                Some(Item::Value(Value::InlineTable(t))) => t.contains_key("stress_strain"),
-                Some(_) => true,
+            let Some(component) = table.get(c) else {
+                if c == "outer" {
+                    out.push("outer.stress_strain".into());
+                }
+                continue;
             };
-            if !has {
-                out.push(format!("{c}.stress_strain"));
+            match curves_of(Some(component)) {
+                None => out.push(format!("{c}.stress_strain")),
+                Some(false) => out.push(format!("{c}.stress_strain.creep")),
+                Some(true) => {}
             }
         }
+    }
+    if table.contains_key("core")
+        && bimetallic_behavior(table) == "compression"
+        && !table.contains_key("max_virtual_compression")
+    {
+        out.push("max_virtual_compression".into());
     }
     out
 }
@@ -987,6 +1049,34 @@ fn add_for_model(table: &mut Table, model: &str) {
             None => {
                 if let Some(v) = example(&k, CABLE) {
                     table.insert(&k, Item::Value(v));
+                }
+            }
+            Some((component, "stress_strain.creep")) => {
+                // The creep curve as the initial one (no creep) to start.
+                let curves = match table.get_mut(component) {
+                    Some(Item::Table(t)) => t.get_mut("stress_strain"),
+                    Some(Item::Value(Value::InlineTable(t))) => {
+                        if let Some(Value::InlineTable(c)) = t.get_mut("stress_strain")
+                            && let Some(initial) = c.get("initial").cloned()
+                        {
+                            c.insert("creep", initial);
+                        }
+                        continue;
+                    }
+                    _ => None,
+                };
+                match curves {
+                    Some(Item::Table(c)) => {
+                        if let Some(initial) = c.get("initial").cloned() {
+                            c.insert("creep", initial);
+                        }
+                    }
+                    Some(Item::Value(Value::InlineTable(c))) => {
+                        if let Some(initial) = c.get("initial").cloned() {
+                            c.insert("creep", initial);
+                        }
+                    }
+                    _ => {}
                 }
             }
             Some((component, field)) => {
@@ -1045,16 +1135,22 @@ fn required(
             if table.contains_key("core") {
                 out.push("core".into());
             }
-            let model = cable_model(table);
             out.extend(
-                ["creep_temperature_shift", "creep_shift_tension"]
-                    .into_iter()
-                    .filter(|k| used_by_model(k, &model))
-                    .map(str::to_owned),
+                [
+                    "creep_temperature_shift",
+                    "creep_shift_tension",
+                    "max_virtual_compression",
+                ]
+                .into_iter()
+                .filter(|k| used_by_cable(k, table))
+                .map(str::to_owned),
             );
         }
         (LibraryKind::Cables, "outer" | "core") if parent_model == Some("nonlinear") => {
             out.push("stress_strain".into());
+        }
+        (LibraryKind::Cables, "stress_strain") if parent_model == Some("nonlinear") => {
+            out.push("creep".into());
         }
         _ => {}
     }
@@ -1067,6 +1163,18 @@ fn used_by_model(key: &str, model: &str) -> bool {
         "creep_temperature_shift" => model != "nonlinear",
         "creep_shift_tension" => model == "linear_creep_tension",
         _ => true,
+    }
+}
+
+/// Whether a cable field is used, with its model and bimetallic options
+/// (unused ones are hidden; kept in the file).
+fn used_by_cable(key: &str, table: &Table) -> bool {
+    match key {
+        "bimetallic_behavior" => table.contains_key("core"),
+        "max_virtual_compression" => {
+            table.contains_key("core") && bimetallic_behavior(table) == "compression"
+        }
+        _ => used_by_model(key, &cable_model(table)),
     }
 }
 
@@ -1123,12 +1231,48 @@ fn cable_model_ui(ui: &mut egui::Ui, table: &mut Table, path: &str) -> bool {
             }
             add_for_model(table, &chosen);
         } else {
-            table.remove("core");
+            for k in ["core", "bimetallic_behavior", "max_virtual_compression"] {
+                table.remove(k);
+            }
         }
         changed = true;
     }
     ui.label("");
     ui.end_row();
+    // Bimetallic: what the outer strands do above the transition
+    // temperature.
+    if bimetallic {
+        let behavior = bimetallic_behavior(table);
+        let mut chosen_behavior = behavior.clone();
+        ui.label("above the transition").on_hover_text(
+            "The outer strands (e.g. aluminium) expand more than the core (e.g. steel): \
+                 above a transition temperature they are no longer in tension",
+        );
+        ui.vertical(|ui| {
+            for (key, name) in BIMETALLIC_BEHAVIORS {
+                ui.radio_value(&mut chosen_behavior, key.to_owned(), name);
+            }
+            ui.label(
+                egui::RichText::new(
+                    "Virtual stress = actual stress × Ao / At (Ao outer strands' area, At total \
+                     area)",
+                )
+                .small()
+                .weak(),
+            );
+        });
+        if chosen_behavior != behavior {
+            if chosen_behavior == "criteria" {
+                table.remove("bimetallic_behavior");
+            } else {
+                table.insert("bimetallic_behavior", toml_edit::value(chosen_behavior));
+            }
+            add_for_model(table, &chosen);
+            changed = true;
+        }
+        ui.label("");
+        ui.end_row();
+    }
     let missing = missing_for_model(table, &chosen);
     if !missing.is_empty() {
         ui.label("");
@@ -1245,19 +1389,16 @@ fn table_ui(
                 if only_known && help(k).is_none() {
                     continue;
                 }
-                if cable && k == "model" {
+                // The model and bimetallic options are drawn above; fields
+                // they do not use are hidden (kept in the file).
+                if cable && (k == "model" || k == "bimetallic_behavior" || !used_by_cable(k, table))
+                {
                     continue;
                 }
-                let unused = model.as_deref().is_some_and(|m| !used_by_model(k, m));
                 let Some(Item::Value(v)) = table.get_mut(k) else {
                     continue;
                 };
-                let r = if unused {
-                    ui.label(egui::RichText::new(k).weak())
-                        .on_hover_text("not used by this model (kept in the file)")
-                } else {
-                    ui.label(k)
-                };
+                let r = ui.label(k);
                 if let Some(h) = help(k) {
                     r.on_hover_text(h);
                 }
@@ -1266,8 +1407,11 @@ fn table_ui(
                 if ui
                     .add_enabled(!needed, egui::Button::new("🗑").small())
                     .on_hover_text("Remove this field")
-                    .on_disabled_hover_text(match &model {
-                        Some(m) if !used_by_model(k, "nonlinear") || k == "stress_strain" => {
+                    .on_disabled_hover_text(match (&model, k.as_str()) {
+                        (_, "max_virtual_compression") => {
+                            "needed: the outer strands can go into compression".to_owned()
+                        }
+                        (Some(m), _) if !used_by_model(k, "nonlinear") => {
                             format!("needed by the {m} model")
                         }
                         _ => "needed: it cannot be removed".to_owned(),
@@ -1316,7 +1460,12 @@ fn table_ui(
     }
     let missing: Vec<&Field> = fields
         .iter()
-        .filter(|f| !table.contains_key(f.0) && !(cable && f.0 == "model"))
+        .filter(|f| {
+            !table.contains_key(f.0)
+                && !(cable
+                    && (["model", "core", "bimetallic_behavior"].contains(&f.0)
+                        || !used_by_cable(f.0, table)))
+        })
         .collect();
     if !missing.is_empty() {
         let mut add: Option<&Field> = None;
@@ -1594,6 +1743,45 @@ mod tests {
             !required(kind, "outer", &outer, Some("linear_creep_temperature"))
                 .contains(&"stress_strain".into())
         );
+        // The curves' creep curve cannot be removed (non-linear model).
+        assert!(
+            required(kind, "stress_strain", &Table::new(), Some("nonlinear"))
+                .contains(&"creep".into())
+        );
+        // A core without its creep curve: it is asked for, the initial
+        // curve to start.
+        let cable = doc
+            .get_mut("cable")
+            .and_then(Item::as_array_of_tables_mut)
+            .and_then(|a| a.get_mut(0))
+            .unwrap();
+        if let Some(Item::Value(Value::InlineTable(core))) = cable.get_mut("core")
+            && let Some(Value::InlineTable(c)) = core.get_mut("stress_strain")
+        {
+            c.remove("creep");
+        }
+        assert_eq!(
+            missing_for_model(cable, "nonlinear"),
+            vec!["core.stress_strain.creep"]
+        );
+        add_for_model(cable, "nonlinear");
+        assert!(missing_for_model(cable, "nonlinear").is_empty());
+        // Hidden fields: the creep shifts with the non-linear model; the
+        // shift tension with the temperature model.
+        assert!(!used_by_cable("creep_temperature_shift", cable));
+        cable.insert("model", toml_edit::value("linear_creep_temperature"));
+        assert!(used_by_cable("creep_temperature_shift", cable));
+        assert!(!used_by_cable("creep_shift_tension", cable));
+        cable.insert("model", toml_edit::value("nonlinear"));
+        // Bimetallic, compression: its largest stress, locked.
+        assert!(!used_by_cable("max_virtual_compression", cable));
+        cable.insert("bimetallic_behavior", toml_edit::value("compression"));
+        assert_eq!(
+            missing_for_model(cable, "nonlinear"),
+            vec!["max_virtual_compression"]
+        );
+        add_for_model(cable, "nonlinear");
+        assert!(required(kind, "cable", cable, None).contains(&"max_virtual_compression".into()));
         let text = doc.to_string();
         kind.check(Path::new("x.olsw"), &text).unwrap();
         let mut lib = ols_cables::Library::default();
@@ -1602,5 +1790,12 @@ mod tests {
         assert!(
             c.outer.stress_strain.is_some() && c.core.as_ref().unwrap().stress_strain.is_some()
         );
+        let core_curves = c.core.as_ref().unwrap().stress_strain.as_ref().unwrap();
+        assert_eq!(core_curves.creep.as_ref(), Some(&core_curves.initial));
+        assert_eq!(
+            c.bimetallic_behavior,
+            ols_cables::BimetallicBehavior::Compression
+        );
+        assert!(c.max_virtual_compression.is_some());
     }
 }

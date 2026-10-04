@@ -3312,7 +3312,25 @@ fn the_cable_model_is_a_list_and_adds_its_fields() {
         "{text}"
     );
     assert!(text.contains("creep_temperature_shift"));
-    // Unticking Bimetallic removes the core.
+    // Only the temperature shift is asked for.
+    assert!(harness.query_by_label("creep_shift_tension").is_none());
+    // Bimetallic options: compression asks for its largest stress.
+    assert!(harness.query_by_label("max_virtual_compression").is_none());
+    harness
+        .get_by_label(crate::library::BIMETALLIC_BEHAVIORS[2].1)
+        .click();
+    harness.run();
+    harness.get_by_label("max_virtual_compression");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let text = r.libraries[&LibraryKind::Cables].text().unwrap();
+        assert!(
+            text.contains("bimetallic_behavior = \"compression\""),
+            "{text}"
+        );
+        assert!(text.contains("max_virtual_compression = \"68947.4 MPa\""));
+    }
+    // Unticking Bimetallic removes the core (and its options).
     harness.get_by_label(bimetallic).click();
     harness.run();
     let r = harness.state_mut().ready().unwrap();
@@ -3320,5 +3338,35 @@ fn the_cable_model_is_a_list_and_adds_its_fields() {
     let text = page.text().unwrap();
     let first = text.split("[[cable]]").nth(1).unwrap();
     assert!(!first.contains("core"), "{first}");
+    assert!(!first.contains("bimetallic_behavior"), "{first}");
     assert!(page.dirty());
+}
+
+/// Criteria › Bimetallic conductor model: OK sets it (one command, the
+/// sections solved again); undo puts it back.
+#[test]
+fn the_bimetallic_conductor_model_is_a_criterion() {
+    let model = synthetic_project("bimetallic");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().bimetallic_window =
+        Some(ols_cables::BimetallicModel::default());
+    harness.run();
+    harness
+        .get_by_label("Outer strands do not take compression (bird cage)")
+        .click();
+    harness.run();
+    harness.get_by_label("OK").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.model.line.bimetallic.bird_cage);
+        assert!(r.bimetallic_window.is_none());
+        assert_solved_fully(&r.model);
+    }
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(!r.model.line.bimetallic.bird_cage, "undone");
 }

@@ -177,6 +177,8 @@ pub struct Ready {
     pub controls_window: Option<ControlsPage>,
     /// Criteria › Creep-Stretch, when open: the weather cases chosen.
     pub creep_stretch_window: Option<ols_line::condition::CreepStretch>,
+    /// Criteria › Bimetallic conductor model, when open: the model chosen.
+    pub bimetallic_window: Option<ols_cables::BimetallicModel>,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
     /// A page to bring to the front (with a table filter), from a tool.
@@ -227,6 +229,7 @@ impl Ready {
             reopen: false,
             controls_window: None,
             creep_stretch_window: None,
+            bimetallic_window: None,
             jumper_from: None,
             open_page: None,
             clearances: crate::clearance::Clearances::new(
@@ -1693,6 +1696,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     survey_io_windows(ctx, r);
     controls_window(ctx, r);
     creep_stretch_window(ctx, r);
+    bimetallic_window(ctx, r);
     lines_window(ctx, r);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
@@ -2020,6 +2024,100 @@ fn creep_stretch_window(ctx: &egui::Context, r: &mut Ready) {
         }
     }
     r.creep_stretch_window = (open && !ok && !cancel).then_some(draft);
+}
+
+/// Criteria › Bimetallic conductor model: whether the outer strands of
+/// bimetallic cables (those whose option is the criteria) take compression
+/// above the transition temperature; OK makes it one command (undoable)
+/// and every section is solved again.
+fn bimetallic_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(mut draft) = r.bimetallic_window else {
+        return;
+    };
+    let (mut ok, mut cancel) = (false, false);
+    let mut open = true;
+    egui::Window::new("Bimetallic conductor model")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(520.0)
+        .show(ctx, |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "The outer strands (e.g. aluminium) expand more with temperature than the \
+                     core (e.g. steel): above a transition temperature they are no longer in \
+                     tension. For the cables whose bimetallic option is \"Use the behaviour \
+                     from Criteria\" (Structures › Wire library).",
+                )
+                .small()
+                .weak(),
+            );
+            ui.strong("Above the transition temperature");
+            ui.radio_value(
+                &mut draft.bird_cage,
+                true,
+                "Outer strands do not take compression (bird cage)",
+            );
+            ui.radio_value(
+                &mut draft.bird_cage,
+                false,
+                "Outer strands can go into compression",
+            );
+            ui.add_enabled_ui(!draft.bird_cage, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Maximum virtual compressive stress");
+                    let mut mpa = draft.max_virtual_compression.megapascals();
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut mpa)
+                                .range(0.0..=1e6)
+                                .speed(1.0)
+                                .suffix(" MPa"),
+                        )
+                        .changed()
+                    {
+                        draft.max_virtual_compression =
+                            ols_core::units::Stress::from_megapascals(mpa);
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(
+                        "Virtual stress = actual stress × Ao / At (Ao outer strands' area, At \
+                         total area). The default, 68 947.4 MPa (10⁷ psi), is in practice no \
+                         limit.",
+                    )
+                    .small()
+                    .weak(),
+                );
+            });
+            ui.separator();
+            if let Err(why) = r.model.can_edit() {
+                ui.colored_label(egui::Color32::LIGHT_RED, format!("read-only: {why}"));
+            }
+            ui.horizontal(|ui| {
+                ok = ui
+                    .add_enabled(r.model.can_edit().is_ok(), egui::Button::new("OK"))
+                    .clicked();
+                cancel = ui.button("Cancel").clicked();
+                if ui.button("Defaults").clicked() {
+                    draft = ols_cables::BimetallicModel::default();
+                }
+            });
+        });
+    if ok {
+        let command = r
+            .model
+            .editing
+            .as_ref()
+            .map(|e| e.session.bimetallic_command(draft));
+        if let Ok(command) = command {
+            r.perform(crate::edit::Action::Command {
+                what: "bimetallic conductor model".into(),
+                command,
+            });
+        }
+    }
+    r.bimetallic_window = (open && !ok && !cancel).then_some(draft);
 }
 
 /// The Import / Export LAS/LAZ windows and the job they started.
@@ -3151,6 +3249,17 @@ fn menus(
             .clicked()
         {
             r.creep_stretch_window = Some(r.model.line.creep_stretch.clone());
+            ui.close();
+        }
+        if ui
+            .button("Bimetallic conductor model…")
+            .on_hover_text(
+                "What the outer strands of bimetallic cables do above the transition \
+                 temperature, for the cables that use the criteria",
+            )
+            .clicked()
+        {
+            r.bimetallic_window = Some(r.model.line.bimetallic);
             ui.close();
         }
         ui.separator();

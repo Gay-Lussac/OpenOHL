@@ -159,6 +159,7 @@ impl Importer for StructuresCsv {
             display: Default::default(),
             systems: Vec::new(),
             creep_stretch: Default::default(),
+            bimetallic: Default::default(),
             condition_cases: Default::default(),
         });
         for (n, row) in rows {

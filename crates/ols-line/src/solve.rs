@@ -1029,7 +1029,8 @@ pub fn final_state(
         temperature: c.temperature,
     };
     let (spans, _, strung_state, h) = strung(line, section, cable, budget)?;
-    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
+    let mechanics =
+        Mechanics::from_cable_with(cable, &line.bimetallic).map_err(|e| invalid(e.to_string()))?;
     let ns = NonlinearSection::from_known_state(
         spans,
         mechanics.clone(),
@@ -1153,7 +1154,8 @@ fn solve_rs(
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let st = |e: ols_sagtension::SagTensionError| invalid(e.to_string());
     let (spans, clamps, strung_state, h0) = strung(line, section, cable, budget)?;
-    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
+    let mechanics =
+        Mechanics::from_cable_with(cable, &line.bimetallic).map_err(|e| invalid(e.to_string()))?;
     let mut ns = NonlinearSection::from_known_state(
         spans.clone(),
         mechanics,
@@ -1255,7 +1257,16 @@ fn solve_fe(
             *l *= 1.0 + stretch;
         }
     }
-    let (built, solution) = solve_built(section, &layout, &reference, cable, case, true, budget)?;
+    let (mut built, mut solution) =
+        solve_built(section, &layout, &reference, cable, case, true, budget)?;
+    // Bimetallic cables: past the transition, outer strands limited in
+    // compression leave the core alone ([`core_branch`]).
+    if let Some((core, offset)) = core_branch(line, cable, case, &reference, &built, &solution) {
+        for l in &mut reference.lengths {
+            *l *= 1.0 + offset;
+        }
+        (built, solution) = solve_built(section, &layout, &reference, &core, case, true, budget)?;
+    }
     let pos = &solution.positions;
     let mut spans = Vec::with_capacity(built.span_elements.len());
     for (s, elements) in built.span_elements.iter().enumerate() {
@@ -1323,6 +1334,44 @@ fn solve_fe(
         iterations: solution.iterations,
         estimated_weights,
     })
+}
+
+/// The core branch of a bimetallic cable, when its outer strands are in
+/// more compression than they may carry (the line's or the cable's
+/// bimetallic model) at the mean tension of the composite solution: the
+/// cable as the core alone (outer strands without stiffness: the core's
+/// \\( EA \\) and expansion), and the extra strain of the outer strands'
+/// constant compressive load \\( L \\): \\( \varepsilon = (T + L) / EA_c +
+/// \alpha_c \Delta t \\). One branch per section (its tension varies
+/// little).
+fn core_branch(
+    line: &Line,
+    cable: &Cable,
+    case: &WeatherCase,
+    reference: &Reference,
+    built: &Built,
+    solution: &ols_wirefe::Solution,
+) -> Option<(Cable, f64)> {
+    let limit = cable.outer_compression_limit(&line.bimetallic);
+    let core_part = cable.core.as_ref()?;
+    if !limit.is_finite() {
+        return None;
+    }
+    let elements: Vec<usize> = built.span_elements.iter().flatten().copied().collect();
+    let tension = elements
+        .iter()
+        .map(|&e| 0.5 * (solution.cables[e].tension_i + solution.cables[e].tension_j))
+        .sum::<f64>()
+        / elements.len().max(1) as f64;
+    let dt = case.temperature.celsius() - reference.temperature;
+    let strain = tension / cable.axial_stiffness().si() + cable.thermal_expansion() * dt;
+    let outer = cable.outer.axial_stiffness().si() * (strain - cable.outer.thermal_expansion * dt);
+    if outer >= -limit {
+        return None;
+    }
+    let mut core = cable.clone();
+    core.outer.modulus = ols_core::units::Stress::ZERO;
+    Some((core, limit / core_part.axial_stiffness().si()))
 }
 
 /// Solves one section (it need not be the line's own: a section being
@@ -1809,6 +1858,48 @@ mod tests {
             .xy()
             .norm();
         assert!(shift > 1.0, "{shift}");
+    }
+
+    /// Bimetallic cables: above the transition temperature, outer strands
+    /// taking no compression (bird cage) leave the core alone, expanding
+    /// less than the composite: a hot ACSR sags less than with the
+    /// aluminium in compression; the cable's own choice wins over the
+    /// line's criteria.
+    #[test]
+    fn bird_cage_changes_the_hot_sag() {
+        use crate::condition::Calculation;
+        let lib = library();
+        let budget = default_fe_budget();
+        let hot = WeatherCase::still("hot", Temperature::from_celsius(180.0));
+        let sag = |line: &Line, cable: &Cable| {
+            max_sag(&solve_section(line, &line.sections[0], cable, &hot, &budget).unwrap())
+        };
+        let mut sags = vec![];
+        for calculation in [Calculation::InitialRs, Calculation::InitialFe] {
+            let mut cable = lib.get("acsr-drake-26-7").unwrap().clone();
+            let mut line = crate::tests::example();
+            line.sections[0].loads.clear();
+            line.sections[0].calculation = calculation;
+            let free = sag(&line, &cable);
+            line.bimetallic.bird_cage = true;
+            let caged = sag(&line, &cable);
+            assert!(
+                caged < free - 0.1,
+                "{calculation:?}: bird cage {caged} vs {free}"
+            );
+            cable.bimetallic_behavior = ols_cables::BimetallicBehavior::Compression;
+            let own = sag(&line, &cable);
+            assert!((own - free).abs() < 1e-6, "{own} vs {free}");
+            sags.push(free - caged);
+        }
+        // Both methods take the same off (the sags themselves differ by
+        // 2 % at 180 °C: RS holds the clamps).
+        assert!(
+            (sags[0] - sags[1]).abs() < 0.1 * sags[0],
+            "less sag: RS {} FE {}",
+            sags[0],
+            sags[1]
+        );
     }
 
     /// Creep as a temperature increase (linear model): after creep at

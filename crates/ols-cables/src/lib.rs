@@ -126,6 +126,80 @@ pub struct Cable {
     /// case tension at which the stretch equals `creep_temperature_shift`.
     #[serde(default)]
     pub creep_shift_tension: Option<Force>,
+    /// Bimetallic cables: what the outer strands do above the transition
+    /// temperature.
+    #[serde(default)]
+    pub bimetallic_behavior: BimetallicBehavior,
+    /// `bimetallic_behavior = "compression"`: the largest virtual
+    /// compressive stress of the outer strands (their actual stress × outer
+    /// area / total area); default [`BimetallicModel::DEFAULT_MAX_VIRTUAL_COMPRESSION`].
+    #[serde(default)]
+    pub max_virtual_compression: Option<Stress>,
+}
+
+/// What the outer strands of a bimetallic cable (e.g. aluminium over a
+/// steel core) do above the transition temperature, where their larger
+/// thermal expansion leaves them without tension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BimetallicBehavior {
+    /// As the line's criteria say ([`BimetallicModel`]).
+    #[default]
+    Criteria,
+    /// The outer strands take no compression (bird cage): the core
+    /// carries the whole tension.
+    BirdCage,
+    /// The outer strands go into compression, up to the cable's
+    /// `max_virtual_compression`.
+    Compression,
+}
+
+impl BimetallicBehavior {
+    /// The name in the files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BimetallicBehavior::Criteria => "criteria",
+            BimetallicBehavior::BirdCage => "bird_cage",
+            BimetallicBehavior::Compression => "compression",
+        }
+    }
+}
+
+/// The line's bimetallic conductor model (Criteria › Bimetallic conductor
+/// model), for the cables whose behaviour is
+/// [`BimetallicBehavior::Criteria`].
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, Deserialize)]
+pub struct BimetallicModel {
+    /// The outer strands take no compression (bird cage).
+    #[serde(default)]
+    pub bird_cage: bool,
+    /// Otherwise their largest virtual compressive stress (actual stress ×
+    /// outer area / total area).
+    #[serde(default = "BimetallicModel::default_max")]
+    pub max_virtual_compression: Stress,
+}
+
+impl BimetallicModel {
+    /// 10⁷ psi (68 947.4 MPa): in practice no limit.
+    pub const DEFAULT_MAX_VIRTUAL_COMPRESSION: f64 = 68_947.4e6;
+
+    fn default_max() -> Stress {
+        Stress::from_si(Self::DEFAULT_MAX_VIRTUAL_COMPRESSION)
+    }
+
+    /// Whether these are the defaults (not written to files).
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+impl Default for BimetallicModel {
+    fn default() -> Self {
+        Self {
+            bird_cage: false,
+            max_virtual_compression: Self::default_max(),
+        }
+    }
 }
 
 /// How a cable's sag and tension are modelled (the cable models of line
@@ -284,6 +358,24 @@ impl Cable {
         weighted / self.axial_stiffness().si()
     }
 
+    /// The largest compressive load of the outer strands, N, with the
+    /// line's bimetallic model `criteria`: unlimited without a core.
+    pub fn outer_compression_limit(&self, criteria: &BimetallicModel) -> f64 {
+        if self.core.is_none() {
+            return f64::INFINITY;
+        }
+        let virtual_stress = match self.bimetallic_behavior {
+            BimetallicBehavior::Criteria if criteria.bird_cage => return 0.0,
+            BimetallicBehavior::Criteria => criteria.max_virtual_compression.si(),
+            BimetallicBehavior::BirdCage => return 0.0,
+            BimetallicBehavior::Compression => self
+                .max_virtual_compression
+                .map_or(BimetallicModel::DEFAULT_MAX_VIRTUAL_COMPRESSION, |s| s.si()),
+        };
+        // Virtual stress is on the total area.
+        virtual_stress.abs() * self.area().si()
+    }
+
     /// Checks that the data is physically plausible. Catches typos and unit
     /// mistakes in library files (e.g. mm² entered as m²).
     pub fn validate(&self) -> Result<(), CableError> {
@@ -309,6 +401,12 @@ impl Cable {
                 ));
             }
             _ => {}
+        }
+        if self
+            .max_virtual_compression
+            .is_some_and(|s| !(s.si().is_finite() && s.si() >= 0.0))
+        {
+            return Err(error("max_virtual_compression must be a stress ≥ 0".into()));
         }
         if self.id.is_empty()
             || !self

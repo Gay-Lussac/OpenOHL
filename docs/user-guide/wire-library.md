@@ -39,6 +39,8 @@ A `.olsw` file is plain **TOML** text (any text editor works; editors highlight 
 | `model` | no (`"nonlinear"`) | `"nonlinear"`, `"linear_creep_tension"`, `"linear_creep_temperature"` | The cable model (below). |
 | `creep_temperature_shift` | linear models | number, °C | The permanent stretch due to creep as a temperature increase. |
 | `creep_shift_tension` | `linear_creep_tension` | force | The creep weather case tension at which the stretch equals `creep_temperature_shift`. |
+| `bimetallic_behavior` | no (`"criteria"`) | `"criteria"`, `"bird_cage"`, `"compression"` | Cables with a core: what the outer strands do above the transition temperature (below). |
+| `max_virtual_compression` | `bimetallic_behavior = "compression"` | stress (default `"68947.4 MPa"`, 10⁷ psi: in practice no limit) | The outer strands' largest virtual compressive stress. |
 
 ### Cable models
 
@@ -50,7 +52,17 @@ The three models of line design programs, used for the conditions after creep an
 | `linear_creep_tension` | linear elastic | stretch of `creep_temperature_shift` (α·ΔT), scaled by the creep weather case tension over `creep_shift_tension` | none (elastic) |
 | `linear_creep_temperature` | linear elastic | stretch of `creep_temperature_shift` (α·ΔT) | none |
 
-**Bimetallic cables** (aluminium on steel…): give the outer layers and the core each their own `stress_strain` (initial and creep polynomials, final modulus, thermal expansion), on the total area (`basis = "total"`: the actual material values × component area / total area, as tables give them). Above the temperature where the outer layers go slack, `max_compression` on the outer layers sets their behaviour: `0` no compression (they unload onto the core), a stress for limited compression, absent unlimited.
+**Bimetallic cables** (aluminium on steel…): give the outer layers and the core each their own `stress_strain` (initial and creep polynomials, final modulus, thermal expansion), on the total area (`basis = "total"`: the actual material values × component area / total area, as tables give them).
+
+The outer strands expand more with temperature than the core. Above a transition temperature they are no longer in tension. `bimetallic_behavior` sets what they do then:
+
+| `bimetallic_behavior` | Above the transition temperature |
+|---|---|
+| `criteria` | as the line's Criteria › Bimetallic conductor model says (`bimetallic` in the [line file](line-file.md); default: compression up to 68 947.4 MPa) |
+| `bird_cage` | the outer strands take no compression: the core carries the whole tension |
+| `compression` | the outer strands go into compression, up to `max_virtual_compression` |
+
+Virtual stress = actual stress × Ao / At (Ao the outer strands' area, At the total area). Past the limit the core alone carries the tension, so a hot cable expands as the core does. Both methods use this: the ruling span through the cable's stress-strain model, and the finite elements with one branch per section (the core alone when, at the section's mean tension, the outer strands are past their limit). A curve's own `max_compression` (below) still applies, whichever is smaller.
 
 ## Components: `[cable.outer]`, `[cable.core]`
 
@@ -79,7 +91,7 @@ Any number of coefficients (at least two) is accepted; published curves are usua
 | `initial` | yes | list of numbers `[a0, a1, a2, …]` | — | Initial (virgin loading) curve. Coefficient \\( a_k \\) has units stress / strainᵏ. |
 | `creep` | no | list of numbers | none | Creep curve (typically 10-year). Omit for no creep (e.g. steel cores). |
 | `final_modulus` | yes | number | — | Unloading / reloading slope, in `stress_unit` per strain unit (per % if `strain = "percent"`), on the same `basis`. |
-| `max_compression` | no | number ≥ 0 | unlimited | Largest compressive stress carried, in `stress_unit`. `0` = no compression (typical for aluminium layers: they unload onto the core when hot). |
+| `max_compression` | no | number ≥ 0 | unlimited | Largest compressive stress carried, in `stress_unit`. Usually set with the cable's `bimetallic_behavior` instead. |
 | `max_strain` | no | number > 0 | 1 % | Strain up to which the curves are valid, in strain units. The curves must rise up to it. |
 | `reference_temperature` | no | temperature: `°C`, `degC`, `K`, `°F`, `degF` | `"20 °C"` | Temperature of the curve tests. Both components must use the same. |
 
