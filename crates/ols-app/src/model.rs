@@ -203,6 +203,9 @@ pub struct Model {
     pub hidden_classes: std::collections::BTreeSet<u8>,
     /// Points per class of the whole point cloud (loaded or not).
     pub class_counts: Vec<(u8, u64)>,
+    /// Share of the point cloud shown near the camera, % (level of detail
+    /// 0; kept with the project, [`LIDAR_PERCENT_SETTING`]).
+    pub points_percent: f64,
     /// Working folder of the project's libraries (the project holds them);
     /// `None`: read from their files (a line file, or read-only).
     pub library_dir: Option<PathBuf>,
@@ -365,6 +368,12 @@ impl Thinning {
         self.whole[c as usize] || (*n).is_multiple_of(self.stride)
     }
 }
+
+/// Project setting: the share of the point cloud shown near the camera, %.
+pub const LIDAR_PERCENT_SETTING: &str = "app.lidar_percent";
+
+/// Share of the point cloud shown near the camera by default, %.
+pub const DEFAULT_LIDAR_PERCENT: f64 = 25.0;
 
 /// Project setting holding the weather case file used.
 pub const WEATHER_SETTING: &str = "app.weather";
@@ -968,6 +977,13 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         }
     }
     let editing = editing(session, sources.user.as_deref());
+    let points_percent = editing
+        .as_ref()
+        .ok()
+        .and_then(|e| e.session.setting(LIDAR_PERCENT_SETTING).ok().flatten())
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|v| *v > 0.0 && *v <= 100.0)
+        .unwrap_or(DEFAULT_LIDAR_PERCENT);
     // Remember the weather case file with the project.
     if let (Ok(e), Some(p)) = (&editing, &sources.weather) {
         remember_weather(&e.session, p);
@@ -995,6 +1011,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         other_lines: Vec::new(),
         hidden_classes: Default::default(),
         class_counts,
+        points_percent,
         library_dir,
     })
 }

@@ -31,6 +31,9 @@ pub struct View3d {
     /// Chunked layers: their index, chunks on the GPU, the row they were
     /// built with ([`crate::lod`]).
     chunks: HashMap<Layer, Chunked>,
+    /// LiDAR points read from the project's point cloud as tiles come in
+    /// view, and the share of the cloud they were asked with.
+    stream: Option<(crate::chunks::PointStream, f64)>,
     /// Layers to rebuild before the next frame.
     pub dirty: HashSet<Layer>,
     texture: Option<egui::TextureId>,
@@ -60,6 +63,14 @@ struct Chunked {
 const BUILD_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
 
 impl View3d {
+    /// Points drawn by a chunked layer in the last frame (tests).
+    #[cfg(test)]
+    pub fn drawn_points(&self, layer: Layer) -> u32 {
+        self.chunks
+            .get(&layer)
+            .map_or(0, |c| c.set.drawn().map(|g| g.counts().1).sum())
+    }
+
     /// What a chunked layer drew in the last frame.
     pub fn lod_stats(&self, layer: Layer) -> Option<ols_render::lod::PlanStats> {
         self.chunks.get(&layer).map(|c| c.set.stats)
@@ -303,6 +314,17 @@ impl View3d {
                 let index = crate::chunks::ChunkIndex::new(model, layer, case);
                 let mut set = ChunkSet::default();
                 set.reset(index.keys());
+                if index.streamed() {
+                    // Hidden classes or another cloud: read again.
+                    match &mut self.stream {
+                        Some((s, _)) => s.restart(),
+                        None => {
+                            self.stream =
+                                crate::chunks::PointStream::new(model, Some(ui.ctx().clone()))
+                                    .map(|s| (s, model.points_percent));
+                        }
+                    }
+                }
                 self.chunks.insert(
                     layer,
                     Chunked {
@@ -334,7 +356,25 @@ impl View3d {
                 continue;
             }
             let row = lod.row(layer);
-            if row.detail != c.row.detail {
+            let streamed = layer == Layer::Points && c.index.streamed();
+            let mut other = row.detail != c.row.detail;
+            if streamed && let Some((stream, percent)) = &mut self.stream {
+                if *percent != model.points_percent {
+                    *percent = model.points_percent;
+                    other = true;
+                }
+                if other {
+                    stream.restart();
+                }
+                // The tiles read since the last frame.
+                for l in stream.take() {
+                    match l.scene {
+                        Ok(s) => c.set.insert(&l.tile, l.level, GpuScene::new(device, &s)),
+                        Err(e) => log::warn!("LiDAR tile {:?}: {e}", l.tile),
+                    }
+                }
+            }
+            if other {
                 // Other details: the levels built go.
                 c.set.reset(c.index.keys());
             }
@@ -354,6 +394,20 @@ impl View3d {
             let Some(c) = self.chunks.get_mut(layer) else {
                 continue;
             };
+            if *layer == Layer::Points
+                && c.index.streamed()
+                && let Some((stream, percent)) = &mut self.stream
+            {
+                // Read in the background: the share of the cloud of the
+                // tile's level.
+                let near = *percent / 100.0;
+                let share = match w.level {
+                    0 => near,
+                    l => near * c.row.detail[l - 1] / 100.0,
+                };
+                stream.request(&c.index, w.key, w.level, share, model);
+                continue;
+            }
             let s = c.index.build(model, *layer, &w.key, w.level, &c.row);
             c.set.insert(&w.key, w.level, GpuScene::new(device, &s));
             built.insert(*layer);
@@ -366,7 +420,19 @@ impl View3d {
                 c.set.plan(&frustum, &rule);
             }
         }
-        if wanted.len() > n_built {
+        let streaming = self.stream.as_ref().is_some_and(|(s, _)| s.pending() > 0);
+        if streaming {
+            // The tiles come back on the reader's repaints; keep planning.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        let built_all = wanted
+            .iter()
+            .filter(|(l, _)| {
+                !(*l == Layer::Points && self.chunks.get(l).is_some_and(|c| c.index.streamed()))
+            })
+            .count();
+        if built_all > n_built {
             ui.ctx().request_repaint();
         }
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));

@@ -3272,6 +3272,7 @@ dependencies = [
  "egui_dock",
  "egui_kittest",
  "env_logger",
+ "las",
  "log",
  "ols-cables",
  "ols-clearance",

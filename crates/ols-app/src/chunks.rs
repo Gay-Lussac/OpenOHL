@@ -36,6 +36,9 @@ enum Content {
     Triangles(Vec<u32>),
     /// LiDAR points (indices into the model's points).
     Points(Vec<u32>),
+    /// LiDAR points read from the project's point cloud when needed
+    /// ([`PointStream`]).
+    Stored,
 }
 
 /// A TIN: points and triangles (indices into the points).
@@ -95,6 +98,30 @@ impl ChunkIndex {
                     .map(|(k, v)| (k, Content::Triangles(v)))
                     .collect()
             }
+            Layer::Points if cloud_of(model).is_some() => {
+                // The tiles of the stored cloud: read when needed.
+                let (file, name) = cloud_of(model).expect("checked");
+                let tiles = ols_pointcloud::Store::open(&file).and_then(|s| {
+                    let cloud = s.cloud(name.as_deref())?;
+                    Ok((s.tiles(&cloud, &grid, 0)?, cloud))
+                });
+                let Ok((counts, cloud)) = tiles else {
+                    return Self::empty(grid);
+                };
+                let mut out = HashMap::new();
+                for (tile, _) in counts.tiles {
+                    let area = grid.bounds(&tile);
+                    bounds.insert(
+                        tile,
+                        Some(Bounds {
+                            min: [area.min[0], area.min[1], cloud.bounds[0][2]],
+                            max: [area.max[0], area.max[1], cloud.bounds[1][2]],
+                        }),
+                    );
+                    out.insert(tile, Content::Stored);
+                }
+                out
+            }
             Layer::Points => {
                 let mut by: HashMap<Tile, Vec<u32>> = HashMap::new();
                 for (k, (q, c)) in model.points.iter().enumerate() {
@@ -143,6 +170,20 @@ impl ChunkIndex {
             chunks: HashMap::new(),
             mesh: None,
         }
+    }
+
+    /// Whether its points are read from the project's point cloud
+    /// ([`PointStream`]) rather than built here.
+    pub fn streamed(&self) -> bool {
+        self.chunks
+            .values()
+            .any(|(_, c)| matches!(c, Content::Stored))
+    }
+
+    /// The area of a tile.
+    pub fn area(&self, tile: &Tile) -> ([f64; 2], [f64; 2]) {
+        let b = self.grid.bounds(tile);
+        (b.min, b.max)
     }
 
     /// The chunks and their bounds.
@@ -196,6 +237,7 @@ impl ChunkIndex {
                     }
                 }
             }
+            Content::Stored => {}
             Content::Triangles(tris) if level == 0 => {
                 if let Some(m) = &self.mesh {
                     for &k in tris {
@@ -238,5 +280,186 @@ impl ChunkIndex {
             }
         }
         s
+    }
+}
+
+/// The point cloud of a model: project file and cloud name.
+pub fn cloud_of(model: &Model) -> Option<(std::path::PathBuf, Option<String>)> {
+    let spec = model.cloud.as_ref()?;
+    Some(match spec.split_once('#') {
+        Some((f, n)) => (f.into(), Some(n.to_owned())),
+        None => (spec.into(), None),
+    })
+}
+
+/// A tile of LiDAR points to read.
+struct Request {
+    tile: Tile,
+    level: usize,
+    area: ([f64; 2], [f64; 2]),
+    /// Every n-th point of a class kept (1: all).
+    every: usize,
+    /// Classes kept whole (small ones).
+    whole: [bool; 256],
+    /// Classes not read.
+    hidden: [bool; 256],
+    generation: u64,
+}
+
+/// A tile read.
+pub struct Loaded {
+    /// The tile.
+    pub tile: Tile,
+    /// Its level of detail.
+    pub level: usize,
+    /// Settings it was read with ([`PointStream::generation`]).
+    pub generation: u64,
+    /// Its points.
+    pub scene: Result<Scene, String>,
+}
+
+/// LiDAR points streamed from the project's point cloud: tiles read on a
+/// background thread (its own connection to the project file), so the
+/// view never waits for decoding.
+pub struct PointStream {
+    tx: std::sync::mpsc::Sender<Request>,
+    rx: std::sync::mpsc::Receiver<Loaded>,
+    /// Settings now (hidden classes, shares): results of other ones are
+    /// dropped.
+    pub generation: u64,
+    /// Tiles asked for and not back yet.
+    in_flight: std::collections::HashSet<(Tile, usize)>,
+}
+
+impl std::fmt::Debug for PointStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PointStream")
+            .field("generation", &self.generation)
+            .field("in_flight", &self.in_flight.len())
+            .finish()
+    }
+}
+
+impl PointStream {
+    /// Starts the reader of `model`'s point cloud (`None` without one).
+    pub fn new(model: &Model, ctx: Option<eframe::egui::Context>) -> Option<Self> {
+        let (file, name) = cloud_of(model)?;
+        let colors: Vec<Option<[u8; 3]>> = (0..=255u8)
+            .map(|c| scene::class_color(&model.scheme, c))
+            .collect();
+        let origin = model.origin;
+        let (tx, requests) = std::sync::mpsc::channel::<Request>();
+        let (done, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let store = ols_pointcloud::Store::open(&file)
+                .and_then(|s| s.cloud(name.as_deref()).map(|c| (s, c)));
+            let budget =
+                ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(60));
+            for r in requests {
+                let scene = match &store {
+                    Err(e) => Err(e.to_string()),
+                    Ok((store, cloud)) => {
+                        let mut s = Scene::new(origin);
+                        let mut seen = [0usize; 256];
+                        let classes: Vec<u8> =
+                            (0..=255u8).filter(|c| !r.hidden[*c as usize]).collect();
+                        store
+                            .visit_rect(
+                                cloud,
+                                r.area.0,
+                                r.area.1,
+                                Some(&classes),
+                                &budget,
+                                &mut |x, y, z, c| {
+                                    let n = &mut seen[c as usize];
+                                    *n += 1;
+                                    if (r.whole[c as usize] || (*n).is_multiple_of(r.every))
+                                        && let Some(col) = colors[c as usize]
+                                    {
+                                        s.point([x, y, z], [col[0], col[1], col[2], 255], 2.0);
+                                    }
+                                },
+                            )
+                            .map(|_| s)
+                            .map_err(|e| e.to_string())
+                    }
+                };
+                let sent = done.send(Loaded {
+                    tile: r.tile,
+                    level: r.level,
+                    generation: r.generation,
+                    scene,
+                });
+                if sent.is_err() {
+                    break;
+                }
+                if let Some(c) = &ctx {
+                    c.request_repaint();
+                }
+            }
+        });
+        Some(Self {
+            tx,
+            rx,
+            generation: 0,
+            in_flight: Default::default(),
+        })
+    }
+
+    /// Other settings: what is being read is no longer wanted.
+    pub fn restart(&mut self) {
+        self.generation += 1;
+        self.in_flight.clear();
+    }
+
+    /// Asks for tile `tile` at `level`, keeping `share` (0–1] of its
+    /// points (classes of up to [`crate::model::SMALL_CLASS`] points
+    /// whole), without the `hidden` classes; nothing if already asked.
+    pub fn request(
+        &mut self,
+        index: &ChunkIndex,
+        tile: Tile,
+        level: usize,
+        share: f64,
+        model: &Model,
+    ) {
+        if !self.in_flight.insert((tile, level)) {
+            return;
+        }
+        let mut whole = [false; 256];
+        for (c, n) in &model.class_counts {
+            whole[*c as usize] = *n <= crate::model::SMALL_CLASS;
+        }
+        let mut hidden = [false; 256];
+        for c in &model.hidden_classes {
+            hidden[*c as usize] = true;
+        }
+        let every = (1.0 / share.clamp(1e-6, 1.0)).round().max(1.0) as usize;
+        let _ = self.tx.send(Request {
+            tile,
+            level,
+            area: index.area(&tile),
+            every,
+            whole,
+            hidden,
+            generation: self.generation,
+        });
+    }
+
+    /// The tiles read since the last call (of the current settings).
+    pub fn take(&mut self) -> Vec<Loaded> {
+        let mut out = Vec::new();
+        while let Ok(l) = self.rx.try_recv() {
+            if l.generation == self.generation {
+                self.in_flight.remove(&(l.tile, l.level));
+                out.push(l);
+            }
+        }
+        out
+    }
+
+    /// Tiles being read.
+    pub fn pending(&self) -> usize {
+        self.in_flight.len()
     }
 }

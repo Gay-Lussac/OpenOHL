@@ -2694,3 +2694,197 @@ fn the_survey_window_stays_open_for_several_classes() {
     assert!(hidden(&mut harness).is_empty());
     assert!(harness.state_mut().ready().unwrap().survey_window.is_some());
 }
+
+/// In the survey window, pressing on a class and dragging down gives every
+/// class passed the first one's new state.
+#[test]
+fn dragging_over_classes_gives_them_one_state() {
+    let mut model = synthetic();
+    model.points = vec![
+        ([0, 0, 0], 2),
+        ([1000, 0, 0], 3),
+        ([2000, 0, 0], 4),
+        ([3000, 0, 0], 5),
+        ([4000, 0, 0], 6),
+    ];
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().survey_window = Some(String::new());
+    harness.run();
+    let centre = |h: &Harness<'_, App>, label: &str| h.get_by_label_contains(label).rect().center();
+    let (from, to) = (centre(&harness, "3 Low"), centre(&harness, "5 High"));
+    let press = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    harness.event(egui::Event::PointerMoved(from));
+    harness.step();
+    harness.event(press(from, true));
+    harness.step();
+    for k in 1..=10 {
+        let p = from + (to - from) * (k as f32 / 10.0);
+        harness.event(egui::Event::PointerMoved(p));
+        harness.step();
+    }
+    harness.event(press(to, false));
+    harness.run();
+    let hidden: Vec<u8> = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .hidden_classes
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(hidden, vec![3, 4, 5], "the classes dragged over, hidden");
+}
+
+/// The survey window stays on the screen with many classes: its list
+/// scrolls.
+#[test]
+fn the_survey_list_scrolls() {
+    let mut model = synthetic();
+    model.points = (1..=60u8)
+        .map(|c| ([i32::from(c) * 1000, 0, 0], c))
+        .collect();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().survey_window = Some(String::new());
+    harness.run();
+    let slider = harness
+        .get_by_label_contains("Points shown near the camera")
+        .rect();
+    assert!(slider.bottom() < 900.0, "{slider:?}");
+}
+
+/// A survey stored in the project: its points are read by tile as they
+/// come in view, the share chosen of them (100 %: every point).
+#[test]
+fn stored_points_are_streamed_at_the_share_chosen() {
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    use crate::scene::Layer;
+    // The project, then a survey of 0.5 m grid points around T3: ground
+    // and vegetation alternating, 48 000 each (thinned: above 20 000).
+    let first = synthetic_project("stream");
+    let file = first.sources.file.clone();
+    drop(first);
+    let dir = file.parent().unwrap().to_path_buf();
+    let laz = dir.join("survey.laz");
+    {
+        let mut b = las::Builder::from((1, 4));
+        b.point_format.is_compressed = true;
+        for t in [
+            &mut b.transforms.x,
+            &mut b.transforms.y,
+            &mut b.transforms.z,
+        ] {
+            t.scale = 0.001;
+        }
+        let mut w = las::Writer::from_path(&laz, b.into_header().unwrap()).unwrap();
+        for i in 0..600 {
+            for j in 0..160 {
+                let veg = (i + j) % 2 == 0;
+                w.write_point(las::Point {
+                    x: 500.0 + f64::from(i) * 0.5,
+                    y: -40.0 + f64::from(j) * 0.5,
+                    z: if veg { 530.0 } else { 520.0 },
+                    classification: if veg {
+                        las::point::Classification::HighVegetation
+                    } else {
+                        las::point::Classification::Ground
+                    },
+                    ..Default::default()
+                })
+                .unwrap();
+            }
+        }
+        w.close().unwrap();
+    }
+    let mut store = ols_pointcloud::Store::open(&file).unwrap();
+    store
+        .import_tiles(
+            "survey",
+            &[laz],
+            "EPSG:2056",
+            None,
+            64.0,
+            0.001,
+            &ols_core::budget::Budget::new(),
+            |_, _, _| {},
+        )
+        .unwrap();
+    drop(store);
+    let model = model::load(
+        Sources {
+            file,
+            point_budget: 1000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    assert!(model.cloud.is_some());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.state_mut().show_tab(crate::app::Tab::View3d);
+    harness.step();
+    {
+        // Every tile at full detail, the survey seen from above.
+        let mut row = harness.state().lod.row(Layer::Points);
+        row.render_distance = 1e6;
+        row.from = [1e6, 1e6];
+        harness.state_mut().lod.set(Layer::Points, row).unwrap();
+        let r = harness.state_mut().ready().unwrap();
+        r.model.points_percent = 100.0;
+        let cam = r.view3d.camera.as_mut().unwrap();
+        cam.target = [650.0, 0.0, 520.0];
+        cam.distance = 1500.0;
+        cam.pitch = 1.5;
+    }
+    let settle = |h: &mut Harness<'_, App>| {
+        for _ in 0..400 {
+            h.step();
+            let s = h
+                .state_mut()
+                .ready()
+                .unwrap()
+                .view3d
+                .lod_stats(Layer::Points)
+                .unwrap();
+            if s.pending == 0 && s.drawn[0] > 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .view3d
+            .drawn_points(Layer::Points)
+    };
+    let all = settle(&mut harness);
+    assert_eq!(all, 600 * 160, "100 %: every point");
+    harness.state_mut().ready().unwrap().model.points_percent = 10.0;
+    let tenth = settle(&mut harness);
+    assert!(
+        (f64::from(tenth) / f64::from(all) - 0.1).abs() < 0.01,
+        "{tenth} of {all}"
+    );
+}

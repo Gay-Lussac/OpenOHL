@@ -379,6 +379,12 @@ pub struct GpuScene {
 }
 
 impl GpuScene {
+    /// Segments, points and triangles on the GPU.
+    pub fn counts(&self) -> (u32, u32, u32) {
+        let n = |b: &Option<(wgpu::Buffer, u32)>| b.as_ref().map_or(0, |b| b.1);
+        (n(&self.lines), n(&self.points), n(&self.triangles) / 3)
+    }
+
     /// Uploads a scene.
     pub fn new(device: &wgpu::Device, scene: &Scene) -> Self {
         fn buffer<T: bytemuck::Pod>(

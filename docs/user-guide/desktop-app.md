@@ -37,7 +37,7 @@ The **menu bar** holds what needs no view:
 | Lines | Project lines (saved states of the line to show next to the working line, or to make the working line), Create line, Delete line (see [Project lines](#project-lines)) |
 | Tools | the tool inventory (E); hold any tool |
 | Checks | calculations run **on demand** — they never change the model: Clearances (Run checks, also after every edit, rule file, Show results); more checks to come |
-| Terrain | the ground surface (TIN) shown or not; **Survey data**: LiDAR points shown or not, and **Survey data display options…** — a window that stays open: a tick per LiDAR class of the point cloud (the points shown of its total), All, None, Invert, by kind (ground, vegetation, buildings, wires and structures, traffic, noise), a filter by name or role; each change shows at once; a hidden class is neither drawn nor clicked; noise is drawn magenta |
+| Terrain | the ground surface (TIN) shown or not; **Survey data**: LiDAR points shown or not, and **Survey data display options…** — a window that stays open: every LiDAR class of the point cloud with its points, in a list that scrolls; a click shows or hides a class, **press and drag** up or down to give every class passed the same state; All, None, Invert, by kind (ground, vegetation, buildings, wires and structures, traffic, noise), a filter by name or role; **Points shown near the camera**, 0.1–100 % of the survey (kept with the project; default 25 %) — farther away the Level of detail table's shares and render distance reduce them; each change shows at once; a hidden class is neither drawn nor clicked; noise is drawn magenta |
 | Structures | libraries: structure types, insulators (see [Library editors](#library-editors)); tables: structures, strings, alignment points (see [Tables](#tables)) |
 | Sections | libraries: wires, weather cases; tables: sections, jumpers, electrical systems, weather cases; Display weather cases |
 | Plugins | to come (the plugin manager) |
@@ -66,11 +66,11 @@ The 3D view draws the large layers — terrain, LiDAR points, structures, wires,
 | Layer | Level 0 | Level 1 (default from) | Level 2 (default from) | Render distance |
 |---|---|---|---|---|
 | Terrain | every TIN triangle | the surface on an 8 m grid (1.5 km) | a 32 m grid (5 km) | 30 km |
-| LiDAR points | every point shown | 25 % of them (500 m) | 5 % (1.5 km) | 3 km |
+| LiDAR points | the share of the survey chosen in Survey data display options (default 25 %; 100 %: every point) | 25 % of that (500 m) | 5 % of that (1.5 km) | 3 km |
 | Structures | lattice, arms, strings | mast, arms and strings (2 km) | the mast line (8 km) | 50 km |
 | Wires, other cases, project lines | every point; bundles as subconductors with their yokes | 16 points per span, one line per bundle (1.5 km) | 5 points per span (6 km) | 50 km |
 
-The last column of the table shows what was drawn in the last frame: the chunks at each level, of how many, and how many are still loading. On a 25 km line seen from 1.5 km, 5 million terrain triangles became 280 000 drawn, 1.5 million LiDAR points 24 000, and 190 000 wire segments 14 000; every chunk builds in under 2 ms.
+A survey stored in the project is read by tile as tiles come in view, on a background thread straight from the project file (every class; classes of up to 20 000 points whole): on a 25 km line seen from 600 m, 3.2 million points at 100 % appear in 0.2 s without a frame over 11 ms. The last column of the table shows what was drawn in the last frame: the chunks at each level, of how many, and how many are still loading. On a 25 km line seen from 1.5 km, 5 million terrain triangles became 280 000 drawn, 1.5 million LiDAR points 24 000, and 190 000 wire segments 14 000; every chunk builds in under 2 ms.
 
 The level of detail changes what is **drawn** only: calculations, checks, the profile, the plan and picking always use the full model.
 

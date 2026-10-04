@@ -143,6 +143,22 @@ impl fmt::Debug for Store {
     }
 }
 
+/// Takes a decoded point (with its class and its block's corridor) and
+/// says whether it took it.
+type BlockVisitor<'a> = dyn FnMut([f64; 3], u8, Option<&Corridor>) -> bool + 'a;
+
+/// A block selected for reading: id, chunk x and y, class, count, z0, the
+/// corridor near its chunk (none: every point).
+type Selected = (
+    i64,
+    i64,
+    i64,
+    u8,
+    usize,
+    i64,
+    Option<std::sync::Arc<Corridor>>,
+);
+
 /// A stored block: id, count, z0, coordinates, intensities, returns.
 type StoredBlock = (i64, i64, i64, Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
 
@@ -547,6 +563,103 @@ impl Store {
         }
         // Blocks outside the area's chunk range were not even listed.
         stats.skipped = total - selected.len();
+        self.decode_selected(
+            cloud,
+            &selected,
+            &run,
+            &mut stats,
+            &mut |p, class, local| {
+                local.is_none_or(|a| a.contains(p[0], p[1])) && {
+                    visit(p[0], p[1], p[2], class);
+                    true
+                }
+            },
+        )?;
+        Ok(stats)
+    }
+
+    /// Calls `visit(x, y, z, class)` for every point of `cloud` in the
+    /// rectangle `min`–`max` (x, y; lower edges in, upper edges out) of
+    /// `classes` (all without them) — what a viewer streams by tile: only
+    /// the chunks of the rectangle are listed and read.
+    ///
+    /// Cost: one indexed query, then decoding the rectangle's blocks in
+    /// parallel (~50 ns per point on 10 cores).
+    pub fn visit_rect(
+        &self,
+        cloud: &CloudInfo,
+        min: [f64; 2],
+        max: [f64; 2],
+        classes: Option<&[u8]>,
+        budget: &Budget,
+        visit: &mut dyn FnMut(f64, f64, f64, u8),
+    ) -> Result<Stats, StoreError> {
+        let run = budget.start();
+        let mut wanted = [true; 256];
+        if let Some(cs) = classes {
+            wanted = [false; 256];
+            for &c in cs {
+                wanted[c as usize] = true;
+            }
+        }
+        let c = cloud.chunk_size;
+        let chunk = |v: f64| (v / c).floor() as i64;
+        // The chunk holding a point just below the upper edge.
+        let below = |v: f64| chunk(v - 1e-9 * c.max(1.0));
+        let mut stmt = self.conn.prepare(
+            "SELECT id, cx, cy, class, count, z0 FROM pointcloud_block
+             WHERE cloud = ?1 AND cx BETWEEN ?2 AND ?3 AND cy BETWEEN ?4 AND ?5",
+        )?;
+        let rows = stmt.query_map(
+            params![
+                cloud.id,
+                chunk(min[0]),
+                below(max[0]),
+                chunk(min[1]),
+                below(max[1])
+            ],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)? as u8,
+                    r.get::<_, i64>(4)? as usize,
+                    r.get::<_, i64>(5)?,
+                ))
+            },
+        )?;
+        let mut stats = Stats::default();
+        let mut selected = Vec::new();
+        for row in rows {
+            let (id, cx, cy, class, count, z0) = row?;
+            if wanted[class as usize] {
+                selected.push((id, cx, cy, class, count, z0, None));
+            } else {
+                stats.skipped += 1;
+            }
+        }
+        self.decode_selected(cloud, &selected, &run, &mut stats, &mut |p, class, _| {
+            let inside = p[0] >= min[0] && p[0] < max[0] && p[1] >= min[1] && p[1] < max[1];
+            if inside {
+                visit(p[0], p[1], p[2], class);
+            }
+            inside
+        })?;
+        Ok(stats)
+    }
+
+    /// Decodes the blocks `selected` in parallel batches and hands their
+    /// points to `visit(point, class, block's corridor)`, which says
+    /// whether it took the point.
+    fn decode_selected(
+        &self,
+        cloud: &CloudInfo,
+        selected: &[Selected],
+        run: &ols_core::budget::Run<'_>,
+        stats: &mut Stats,
+        visit: &mut BlockVisitor<'_>,
+    ) -> Result<(), StoreError> {
         let units = (cloud.chunk_size / cloud.scale).round() as i64;
         let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
         let mut blob_stmt = self
@@ -605,15 +718,14 @@ impl Store {
                 stats.read += 1;
                 stats.points_read += points.len() as u64;
                 for p in points {
-                    if meta.6.as_ref().is_none_or(|a| a.contains(p[0], p[1])) {
+                    if visit(p, meta.3, meta.6.as_deref()) {
                         stats.points_visited += 1;
-                        visit(p[0], p[1], p[2], meta.3);
                     }
                 }
             }
             start = end;
         }
-        Ok(stats)
+        Ok(())
     }
 }
 

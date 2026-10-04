@@ -162,6 +162,8 @@ pub struct Ready {
     pub lines_window: Option<LinesWindow>,
     /// The "Survey data display options" window, when open: its filter.
     pub survey_window: Option<String>,
+    /// Dragging over its classes: the state they all get (shown).
+    pub survey_paint: Option<bool>,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
     /// A page to bring to the front (with a table filter), from a tool.
@@ -205,6 +207,7 @@ impl Ready {
             display_window: None,
             lines_window: None,
             survey_window: None,
+            survey_paint: None,
             jumper_from: None,
             open_page: None,
             clearances: crate::clearance::Clearances::new(
@@ -1808,7 +1811,10 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
     let classes = survey_classes(&r.model);
     let mut open = true;
     let mut changed = false;
+    let mut percent_set = false;
     let hidden = &mut r.model.hidden_classes;
+    let percent = &mut r.model.points_percent;
+    let paint = &mut r.survey_paint;
     egui::Window::new("Survey data display options")
         .open(&mut open)
         .collapsible(false)
@@ -1867,43 +1873,124 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
                 ui.label("Filter:");
                 ui.text_edit_singleline(&mut filter);
             });
+            ui.label(
+                egui::RichText::new(
+                    "Click a class to show or hide it; press and drag up or down to give \
+                     every class passed the same state.",
+                )
+                .small()
+                .weak(),
+            );
             ui.separator();
             let f = filter.to_lowercase();
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::Grid::new("survey-classes")
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.label("");
-                        ui.strong("class");
-                        ui.strong("points shown / in the cloud");
-                        ui.end_row();
-                        for (code, name, roles, loaded, total) in &classes {
-                            let text = format!("{code} {name}");
-                            if !f.is_empty()
-                                && !text.to_lowercase().contains(&f)
-                                && !roles.iter().any(|r| r.contains(&f))
-                            {
-                                continue;
-                            }
-                            let mut on = !hidden.contains(code);
-                            if ui.checkbox(&mut on, "").changed() {
-                                if on {
-                                    hidden.remove(code);
-                                } else {
-                                    hidden.insert(*code);
-                                }
-                                changed = true;
-                            }
-                            ui.label(text).on_hover_text(roles.join(", "));
-                            ui.label(match total {
-                                Some(t) if t != loaded => format!("{loaded} / {t}"),
-                                _ => loaded.to_string(),
-                            });
-                            ui.end_row();
+            let (pressed, down) =
+                ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down()));
+            let pointer = ui.input(|i| i.pointer.interact_pos());
+            if !down {
+                *paint = None;
+            }
+            // The list scrolls inside the window (a cloud may have dozens
+            // of classes).
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .max_height(ui.available_height() - 70.0)
+                .show(ui, |ui| {
+                    for (code, name, roles, loaded, total) in &classes {
+                        let text = format!("{code} {name}");
+                        if !f.is_empty()
+                            && !text.to_lowercase().contains(&f)
+                            && !roles.iter().any(|r| r.contains(&f))
+                        {
+                            continue;
                         }
-                    });
+                        let mut on = !hidden.contains(code);
+                        let row = ui
+                            .horizontal(|ui| {
+                                ui.checkbox(&mut on, "");
+                                ui.label(&text);
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "{} points",
+                                                total.unwrap_or(*loaded)
+                                            ))
+                                            .small()
+                                            .weak(),
+                                        );
+                                    },
+                                );
+                            })
+                            .response;
+                        // The whole row on top of its checkbox: press to
+                        // flip it, drag over others to give them its state.
+                        let row = ui
+                            .interact(
+                                row.rect,
+                                ui.id().with(("survey-row", code)),
+                                egui::Sense::click_and_drag(),
+                            )
+                            .on_hover_text(roles.join(", "));
+                        let shown = !hidden.contains(code);
+                        let target = if pressed && row.hovered() {
+                            *paint = Some(!shown);
+                            Some(!shown)
+                        } else {
+                            match (*paint, pointer) {
+                                (Some(t), Some(p))
+                                    if down && p.y >= row.rect.top() && p.y < row.rect.bottom() =>
+                                {
+                                    Some(t)
+                                }
+                                _ => None,
+                            }
+                        };
+                        if let Some(t) = target
+                            && t != shown
+                        {
+                            if t {
+                                hidden.remove(code);
+                            } else {
+                                hidden.insert(*code);
+                            }
+                            changed = true;
+                        }
+                    }
+                });
+            ui.separator();
+            // How many points: near the camera; farther away the level of
+            // detail and the render distance thin them further.
+            ui.horizontal(|ui| {
+                ui.label("Points shown near the camera:");
+                let slider = ui.add(
+                    egui::Slider::new(percent, 0.1..=100.0)
+                        .logarithmic(true)
+                        .suffix(" % of the cloud"),
+                );
+                if slider.drag_stopped() || (slider.changed() && !slider.dragged()) {
+                    percent_set = true;
+                }
             });
+            ui.label(
+                egui::RichText::new(
+                    "100 %: every point of the survey near the camera (classes of up to \
+                     20 000 points are always whole). Farther away the Level of detail \
+                     table's shares and render distance reduce them.",
+                )
+                .small()
+                .weak(),
+            );
         });
+    if percent_set
+        && let Ok(e) = &r.model.editing
+        && let Err(err) = e.session.set_setting(
+            crate::model::LIDAR_PERCENT_SETTING,
+            Some(&r.model.points_percent.to_string()),
+        )
+    {
+        log::warn!("keeping the LiDAR share: {err}");
+    }
     if changed {
         r.view3d.dirty.insert(Layer::Points);
     }

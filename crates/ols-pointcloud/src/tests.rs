@@ -221,3 +221,59 @@ fn points_per_grid_tile() {
     assert!(stats.read < blocks, "{stats:?}");
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn a_rectangle_gives_exactly_its_points() {
+    let dir = scratch("rect");
+    write_tile(&dir.join("a.laz"), 0.0, 120.0);
+    let tiles = ols_lidar::tiles_in(&dir).unwrap();
+    let db = dir.join("project.ols");
+    let mut store = Store::open(&db).unwrap();
+    let (cloud, _) = store
+        .import_tiles(
+            "survey",
+            &tiles,
+            "EPSG:2056",
+            None,
+            50.0,
+            0.001,
+            &Budget::new(),
+            |_, _, _| {},
+        )
+        .unwrap();
+    let all = collect(&CloudSource::open(&db, None).unwrap(), None, None);
+    // Two rectangles side by side at x = 64 (not a chunk border): every
+    // point in one of them, none twice.
+    let mut parts = Vec::new();
+    for (min, max) in [([0.0, 0.0], [64.0, 40.0]), ([64.0, 0.0], [130.0, 40.0])] {
+        let mut out = Vec::new();
+        let stats = store
+            .visit_rect(&cloud, min, max, None, &Budget::new(), &mut |x, y, z, c| {
+                let mm = |v: f64| (v * 1000.0).round() as i64;
+                assert!(x >= min[0] && x < max[0]);
+                out.push([mm(x), mm(y), mm(z), c as i64]);
+            })
+            .unwrap();
+        assert_eq!(stats.points_visited as usize, out.len());
+        parts.extend(out);
+    }
+    assert_eq!(sorted(parts), all);
+    // One class only.
+    let mut n = 0;
+    store
+        .visit_rect(
+            &cloud,
+            [0.0, 0.0],
+            [64.0, 40.0],
+            Some(&[5]),
+            &Budget::new(),
+            &mut |_, _, _, c| {
+                assert_eq!(c, 5);
+                n += 1;
+            },
+        )
+        .unwrap();
+    assert!(n > 0);
+    drop(store);
+    std::fs::remove_dir_all(dir).ok();
+}
