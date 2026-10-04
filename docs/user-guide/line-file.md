@@ -95,8 +95,6 @@ A V-string holds its clamp across the line while both legs are in tension; when 
 
 The weather cases come from the line's `creep_stretch` (Criteria › Creep-Stretch): `{ "creep_case": "everyday", "load_cases": ["glaze ice", "rime ice + wind"] }` (by name, from the weather case file used); how a cable stretches, from its model ([wire library](wire-library.md#cable-models)). A section after creep or load without its weather case fails, saying so.
 
-The line's `bimetallic` (Criteria › Bimetallic conductor model): what the outer strands of bimetallic cables do above the transition temperature, for the cables whose `bimetallic_behavior` is `criteria` ([wire library](wire-library.md#cable-models)): `{ "bird_cage": true }` (no compression), or `{ "bird_cage": false, "max_virtual_compression": "50 MPa" }` (compression up to that stress; a number is in Pa). The default, compression up to 68 947.4 MPa, is not written.
-
 | Method | |
 |---|---|
 | FE | the section's finite-element model: suspension strings swing, each span its own tension; after creep or load the unstressed lengths are longer by the permanent stretch |

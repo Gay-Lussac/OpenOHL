@@ -36,7 +36,7 @@
 use ols_core::units::{Force, Quantity, Stress, Temperature};
 use serde::Deserialize;
 
-use crate::{BimetallicModel, Cable, CableError, Component};
+use crate::{Cable, CableError, Component};
 
 /// Unit of strain used by the coefficients.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -188,18 +188,11 @@ impl ComponentMechanics {
 }
 
 impl Mechanics {
-    /// Builds the model from a cable, with the default bimetallic model.
-    /// Components without stress-strain data are linear with their
-    /// modulus.
+    /// Builds the model from a cable. Components without stress-strain data
+    /// are linear with their modulus; the outer strands of a bimetallic
+    /// cable are limited in compression as the cable says.
     pub fn from_cable(cable: &Cable) -> Result<Self, CableError> {
-        Self::from_cable_with(cable, &BimetallicModel::default())
-    }
-
-    /// Builds the model from a cable, the outer strands of a bimetallic
-    /// cable limited in compression as the cable or, for it, the line's
-    /// bimetallic model `criteria` say.
-    pub fn from_cable_with(cable: &Cable, criteria: &BimetallicModel) -> Result<Self, CableError> {
-        let outer_limit = cable.outer_compression_limit(criteria);
+        let outer_limit = cable.outer_compression_limit();
         let total_area = cable.area().si();
         let mut reference: Option<Temperature> = None;
         let mut components = Vec::new();
@@ -568,40 +561,32 @@ mod tests {
     }
 
     #[test]
-    fn bimetallic_model_limits_the_outer_strands() {
+    fn bimetallic_behavior_limits_the_outer_strands() {
         // Linear components: hot and slack, the outer strands would be in
-        // compression. Bird cage: the core carries everything (its slope);
-        // the default: both (the composite slope).
+        // compression. Compression (default): both carry (the composite
+        // slope); bird cage: the core alone (its slope).
         let mut c = cable();
         c.outer.stress_strain = None;
         c.core.as_mut().unwrap().stress_strain = None;
         let hot = t(150.0);
-        let slope = |m: &Mechanics| {
+        let slope = |c: &Cable| {
+            let m = Mechanics::from_cable(c).unwrap();
             let state = MaterialState::Initial;
             let e = m.strain(Force::from_kilonewtons(2.0), hot, &state).unwrap();
             (m.tension(e + 1e-7, hot, &state) - m.tension(e, hot, &state)).newtons() / 1e-7
         };
         let core = c.core.as_ref().unwrap().axial_stiffness().newtons();
         let all = c.axial_stiffness().newtons();
-        let free = Mechanics::from_cable(&c).unwrap();
-        assert!((slope(&free) - all).abs() / all < 1e-6);
-        let cage = crate::BimetallicModel {
-            bird_cage: true,
-            ..Default::default()
-        };
-        let caged = Mechanics::from_cable_with(&c, &cage).unwrap();
-        assert!((slope(&caged) - core).abs() / core < 1e-6);
-        // The cable's own choice wins over the criteria.
-        c.bimetallic_behavior = crate::BimetallicBehavior::Compression;
-        let own = Mechanics::from_cable_with(&c, &cage).unwrap();
-        assert!((slope(&own) - all).abs() / all < 1e-6);
+        assert!((slope(&c) - all).abs() / all < 1e-6);
+        c.bimetallic_behavior = crate::BimetallicBehavior::BirdCage;
+        assert!((slope(&c) - core).abs() / core < 1e-6);
         // A small limit: past it, the core alone again.
+        c.bimetallic_behavior = crate::BimetallicBehavior::Compression;
         c.max_virtual_compression = Some(Stress::from_megapascals(0.1));
-        let limited = Mechanics::from_cable_with(&c, &cage).unwrap();
-        assert!((slope(&limited) - core).abs() / core < 1e-6);
+        assert!((slope(&c) - core).abs() / core < 1e-6);
         // No core: never limited.
         c.core = None;
-        assert_eq!(c.outer_compression_limit(&cage), f64::INFINITY);
+        assert_eq!(c.outer_compression_limit(), f64::INFINITY);
     }
 
     #[test]

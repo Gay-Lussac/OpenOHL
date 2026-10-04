@@ -105,10 +105,10 @@ const CABLE: &[Field] = &[
     ),
     (
         "bimetallic_behavior",
-        "\"criteria\"",
-        "bimetallic cables, above the transition temperature: criteria (Criteria › Bimetallic \
-         conductor model), bird_cage (the outer strands take no compression) or compression \
-         (they can go into compression)",
+        "\"compression\"",
+        "bimetallic cables, above the transition temperature: compression (the outer strands \
+         can go into compression, up to max_virtual_compression) or bird_cage (they take no \
+         compression)",
     ),
     (
         "max_virtual_compression",
@@ -945,11 +945,7 @@ pub const CABLE_MODELS: [(&str, &str); 3] = [
 const CORE_CURVES: &str = "{ stress_unit = \"MPa\", strain = \"percent\", basis = \"total\", initial = [0.0, 250.0, 0.0, 0.0, 0.0], creep = [0.0, 250.0, 0.0, 0.0, 0.0], final_modulus = 250.0, reference_temperature = \"20 °C\" }";
 
 /// The bimetallic options (`bimetallic_behavior` of a cable): key, name.
-pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 3] = [
-    (
-        "criteria",
-        "Use the behaviour from Criteria › Bimetallic conductor model",
-    ),
+pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 2] = [
     (
         "bird_cage",
         "Outer strands do not take compression at high temperature (bird cage)",
@@ -960,12 +956,12 @@ pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 3] = [
     ),
 ];
 
-/// A cable's bimetallic option (default `criteria`).
+/// A cable's bimetallic option (default `compression`).
 fn bimetallic_behavior(table: &Table) -> String {
     table
         .get("bimetallic_behavior")
         .and_then(Item::as_str)
-        .unwrap_or("criteria")
+        .unwrap_or("compression")
         .to_owned()
 }
 
@@ -1229,6 +1225,7 @@ fn cable_model_ui(ui: &mut egui::Ui, table: &mut Table, path: &str) -> bool {
             {
                 table.insert("core", Item::Value(v));
             }
+            table.insert("bimetallic_behavior", toml_edit::value("compression"));
             add_for_model(table, &chosen);
         } else {
             for k in ["core", "bimetallic_behavior", "max_virtual_compression"] {
@@ -1262,11 +1259,7 @@ fn cable_model_ui(ui: &mut egui::Ui, table: &mut Table, path: &str) -> bool {
             );
         });
         if chosen_behavior != behavior {
-            if chosen_behavior == "criteria" {
-                table.remove("bimetallic_behavior");
-            } else {
-                table.insert("bimetallic_behavior", toml_edit::value(chosen_behavior));
-            }
+            table.insert("bimetallic_behavior", toml_edit::value(chosen_behavior));
             add_for_model(table, &chosen);
             changed = true;
         }
@@ -1723,6 +1716,8 @@ mod tests {
                     .unwrap(),
             ),
         );
+        // Bird cage: no largest compressive stress to give.
+        cable.insert("bimetallic_behavior", toml_edit::value("bird_cage"));
         assert_eq!(
             missing_for_model(cable, "nonlinear"),
             vec!["outer.stress_strain", "core.stress_strain"]
@@ -1775,6 +1770,7 @@ mod tests {
         cable.insert("model", toml_edit::value("nonlinear"));
         // Bimetallic, compression: its largest stress, locked.
         assert!(!used_by_cable("max_virtual_compression", cable));
+        assert!(!required(kind, "cable", cable, None).contains(&"max_virtual_compression".into()));
         cable.insert("bimetallic_behavior", toml_edit::value("compression"));
         assert_eq!(
             missing_for_model(cable, "nonlinear"),

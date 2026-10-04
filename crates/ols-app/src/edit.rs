@@ -83,12 +83,10 @@ impl Model {
         started: Instant,
     ) -> Result<String, EditError> {
         let line = self.session_line()?;
-        // Other creep-stretch weather cases or bimetallic model (Criteria,
-        // or its undo): every section may change.
+        // Other creep-stretch weather cases (Criteria › Creep-Stretch, or
+        // its undo): every section after creep or load changes.
         let all: Vec<String>;
-        let dirty = if line.creep_stretch != self.line.creep_stretch
-            || line.bimetallic != self.line.bimetallic
-        {
+        let dirty = if line.creep_stretch != self.line.creep_stretch {
             all = line.sections.iter().map(|s| s.id.clone()).collect();
             &all
         } else {
