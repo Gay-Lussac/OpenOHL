@@ -801,14 +801,13 @@ impl SurfacesWindow {
                 false
             }
             Action::Import(path) => {
-                let options = self
-                    .import_options
-                    .split([',', '\n'])
-                    .filter_map(|kv| {
-                        kv.split_once('=')
-                            .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
-                    })
-                    .collect();
+                let options = match ols_io::parse_options(&self.import_options) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        self.status = Some((e, true));
+                        return false;
+                    }
+                };
                 plugins.store_surfaces(crate::plugins::SurfaceImport {
                     path,
                     format: (!self.import_format.is_empty()).then(|| self.import_format.clone()),
@@ -908,12 +907,7 @@ fn keep(
         .into_iter()
         .map(|i| i.name)
         .collect();
-    let mut name = base.to_owned();
-    let mut k = 2;
-    while taken.contains(&name) {
-        name = format!("{base} ({k})");
-        k += 1;
-    }
+    let name = ols_io::surfaces::free_name(base, &taken);
     session
         .put_surface(user, &name, source, t.points(), t.triangles())
         .map_err(|e| e.to_string())?;

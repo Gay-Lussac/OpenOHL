@@ -7,7 +7,7 @@
 //! on what was read, left out or assumed.
 
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use ols_line::Line;
@@ -156,4 +156,63 @@ pub fn register_plugin(
         }));
     }
     Ok(name)
+}
+
+/// A project made by [`create_project`].
+#[derive(Debug, Clone)]
+pub struct CreatedProject {
+    /// The project file.
+    pub path: PathBuf,
+    /// What was read (notes: also whether the line checks).
+    pub project: ImportedProject,
+    /// The line's import into the project.
+    pub applied: ols_session::Applied,
+}
+
+/// Reads another program's file (format: `format`, else the extension)
+/// into a new project `into` (`.ols` added): the line and its library
+/// files, the sections clipped in if asked. Refused if the project file
+/// exists.
+pub fn create_project(
+    registry: &mut Registry,
+    path: &Path,
+    format: Option<&str>,
+    options: &Options,
+    into: &Path,
+    user: &str,
+    clip_in: bool,
+) -> Result<CreatedProject, String> {
+    let into = into.with_extension("ols");
+    if into.exists() {
+        return Err(format!("{} exists already", into.display()));
+    }
+    let id = crate::format_of(path, format);
+    let importer = registry
+        .project_importer(&id)
+        .ok_or_else(|| format!("no project format \"{id}\": it needs a project plugin"))?;
+    let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut p = importer.import(&data, options)?;
+    if clip_in {
+        let (n, failed) = p.clip_in();
+        p.notes.push(format!(
+            "{n} sections clipped in at their stringing condition"
+        ));
+        p.notes
+            .extend(failed.into_iter().map(|f| format!("not clipped in: {f}")));
+    }
+    if let Err(e) = p.line.validate() {
+        p.notes.push(format!("the line does not check yet: {e}"));
+    }
+    let mut s = ols_session::Session::open(&into).map_err(|e| e.to_string())?;
+    let applied = s.import(&p.line, user).map_err(|e| e.to_string())?;
+    for (kind, name, text) in &p.libraries {
+        s.put_library_file(user, kind, name, text)
+            .map_err(|e| e.to_string())?;
+    }
+    s.checkpoint().map_err(|e| e.to_string())?;
+    Ok(CreatedProject {
+        path: into,
+        project: p,
+        applied,
+    })
 }

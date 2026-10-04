@@ -28,6 +28,37 @@ use ols_line::solve::SectionShape;
 /// Options given to a format, as key/value pairs (`--option key=value`).
 pub type Options = BTreeMap<String, String>;
 
+/// One `KEY=VALUE` option (both trimmed).
+pub fn parse_option(entry: &str) -> Result<(String, String), String> {
+    entry
+        .split_once('=')
+        .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
+        .filter(|(k, _)| !k.is_empty())
+        .ok_or_else(|| format!("option \"{}\": use KEY=VALUE", entry.trim()))
+}
+
+/// `KEY=VALUE` options separated by commas or line breaks (empty entries
+/// skipped).
+pub fn parse_options(text: &str) -> Result<Options, String> {
+    text.split([',', '\n'])
+        .filter(|e| !e.trim().is_empty())
+        .map(parse_option)
+        .collect()
+}
+
+/// The format of a file to read: `format` if given, else its extension
+/// (lower case).
+pub fn format_of(path: &std::path::Path, format: Option<&str>) -> String {
+    match format.map(str::trim).filter(|f| !f.is_empty()) {
+        Some(f) => f.to_owned(),
+        None => path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase(),
+    }
+}
+
 /// One wire of a solved model: a span of a section, or a jumper.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportWire {

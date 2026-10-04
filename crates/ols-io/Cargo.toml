@@ -14,6 +14,7 @@ ols-core.workspace = true
 ols-crs.workspace = true
 ols-line.workspace = true
 ols-plugins.workspace = true
+ols-session.workspace = true
 ols-terrain.workspace = true
 serde_json.workspace = true
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }

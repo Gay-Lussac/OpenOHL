@@ -138,64 +138,28 @@ pub fn run(command: SurfaceCommand) -> Result<(), String> {
         } => {
             let started = std::time::Instant::now();
             let mut r = crate::io_run::registry(&plugin)?;
-            let id = format.unwrap_or_else(|| {
-                file.extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_ascii_lowercase()
-            });
             let options = crate::io_run::options(&options)?;
-            let importer = r
-                .surface_importer(&id)
-                .ok_or_else(|| format!("no surface format \"{id}\" (see ols surface formats)"))?;
-            let data = std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
-            let stem = file
-                .file_stem()
-                .map_or("surface".into(), |s| s.to_string_lossy().into_owned());
-            let meshes = importer
-                .import(&data, &stem, &options)
-                .map_err(|e| format!("{}: {e}", file.display()))?;
-            let source = format!(
-                "{} ({})",
-                file.file_name()
-                    .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
-                importer.id()
-            );
-            println!(
-                "read {} surface(s) in {:.1?}",
-                meshes.len(),
-                started.elapsed()
-            );
             let s = open(&into)?;
-            let existing: Vec<String> = s
-                .surfaces()
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .map(|i| i.name)
-                .collect();
-            for (k, m) in meshes.into_iter().enumerate() {
-                let base = match (&name, k) {
-                    (Some(n), 0) => n.clone(),
-                    (Some(n), k) => format!("{n} {}", k + 1),
-                    (None, _) if m.name.is_empty() => stem.clone(),
-                    (None, _) => m.name.clone(),
-                };
-                if existing.contains(&base) && !replace {
-                    return Err(format!(
-                        "a surface \"{base}\" exists already (--replace, or --name)"
-                    ));
-                }
-                // Checked like any surface (indices, areas).
-                let t = m.terrain().map_err(|e| format!("{base}: {e}"))?;
-                s.put_surface(&user, &base, &source, t.points(), t.triangles())
-                    .map_err(|e| e.to_string())?;
+            let stored = ols_io::surfaces::import_into(
+                &mut r,
+                &file,
+                format.as_deref(),
+                &options,
+                &s,
+                &user,
+                name.as_deref(),
+                if replace {
+                    ols_io::surfaces::WhenTaken::Replace
+                } else {
+                    ols_io::surfaces::WhenTaken::Refuse
+                },
+            )?;
+            for t in &stored {
                 println!(
-                    "  {base}: {} points, {} triangles",
-                    t.num_points(),
-                    t.num_triangles()
+                    "  {}: {} points, {} triangles",
+                    t.name, t.points, t.triangles
                 );
             }
-            s.checkpoint().map_err(|e| e.to_string())?;
             println!("stored in {} in {:.1?}", into.display(), started.elapsed());
             Ok(())
         }

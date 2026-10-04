@@ -358,6 +358,13 @@ impl ImportProjectWindow {
                     )
                     .clicked()
                     && let Some(file) = &self.file
+                    && let Some(options) = match ols_io::parse_options(&self.options) {
+                        Ok(o) => Some(o),
+                        Err(e) => {
+                            self.error = Some(e);
+                            None
+                        }
+                    }
                     && let Some(into) = rfd::FileDialog::new()
                         .add_filter("OLS CAD project", &["ols"])
                         .set_file_name(format!(
@@ -370,14 +377,7 @@ impl ImportProjectWindow {
                     job = Some(crate::plugins::ProjectImport {
                         path: file.clone(),
                         format: (!self.format.trim().is_empty()).then(|| self.format.trim().into()),
-                        options: self
-                            .options
-                            .split(',')
-                            .filter_map(|kv| {
-                                kv.split_once('=')
-                                    .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
-                            })
-                            .collect(),
+                        options,
                         into,
                         user: user(),
                         clip_in: self.clip_in,

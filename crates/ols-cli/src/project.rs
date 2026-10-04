@@ -203,55 +203,31 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             plugin,
             clip_in,
         } => {
-            if into.exists() {
-                return Err(format!("{} exists already", into.display()));
-            }
             let started = std::time::Instant::now();
             let mut r = crate::io_run::registry(&plugin)?;
-            let id = format.unwrap_or_else(|| {
-                file.extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_ascii_lowercase()
-            });
-            let importer = r.project_importer(&id).ok_or_else(|| {
-                format!("no project format \"{id}\" (a project plugin: --plugin DIR)")
-            })?;
-            let data = std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
-            let mut p = importer.import(&data, &crate::io_run::options(&options)?)?;
-            if clip_in {
-                let (n, failed) = p.clip_in();
-                p.notes.push(format!(
-                    "{n} sections clipped in at their stringing condition"
-                ));
-                for f in failed {
-                    p.notes.push(format!("not clipped in: {f}"));
-                }
-            }
-            println!("read {} in {:.1?}", file.display(), started.elapsed());
+            let made = ols_io::projects::create_project(
+                &mut r,
+                &file,
+                format.as_deref(),
+                &crate::io_run::options(&options)?,
+                &into,
+                &user,
+                clip_in,
+            )?;
+            let p = &made.project;
             for n in &p.notes {
                 println!("  - {n}");
             }
-            if let Err(e) = p.line.validate() {
-                println!("  ! the line does not check: {e}");
-            }
-            let mut s = open(&into)?;
-            let a = s.import(&p.line, &user).map_err(|e| e.to_string())?;
-            for (kind, name, text) in &p.libraries {
-                s.put_library_file(&user, kind, name, text)
-                    .map_err(|e| e.to_string())?;
-            }
-            s.checkpoint().map_err(|e| e.to_string())?;
             println!(
                 "created {}: {} structures, {} sections, {} jumpers, {} library files, in {:.1?}",
-                into.display(),
+                made.path.display(),
                 p.line.structures.len(),
                 p.line.sections.len(),
                 p.line.jumpers.len(),
                 p.libraries.len(),
                 started.elapsed()
             );
-            report(&a);
+            report(&made.applied);
         }
         ProjectCommand::Export { project, out } => {
             let s = open(&project)?;
