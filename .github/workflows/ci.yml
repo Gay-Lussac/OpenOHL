@@ -1,9 +1,16 @@
 name: CI
 
+# Run by hand only (Actions → CI → Run workflow): the Actions budget is
+# limited, and every check runs locally before each push. The default run
+# is Linux only; "full" adds macOS and Windows tests (billed at a multiple
+# of Linux minutes) and the benchmarks.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Also macOS and Windows tests, and benchmarks"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -42,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(inputs.full && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     env:
       OLS_REQUIRE_PLUGIN_TESTS: "1"
     steps:
@@ -154,11 +161,12 @@ jobs:
   bench:
     name: Benchmarks
     needs: lint
+    if: ${{ inputs.full }}
     runs-on: ubuntu-latest
     timeout-minutes: 25 # expected ~8 min: two benchmark runs; each benchmark ~3 s
     env:
-      # Base commit: the PR base, or the previous head of the pushed branch.
-      PARENT: ${{ github.event.pull_request.base.sha || github.event.before }}
+      # Base commit: the previous commit of the branch.
+      PARENT: ${{ github.sha }}~1
       CRITERION_HOME: ${{ github.workspace }}/target/criterion-compare
     steps:
       - uses: actions/checkout@v4

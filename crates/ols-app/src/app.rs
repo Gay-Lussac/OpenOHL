@@ -561,7 +561,7 @@ impl App {
             let _ = e.session.checkpoint();
         }
         let options = ols_server::server::Options {
-            bind: std::net::SocketAddr::from(([0, 0, 0, 0], w.port)),
+            bind: std::net::SocketAddr::new(w.bind, w.port),
             advertise: None,
             code: None,
             newcomers: w.newcomers,

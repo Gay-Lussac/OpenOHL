@@ -3793,10 +3793,18 @@ fn an_application_hosts_its_project() {
         app.file_action = Some(crate::files::FileAction::Host);
     }
     harness.step();
-    harness.state_mut().host_window.as_mut().unwrap().port = 0;
+    {
+        let w = harness.state_mut().host_window.as_mut().unwrap();
+        w.port = 0;
+        w.bind = std::net::IpAddr::from([127, 0, 0, 1]);
+    }
     harness.step();
     harness.get_by_label("Start hosting").click();
     run_until(&mut harness, |a| {
+        // A failure to host or join says why.
+        if let Some(e) = a.host_window.as_ref().and_then(|w| w.error.clone()) {
+            panic!("hosting: {e}");
+        }
         a.hosting.is_some()
             && a.ready()
                 .is_some_and(|r| r.model.remote.is_some() && !r.model.cases.is_empty())

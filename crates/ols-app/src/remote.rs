@@ -537,6 +537,8 @@ impl JoinWindow {
 
 /// File › Host this project: the port and who may join.
 pub struct HostWindow {
+    /// Address to listen on (default: every network of this computer).
+    pub bind: std::net::IpAddr,
     /// UDP port.
     pub port: u16,
     /// Role of users the project does not know (`None`: refused).
@@ -548,6 +550,7 @@ pub struct HostWindow {
 impl Default for HostWindow {
     fn default() -> Self {
         Self {
+            bind: std::net::IpAddr::from([0, 0, 0, 0]),
             port: 4433,
             newcomers: Some(Role::Viewer),
             error: None,
@@ -576,7 +579,8 @@ impl HostWindow {
                 );
                 egui::Grid::new("host").show(ui, |ui| {
                     ui.label("Port (UDP)");
-                    ui.add(egui::DragValue::new(&mut self.port).range(1..=65535));
+                    ui.add(egui::DragValue::new(&mut self.port).range(0..=65535))
+                        .on_hover_text("0: any free port (shown in the invitation)");
                     ui.end_row();
                     ui.label("Users the project does not know");
                     egui::ComboBox::from_id_salt("newcomers")
