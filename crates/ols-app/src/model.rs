@@ -47,6 +47,67 @@ pub struct Sources {
     /// Load cases (`.olslc`) for the structure loads; default: the
     /// project's own, else the first `.olslc` next to the file.
     pub load_cases: Option<PathBuf>,
+    /// What this user showed of the file last time ([`ViewPrefs`]).
+    pub view: Option<ViewPrefs>,
+}
+
+/// What one user shows of a project — the ground surface used and the
+/// others shown, the LiDAR classes hidden and the share of points shown.
+/// Remembered on this computer, per project file; never written to the
+/// project nor sent to a server: everyone decides for themselves.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ViewPrefs {
+    /// Terrain surfaces: the ground, others shown.
+    #[serde(default)]
+    pub surfaces: crate::surfaces::SurfaceSettings,
+    /// Share of the point cloud shown near the camera, %.
+    #[serde(default)]
+    pub lidar_percent: Option<f64>,
+    /// LiDAR classes hidden.
+    #[serde(default)]
+    pub hidden_classes: std::collections::BTreeSet<u8>,
+}
+
+/// The [`ViewPrefs`] of every project opened, by file (remembered).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ViewPrefsStore(pub std::collections::BTreeMap<String, ViewPrefs>);
+
+impl ViewPrefsStore {
+    fn key(file: &Path) -> String {
+        std::fs::canonicalize(file)
+            .unwrap_or_else(|_| file.to_path_buf())
+            .display()
+            .to_string()
+    }
+
+    /// Those of `file`.
+    pub fn get(&self, file: &Path) -> Option<ViewPrefs> {
+        self.0.get(&Self::key(file)).cloned()
+    }
+
+    /// Keeps those of `file`.
+    pub fn set(&mut self, file: &Path, prefs: ViewPrefs) {
+        if !file.as_os_str().is_empty() {
+            self.0.insert(Self::key(file), prefs);
+        }
+    }
+
+    /// Saved as JSON.
+    pub fn save(&self, storage: &mut dyn eframe::Storage) {
+        if let Ok(t) = serde_json::to_string(&self.0) {
+            storage.set_string("view-prefs", t);
+        }
+    }
+
+    /// As saved.
+    pub fn load(storage: &dyn eframe::Storage) -> Self {
+        Self(
+            storage
+                .get_string("view-prefs")
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_default(),
+        )
+    }
 }
 
 /// One solved weather case.
@@ -716,6 +777,15 @@ fn load_cases(sources: &Sources) -> Result<Vec<WeatherCase>, String> {
 }
 
 impl Model {
+    /// What this user shows of the project now (remembered locally).
+    pub fn view_prefs(&self) -> ViewPrefs {
+        ViewPrefs {
+            surfaces: self.surface_settings.clone(),
+            lidar_percent: Some(self.points_percent),
+            hidden_classes: self.hidden_classes.clone(),
+        }
+    }
+
     /// Solves the weather cases `wanted` that are not solved yet, in the
     /// background (one thread each); [`Model::poll_solving`] takes them.
     pub fn want(&mut self, wanted: impl IntoIterator<Item = usize>, ctx: &eframe::egui::Context) {
@@ -1062,12 +1132,16 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         }
         None => None,
     };
-    // The project's terrain surfaces: the active one is the ground (no
-    // ground built from LiDAR then); those shown are read too.
-    let surface_settings = session
-        .as_ref()
-        .map(crate::surfaces::SurfaceSettings::read)
-        .unwrap_or_default();
+    // The project's terrain surfaces: the one this user uses is the ground
+    // (no ground built from LiDAR then); those shown are read too. This
+    // user's choice, else (projects from earlier builds) the project's.
+    let surface_settings = match &sources.view {
+        Some(v) => v.surfaces.clone(),
+        None => session
+            .as_ref()
+            .map(crate::surfaces::SurfaceSettings::read)
+            .unwrap_or_default(),
+    };
     let mut other_surfaces = Vec::new();
     if session.is_some() {
         if ground.is_none()
@@ -1207,11 +1281,17 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         }
     }
     let (editing, viewer_session) = editing(session, sources.user.as_deref());
-    let points_percent = editing
+    let points_percent = sources
+        .view
         .as_ref()
-        .ok()
-        .and_then(|e| e.session.setting(LIDAR_PERCENT_SETTING).ok().flatten())
-        .and_then(|v| v.parse::<f64>().ok())
+        .and_then(|v| v.lidar_percent)
+        .or_else(|| {
+            editing
+                .as_ref()
+                .ok()
+                .and_then(|e| e.session.setting(LIDAR_PERCENT_SETTING).ok().flatten())
+                .and_then(|v| v.parse::<f64>().ok())
+        })
         .filter(|v| *v > 0.0 && *v <= 100.0)
         .unwrap_or(DEFAULT_LIDAR_PERCENT);
     // Remember the weather case file with the project.
@@ -1223,6 +1303,11 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         Err(why) => step(format!("read-only: {why}"), &mut log),
     }
     step(format!("ready in {:.1?}", started.elapsed()), &mut log);
+    let hidden_classes = sources
+        .view
+        .as_ref()
+        .map(|v| v.hidden_classes.clone())
+        .unwrap_or_default();
     Ok(Model {
         sources,
         line,
@@ -1242,7 +1327,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         display_cases: Default::default(),
         shown_cases: vec![0],
         other_lines: Vec::new(),
-        hidden_classes: Default::default(),
+        hidden_classes,
         class_counts,
         points_percent,
         library_dir,

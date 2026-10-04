@@ -127,6 +127,7 @@ fn main() -> std::process::ExitCode {
         user: args.user,
         rules: args.rules,
         load_cases: args.load_cases,
+        view: None,
     };
     if let Some(path) = args.screenshot {
         if !open {
@@ -165,6 +166,7 @@ fn main() -> std::process::ExitCode {
             let mut app = app::App::empty(sources.clone(), rs);
             if let Some(st) = cc.storage {
                 app.recent = files::Recent::load(st);
+                app.view_prefs = model::ViewPrefsStore::load(st);
             }
             if open {
                 app.start(sources, &cc.egui_ctx);

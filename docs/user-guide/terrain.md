@@ -222,7 +222,7 @@ ground: spans that are not fully over the survey are reported.
 
 ## Terrain surfaces in the project
 
-A project keeps any number of terrain surfaces (TINs, *triangulated irregular networks*), by name, compressed in the project file. One is **active**: it is the ground — drawn, and used for clearances, profiles and placing structures. When a project with an active surface opens, the ground is read from it (a 12.7-million-triangle surface: about 1 s) instead of being built from the LiDAR every time. Other surfaces can be **shown** too, each in its colour (the *Other surfaces* layer, drawn in chunks with levels of detail like the ground).
+A project keeps any number of terrain surfaces (TINs, *triangulated irregular networks*), by name, compressed in the project file. You choose one as **active**: it is the ground — drawn, and used for clearances, profiles and placing structures. When a project with an active surface opens, the ground is read from it (a 12.7-million-triangle surface: about 1 s) instead of being built from the LiDAR every time. Other surfaces can be **shown** too, each in its colour (the *Other surfaces* layer, drawn in chunks with levels of detail like the ground).
 
 Terrain › **Terrain surfaces (TIN)…** manages them:
 
@@ -238,7 +238,7 @@ Terrain › **Terrain surfaces (TIN)…** manages them:
   The first surface kept becomes the ground when there is none.
 - **Build from the LiDAR ground classes:** the lowest point of each cell (default 1 m), near the line or the whole cloud, triangulated with a longest side (default 50 m).
 - **Keep the ground shown as a surface:** the ground built at opening (from the LiDAR or a survey file), kept so the next opening reads it.
-- **Active** (radio) and **shown** (tick, colour) are project settings. With a server they follow everyone.
+- **Active** (radio) and **shown** (tick, colour) are your own choice: remembered on this computer for this project, never written to the project nor sent to a server — everyone working on a hosted project decides what they show. The surface you choose as the ground is also the one your clearance checks use.
 - **Rename**, **Export…** (LandXML `.xml` or OBJ `.obj`), **Delete** (confirmed; it cannot be undone — export first to keep a copy).
 
 Reading, building and storing run in the background. With a project joined on a server, surfaces are imported and built on the hosting computer.

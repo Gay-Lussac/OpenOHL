@@ -12,9 +12,11 @@
 //! ground shown; renamed, exported (LandXML, OBJ) and deleted. Reading,
 //! building and storing run in the background.
 //!
-//! Which surface is active and which are shown is a project setting
-//! ([`SETTING`]): with a project hosted on a server it follows everyone;
-//! the surfaces themselves are imported on the hosting computer.
+//! Which surface is active and which are shown is each user's own choice,
+//! remembered on their computer ([`crate::model::ViewPrefs`]) — never
+//! written to the project nor sent to a server. The surfaces themselves
+//! are part of the project: with a project hosted on a server they are
+//! imported on the hosting computer.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,7 +31,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::Model;
 
-/// The project setting: active surface and those shown.
+/// The project setting of earlier builds (active surface and those
+/// shown): read when this user has no choice of their own yet.
 pub const SETTING: &str = "app.surfaces";
 
 /// Which surface is the ground and which others are shown.
@@ -44,7 +47,7 @@ pub struct SurfaceSettings {
 }
 
 impl SurfaceSettings {
-    /// As kept in the project.
+    /// As kept in a project by an earlier build.
     pub fn read(session: &ols_session::Session) -> Self {
         session
             .setting(SETTING)
@@ -52,14 +55,6 @@ impl SurfaceSettings {
             .flatten()
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default()
-    }
-
-    /// The project edit keeping them.
-    pub fn op(&self) -> ols_server::Op {
-        ols_server::Op::SetSetting {
-            key: SETTING.into(),
-            value: serde_json::to_string(self).ok(),
-        }
     }
 }
 
@@ -275,16 +270,10 @@ impl SurfacesWindow {
         }
     }
 
-    /// Keeps the settings in the project (an edit: with a server, it
-    /// follows everyone).
+    /// This user's choice (remembered on this computer with the other
+    /// view preferences, not in the project).
     fn set(&mut self, model: &mut Model, s: SurfaceSettings) {
-        let op = s.op();
         model.surface_settings = s;
-        if model.can_edit().is_ok()
-            && let Err(e) = model.project_op("terrain surfaces", op)
-        {
-            self.status = Some((e.to_string(), true));
-        }
     }
 }
 

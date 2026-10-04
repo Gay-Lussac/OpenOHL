@@ -300,6 +300,8 @@ pub struct App {
     pub lod: crate::lod::LodSettings,
     /// Files opened recently.
     pub recent: crate::files::Recent,
+    /// What this user shows of each project (remembered locally).
+    pub view_prefs: crate::model::ViewPrefsStore,
     /// The plugin manager, and the formats of File › Import / Export.
     pub plugins: crate::plugins::Plugins,
     /// The server this application hosts.
@@ -357,6 +359,7 @@ impl App {
             quickbar: Default::default(),
             lod: Default::default(),
             recent: Default::default(),
+            view_prefs: Default::default(),
             plugins: Default::default(),
             hosting: None,
             hosted_file: None,
@@ -384,8 +387,11 @@ impl App {
     }
 
     /// Loads `sources` in the background (the file open is closed first).
-    pub fn start(&mut self, sources: Sources, ctx: &egui::Context) {
+    pub fn start(&mut self, mut sources: Sources, ctx: &egui::Context) {
         self.close();
+        if sources.view.is_none() {
+            sources.view = self.view_prefs.get(&sources.file);
+        }
         if !sources.file.as_os_str().is_empty() {
             self.recent.add(&sources.file);
         }
@@ -422,6 +428,8 @@ impl App {
             {
                 log::warn!("closing: {err}");
             }
+            self.view_prefs
+                .set(&r.model.sources.file, r.model.view_prefs());
             self.controls = r.view3d.controls.clone();
             self.snaps = r.snaps.clone();
             self.hotbar = r.hotbar.clone();
@@ -678,6 +686,7 @@ impl App {
             quickbar: Default::default(),
             lod: Default::default(),
             recent: Default::default(),
+            view_prefs: Default::default(),
             plugins: Default::default(),
             hosting: None,
             hosted_file: None,
@@ -2723,19 +2732,9 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
             r.view3d.dirty.insert(Layer::Points);
         }
         if draft.percent != r.model.points_percent {
-            // The 3D view reads the points again at the new share.
+            // The 3D view reads the points again at the new share (this
+            // user's choice, remembered on this computer).
             r.model.points_percent = draft.percent;
-            if r.model.can_edit().is_ok()
-                && let Err(err) = r.model.project_op(
-                    "LiDAR share kept",
-                    ols_server::Op::SetSetting {
-                        key: crate::model::LIDAR_PERCENT_SETTING.into(),
-                        value: Some(draft.percent.to_string()),
-                    },
-                )
-            {
-                log::warn!("keeping the LiDAR share: {err}");
-            }
         }
     }
     // Closed: changes not applied are dropped.
@@ -3829,6 +3828,11 @@ impl eframe::App for App {
         self.lod.save(storage);
         self.recent.save(storage);
         self.plugins.save(storage);
+        if let State::Ready(r) = &self.state {
+            self.view_prefs
+                .set(&r.model.sources.file, r.model.view_prefs());
+        }
+        self.view_prefs.save(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

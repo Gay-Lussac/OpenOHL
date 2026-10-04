@@ -3915,7 +3915,8 @@ fn weather_cases_are_solved_when_shown() {
 
 /// Terrain › Terrain surfaces (TIN): a survey file imported becomes the
 /// ground (none before); another surface (LandXML) is shown in its colour;
-/// opened again, the project's active surface is the ground; rename and
+/// those choices are the user's (remembered locally, not in the project):
+/// opened again with them, the surface chosen is the ground; rename and
 /// delete.
 #[test]
 fn terrain_surfaces_are_kept_in_the_project() {
@@ -3992,7 +3993,14 @@ fn terrain_surfaces_are_kept_in_the_project() {
     run_until(&mut harness, |a| {
         a.ready().unwrap().model.other_surfaces.len() == 1
     });
-    // Opened again: the active surface is the ground (no LiDAR, no survey).
+    // The choice is this user's, not the project's.
+    let prefs = harness.state_mut().ready().unwrap().model.view_prefs();
+    {
+        let s = ols_session::Session::open(&file).unwrap();
+        assert_eq!(s.setting(crate::surfaces::SETTING).unwrap(), None);
+    }
+    // Opened again with this user's choice: the surface chosen is the
+    // ground (no LiDAR, no survey).
     let again = model::load(
         Sources {
             file: file.clone(),
@@ -4000,6 +4008,7 @@ fn terrain_surfaces_are_kept_in_the_project() {
             point_budget: 1000,
             corridor: 60.0,
             user: Some("tester".into()),
+            view: Some(prefs),
             ..Sources::default()
         },
         &|_| {},

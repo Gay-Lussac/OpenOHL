@@ -31,7 +31,7 @@ File › **Join a server…** (also on the start page): the invitation and your 
 - **Roles:** viewers read; designers edit; admins also change roles (People) and reverse anyone's edits (Edit › **History…**: **Reverse** one entry, or **Back to here**, the line as it was just after an entry; both are undoable).
 - **People** (View › People) lists who is connected: their role, their selection, what they are editing, and **Go to** to look where they look. Others are also shown in the plan view, as a diamond with their name.
 - **Soft locks:** a structure in someone's Move window is theirs until they close it. Others cannot open it, and the server refuses their edits of it.
-- Libraries, project lines and project settings (such as the LiDAR share shown) also go through the server.
+- Libraries and project lines also go through the server. What each person **displays** is their own: the surface used as the ground and the others shown, the LiDAR classes hidden, the share of points, the layers — remembered on their computer, never sent to the server. Importing terrain surfaces and point clouds is done on the hosting computer.
 
 ## Limits of the alpha
 
