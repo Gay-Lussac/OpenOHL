@@ -292,41 +292,85 @@ const ALIGNMENTS: &[Column] = &[
     ),
 ];
 
+// Columns of the weather case table (as in the criteria tables of other
+// line design programs: name, then the unit; every row the same widths).
+const W_ORDER: usize = 0;
+const W_NAME: usize = 1;
+const W_DESCRIPTION: usize = 2;
+const W_TAGS: usize = 3;
+const W_Q: usize = 4;
+const W_VELOCITY: usize = 5;
+const W_PRESSURE: usize = 6;
+const W_FROM: usize = 7;
+const W_ICE: usize = 8;
+const W_ICE_DENSITY: usize = 9;
+const W_ICE_LOAD: usize = 10;
+const W_TEMP: usize = 11;
+const W_AMBIENT: usize = 12;
+
 const WEATHER: &[Column] = &[
     (
-        "#",
+        "#\n ",
         40.0,
         Yes,
         "order in the file; 2.5 goes between 2 and 3",
     ),
-    ("name", 170.0, Yes, "unique name"),
-    ("description", 200.0, Yes, "free text"),
-    ("tags", 150.0, Yes, "comma separated, e.g. clearance, loads"),
-    ("temp °C", 70.0, Yes, "cable temperature"),
-    ("ice mm", 65.0, Yes, "radial ice thickness (0: none)"),
+    ("Name\n ", 170.0, Yes, "unique name"),
+    ("Description\n ", 190.0, Yes, "free text"),
     (
-        "ice N/m",
-        65.0,
+        "Tags\n ",
+        130.0,
         Yes,
-        "or: ice load per length (empty: none)",
+        "comma separated, e.g. clearance, loads",
     ),
     (
-        "ice kg/m³",
+        "Air density factor\nPa/(m/s)²",
+        120.0,
+        Yes,
+        "Q: the wind pressure of a velocity V is Q·V² (empty: 0.613, air at 15 °C at sea level)",
+    ),
+    (
+        "Wind velocity\nm/s",
+        95.0,
+        Yes,
+        "V = √(P / Q); typed in, the pressure becomes Q·V²",
+    ),
+    (
+        "Wind pressure\nPa",
+        95.0,
+        Yes,
+        "on the projected (iced) diameter; what the loads use",
+    ),
+    (
+        "Wind from\n ",
         75.0,
         Yes,
-        "ice density (empty: glaze ice with a thickness)",
-    ),
-    (
-        "wind Pa",
-        70.0,
-        Yes,
-        "wind pressure on the projected diameter",
-    ),
-    (
-        "wind from",
-        70.0,
-        Yes,
         "left or right, looking ahead along the line (each span from its back to its ahead point)",
+    ),
+    (
+        "Ice thickness\nmm",
+        95.0,
+        Yes,
+        "radial ice thickness (0: none)",
+    ),
+    (
+        "Ice density\nkg/m³",
+        90.0,
+        Yes,
+        "empty: glaze ice (913) with a thickness; with a load: the iced diameter for the wind",
+    ),
+    (
+        "Ice load\nN/m",
+        80.0,
+        Yes,
+        "or: ice load per length (instead of a thickness; empty: none)",
+    ),
+    ("Wire temp\n°C", 80.0, Yes, "cable temperature"),
+    (
+        "Ambient temp\n°C",
+        90.0,
+        Yes,
+        "air temperature, for ratings (empty: not given)",
     ),
 ];
 
@@ -557,6 +601,12 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
                 let angle = f(ols_line::jumper::DEFAULT_TERMINAL_ANGLE_DEG, 1);
                 set(row, 10, angle.clone());
                 set(row, 11, angle);
+            }
+        }
+        TableKind::WeatherCases => {
+            let q = f(ols_weather::DEFAULT_AIR_DENSITY_FACTOR, 3);
+            for row in rows.iter_mut() {
+                set(row, W_Q, q.clone());
             }
         }
         _ => {}
@@ -870,18 +920,26 @@ impl TableKind {
                         defaulted: Vec::new(),
                         key: k.to_string(),
                         select: Selection::None,
-                        cells: vec![
-                            (k + 1).to_string(),
-                            w.name.clone(),
-                            w.description.clone(),
-                            w.tags.join(", "),
-                            f(w.temperature.celsius(), 1),
-                            f(w.ice_thickness.si() * 1000.0, 1),
-                            w.ice_load.map_or(String::new(), |v| f(v.si(), 2)),
-                            w.ice_density.map_or(String::new(), |v| f(v.si(), 0)),
-                            f(w.wind_pressure.si(), 0),
-                            w.wind_from.as_str().into(),
-                        ],
+                        cells: {
+                            let mut c = vec![String::new(); WEATHER.len()];
+                            c[W_ORDER] = (k + 1).to_string();
+                            c[W_NAME] = w.name.clone();
+                            c[W_DESCRIPTION] = w.description.clone();
+                            c[W_TAGS] = w.tags.join(", ");
+                            c[W_Q] = w.air_density_factor.map_or(String::new(), |q| f(q, 3));
+                            c[W_VELOCITY] = f(w.wind_velocity(), 2);
+                            c[W_PRESSURE] = f(w.wind_pressure.si(), 1);
+                            c[W_FROM] = w.wind_from.as_str().into();
+                            c[W_ICE] = f(w.ice_thickness.si() * 1000.0, 1);
+                            c[W_ICE_DENSITY] =
+                                w.ice_density.map_or(String::new(), |v| f(v.si(), 0));
+                            c[W_ICE_LOAD] = w.ice_load.map_or(String::new(), |v| f(v.si(), 2));
+                            c[W_TEMP] = f(w.temperature.celsius(), 1);
+                            c[W_AMBIENT] = w
+                                .ambient_temperature
+                                .map_or(String::new(), |t| f(t.celsius(), 1));
+                            c
+                        },
                     }
                 })
                 .collect(),
@@ -951,12 +1009,12 @@ impl TableKind {
                 cells[1] = (points.len() + 1).to_string();
             }
             TableKind::WeatherCases => {
-                cells[0] = (model.cases.len() + added.len() + 1).to_string();
-                cells[1] = format!("new case {}", added.len() + 1);
-                cells[4] = "15".into();
-                cells[5] = "0".into();
-                cells[8] = "0".into();
-                cells[9] = "right".into();
+                cells[W_ORDER] = (model.cases.len() + added.len() + 1).to_string();
+                cells[W_NAME] = format!("new case {}", added.len() + 1);
+                cells[W_TEMP] = "15".into();
+                cells[W_ICE] = "0".into();
+                cells[W_PRESSURE] = "0".into();
+                cells[W_FROM] = "right".into();
             }
         }
         cells
@@ -1446,7 +1504,7 @@ fn choices(
         ),
         (TableKind::Strings, "strain") => (vec!["no".into(), "yes".into()], false),
         (TableKind::Systems, "kind") => (vec!["AC".into(), "DC".into()], false),
-        (TableKind::WeatherCases, "wind from") => (vec!["right".into(), "left".into()], false),
+        (TableKind::WeatherCases, "Wind from\n ") => (vec!["right".into(), "left".into()], false),
         (TableKind::Alignments, "structure") => (
             with_none(model.line.structures.iter().map(|s| s.id.clone()).collect()),
             false,
@@ -1473,9 +1531,20 @@ fn choice_cell(
     if let Some(c) = color {
         shown = shown.color(c);
     }
+    // Exactly the column's width: the combo box's own width leaves out
+    // its arrow and padding, and wider cells shifted the columns after it.
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 20.0), egui::Sense::hover());
+    let mut cell = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    cell.set_clip_rect(rect.intersect(ui.clip_rect()));
+    let ui = &mut cell;
+    let arrow = ui.spacing().icon_width + 2.0 * ui.spacing().button_padding.x + 4.0;
     let mut combo = egui::ComboBox::from_id_salt(id)
         .selected_text(shown)
-        .width(width - 8.0)
+        .width((width - arrow).max(10.0))
         .height(400.0);
     if multi {
         combo = combo.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
@@ -1998,56 +2067,102 @@ fn weather_file(
         .unwrap_or_default();
     let mut cases: Vec<(f64, toml_edit::Table)> = Vec::new();
     let write = |t: &mut toml_edit::Table, c: &Cells, all: bool| -> Result<(), String> {
-        let name = c.get(1);
-        for (col, spec) in WEATHER.iter().enumerate().skip(1) {
-            if !(all || c.changed(col)) {
-                continue;
-            }
+        let name = c.get(W_NAME);
+        let label = |col: usize| WEATHER[col].0.replace('\n', " ").trim().to_owned();
+        let number = |col: usize, unit: &str| -> Result<Option<toml_edit::Item>, String> {
             let v = c.get(col);
             let v = v.trim();
-            let number = |unit: &str| -> Result<Option<toml_edit::Item>, String> {
-                if v.is_empty() {
-                    return Ok(None);
-                }
-                let x = num(v, &format!("{name} {}", spec.0))?;
-                Ok(Some(toml_edit::value(format!("{x} {unit}"))))
-            };
-            let (field, item) = match col {
-                1 if v.is_empty() => return Err("a case needs a name".into()),
-                1 => ("name", Some(toml_edit::value(v))),
-                2 => ("description", (!v.is_empty()).then(|| toml_edit::value(v))),
-                3 => {
-                    let mut a = toml_edit::Array::new();
-                    for tag in v.split(',').map(str::trim).filter(|t| !t.is_empty()) {
-                        a.push(tag);
-                    }
-                    ("tags", (!a.is_empty()).then(|| toml_edit::value(a)))
-                }
-                4 if v.is_empty() => return Err(format!("{name}: a temperature is needed")),
-                4 => ("temperature", number("°C")?),
-                5 => ("ice_thickness", number("mm")?),
-                6 => ("ice_load", number("N/m")?),
-                7 => ("ice_density", number("kg/m³")?),
-                8 => ("wind_pressure", number("Pa")?),
-                9 => match v.to_lowercase().as_str() {
-                    "" | "right" => ("wind_from", None),
-                    "left" => ("wind_from", Some(toml_edit::value("left"))),
-                    other => {
-                        return Err(format!(
-                            "{name} wind from: \"{other}\" — write left or right"
-                        ));
-                    }
-                },
-                _ => continue,
-            };
-            match item {
-                Some(i) => {
-                    t.insert(field, i);
-                }
-                None => {
-                    t.remove(field);
+            if v.is_empty() {
+                return Ok(None);
+            }
+            let x = num(v, &format!("{name} {}", label(col)))?;
+            Ok(Some(toml_edit::value(format!("{x} {unit}"))))
+        };
+        let mut set = |field: &str, item: Option<toml_edit::Item>| match item {
+            Some(i) => {
+                t.insert(field, i);
+            }
+            None => {
+                t.remove(field);
+            }
+        };
+        let touched = |col: usize| all || c.changed(col);
+        if touched(W_NAME) {
+            let v = c.get(W_NAME).trim().to_owned();
+            if v.is_empty() {
+                return Err("a case needs a name".into());
+            }
+            set("name", Some(toml_edit::value(v)));
+        }
+        if touched(W_DESCRIPTION) {
+            let v = c.get(W_DESCRIPTION).trim().to_owned();
+            set("description", (!v.is_empty()).then(|| toml_edit::value(v)));
+        }
+        if touched(W_TAGS) {
+            let mut a = toml_edit::Array::new();
+            for tag in c
+                .get(W_TAGS)
+                .split(',')
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+            {
+                a.push(tag);
+            }
+            set("tags", (!a.is_empty()).then(|| toml_edit::value(a)));
+        }
+        if touched(W_TEMP) {
+            if c.get(W_TEMP).trim().is_empty() {
+                return Err(format!("{name}: a temperature is needed"));
+            }
+            set("temperature", number(W_TEMP, "°C")?);
+        }
+        if touched(W_AMBIENT) {
+            set("ambient_temperature", number(W_AMBIENT, "°C")?);
+        }
+        if touched(W_ICE) {
+            set("ice_thickness", number(W_ICE, "mm")?);
+        }
+        if touched(W_ICE_LOAD) {
+            set("ice_load", number(W_ICE_LOAD, "N/m")?);
+        }
+        if touched(W_ICE_DENSITY) {
+            set("ice_density", number(W_ICE_DENSITY, "kg/m³")?);
+        }
+        if touched(W_FROM) {
+            match c.get(W_FROM).trim().to_lowercase().as_str() {
+                "" | "right" => set("wind_from", None),
+                "left" => set("wind_from", Some(toml_edit::value("left"))),
+                other => {
+                    return Err(format!(
+                        "{name} wind from: \"{other}\" — write left or right"
+                    ));
                 }
             }
+        }
+        // Wind: pressure P = Q·V². The pressure typed wins; else a velocity
+        // (or another Q) typed gives the pressure of the velocity shown.
+        if touched(W_Q) {
+            let q = opt_num(&c.get(W_Q), &format!("{name} air density factor"))?;
+            if q.is_some_and(|q| q <= 0.0) {
+                return Err(format!("{name}: the air density factor must be > 0"));
+            }
+            set("air_density_factor", q.map(toml_edit::value));
+        }
+        let q = opt_num(&c.get(W_Q), &format!("{name} air density factor"))?
+            .unwrap_or(ols_weather::DEFAULT_AIR_DENSITY_FACTOR);
+        if touched(W_PRESSURE) && (all || !c.changed(W_VELOCITY)) {
+            set("wind_pressure", number(W_PRESSURE, "Pa")?);
+        } else if c.changed(W_VELOCITY) || c.changed(W_Q) {
+            let v = opt_num(&c.get(W_VELOCITY), &format!("{name} wind velocity"))?.unwrap_or(0.0);
+            if v < 0.0 {
+                return Err(format!("{name}: the wind velocity must be ≥ 0"));
+            }
+            let p = q * v * v;
+            set(
+                "wind_pressure",
+                (p > 0.0)
+                    .then(|| toml_edit::value(format!("{} Pa", (p * 1000.0).round() / 1000.0))),
+            );
         }
         Ok(())
     };
@@ -2066,7 +2181,10 @@ fn weather_file(
             defaulted: &row.defaulted,
         };
         write(&mut t, &c, false)?;
-        cases.push((num(&c.get(0), &format!("{} #", row.cells[1]))?, t));
+        cases.push((
+            num(&c.get(W_ORDER), &format!("{} #", row.cells[W_NAME]))?,
+            t,
+        ));
     }
     for cells in &page.added {
         let c = Cells {
@@ -2076,7 +2194,7 @@ fn weather_file(
         };
         let mut t = toml_edit::Table::new();
         write(&mut t, &c, true)?;
-        let order = opt_num(&c.get(0), "new case #")?.unwrap_or(f64::MAX);
+        let order = opt_num(&c.get(W_ORDER), "new case #")?.unwrap_or(f64::MAX);
         cases.push((order + 1e-9, t));
     }
     cases.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -2310,11 +2428,47 @@ impl TablePage {
         }
         let row_height = 20.0;
         let buttons = 52.0;
+        // Headers of two lines: the name, then the unit.
+        let header_height = if columns.iter().any(|c| c.0.contains('\n')) {
+            34.0
+        } else {
+            row_height
+        };
         let added = self.added.len();
+        // The grid: a line at every column edge and under every row, from
+        // the columns' widths (each cell `width` wide, 2 apart, after the
+        // two row buttons) — every row the same widths whatever its cells.
+        let widths: Vec<f32> = columns.iter().map(|c| c.1).collect();
+        let grid = move |ui: &egui::Ui, row: egui::Rect| {
+            let stroke =
+                egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
+            let p = ui.painter();
+            let mut x = row.left() + buttons - 1.0;
+            p.line_segment(
+                [egui::pos2(x, row.top()), egui::pos2(x, row.bottom())],
+                stroke,
+            );
+            for w in &widths {
+                x += w + 2.0;
+                p.line_segment(
+                    [egui::pos2(x, row.top()), egui::pos2(x, row.bottom())],
+                    stroke,
+                );
+            }
+            p.line_segment(
+                [
+                    egui::pos2(row.left() + buttons - 1.0, row.bottom() + 1.0),
+                    egui::pos2(x, row.bottom() + 1.0),
+                ],
+                stroke,
+            );
+        };
         egui::ScrollArea::horizontal().show(ui, |ui| {
-            ui.horizontal(|ui| {
+            let header = ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
-                ui.add_space(buttons);
+                // Where the rows have their two buttons.
+                ui.add_sized([24.0, header_height], egui::Label::new(""));
+                ui.add_sized([24.0, header_height], egui::Label::new(""));
                 for (c, col) in columns.iter().enumerate() {
                     let arrow = match self.sort {
                         Some((s, true)) if s == c => " ▲",
@@ -2323,7 +2477,7 @@ impl TablePage {
                     };
                     let text = egui::RichText::new(format!("{}{arrow}", col.0)).strong();
                     if ui
-                        .add_sized([col.1, row_height], egui::Button::new(text).frame(false))
+                        .add_sized([col.1, header_height], egui::Button::new(text).frame(false))
                         .on_hover_text(format!("{} — click to sort", col.3))
                         .clicked()
                     {
@@ -2335,7 +2489,8 @@ impl TablePage {
                     }
                 }
             });
-            ui.separator();
+            grid(ui, header.response.rect);
+            ui.add_space(2.0);
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show_rows(ui, row_height, order.len() + added, |ui, range| {
@@ -2343,7 +2498,7 @@ impl TablePage {
                         if i >= order.len() {
                             // A new row.
                             let k = i - order.len();
-                            ui.horizontal(|ui| {
+                            let cells = ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 2.0;
                                 if ui
                                     .add_sized([buttons - 2.0, row_height], egui::Button::new("🗑"))
@@ -2381,11 +2536,12 @@ impl TablePage {
                                     ui.add_sized([col.1, row_height], edit);
                                 }
                             });
+                            grid(ui, cells.response.rect);
                             continue;
                         }
                         let row = &rows[order[i]];
                         let deleted = self.deleted.contains(&row.key);
-                        ui.horizontal(|ui| {
+                        let cells = ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 2.0;
                             let selected = match kind {
                                 TableKind::WeatherCases => row.key == case.to_string(),
@@ -2493,6 +2649,7 @@ impl TablePage {
                                 }
                             }
                         });
+                        grid(ui, cells.response.rect);
                     }
                 });
         });

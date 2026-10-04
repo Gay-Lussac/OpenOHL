@@ -72,7 +72,19 @@ pub struct WeatherCase {
     /// wires to the left.
     #[serde(default)]
     pub wind_from: WindSide,
+    /// Air density factor Q, Pa/(m/s)²: the wind pressure of a wind
+    /// velocity V is Q·V² (default [`DEFAULT_AIR_DENSITY_FACTOR`], ½ρ of air
+    /// at 15 °C at sea level). Only relates pressure and velocity: the
+    /// loads use the pressure.
+    #[serde(default)]
+    pub air_density_factor: Option<f64>,
+    /// Ambient (air) temperature, for ratings; the wires use `temperature`.
+    #[serde(default)]
+    pub ambient_temperature: Option<Temperature>,
 }
+
+/// Air density factor when a case gives none, Pa/(m/s)² (½ · 1.225 kg/m³).
+pub const DEFAULT_AIR_DENSITY_FACTOR: f64 = 0.613;
 
 /// Side of the line the wind comes from, looking ahead along it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -116,7 +128,22 @@ impl WeatherCase {
             ice_density: None,
             wind_pressure: Stress::ZERO,
             wind_from: WindSide::Right,
+            air_density_factor: None,
+            ambient_temperature: None,
         }
+    }
+
+    /// Its air density factor Q, Pa/(m/s)².
+    pub fn air_density_factor(&self) -> f64 {
+        self.air_density_factor
+            .unwrap_or(DEFAULT_AIR_DENSITY_FACTOR)
+    }
+
+    /// The wind velocity of its pressure, m/s: √(P / Q).
+    pub fn wind_velocity(&self) -> f64 {
+        (self.wind_pressure.si() / self.air_density_factor())
+            .max(0.0)
+            .sqrt()
     }
 
     /// Checks the case: ice as a thickness or a load (not both), values
@@ -125,6 +152,12 @@ impl WeatherCase {
         let bad = |m: &str| Err(format!("weather case \"{}\": {m}", self.name));
         if self.ice_thickness.si() < 0.0 || self.wind_pressure.si() < 0.0 {
             return bad("ice thickness and wind pressure must be ≥ 0");
+        }
+        if self
+            .air_density_factor
+            .is_some_and(|q| !(q > 0.0 && q.is_finite()))
+        {
+            return bad("the air density factor must be > 0");
         }
         if let Some(w) = self.ice_load {
             if w.si() < 0.0 {
@@ -508,5 +541,37 @@ mod tests {
         assert!(set.select(&[], &["nope".into()]).is_err());
         assert!(set.cases[2].summary().contains("ice 20.00 N/m (500 kg/m³)"));
         assert!(WeatherCases::parse("[[case]]\nname = \"a\"\ntemperature = \"1 °C\"\n[[case]]\nname = \"a\"\ntemperature = \"2 °C\"").is_err());
+    }
+
+    #[test]
+    fn air_density_factor_relates_velocity_and_pressure() {
+        let cases = WeatherCases::parse(
+            r#"
+format = "ols-weather-cases"
+version = 1
+name = "q"
+
+[[case]]
+name = "wind"
+temperature = "10 °C"
+wind_pressure = "600 Pa"
+ambient_temperature = "35 °C"
+
+[[case]]
+name = "own Q"
+temperature = "10 °C"
+wind_pressure = "240 Pa"
+air_density_factor = 0.6
+"#,
+        )
+        .unwrap();
+        let (a, b) = (&cases.cases[0], &cases.cases[1]);
+        assert_eq!(a.air_density_factor(), DEFAULT_AIR_DENSITY_FACTOR);
+        assert!((a.wind_velocity() - (600.0f64 / 0.613).sqrt()).abs() < 1e-12);
+        assert_eq!(a.ambient_temperature.map(|t| t.celsius()), Some(35.0));
+        assert!((b.wind_velocity() - 20.0).abs() < 1e-12);
+        let mut bad = b.clone();
+        bad.air_density_factor = Some(0.0);
+        assert!(bad.validate().is_err());
     }
 }

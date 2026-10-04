@@ -1398,7 +1398,7 @@ fn a_saved_library_reaches_the_model() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Sections").click();
+    harness.get_by_label("Criteria").click();
     harness.run();
     harness.get_by_label("Weather cases library").click();
     harness.run();
@@ -1893,18 +1893,43 @@ fn the_weather_case_table_writes_its_file() {
     harness.run();
     let kind = TableKind::WeatherCases;
     let n = harness.state_mut().ready().unwrap().model.cases.len();
-    set_cell(&mut harness, kind, "2", "ice mm", "20");
-    set_cell(&mut harness, kind, "2", "tags", "clearance, loads, heavy");
-    set_cell(&mut harness, kind, "2", "wind from", "left");
-    set_cell(&mut harness, kind, "0", "temp °C", "warm");
+    {
+        // The air density factor's default shown, dimmed.
+        let r = harness.state_mut().ready().unwrap();
+        let rows = kind.rows(&r.model, 0);
+        let q = kind.column("Air density factor\nPa/(m/s)²");
+        assert_eq!(rows[0].cells[q], "0.613");
+        assert!(rows[0].defaulted[q]);
+    }
+    set_cell(&mut harness, kind, "2", "Ice thickness\nmm", "20");
+    set_cell(
+        &mut harness,
+        kind,
+        "2",
+        "Tags\n ",
+        "clearance, loads, heavy",
+    );
+    set_cell(&mut harness, kind, "2", "Wind from\n ", "left");
+    set_cell(&mut harness, kind, "2", "Ambient temp\n°C", "-5");
+    // A velocity typed: the pressure is Q·V² (Q 0.613, then 0.6).
+    set_cell(&mut harness, kind, "1", "Wind velocity\nm/s", "40");
+    set_cell(
+        &mut harness,
+        kind,
+        "3",
+        "Air density factor\nPa/(m/s)²",
+        "0.6",
+    );
+    set_cell(&mut harness, kind, "3", "Wind velocity\nm/s", "20");
+    set_cell(&mut harness, kind, "0", "Wire temp\n°C", "warm");
     assert!(apply_table(&mut harness, kind, false).is_err());
-    set_cell(&mut harness, kind, "0", "temp °C", "10.0");
+    set_cell(&mut harness, kind, "0", "Wire temp\n°C", "10.0");
     {
         let r = harness.state_mut().ready().unwrap();
         let mut row = kind.new_row(&r.model, 0, &[]);
-        row[kind.column("#")] = "1.5".into();
-        row[kind.column("name")] = "cold".into();
-        row[kind.column("temp °C")] = "-20".into();
+        row[kind.column("#\n ")] = "1.5".into();
+        row[kind.column("Name\n ")] = "cold".into();
+        row[kind.column("Wire temp\n°C")] = "-20".into();
         let page = r.tables.entry(kind).or_default();
         page.added.push(row);
         page.deleted.insert("4".into());
@@ -1923,6 +1948,32 @@ fn the_weather_case_table_writes_its_file() {
     assert!((glaze.case.ice_thickness.si() - 0.02).abs() < 1e-12);
     assert_eq!(glaze.case.tags, vec!["clearance", "loads", "heavy"]);
     assert_eq!(glaze.case.wind_from, ols_weather::WindSide::Left);
+    assert_eq!(
+        glaze.case.ambient_temperature.map(|t| t.celsius()),
+        Some(-5.0)
+    );
+    let case = |name: &str| {
+        &r.model
+            .cases
+            .iter()
+            .find(|c| c.case.name == name)
+            .unwrap()
+            .case
+    };
+    let high = case("max temperature");
+    assert!(
+        (high.wind_pressure.si() - 0.613 * 1600.0).abs() < 1e-6,
+        "{}",
+        high.wind_pressure.si()
+    );
+    assert!((high.wind_velocity() - 40.0).abs() < 1e-9);
+    let rime = case("rime ice + wind");
+    assert_eq!(rime.air_density_factor, Some(0.6));
+    assert!(
+        (rime.wind_pressure.si() - 240.0).abs() < 1e-6,
+        "{}",
+        rime.wind_pressure.si()
+    );
     let written = std::fs::read_to_string(&path).unwrap();
     assert!(
         written.starts_with("# Example weather cases"),

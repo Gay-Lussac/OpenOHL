@@ -39,6 +39,8 @@ wind_pressure = "200 Pa"
 | `ice_load` | no | Or: ice weight per length of wire (not both). |
 | `ice_density` | no | With a thickness: the ice weight (default glaze ice, 913 kg/m³). With a load: the iced diameter for the wind; without it, wind acts on the bare diameter. |
 | `wind_pressure` | no | Wind pressure on the projected (iced) diameter, perpendicular to each span. |
+| `air_density_factor` | no | Q, Pa/(m/s)²: the wind pressure of a wind velocity V is Q·V² (default 0.613, ½ρ of air at 15 °C at sea level). Only relates pressure and velocity (the Weather cases table shows and takes both); the loads use `wind_pressure`. |
+| `ambient_temperature` | no | Air temperature, e.g. `"35 °C"`, for ratings; the wires use `temperature`. |
 | `wind_from` | no | `"right"` (default) or `"left"`: the side the wind comes from, looking ahead along the line (each span from its back point to its ahead point). From the right the wires are blown to the left. At line angles the two sides do not give the same swing. |
 
 Values take units (`"0.5 in"`, `"4 psf"`, `"1.2 lbf/ft"`, …).

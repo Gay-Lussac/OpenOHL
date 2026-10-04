@@ -3019,13 +3019,26 @@ fn menus(
         use crate::tables::TableKind;
         ui.label(egui::RichText::new("Libraries").small().weak());
         item(ui, Command::Library(LibraryKind::Cables), out);
-        item(ui, Command::Library(LibraryKind::WeatherCases), out);
         ui.separator();
         ui.label(egui::RichText::new("Tables").small().weak());
         item(ui, Command::Table(TableKind::Sections), out);
         item(ui, Command::Table(TableKind::Jumpers), out);
         item(ui, Command::Table(TableKind::Systems), out);
-        item(ui, Command::Table(TableKind::WeatherCases), out);
+        ui.separator();
+        item(ui, Command::DisplayCases, out);
+    });
+    ui.menu_button("Criteria", |ui| {
+        use crate::library::LibraryKind;
+        use crate::tables::TableKind;
+        if ui
+            .button("Weather cases")
+            .on_hover_text("Every weather case in one table: wind, ice, temperatures")
+            .clicked()
+        {
+            out.push(Command::Table(TableKind::WeatherCases));
+            ui.close();
+        }
+        item(ui, Command::Library(LibraryKind::WeatherCases), out);
         ui.separator();
         item(ui, Command::DisplayCases, out);
     });
