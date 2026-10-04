@@ -511,6 +511,8 @@ impl StringForm {
             wire_point: global(self.bottom),
             insulator_weight: self.weight,
             insulator: self.insulator.clone(),
+            // Set from the insulator library when the line is resolved.
+            insulator_wind_area: 0.0,
             legs: self.legs.map(|l| l.map(global)),
             top_label: self.top_label.clone(),
             bottom_label: self.bottom_label.clone(),

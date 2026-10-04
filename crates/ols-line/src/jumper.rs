@@ -316,7 +316,7 @@ impl Stiff {
         };
         let budget = Budget::new()
             .max_iterations(150)
-            .time_limit(std::time::Duration::from_secs(2));
+            .time_limit(std::time::Duration::from_secs(60));
         match rod(self.ei).solve(&start, &budget) {
             Ok(shape) => Ok(shape),
             Err(first) => {
@@ -395,30 +395,14 @@ fn stiff_length_for_sag(
     Err(format!("sag {sag} m: no length found in 40 iterations"))
 }
 
-/// Solves one jumper in a weather case, between the solved section ends.
-pub fn solve_jumper(
+/// The bending stiffness of a jumper and the directions its end clamps hold
+/// it in (`None`: hinged).
+fn stiffness(
     line: &Line,
     jumper: &Jumper,
     shapes: &[SectionShape],
     cable: &Cable,
-    case: &WeatherCase,
-) -> Result<JumperShape, LineError> {
-    let invalid = |m: String| LineError::Invalid(format!("jumper {}: {m}", jumper.id));
-    let a = end_position(line, shapes, &jumper.from).map_err(|e| invalid(e.to_string()))?;
-    let b = end_position(line, shapes, &jumper.to).map_err(|e| invalid(e.to_string()))?;
-    let d = b - a;
-    if d.xy().norm() < 0.1 {
-        return Err(invalid(
-            "ends less than 0.1 m apart horizontally (a vertical jumper is not supported yet)"
-                .into(),
-        ));
-    }
-    let ea = cable.axial_stiffness().si();
-    let still = CableProperties {
-        unstressed_length: 1.0,
-        axial_stiffness: ea,
-        load: Vector3::new(0.0, 0.0, -cable.weight().si()),
-    };
+) -> Option<Stiff> {
     let ei = jumper
         .bending_stiffness
         .unwrap_or_else(|| estimated_bending_stiffness(cable));
@@ -439,19 +423,70 @@ pub fn solve_jumper(
         .map(|d| -d),
         ei,
     };
-    let stiff = (ei > 0.0 && (stiff.start.is_some() || stiff.end.is_some())).then_some(stiff);
+    (ei > 0.0 && (stiff.start.is_some() || stiff.end.is_some())).then_some(stiff)
+}
+
+/// The unstressed length, at the jumper's temperature, giving its sag in
+/// still air between the section ends solved in `shapes` (its design
+/// case: still air at that temperature).
+fn cut_length(
+    line: &Line,
+    jumper: &Jumper,
+    shapes: &[SectionShape],
+    cable: &Cable,
+) -> Result<f64, LineError> {
+    let invalid = |m: String| LineError::Invalid(format!("jumper {}: {m}", jumper.id));
+    let sag = jumper
+        .sag
+        .ok_or_else(|| invalid("needs a length or a sag".into()))?;
+    let a = end_position(line, shapes, &jumper.from).map_err(|e| invalid(e.to_string()))?;
+    let b = end_position(line, shapes, &jumper.to).map_err(|e| invalid(e.to_string()))?;
+    let still = CableProperties {
+        unstressed_length: 1.0,
+        axial_stiffness: cable.axial_stiffness().si(),
+        load: Vector3::new(0.0, 0.0, -cable.weight().si()),
+    };
+    let budget = Budget::new().max_iterations(200);
+    let hinged = length_for_sag(still, a, b, sag, &budget).map_err(invalid)?;
+    match stiffness(line, jumper, shapes, cable) {
+        Some(stiff) => stiff_length_for_sag(&stiff, still, a, b, sag, hinged).map_err(invalid),
+        None => Ok(hinged),
+    }
+}
+
+/// Whether `case` is a jumper's design case: still air at its temperature.
+fn is_design_case(jumper: &Jumper, case: &WeatherCase) -> bool {
+    case.wind_pressure.si() == 0.0
+        && case.ice_thickness.si() == 0.0
+        && case.ice_load.is_none_or(|w| w.si() == 0.0)
+        && (case.temperature.celsius() - jumper.temperature).abs() < 1e-9
+}
+
+/// Solves one jumper in a weather case, between the solved section ends.
+pub fn solve_jumper(
+    line: &Line,
+    jumper: &Jumper,
+    shapes: &[SectionShape],
+    cable: &Cable,
+    case: &WeatherCase,
+) -> Result<JumperShape, LineError> {
+    let invalid = |m: String| LineError::Invalid(format!("jumper {}: {m}", jumper.id));
+    let a = end_position(line, shapes, &jumper.from).map_err(|e| invalid(e.to_string()))?;
+    let b = end_position(line, shapes, &jumper.to).map_err(|e| invalid(e.to_string()))?;
+    let d = b - a;
+    if d.xy().norm() < 0.1 {
+        return Err(invalid(
+            "ends less than 0.1 m apart horizontally (a vertical jumper is not supported yet)"
+                .into(),
+        ));
+    }
+    let ea = cable.axial_stiffness().si();
+    let stiff = stiffness(line, jumper, shapes, cable);
     let reference = match (jumper.length, jumper.sag) {
         (Some(length), _) => length,
-        (None, Some(sag)) => {
-            let budget = Budget::new().max_iterations(200);
-            let hinged = length_for_sag(still, a, b, sag, &budget).map_err(invalid)?;
-            match &stiff {
-                Some(stiff) => {
-                    stiff_length_for_sag(stiff, still, a, b, sag, hinged).map_err(invalid)?
-                }
-                None => hinged,
-            }
-        }
+        // Given by its sag: cut in this case (the design case; other cases
+        // get the length cut there, see [`solve_jumpers`]).
+        (None, Some(_)) => cut_length(line, jumper, shapes, cable)?,
         (None, None) => return Err(invalid("needs a length or a sag".into())),
     };
     let l0 = reference
@@ -591,6 +626,10 @@ fn s_point(jumper: &Jumper) -> Point {
 }
 
 /// Solves every jumper of the line between the solved sections `shapes`.
+///
+/// A jumper given by its sag is cut once, in its design case (still air at
+/// its temperature: the sections at its ends are solved there when `case`
+/// is another), and keeps that length in every case.
 pub fn solve_jumpers(
     line: &Line,
     library: &ols_cables::Library,
@@ -606,8 +645,35 @@ pub fn solve_jumpers(
                     jumper.id, jumper.cable
                 ))
             })?;
+            if jumper.length.is_none() && jumper.sag.is_some() && !is_design_case(jumper, case) {
+                let design = design_shapes(line, library, jumper)?;
+                let mut cut = jumper.clone();
+                cut.length = Some(cut_length(line, jumper, &design, cable)?);
+                return solve_jumper(line, &cut, shapes, cable, case);
+            }
             solve_jumper(line, jumper, shapes, cable, case)
         })
+        .collect()
+}
+
+/// The sections at a jumper's ends solved in its design case.
+fn design_shapes(
+    line: &Line,
+    library: &ols_cables::Library,
+    jumper: &Jumper,
+) -> Result<Vec<SectionShape>, LineError> {
+    let case = WeatherCase::still(
+        "jumper design",
+        ols_core::units::Temperature::from_celsius(jumper.temperature),
+    );
+    line.sections
+        .iter()
+        .filter(|s| {
+            s.points
+                .iter()
+                .any(|p| *p == jumper.from || *p == jumper.to)
+        })
+        .map(|s| crate::solve::solve_one(line, s, library, &case))
         .collect()
 }
 
@@ -655,9 +721,19 @@ mod tests {
         let (first, last) = (v(j.points[0]), v(*j.points.last().unwrap()));
         assert!((first - v(shapes[2].clamps[0])).norm() < 1e-6);
         assert!((last - v(shapes[0].clamps[2])).norm() < 1e-6);
-        // Heat lengthens the jumper: more sag.
+        // Cut once at its temperature (15 °C): in the heat only its thermal
+        // stretch changes the length; the clamps move, so the sag is not
+        // 1.5 m any more.
         let (_, hot) = solve_all(&line, &still(80.0));
-        assert!(hot[0].sag > j.sag + 0.01, "{} vs {}", hot[0].sag, j.sag);
+        let lib = library();
+        let alpha = lib.get(&line.jumpers[0].cable).unwrap().thermal_expansion();
+        let expected = j.unstressed_length * (alpha * (80.0 - line.jumpers[0].temperature)).exp();
+        assert!(
+            (hot[0].unstressed_length - expected).abs() < 1e-9,
+            "{} vs {expected}",
+            hot[0].unstressed_length
+        );
+        assert!((hot[0].sag - 1.5).abs() > 0.01, "{}", hot[0].sag);
         // Wind blows it sideways.
         let mut windy = still(15.0);
         windy.wind_pressure = Stress::from_pascals(500.0);

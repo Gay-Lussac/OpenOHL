@@ -118,7 +118,7 @@ fn geometry(h: f64, v0: f64, l0: f64, ea: f64, w: f64) -> (Vector2<f64>, Matrix2
 pub fn default_element_budget() -> Budget {
     Budget::new()
         .max_iterations(100)
-        .time_limit(std::time::Duration::from_millis(500))
+        .time_limit(std::time::Duration::from_secs(10))
 }
 
 impl CableProperties {

@@ -1103,6 +1103,9 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     }
     let lib_path = library_path(&sources);
     let library = ols_cables::Library::load(&lib_path).map_err(|e| e.to_string())?;
+    if let Some(w) = ols_cables::mechanics::curve_offset_warning(&library) {
+        log.push(format!("wire library: {w}"));
+    }
     step(
         match &library_dir {
             Some(w) if lib_path.starts_with(w) => "wire library from the project".to_owned(),

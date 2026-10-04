@@ -105,11 +105,12 @@ pub struct Governing {
 }
 
 /// Default outer exit clauses: ~60 bisection steps expected; each runs a
-/// change of state (~10 µs). 200 steps and 2 s leave a wide margin.
+/// change of state (~10 µs). 200 steps leave a wide margin (the time limit, 60 s, only guards
+/// against a loop).
 pub fn default_criteria_budget() -> Budget {
     Budget::new()
         .max_iterations(200)
-        .time_limit(Duration::from_secs(2))
+        .time_limit(Duration::from_secs(60))
 }
 
 /// Finds the stringing tension at `reference` for a tension section (one or

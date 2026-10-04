@@ -188,19 +188,27 @@ pub struct GroundPoint {
     pub point: [f64; 3],
 }
 
-/// Most grid cells of the triangle index (64 Mi, 256 MB of offsets);
-/// beyond this the cells are made larger.
+/// Most grid cells over the bounding box of the triangle index (64 Mi);
+/// beyond this the cells are made larger. Only the occupied band of each
+/// row is stored.
 const MAX_CELLS: f64 = 67_108_864.0;
 
 /// Uniform grid over the mesh: for every cell, the triangles whose bounding
 /// box overlaps it (compressed rows: `start[c]..start[c + 1]` in `items`).
+/// Each row is stored only between its first and last occupied cell: a
+/// corridor across its bounding box (a diagonal line) takes memory for the
+/// band it covers, not for the box.
 #[derive(Debug, Clone, Default)]
 struct Grid {
     origin: [f64; 2],
     cell: f64,
     nx: usize,
     ny: usize,
-    start: Vec<u32>,
+    /// Per row: first occupied column, and where its cells begin in
+    /// `start` (`row_offset[j + 1] - row_offset[j]` cells).
+    row_first: Vec<usize>,
+    row_offset: Vec<usize>,
+    start: Vec<usize>,
     items: Vec<u32>,
 }
 
@@ -235,19 +243,41 @@ impl Grid {
             cell,
             nx,
             ny,
-            start: vec![0; nx * ny + 1],
-            items: Vec::new(),
+            ..Self::default()
         };
+        // The occupied span of every row.
+        let (mut first, mut last) = (vec![usize::MAX; ny], vec![0usize; ny]);
+        for t in triangles {
+            let (i0, i1, j0, j1) = grid.cell_range(t.map(|v| points[v as usize]));
+            for j in j0..=j1 {
+                first[j] = first[j].min(i0);
+                last[j] = last[j].max(i1);
+            }
+        }
+        let mut offset = Vec::with_capacity(ny + 1);
+        let mut acc = 0;
+        for j in 0..ny {
+            offset.push(acc);
+            if first[j] == usize::MAX {
+                first[j] = 0;
+            } else {
+                acc += last[j] - first[j] + 1;
+            }
+        }
+        offset.push(acc);
+        grid.row_first = first;
+        grid.row_offset = offset;
+        grid.start = vec![0; acc + 1];
         // Two passes: count, then fill.
         for pass in 0..2 {
             let mut fill = if pass == 1 {
-                let mut acc = 0u32;
+                let mut acc = 0;
                 for c in grid.start.iter_mut() {
                     let n = *c;
                     *c = acc;
                     acc += n;
                 }
-                grid.items = vec![0; acc as usize];
+                grid.items = vec![0; acc];
                 grid.start.clone()
             } else {
                 Vec::new()
@@ -256,11 +286,11 @@ impl Grid {
                 let (i0, i1, j0, j1) = grid.cell_range(t.map(|v| points[v as usize]));
                 for j in j0..=j1 {
                     for i in i0..=i1 {
-                        let c = j * nx + i;
+                        let c = grid.row_offset[j] + i - grid.row_first[j];
                         if pass == 0 {
                             grid.start[c] += 1;
                         } else {
-                            grid.items[fill[c] as usize] = k as u32;
+                            grid.items[fill[c]] = k as u32;
                             fill[c] += 1;
                         }
                     }
@@ -286,8 +316,15 @@ impl Grid {
     }
 
     fn cell_items(&self, i: usize, j: usize) -> &[u32] {
-        let c = j * self.nx + i;
-        &self.items[self.start[c] as usize..self.start[c + 1] as usize]
+        let (first, cells) = (
+            self.row_first[j],
+            self.row_offset[j + 1] - self.row_offset[j],
+        );
+        if i < first || i >= first + cells {
+            return &[];
+        }
+        let c = self.row_offset[j] + i - first;
+        &self.items[self.start[c]..self.start[c + 1]]
     }
 
     /// Triangles near the segment a–b (sorted, unique): the cells met when
@@ -711,6 +748,40 @@ mod tests {
 
     fn plane(x: f64, y: f64) -> f64 {
         400.0 + 0.05 * x - 0.02 * y
+    }
+
+    #[test]
+    fn a_diagonal_corridor_indexes_only_its_band() {
+        // A 20 km diagonal strip, 100 m wide, points every 25 m.
+        let mut points = Vec::new();
+        for k in 0..800 {
+            for w in -2..=2 {
+                let s = k as f64 * 25.0;
+                let (x, y) = (
+                    s / 2f64.sqrt() - w as f64 * 25.0 / 2f64.sqrt(),
+                    s / 2f64.sqrt() + w as f64 * 25.0 / 2f64.sqrt(),
+                );
+                points.push(SurveyPoint {
+                    x,
+                    y,
+                    z: plane(x, y),
+                    code: String::new(),
+                    line: String::new(),
+                });
+            }
+        }
+        let t = Terrain::from_points(&points, Some(60.0)).unwrap();
+        let g = &t.grid;
+        // Far fewer stored cells than the bounding box holds.
+        assert!(
+            g.start.len() * 20 < g.nx * g.ny,
+            "{} of {}",
+            g.start.len(),
+            g.nx * g.ny
+        );
+        let (x, y) = (5000.0, 5000.0 + 10.0);
+        assert!((t.height(x, y).unwrap() - plane(x, y)).abs() < 1e-6);
+        assert_eq!(t.height(5000.0, 8000.0), None);
     }
 
     fn grid(f: impl Fn(f64, f64) -> f64, n: usize, step: f64) -> Vec<SurveyPoint> {

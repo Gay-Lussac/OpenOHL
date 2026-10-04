@@ -167,12 +167,13 @@ impl fmt::Display for FeError {
 impl std::error::Error for FeError {}
 
 /// Default exit clauses for a structure solve: Newton usually converges in
-/// 5–20 iterations; 100 iterations / 5 s covers difficult cases (broken
-/// wire) with margin.
+/// 5–20 iterations; 100 iterations cover difficult cases (broken wire)
+/// with margin. The time limit only guards against a solve that never ends:
+/// set far above any real solve (120 s), it does not stop slow machines.
 pub fn default_fe_budget() -> Budget {
     Budget::new()
         .max_iterations(100)
-        .time_limit(Duration::from_secs(5))
+        .time_limit(Duration::from_secs(120))
 }
 
 struct Evaluation {

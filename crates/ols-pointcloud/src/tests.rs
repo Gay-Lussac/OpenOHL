@@ -14,6 +14,8 @@ fn write_tile(path: &Path, x0: f64, w: f64) {
     builder.transforms.x.scale = 0.001;
     builder.transforms.y.scale = 0.001;
     builder.transforms.z.scale = 0.001;
+    // Projected coordinates need an offset to fit the 32-bit integers.
+    builder.transforms.x.offset = x0.floor();
     let mut writer = Writer::from_path(path, builder.into_header().unwrap()).unwrap();
     let n = (w / 0.25) as usize;
     for i in 0..n {
@@ -434,5 +436,48 @@ fn export_and_import_again_give_the_same_points() {
         .unwrap();
     assert_eq!(stats.points_visited, 20, "class 98 (y = 8), x 10-20 m");
     drop(store);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn any_chunk_size_far_from_the_origin() {
+    // A chunk size that is not a whole number of millimetres, at
+    // projected coordinates: the store still returns the tiles' points.
+    let dir = scratch("odd-chunk");
+    write_tile(&dir.join("a.laz"), 2_600_000.0, 40.0);
+    let tiles = ols_lidar::tiles_in(&dir).unwrap();
+    let db = dir.join("project.ols");
+    let mut store = Store::open(&db).unwrap();
+    let (cloud, _) = store
+        .import_tiles(
+            "survey",
+            &tiles,
+            "EPSG:2056",
+            None,
+            2.000_4,
+            0.001,
+            &Budget::new(),
+            |_, _, _| {},
+        )
+        .unwrap();
+    assert!(
+        (cloud.chunk_size - 2.0).abs() < 1e-9,
+        "{}",
+        cloud.chunk_size
+    );
+    drop(store);
+    let from_store = CloudSource::open(&db, None).unwrap();
+    let from_tiles = TileSource {
+        tiles: tiles.clone(),
+        scheme: None,
+    };
+    assert_eq!(
+        collect(&from_store, None, None),
+        collect(&from_tiles, None, None)
+    );
+    let corridor = Corridor::new(&[vec![[2_600_005.0, 10.0], [2_600_035.0, 10.0]]], 3.0);
+    let a = collect(&from_store, Some(&corridor), None);
+    assert!(!a.is_empty());
+    assert_eq!(a, collect(&from_tiles, Some(&corridor), None));
     std::fs::remove_dir_all(dir).ok();
 }

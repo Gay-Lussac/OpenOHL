@@ -212,15 +212,13 @@ pub fn final_condition(
         )
         .map_err(cable_error)?;
     let crept = section.solve(creep, &MaterialState::Creep, budget)?;
+    // Compared at the creep (everyday) tension.
+    let working = Force::from_si(NonlinearSection::section_mean_tension(&crept));
     let after_creep = m
-        .permanent_set(
-            Force::from_si(NonlinearSection::section_mean_tension(&crept)),
-            creep.temperature,
-            &MaterialState::Creep,
-        )
+        .permanent_set(working, creep.temperature, &MaterialState::Creep)
         .map_err(cable_error)?;
     let longer = m
-        .longer(after_creep.clone(), after_load)
+        .longer(after_creep.clone(), after_load, working)
         .map_err(cable_error)?;
     let cause = if longer == after_creep {
         FinalCause::Creep

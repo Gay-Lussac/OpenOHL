@@ -162,6 +162,8 @@ enum Clamp {
         top: Vector3<f64>,
         length: f64,
         weight: f64,
+        /// Wind area, m² (per subconductor, like the weight).
+        wind_area: f64,
     },
     /// Strain assembly: free clamp on a member of `length` from `top`; it
     /// lines up with its conductor by equilibrium (direction and droop
@@ -171,6 +173,7 @@ enum Clamp {
         top: Vector3<f64>,
         length: f64,
         weight: f64,
+        wind_area: f64,
         initial: Vector3<f64>,
         /// No weight given: estimated from `initial`.
         estimate: bool,
@@ -181,6 +184,7 @@ enum Clamp {
         tops: [Vector3<f64>; 2],
         lengths: [f64; 2],
         weight: f64,
+        wind_area: f64,
         plumb: Vector3<f64>,
     },
 }
@@ -206,6 +210,7 @@ fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
                     tops,
                     lengths: tops.map(|t| (wire - t).norm()),
                     weight: a.insulator_weight / f64::from(section.bundle.max(1)),
+                    wind_area: a.insulator_wind_area / f64::from(section.bundle.max(1)),
                     plumb: wire,
                 }
             } else if middle && is_suspension(ins, wire) {
@@ -213,6 +218,7 @@ fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
                     top: ins,
                     length: (wire - ins).norm(),
                     weight: a.insulator_weight / f64::from(section.bundle.max(1)),
+                    wind_area: a.insulator_wind_area / f64::from(section.bundle.max(1)),
                 }
             } else if (wire - ins).norm() > 0.01 {
                 // A strain assembly is a free member, so it moves with the
@@ -225,6 +231,7 @@ fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
                     top: ins,
                     length: (wire - ins).norm(),
                     weight: a.insulator_weight / f64::from(section.bundle.max(1)),
+                    wind_area: a.insulator_wind_area / f64::from(section.bundle.max(1)),
                     initial: wire,
                     estimate: a.insulator.is_none()
                         && !a.strain_member
@@ -304,6 +311,7 @@ fn build(
                 top,
                 length,
                 weight,
+                ..
             }
             | Clamp::Strain {
                 top,
@@ -325,6 +333,26 @@ fn build(
                     tension_only: true,
                     weight: *weight,
                 });
+            }
+        }
+    }
+
+    // Wind on the strings: half on the clamp, across the line there.
+    for (k, clamp) in layout.iter().enumerate() {
+        let area = match clamp {
+            Clamp::Suspension { wind_area, .. }
+            | Clamp::Strain { wind_area, .. }
+            | Clamp::VString { wind_area, .. } => *wind_area,
+            Clamp::Fixed(_) => 0.0,
+        };
+        if area > 0.0 && case.wind_pressure.si() > 0.0 {
+            let along =
+                reference.clamps[(k + 1).min(n - 1)] - reference.clamps[k.saturating_sub(1)];
+            let horizontal = along.xy();
+            if horizontal.norm() > 0.0 {
+                let transverse = Vector3::new(-horizontal.y, horizontal.x, 0.0) / horizontal.norm();
+                model.nodes[clamps[k]].load +=
+                    transverse * (0.5 * case.wind_pressure.si() * area * case.wind_from.to_left());
             }
         }
     }
@@ -354,7 +382,8 @@ fn build(
                 .map(|l| {
                     (
                         shape_props.arc_length_at_fraction(d, &solved, l.fraction),
-                        l.vertical,
+                        // The model is one subconductor: its share.
+                        l.vertical / f64::from(section.bundle.max(1)),
                     )
                 })
                 .collect();
@@ -481,6 +510,7 @@ fn estimate_strain_weights(
             weight,
             initial,
             estimate: estimate @ true,
+            ..
         } = clamp
         {
             // The wires' pull on the clamp: the support's reaction, reversed.
@@ -1062,9 +1092,12 @@ pub fn final_state(
         &MaterialState::Initial,
     )
     .map_err(st)?;
-    let zero_strain = |m: &MaterialState| {
+    // The permanent stretch is measured at the stringing tension: at zero
+    // tension, outer strands that take no compression are slack and only
+    // the core's set would count.
+    let working_strain = |m: &MaterialState| {
         mechanics
-            .strain(Force::ZERO, strung_state.temperature, m)
+            .strain(Force::from_si(h), strung_state.temperature, m)
             .map_err(|e| invalid(e.to_string()))
     };
     match condition {
@@ -1085,7 +1118,8 @@ pub fn final_state(
                             &MaterialState::Creep,
                         )
                         .map_err(|e| invalid(e.to_string()))?;
-                    let stretch = zero_strain(&material)? - zero_strain(&MaterialState::Initial)?;
+                    let stretch =
+                        working_strain(&material)? - working_strain(&MaterialState::Initial)?;
                     Ok(FinalState {
                         material,
                         stretch: stretch.max(0.0),
@@ -1138,8 +1172,9 @@ pub fn final_state(
                         &MaterialState::Initial,
                     )
                     .map_err(|e| invalid(e.to_string()))?;
-                let stretch =
-                    (zero_strain(&material)? - zero_strain(&MaterialState::Initial)?).max(0.0);
+                let stretch = (working_strain(&material)?
+                    - working_strain(&MaterialState::Initial)?)
+                .max(0.0);
                 if best.as_ref().is_none_or(|b| stretch > b.stretch) {
                     best = Some(FinalState {
                         material,
@@ -1546,6 +1581,10 @@ mod tests {
                 a.insulator_weight *= 3.0;
             }
         }
+        // Point loads are on the whole bundle too.
+        for l in &mut bundled.sections[0].loads {
+            l.vertical *= 3.0;
+        }
         bundled.validate().unwrap();
         let a = solve_line(&single, &lib, &windy).remove(0).unwrap();
         let b = solve_line(&bundled, &lib, &windy).remove(0).unwrap();
@@ -1561,6 +1600,50 @@ mod tests {
             assert!((3.0 * f - g).abs() < 1e-6 * g.abs().max(1.0), "{f} {g}");
         }
         assert!(a.insulators.iter().flatten().count() > 0);
+    }
+
+    #[test]
+    fn strings_catch_wind_and_bundles_share_point_loads() {
+        let lib = library();
+        let still = WeatherCase::still("still", Temperature::from_celsius(15.0));
+        let mut windy = still.clone();
+        windy.wind_pressure = Stress::from_pascals(400.0);
+        let line = crate::tests::example();
+        assert!(!line.sections[0].loads.is_empty());
+        // Wind on the strings swings the clamps further.
+        let mut catching = line.clone();
+        for s in &mut catching.structures {
+            for a in &mut s.attachments {
+                a.insulator_wind_area = 0.5;
+            }
+        }
+        let rest = solve_line(&line, &lib, &still).remove(0).unwrap();
+        let a = solve_line(&line, &lib, &windy).remove(0).unwrap();
+        let b = solve_line(&catching, &lib, &windy).remove(0).unwrap();
+        let n = rest.clamps.len();
+        let mut further = 0;
+        for k in 1..n - 1 {
+            let (r, p, q) = (v(rest.clamps[k]), v(a.clamps[k]), v(b.clamps[k]));
+            assert!((q - r).norm() >= (p - r).norm() - 1e-9, "clamp {k}");
+            further += usize::from((q - r).norm() > (p - r).norm() + 1e-4);
+        }
+        assert!(further > 0);
+        // A 3-bundle under 3 × each point load hangs like one wire.
+        let mut bundled = line.clone();
+        bundled.sections[0].bundle = 3;
+        bundled.sections[0].bundle_spacing = Some(0.4);
+        for l in &mut bundled.sections[0].loads {
+            l.vertical *= 3.0;
+        }
+        for s in &mut bundled.structures {
+            for a in &mut s.attachments {
+                a.insulator_weight *= 3.0;
+            }
+        }
+        let c = solve_line(&bundled, &lib, &still).remove(0).unwrap();
+        for (p, q) in rest.clamps.iter().zip(&c.clamps) {
+            assert!((v(*p) - v(*q)).norm() < 1e-6, "{p:?} {q:?}");
+        }
     }
 
     /// The synthetic line with T2's first attachment (a 3.5 m I-string,
@@ -2051,6 +2134,21 @@ mod tests {
             final_state(&line, &line.sections[0], cable, Condition::Creep, &budget).unwrap();
         let load = final_state(&line, &line.sections[0], cable, Condition::Load, &budget).unwrap();
         assert!(creep.stretch > 1e-5, "{}", creep.stretch);
+        // Measured at the working tension: the aluminium's set counts too
+        // (at zero tension its strands are slack: only the core's would).
+        {
+            use ols_cables::mechanics::{MaterialState, Mechanics};
+            use ols_core::units::Force;
+            let m = Mechanics::from_cable(cable).unwrap();
+            let t = Temperature::from_celsius(15.0);
+            let at_zero = m.strain(Force::ZERO, t, &creep.material).unwrap()
+                - m.strain(Force::ZERO, t, &MaterialState::Initial).unwrap();
+            assert!(
+                creep.stretch > 1.5 * at_zero,
+                "{} vs {at_zero}",
+                creep.stretch
+            );
+        }
         assert!(load.stretch > 0.0, "{}", load.stretch);
         assert_eq!(load.case, "heavy ice", "the case stretching most");
         let hot = WeatherCase::still("hot", Temperature::from_celsius(50.0));

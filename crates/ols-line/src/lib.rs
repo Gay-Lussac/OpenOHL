@@ -272,6 +272,11 @@ pub struct Attachment {
     /// Insulator assembly id from the insulator library (`.olsi`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub insulator: Option<String>,
+    /// Area of the insulator assembly the wind blows on, m² (from the
+    /// insulator library when resolved): half its wind load is put on the
+    /// clamp.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub insulator_wind_area: f64,
     /// V-string: the attachment points of the two legs on the structure
     /// (the insulator point is then informative, e.g. their centre). Both
     /// legs end at the wire point; their lengths are the distances to it.
@@ -373,11 +378,16 @@ pub struct SpanLoad {
     pub span: usize,
     /// Horizontal fraction of the span from its back point, 0–1.
     pub fraction: f64,
-    /// Downward force, N.
+    /// Downward force, N: on the whole bundle (shared between its
+    /// subconductors).
     pub vertical: f64,
     /// Label, e.g. `"marker ball"`.
     #[serde(default)]
     pub label: String,
+}
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
 }
 
 /// A wire section.

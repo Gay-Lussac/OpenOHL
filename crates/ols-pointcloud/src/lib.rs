@@ -147,6 +147,13 @@ impl fmt::Debug for Store {
 /// says whether it took it.
 type BlockVisitor<'a> = dyn FnMut([f64; 3], u8, Option<&Corridor>) -> bool + 'a;
 
+/// A chunk size made a whole number (at least one) of `scale` units: the
+/// blocks' points are integers relative to their chunk, so every chunk
+/// edge must fall on the scale's grid.
+fn whole_chunk(chunk_size: f64, scale: f64) -> f64 {
+    (chunk_size / scale).round().max(1.0) * scale
+}
+
 /// A block selected for reading: id, chunk x and y, class, count, z0, the
 /// corridor near its chunk (none: every point).
 type Selected = (
@@ -234,12 +241,15 @@ impl Store {
             let opt = |k: usize| -> rusqlite::Result<f64> {
                 Ok(r.get::<_, Option<f64>>(k)?.unwrap_or(f64::NAN))
             };
+            let scale: f64 = r.get(3)?;
             Ok(CloudInfo {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 crs: r.get(2)?,
-                scale: r.get(3)?,
-                chunk_size: r.get(4)?,
+                scale,
+                // The chunks are whole numbers of scale units (as the
+                // blocks were binned), whatever was asked for.
+                chunk_size: whole_chunk(r.get(4)?, scale),
                 class_scheme: r.get(5)?,
                 points: r.get::<_, i64>(6)? as u64,
                 bounds: [[opt(7)?, opt(8)?, opt(9)?], [opt(10)?, opt(11)?, opt(12)?]],
@@ -548,6 +558,7 @@ impl Store {
                 "chunk size and scale must be positive, chunk/scale < 2³¹",
             ));
         }
+        let chunk_size = whole_chunk(chunk_size, scale);
         let existing = self.clouds()?.into_iter().find(|c| c.name == name);
         let cloud = match existing {
             Some(c) => c,

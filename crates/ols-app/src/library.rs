@@ -476,6 +476,8 @@ pub struct LibraryPage {
     item: usize,
     /// Why the file does not read, as edited.
     pub error: Option<String>,
+    /// What reads but is worth a look (e.g. curves not starting at zero).
+    pub warning: Option<String>,
     /// What happened last (saved, reloaded…).
     pub message: Option<(String, bool)>,
     /// Fields being typed, by path (a number half typed does not parse).
@@ -510,6 +512,7 @@ impl LibraryPage {
             saved: String::new(),
             item: 0,
             error: None,
+            warning: None,
             message: None,
             buffers: HashMap::new(),
         };
@@ -564,6 +567,16 @@ impl LibraryPage {
     fn check(&mut self) {
         self.error = match (&self.file, self.text()) {
             (Some(path), Some(text)) => self.kind.check(path, &text).err(),
+            _ => None,
+        };
+        // Reads, but worth a look.
+        self.warning = match (&self.file, self.text(), self.kind) {
+            (Some(path), Some(text), LibraryKind::Cables) if self.error.is_none() => {
+                let mut lib = ols_cables::Library::default();
+                lib.add_toml(path, &text)
+                    .ok()
+                    .and_then(|_| ols_cables::mechanics::curve_offset_warning(&lib))
+            }
             _ => None,
         };
     }
@@ -860,6 +873,9 @@ impl LibraryPage {
         );
         if let Some(e) = &self.error {
             ui.colored_label(egui::Color32::LIGHT_RED, egui::RichText::new(e).small());
+        }
+        if let Some(w) = &self.warning {
+            ui.colored_label(egui::Color32::YELLOW, egui::RichText::new(w).small());
         }
         if let Some((m, error)) = &self.message {
             let t = egui::RichText::new(m).small();

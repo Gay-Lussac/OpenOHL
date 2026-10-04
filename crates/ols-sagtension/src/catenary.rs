@@ -254,12 +254,12 @@ impl SpanSolution {
 }
 
 /// Default exit clauses for [`tension_for_sag`]: bisection halves the
-/// bracket each step, so ~60 steps reach `f64` precision; 200 steps and
-/// 50 ms (expected: a few microseconds) leave a wide safety margin.
+/// bracket each step, so ~60 steps reach `f64` precision; 200 steps leave a
+/// wide margin (the time limit, 10 s, only guards against a loop).
 pub fn default_solver_budget() -> Budget {
     Budget::new()
         .max_iterations(200)
-        .time_limit(Duration::from_millis(50))
+        .time_limit(Duration::from_secs(10))
 }
 
 /// Finds the horizontal tension that gives a maximum sag of `sag` on a span.

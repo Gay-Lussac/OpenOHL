@@ -342,15 +342,63 @@ impl Mechanics {
     }
 
     /// Of two final states, the one that leaves the cable longer (larger
-    /// strain at zero tension at the reference temperature).
-    pub fn longer(&self, a: MaterialState, b: MaterialState) -> Result<MaterialState, CableError> {
+    /// strain at the working tension `at`, reference temperature; not at
+    /// zero tension, where outer strands that take no compression are
+    /// slack and only the core's set counts).
+    pub fn longer(
+        &self,
+        a: MaterialState,
+        b: MaterialState,
+        at: Force,
+    ) -> Result<MaterialState, CableError> {
         let t = self.reference_temperature;
-        let (sa, sb) = (
-            self.strain(Force::ZERO, t, &a)?,
-            self.strain(Force::ZERO, t, &b)?,
-        );
+        let (sa, sb) = (self.strain(at, t, &a)?, self.strain(at, t, &b)?);
         Ok(if sb > sa { b } else { a })
     }
+}
+
+/// The largest load, N, at which a cable's curves start (their constant
+/// term): published polynomials often do not pass through zero, so the
+/// tension jumps by that much near zero strain. `None`: they start at zero
+/// (or the cable has no curves, or a linear model).
+pub fn curve_offset(cable: &Cable) -> Option<f64> {
+    if cable.model != crate::CableModel::Nonlinear {
+        return None;
+    }
+    let total_area = cable.area().si();
+    let mut worst: f64 = 0.0;
+    for (label, component) in [("outer", Some(&cable.outer)), ("core", cable.core.as_ref())] {
+        let Some(component) = component else { continue };
+        let Some(data) = &component.stress_strain else {
+            continue;
+        };
+        let Ok(c) = convert(cable, label, component, data, total_area) else {
+            continue;
+        };
+        for curve in std::iter::once(&c.initial).chain(c.creep.as_ref()) {
+            worst = worst.max(curve.first().map_or(0.0, |a| a.abs()));
+        }
+    }
+    (worst > 1.0).then_some(worst)
+}
+
+/// One line on the cables whose curves do not start at zero
+/// ([`curve_offset`]), or `None`.
+pub fn curve_offset_warning(library: &crate::Library) -> Option<String> {
+    let found: Vec<(String, f64)> = library
+        .iter()
+        .filter_map(|c| curve_offset(c).map(|o| (c.id.clone(), o)))
+        .collect();
+    let worst = found.iter().map(|f| f.1).fold(0.0, f64::max);
+    let ids: Vec<&str> = found.iter().map(|f| f.0.as_str()).collect();
+    (!found.is_empty()).then(|| {
+        format!(
+            "stress-strain curves not starting at zero ({}): the tension jumps by up to {:.1} kN \
+             near zero strain (hot cases); check the data",
+            ids.join(", "),
+            worst / 1000.0
+        )
+    })
 }
 
 fn invalid(cable: &Cable, message: &str) -> CableError {
@@ -547,7 +595,13 @@ mod tests {
             .strain(Force::from_kilonewtons(60.0), t(-10.0), &after_load)
             .unwrap();
         assert!((e_max - e_reload).abs() < 1e-12, "{e_max} vs {e_reload}");
-        let longer = m.longer(after_creep.clone(), after_load.clone()).unwrap();
+        let longer = m
+            .longer(
+                after_creep.clone(),
+                after_load.clone(),
+                Force::from_kilonewtons(25.0),
+            )
+            .unwrap();
         assert!(longer == after_creep || longer == after_load);
     }
 

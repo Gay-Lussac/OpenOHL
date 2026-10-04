@@ -124,6 +124,7 @@ impl Line {
                     wire_point: p.wire_point,
                     insulator_weight: p.insulator_weight,
                     insulator: p.insulator,
+                    insulator_wind_area: 0.0,
                     legs: p.legs,
                     top_label: p.top_label,
                     bottom_label: p.bottom_label,
@@ -140,6 +141,15 @@ impl Line {
             s.members = t
                 .place_stick(s.position, s.orientation_deg, s.extension.as_deref())
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
+        }
+
+        // Wind areas of library assemblies.
+        for s in &mut line.structures {
+            for a in &mut s.attachments {
+                if let Some(i) = a.insulator.as_deref().and_then(|id| insulators.get(id)) {
+                    a.insulator_wind_area = i.wind_area.si();
+                }
+            }
         }
 
         // Aim strain assemblies of typed structures along their conductor.

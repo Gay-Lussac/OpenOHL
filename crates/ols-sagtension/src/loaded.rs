@@ -334,7 +334,7 @@ impl LoadedSpan {
 pub fn default_loaded_budget() -> Budget {
     Budget::new()
         .max_iterations(200)
-        .time_limit(Duration::from_secs(2))
+        .time_limit(Duration::from_secs(60))
 }
 
 /// Shape of a loaded span.
