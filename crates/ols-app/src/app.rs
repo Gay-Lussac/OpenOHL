@@ -1590,9 +1590,16 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
     }
     layer(ui, Layer::Points, "LiDAR points", r);
     ui.menu_button("LiDAR classes shown", |ui| {
-        let mut counts: std::collections::BTreeMap<u8, usize> = Default::default();
+        // Loaded per class; every class of the cloud is listed (a class
+        // without points loaded too).
+        let mut loaded: std::collections::BTreeMap<u8, u64> = Default::default();
         for (_, c) in &r.model.points {
-            *counts.entry(*c).or_default() += 1;
+            *loaded.entry(*c).or_default() += 1;
+        }
+        let mut classes: std::collections::BTreeMap<u8, Option<u64>> =
+            loaded.keys().map(|c| (*c, None)).collect();
+        for (c, n) in &r.model.class_counts {
+            classes.insert(*c, Some(*n));
         }
         let mut changed = false;
         ui.horizontal(|ui| {
@@ -1601,30 +1608,24 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
                 changed = true;
             }
             if ui.small_button("None").clicked() {
-                r.model.hidden_classes = counts.keys().copied().collect();
+                r.model.hidden_classes = classes.keys().copied().collect();
                 changed = true;
             }
         });
-        for (code, n) in &counts {
+        for (code, total) in &classes {
             let name = r
                 .model
                 .scheme
                 .class(*code)
                 .map_or_else(|| "unknown".to_owned(), |c| c.name.clone());
-            let drawable = crate::scene::class_color(&r.model.scheme, *code).is_some();
+            let n = loaded.get(code).copied().unwrap_or(0);
             let mut on = !r.model.hidden_classes.contains(code);
-            let label = format!(
-                "{code} {name} — {n} points{}",
-                if drawable {
-                    ""
-                } else {
-                    " (noise: never drawn)"
-                }
-            );
-            if ui
-                .add_enabled(drawable, egui::Checkbox::new(&mut on, label))
-                .changed()
-            {
+            let label = match total {
+                Some(t) if *t == n => format!("{code} {name} — {n} points"),
+                Some(t) => format!("{code} {name} — {n} of {t} points shown"),
+                None => format!("{code} {name} — {n} points"),
+            };
+            if ui.checkbox(&mut on, label).changed() {
                 if on {
                     r.model.hidden_classes.remove(code);
                 } else {

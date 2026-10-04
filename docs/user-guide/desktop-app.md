@@ -17,8 +17,8 @@ cargo run --release -p ols-app -- project.ols          # with the project's poin
 | `--weather` | Weather cases (`.olswc`); default: still air at 15 °C. All cases are solved. |
 | `--terrain` | Survey points for the ground. |
 | `--pointcloud` | Point cloud in a project (`FILE.ols` or `FILE.ols#name`); default: the project's own. |
-| `--points` | Most LiDAR points shown (default 2 000 000). The ground surface is built from all ground points (lowest per 1 m cell) in the corridor. |
-| `--corridor` | Half width of the LiDAR corridor around the spans (default 60 m). |
+| `--points` | About how many LiDAR points are shown (default 2 000 000). Points of **every class** of the whole cloud are shown, ground classes and noise included: a class of up to 20 000 points whole, the larger classes thinned alike to the budget. The ground surface is built from all points of the ground classes (lowest per 1 m cell) in the corridor. |
+| `--corridor` | Half width of the corridor around the spans the ground surface is built in (default 60 m). |
 | `--controls` | Navigation scheme: `orbit` or `minecraft` (default: the one used last). |
 | `--screenshot FILE.png` (`--focus ID`, `--distance M`) | Load, render the 3D view to an image and exit (with `--focus`, looking at that structure's first attachment). |
 
@@ -34,7 +34,7 @@ The **menu bar** holds what needs no view:
 | Lines | Project lines (saved states of the line to show next to the working line, or to make the working line), Create line, Delete line (see [Project lines](#project-lines)) |
 | Tools | the tool inventory (E); hold any tool |
 | Checks | calculations run **on demand** — they never change the model: Clearances (Run checks, also after every edit, rule file, Show results); more checks to come |
-| Terrain | the ground surface (TIN) shown or not; the survey data: LiDAR points shown or not and **LiDAR classes shown** (tick each class, with its point count; a hidden class is neither drawn nor clicked; All / None) |
+| Terrain | the ground surface (TIN) shown or not; the survey data: LiDAR points shown or not and **LiDAR classes shown** (every class of the point cloud, with the points shown of its total; tick each one; a hidden class is neither drawn nor clicked; All / None; noise is drawn magenta) |
 | Structures | libraries: structure types, insulators (see [Library editors](#library-editors)); tables: structures, strings, alignment points (see [Tables](#tables)) |
 | Sections | libraries: wires, weather cases; tables: sections, jumpers, electrical systems, weather cases; Display weather cases |
 | Plugins | to come (the plugin manager) |
@@ -184,4 +184,4 @@ The speed (m/s) and, for the first-person scheme, the look sensitivity are set t
 
 Clicking an object in any view selects it everywhere: a structure anywhere along the lines it is drawn with (mast or stick drawing, arms, insulator strings), a span anywhere along its wire, a jumper anywhere along it (drawn as a bundle like its section). The properties of a jumper show its cable, section, bundle (and whether it is its own or its section's), length or sag, support string, and results in every weather case. Tabs can be dragged to rearrange the window.
 
-Loading runs in the background. On a real 25 km line with 99.6 million LiDAR points stored in its project, the window is ready in about 8 s (release build): 84 million points decoded in the corridor, 1.5 million shown, a 5-million-triangle ground surface.
+Loading runs in the background. On a real 25 km line with 99.6 million LiDAR points stored in its project, the window is ready in about 8 s (release build): the whole cloud decoded (every one of its 31 classes shown, 2.1 million points), a 5-million-triangle ground surface.

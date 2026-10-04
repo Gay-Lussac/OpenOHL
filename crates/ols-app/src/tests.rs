@@ -2548,3 +2548,27 @@ fn the_3d_view_draws_chunks_by_the_lod_table() {
     let s = stats(&mut harness, Layer::Wires);
     assert_eq!(s.drawn[2], s.chunks, "{s:?}");
 }
+
+/// Every LiDAR class is loaded: a small one whole, a large one thinned
+/// (a real survey lost classes of 6 to 500 points when every class was
+/// thinned alike).
+#[test]
+fn every_lidar_class_is_loaded() {
+    let counts = [(2u8, 1_000_000u64), (55, 6), (84, 507), (72, 40)];
+    let mut t = model::Thinning::new(&counts, 50);
+    let mut kept = std::collections::BTreeMap::new();
+    for (c, n) in counts {
+        for _ in 0..n {
+            if t.keep(c) {
+                *kept.entry(c).or_insert(0u64) += 1;
+            }
+        }
+    }
+    assert_eq!(kept[&2], 20_000);
+    assert_eq!((kept[&55], kept[&84], kept[&72]), (6, 507, 40));
+    // Noise has a colour: it can be shown.
+    let scheme = ols_lidar::ClassScheme::asprs();
+    for code in [7u8, 18] {
+        assert!(crate::scene::class_color(&scheme, code).is_some(), "{code}");
+    }
+}

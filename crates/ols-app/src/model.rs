@@ -201,6 +201,8 @@ pub struct Model {
     pub other_lines: Vec<OtherLine>,
     /// LiDAR classes not drawn (Terrain menu).
     pub hidden_classes: std::collections::BTreeSet<u8>,
+    /// Points per class of the whole point cloud (loaded or not).
+    pub class_counts: Vec<(u8, u64)>,
     /// Working folder of the project's libraries (the project holds them);
     /// `None`: read from their files (a line file, or read-only).
     pub library_dir: Option<PathBuf>,
@@ -308,6 +310,41 @@ fn load_types(
     let insulators = ols_structures::InsulatorLibrary::load_dir(&insulators_dir(sources))
         .map_err(|e| e.to_string())?;
     Ok(Some((structures, insulators)))
+}
+
+/// A LiDAR class of up to this many points is loaded whole (larger ones
+/// are thinned to the point budget).
+pub const SMALL_CLASS: u64 = 20_000;
+
+/// Which LiDAR points are loaded: every class, a small class (up to
+/// [`SMALL_CLASS`] points) whole, every `stride`-th point of the others.
+#[derive(Debug)]
+pub struct Thinning {
+    whole: [bool; 256],
+    seen: [usize; 256],
+    stride: usize,
+}
+
+impl Thinning {
+    /// For a cloud of `counts` points per class.
+    pub fn new(counts: &[(u8, u64)], stride: usize) -> Self {
+        let mut whole = [false; 256];
+        for (c, n) in counts {
+            whole[*c as usize] = *n <= SMALL_CLASS;
+        }
+        Self {
+            whole,
+            seen: [0; 256],
+            stride: stride.max(1),
+        }
+    }
+
+    /// Whether the next point of class `c` is loaded.
+    pub fn keep(&mut self, c: u8) -> bool {
+        let n = &mut self.seen[c as usize];
+        *n += 1;
+        self.whole[c as usize] || (*n).is_multiple_of(self.stride)
+    }
 }
 
 /// Project setting holding the weather case file used.
@@ -818,6 +855,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         has.then(|| sources.file.display().to_string())
     });
     let mut points = Vec::new();
+    let mut class_counts: Vec<(u8, u64)> = Vec::new();
     let mut scheme = ols_lidar::ClassScheme::asprs();
     if let Some(spec) = cloud.clone() {
         let t = Instant::now();
@@ -848,24 +886,31 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
             })
             .collect();
         let corridor = ols_lidar::Corridor::new(&polylines, sources.corridor);
-        // Every n-th point of the other classes, n from the cloud's size.
+        // Every class shown, of the whole cloud: a class of up to
+        // SMALL_CLASS points whole, the others every n-th point, n from
+        // the cloud's size. (Thinning every class alike and leaving out the
+        // ground classes, as before, lost whole classes of a real survey:
+        // roads, water, bridges, and classes of 6 to 500 points.)
         let info = source.cloud().clone();
         let stride = (info.points as usize / sources.point_budget.max(1)).max(1);
+        class_counts = ols_pointcloud::Store::open(Path::new(&file))
+            .and_then(|s| s.class_counts(&info))
+            .map_err(|e| e.to_string())?;
+        let mut thinning = Thinning::new(&class_counts, stride);
         let mut cells: std::collections::HashMap<(i64, i64), usize> =
             std::collections::HashMap::new();
         let mut ground_points: Vec<[f64; 3]> = Vec::new();
-        let mut k = 0usize;
         let mm = |v: f64, i: usize| ((v - origin[i]) * 1000.0).round() as i32;
         // Exit clause: decoding is ~1 s per 10⁷ points; 10 min is far beyond.
         let budget =
             ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
-        let stats = ols_pointcloud::PointSource::visit(
-            &source,
-            Some(&corridor),
-            None,
-            &budget,
-            &mut |x, y, z, c| {
-                if is_ground[c as usize] {
+        let stats =
+            ols_pointcloud::PointSource::visit(&source, None, None, &budget, &mut |x, y, z, c| {
+                if thinning.keep(c) {
+                    points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
+                }
+                // The ground surface: ground classes in the corridor.
+                if is_ground[c as usize] && corridor.contains(x, y) {
                     // Lowest point per 1 m cell for the surface.
                     let key = (x.floor() as i64, y.floor() as i64);
                     match cells.get(&key) {
@@ -876,15 +921,9 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
                             ground_points.push([x, y, z]);
                         }
                     }
-                } else {
-                    k += 1;
-                    if k.is_multiple_of(stride) {
-                        points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
-                    }
                 }
-            },
-        )
-        .map_err(|e| e.to_string())?;
+            })
+            .map_err(|e| e.to_string())?;
         step(
             format!(
                 "points: {} decoded in {:.1?}; {} shown, {} ground cells",
@@ -936,6 +975,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         shown_cases: vec![0],
         other_lines: Vec::new(),
         hidden_classes: Default::default(),
+        class_counts,
         library_dir,
     })
 }
