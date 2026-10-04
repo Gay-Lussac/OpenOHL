@@ -489,6 +489,11 @@ struct Meta {
     display: ols_line::Display,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     systems: Vec<ols_line::electrical::System>,
+    #[serde(
+        default,
+        skip_serializing_if = "ols_line::condition::CreepStretch::is_empty"
+    )]
+    creep_stretch: ols_line::condition::CreepStretch,
 }
 
 /// A raw log row: seq, time, user, kind, command, inverse, objects,
@@ -547,6 +552,7 @@ fn objects_of(line: &Line) -> Vec<(Kind, String, Value)> {
             alignment: line.alignment.clone(),
             display: line.display.clone(),
             systems: line.systems.clone(),
+            creep_stretch: line.creep_stretch.clone(),
         }),
     )];
     out.extend(
@@ -594,6 +600,8 @@ fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionEr
         jumpers: vec![],
         display: meta.display,
         systems: meta.systems,
+        creep_stretch: meta.creep_stretch,
+        condition_cases: Default::default(),
     };
     for ((kind, id), o) in ordered {
         let v = o.value.clone();
@@ -772,6 +780,8 @@ impl Session {
                 jumpers: vec![],
                 display: ols_line::Display::default(),
                 systems: vec![],
+                creep_stretch: Default::default(),
+                condition_cases: Default::default(),
             }
         } else {
             line_of(&objects)?
@@ -1102,6 +1112,28 @@ impl Session {
             .ok_or_else(|| refused(format!("no route {route}")))
     }
 
+    /// The command setting the line's creep-stretch criteria (Criteria ›
+    /// Creep-Stretch): one logged, undoable put of the line's settings.
+    pub fn creep_stretch_command(
+        &self,
+        creep_stretch: ols_line::condition::CreepStretch,
+    ) -> Command {
+        let meta = Meta {
+            name: self.line.name.clone(),
+            crs: self.line.crs.clone(),
+            alignment: self.line.alignment.clone(),
+            display: self.line.display.clone(),
+            systems: self.line.systems.clone(),
+            creep_stretch,
+        };
+        Command::Put {
+            kind: Kind::Meta,
+            id: "line".into(),
+            value: json(&meta),
+            ord: None,
+        }
+    }
+
     /// A put replacing the alignment of `route`.
     fn put_alignment(
         &self,
@@ -1115,6 +1147,7 @@ impl Session {
                 alignment,
                 display: self.line.display.clone(),
                 systems: self.line.systems.clone(),
+                creep_stretch: self.line.creep_stretch.clone(),
             };
             return Ok(Command::Put {
                 kind: Kind::Meta,
@@ -1496,6 +1529,7 @@ impl Session {
                     alignment: self.line.alignment.clone(),
                     display: self.line.display.clone(),
                     systems,
+                    creep_stretch: self.line.creep_stretch.clone(),
                 };
                 out.push(Command::Put {
                     kind: Kind::Meta,

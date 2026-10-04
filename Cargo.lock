@@ -3403,6 +3403,7 @@ dependencies = [
  "nalgebra",
  "ols-cables",
  "ols-core",
+ "ols-sagtension",
  "ols-structures",
  "ols-weather",
  "ols-wirefe",

@@ -183,8 +183,8 @@ impl NonlinearSection {
         })
     }
 
-    /// Length-weighted mean tension of the section in a solution.
-    fn section_mean_tension(solution: &SectionSolution) -> f64 {
+    /// Length-weighted mean tension of the section in a solution, N.
+    pub fn section_mean_tension(solution: &SectionSolution) -> f64 {
         let (weighted, length) = solution.spans.iter().fold((0.0, 0.0), |(w, l), s| {
             let len = s.length().si();
             (w + mean_tension(s) * len, l + len)

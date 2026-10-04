@@ -159,6 +159,12 @@ const SECTIONS: &[Column] = &[
         Yes,
         "largest sag of its spans in each display case — type a target (one number: in the first display case): the condition giving it is found",
     ),
+    (
+        "calculation",
+        100.0,
+        Yes,
+        "cable condition (Initial, after Creep, after Load, Max Sag of the two) and method (RS: ruling span, FE: finite elements); Creep and Load use Criteria › Creep-Stretch",
+    ),
 ];
 
 const STRINGS: &[Column] = &[
@@ -790,6 +796,7 @@ impl TableKind {
                                 .map(|x| f(x.spans.iter().map(|sp| sp.sag).fold(0.0, f64::max), 3))
                                 .collect::<Vec<_>>()
                                 .join(" / "),
+                            s.calculation.label().to_owned(),
                         ],
                     }
                 })
@@ -978,6 +985,8 @@ impl TableKind {
                 cells[5] = like.bundle.to_string();
                 cells[6] = f(like.spacing, 3);
                 cells[7] = "in the blocks".into();
+                cells[TableKind::Sections.column("calculation")] =
+                    ols_line::condition::Calculation::default().label().into();
                 cells[8] = "tension".into();
                 cells[9] = "20".into();
                 cells[10] = "15".into();
@@ -1476,6 +1485,13 @@ fn choices(
             with_none(model.line.systems.iter().map(|s| s.id.clone()).collect()),
             false,
         ),
+        (TableKind::Sections, "calculation") => (
+            ols_line::condition::Calculation::ALL
+                .iter()
+                .map(|c| c.label().to_owned())
+                .collect(),
+            false,
+        ),
         (TableKind::Sections, "status") => {
             (vec!["in the blocks".into(), "clipped in".into()], false)
         }
@@ -1646,6 +1662,14 @@ fn section_cells(
 ) -> Result<(), String> {
     let is_new = c.typed.is_none();
     form.cable = c.get(1).trim().to_owned();
+    let calc = c.get(TableKind::Sections.column("calculation"));
+    form.calculation = if calc.trim().is_empty() {
+        Default::default()
+    } else {
+        ols_line::condition::Calculation::parse(&calc).ok_or_else(|| {
+            format!("{name} calculation: \"{calc}\" — e.g. Initial FE, Creep RS, Max Sag FE")
+        })?
+    };
     if model.library.get(&form.cable).is_none() {
         return Err(format!(
             "{name}: cable \"{}\" is not in the wire library",

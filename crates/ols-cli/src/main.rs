@@ -857,6 +857,8 @@ fn line(args: &LineArgs) -> ExitCode {
         let cases: Vec<WeatherCase> = match weather {
             Some(path) => {
                 let set = WeatherCases::load(path)?;
+                // The creep-stretch cases from the whole file.
+                line.set_weather_cases(&set.cases);
                 let chosen = set.select(case, tag)?;
                 println!(
                     "weather: {} — {} of {} cases",

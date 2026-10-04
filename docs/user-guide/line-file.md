@@ -82,6 +82,25 @@ A V-string holds its clamp across the line while both legs are in tension; when 
 | `stringing` | yes | See below. |
 | `loads` | no | Point loads: `{ "span": index, "fraction": 0–1 (horizontal, from the back point), "vertical": N, "label": "…" }`. |
 | `color` | no | Display colour `#rrggbb`, overriding the phase colour. |
+| `calculation` | no (`"initial-fe"`) | How the section is solved: a cable condition and a method — `initial-rs`, `creep-rs`, `load-rs`, `max-sag-rs`, `initial-fe`, `creep-fe`, `load-fe`, `max-sag-fe`. See below. |
+
+### Calculations: condition and method
+
+| Condition | The cable |
+|---|---|
+| Initial | as strung |
+| Creep | after its permanent stretch due to creep (years at the creep weather case) |
+| Load | after its permanent stretch due to the heaviest of the load weather cases (the one stretching it most) |
+| Max Sag | after creep or after load, whichever sags more in the weather case solved |
+
+The weather cases come from the line's `creep_stretch` (Criteria › Creep-Stretch): `{ "creep_case": "everyday", "load_cases": ["glaze ice", "rime ice + wind"] }` (by name, from the weather case file used); how a cable stretches, from its model ([wire library](wire-library.md#cable-models)). A section after creep or load without its weather case fails, saying so.
+
+| Method | |
+|---|---|
+| FE | the section's finite-element model: suspension strings swing, each span its own tension; after creep or load the unstressed lengths are longer by the permanent stretch |
+| RS | ruling span: one horizontal tension for the whole section (the sag-tension section with the non-linear cable model and the permanent set), every span a catenary between its clamps held where they hang in still air at stringing, in the plane of its load (blown out by the wind); point loads are left out |
+
+RS and FE agree to about 1 % (the FE strings swing to even out the spans' tensions: on the synthetic example 1.2 % of sag at 60 °C).
 
 ### Colours
 

@@ -9,6 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+ols-sagtension.workspace = true
 ols-core.workspace = true
 ols-cables.workspace = true
 ols-structures.workspace = true

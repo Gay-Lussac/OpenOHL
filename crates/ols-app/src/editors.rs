@@ -114,6 +114,8 @@ pub struct SectionForm {
     pub stringing: Stringing,
     /// Why the stringing was changed (points changed with lengths given).
     pub note: Option<String>,
+    /// Cable condition and method it is solved with.
+    pub calculation: ols_line::condition::Calculation,
 }
 
 /// An editor window's content.
@@ -582,6 +584,7 @@ impl SectionForm {
             points: s.points.clone(),
             stringing: s.stringing.clone(),
             note: None,
+            calculation: s.calculation,
         })
     }
 
@@ -632,6 +635,7 @@ impl SectionForm {
                     temperature: 15.0,
                 },
                 note: None,
+                calculation: Default::default(),
             },
         };
         // In the blocks (rolling) by default: a clipped template's
@@ -728,6 +732,7 @@ impl SectionForm {
             stringing: self.stringing.clone(),
             loads: old.map_or_else(Vec::new, |o| o.loads.clone()),
             color: old.and_then(|o| o.color.clone()),
+            calculation: self.calculation,
         }
     }
 
@@ -1044,6 +1049,20 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
             ui.end_row();
             ui.label("phase");
             ui.add(egui::TextEdit::singleline(&mut f.phase_label).desired_width(60.0));
+            ui.end_row();
+            ui.label("calculation");
+            egui::ComboBox::from_id_salt("section-calculation")
+                .selected_text(f.calculation.label())
+                .show_ui(ui, |ui| {
+                    for c in ols_line::condition::Calculation::ALL {
+                        ui.selectable_value(&mut f.calculation, c, c.label());
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "Cable condition (Initial, after Creep, after Load, Max Sag of the two) and \
+                     method (RS: ruling span; FE: finite elements)",
+                );
             ui.end_row();
             ui.label("system");
             egui::ComboBox::from_id_salt("section-system")

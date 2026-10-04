@@ -115,6 +115,47 @@ pub struct Cable {
     /// Electrical and thermal data (optional).
     #[serde(default)]
     pub electrical: Option<Electrical>,
+    /// How sag and tension are modelled (default: non-linear).
+    #[serde(default)]
+    pub model: CableModel,
+    /// Linear models: the permanent stretch due to creep as an equivalent
+    /// temperature increase, °C.
+    #[serde(default)]
+    pub creep_temperature_shift: Option<f64>,
+    /// Linear model with creep proportional to tension: the creep weather
+    /// case tension at which the stretch equals `creep_temperature_shift`.
+    #[serde(default)]
+    pub creep_shift_tension: Option<Force>,
+}
+
+/// How a cable's sag and tension are modelled (the cable models of line
+/// design programs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CableModel {
+    /// Separate polynomials for the initial and creep behaviour of the
+    /// outer and core materials ([`mechanics`]); a component without them
+    /// is linear elastic, without creep.
+    #[default]
+    Nonlinear,
+    /// Linear elastic; permanent stretch due to creep proportional to the
+    /// creep weather case tension: the strain of `creep_temperature_shift`
+    /// at `creep_shift_tension`, scaled by the tension.
+    LinearCreepTension,
+    /// Linear elastic; permanent stretch due to creep given as a temperature
+    /// increase (`creep_temperature_shift`).
+    LinearCreepTemperature,
+}
+
+impl CableModel {
+    /// Its name in files and lists.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CableModel::Nonlinear => "nonlinear",
+            CableModel::LinearCreepTension => "linear_creep_tension",
+            CableModel::LinearCreepTemperature => "linear_creep_temperature",
+        }
+    }
 }
 
 /// A resistance at a temperature.
@@ -250,6 +291,25 @@ impl Cable {
             id: self.id.clone(),
             message,
         };
+        match self.model {
+            CableModel::Nonlinear => {}
+            CableModel::LinearCreepTemperature if self.creep_temperature_shift.is_none() => {
+                return Err(error(
+                    "linear_creep_temperature needs creep_temperature_shift".into(),
+                ));
+            }
+            CableModel::LinearCreepTension
+                if self.creep_temperature_shift.is_none()
+                    || self.creep_shift_tension.is_none_or(|t| t.si() <= 0.0) =>
+            {
+                return Err(error(
+                    "linear_creep_tension needs creep_temperature_shift and a positive \
+                     creep_shift_tension"
+                        .into(),
+                ));
+            }
+            _ => {}
+        }
         if self.id.is_empty()
             || !self
                 .id

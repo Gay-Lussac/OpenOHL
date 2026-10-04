@@ -42,6 +42,17 @@ const COMPONENT: &[Field] = &[
         "23e-6",
         "linear thermal expansion, 1/K",
     ),
+    (
+        "stress_strain",
+        "{ stress_unit = \"MPa\", strain = \"percent\", basis = \"total\", initial = [0.0, 550.0, 0.0, 0.0, 0.0], creep = [0.0, 550.0, 0.0, 0.0, 0.0], final_modulus = 550.0, reference_temperature = \"20 °C\" }",
+        "non-linear model: polynomials of this material, stress (stress_unit) of strain (% or unit), \
+         on the total cable area (basis = \"total\": actual values × component area / total \
+         area) or its own (\"component\"); initial a0…a4, creep c0…c4, final_modulus per strain \
+         unit, the temperature the strand data were obtained at. Bimetallic cables: give the \
+         outer and the core their own. max_compression (outer layers, above the transition \
+         temperature): 0 none (aluminium unloads onto the core), a stress for limited \
+         compression, absent unlimited",
+    ),
 ];
 
 const CABLE: &[Field] = &[
@@ -73,6 +84,25 @@ const CABLE: &[Field] = &[
         "core",
         "{ area = \"50 mm²\", modulus = \"190 GPa\", thermal_expansion = 11.5e-6 }",
         "core component (bimetallic cables)",
+    ),
+    (
+        "model",
+        "\"nonlinear\"",
+        "cable model: nonlinear (polynomials for the initial and creep behaviour of the outer \
+         and core materials), linear_creep_tension (linear elastic, permanent stretch due to \
+         creep proportional to the creep weather case tension), linear_creep_temperature \
+         (linear elastic, permanent stretch due to creep given as a temperature increase)",
+    ),
+    (
+        "creep_temperature_shift",
+        "15.0",
+        "linear models: the permanent stretch due to creep as a temperature increase, °C",
+    ),
+    (
+        "creep_shift_tension",
+        "\"25 kN\"",
+        "linear_creep_tension: the creep weather case tension at which the stretch equals the \
+         temperature shift (scaled by the tension)",
     ),
 ];
 

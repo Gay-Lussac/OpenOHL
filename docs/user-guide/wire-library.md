@@ -36,6 +36,21 @@ A `.olsw` file is plain **TOML** text (any text editor works; editors highlight 
 | `rated_tensile_strength` | yes | force: `N`, `kN`, `lbf`, `lb`, `kip`, `kips` | RTS / RBS / UTS. |
 | `outer` | yes | component table | The whole cable for homogeneous conductors (AAC, AAAC, steel…). |
 | `core` | no | component table | Core of bimetallic / composite conductors (ACSR steel core…). |
+| `model` | no (`"nonlinear"`) | `"nonlinear"`, `"linear_creep_tension"`, `"linear_creep_temperature"` | The cable model (below). |
+| `creep_temperature_shift` | linear models | number, °C | The permanent stretch due to creep as a temperature increase. |
+| `creep_shift_tension` | `linear_creep_tension` | force | The creep weather case tension at which the stretch equals `creep_temperature_shift`. |
+
+### Cable models
+
+The three models of line design programs, used for the conditions after creep and after load (a section's calculation, [line file](line-file.md#sections); the weather cases from Criteria › Creep-Stretch):
+
+| `model` | Behaviour | After creep | After load |
+|---|---|---|---|
+| `nonlinear` | separate polynomials for the initial and creep behaviour of the outer and core materials (`stress_strain`; a component without them is linear) | the permanent set of the creep curve at the creep weather case | the largest permanent set of the initial curve among the load weather cases |
+| `linear_creep_tension` | linear elastic | stretch of `creep_temperature_shift` (α·ΔT), scaled by the creep weather case tension over `creep_shift_tension` | none (elastic) |
+| `linear_creep_temperature` | linear elastic | stretch of `creep_temperature_shift` (α·ΔT) | none |
+
+**Bimetallic cables** (aluminium on steel…): give the outer layers and the core each their own `stress_strain` (initial and creep polynomials, final modulus, thermal expansion), on the total area (`basis = "total"`: the actual material values × component area / total area, as tables give them). Above the temperature where the outer layers go slack, `max_compression` on the outer layers sets their behaviour: `0` no compression (they unload onto the core), a stress for limited compression, absent unlimited.
 
 ## Components: `[cable.outer]`, `[cable.core]`
 

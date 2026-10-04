@@ -175,6 +175,8 @@ pub struct Ready {
     pub reopen: bool,
     /// Parameters › Controls: the window of a view's controls, when open.
     pub controls_window: Option<ControlsPage>,
+    /// Criteria › Creep-Stretch, when open: the weather cases chosen.
+    pub creep_stretch_window: Option<ols_line::condition::CreepStretch>,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
     /// A page to bring to the front (with a table filter), from a tool.
@@ -224,6 +226,7 @@ impl Ready {
             survey_job: None,
             reopen: false,
             controls_window: None,
+            creep_stretch_window: None,
             jumper_from: None,
             open_page: None,
             clearances: crate::clearance::Clearances::new(
@@ -1689,6 +1692,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     survey_window(ctx, r);
     survey_io_windows(ctx, r);
     controls_window(ctx, r);
+    creep_stretch_window(ctx, r);
     lines_window(ctx, r);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
@@ -1917,6 +1921,105 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
     if !open {
         r.controls_window = None;
     }
+}
+
+/// Criteria › Creep-Stretch: the weather case for the final after creep
+/// and the weather case(s) for the final after load; OK makes it one
+/// command (undoable) and every section is solved again.
+fn creep_stretch_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(mut draft) = r.creep_stretch_window.clone() else {
+        return;
+    };
+    let names: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    let (mut ok, mut cancel) = (false, false);
+    let mut open = true;
+    egui::Window::new("Creep-Stretch")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(520.0)
+        .show(ctx, |ui| {
+            ui.strong("Weather case for final after creep");
+            ui.label(
+                egui::RichText::new(
+                    "Creep: the wire stretches permanently under tension over time, so its \
+                     tensions after creep are lower than initially. Normally an everyday case the \
+                     wires see over long periods.",
+                )
+                .small()
+                .weak(),
+            );
+            egui::ComboBox::from_id_salt("creep-case")
+                .selected_text(draft.creep_case.as_deref().unwrap_or("— none —"))
+                .width(300.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut draft.creep_case, None, "— none —");
+                    for n in &names {
+                        ui.selectable_value(&mut draft.creep_case, Some(n.clone()), n);
+                    }
+                });
+            ui.add_space(10.0);
+            ui.strong("Weather case(s) for final after load");
+            ui.label(
+                egui::RichText::new(
+                    "A short exposure to an extreme load stretches the wire permanently. With \
+                     several cases, the one giving the most stretch is used, for each wire.",
+                )
+                .small()
+                .weak(),
+            );
+            let mut remove = None;
+            egui::Grid::new("load-cases").striped(true).show(ui, |ui| {
+                for (k, case) in draft.load_cases.iter_mut().enumerate() {
+                    ui.label(format!("{}", k + 1));
+                    egui::ComboBox::from_id_salt(("load-case", k))
+                        .selected_text(case.as_str())
+                        .width(300.0)
+                        .show_ui(ui, |ui| {
+                            for n in &names {
+                                ui.selectable_value(case, n.clone(), n);
+                            }
+                        });
+                    if ui.small_button("🗑").on_hover_text("Remove").clicked() {
+                        remove = Some(k);
+                    }
+                    ui.end_row();
+                }
+            });
+            if let Some(k) = remove {
+                draft.load_cases.remove(k);
+            }
+            if ui.button("+ Add a weather case").clicked()
+                && let Some(n) = names.iter().find(|n| !draft.load_cases.contains(n))
+            {
+                draft.load_cases.push(n.clone());
+            }
+            ui.separator();
+            if let Err(why) = r.model.can_edit() {
+                ui.colored_label(egui::Color32::LIGHT_RED, format!("read-only: {why}"));
+            }
+            ui.horizontal(|ui| {
+                ok = ui
+                    .add_enabled(r.model.can_edit().is_ok(), egui::Button::new("OK"))
+                    .clicked();
+                cancel = ui.button("Cancel").clicked();
+            });
+        });
+    if ok {
+        draft.load_cases.dedup();
+        let command = r
+            .model
+            .editing
+            .as_ref()
+            .map(|e| e.session.creep_stretch_command(draft.clone()));
+        if let Ok(command) = command {
+            r.perform(crate::edit::Action::Command {
+                what: "creep-stretch weather cases".into(),
+                command,
+            });
+        }
+    }
+    r.creep_stretch_window = (open && !ok && !cancel).then_some(draft);
 }
 
 /// The Import / Export LAS/LAZ windows and the job they started.
@@ -3039,6 +3142,17 @@ fn menus(
             ui.close();
         }
         item(ui, Command::Library(LibraryKind::WeatherCases), out);
+        if ui
+            .button("Creep-Stretch…")
+            .on_hover_text(
+                "The weather cases for the permanent stretch due to creep and due to load \
+                 (sections calculated after Creep, after Load or for Max Sag)",
+            )
+            .clicked()
+        {
+            r.creep_stretch_window = Some(r.model.line.creep_stretch.clone());
+            ui.close();
+        }
         ui.separator();
         item(ui, Command::DisplayCases, out);
     });

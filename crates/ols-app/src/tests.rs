@@ -3148,3 +3148,128 @@ fn the_survey_menu_opens_import_and_export() {
         "no file chosen yet"
     );
 }
+
+/// Sections are calculated as chosen in the Sections table (8 choices:
+/// Initial, Creep, Load, Max Sag; RS or FE); Criteria › Creep-Stretch
+/// names the weather cases for after creep and after load, as one command
+/// (undone with ⌘Z), and every section is solved again.
+#[test]
+fn sections_are_calculated_after_creep_or_load_as_chosen() {
+    use crate::tables::TableKind;
+    use ols_line::condition::{Calculation, CreepStretch};
+    let model = synthetic_project("calculation");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let kind = TableKind::Sections;
+    // The column's choices.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let rows = kind.rows(&r.model, r.case);
+        assert_eq!(rows[0].cells[kind.column("calculation")], "Initial FE");
+    }
+    set_cell(&mut harness, kind, "S1", "calculation", "Creep RS");
+    apply_table(&mut harness, kind, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.line.sections[0].calculation, Calculation::CreepRs);
+        // No creep weather case yet: S1 fails, saying where to choose one.
+        let failed = &r.model.cases[0].failed;
+        assert!(
+            failed
+                .iter()
+                .any(|f| f.starts_with("S1") && f.contains("Creep-Stretch")),
+            "{failed:?}"
+        );
+        // Criteria › Creep-Stretch: OK.
+        r.creep_stretch_window = Some(CreepStretch {
+            creep_case: Some("everyday".into()),
+            load_cases: vec!["glaze ice".into(), "rime ice + wind".into()],
+        });
+    }
+    harness.run();
+    harness.get_by_label("OK").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(
+            r.model.line.creep_stretch.creep_case.as_deref(),
+            Some("everyday")
+        );
+        assert_eq!(r.model.line.condition_cases.loads.len(), 2);
+        assert!(
+            r.model.cases.iter().all(|c| c.failed.is_empty()),
+            "solved again"
+        );
+        // A linear cable without creep data: after creep sags as initial.
+        assert_solved_fully(&r.model);
+    }
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.line.creep_stretch.is_empty(), "undone");
+    assert!(
+        !r.model.cases[0].failed.is_empty(),
+        "S1 needs its case again"
+    );
+}
+
+/// The wire library takes the cable models and, for bimetallic cables,
+/// the curves of the outer and the core materials.
+#[test]
+fn cable_models_and_bimetallic_curves_are_read() {
+    let text = r#"
+format = "ols-wire"
+version = 1
+
+[[cable]]
+id = "bimetallic"
+name = "Aluminium on steel"
+kind = "acsr"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+model = "nonlinear"
+
+[cable.outer]
+area = "400 mm²"
+modulus = "55 GPa"
+thermal_expansion = 23.0e-6
+stress_strain = { stress_unit = "MPa", basis = "total", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" }
+
+[cable.core]
+area = "65 mm²"
+modulus = "190 GPa"
+thermal_expansion = 11.5e-6
+stress_strain = { stress_unit = "MPa", basis = "total", initial = [0.0, 1800.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, reference_temperature = "20 °C" }
+
+[[cable]]
+id = "linear-shift"
+name = "Linear, creep as +15 °C"
+kind = "aaac"
+diameter = "30 mm"
+mass_per_length = "1.5 kg/m"
+rated_tensile_strength = "160 kN"
+model = "linear_creep_temperature"
+creep_temperature_shift = 15.0
+outer = { area = "550 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
+"#;
+    crate::library::LibraryKind::Cables
+        .check(std::path::Path::new("x.olsw"), text)
+        .unwrap();
+    let mut lib = ols_cables::Library::default();
+    lib.add_toml(std::path::Path::new("x.olsw"), text).unwrap();
+    let b = lib.get("bimetallic").unwrap();
+    assert!(b.outer.stress_strain.is_some() && b.core.as_ref().unwrap().stress_strain.is_some());
+    assert_eq!(
+        lib.get("linear-shift").unwrap().model,
+        ols_cables::CableModel::LinearCreepTemperature
+    );
+    // A linear model without its shift is refused.
+    let bad = text.replace("creep_temperature_shift = 15.0\n", "");
+    assert!(
+        crate::library::LibraryKind::Cables
+            .check(std::path::Path::new("x.olsw"), &bad)
+            .is_err()
+    );
+}

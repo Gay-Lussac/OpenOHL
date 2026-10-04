@@ -24,6 +24,7 @@
 //! elements, insulator strings) and solves it in any weather state.
 
 pub mod bundles;
+pub mod condition;
 pub mod electrical;
 pub mod export;
 pub mod incremental;
@@ -93,6 +94,14 @@ pub struct Line {
     /// Display settings (phase colours).
     #[serde(default, skip_serializing_if = "Display::is_default")]
     pub display: Display,
+    /// Weather cases for the permanent stretch due to creep and load
+    /// (Criteria › Creep-Stretch), by name.
+    #[serde(default, skip_serializing_if = "condition::CreepStretch::is_empty")]
+    pub creep_stretch: condition::CreepStretch,
+    /// Those weather cases themselves, given by the program solving the
+    /// line ([`crate::Line::set_weather_cases`]); not stored.
+    #[serde(skip)]
+    pub condition_cases: condition::ConditionCases,
 }
 
 fn default_jumper_temperature() -> f64 {
@@ -416,6 +425,9 @@ pub struct Section {
     /// Display colour (`#rrggbb`), overriding the phase colour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Cable condition and method it is solved with (default Initial FE).
+    #[serde(default, skip_serializing_if = "condition::Calculation::is_default")]
+    pub calculation: condition::Calculation,
 }
 
 fn one() -> u32 {

@@ -702,10 +702,12 @@ impl Model {
         let started = Instant::now();
         let e = self.editing.as_ref().map_err(Clone::clone)?;
         let stored = e.session.snapshot(name).map_err(|e| e.to_string())?;
-        let line = match &self.types {
+        let mut line = match &self.types {
             Some((s, i)) => stored.resolve(s, i).map_err(|e| e.to_string())?,
             None => stored,
         };
+        let weather: Vec<WeatherCase> = self.cases.iter().map(|c| c.case.clone()).collect();
+        line.set_weather_cases(&weather);
         let cases: Vec<Solved> = self
             .cases
             .iter()
@@ -741,13 +743,14 @@ impl Model {
             Err(_) => load_line(&self.sources.file)?.0,
         };
         let types = load_types(&self.sources, &stored)?;
-        let line = match &types {
+        let mut line = match &types {
             Some((s, i)) => stored.resolve(s, i).map_err(|e| e.to_string())?,
             None => stored,
         };
         let library =
             ols_cables::Library::load(&library_path(&self.sources)).map_err(|e| e.to_string())?;
         let cases = load_cases(&self.sources)?;
+        line.set_weather_cases(&cases);
         self.cases = cases
             .into_iter()
             .map(|c| Solved::new(&line, &library, c))
@@ -845,6 +848,18 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         }
     }
     let cases = load_cases(&sources)?;
+    // The creep-stretch weather cases, for sections after creep or load.
+    line.set_weather_cases(&cases);
+    let missing = line.missing_condition_cases();
+    if !missing.is_empty() {
+        step(
+            format!(
+                "creep-stretch weather cases not in the weather case file: {}",
+                missing.join(", ")
+            ),
+            &mut log,
+        );
+    }
     let mut solved = Vec::new();
     for case in cases {
         let t = Instant::now();

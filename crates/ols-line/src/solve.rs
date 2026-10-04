@@ -866,11 +866,394 @@ pub fn solve_section(
     case: &WeatherCase,
     budget: &Budget,
 ) -> Result<SectionShape, LineError> {
+    use crate::condition::{Condition, Method};
+    let calc = section.calculation;
+    let solve = |final_state: Option<&FinalState>| match calc.method() {
+        Method::Fe => solve_fe(
+            line,
+            section,
+            cable,
+            case,
+            final_state.map_or(0.0, |f| f.stretch),
+            budget,
+        ),
+        Method::Rs => solve_rs(line, section, cable, case, final_state, budget),
+    };
+    match calc.condition() {
+        Condition::Initial => solve(None),
+        Condition::Creep => solve(Some(&final_state(
+            line,
+            section,
+            cable,
+            Condition::Creep,
+            budget,
+        )?)),
+        Condition::Load => solve(Some(&final_state(
+            line,
+            section,
+            cable,
+            Condition::Load,
+            budget,
+        )?)),
+        Condition::MaxSag => {
+            // Whichever of the two sags more in this weather case.
+            let max_sag = |s: &SectionShape| s.spans.iter().map(|x| x.sag).fold(0.0, f64::max);
+            let creep = final_state(line, section, cable, Condition::Creep, budget);
+            let load = final_state(line, section, cable, Condition::Load, budget);
+            let shapes: Vec<SectionShape> = [creep, load]
+                .into_iter()
+                .filter_map(Result::ok)
+                .map(|f| solve(Some(&f)))
+                .collect::<Result<_, _>>()?;
+            shapes
+                .into_iter()
+                .max_by(|a, b| max_sag(a).total_cmp(&max_sag(b)))
+                .ok_or_else(|| {
+                    LineError::Invalid(format!(
+                        "section {}: Max Sag needs the weather cases for final after creep or \
+                         after load (Criteria › Creep-Stretch)",
+                        section.id
+                    ))
+                })
+        }
+    }
+}
+
+/// The cable's permanent state in a condition: its material state (for
+/// the non-linear model) and its permanent stretch, the extra unit length
+/// at zero tension compared with the initial state.
+#[derive(Debug, Clone)]
+pub struct FinalState {
+    /// Material state of the non-linear model (`Initial` for the linear
+    /// models: their stretch is all in `stretch`).
+    pub material: ols_cables::mechanics::MaterialState,
+    /// Permanent stretch, unit strain.
+    pub stretch: f64,
+    /// Weather case that gave it.
+    pub case: String,
+}
+
+/// The total load per length of `cable` in `case`, N/m (weight, ice,
+/// wind).
+fn load_magnitude(case: &WeatherCase, cable: &Cable) -> f64 {
+    span_load(case, cable, Vector3::new(1.0, 0.0, 0.0)).norm()
+}
+
+/// A section as strung: span geometries, clamps, stringing state,
+/// horizontal tension, N.
+type Strung = (
+    Vec<ols_sagtension::SpanGeometry>,
+    Vec<Vector3<f64>>,
+    ols_sagtension::LoadState,
+    f64,
+);
+
+/// The section as strung, for the sag-tension model: its spans (between
+/// the clamps hanging in still air at the stringing temperature), the
+/// stringing state and the horizontal tension then (the mean of the
+/// spans', from the finite-element model).
+fn strung(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    budget: &Budget,
+) -> Result<Strung, LineError> {
+    use ols_core::units::{ForcePerLength, Length, Temperature};
+    let (layout, _) = estimate_strain_weights(section, clamps_of(line, section)?, cable, budget)?;
+    let reference = reference(section, &layout, cable, budget)?;
+    let still = WeatherCase::still(
+        "stringing",
+        Temperature::from_celsius(reference.temperature),
+    );
+    let (built, solution) =
+        solve_built(section, &layout, &reference, cable, &still, false, budget)?;
+    let clamps: Vec<Vector3<f64>> = built
+        .clamps
+        .iter()
+        .map(|&c| solution.positions[c])
+        .collect();
+    let h = built
+        .span_elements
+        .iter()
+        .map(|e| solution.cables[e[0]].horizontal)
+        .sum::<f64>()
+        / built.span_elements.len().max(1) as f64;
+    let spans = clamps
+        .windows(2)
+        .map(|w| {
+            let d = w[1] - w[0];
+            ols_sagtension::SpanGeometry::inclined(
+                Length::from_si(d.xy().norm()),
+                Length::from_si(d.z),
+            )
+        })
+        .collect();
+    let state = ols_sagtension::LoadState {
+        load: ForcePerLength::from_si(cable.weight().si()),
+        temperature: Temperature::from_celsius(reference.temperature),
+    };
+    Ok((spans, clamps, state, h))
+}
+
+/// The cable's permanent state after creep or after load
+/// ([`crate::condition`]), from the line's creep-stretch weather cases.
+///
+/// - Non-linear model: after creep, the permanent set of the creep curve
+///   at the creep case; after load, the longest permanent set of the
+///   initial curve among the load cases.
+/// - Linear, creep ∝ tension: the strain of the temperature shift at the
+///   shift tension, scaled by the creep case's mean tension; no stretch
+///   after load (elastic).
+/// - Linear, temperature: the strain of the temperature shift; no stretch
+///   after load.
+///
+/// Expected cost: one still-air section solve and a few sag-tension
+/// solves (~1 ms each for 10 spans).
+pub fn final_state(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    condition: crate::condition::Condition,
+    budget: &Budget,
+) -> Result<FinalState, LineError> {
+    use crate::condition::Condition;
+    use ols_cables::CableModel;
+    use ols_cables::mechanics::{MaterialState, Mechanics};
+    use ols_core::units::{Force, ForcePerLength};
+    use ols_sagtension::nonlinear::NonlinearSection;
+    let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
+    let st = |e: ols_sagtension::SagTensionError| invalid(e.to_string());
+    let cases = &line.condition_cases;
+    let state_of = |c: &WeatherCase| ols_sagtension::LoadState {
+        load: ForcePerLength::from_si(load_magnitude(c, cable)),
+        temperature: c.temperature,
+    };
+    let (spans, _, strung_state, h) = strung(line, section, cable, budget)?;
+    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
+    let ns = NonlinearSection::from_known_state(
+        spans,
+        mechanics.clone(),
+        strung_state,
+        Force::from_si(h),
+        &MaterialState::Initial,
+    )
+    .map_err(st)?;
+    let zero_strain = |m: &MaterialState| {
+        mechanics
+            .strain(Force::ZERO, strung_state.temperature, m)
+            .map_err(|e| invalid(e.to_string()))
+    };
+    match condition {
+        Condition::Creep => {
+            let case = cases.creep.as_ref().ok_or_else(|| {
+                invalid("no weather case for final after creep (Criteria › Creep-Stretch)".into())
+            })?;
+            let alpha = cable.thermal_expansion();
+            match cable.model {
+                CableModel::Nonlinear => {
+                    let crept = ns
+                        .solve(state_of(case), &MaterialState::Creep, budget)
+                        .map_err(st)?;
+                    let material = mechanics
+                        .permanent_set(
+                            Force::from_si(NonlinearSection::section_mean_tension(&crept)),
+                            case.temperature,
+                            &MaterialState::Creep,
+                        )
+                        .map_err(|e| invalid(e.to_string()))?;
+                    let stretch = zero_strain(&material)? - zero_strain(&MaterialState::Initial)?;
+                    Ok(FinalState {
+                        material,
+                        stretch: stretch.max(0.0),
+                        case: case.name.clone(),
+                    })
+                }
+                CableModel::LinearCreepTemperature => Ok(FinalState {
+                    material: MaterialState::Initial,
+                    stretch: alpha * cable.creep_temperature_shift.unwrap_or(0.0),
+                    case: case.name.clone(),
+                }),
+                CableModel::LinearCreepTension => {
+                    let solved = ns
+                        .solve(state_of(case), &MaterialState::Initial, budget)
+                        .map_err(st)?;
+                    let t = NonlinearSection::section_mean_tension(&solved);
+                    let at = cable.creep_shift_tension.map_or(1.0, |f| f.si());
+                    Ok(FinalState {
+                        material: MaterialState::Initial,
+                        stretch: alpha * cable.creep_temperature_shift.unwrap_or(0.0) * t / at,
+                        case: case.name.clone(),
+                    })
+                }
+            }
+        }
+        Condition::Load => {
+            if cases.loads.is_empty() {
+                return Err(invalid(
+                    "no weather case for final after load (Criteria › Creep-Stretch)".into(),
+                ));
+            }
+            if cable.model != CableModel::Nonlinear {
+                // Linear elastic: no permanent stretch from a load.
+                return Ok(FinalState {
+                    material: MaterialState::Initial,
+                    stretch: 0.0,
+                    case: cases.loads[0].name.clone(),
+                });
+            }
+            // The case giving the most stretch.
+            let mut best: Option<FinalState> = None;
+            for case in &cases.loads {
+                let loaded = ns
+                    .solve(state_of(case), &MaterialState::Initial, budget)
+                    .map_err(st)?;
+                let material = mechanics
+                    .permanent_set(
+                        Force::from_si(NonlinearSection::section_mean_tension(&loaded)),
+                        case.temperature,
+                        &MaterialState::Initial,
+                    )
+                    .map_err(|e| invalid(e.to_string()))?;
+                let stretch =
+                    (zero_strain(&material)? - zero_strain(&MaterialState::Initial)?).max(0.0);
+                if best.as_ref().is_none_or(|b| stretch > b.stretch) {
+                    best = Some(FinalState {
+                        material,
+                        stretch,
+                        case: case.name.clone(),
+                    });
+                }
+            }
+            Ok(best.expect("load cases given"))
+        }
+        Condition::Initial | Condition::MaxSag => Ok(FinalState {
+            material: MaterialState::Initial,
+            stretch: 0.0,
+            case: String::new(),
+        }),
+    }
+}
+
+/// Ruling-span solution of a section in `case`: one horizontal tension for
+/// all spans (the sag-tension section, non-linear cable model, with the
+/// permanent state `final_state`), each span a catenary between its
+/// clamps held where they hang in still air at stringing, in the plane of
+/// its load (blown out by the wind). Point loads are left out.
+fn solve_rs(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    case: &WeatherCase,
+    final_state: Option<&FinalState>,
+    budget: &Budget,
+) -> Result<SectionShape, LineError> {
+    use ols_cables::mechanics::{MaterialState, Mechanics};
+    use ols_core::units::{Force, ForcePerLength, Length};
+    use ols_sagtension::nonlinear::NonlinearSection;
+    let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
+    let st = |e: ols_sagtension::SagTensionError| invalid(e.to_string());
+    let (spans, clamps, strung_state, h0) = strung(line, section, cable, budget)?;
+    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
+    let mut ns = NonlinearSection::from_known_state(
+        spans.clone(),
+        mechanics,
+        strung_state,
+        Force::from_si(h0),
+        &MaterialState::Initial,
+    )
+    .map_err(st)?;
+    let material = match final_state {
+        Some(f) => {
+            if matches!(f.material, MaterialState::Initial) {
+                // Linear models: the stretch lengthens the cable.
+                ns.unstressed_length =
+                    Length::from_si(ns.unstressed_length.si() * (1.0 + f.stretch));
+            }
+            f.material.clone()
+        }
+        None => MaterialState::Initial,
+    };
+    let q = load_magnitude(case, cable);
+    let solved = ns
+        .solve(
+            ols_sagtension::LoadState {
+                load: ForcePerLength::from_si(q),
+                temperature: case.temperature,
+            },
+            &material,
+            budget,
+        )
+        .map_err(st)?;
+    let h = solved.horizontal_tension.si();
+    let mut out = Vec::with_capacity(spans.len());
+    for (k, sol) in solved.spans.iter().enumerate() {
+        let (a, b) = (clamps[k], clamps[k + 1]);
+        let d = b - a;
+        let horizontal = d.xy().norm();
+        // The plane of the load: the sag hangs along it (down, and to the
+        // side the wind blows).
+        let along_load = {
+            let l = span_load(case, cable, d);
+            if l.norm() > 0.0 {
+                l / l.norm()
+            } else {
+                Vector3::new(0.0, 0.0, -1.0)
+            }
+        };
+        let n = 64;
+        let mut points = Vec::with_capacity(n + 1);
+        let mut sag: f64 = 0.0;
+        for i in 0..=n {
+            let t = i as f64 / n as f64;
+            let x = horizontal * t;
+            let below = (d.z * t - sol.elevation(Length::from_si(x)).si()).max(0.0);
+            sag = sag.max(below);
+            points.push(a + d * t + along_load * below);
+        }
+        let low = *points
+            .iter()
+            .min_by(|p, q| p.z.total_cmp(&q.z))
+            .expect("points");
+        out.push(SpanShape {
+            points: points.iter().map(|q| p(*q)).collect(),
+            horizontal_tension: h,
+            max_tension: sol.tension_left().si().max(sol.tension_right().si()),
+            mid_point: p(points[n / 2]),
+            low_point: p(low),
+            sag,
+        });
+    }
+    let n = clamps.len();
+    Ok(SectionShape {
+        section: section.id.clone(),
+        clamps: clamps.iter().map(|c| p(*c)).collect(),
+        spans: out,
+        insulators: vec![Vec::new(); n],
+        iterations: 0,
+        estimated_weights: vec![None; n],
+    })
+}
+
+/// Finite-element solution of a section in `case`, its cable longer by
+/// the permanent `stretch` (unit strain; 0: initial).
+fn solve_fe(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    case: &WeatherCase,
+    stretch: f64,
+    budget: &Budget,
+) -> Result<SectionShape, LineError> {
     let (layout, estimated_weights) =
         estimate_strain_weights(section, clamps_of(line, section)?, cable, budget)?;
     let mut reference = reference(section, &layout, cable, budget)?;
     if !section.stringing.clipped() && reference.lengths.len() > 1 {
         reference = rolled(section, &layout, &reference, cable, case, budget)?;
+    }
+    if stretch != 0.0 {
+        for l in &mut reference.lengths {
+            *l *= 1.0 + stretch;
+        }
     }
     let (built, solution) = solve_built(section, &layout, &reference, cable, case, true, budget)?;
     let pos = &solution.positions;
@@ -1347,5 +1730,180 @@ mod tests {
         windy.wind_pressure = Stress::from_pascals(600.0);
         let blown = solve(&windy);
         assert!((at(&blown) - at(&stringing)).xy().norm() > 0.01);
+    }
+
+    /// The synthetic non-linear test cable (invented curves, with creep).
+    fn with_nonlinear(mut lib: ols_cables::Library) -> ols_cables::Library {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../ols-sagtension/tests/data/synthetic-cable.olsw");
+        lib.add_toml(&path, &std::fs::read_to_string(&path).unwrap())
+            .unwrap();
+        lib
+    }
+
+    fn max_sag(s: &SectionShape) -> f64 {
+        s.spans.iter().map(|x| x.sag).fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn calculations_have_names() {
+        use crate::condition::{Calculation, Condition, Method};
+        for c in Calculation::ALL {
+            assert_eq!(Calculation::parse(c.label()), Some(c));
+            let json = serde_json::to_string(&c).unwrap();
+            assert_eq!(serde_json::from_str::<Calculation>(&json).unwrap(), c);
+        }
+        assert_eq!(
+            Calculation::parse("max sag fe"),
+            Some(Calculation::MaxSagFe)
+        );
+        assert_eq!(Calculation::CreepRs.condition(), Condition::Creep);
+        assert_eq!(Calculation::CreepRs.method(), Method::Rs);
+        assert_eq!(
+            serde_json::to_string(&Calculation::CreepRs).unwrap(),
+            "\"creep-rs\""
+        );
+        assert!(Calculation::default().is_default());
+    }
+
+    /// The ruling span (one tension, clamps held) and the finite elements
+    /// (strings swing) agree closely on a section strung by tension.
+    #[test]
+    fn ruling_span_and_finite_elements_agree() {
+        use crate::condition::Calculation;
+        let lib = library();
+        let mut line = crate::tests::example();
+        // Point loads (S1's marker ball) are the finite elements' only.
+        line.sections[0].loads.clear();
+        let cable = lib.get(&line.sections[0].cable).unwrap();
+        let budget = default_fe_budget();
+        for t in [15.0, 60.0] {
+            let case = WeatherCase::still("t", Temperature::from_celsius(t));
+            line.sections[0].calculation = Calculation::InitialFe;
+            let fe = solve_section(&line, &line.sections[0], cable, &case, &budget).unwrap();
+            line.sections[0].calculation = Calculation::InitialRs;
+            let rs = solve_section(&line, &line.sections[0], cable, &case, &budget).unwrap();
+            let (a, b) = (max_sag(&fe), max_sag(&rs));
+            // Within 2 %: the FE strings swing to even out the spans'
+            // tensions, RS holds the clamps (1.2 % apart at 60 °C).
+            assert!((a - b).abs() < 0.02 * a, "{t} °C: FE {a} RS {b}");
+            // One tension in RS.
+            let h: Vec<f64> = rs.spans.iter().map(|x| x.horizontal_tension).collect();
+            assert!(h.iter().all(|x| (x - h[0]).abs() < 1e-9));
+            assert!(rs.spans.iter().all(|x| x.points.len() == 65));
+        }
+        // Wind blows the RS spans sideways.
+        let mut windy = WeatherCase::still("w", Temperature::from_celsius(15.0));
+        windy.wind_pressure = Stress::from_pascals(500.0);
+        line.sections[0].calculation = Calculation::InitialRs;
+        let calm = solve_section(
+            &line,
+            &line.sections[0],
+            cable,
+            &WeatherCase::still("c", Temperature::from_celsius(15.0)),
+            &budget,
+        )
+        .unwrap();
+        let blown = solve_section(&line, &line.sections[0], cable, &windy, &budget).unwrap();
+        let shift = (v(blown.spans[1].mid_point) - v(calm.spans[1].mid_point))
+            .xy()
+            .norm();
+        assert!(shift > 1.0, "{shift}");
+    }
+
+    /// Creep as a temperature increase (linear model): after creep at
+    /// 15 °C sags as initial at 15 °C + the shift.
+    #[test]
+    fn creep_as_a_temperature_shift() {
+        use crate::condition::Calculation;
+        let lib = library();
+        let mut cable = lib.get("acsr-drake-26-7").unwrap().clone();
+        cable.model = ols_cables::CableModel::LinearCreepTemperature;
+        cable.creep_temperature_shift = Some(20.0);
+        let mut line = crate::tests::example();
+        let every = WeatherCase::still("everyday", Temperature::from_celsius(15.0));
+        line.creep_stretch.creep_case = Some("everyday".into());
+        line.set_weather_cases(std::slice::from_ref(&every));
+        let budget = default_fe_budget();
+        line.sections[0].calculation = Calculation::CreepFe;
+        let crept = solve_section(&line, &line.sections[0], &cable, &every, &budget).unwrap();
+        line.sections[0].calculation = Calculation::InitialFe;
+        let warm = solve_section(
+            &line,
+            &line.sections[0],
+            &cable,
+            &WeatherCase::still("35", Temperature::from_celsius(35.0)),
+            &budget,
+        )
+        .unwrap();
+        let (a, b) = (max_sag(&crept), max_sag(&warm));
+        assert!((a - b).abs() < 0.005, "creep {a} vs +20 °C {b}");
+        // No stretch after load (elastic).
+        line.creep_stretch.load_cases = vec!["everyday".into()];
+        line.set_weather_cases(std::slice::from_ref(&every));
+        let f = final_state(
+            &line,
+            &line.sections[0],
+            &cable,
+            crate::condition::Condition::Load,
+            &budget,
+        )
+        .unwrap();
+        assert_eq!(f.stretch, 0.0);
+    }
+
+    /// The non-linear model: creep and a heavy load stretch the cable
+    /// permanently, so it sags more than initially; Max Sag takes the
+    /// larger; a condition without its weather case is said so.
+    #[test]
+    fn creep_and_load_stretch_a_nonlinear_cable() {
+        use crate::condition::{Calculation, Condition};
+        let lib = with_nonlinear(library());
+        let cable = lib.get("synthetic").unwrap();
+        let mut line = crate::tests::example();
+        line.sections[0].cable = "synthetic".into();
+        let budget = default_fe_budget();
+        let every = WeatherCase::still("everyday", Temperature::from_celsius(15.0));
+        let mut ice = WeatherCase::still("heavy ice", Temperature::from_celsius(-5.0));
+        ice.ice_thickness = ols_core::units::Length::from_millimeters(15.0);
+        // Without criteria: said so.
+        line.sections[0].calculation = Calculation::CreepFe;
+        let e = solve_section(&line, &line.sections[0], cable, &every, &budget).unwrap_err();
+        assert!(e.to_string().contains("Creep-Stretch"), "{e}");
+        line.creep_stretch.creep_case = Some("everyday".into());
+        line.creep_stretch.load_cases = vec!["everyday".into(), "heavy ice".into()];
+        line.set_weather_cases(&[every.clone(), ice.clone()]);
+        let creep =
+            final_state(&line, &line.sections[0], cable, Condition::Creep, &budget).unwrap();
+        let load = final_state(&line, &line.sections[0], cable, Condition::Load, &budget).unwrap();
+        assert!(creep.stretch > 1e-5, "{}", creep.stretch);
+        assert!(load.stretch > 0.0, "{}", load.stretch);
+        assert_eq!(load.case, "heavy ice", "the case stretching most");
+        let hot = WeatherCase::still("hot", Temperature::from_celsius(50.0));
+        let mut sag = |c: Calculation| {
+            line.sections[0].calculation = c;
+            max_sag(&solve_section(&line, &line.sections[0], cable, &hot, &budget).unwrap())
+        };
+        for (initial, creep, load, max) in [
+            (
+                Calculation::InitialFe,
+                Calculation::CreepFe,
+                Calculation::LoadFe,
+                Calculation::MaxSagFe,
+            ),
+            (
+                Calculation::InitialRs,
+                Calculation::CreepRs,
+                Calculation::LoadRs,
+                Calculation::MaxSagRs,
+            ),
+        ] {
+            let (i, c, l, m) = (sag(initial), sag(creep), sag(load), sag(max));
+            assert!(
+                c > i + 0.01 && l > i,
+                "{initial:?}: initial {i} creep {c} load {l}"
+            );
+            assert!((m - c.max(l)).abs() < 1e-9, "max sag {m} of {c}, {l}");
+        }
     }
 }

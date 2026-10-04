@@ -62,12 +62,16 @@ impl Model {
             .as_ref()
             .map_err(|why| EditError::ReadOnly(why.clone()))?;
         let line = e.session.export();
-        match &self.types {
+        let mut line = match &self.types {
             Some((s, i)) => line
                 .resolve(s, i)
-                .map_err(|e| EditError::Refused(e.to_string())),
-            None => Ok(line),
-        }
+                .map_err(|e| EditError::Refused(e.to_string()))?,
+            None => line,
+        };
+        // The creep-stretch weather cases, for sections after creep or load.
+        let cases: Vec<_> = self.cases.iter().map(|c| c.case.clone()).collect();
+        line.set_weather_cases(&cases);
+        Ok(line)
     }
 
     /// Brings the model up to the session after `applied`: re-solves its
@@ -79,9 +83,18 @@ impl Model {
         started: Instant,
     ) -> Result<String, EditError> {
         let line = self.session_line()?;
+        // Other creep-stretch weather cases (Criteria › Creep-Stretch, or
+        // its undo): every section after creep or load changes.
+        let all: Vec<String>;
+        let dirty = if line.creep_stretch != self.line.creep_stretch {
+            all = line.sections.iter().map(|s| s.id.clone()).collect();
+            &all
+        } else {
+            &applied.sections
+        };
         let mut solved = 0;
         for c in &mut self.cases {
-            solved += c.update(&line, &self.library, &applied.sections);
+            solved += c.update(&line, &self.library, dirty);
         }
         self.line = line;
         Ok(format!(
