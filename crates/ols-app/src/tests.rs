@@ -2681,17 +2681,28 @@ fn the_survey_window_stays_open_for_several_classes() {
     };
     harness.get_by_label("None").click();
     harness.run();
+    // Not shown before Apply.
+    assert!(hidden(&mut harness).is_empty());
+    harness.get_by_label("changes not applied");
+    harness.get_by_label("Apply").click();
+    harness.run();
     assert_eq!(hidden(&mut harness), vec![2, 3, 5, 6]);
     // Still open: vegetation back, then everything.
     harness.get_by_label("vegetation").click();
     harness.run();
-    assert_eq!(hidden(&mut harness), vec![2, 6]);
     harness.get_by_label("Invert").click();
     harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
     assert_eq!(hidden(&mut harness), vec![3, 5]);
+    // Revert drops what is not applied.
     harness.get_by_label("All").click();
     harness.run();
-    assert!(hidden(&mut harness).is_empty());
+    harness.get_by_label("Revert").click();
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
+    assert_eq!(hidden(&mut harness), vec![3, 5]);
     assert!(harness.state_mut().ready().unwrap().survey_window.is_some());
 }
 
@@ -2711,7 +2722,10 @@ fn dragging_over_classes_gives_them_one_state() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.state_mut().ready().unwrap().survey_window = Some(String::new());
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.survey_window = Some(crate::app::SurveyDraft::of(&r.model));
+    }
     harness.run();
     let centre = |h: &Harness<'_, App>, label: &str| h.get_by_label_contains(label).rect().center();
     let (from, to) = (centre(&harness, "3 Low"), centre(&harness, "5 High"));
@@ -2731,6 +2745,8 @@ fn dragging_over_classes_gives_them_one_state() {
         harness.step();
     }
     harness.event(press(to, false));
+    harness.run();
+    harness.get_by_label("Apply").click();
     harness.run();
     let hidden: Vec<u8> = harness
         .state_mut()
@@ -2756,7 +2772,10 @@ fn the_survey_list_scrolls() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.state_mut().ready().unwrap().survey_window = Some(String::new());
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.survey_window = Some(crate::app::SurveyDraft::of(&r.model));
+    }
     harness.run();
     let slider = harness
         .get_by_label_contains("Points shown near the camera")

@@ -160,8 +160,9 @@ pub struct Ready {
     pub display_window: Option<Vec<bool>>,
     /// A window of the Lines menu, when open.
     pub lines_window: Option<LinesWindow>,
-    /// The "Survey data display options" window, when open: its filter.
-    pub survey_window: Option<String>,
+    /// The "Survey data display options" window, when open: its changes
+    /// (applied with its Apply button).
+    pub survey_window: Option<SurveyDraft>,
     /// Dragging over its classes: the state they all get (shown).
     pub survey_paint: Option<bool>,
     /// Add jumper: the first string right-clicked.
@@ -1745,7 +1746,9 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
             .on_hover_text("The LiDAR classes shown: tick or untick as many as you like")
             .clicked()
         {
-            r.survey_window.get_or_insert_with(String::new);
+            if r.survey_window.is_none() {
+                r.survey_window = Some(SurveyDraft::of(&r.model));
+            }
             ui.close();
         }
     });
@@ -1804,16 +1807,49 @@ const SURVEY_GROUPS: [(&str, &[&str]); 6] = [
 /// The "Survey data display options" window: a tick per LiDAR class, kept
 /// open while classes are ticked and unticked (each change shows at once);
 /// all, none, invert, by group, a filter.
+/// What the "Survey data display options" window changes, kept there
+/// until applied: reloading the points at every tick lagged, and a drag
+/// over several classes missed some of them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurveyDraft {
+    /// Filter of the class list.
+    pub filter: String,
+    /// Classes hidden.
+    pub hidden: std::collections::BTreeSet<u8>,
+    /// Points shown near the camera, %.
+    pub percent: f64,
+}
+
+impl SurveyDraft {
+    /// What the model shows now.
+    pub fn of(model: &Model) -> Self {
+        Self {
+            filter: String::new(),
+            hidden: model.hidden_classes.clone(),
+            percent: model.points_percent,
+        }
+    }
+
+    /// Whether it differs from what the model shows.
+    fn differs(&self, model: &Model) -> bool {
+        self.hidden != model.hidden_classes || self.percent != model.points_percent
+    }
+}
+
 fn survey_window(ctx: &egui::Context, r: &mut Ready) {
-    let Some(mut filter) = r.survey_window.clone() else {
+    let Some(mut draft) = r.survey_window.clone() else {
         return;
     };
     let classes = survey_classes(&r.model);
     let mut open = true;
+    let (mut apply, mut revert) = (false, false);
+    let pending = draft.differs(&r.model);
     let mut changed = false;
-    let mut percent_set = false;
-    let hidden = &mut r.model.hidden_classes;
-    let percent = &mut r.model.points_percent;
+    let SurveyDraft {
+        filter,
+        hidden,
+        percent,
+    } = &mut draft;
     let paint = &mut r.survey_paint;
     egui::Window::new("Survey data display options")
         .open(&mut open)
@@ -1871,7 +1907,7 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
             });
             ui.horizontal(|ui| {
                 ui.label("Filter:");
-                ui.text_edit_singleline(&mut filter);
+                ui.text_edit_singleline(filter);
             });
             ui.label(
                 egui::RichText::new(
@@ -1968,9 +2004,7 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
                         .logarithmic(true)
                         .suffix(" % of the cloud"),
                 );
-                if slider.drag_stopped() || (slider.changed() && !slider.dragged()) {
-                    percent_set = true;
-                }
+                changed |= slider.changed();
             });
             ui.label(
                 egui::RichText::new(
@@ -1981,20 +2015,53 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
                 .small()
                 .weak(),
             );
+            ui.separator();
+            ui.horizontal(|ui| {
+                let pending = pending || changed;
+                if ui
+                    .add_enabled(pending, egui::Button::new("Apply"))
+                    .on_hover_text("Show the classes and the share of points chosen")
+                    .clicked()
+                {
+                    apply = true;
+                }
+                if ui
+                    .add_enabled(pending, egui::Button::new("Revert"))
+                    .on_hover_text("Back to what is shown")
+                    .clicked()
+                {
+                    revert = true;
+                }
+                if pending {
+                    ui.colored_label(egui::Color32::YELLOW, "changes not applied");
+                }
+            });
         });
-    if percent_set
-        && let Ok(e) = &r.model.editing
-        && let Err(err) = e.session.set_setting(
-            crate::model::LIDAR_PERCENT_SETTING,
-            Some(&r.model.points_percent.to_string()),
-        )
-    {
-        log::warn!("keeping the LiDAR share: {err}");
+    if revert {
+        let filter = draft.filter.clone();
+        draft = SurveyDraft::of(&r.model);
+        draft.filter = filter;
     }
-    if changed {
-        r.view3d.dirty.insert(Layer::Points);
+    if apply {
+        if draft.hidden != r.model.hidden_classes {
+            r.model.hidden_classes = draft.hidden.clone();
+            r.view3d.dirty.insert(Layer::Points);
+        }
+        if draft.percent != r.model.points_percent {
+            // The 3D view reads the points again at the new share.
+            r.model.points_percent = draft.percent;
+            if let Ok(e) = &r.model.editing
+                && let Err(err) = e.session.set_setting(
+                    crate::model::LIDAR_PERCENT_SETTING,
+                    Some(&draft.percent.to_string()),
+                )
+            {
+                log::warn!("keeping the LiDAR share: {err}");
+            }
+        }
     }
-    r.survey_window = open.then_some(filter);
+    // Closed: changes not applied are dropped.
+    r.survey_window = open.then_some(draft);
 }
 
 fn lines_menu(ui: &mut egui::Ui, r: &mut Ready) {
