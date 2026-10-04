@@ -642,9 +642,11 @@ impl WasmHost {
         self.limits
     }
 
-    /// Loads the plugin in `dir`: reads its manifest, checks compatibility
-    /// and permissions, compiles and instantiates it.
-    pub fn load(&self, dir: &Path) -> Result<WasmPlugin, PluginError> {
+    /// Reads and checks the manifest in `dir` (WebAssembly tier,
+    /// compatibility, permissions and, if given, the extension point the
+    /// plugin must list, with what to call it), compiles the component and
+    /// sets up a sandboxed store with the limits the manifest asks for.
+    fn prepare(&self, dir: &Path, point: Option<(&str, &str)>) -> Result<Prepared, PluginError> {
         let manifest = Manifest::load(dir)?;
         if manifest.plugin.tier != Tier::Wasm {
             return Err(PluginError::UnsupportedTier(
@@ -653,170 +655,104 @@ impl WasmHost {
         }
         manifest.check_compatible()?;
         manifest.check_permissions()?;
-
+        if let Some((point, kind)) = point
+            && !manifest.plugin.extension_points.iter().any(|e| e == point)
+        {
+            return Err(PluginError::Manifest {
+                path: dir.join(MANIFEST_FILE),
+                message: format!("{kind} lists the extension point \"{point}\""),
+            });
+        }
+        let limits = self.limits.for_manifest(&manifest);
         let component = Component::from_file(&self.engine, manifest.entry_path())?;
         // No stdio, environment, file system or network: a fully sandboxed guest.
         let state = HostState {
             wasi: WasiCtxBuilder::new().build(),
             table: ResourceTable::new(),
             limits: StoreLimitsBuilder::new()
-                .memory_size(self.limits.max_memory_bytes)
+                .memory_size(limits.max_memory_bytes)
                 .build(),
         };
         let mut store = Store::new(&self.engine, state);
         store.limiter(|state| &mut state.limits);
-        store.set_epoch_deadline(self.limits.deadline_ticks());
-        let name = manifest.plugin.name.clone();
-        let instance = bindings::Plugin::instantiate(&mut store, &component, &self.linker)
-            .map_err(|e| classify(e, &name, "instantiation", self.limits))?;
+        store.set_epoch_deadline(limits.deadline_ticks());
+        // Files, models and surfaces cross between host and plugin: as
+        // much as its memory may hold.
+        store.set_hostcall_fuel(limits.max_memory_bytes);
+        Ok(Prepared {
+            manifest,
+            component,
+            store,
+            limits,
+        })
+    }
+
+    /// Loads the plugin in `dir`: reads its manifest, checks compatibility
+    /// and permissions, compiles and instantiates it, with the limits its
+    /// manifest asks for.
+    pub fn load(&self, dir: &Path) -> Result<WasmPlugin, PluginError> {
+        let mut p = self.prepare(dir, None)?;
+        let instance = bindings::Plugin::instantiate(&mut p.store, &p.component, &self.linker)
+            .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
         Ok(WasmPlugin {
-            manifest,
-            store,
+            manifest: p.manifest,
+            store: p.store,
             instance,
-            limits: self.limits,
+            limits: p.limits,
         })
     }
-}
 
-impl WasmHost {
     /// Loads a file-format plugin (`io-plugin` world, extension point
-    /// `io` in its manifest).
+    /// `io` in its manifest), with the limits its manifest asks for.
     pub fn load_io(&self, dir: &Path) -> Result<WasmIoPlugin, PluginError> {
-        let manifest = Manifest::load(dir)?;
-        if manifest.plugin.tier != Tier::Wasm {
-            return Err(PluginError::UnsupportedTier(
-                manifest.plugin.tier.to_string(),
-            ));
-        }
-        manifest.check_compatible()?;
-        manifest.check_permissions()?;
-        if !manifest.plugin.extension_points.iter().any(|e| e == "io") {
-            return Err(PluginError::Manifest {
-                path: dir.join(MANIFEST_FILE),
-                message: "a file-format plugin lists the extension point \"io\"".into(),
-            });
-        }
-        let component = Component::from_file(&self.engine, manifest.entry_path())?;
-        let state = HostState {
-            wasi: WasiCtxBuilder::new().build(),
-            table: ResourceTable::new(),
-            limits: StoreLimitsBuilder::new()
-                .memory_size(self.limits.max_memory_bytes)
-                .build(),
-        };
-        let mut store = Store::new(&self.engine, state);
-        store.limiter(|state| &mut state.limits);
-        store.set_epoch_deadline(self.limits.deadline_ticks());
-        let name = manifest.plugin.name.clone();
-        let instance = io_bindings::IoPlugin::instantiate(&mut store, &component, &self.linker)
-            .map_err(|e| classify(e, &name, "instantiation", self.limits))?;
+        let mut p = self.prepare(dir, Some(("io", "a file-format plugin")))?;
+        let instance = io_bindings::IoPlugin::instantiate(&mut p.store, &p.component, &self.linker)
+            .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
         Ok(WasmIoPlugin {
-            manifest,
-            store,
+            manifest: p.manifest,
+            store: p.store,
             instance,
-            limits: self.limits,
+            limits: p.limits,
         })
     }
-}
 
-impl WasmHost {
     /// Loads a terrain plugin (`terrain-plugin` world, extension point
     /// `terrain` in its manifest), with the limits its manifest asks for.
     pub fn load_terrain(&self, dir: &Path) -> Result<WasmTerrainPlugin, PluginError> {
-        let manifest = Manifest::load(dir)?;
-        if manifest.plugin.tier != Tier::Wasm {
-            return Err(PluginError::UnsupportedTier(
-                manifest.plugin.tier.to_string(),
-            ));
-        }
-        manifest.check_compatible()?;
-        manifest.check_permissions()?;
-        if !manifest
-            .plugin
-            .extension_points
-            .iter()
-            .any(|e| e == "terrain")
-        {
-            return Err(PluginError::Manifest {
-                path: dir.join(MANIFEST_FILE),
-                message: "a terrain plugin lists the extension point \"terrain\"".into(),
-            });
-        }
-        let limits = self.limits.for_manifest(&manifest);
-        let component = Component::from_file(&self.engine, manifest.entry_path())?;
-        let state = HostState {
-            wasi: WasiCtxBuilder::new().build(),
-            table: ResourceTable::new(),
-            limits: StoreLimitsBuilder::new()
-                .memory_size(limits.max_memory_bytes)
-                .build(),
-        };
-        let mut store = Store::new(&self.engine, state);
-        store.limiter(|state| &mut state.limits);
-        store.set_epoch_deadline(limits.deadline_ticks());
-        // Files and surfaces cross between host and plugin: as much as
-        // its memory may hold.
-        store.set_hostcall_fuel(limits.max_memory_bytes);
-        let name = manifest.plugin.name.clone();
+        let mut p = self.prepare(dir, Some(("terrain", "a terrain plugin")))?;
         let instance =
-            terrain_bindings::TerrainPlugin::instantiate(&mut store, &component, &self.linker)
-                .map_err(|e| classify(e, &name, "instantiation", limits))?;
+            terrain_bindings::TerrainPlugin::instantiate(&mut p.store, &p.component, &self.linker)
+                .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
         Ok(WasmTerrainPlugin {
-            manifest,
-            store,
+            manifest: p.manifest,
+            store: p.store,
             instance,
-            limits,
+            limits: p.limits,
+        })
+    }
+
+    /// Loads a project plugin (`project-plugin` world, extension point
+    /// `project` in its manifest), with the limits its manifest asks for.
+    pub fn load_project(&self, dir: &Path) -> Result<WasmProjectPlugin, PluginError> {
+        let mut p = self.prepare(dir, Some(("project", "a project plugin")))?;
+        let instance =
+            project_bindings::ProjectPlugin::instantiate(&mut p.store, &p.component, &self.linker)
+                .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
+        Ok(WasmProjectPlugin {
+            manifest: p.manifest,
+            store: p.store,
+            instance,
+            limits: p.limits,
         })
     }
 }
 
-impl WasmHost {
-    /// Loads a project plugin (`project-plugin` world, extension point
-    /// `project` in its manifest), with the limits its manifest asks for.
-    pub fn load_project(&self, dir: &Path) -> Result<WasmProjectPlugin, PluginError> {
-        let manifest = Manifest::load(dir)?;
-        if manifest.plugin.tier != Tier::Wasm {
-            return Err(PluginError::UnsupportedTier(
-                manifest.plugin.tier.to_string(),
-            ));
-        }
-        manifest.check_compatible()?;
-        manifest.check_permissions()?;
-        if !manifest
-            .plugin
-            .extension_points
-            .iter()
-            .any(|e| e == "project")
-        {
-            return Err(PluginError::Manifest {
-                path: dir.join(MANIFEST_FILE),
-                message: "a project plugin lists the extension point \"project\"".into(),
-            });
-        }
-        let limits = self.limits.for_manifest(&manifest);
-        let component = Component::from_file(&self.engine, manifest.entry_path())?;
-        let state = HostState {
-            wasi: WasiCtxBuilder::new().build(),
-            table: ResourceTable::new(),
-            limits: StoreLimitsBuilder::new()
-                .memory_size(limits.max_memory_bytes)
-                .build(),
-        };
-        let mut store = Store::new(&self.engine, state);
-        store.limiter(|state| &mut state.limits);
-        store.set_epoch_deadline(limits.deadline_ticks());
-        store.set_hostcall_fuel(limits.max_memory_bytes);
-        let name = manifest.plugin.name.clone();
-        let instance =
-            project_bindings::ProjectPlugin::instantiate(&mut store, &component, &self.linker)
-                .map_err(|e| classify(e, &name, "instantiation", limits))?;
-        Ok(WasmProjectPlugin {
-            manifest,
-            store,
-            instance,
-            limits,
-        })
-    }
+/// A checked plugin, compiled, with its store ([`WasmHost::prepare`]).
+struct Prepared {
+    manifest: Manifest,
+    component: Component,
+    store: Store<HostState>,
+    limits: Limits,
 }
 
 /// A loaded project plugin.
