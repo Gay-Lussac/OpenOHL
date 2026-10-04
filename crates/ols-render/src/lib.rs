@@ -373,41 +373,28 @@ impl Camera {
 #[derive(Debug)]
 pub struct GpuScene {
     origin: [f64; 3],
-    lines: Option<(wgpu::Buffer, u32)>,
-    points: Option<(wgpu::Buffer, u32)>,
-    triangles: Option<(wgpu::Buffer, u32)>,
+    /// Each part in buffers no larger than the device allows.
+    lines: Vec<(wgpu::Buffer, u32)>,
+    points: Vec<(wgpu::Buffer, u32)>,
+    triangles: Vec<(wgpu::Buffer, u32)>,
 }
 
 impl GpuScene {
     /// Segments, points and triangles on the GPU.
     pub fn counts(&self) -> (u32, u32, u32) {
-        let n = |b: &Option<(wgpu::Buffer, u32)>| b.as_ref().map_or(0, |b| b.1);
+        let n = |b: &Vec<(wgpu::Buffer, u32)>| b.iter().map(|b| b.1).sum::<u32>();
         (n(&self.lines), n(&self.points), n(&self.triangles) / 3)
     }
 
-    /// Uploads a scene.
+    /// Uploads a scene, each part split into buffers the device accepts
+    /// (whole triangles in each).
     pub fn new(device: &wgpu::Device, scene: &Scene) -> Self {
-        fn buffer<T: bytemuck::Pod>(
-            device: &wgpu::Device,
-            v: &[T],
-            label: &str,
-        ) -> Option<(wgpu::Buffer, u32)> {
-            (!v.is_empty()).then(|| {
-                (
-                    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some(label),
-                        contents: bytemuck::cast_slice(v),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-                    v.len() as u32,
-                )
-            })
-        }
+        let max = device.limits().max_buffer_size.min(1 << 30) as usize;
         Self {
             origin: scene.origin,
-            lines: buffer(device, &scene.lines, "lines"),
-            points: buffer(device, &scene.points, "points"),
-            triangles: buffer(device, &scene.triangles, "triangles"),
+            lines: buffer_pieces(device, &scene.lines, "lines", 1, max),
+            points: buffer_pieces(device, &scene.points, "points", 1, max),
+            triangles: buffer_pieces(device, &scene.triangles, "triangles", 3, max),
         }
     }
 }
@@ -418,6 +405,30 @@ struct Targets {
     depth: wgpu::TextureView,
     color: wgpu::Texture,
     view: wgpu::TextureView,
+}
+
+/// `v` in buffers of at most `max` bytes, each a multiple of `unit`
+/// elements.
+fn buffer_pieces<T: bytemuck::Pod>(
+    device: &wgpu::Device,
+    v: &[T],
+    label: &str,
+    unit: usize,
+    max: usize,
+) -> Vec<(wgpu::Buffer, u32)> {
+    let per = ((max / std::mem::size_of::<T>().max(1)) / unit * unit).max(unit);
+    v.chunks(per)
+        .map(|c| {
+            (
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents: bytemuck::cast_slice(c),
+                    usage: wgpu::BufferUsages::VERTEX,
+                }),
+                c.len() as u32,
+            )
+        })
+        .collect()
 }
 
 /// Draws scenes into an offscreen colour texture.
@@ -679,7 +690,7 @@ impl Renderer {
                         1 => &layer.points,
                         _ => &layer.lines,
                     };
-                    if let Some((buffer, n)) = part {
+                    for (buffer, n) in part {
                         pass.set_vertex_buffer(0, buffer.slice(..));
                         if k == 0 {
                             pass.draw(0..*n, 0..1);

@@ -2773,7 +2773,7 @@ fn the_survey_window_stays_open_for_several_classes() {
     harness.run();
     harness.get_by_label("Terrain").click();
     harness.run();
-    harness.get_by_label("TIN (ground surface)");
+    harness.get_by_label("Ground (active surface) shown");
     harness.get_by_label_contains("Survey data").click();
     harness.run();
     harness.get_by_label("Survey data display options…").click();
@@ -3911,4 +3911,115 @@ fn weather_cases_are_solved_when_shown() {
     assert!(!m.cases[1].ready, "not shown: not solved");
     assert_solved_fully(m);
     assert!(!m.cases[2].shapes.is_empty());
+}
+
+/// Terrain › Terrain surfaces (TIN): a survey file imported becomes the
+/// ground (none before); another surface (LandXML) is shown in its colour;
+/// opened again, the project's active surface is the ground; rename and
+/// delete.
+#[test]
+fn terrain_surfaces_are_kept_in_the_project() {
+    use crate::surfaces::Action;
+    let model = synthetic_project("surfaces");
+    let file = model.sources.file.clone();
+    assert!(model.ground.is_none());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.step();
+    let act = |h: &mut Harness<'_, App>, a: Action| {
+        let ctx = egui::Context::default();
+        let app = h.state_mut();
+        let mut plugins = std::mem::take(&mut app.plugins);
+        let r = app.ready().unwrap();
+        let project = r.model.sources.file.clone();
+        r.surfaces
+            .act(a, &mut r.model, &mut plugins, "tester", &project, &ctx);
+        app.plugins = plugins;
+    };
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.surfaces.show(&r.model);
+    }
+    // Import the survey points: triangulated, kept, made the ground.
+    let survey = root().join("examples/synthetic-line/synthetic-survey.csv");
+    act(&mut harness, Action::Import(survey));
+    run_until(&mut harness, |a| {
+        a.ready().unwrap().model.ground_source == "surface synthetic-survey"
+    });
+    harness.get_by_label("Terrain surfaces (TIN)");
+    let n = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .ground
+        .as_ref()
+        .unwrap()
+        .num_triangles();
+    assert!(n > 100);
+    // A second surface (LandXML of the first, raised 1 m), shown.
+    let dir = file.parent().unwrap().to_owned();
+    let xml = dir.join("raised.xml");
+    {
+        let g = harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .ground
+            .clone()
+            .unwrap();
+        let raised = ols_terrain::Terrain::from_mesh(
+            g.points()
+                .iter()
+                .map(|p| [p[0], p[1], p[2] + 1.0])
+                .collect(),
+            g.triangles().to_vec(),
+        )
+        .unwrap();
+        std::fs::write(
+            &xml,
+            ols_terrain::formats::write_landxml(&[("raised", &raised)]),
+        )
+        .unwrap();
+    }
+    act(&mut harness, Action::Import(xml));
+    run_until(&mut harness, |a| {
+        a.ready().unwrap().surfaces.list.len() == 2
+    });
+    act(&mut harness, Action::Show("raised".into(), true));
+    run_until(&mut harness, |a| {
+        a.ready().unwrap().model.other_surfaces.len() == 1
+    });
+    // Opened again: the active surface is the ground (no LiDAR, no survey).
+    let again = model::load(
+        Sources {
+            file: file.clone(),
+            library: Some(root().join("libraries/cables")),
+            point_budget: 1000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    assert_eq!(again.ground_source, "surface synthetic-survey");
+    assert_eq!(again.ground.as_ref().unwrap().num_triangles(), n);
+    assert_eq!(again.other_surfaces.len(), 1);
+    assert_eq!(again.other_surfaces[0].name, "raised");
+    drop(again);
+    // Rename the ground; delete the other.
+    act(
+        &mut harness,
+        Action::Rename("synthetic-survey".into(), "survey".into()),
+    );
+    act(&mut harness, Action::Delete("raised".into()));
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.ground_source, "surface survey");
+    assert!(r.model.other_surfaces.is_empty());
+    let names: Vec<&str> = r.surfaces.list.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["survey"]);
+    assert_eq!(r.model.surface_settings.active.as_deref(), Some("survey"));
 }

@@ -184,7 +184,7 @@ impl From<rusqlite::Error> for SessionError {
     }
 }
 
-fn refused(m: impl Into<String>) -> SessionError {
+pub(crate) fn refused(m: impl Into<String>) -> SessionError {
     SessionError::Refused(m.into())
 }
 
@@ -697,6 +697,7 @@ impl Session {
             conn.execute("ALTER TABLE oplog ADD COLUMN note TEXT", [])?;
         }
         conn.execute_batch(spatial::SCHEMA)?;
+        conn.execute_batch(surfaces::SCHEMA)?;
         // The chunk grid is fixed when the project is created.
         let grid_size: Option<String> = conn
             .query_row(
@@ -2289,6 +2290,7 @@ impl Session {
 
 pub mod live;
 pub mod spatial;
+pub mod surfaces;
 
 pub use live::Live;
 

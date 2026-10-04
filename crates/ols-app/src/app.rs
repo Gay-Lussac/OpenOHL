@@ -202,6 +202,8 @@ pub struct Ready {
     pub history_open: bool,
     /// Checks › Structure loads.
     pub loads: crate::loads::LoadsPage,
+    /// Terrain › Terrain surfaces (TIN).
+    pub surfaces: crate::surfaces::SurfacesWindow,
     /// Parameters › Controls: the window of a view's controls, when open.
     pub controls_window: Option<ControlsPage>,
     /// Criteria › Creep-Stretch, when open: the weather cases chosen.
@@ -258,6 +260,7 @@ impl Ready {
             console: Default::default(),
             history_open: false,
             loads: Default::default(),
+            surfaces: Default::default(),
             controls_window: None,
             creep_stretch_window: None,
             jumper_from: None,
@@ -2089,10 +2092,24 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
         }
     };
     ui.label(egui::RichText::new("Ground surface").small().weak());
+    if ui
+        .button("Terrain surfaces (TIN)…")
+        .on_hover_text(
+            "The surfaces kept in the project: import, build from LiDAR, the active one (the \
+             ground), others shown, export, delete",
+        )
+        .clicked()
+    {
+        r.surfaces.show(&r.model);
+        ui.close();
+    }
     if r.model.ground.is_some() {
-        layer(ui, Layer::Ground, "TIN (ground surface)", r);
+        layer(ui, Layer::Ground, "Ground (active surface) shown", r);
     } else {
-        ui.add_enabled(false, egui::Button::new("TIN: none loaded"));
+        ui.add_enabled(false, egui::Button::new("Ground: none"));
+    }
+    if !r.model.other_surfaces.is_empty() {
+        layer(ui, Layer::Surfaces, "Other surfaces shown", r);
     }
     ui.separator();
     ui.menu_button("Survey data", |ui| {
@@ -4001,6 +4018,9 @@ impl eframe::App for App {
                     let answer = crate::python::serve(ready, &what, &arg);
                     crate::python::answer(answer);
                 }
+                if ready.surfaces.open {
+                    self.plugins.want_formats();
+                }
                 if let Some(line) = self.plugins.poll(&ctx) {
                     ready.perform(crate::edit::Action::Command {
                         what: format!("imported {}", line.name),
@@ -4008,6 +4028,14 @@ impl eframe::App for App {
                     });
                 }
                 self.plugins.manager_ui(&ctx);
+                if ready.surfaces.ui(&ctx, &mut ready.model, &mut self.plugins) {
+                    ready.visible.insert(Layer::Ground);
+                    if !ready.model.other_surfaces.is_empty() {
+                        ready.visible.insert(Layer::Surfaces);
+                    }
+                    ready.clearances.stale = true;
+                    ready.refresh_views();
+                }
                 let editable = ready.model.can_edit().map_err(|e| e.to_string());
                 self.plugins.format_ui(&ctx, &ready.model, editable);
                 if std::mem::take(&mut ready.reopen) {

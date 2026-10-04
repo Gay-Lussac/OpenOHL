@@ -46,6 +46,27 @@ extension-points = ["io"]
 
 `plugins/examples/geojson` is a complete example (GeoJSON export of structures and wires; structures imported from GeoJSON points). Its formats appear next to the built-in ones in `ols formats --plugin plugins/examples/geojson`; see [Import and export](../user-guide/import-export.md).
 
+## Terrain plugins
+
+A plugin that reads terrain surfaces implements the `terrain-plugin` world and lists the extension point `terrain`:
+
+```toml
+extension-points = ["terrain"]
+
+# Large files: more than the default 5 s and 256 MiB per call (granted up
+# to 600 s and 4 GiB).
+[limits]
+seconds = 60
+memory-mib = 1024
+```
+
+- `formats()` lists the formats it reads (direction `importer`).
+- `import-surfaces(format, data, options)` returns surfaces: a name, the points as `x0, y0, z0, x1, …` (metres, x east, y north, z up) and the triangles as three point indices each. The host checks them like any mesh and keeps them in the project.
+
+`plugins/examples/esri-grid` reads ESRI ASCII grids (`.asc`): a point per cell centre, two triangles per square of cells with data. Its format appears in `ols surface formats --plugin plugins/examples/esri-grid` and in Terrain › Terrain surfaces once the plugin is installed or its folder added (Plugins › Plugin manager).
+
+A plugin also suits formats that should not be in the open-source code — e.g. one read from a private specification — kept and installed only where it may be used.
+
 ## Python plugins
 
 Python plugins are scripts (`tier = "python"`, `entry` the script). Outside the application they use the `ols` package built from `crates/ols-py`; inside it, the Python console runs them (Plugins › Python console › Plugin scripts) with the `ols` module of the application, which also reads and edits the open project ([Python console](../user-guide/desktop-app.md#python-console)). See `plugins/examples/hello-python`.

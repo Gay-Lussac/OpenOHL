@@ -35,6 +35,7 @@ mod python;
 mod remote;
 mod scene;
 mod selection;
+mod surfaces;
 mod survey_io;
 mod tables;
 mod tools;

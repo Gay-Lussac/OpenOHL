@@ -220,6 +220,40 @@ height anywhere inside the surveyed area (the convex hull of the points) is
 the linear interpolation on the triangle below. Outside it there is no
 ground: spans that are not fully over the survey are reported.
 
+## Terrain surfaces in the project
+
+A project keeps any number of terrain surfaces (TINs, *triangulated irregular networks*), by name, compressed in the project file. One is **active**: it is the ground — drawn, and used for clearances, profiles and placing structures. When a project with an active surface opens, the ground is read from it (a 12.7-million-triangle surface: about 1 s) instead of being built from the LiDAR every time. Other surfaces can be **shown** too, each in its colour (the *Other surfaces* layer, drawn in chunks with levels of detail like the ground).
+
+Terrain › **Terrain surfaces (TIN)…** manages them:
+
+- **Import…** a file. Its format comes from the extension, or you choose it:
+
+  | Format | Extension | |
+  |---|---|---|
+  | LandXML | `.xml` | every TIN surface of the file (`<Surface>` with `<Faces>`; points are *northing easting elevation*) |
+  | OBJ | `.obj` | a mesh (`v x y z`, `f a b c …`) |
+  | Survey points | `.csv`, `.xyz` | triangulated, breaklines kept; option `max_edge=50` leaves out longer triangles |
+  | Terrain plugins | as they say | e.g. `plugins/examples/esri-grid` (ESRI ASCII grids, `.asc`) |
+
+  The first surface kept becomes the ground when there is none.
+- **Build from the LiDAR ground classes:** the lowest point of each cell (default 1 m), near the line or the whole cloud, triangulated with a longest side (default 50 m).
+- **Keep the ground shown as a surface:** the ground built at opening (from the LiDAR or a survey file), kept so the next opening reads it.
+- **Active** (radio) and **shown** (tick, colour) are project settings. With a server they follow everyone.
+- **Rename**, **Export…** (LandXML `.xml` or OBJ `.obj`), **Delete** (confirmed; it cannot be undone — export first to keep a copy).
+
+Reading, building and storing run in the background. With a project joined on a server, surfaces are imported and built on the hosting computer.
+
+From the command line:
+
+```bash
+ols surface list project.ols
+ols surface import ground.xml --into project.ols --user ann [--name N] [--format F] [--option max_edge=50] [--plugin DIR] [--replace]
+ols surface export project.ols "ground" ground.xml
+ols surface rename project.ols "ground" "survey 2026" --user ann
+ols surface delete project.ols "ground" --user ann
+ols surface formats [--plugin DIR]
+```
+
 Ground profiles follow the TIN exactly: a profile point at every triangle
 edge crossed, with straight ground between them — no sampling step to choose
 and no ridge missed between samples.

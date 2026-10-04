@@ -54,6 +54,15 @@ mod io_bindings {
     });
 }
 
+mod terrain_bindings {
+    wasmtime::component::bindgen!({
+        world: "terrain-plugin",
+        path: "wit",
+    });
+}
+
+pub use terrain_bindings::ols::plugin::terrain_types::Surface;
+
 pub use bindings::ols::plugin::types::PluginInfo;
 pub use io_bindings::ols::plugin::io_types::{Direction, Format};
 
@@ -196,6 +205,20 @@ pub struct Permissions {
     pub filesystem: Vec<String>,
 }
 
+/// `[limits]` section of a manifest: more time or memory than the host's
+/// defaults for one call (a plugin reading large files), granted up to
+/// [`Limits::MAX_TIMEOUT`] and [`Limits::MAX_MEMORY_BYTES`].
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct RequestedLimits {
+    /// Longest call, seconds.
+    #[serde(default)]
+    pub seconds: Option<u64>,
+    /// Largest memory, MiB.
+    #[serde(default)]
+    pub memory_mib: Option<u64>,
+}
+
 /// A parsed `ols-plugin.toml`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -205,6 +228,9 @@ pub struct Manifest {
     /// Requested permissions.
     #[serde(default)]
     pub permissions: Permissions,
+    /// Requested limits (more than the defaults).
+    #[serde(default)]
+    pub limits: RequestedLimits,
     /// Directory containing the manifest.
     #[serde(skip)]
     pub dir: PathBuf,
@@ -444,6 +470,29 @@ pub struct Limits {
     pub max_memory_bytes: usize,
 }
 
+impl Limits {
+    /// The most time a manifest may ask for one call.
+    pub const MAX_TIMEOUT: Duration = Duration::from_secs(600);
+    /// The most memory a manifest may ask for (WebAssembly 32-bit: 4 GiB).
+    pub const MAX_MEMORY_BYTES: usize = 4 << 30;
+
+    /// These limits raised to what `manifest` asks for (never lowered;
+    /// capped).
+    pub fn for_manifest(self, manifest: &Manifest) -> Self {
+        let mut l = self;
+        if let Some(s) = manifest.limits.seconds {
+            l.call_timeout = l
+                .call_timeout
+                .max(Duration::from_secs(s).min(Self::MAX_TIMEOUT));
+        }
+        if let Some(m) = manifest.limits.memory_mib {
+            let bytes = usize::try_from(m.saturating_mul(1 << 20)).unwrap_or(usize::MAX);
+            l.max_memory_bytes = l.max_memory_bytes.max(bytes.min(Self::MAX_MEMORY_BYTES));
+        }
+        l
+    }
+}
+
 impl Default for Limits {
     fn default() -> Self {
         Self {
@@ -634,6 +683,119 @@ impl WasmHost {
             instance,
             limits: self.limits,
         })
+    }
+}
+
+impl WasmHost {
+    /// Loads a terrain plugin (`terrain-plugin` world, extension point
+    /// `terrain` in its manifest), with the limits its manifest asks for.
+    pub fn load_terrain(&self, dir: &Path) -> Result<WasmTerrainPlugin, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm {
+            return Err(PluginError::UnsupportedTier(
+                manifest.plugin.tier.to_string(),
+            ));
+        }
+        manifest.check_compatible()?;
+        manifest.check_permissions()?;
+        if !manifest
+            .plugin
+            .extension_points
+            .iter()
+            .any(|e| e == "terrain")
+        {
+            return Err(PluginError::Manifest {
+                path: dir.join(MANIFEST_FILE),
+                message: "a terrain plugin lists the extension point \"terrain\"".into(),
+            });
+        }
+        let limits = self.limits.for_manifest(&manifest);
+        let component = Component::from_file(&self.engine, manifest.entry_path())?;
+        let state = HostState {
+            wasi: WasiCtxBuilder::new().build(),
+            table: ResourceTable::new(),
+            limits: StoreLimitsBuilder::new()
+                .memory_size(limits.max_memory_bytes)
+                .build(),
+        };
+        let mut store = Store::new(&self.engine, state);
+        store.limiter(|state| &mut state.limits);
+        store.set_epoch_deadline(limits.deadline_ticks());
+        // Files and surfaces cross between host and plugin: as much as
+        // its memory may hold.
+        store.set_hostcall_fuel(limits.max_memory_bytes);
+        let name = manifest.plugin.name.clone();
+        let instance =
+            terrain_bindings::TerrainPlugin::instantiate(&mut store, &component, &self.linker)
+                .map_err(|e| classify(e, &name, "instantiation", limits))?;
+        Ok(WasmTerrainPlugin {
+            manifest,
+            store,
+            instance,
+            limits,
+        })
+    }
+}
+
+/// A loaded terrain plugin.
+pub struct WasmTerrainPlugin {
+    manifest: Manifest,
+    store: Store<HostState>,
+    instance: terrain_bindings::TerrainPlugin,
+    limits: Limits,
+}
+
+impl WasmTerrainPlugin {
+    /// The plugin's manifest.
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    fn arm(&mut self) {
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+    }
+
+    /// Calls `formats`.
+    pub fn formats(&mut self) -> Result<Vec<Format>, PluginError> {
+        self.arm();
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        let formats = self
+            .instance
+            .call_formats(&mut self.store)
+            .map_err(|e| classify(e, &name, "formats", limits))?;
+        // Same WIT record, generated once per world.
+        Ok(formats
+            .into_iter()
+            .map(|f| Format {
+                id: f.id,
+                description: f.description,
+                extension: f.extension,
+                direction: match f.direction {
+                    terrain_bindings::ols::plugin::io_types::Direction::Exporter => {
+                        Direction::Exporter
+                    }
+                    terrain_bindings::ols::plugin::io_types::Direction::Importer => {
+                        Direction::Importer
+                    }
+                },
+            })
+            .collect())
+    }
+
+    /// Calls `import-surfaces` (inner `Err`: the plugin's own error).
+    pub fn import_surfaces(
+        &mut self,
+        format: &str,
+        data: &[u8],
+        options: &[(String, String)],
+    ) -> Result<Result<Vec<Surface>, String>, PluginError> {
+        self.arm();
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        self.instance
+            .call_import_surfaces(&mut self.store, format, data, options)
+            .map_err(|e| classify(e, &name, "import-surfaces", limits))
     }
 }
 

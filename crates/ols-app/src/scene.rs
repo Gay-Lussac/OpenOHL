@@ -12,8 +12,10 @@ use crate::selection::Selection;
 /// The layers of the 3D view, in drawing order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Layer {
-    /// Ground surface.
+    /// Ground surface (the active terrain surface).
     Ground,
+    /// Other terrain surfaces shown, each in its colour.
+    Surfaces,
     /// LiDAR points (other than ground).
     Points,
     /// Route alignments.
@@ -38,8 +40,9 @@ pub enum Layer {
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 10] = [
+    pub const ALL: [Layer; 11] = [
         Layer::Ground,
+        Layer::Surfaces,
         Layer::Points,
         Layer::Alignment,
         Layer::Structures,
@@ -55,6 +58,7 @@ impl Layer {
     pub fn name(self) -> &'static str {
         match self {
             Layer::Ground => "Ground",
+            Layer::Surfaces => "Other surfaces",
             Layer::Points => "LiDAR points",
             Layer::Alignment => "Alignments",
             Layer::Structures => "Structures",
@@ -468,6 +472,15 @@ pub fn thin(points: &[[f64; 3]], n: usize) -> Vec<[f64; 3]> {
         .collect()
 }
 
+/// Shade of a triangle of another surface: its colour, lit like the
+/// ground.
+pub fn tinted_color(a: [f64; 3], b: [f64; 3], c: [f64; 3], tint: [u8; 3]) -> [u8; 4] {
+    let g = ground_color(a, b, c);
+    // The ground's light, as a factor of its base colour.
+    let lit = f64::from(g[0]) / (120.0 * 1.3);
+    rgba(tint.map(|x| (f64::from(x) * lit).min(255.0) as u8), 255)
+}
+
 /// Shade of a ground triangle (light from the north-west, above).
 pub fn ground_color(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> [u8; 4] {
     let light = {
@@ -503,6 +516,15 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                 for t in tris {
                     let [a, b, c] = t.map(|i| pts[i]);
                     s.triangle([a, b, c], [ground_color(a, b, c); 3]);
+                }
+            }
+        }
+        Layer::Surfaces => {
+            for o in &model.other_surfaces {
+                let pts = o.terrain.points();
+                for t in o.terrain.triangles() {
+                    let [a, b, c] = t.map(|i| pts[i as usize]);
+                    s.triangle([a, b, c], [tinted_color(a, b, c, o.color); 3]);
                 }
             }
         }

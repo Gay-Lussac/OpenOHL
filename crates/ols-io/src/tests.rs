@@ -258,3 +258,76 @@ fn plugin_formats_export_and_import() {
         .unwrap_err();
     assert!(err.contains("plugin geojson: no Point features"), "{err}");
 }
+
+/// Built-in surface formats: LandXML (several surfaces), points
+/// triangulated with a longest side; by id or extension.
+#[test]
+fn surface_formats_read_meshes() {
+    let mut r = Registry::with_builtin();
+    let t = ols_terrain::Terrain::from_mesh(
+        vec![[0.0, 0.0, 1.0], [10.0, 0.0, 2.0], [0.0, 10.0, 3.0]],
+        vec![[0, 1, 2]],
+    )
+    .unwrap();
+    let xml = ols_terrain::formats::write_landxml(&[("a", &t), ("b", &t)]);
+    let s = r
+        .surface_importer("xml")
+        .unwrap()
+        .import(xml.as_bytes(), "f", &Options::new())
+        .unwrap();
+    assert_eq!(s.len(), 2);
+    assert_eq!(s[1].name, "b");
+    let csv = "x,y,z\n0,0,1\n10,0,2\n0,10,3\n10,10,4\n100,100,9\n";
+    let mut options = Options::new();
+    let all = r
+        .surface_importer("points-csv")
+        .unwrap()
+        .import(csv.as_bytes(), "pts", &options)
+        .unwrap();
+    options.insert("max_edge".into(), "20".into());
+    let near = r
+        .surface_importer("csv")
+        .unwrap()
+        .import(csv.as_bytes(), "pts", &options)
+        .unwrap();
+    assert_eq!(near[0].name, "pts");
+    assert!(near[0].triangles.len() < all[0].triangles.len());
+    assert_eq!(r.surface_importers().count(), 4);
+}
+
+/// The example terrain plugin (ESRI ASCII grid) once built: its format
+/// next to the built-in ones; a point per cell, no data left out.
+#[test]
+fn terrain_plugin_reads_a_grid() {
+    let dir = root().join("plugins/examples/esri-grid");
+    if !dir
+        .join("target/wasm32-wasip2/release/esri_grid.wasm")
+        .exists()
+    {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_PLUGIN_TESTS").is_none(),
+            "esri-grid plugin not built"
+        );
+        eprintln!("skipping: esri-grid plugin not built");
+        return;
+    }
+    let host = ols_plugins::WasmHost::new().unwrap();
+    let mut r = Registry::with_builtin();
+    assert_eq!(r.add_plugin(&host, &dir).unwrap(), "esri-grid");
+    let asc = "ncols 3\nnrows 2\nxllcorner 1000\nyllcorner 2000\ncellsize 10\nNODATA_value -9999\n\
+               5 6 7\n1 2 -9999\n";
+    let i = r.surface_importer("asc").unwrap();
+    assert_eq!(i.origin(), "plugin esri-grid");
+    let s = i.import(asc.as_bytes(), "dem", &Options::new()).unwrap();
+    assert_eq!(s[0].points.len(), 5);
+    // Lower-left cell centre, from the southern row.
+    assert_eq!(s[0].points[3], [1005.0, 2005.0, 1.0]);
+    assert_eq!(s[0].triangles.len(), 2);
+    assert!(
+        r.surface_importer("asc")
+            .unwrap()
+            .import(b"ncols 3\n", "x", &Options::new())
+            .unwrap_err()
+            .contains("plugin esri-grid")
+    );
+}

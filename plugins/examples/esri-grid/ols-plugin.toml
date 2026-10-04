@@ -1,0 +1,14 @@
+[plugin]
+name = "esri-grid"
+version = "0.1.0"
+description = "Example terrain plugin: ESRI ASCII grid (.asc) elevation models as surfaces"
+sdk = "0.1"
+tier = "wasm"
+entry = "target/wasm32-wasip2/release/esri_grid.wasm"
+extension-points = ["terrain"]
+
+# A digital elevation model can be large: more than the default 5 s and
+# 256 MiB per call.
+[limits]
+seconds = 60
+memory-mib = 1024

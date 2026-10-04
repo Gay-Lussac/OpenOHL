@@ -59,12 +59,14 @@ jobs:
             .
             plugins/examples/hello-wasm
             plugins/examples/geojson
+            plugins/examples/esri-grid
             plugins/tests/runaway
       - name: Build test plugins
         shell: bash
         run: |
           (cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2)
           (cd plugins/examples/geojson && cargo build --release --target wasm32-wasip2)
+          (cd plugins/examples/esri-grid && cargo build --release --target wasm32-wasip2)
           (cd plugins/tests/runaway && cargo build --release --target wasm32-wasip2)
       - run: cargo test --workspace --exclude ols-py --locked
 

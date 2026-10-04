@@ -39,6 +39,8 @@ enum Content {
     Prims(Vec<Prim>),
     /// TIN triangles (indices into the index's mesh).
     Triangles(Vec<u32>),
+    /// Triangles of other surfaces: (surface, triangle indices).
+    Others(Vec<(usize, Vec<u32>)>),
     /// LiDAR points (indices into the model's points).
     Points(Vec<u32>),
     /// LiDAR points read from the project's point cloud when needed
@@ -82,6 +84,29 @@ impl ChunkIndex {
         let mut bounds: HashMap<Tile, Option<Bounds>> = HashMap::new();
         let mut mesh = None;
         let chunks: HashMap<Tile, Content> = match layer {
+            Layer::Surfaces => {
+                let mut by: HashMap<Tile, Vec<(usize, Vec<u32>)>> = HashMap::new();
+                for (s, o) in model.other_surfaces.iter().enumerate() {
+                    let pts = o.terrain.points();
+                    for (k, t) in o.terrain.triangles().iter().enumerate() {
+                        let [a, b, c] = t.map(|i| pts[i as usize]);
+                        let centre = [0, 1, 2].map(|i| (a[i] + b[i] + c[i]) / 3.0);
+                        let key = tile(centre);
+                        let list = by.entry(key).or_default();
+                        match list.last_mut() {
+                            Some((j, v)) if *j == s => v.push(k as u32),
+                            _ => list.push((s, vec![k as u32])),
+                        }
+                        let bb = bounds.entry(key).or_default();
+                        for p in [a, b, c] {
+                            grow(bb, p);
+                        }
+                    }
+                }
+                by.into_iter()
+                    .map(|(k, v)| (k, Content::Others(v)))
+                    .collect()
+            }
             Layer::Ground => {
                 let Some(g) = &model.ground else {
                     return Self::empty(grid);
@@ -248,6 +273,30 @@ impl ChunkIndex {
                 }
             }
             Content::Stored => {}
+            Content::Others(lists) => {
+                for (k, tris) in lists {
+                    let Some(o) = model.other_surfaces.get(*k) else {
+                        continue;
+                    };
+                    if level == 0 {
+                        let pts = o.terrain.points();
+                        for &t in tris {
+                            let [a, b, c] =
+                                o.terrain.triangles()[t as usize].map(|i| pts[i as usize]);
+                            s.triangle([a, b, c], [scene::tinted_color(a, b, c, o.color); 3]);
+                        }
+                    } else {
+                        let area = self.grid.bounds(tile);
+                        grid_surface(
+                            &mut s,
+                            &o.terrain,
+                            area,
+                            detail(level).max(0.5),
+                            |a, b, c| scene::tinted_color(a, b, c, o.color),
+                        );
+                    }
+                }
+            }
             Content::Triangles(tris) if level == 0 => {
                 if let Some(m) = &self.mesh {
                     for &k in tris {
@@ -290,6 +339,42 @@ impl ChunkIndex {
             }
         }
         s
+    }
+}
+
+/// A surface sampled on a regular grid of `step` over `area` (the coarse
+/// levels of detail), each triangle shaded by `color`.
+fn grid_surface(
+    s: &mut Scene,
+    g: &ols_terrain::Terrain,
+    area: ols_core::grid::Bounds,
+    step: f64,
+    color: impl Fn([f64; 3], [f64; 3], [f64; 3]) -> [u8; 4],
+) {
+    let n = ((area.max[0] - area.min[0]) / step).ceil() as usize;
+    let at = |i: usize, j: usize| {
+        let (x, y) = (
+            (area.min[0] + i as f64 * step).min(area.max[0]),
+            (area.min[1] + j as f64 * step).min(area.max[1]),
+        );
+        g.height(x, y).map(|z| [x, y, z])
+    };
+    let heights: Vec<Vec<Option<[f64; 3]>>> = (0..=n)
+        .map(|i| (0..=n).map(|j| at(i, j)).collect())
+        .collect();
+    for i in 0..n {
+        for j in 0..n {
+            let (Some(a), Some(b), Some(c), Some(d)) = (
+                heights[i][j],
+                heights[i + 1][j],
+                heights[i + 1][j + 1],
+                heights[i][j + 1],
+            ) else {
+                continue;
+            };
+            s.triangle([a, b, c], [color(a, b, c); 3]);
+            s.triangle([a, c, d], [color(a, c, d); 3]);
+        }
     }
 }
 

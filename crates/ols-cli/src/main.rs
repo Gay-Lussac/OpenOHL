@@ -14,6 +14,7 @@ mod clearance_run;
 mod io_run;
 mod project;
 mod sagtension_job;
+mod surface;
 
 #[derive(Parser)]
 #[command(
@@ -105,6 +106,11 @@ enum Command {
         /// File-format plugin directory (repeatable).
         #[arg(long)]
         plugin: Vec<PathBuf>,
+    },
+    /// Terrain surfaces (TINs) kept in a project file.
+    Surface {
+        #[command(subcommand)]
+        command: surface::SurfaceCommand,
     },
     /// Inspect plugins.
     Plugin {
@@ -454,6 +460,7 @@ fn main() -> ExitCode {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
         Some(Command::Formats { plugin }) => report(io_run::formats(&plugin)),
+        Some(Command::Surface { command }) => report(surface::run(command)),
         Some(Command::Serve {
             project,
             bind,

@@ -79,3 +79,34 @@ world io-plugin {
     /// file (.ols.json) as JSON.
     export import-file: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<string, string>;
 }
+
+/// Types of terrain plugins.
+interface terrain-types {
+    /// A terrain surface (TIN): points as x, y, z one after the other
+    /// (metres, x east, y north, z up), triangles as three point indices
+    /// each (from 0).
+    record surface {
+        /// Name (e.g. from the file).
+        name: string,
+        /// x0, y0, z0, x1, y1, z1, …
+        points: list<f64>,
+        /// a0, b0, c0, a1, b1, c1, …
+        triangles: list<u32>,
+    }
+}
+
+/// World of terrain plugins: read terrain surfaces (TINs) from files.
+world terrain-plugin {
+    use types.{plugin-info};
+    use io-types.{format};
+    use terrain-types.{surface};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    /// The surface formats this plugin reads (importers).
+    export formats: func() -> list<format>;
+
+    /// Reads the surfaces of `data` in format `format`.
+    export import-surfaces: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<list<surface>, string>;
+}

@@ -40,10 +40,14 @@ impl Listed {
         self.found.problem()
     }
 
-    /// A file-format plugin (WebAssembly, extension point `io`).
+    /// A format plugin (WebAssembly, extension point `io` or `terrain`).
     pub fn is_io(&self) -> bool {
         self.found.manifest.as_ref().is_ok_and(|m| {
-            m.plugin.tier == Tier::Wasm && m.plugin.extension_points.iter().any(|p| p == "io")
+            m.plugin.tier == Tier::Wasm
+                && m.plugin
+                    .extension_points
+                    .iter()
+                    .any(|p| p == "io" || p == "terrain")
         })
     }
 }
@@ -68,6 +72,8 @@ pub struct Formats {
     pub exporters: Vec<FormatInfo>,
     /// Importers.
     pub importers: Vec<FormatInfo>,
+    /// Terrain surface readers.
+    pub surfaces: Vec<FormatInfo>,
     /// Plugins whose formats could not be loaded, with why.
     pub errors: Vec<String>,
 }
@@ -87,12 +93,31 @@ enum Job {
         base: Box<ols_line::Line>,
         options: ols_io::Options,
     },
+    StoreSurfaces(SurfaceImport),
+}
+
+/// A terrain surface file to read and keep in a project.
+#[derive(Debug, Clone)]
+pub struct SurfaceImport {
+    /// The file.
+    pub path: PathBuf,
+    /// Format id (`None`: from the file extension).
+    pub format: Option<String>,
+    /// Format options.
+    pub options: ols_io::Options,
+    /// The project file.
+    pub project: PathBuf,
+    /// The user storing it.
+    pub user: String,
+    /// Name (`None`: the surface's own, else the file's).
+    pub name: Option<String>,
 }
 
 enum Reply {
     Formats(Formats),
     Exported(Result<String, String>),
     Imported(Result<Box<ols_line::Line>, String>),
+    SurfacesStored(Result<Vec<String>, String>),
 }
 
 /// The thread holding the format registry (plugin instances stay on it).
@@ -142,6 +167,9 @@ impl Worker {
                         } => {
                             Reply::Imported(import(&mut registry, &format, &path, &base, &options))
                         }
+                        Job::StoreSurfaces(job) => {
+                            Reply::SurfacesStored(store_surfaces(&mut registry, &job))
+                        }
                     };
                     if tx.send(reply).is_err() {
                         break;
@@ -151,6 +179,65 @@ impl Worker {
             .expect("formats thread");
         Self { jobs, replies }
     }
+}
+
+/// Reads a surface file and keeps its surfaces in the project (names made
+/// unique: " (2)"…); their names.
+fn store_surfaces(r: &mut ols_io::Registry, job: &SurfaceImport) -> Result<Vec<String>, String> {
+    let id = job.format.clone().unwrap_or_else(|| {
+        job.path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    });
+    let importer = r
+        .surface_importer(&id)
+        .ok_or_else(|| format!("no surface format for \"{id}\""))?;
+    let data = std::fs::read(&job.path).map_err(|e| format!("{}: {e}", job.path.display()))?;
+    let stem = job
+        .path
+        .file_stem()
+        .map_or("surface".into(), |s| s.to_string_lossy().into_owned());
+    let meshes = importer
+        .import(&data, &stem, &job.options)
+        .map_err(|e| format!("{}: {e}", job.path.display()))?;
+    let source = format!(
+        "{} ({})",
+        job.path
+            .file_name()
+            .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+        importer.id()
+    );
+    let session = ols_session::Session::open(&job.project).map_err(|e| e.to_string())?;
+    let mut taken: Vec<String> = session
+        .surfaces()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|i| i.name)
+        .collect();
+    let mut out = Vec::new();
+    for m in meshes {
+        let base = match &job.name {
+            Some(n) if !n.trim().is_empty() => n.trim().to_owned(),
+            _ if m.name.is_empty() => stem.clone(),
+            _ => m.name.clone(),
+        };
+        let mut name = base.clone();
+        let mut k = 2;
+        while taken.contains(&name) {
+            name = format!("{base} ({k})");
+            k += 1;
+        }
+        let t = m.terrain().map_err(|e| format!("{name}: {e}"))?;
+        session
+            .put_surface(&job.user, &name, &source, t.points(), t.triangles())
+            .map_err(|e| e.to_string())?;
+        taken.push(name.clone());
+        out.push(name);
+    }
+    session.checkpoint().map_err(|e| e.to_string())?;
+    Ok(out)
 }
 
 fn formats_of(r: &ols_io::Registry, errors: Vec<String>) -> Formats {
@@ -166,6 +253,15 @@ fn formats_of(r: &ols_io::Registry, errors: Vec<String>) -> Formats {
             .collect(),
         importers: r
             .importers()
+            .map(|e| FormatInfo {
+                id: e.id().into(),
+                extension: e.extension().into(),
+                description: e.description().into(),
+                origin: e.origin(),
+            })
+            .collect(),
+        surfaces: r
+            .surface_importers()
             .map(|e| FormatInfo {
                 id: e.id().into(),
                 extension: e.extension().into(),
@@ -256,6 +352,12 @@ pub struct Plugins {
     worker: Option<Worker>,
     /// The formats need loading again (plugins changed).
     stale: bool,
+    /// A surface import running.
+    pub storing: bool,
+    /// The formats asked of the worker, not come yet.
+    reloading: bool,
+    /// The surfaces an import kept (taken by the surface manager).
+    pub surfaces_stored: Option<Result<Vec<String>, String>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
@@ -382,11 +484,15 @@ impl Plugins {
             self.stale = false;
             let _ = worker.jobs.send(Job::Reload(dirs));
             self.formats = None;
+            self.reloading = true;
         }
         let mut imported = None;
         while let Ok(reply) = worker.replies.try_recv() {
             match reply {
-                Reply::Formats(f) => self.formats = Some(f),
+                Reply::Formats(f) => {
+                    self.formats = Some(f);
+                    self.reloading = false;
+                }
                 Reply::Exported(r) => {
                     if let Some(w) = &mut self.window {
                         w.busy = false;
@@ -398,6 +504,10 @@ impl Plugins {
                             Err(e) => w.error = Some(e),
                         }
                     }
+                }
+                Reply::SurfacesStored(r) => {
+                    self.storing = false;
+                    self.surfaces_stored = Some(r);
                 }
                 Reply::Imported(r) => {
                     if let Some(w) = &mut self.window {
@@ -414,7 +524,8 @@ impl Plugins {
             }
         }
         let waiting = ((self.open || self.window.is_some()) && self.formats.is_none())
-            || self.window.as_ref().is_some_and(|w| w.busy);
+            || self.window.as_ref().is_some_and(|w| w.busy)
+            || self.storing;
         if waiting {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
@@ -645,6 +756,25 @@ impl Plugins {
             "formats (none loaded)".into()
         } else {
             list.join(", ")
+        }
+    }
+
+    /// The formats are wanted (a window lists them): the worker starts
+    /// and loads them if it has not.
+    pub fn want_formats(&mut self) {
+        self.worker.get_or_insert_with(Worker::start);
+        if self.formats.is_none() && !self.reloading {
+            self.stale = true;
+        }
+    }
+
+    /// Reads a surface file and keeps it in the project (on the worker);
+    /// the result comes in [`Plugins::surfaces_stored`].
+    pub fn store_surfaces(&mut self, job: SurfaceImport) {
+        let worker = self.worker.get_or_insert_with(Worker::start);
+        if worker.jobs.send(Job::StoreSurfaces(job)).is_ok() {
+            self.storing = true;
+            self.surfaces_stored = None;
         }
     }
 

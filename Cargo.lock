@@ -3520,6 +3520,7 @@ dependencies = [
  "ols-crs",
  "ols-line",
  "ols-plugins",
+ "ols-terrain",
  "ols-weather",
  "serde_json",
  "zip",
@@ -3641,6 +3642,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "zstd",
 ]
 
 [[package]]

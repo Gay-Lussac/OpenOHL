@@ -23,6 +23,8 @@
 
 use std::fmt;
 
+pub mod formats;
+
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, Point2, PositionInTriangulation, Triangulation,
 };
@@ -665,6 +667,29 @@ impl Terrain {
                 }
             }
         }
+    }
+
+    /// The points (x, y, z).
+    pub fn points(&self) -> &[[f64; 3]] {
+        &self.points
+    }
+
+    /// The triangles (indices into the points).
+    pub fn triangles(&self) -> &[[u32; 3]] {
+        &self.triangles
+    }
+
+    /// The extent in plan and height: (min, max), or `None` when empty.
+    pub fn bounds(&self) -> Option<([f64; 3], [f64; 3])> {
+        let mut it = self.points.iter();
+        let first = *it.next()?;
+        Some(it.fold((first, first), |(mut lo, mut hi), p| {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+            (lo, hi)
+        }))
     }
 
     /// The surface as a mesh: points and triangles (indices into the

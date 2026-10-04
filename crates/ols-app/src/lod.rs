@@ -15,8 +15,9 @@ use ols_render::lod::LodRule;
 use crate::scene::Layer;
 
 /// The layers drawn in chunks with levels of detail.
-pub const CHUNKED: [Layer; 6] = [
+pub const CHUNKED: [Layer; 7] = [
     Layer::Ground,
+    Layer::Surfaces,
     Layer::Points,
     Layer::Structures,
     Layer::Wires,
@@ -41,7 +42,7 @@ impl DetailKind {
     /// The kind of a chunked layer.
     pub fn of(layer: Layer) -> Self {
         match layer {
-            Layer::Ground => DetailKind::Spacing,
+            Layer::Ground | Layer::Surfaces => DetailKind::Spacing,
             Layer::Points => DetailKind::Percent,
             Layer::Structures => DetailKind::Structure,
             _ => DetailKind::PerSpan,
@@ -97,7 +98,7 @@ impl LodRow {
     /// view, the detail falls with the distance.
     pub fn default_for(layer: Layer) -> Self {
         let (render_distance, from, detail) = match layer {
-            Layer::Ground => (30_000.0, [1_500.0, 5_000.0], [8.0, 32.0]),
+            Layer::Ground | Layer::Surfaces => (30_000.0, [1_500.0, 5_000.0], [8.0, 32.0]),
             Layer::Points => (3_000.0, [500.0, 1_500.0], [25.0, 5.0]),
             Layer::Structures => (50_000.0, [2_000.0, 8_000.0], [0.0, 0.0]),
             _ => (50_000.0, [1_500.0, 6_000.0], [16.0, 5.0]),
@@ -141,6 +142,7 @@ pub struct LodSettings {
 fn key(layer: Layer) -> &'static str {
     match layer {
         Layer::Ground => "terrain",
+        Layer::Surfaces => "surfaces",
         Layer::Points => "lidar",
         Layer::Structures => "structures",
         Layer::Wires => "wires",

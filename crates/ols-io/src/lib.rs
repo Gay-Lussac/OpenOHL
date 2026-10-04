@@ -16,6 +16,7 @@
 
 pub mod formats;
 pub mod plugin;
+pub mod surfaces;
 
 use std::collections::BTreeMap;
 
@@ -218,6 +219,7 @@ pub trait Importer {
 pub struct Registry {
     exporters: Vec<Box<dyn Exporter>>,
     importers: Vec<Box<dyn Importer>>,
+    surface_importers: Vec<Box<dyn surfaces::SurfaceImporter>>,
 }
 
 impl Registry {
@@ -225,6 +227,7 @@ impl Registry {
     pub fn with_builtin() -> Self {
         let mut r = Self::default();
         formats::register(&mut r);
+        surfaces::register(&mut r);
         r
     }
 
@@ -240,13 +243,58 @@ impl Registry {
         self.importers.push(i);
     }
 
-    /// The formats of a file-format plugin directory.
+    /// Adds a terrain surface reader (a later one with the same id
+    /// replaces it).
+    pub fn add_surface_importer(&mut self, i: Box<dyn surfaces::SurfaceImporter>) {
+        self.surface_importers.retain(|x| x.id() != i.id());
+        self.surface_importers.push(i);
+    }
+
+    /// Terrain surface readers.
+    pub fn surface_importers(&self) -> impl Iterator<Item = &dyn surfaces::SurfaceImporter> {
+        self.surface_importers.iter().map(|i| i.as_ref())
+    }
+
+    /// The surface reader with this id, or for this file extension.
+    pub fn surface_importer(
+        &mut self,
+        id_or_extension: &str,
+    ) -> Option<&mut Box<dyn surfaces::SurfaceImporter>> {
+        let key = id_or_extension.to_ascii_lowercase();
+        let k = self
+            .surface_importers
+            .iter()
+            .position(|e| e.id() == key)
+            .or_else(|| {
+                self.surface_importers
+                    .iter()
+                    .position(|e| e.extension() == key)
+            })?;
+        self.surface_importers.get_mut(k)
+    }
+
+    /// The formats of a plugin directory: a file-format plugin (extension
+    /// point `io`), a terrain plugin (`terrain`), or both.
     pub fn add_plugin(
         &mut self,
         host: &ols_plugins::WasmHost,
         dir: &std::path::Path,
     ) -> Result<String, String> {
-        plugin::register(self, host, dir)
+        let manifest = ols_plugins::Manifest::load(dir).map_err(|e| e.to_string())?;
+        let points = &manifest.plugin.extension_points;
+        let mut name = None;
+        if points.iter().any(|p| p == "io") {
+            name = Some(plugin::register(self, host, dir)?);
+        }
+        if points.iter().any(|p| p == "terrain") {
+            name = Some(surfaces::register_plugin(self, host, dir)?);
+        }
+        name.ok_or_else(|| {
+            format!(
+                "plugin {}: no format extension point (io or terrain)",
+                manifest.plugin.name
+            )
+        })
     }
 
     /// Exporters.

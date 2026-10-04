@@ -196,6 +196,12 @@ pub struct Model {
     pub cases: Vec<Solved>,
     /// Ground surface (shared with clearance checks).
     pub ground: Option<std::sync::Arc<Terrain>>,
+    /// Where the ground comes from, in words (empty: built at opening).
+    pub ground_source: String,
+    /// The project's terrain surface settings (active, shown).
+    pub surface_settings: crate::surfaces::SurfaceSettings,
+    /// Other terrain surfaces shown.
+    pub other_surfaces: Vec<crate::surfaces::OtherSurface>,
     /// The point cloud read (`FILE.ols` or `FILE.ols#name`).
     pub cloud: Option<String>,
     /// LiDAR points shown (thinned to the budget).
@@ -1046,14 +1052,55 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         );
     }
     let origin = line.structures.first().map_or([0.0; 3], |s| s.position);
+    let mut ground_source = String::new();
     let mut ground = match &sources.terrain {
         Some(p) => {
             let t = Terrain::load(p).map_err(|e| e.to_string())?;
             step(format!("ground: {} triangles", t.num_triangles()), &mut log);
+            ground_source = format!("survey file {}", p.display());
             Some(t)
         }
         None => None,
     };
+    // The project's terrain surfaces: the active one is the ground (no
+    // ground built from LiDAR then); those shown are read too.
+    let surface_settings = session
+        .as_ref()
+        .map(crate::surfaces::SurfaceSettings::read)
+        .unwrap_or_default();
+    let mut other_surfaces = Vec::new();
+    if session.is_some() {
+        if ground.is_none()
+            && let Some(name) = &surface_settings.active
+        {
+            let t = Instant::now();
+            match crate::surfaces::load(&sources.file, name) {
+                Ok(g) => {
+                    step(
+                        format!(
+                            "ground: surface {name}, {} triangles, read in {:.1?}",
+                            g.num_triangles(),
+                            t.elapsed()
+                        ),
+                        &mut log,
+                    );
+                    ground_source = format!("surface {name}");
+                    ground = Some(g);
+                }
+                Err(e) => step(format!("surface {name} not read: {e}"), &mut log),
+            }
+        }
+        for (name, color) in &surface_settings.shown {
+            match crate::surfaces::load(&sources.file, name) {
+                Ok(g) => other_surfaces.push(crate::surfaces::OtherSurface {
+                    name: name.clone(),
+                    terrain: std::sync::Arc::new(g),
+                    color: *color,
+                }),
+                Err(e) => step(format!("surface {name} not read: {e}"), &mut log),
+            }
+        }
+    }
     // Point cloud: given, else the project's own.
     let cloud = sources.pointcloud.clone().or_else(|| {
         let is_project = sources.file.extension().is_some_and(|e| e == "ols");
@@ -1110,6 +1157,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
             std::collections::HashMap::new();
         let mut ground_points: Vec<[f64; 3]> = Vec::new();
         let mm = |v: f64, i: usize| ((v - origin[i]) * 1000.0).round() as i32;
+        // A surface or survey file gives the ground: no LiDAR ground then.
+        let need_ground = ground.is_none();
         // Exit clause: decoding is ~1 s per 10⁷ points; 10 min is far beyond.
         let budget =
             ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
@@ -1119,7 +1168,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
                     points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
                 }
                 // The ground surface: ground classes in the corridor.
-                if is_ground[c as usize] && corridor.contains(x, y) {
+                if need_ground && is_ground[c as usize] && corridor.contains(x, y) {
                     // Lowest point per 1 m cell for the surface.
                     let key = (x.floor() as i64, y.floor() as i64);
                     match cells.get(&key) {
@@ -1179,6 +1228,9 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         line,
         cases: solved,
         ground: ground.map(std::sync::Arc::new),
+        ground_source,
+        surface_settings,
+        other_surfaces,
         cloud,
         points,
         origin,
