@@ -295,6 +295,63 @@ fn surface_formats_read_meshes() {
     assert_eq!(r.surface_importers().count(), 4);
 }
 
+#[test]
+fn options_are_parsed_or_refused() {
+    let o = parse_options(" crs = EPSG:2056,\nmax_edge=50\n\n").unwrap();
+    assert_eq!(o["crs"], "EPSG:2056");
+    assert_eq!(o["max_edge"], "50");
+    assert!(parse_options("").unwrap().is_empty());
+    assert_eq!(
+        parse_options("a=1,oops").unwrap_err(),
+        "option \"oops\": use KEY=VALUE"
+    );
+    assert!(parse_option("=1").is_err());
+    assert_eq!(parse_option("crs=a,b").unwrap().1, "a,b");
+    assert_eq!(format_of(Path::new("g.XML"), None), "xml");
+    assert_eq!(format_of(Path::new("g.XML"), Some(" obj ")), "obj");
+}
+
+/// Surfaces stored under free names: within one file and beside those
+/// the project holds (renamed, replaced or refused).
+#[test]
+fn surfaces_are_stored_under_free_names() {
+    use crate::surfaces::{WhenTaken, free_name, import_into};
+    assert_eq!(free_name("g", &["g".into(), "g (2)".into()]), "g (3)");
+    let dir = std::env::temp_dir().join(format!("ols-io-surfaces-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let t = ols_terrain::Terrain::from_mesh(
+        vec![[0.0, 0.0, 1.0], [10.0, 0.0, 2.0], [0.0, 10.0, 3.0]],
+        vec![[0, 1, 2]],
+    )
+    .unwrap();
+    let file = dir.join("ground.xml");
+    std::fs::write(
+        &file,
+        ols_terrain::formats::write_landxml(&[("a", &t), ("b", &t)]),
+    )
+    .unwrap();
+    let s = ols_session::Session::open(&dir.join("p.ols")).unwrap();
+    s.set_user("ann", "ann", ols_session::Role::Admin).unwrap();
+    let mut r = Registry::with_builtin();
+    let o = Options::new();
+    let mut store = |name: Option<&str>, when: WhenTaken| {
+        import_into(&mut r, &file, None, &o, &s, "ann", name, when)
+            .map(|v| v.into_iter().map(|s| s.name).collect::<Vec<_>>().join("|"))
+    };
+    assert_eq!(store(None, WhenTaken::Refuse).unwrap(), "a|b");
+    assert_eq!(store(Some("g"), WhenTaken::Rename).unwrap(), "g|g (2)");
+    assert_eq!(store(Some("g"), WhenTaken::Rename).unwrap(), "g (3)|g (4)");
+    assert!(
+        store(None, WhenTaken::Refuse)
+            .unwrap_err()
+            .contains("\"a\"")
+    );
+    assert_eq!(store(None, WhenTaken::Replace).unwrap(), "a|b");
+    assert_eq!(s.surfaces().unwrap().len(), 6);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The example terrain plugin (ESRI ASCII grid) once built: its format
 /// next to the built-in ones; a point per cell, no data left out.
 #[test]

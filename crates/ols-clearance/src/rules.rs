@@ -90,6 +90,8 @@ use serde::Deserialize;
 pub const RULE_FILE_EXTENSION: &str = "olsr";
 /// Format identifier.
 pub const RULE_FILE_FORMAT: &str = "ols-clearance-rules";
+/// Newest format version read.
+pub const RULE_FILE_VERSION: u32 = 1;
 
 /// What a rule checks against.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -476,12 +478,13 @@ impl RuleSet {
     /// Parses and checks a rule set.
     pub fn parse(text: &str) -> Result<Self, String> {
         let raw: RawRules = toml::from_str(text).map_err(|e| e.to_string())?;
-        if let Some(f) = raw.format.as_deref().filter(|f| *f != RULE_FILE_FORMAT) {
-            return Err(format!("format \"{f}\" is not \"{RULE_FILE_FORMAT}\""));
-        }
-        if raw.version.is_some_and(|v| v > 1) {
-            return Err("rule format version newer than supported (1)".into());
-        }
+        ols_core::files::check_header(
+            raw.format.as_deref(),
+            raw.version,
+            RULE_FILE_FORMAT,
+            RULE_FILE_VERSION,
+            "rule",
+        )?;
         let rules = raw
             .rules
             .into_iter()

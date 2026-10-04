@@ -356,11 +356,8 @@ fn grid_surface(
 
 /// The point cloud of a model: project file and cloud name.
 pub fn cloud_of(model: &Model) -> Option<(std::path::PathBuf, Option<String>)> {
-    let spec = model.cloud.as_ref()?;
-    Some(match spec.split_once('#') {
-        Some((f, n)) => (f.into(), Some(n.to_owned())),
-        None => (spec.into(), None),
-    })
+    let (file, name) = ols_lidar::cloud_spec(model.cloud.as_ref()?);
+    Some((file.to_path_buf(), name.map(str::to_owned)))
 }
 
 /// A tile of LiDAR points to read.

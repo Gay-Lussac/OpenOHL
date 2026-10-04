@@ -21,23 +21,9 @@ pub fn registry(plugins: &[PathBuf]) -> Result<Registry, String> {
     Ok(r)
 }
 
-/// `KEY=VALUE` options.
+/// `KEY=VALUE` options, one per `--option` (a value may hold commas).
 pub fn options(specs: &[String]) -> Result<Options, String> {
-    specs
-        .iter()
-        .map(|s| {
-            s.split_once('=')
-                .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
-                .ok_or_else(|| format!("option \"{s}\": use KEY=VALUE"))
-        })
-        .collect()
-}
-
-fn extension(path: &Path) -> String {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase()
+    specs.iter().map(|s| ols_io::parse_option(s)).collect()
 }
 
 /// Lists the formats.
@@ -80,7 +66,10 @@ pub fn export(
     for spec in specs {
         let (id, path) = match spec.split_once('=') {
             Some((id, path)) => (id.to_owned(), PathBuf::from(path)),
-            None => (extension(Path::new(spec)), PathBuf::from(spec)),
+            None => (
+                ols_io::format_of(Path::new(spec), None),
+                PathBuf::from(spec),
+            ),
         };
         let exporter = registry.exporter(&id).ok_or_else(|| {
             format!("--export {spec}: no exporter for \"{id}\" (see ols formats)")
@@ -111,7 +100,7 @@ pub fn import(
     plugins: &[PathBuf],
 ) -> Result<(), String> {
     let mut r = registry(plugins)?;
-    let id = format.map_or_else(|| extension(file), str::to_owned);
+    let id = ols_io::format_of(file, format);
     let importer = r.importer(&id).ok_or_else(|| {
         format!("no importer for \"{id}\" (see ols formats; choose with --format)")
     })?;

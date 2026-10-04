@@ -7,8 +7,11 @@
 //! See `docs/ARCHITECTURE.md` for how this crate fits into the platform.
 
 pub mod budget;
+pub mod files;
+pub mod geometry;
 pub mod grid;
 pub mod pattern;
+pub mod text;
 pub mod units;
 
 /// Version of the OLS CAD core.

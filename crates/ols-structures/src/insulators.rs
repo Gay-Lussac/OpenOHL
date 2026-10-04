@@ -32,6 +32,8 @@ use serde::Deserialize;
 pub const INSULATOR_FILE_EXTENSION: &str = "olsi";
 /// Format identifier.
 pub const INSULATOR_FILE_FORMAT: &str = "ols-insulator";
+/// Newest format version read.
+pub const INSULATOR_FILE_VERSION: u32 = 1;
 
 fn default_stiffness() -> Force {
     Force::from_newtons(5e7)
@@ -88,16 +90,13 @@ pub struct InsulatorAssembly {
 impl InsulatorAssembly {
     /// Checks plausibility.
     pub fn validate(&self) -> Result<(), String> {
-        if let Some(f) = self
-            .format
-            .as_deref()
-            .filter(|f| *f != INSULATOR_FILE_FORMAT)
-        {
-            return Err(format!("format \"{f}\" is not \"{INSULATOR_FILE_FORMAT}\""));
-        }
-        if self.version.is_some_and(|v| v > 1) {
-            return Err("insulator format version newer than supported (1)".into());
-        }
+        ols_core::files::check_header(
+            self.format.as_deref(),
+            self.version,
+            INSULATOR_FILE_FORMAT,
+            INSULATOR_FILE_VERSION,
+            "insulator",
+        )?;
         if !(self.length.si() > 0.0 && self.length.si() < 50.0) {
             return Err(format!("length {} must be between 0 and 50 m", self.length));
         }

@@ -370,18 +370,6 @@ pub fn pick_in_model(
     best.map_or(Selection::None, |b| b.1)
 }
 
-/// Distance on screen from `p` to the segment `a`–`b`.
-fn to_segment(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
-    let d = [b[0] - a[0], b[1] - a[1]];
-    let len2 = d[0] * d[0] + d[1] * d[1];
-    let t = if len2 > 0.0 {
-        (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / len2).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    (a[0] + t * d[0] - p[0]).hypot(a[1] + t * d[1] - p[1])
-}
-
 /// The candidate nearest to `at` on screen within `radius` pixels, given a
 /// projection to screen coordinates (`None`: not visible). At about the
 /// same distance, points win over the lines they sit on, structures over
@@ -407,7 +395,7 @@ fn pick_scored(
         .iter()
         .filter_map(|(s, a, b)| {
             let (pa, pb) = (project(*a)?, project(*b)?);
-            let d = to_segment(at, pa, pb);
+            let d = ols_core::geometry::distance_to_segment(at, pa, pb);
             let bonus = s.kind().map_or(0.0, Snap::priority);
             (d <= radius).then_some((d - bonus, s))
         })

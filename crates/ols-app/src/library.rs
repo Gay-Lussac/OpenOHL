@@ -358,14 +358,7 @@ impl LibraryKind {
         } else {
             at.parent().map(Path::to_path_buf).unwrap_or_default()
         };
-        let mut out: Vec<PathBuf> = std::fs::read_dir(&dir)
-            .map(|it| {
-                it.filter_map(|e| e.ok().map(|e| e.path()))
-                    .filter(|p| p.extension().is_some_and(|x| x == self.extension()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        out.sort();
+        let mut out = ols_core::files::files_with_extension(&dir, self.extension());
         if at.is_file() && !out.contains(&at) {
             out.insert(0, at);
         }

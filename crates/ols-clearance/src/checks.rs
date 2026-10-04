@@ -370,6 +370,25 @@ impl WireResult {
         self.required.radial.is_some_and(|r| hit.distance < r)
     }
 
+    /// Both measures: `vertical` and `radial`, the clearance found, the
+    /// clearance required and the count below it.
+    pub fn measures(&self) -> [(&'static str, Option<Hit>, Option<f64>, u64); 2] {
+        [
+            (
+                "vertical",
+                self.vertical,
+                self.required.vertical,
+                self.vertical_violations,
+            ),
+            (
+                "radial",
+                self.radial,
+                self.required.radial,
+                self.radial_violations,
+            ),
+        ]
+    }
+
     /// Whether a requirement is not met.
     pub fn violates(&self) -> bool {
         let below =

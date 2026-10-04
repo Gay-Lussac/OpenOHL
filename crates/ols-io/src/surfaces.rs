@@ -203,3 +203,112 @@ pub fn register_plugin(
     }
     Ok(name)
 }
+
+/// What [`import_into`] does with a surface whose name the project holds
+/// already.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhenTaken {
+    /// Keep both: the new one under a free name (`name (2)`, …).
+    Rename,
+    /// Replace the stored one.
+    Replace,
+    /// Store nothing and say so.
+    Refuse,
+}
+
+/// A surface stored by [`import_into`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stored {
+    /// Its name in the project.
+    pub name: String,
+    /// Number of points.
+    pub points: usize,
+    /// Number of triangles.
+    pub triangles: usize,
+}
+
+/// `base`, or `base (2)`, `base (3)`… whichever is not `taken`.
+pub fn free_name(base: &str, taken: &[String]) -> String {
+    let mut name = base.to_owned();
+    let mut k = 2;
+    while taken.contains(&name) {
+        name = format!("{base} ({k})");
+        k += 1;
+    }
+    name
+}
+
+/// Reads a surface file (format: `format`, else the extension) and keeps
+/// its surfaces in the project. Each is named `name` if given, else its
+/// own name, else the file's; surfaces of one file never share a name
+/// (`name (2)`, …). Every surface is checked before any is stored.
+#[allow(clippy::too_many_arguments)]
+pub fn import_into(
+    registry: &mut Registry,
+    path: &Path,
+    format: Option<&str>,
+    options: &Options,
+    session: &ols_session::Session,
+    user: &str,
+    name: Option<&str>,
+    when_taken: WhenTaken,
+) -> Result<Vec<Stored>, String> {
+    let id = crate::format_of(path, format);
+    let importer = registry
+        .surface_importer(&id)
+        .ok_or_else(|| format!("no surface format \"{id}\""))?;
+    let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let stem = path
+        .file_stem()
+        .map_or("surface".into(), |s| s.to_string_lossy().into_owned());
+    let meshes = importer
+        .import(&data, &stem, options)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let source = format!(
+        "{} ({})",
+        path.file_name()
+            .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+        importer.id()
+    );
+    let existing: Vec<String> = session
+        .surfaces()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|i| i.name)
+        .collect();
+    let mut taken = match when_taken {
+        WhenTaken::Rename => existing.clone(),
+        WhenTaken::Replace | WhenTaken::Refuse => Vec::new(),
+    };
+    let mut named = Vec::new();
+    for m in meshes {
+        let base = match name.map(str::trim) {
+            Some(n) if !n.is_empty() => n.to_owned(),
+            _ if m.name.is_empty() => stem.clone(),
+            _ => m.name.clone(),
+        };
+        let name = free_name(&base, &taken);
+        if when_taken == WhenTaken::Refuse && existing.contains(&name) {
+            return Err(format!(
+                "a surface \"{name}\" exists already (replace it, or choose another name)"
+            ));
+        }
+        // Checked like any surface (indices, areas).
+        let t = m.terrain().map_err(|e| format!("{name}: {e}"))?;
+        taken.push(name.clone());
+        named.push((name, t));
+    }
+    let mut out = Vec::new();
+    for (name, t) in named {
+        session
+            .put_surface(user, &name, &source, t.points(), t.triangles())
+            .map_err(|e| e.to_string())?;
+        out.push(Stored {
+            name,
+            points: t.num_points(),
+            triangles: t.num_triangles(),
+        });
+    }
+    session.checkpoint().map_err(|e| e.to_string())?;
+    Ok(out)
+}

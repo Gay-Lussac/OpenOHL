@@ -878,14 +878,6 @@ impl Session {
         spatial::query(&self.conn, &self.grid, area)
     }
 
-    /// Objects whose plan bounds touch a tile (any level).
-    pub fn objects_in_tile(
-        &self,
-        tile: &Tile,
-    ) -> Result<Vec<(Kind, String, spatial::Entry)>, SessionError> {
-        self.objects_in(&self.grid.bounds(tile))
-    }
-
     /// Number of objects of each kind by home tile.
     pub fn home_tiles(&self) -> BTreeMap<Tile, BTreeMap<Kind, usize>> {
         let mut out: BTreeMap<Tile, BTreeMap<Kind, usize>> = BTreeMap::new();

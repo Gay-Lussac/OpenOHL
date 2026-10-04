@@ -30,8 +30,8 @@ use serde::Deserialize;
 struct Job {
     /// Cable id in the library.
     cable: String,
-    /// Wire library (`.olsw` file or directory), relative to the job file (default: `libraries/cables`
-    /// in the current directory).
+    /// Wire library (`.olsw` file or directory), relative to the job file (default: the shipped
+    /// `libraries/cables`).
     library: Option<PathBuf>,
     spans: Vec<SpanInput>,
     reference: Reference,
@@ -471,7 +471,7 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
     let job: Job = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
     let library_dir = match &job.library {
         Some(dir) => path.parent().unwrap_or(Path::new(".")).join(dir),
-        None => PathBuf::from("libraries/cables"),
+        None => ols_core::files::shipped_library("cables"),
     };
     let library = Library::load(&library_dir).map_err(|e| e.to_string())?;
     let cable = library.get(&job.cable).ok_or_else(|| {

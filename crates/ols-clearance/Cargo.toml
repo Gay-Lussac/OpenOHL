@@ -1,6 +1,6 @@
 [package]
 name = "ols-clearance"
-description = "OLS CAD clearances: wire to ground per weather case"
+description = "OLS CAD clearances: wires to the ground, points and other wires, by rule"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

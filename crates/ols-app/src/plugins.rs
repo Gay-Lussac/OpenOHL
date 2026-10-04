@@ -208,60 +208,18 @@ impl Worker {
 /// Reads a surface file and keeps its surfaces in the project (names made
 /// unique: " (2)"…); their names.
 fn store_surfaces(r: &mut ols_io::Registry, job: &SurfaceImport) -> Result<Vec<String>, String> {
-    let id = job.format.clone().unwrap_or_else(|| {
-        job.path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase()
-    });
-    let importer = r
-        .surface_importer(&id)
-        .ok_or_else(|| format!("no surface format for \"{id}\""))?;
-    let data = std::fs::read(&job.path).map_err(|e| format!("{}: {e}", job.path.display()))?;
-    let stem = job
-        .path
-        .file_stem()
-        .map_or("surface".into(), |s| s.to_string_lossy().into_owned());
-    let meshes = importer
-        .import(&data, &stem, &job.options)
-        .map_err(|e| format!("{}: {e}", job.path.display()))?;
-    let source = format!(
-        "{} ({})",
-        job.path
-            .file_name()
-            .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
-        importer.id()
-    );
     let session = ols_session::Session::open(&job.project).map_err(|e| e.to_string())?;
-    let mut taken: Vec<String> = session
-        .surfaces()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|i| i.name)
-        .collect();
-    let mut out = Vec::new();
-    for m in meshes {
-        let base = match &job.name {
-            Some(n) if !n.trim().is_empty() => n.trim().to_owned(),
-            _ if m.name.is_empty() => stem.clone(),
-            _ => m.name.clone(),
-        };
-        let mut name = base.clone();
-        let mut k = 2;
-        while taken.contains(&name) {
-            name = format!("{base} ({k})");
-            k += 1;
-        }
-        let t = m.terrain().map_err(|e| format!("{name}: {e}"))?;
-        session
-            .put_surface(&job.user, &name, &source, t.points(), t.triangles())
-            .map_err(|e| e.to_string())?;
-        taken.push(name.clone());
-        out.push(name);
-    }
-    session.checkpoint().map_err(|e| e.to_string())?;
-    Ok(out)
+    let stored = ols_io::surfaces::import_into(
+        r,
+        &job.path,
+        job.format.as_deref(),
+        &job.options,
+        &session,
+        &job.user,
+        job.name.as_deref(),
+        ols_io::surfaces::WhenTaken::Rename,
+    )?;
+    Ok(stored.into_iter().map(|s| s.name).collect())
 }
 
 /// Reads another program's file into a new project (line and library
@@ -270,41 +228,16 @@ fn create_project(
     r: &mut ols_io::Registry,
     job: &ProjectImport,
 ) -> Result<(PathBuf, Vec<String>), String> {
-    let into = job.into.with_extension("ols");
-    if into.exists() {
-        return Err(format!("{} exists already", into.display()));
-    }
-    let id = job.format.clone().unwrap_or_else(|| {
-        job.path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase()
-    });
-    let importer = r.project_importer(&id).ok_or_else(|| {
-        format!("no project format for \"{id}\": a project plugin (Plugins › Plugin manager)")
-    })?;
-    let data = std::fs::read(&job.path).map_err(|e| format!("{}: {e}", job.path.display()))?;
-    let mut p = importer.import(&data, &job.options)?;
-    if job.clip_in {
-        let (n, failed) = p.clip_in();
-        p.notes.push(format!(
-            "{n} sections clipped in at their stringing condition"
-        ));
-        p.notes
-            .extend(failed.into_iter().map(|f| format!("not clipped in: {f}")));
-    }
-    if let Err(e) = p.line.validate() {
-        p.notes.push(format!("the line does not check yet: {e}"));
-    }
-    let mut s = ols_session::Session::open(&into).map_err(|e| e.to_string())?;
-    s.import(&p.line, &job.user).map_err(|e| e.to_string())?;
-    for (kind, name, text) in &p.libraries {
-        s.put_library_file(&job.user, kind, name, text)
-            .map_err(|e| e.to_string())?;
-    }
-    s.checkpoint().map_err(|e| e.to_string())?;
-    Ok((into, p.notes))
+    let made = ols_io::projects::create_project(
+        r,
+        &job.path,
+        job.format.as_deref(),
+        &job.options,
+        &job.into,
+        &job.user,
+        job.clip_in,
+    )?;
+    Ok((made.path, made.project.notes))
 }
 
 fn formats_of(r: &ols_io::Registry, errors: Vec<String>) -> Formats {
@@ -1002,7 +935,7 @@ impl Plugins {
 
     /// Sends the window's job for `path` to the worker.
     pub fn run(&mut self, w: &mut FormatWindow, model: &crate::model::Model, path: PathBuf) {
-        let options = match options(&w.options) {
+        let options = match ols_io::parse_options(&w.options) {
             Ok(o) => o,
             Err(e) => {
                 w.error = Some(e);
@@ -1042,17 +975,4 @@ impl Plugins {
         w.error = None;
         w.busy = worker.jobs.send(job).is_ok();
     }
-}
-
-/// `KEY=VALUE` lines.
-fn options(text: &str) -> Result<ols_io::Options, String> {
-    text.lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(|l| {
-            l.split_once('=')
-                .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
-                .ok_or_else(|| format!("option \"{l}\": use KEY=VALUE"))
-        })
-        .collect()
 }

@@ -13,8 +13,9 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use eframe::egui;
+use ols_core::text::format_rgb;
 use ols_lidar::ClassScheme;
-use ols_lidar::classes::{ClassDef, format_rgb};
+use ols_lidar::classes::ClassDef;
 
 use crate::model::Model;
 

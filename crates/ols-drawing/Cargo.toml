@@ -9,12 +9,12 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+ols-core.workspace = true
 ols-line.workspace = true
 ols-terrain.workspace = true
 
 [dev-dependencies]
 ols-cables.workspace = true
-ols-core.workspace = true
 ols-weather.workspace = true
 
 [lints]

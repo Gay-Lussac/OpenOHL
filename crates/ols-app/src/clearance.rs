@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
-use ols_clearance::{PairMode, PointCheck, Rule, RuleSet, Target, Wire, WireResult, WireSet};
+use ols_clearance::{CaseTargets, Outcome, Rule, RuleSet, Skipped, Wire, WireResult};
 use ols_line::Line;
 use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;
@@ -96,15 +96,7 @@ fn wire_selection(w: &Wire) -> Selection {
 
 /// The findings of one result (vertical and radial).
 fn findings(rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireResult, out: &mut Vec<Finding>) {
-    for (measure, hit, required, count) in [
-        (
-            "vertical",
-            r.vertical,
-            r.required.vertical,
-            r.vertical_violations,
-        ),
-        ("radial", r.radial, r.required.radial, r.radial_violations),
-    ] {
+    for (measure, hit, required, count) in r.measures() {
         if let (Some(h), Some(req)) = (hit, required)
             && h.distance < req
         {
@@ -124,38 +116,6 @@ fn findings(rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireResult, out: &mut V
     }
 }
 
-/// "lowest vertical 2.00 m, radial 1.25 m" over results.
-fn lowest<'a>(results: impl Iterator<Item = &'a WireResult> + Clone) -> String {
-    let min = |f: fn(&WireResult) -> Option<ols_clearance::Hit>| {
-        results
-            .clone()
-            .filter_map(f)
-            .map(|h| h.distance)
-            .min_by(f64::total_cmp)
-    };
-    let parts: Vec<String> = [
-        ("vertical", min(|r| r.vertical)),
-        ("radial", min(|r| r.radial)),
-    ]
-    .into_iter()
-    .filter_map(|(k, d)| d.map(|d| format!("{k} {d:.2} m")))
-    .collect();
-    if parts.is_empty() {
-        "nothing within reach".into()
-    } else {
-        format!("lowest {}", parts.join(", "))
-    }
-}
-
-/// Whether `rule` applies to `case` (its `cases` list, default all).
-fn applies(rule: &Rule, case: &str) -> bool {
-    rule.cases.is_empty()
-        || rule
-            .cases
-            .iter()
-            .any(|c| ols_weather::name_matches(c, case))
-}
-
 /// Runs the check.
 pub fn run(input: &Input) -> Result<Report, String> {
     let started = Instant::now();
@@ -165,162 +125,105 @@ pub fn run(input: &Input) -> Result<Report, String> {
         ..Report::default()
     };
     // Voltages of the sections: every rule must cover them.
-    let mut voltages = Vec::new();
-    for p in line.potentials().map_err(|e| e.to_string())?.into_values() {
-        if !voltages.contains(&p) {
-            voltages.push(p);
-        }
-    }
-    let rules: Vec<&Rule> = input
+    let voltages = ols_clearance::voltages_of(line)?;
+    for rule in input
         .rules
         .iter()
-        .filter(|r| applies(r, &input.case))
-        .collect();
-    for rule in &rules {
+        .filter(|r| ols_clearance::applies(r, &input.case))
+    {
         rule.check_voltages(&voltages, &[])?;
     }
     let wires = ols_clearance::wires_of(line, &input.shapes, &input.jumpers);
-    let reach = rules
+    let point_classes: Vec<Vec<u8>> = input
+        .rules
         .iter()
-        .map(|r| r.reach(&voltages, &[]))
-        .fold(0.0, f64::max);
-    // Each rule's parts of the wires (exclusion zones), indexed.
-    let parts: Vec<Vec<Wire>> = rules
-        .iter()
-        .map(|r| ols_clearance::checks::checked_parts(r, &wires))
+        .map(|r| r.point_classes(|role| input.scheme.codes_with_role(role)))
         .collect();
-    let sets: Vec<WireSet> = parts
-        .iter()
-        .map(|w| WireSet::new(w.clone(), reach))
-        .collect();
-    // Point rules: one pass over the cloud for all of them.
-    let mut point_checks: Vec<Option<PointCheck>> = Vec::new();
-    let mut wanted = [false; 256];
-    for (k, rule) in rules.iter().enumerate() {
-        if matches!(rule.target, Target::Points { .. }) {
-            let classes = rule.point_classes(|role| input.scheme.codes_with_role(role));
-            if classes.is_empty() {
-                report.notes.push(format!(
+    // Points of the rules' classes, read again from the point cloud in a
+    // corridor around the spans.
+    let mut visited = None;
+    let mut feed = |classes: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
+        let Some(spec) = &input.cloud else {
+            return Ok(());
+        };
+        let (file, name) = ols_lidar::cloud_spec(spec);
+        let source = ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?;
+        let corridor = ols_lidar::Corridor::along_spans(line, input.corridor);
+        // Exit clause: ~1 s per 10⁷ points decoded; 10 min is far beyond
+        // any line.
+        let budget = ols_core::budget::Budget::new().time_limit(Duration::from_secs(600));
+        let stats = ols_pointcloud::PointSource::visit(
+            &source,
+            Some(&corridor),
+            Some(classes),
+            &budget,
+            visit,
+        )?;
+        visited = Some(stats.points_visited);
+        Ok(())
+    };
+    let checks = ols_clearance::check_case(
+        &input.rules,
+        &input.case,
+        &wires,
+        CaseTargets {
+            voltages: &voltages,
+            other_voltages: &[],
+            ground: input.ground.as_deref(),
+            point_classes: &point_classes,
+            points: input.cloud.is_some().then_some(&mut feed as _),
+            other_wires: &[],
+        },
+    )?;
+    if let Some(n) = visited {
+        report
+            .notes
+            .push(format!("{n} LiDAR points of the rules' classes checked"));
+    }
+    for c in &checks {
+        let rule = &input.rules[c.rule];
+        match &c.outcome {
+            Outcome::Skipped(why) => report.notes.push(match why {
+                Skipped::NoGround => format!("{}: no ground", rule.name),
+                Skipped::NoClasses => format!(
                     "{}: no class of \"{}\" matches",
                     rule.name, input.scheme.name
+                ),
+                Skipped::NoPoints => format!("{}: no point cloud in this model", rule.name),
+                Skipped::NoOtherLines => format!(
+                    "{}: other lines are checked by `ols line --other-line`",
+                    rule.name
+                ),
+                Skipped::AcrossCases => format!(
+                    "{}: checked across weather cases only by `ols line --weather`",
+                    rule.name
+                ),
+            }),
+            Outcome::Wires(results) => {
+                report.rules.push((
+                    rule.name.clone(),
+                    ols_clearance::lowest(results.iter(), false),
                 ));
-                point_checks.push(None);
-                continue;
-            }
-            for &c in &classes {
-                wanted[c as usize] = true;
-            }
-            point_checks.push(Some(PointCheck::new(rule, &classes, &sets[k])));
-        } else {
-            point_checks.push(None);
-        }
-    }
-    if point_checks.iter().any(Option::is_some) {
-        match &input.cloud {
-            None => report
-                .notes
-                .push("point rules: no point cloud in this model".into()),
-            Some(spec) => {
-                let (file, name) = match spec.split_once('#') {
-                    Some((f, n)) => (f, Some(n)),
-                    None => (spec.as_str(), None),
-                };
-                let source = ols_pointcloud::CloudSource::open(Path::new(file), name)
-                    .map_err(|e| e.to_string())?;
-                let polylines: Vec<Vec<[f64; 2]>> = line
-                    .sections
-                    .iter()
-                    .map(|s| {
-                        s.points
-                            .iter()
-                            .filter_map(|p| line.attachment(p))
-                            .map(|a| [a.wire_point[0], a.wire_point[1]])
-                            .collect()
-                    })
-                    .collect();
-                let corridor = ols_lidar::Corridor::new(&polylines, input.corridor);
-                let classes: Vec<u8> = (0..=255u8).filter(|c| wanted[*c as usize]).collect();
-                // Exit clause: ~1 s per 10⁷ points decoded; 10 min is far
-                // beyond any line.
-                let budget = ols_core::budget::Budget::new().time_limit(Duration::from_secs(600));
-                let stats = ols_pointcloud::PointSource::visit(
-                    &source,
-                    Some(&corridor),
-                    Some(&classes),
-                    &budget,
-                    &mut |x, y, z, c| {
-                        for (k, check) in point_checks.iter_mut().enumerate() {
-                            if let Some(check) = check {
-                                check.visit(&sets[k], x, y, z, c);
-                            }
-                        }
-                    },
-                )
-                .map_err(|e| e.to_string())?;
-                report.notes.push(format!(
-                    "{} LiDAR points of the rules' classes checked",
-                    stats.points_visited
-                ));
-            }
-        }
-    }
-    for (k, rule) in rules.iter().enumerate() {
-        if !rule.case_pairs.is_empty() {
-            report.notes.push(format!(
-                "{}: checked across weather cases only by `ols line --weather`",
-                rule.name
-            ));
-            continue;
-        }
-        let wires = &parts[k];
-        match &rule.target {
-            Target::Ground | Target::Points { .. } => {
-                let results: Vec<WireResult> = match (&rule.target, &input.ground) {
-                    (Target::Ground, Some(g)) => {
-                        ols_clearance::checks::ground_check(rule, wires, g)
-                    }
-                    (Target::Ground, None) => {
-                        report.notes.push(format!("{}: no ground", rule.name));
-                        continue;
-                    }
-                    _ => match point_checks[k].take() {
-                        Some(c) => c.results,
-                        None => continue,
-                    },
-                };
-                report
-                    .rules
-                    .push((rule.name.clone(), lowest(results.iter())));
                 for (w, r) in results.iter().enumerate() {
-                    findings(rule, &wires[w], None, r, &mut report.findings);
+                    findings(rule, &c.wires[w], None, r, &mut report.findings);
                 }
             }
-            Target::SameLine { include_same_phase } => {
-                let pairs = ols_clearance::checks::wire_pairs(
-                    rule,
-                    wires,
-                    &sets[k],
-                    PairMode::SameLine {
-                        include_same_phase: *include_same_phase,
-                    },
-                );
-                report
-                    .rules
-                    .push((rule.name.clone(), lowest(pairs.iter().map(|p| &p.result))));
-                for p in &pairs {
+            // Wires of this line only (no other lines here).
+            Outcome::Pairs(pairs) => {
+                report.rules.push((
+                    rule.name.clone(),
+                    ols_clearance::lowest(pairs.iter().map(|p| &p.result), false),
+                ));
+                for p in pairs {
                     findings(
                         rule,
-                        &wires[p.a],
-                        Some(&sets[k].wires[p.b]),
+                        &c.wires[p.a],
+                        Some(&c.wires[p.b]),
                         &p.result,
                         &mut report.findings,
                     );
                 }
             }
-            Target::OtherLines => report.notes.push(format!(
-                "{}: other lines are checked by `ols line --other-line`",
-                rule.name
-            )),
         }
     }
     report
@@ -331,23 +234,15 @@ pub fn run(input: &Input) -> Result<Report, String> {
 }
 
 /// Rule files to choose from: the one given, the `*.olsr` next to the
-/// model, those in `libraries/clearance-rules`.
+/// model, those in the shipped `libraries/clearance-rules`.
 pub fn rule_files(model_file: &Path, given: Option<&Path>) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = given.map(Path::to_path_buf).into_iter().collect();
-    let dir = model_file
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    for d in [dir, Path::new("libraries/clearance-rules")] {
-        let Ok(entries) = std::fs::read_dir(d) else {
-            continue;
-        };
-        let mut found: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().is_some_and(|x| x == "olsr"))
-            .collect();
-        found.sort();
-        for p in found {
+    let dirs = [
+        ols_core::files::dir_of(model_file),
+        ols_core::files::shipped_library("clearance-rules"),
+    ];
+    for d in &dirs {
+        for p in ols_core::files::files_with_extension(d, "olsr") {
             if !out.iter().any(|q| q == &p) {
                 out.push(p);
             }

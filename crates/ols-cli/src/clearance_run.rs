@@ -15,8 +15,10 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use ols_clearance::{
-    PairMode, PairResult, PointCheck, Rule, RuleSet, Target, Wire, WireResult, WireSet, wires_of,
+    CaseTargets, Outcome, PairMode, PairResult, Rule, RuleSet, Skipped, Target, Wire, WireResult,
+    WireSet, wires_of,
 };
+use ols_core::text::csv_field;
 use ols_line::Line;
 use ols_line::electrical::{Potential, SystemKind};
 use ols_line::export::ViewerExtras;
@@ -52,7 +54,7 @@ pub struct Prepared {
     /// Points of the point rules' classes: millimetres from `origin`, class.
     points: Vec<([i32; 3], u8)>,
     origin: [f64; 3],
-    /// Classes of each point rule (in rule order).
+    /// Classes of each rule (empty but for point rules).
     point_classes: Vec<Vec<u8>>,
     other_lines: Vec<Line>,
     /// Section potentials of this line and of the other lines.
@@ -64,17 +66,6 @@ impl Prepared {
     fn reach(&self, rule: &Rule) -> f64 {
         rule.reach(&self.voltages, &self.other_voltages)
     }
-}
-
-/// The distinct potentials of a line's sections (earthed: `None`).
-fn voltages_of(line: &Line) -> Result<Vec<Option<Potential>>, String> {
-    let mut v: Vec<Option<Potential>> = Vec::new();
-    for p in line.potentials().map_err(|e| e.to_string())?.into_values() {
-        if !v.contains(&p) {
-            v.push(p);
-        }
-    }
-    Ok(v)
 }
 
 /// "380-1 (AC 380 kV, 50 Hz): 126 sections, …, earthed: 47 sections".
@@ -149,23 +140,15 @@ fn wire_name(w: &Wire) -> String {
 
 /// One row per result and measure for the CSV.
 fn csv_rows(out: &mut String, rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireResult) {
-    for (kind, hit, required, count) in [
-        (
-            "vertical",
-            r.vertical,
-            r.required.vertical,
-            r.vertical_violations,
-        ),
-        ("radial", r.radial, r.required.radial, r.radial_violations),
-    ] {
+    for (kind, hit, required, count) in r.measures() {
         let Some(h) = hit else { continue };
         let _ = writeln!(
             out,
             "{},{kind},{},{},{},{},{:.3},{},{count},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{}",
-            rule.name,
-            a.section,
+            csv_field(&rule.name),
+            csv_field(&a.section),
             a.span,
-            b.map_or(String::new(), |w| w.section.clone()),
+            b.map_or(String::new(), |w| csv_field(&w.section)),
             b.map_or(String::new(), |w| w.span.to_string()),
             h.distance,
             required.map_or(String::new(), |v| format!("{v:.3}")),
@@ -180,32 +163,9 @@ fn csv_rows(out: &mut String, rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireR
     }
 }
 
-/// Lowest vertical and radial over results.
+/// Lowest vertical and radial over results, with where.
 fn lowest<'a>(results: impl Iterator<Item = &'a WireResult> + Clone) -> String {
-    let min = |f: fn(&WireResult) -> Option<ols_clearance::Hit>| {
-        results
-            .clone()
-            .filter_map(f)
-            .min_by(|x, y| x.distance.total_cmp(&y.distance))
-    };
-    let mut parts = Vec::new();
-    if let Some(h) = min(|r| r.vertical) {
-        parts.push(format!(
-            "lowest vertical {:.2} m at ({:.1}, {:.1})",
-            h.distance, h.wire[0], h.wire[1]
-        ));
-    }
-    if let Some(h) = min(|r| r.radial) {
-        parts.push(format!(
-            "lowest radial {:.2} m at ({:.1}, {:.1})",
-            h.distance, h.wire[0], h.wire[1]
-        ));
-    }
-    if parts.is_empty() {
-        "nothing within reach".into()
-    } else {
-        parts.join("; ")
-    }
+    ols_clearance::lowest(results, true)
 }
 
 fn marker(extras: &mut ViewerExtras, rule: &Rule, label: String, r: &WireResult) {
@@ -238,13 +198,9 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
     // Points: a project's point cloud or LAS/LAZ tiles, one interface.
     let source: Option<Box<dyn ols_pointcloud::PointSource>> = match (o.pointcloud, o.lidar) {
         (Some(spec), _) => {
-            let (file, name) = match spec.split_once('#') {
-                Some((f, n)) => (f, Some(n)),
-                None => (spec, None),
-            };
+            let (file, name) = ols_lidar::cloud_spec(spec);
             Some(Box::new(
-                ols_pointcloud::CloudSource::open(Path::new(file), name)
-                    .map_err(|e| e.to_string())?,
+                ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?,
             ))
         }
         (None, Some(dir)) => Some(Box::new(ols_pointcloud::TileSource {
@@ -262,13 +218,11 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
         (None, Some(text)) => ols_lidar::ClassScheme::parse(&text)?,
         (None, None) => ols_lidar::ClassScheme::asprs(),
     };
+    // Classes of each rule (empty but for point rules).
     let mut point_classes = Vec::new();
-    for rule in rules
-        .iter()
-        .filter(|r| matches!(r.target, Target::Points { .. }))
-    {
+    for rule in &rules {
         let classes = rule.point_classes(|role| scheme.codes_with_role(role));
-        if classes.is_empty() {
+        if classes.is_empty() && matches!(rule.target, Target::Points { .. }) {
             return Err(format!(
                 "rule \"{}\": no class of \"{}\" matches",
                 rule.name, scheme.name
@@ -276,7 +230,10 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
         }
         point_classes.push(classes);
     }
-    if !point_classes.is_empty() && source.is_none() {
+    let point_rules = rules
+        .iter()
+        .any(|r| matches!(r.target, Target::Points { .. }));
+    if point_rules && source.is_none() {
         return Err("point rules need --pointcloud or --lidar".into());
     }
 
@@ -306,24 +263,11 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
             wanted.dedup();
             // Corridor around the spans' chords (attachment to attachment):
             // the same for every weather case.
-            let polylines: Vec<Vec<[f64; 2]>> = line
-                .sections
-                .iter()
-                .map(|s| {
-                    s.points
-                        .iter()
-                        .filter_map(|p| line.attachment(p))
-                        .map(|a| [a.wire_point[0], a.wire_point[1]])
-                        .collect()
-                })
-                .collect();
-            let corridor = ols_lidar::Corridor::new(&polylines, o.corridor);
+            let corridor = ols_lidar::Corridor::along_spans(line, o.corridor);
             // Exit clause: ~1 min per 10⁸ points from LAZ; 30 min is far beyond.
             let budget =
                 ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(1800));
-            let mut ground_points: Vec<[f64; 3]> = Vec::new();
-            let mut cells: std::collections::HashMap<(i64, i64), usize> =
-                std::collections::HashMap::new();
+            let mut ground_points = ols_lidar::LowestPerCell::new(o.thin);
             let mm = |v: f64, k: usize| ((v - origin[k]) * 1000.0).round() as i32;
             let stats = source.visit(
                 Some(&corridor),
@@ -331,20 +275,7 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
                 &budget,
                 &mut |x, y, z, c| {
                     if is_ground[c as usize] {
-                        match o.thin {
-                            None => ground_points.push([x, y, z]),
-                            Some(cell) => {
-                                let key = ((x / cell).floor() as i64, (y / cell).floor() as i64);
-                                match cells.get(&key) {
-                                    Some(&k) if ground_points[k][2] <= z => {}
-                                    Some(&k) => ground_points[k] = [x, y, z],
-                                    None => {
-                                        cells.insert(key, ground_points.len());
-                                        ground_points.push([x, y, z]);
-                                    }
-                                }
-                            }
-                        }
+                        ground_points.add(x, y, z);
                     }
                     if is_needed[c as usize] {
                         points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
@@ -360,10 +291,14 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
                 stats.points_read,
                 stats.points_visited,
                 scheme.name,
-                ground_points.len(),
+                ground_points.points().len(),
                 points.len()
             );
-            Some(Terrain::from_xyz(&ground_points, Some(o.max_edge)).map_err(|e| e.to_string())?)
+            Some(
+                ground_points
+                    .terrain(Some(o.max_edge))
+                    .map_err(|e| e.to_string())?,
+            )
         }
         (None, None) => None,
     };
@@ -390,10 +325,10 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
         other_lines.push(other);
     }
     // Voltages: every rule must have a requirement for each one it meets.
-    let voltages = voltages_of(line)?;
+    let voltages = ols_clearance::voltages_of(line)?;
     let mut other_voltages: Vec<Option<Potential>> = Vec::new();
     for other in &other_lines {
-        for p in voltages_of(other)? {
+        for p in ols_clearance::voltages_of(other)? {
             if !other_voltages.contains(&p) {
                 other_voltages.push(p);
             }
@@ -429,15 +364,6 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
 /// [`envelope_report`]): per-case rows, then envelope rows with
 /// `case = envelope` and the case that governs each value.
 pub const CSV_HEADER: &str = "case,rule,measure,section,span,other_section,other_span,clearance_m,required_m,violations,wire_x,wire_y,wire_z,target_x,target_y,target_z,class,governing_case\n";
-
-/// Whether `rule` applies to `case` (its `cases` list, default all).
-fn applies(rule: &Rule, case: &str) -> bool {
-    rule.cases.is_empty()
-        || rule
-            .cases
-            .iter()
-            .any(|c| ols_weather::name_matches(c, case))
-}
 
 fn rule_header(rule: &Rule, p: &Prepared) -> String {
     let required = |r: &Option<ols_clearance::Requirement>| {
@@ -524,7 +450,7 @@ fn report_pairs(
 
 /// Appends rows prefixed with the case (and an empty governing case).
 fn push_rows(csv: &mut String, case: &str, rows: &str) {
-    let name = case.replace(',', ";");
+    let name = csv_field(case);
     for row in rows.lines() {
         let _ = writeln!(csv, "{name},{row},");
     }
@@ -555,38 +481,6 @@ pub fn check(
             other: Vec::new(),
         });
     }
-    let reach = rules.iter().map(|r| p.reach(r)).fold(0.0, f64::max);
-    // The parts of the wires each rule checks (exclusion zones), indexed.
-    let parts: Vec<Vec<Wire>> = rules
-        .iter()
-        .map(|r| ols_clearance::checks::checked_parts(r, &wires))
-        .collect();
-    let sets: Vec<WireSet> = parts
-        .iter()
-        .map(|w| WireSet::new(w.clone(), reach))
-        .collect();
-    // Point rules (those applying to this case) from the points in memory.
-    let mut point_checks: Vec<Option<(usize, PointCheck)>> = rules
-        .iter()
-        .enumerate()
-        .filter(|(_, r)| matches!(r.target, Target::Points { .. }))
-        .zip(&p.point_classes)
-        .map(|((ri, rule), classes)| {
-            applies(rule, &case.name).then(|| (ri, PointCheck::new(rule, classes, &sets[ri])))
-        })
-        .collect();
-    if point_checks.iter().any(Option::is_some) {
-        for (q, c) in &p.points {
-            let (x, y, z) = (
-                p.origin[0] + q[0] as f64 / 1000.0,
-                p.origin[1] + q[1] as f64 / 1000.0,
-                p.origin[2] + q[2] as f64 / 1000.0,
-            );
-            for (ri, check) in point_checks.iter_mut().flatten() {
-                check.visit(&sets[*ri], x, y, z, *c);
-            }
-        }
-    }
     // Other lines in this weather case.
     let mut other_wires: Vec<Wire> = Vec::new();
     for other in &p.other_lines {
@@ -605,39 +499,49 @@ pub fn check(
         }
         other_wires.extend(w);
     }
-    let other_set = (!other_wires.is_empty()).then(|| WireSet::new(other_wires.clone(), reach));
-
-    let mut point_checks = point_checks.into_iter();
-    let mut rows = String::new();
-    for (ri, rule) in rules.iter().enumerate() {
-        let point_check = match rule.target {
-            Target::Points { .. } => point_checks
-                .next()
-                .expect("one slot per point rule")
-                .map(|(_, check)| check),
-            _ => None,
-        };
-        // This rule's parts of the wires (exclusion zones).
-        let (wires, set) = (&parts[ri], &sets[ri]);
-        if !applies(rule, &case.name) {
-            continue;
+    // Point rules from the points in memory.
+    let mut points = |_: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
+        for (q, c) in &p.points {
+            visit(
+                p.origin[0] + q[0] as f64 / 1000.0,
+                p.origin[1] + q[1] as f64 / 1000.0,
+                p.origin[2] + q[2] as f64 / 1000.0,
+                *c,
+            );
         }
-        if !rule.case_pairs.is_empty() {
+        Ok(())
+    };
+    let checks = ols_clearance::check_case(
+        rules,
+        &case.name,
+        &wires,
+        CaseTargets {
+            voltages: &p.voltages,
+            other_voltages: &p.other_voltages,
+            ground: p.ground.as_ref(),
+            point_classes: &p.point_classes,
+            points: Some(&mut points),
+            other_wires: &other_wires,
+        },
+    )?;
+
+    let mut rows = String::new();
+    for c in &checks {
+        let (ri, rule, wires) = (c.rule, &rules[c.rule], &c.wires);
+        if c.outcome == Outcome::Skipped(Skipped::AcrossCases) {
             continue; // across cases, after all cases are solved
         }
         println!("{}", rule_header(rule, p));
-        match &rule.target {
-            Target::Ground | Target::Points { .. } => {
-                let results: Vec<WireResult> = match &rule.target {
-                    Target::Ground => match &p.ground {
-                        Some(g) => ols_clearance::checks::ground_check(rule, wires, g),
-                        None => {
-                            println!("  no ground: give --terrain, --lidar or --pointcloud");
-                            continue;
-                        }
-                    },
-                    _ => point_check.expect("built for applying rules").results,
-                };
+        match &c.outcome {
+            Outcome::Skipped(why) => println!(
+                "  {}",
+                match why {
+                    Skipped::NoGround => "no ground: give --terrain, --lidar or --pointcloud",
+                    Skipped::NoOtherLines => "no other line: give --other-line FILE",
+                    _ => "no points of its classes",
+                }
+            ),
+            Outcome::Wires(results) => {
                 println!("  {}", lowest(results.iter()));
                 let mut bad: Vec<(usize, &WireResult)> = results
                     .iter()
@@ -671,29 +575,15 @@ pub fn check(
                     env.add(ri, &case.name, &wire_name(&wires[w]), None, r);
                 }
             }
-            Target::SameLine { include_same_phase } => {
-                let pairs = ols_clearance::checks::wire_pairs(
-                    rule,
-                    wires,
-                    set,
-                    PairMode::SameLine {
-                        include_same_phase: *include_same_phase,
-                    },
-                );
+            Outcome::Pairs(pairs) => {
+                let others = match rule.target {
+                    Target::OtherLines => &other_wires,
+                    _ => wires,
+                };
                 report_pairs(
-                    ri, rule, &case.name, wires, &set.wires, &pairs, &mut rows, extras, env,
+                    ri, rule, &case.name, wires, others, pairs, &mut rows, extras, env,
                 );
             }
-            Target::OtherLines => match &other_set {
-                Some(os) => {
-                    let pairs =
-                        ols_clearance::checks::wire_pairs(rule, wires, os, PairMode::OtherLines);
-                    report_pairs(
-                        ri, rule, &case.name, wires, &os.wires, &pairs, &mut rows, extras, env,
-                    );
-                }
-                None => println!("  no other line: give --other-line FILE"),
-            },
         }
     }
     push_rows(csv, &case.name, &rows);
@@ -854,9 +744,9 @@ pub fn envelope_report(p: &Prepared, env: &ols_clearance::Envelope, csv: &mut St
                 let _ = writeln!(
                     csv,
                     "envelope,{},{measure},{},,{},,{:.3},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{}",
-                    rule.name,
-                    e.a.replace(',', ";"),
-                    e.b.as_deref().unwrap_or("").replace(',', ";"),
+                    csv_field(&rule.name),
+                    csv_field(&e.a),
+                    csv_field(e.b.as_deref().unwrap_or("")),
                     h.distance,
                     required.map_or(String::new(), |v| format!("{v:.3}")),
                     e.violated_in.len(),
@@ -867,7 +757,7 @@ pub fn envelope_report(p: &Prepared, env: &ols_clearance::Envelope, csv: &mut St
                     h.target[1],
                     h.target[2],
                     h.class.map_or(String::new(), |c| c.to_string()),
-                    c.replace(',', ";")
+                    csv_field(c)
                 );
             }
         }

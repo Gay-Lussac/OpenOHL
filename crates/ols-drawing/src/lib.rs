@@ -1004,7 +1004,7 @@ pub fn profile_csv(d: &RouteDrawing) -> String {
             let _ = writeln!(
                 out,
                 "wire,{},{:.3},{:.3},{:.3}",
-                w.label.replace(',', ";"),
+                ols_core::text::csv_field(&w.label),
                 p[0],
                 p[1],
                 p[2]
