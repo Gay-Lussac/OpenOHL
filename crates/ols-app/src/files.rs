@@ -21,6 +21,12 @@ pub enum FileAction {
     Close,
     /// Quit the application.
     Quit,
+    /// The Join a server window.
+    Join,
+    /// The Host this project window.
+    Host,
+    /// Leave the server (stop hosting).
+    Leave,
 }
 
 /// Files opened, most recent first (remembered).
@@ -68,12 +74,25 @@ pub fn pick_file() -> Option<PathBuf> {
         .pick_file()
 }
 
-/// The File menu: New project, Open, Open recent, (the open file's
-/// Save and Export, from `extra`), Close, Quit.
+/// How the file open is shared (server mode).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shared {
+    /// Not: a file here (a project can be hosted).
+    No,
+    /// Joined on a server.
+    Joined,
+    /// Hosted by this application.
+    Hosting,
+}
+
+/// The File menu: New project, Open, Open recent, Join a server, (the
+/// open file's Save and Export, from `extra`), Host this project / Leave,
+/// Close, Quit.
 pub fn file_menu(
     ui: &mut egui::Ui,
     recent: &Recent,
     open: Option<&Path>,
+    shared: Shared,
     action: &mut Option<FileAction>,
     extra: impl FnOnce(&mut egui::Ui),
 ) {
@@ -122,10 +141,45 @@ pub fn file_menu(
                 }
             });
         });
-        if open.is_some() {
+        if ui
+            .button("Join a server…")
+            .on_hover_text("Work on a project someone hosts, with their invitation")
+            .clicked()
+        {
+            *action = Some(FileAction::Join);
+            ui.close();
+        }
+        if let Some(path) = open {
             ui.separator();
             extra(ui);
             ui.separator();
+            match shared {
+                Shared::No => {
+                    let project = path.extension().is_some_and(|e| e == "ols");
+                    if ui
+                        .add_enabled(project, egui::Button::new("Host this project…"))
+                        .on_hover_text(
+                            "Let others work on this project with you: a server on this computer",
+                        )
+                        .on_disabled_hover_text("A project file (.ols) can be hosted")
+                        .clicked()
+                    {
+                        *action = Some(FileAction::Host);
+                        ui.close();
+                    }
+                }
+                Shared::Joined | Shared::Hosting => {
+                    let label = if shared == Shared::Hosting {
+                        "Stop hosting"
+                    } else {
+                        "Leave the server"
+                    };
+                    if ui.button(label).clicked() {
+                        *action = Some(FileAction::Leave);
+                        ui.close();
+                    }
+                }
+            }
             if ui
                 .button("Close")
                 .on_hover_text("Close the file (the project is written through first)")
@@ -168,6 +222,9 @@ pub fn start_page(ui: &mut egui::Ui, recent: &Recent, action: &mut Option<FileAc
         }
         if ui.button("Open…").clicked() {
             *action = Some(FileAction::Open(None));
+        }
+        if ui.button("Join a server…").clicked() {
+            *action = Some(FileAction::Join);
         }
         if !recent.0.is_empty() {
             ui.add_space(20.0);

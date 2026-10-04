@@ -21,6 +21,8 @@ pub struct PlanView {
     scale: f64,
     /// Clearance violations to mark (points on the wires).
     pub marks: Vec<[f64; 3]>,
+    /// Other users (server mode): where each looks, with their name.
+    pub peers: Vec<(String, [f64; 3])>,
     /// Where it was drawn in the last frame (its page in front), if it was.
     pub drawn: Option<egui::Rect>,
 }
@@ -306,6 +308,31 @@ impl PlanView {
                     p,
                     6.0,
                     egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 60, 50)),
+                );
+            }
+        }
+        // Other users: a diamond where they look, their name.
+        for (name, at) in &self.peers {
+            let p = to_screen(*at);
+            if rect.expand(10.0).contains(p) {
+                let c = egui::Color32::from_rgb(90, 200, 255);
+                let d = 6.0;
+                painter.add(egui::Shape::convex_polygon(
+                    vec![
+                        p + egui::vec2(0.0, -d),
+                        p + egui::vec2(d, 0.0),
+                        p + egui::vec2(0.0, d),
+                        p + egui::vec2(-d, 0.0),
+                    ],
+                    c,
+                    egui::Stroke::new(1.0, egui::Color32::BLACK),
+                ));
+                painter.text(
+                    p + egui::vec2(8.0, -8.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    name,
+                    egui::FontId::proportional(12.0),
+                    c,
                 );
             }
         }

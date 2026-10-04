@@ -111,6 +111,34 @@ enum Command {
         #[command(subcommand)]
         command: PluginCommand,
     },
+    /// Host a project for several users (server mode, alpha): prints the
+    /// invitation to give them; runs until stopped (Ctrl+C: every edit is
+    /// already in the project file).
+    Serve {
+        /// Project file (.ols).
+        project: PathBuf,
+        /// Address and port to listen on (UDP: QUIC).
+        #[arg(long, default_value = "0.0.0.0:4433")]
+        bind: std::net::SocketAddr,
+        /// Host name or address in the invitation (default: this
+        /// computer's address on the local network).
+        #[arg(long)]
+        advertise: Option<String>,
+        /// Access code (default: a random one).
+        #[arg(long)]
+        code: Option<String>,
+        /// Role of users the project does not know: viewer, designer, or
+        /// none (refused).
+        #[arg(long, default_value = "viewer")]
+        newcomers: String,
+        /// Stop after this many seconds (default: run until stopped).
+        #[arg(long)]
+        seconds: Option<u64>,
+        /// Print the personal invitation of this user of the project
+        /// (repeatable): users the project knows join only with theirs.
+        #[arg(long)]
+        invite: Vec<String>,
+    },
 }
 
 /// Arguments of `ols line`.
@@ -419,6 +447,17 @@ fn main() -> ExitCode {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
         Some(Command::Formats { plugin }) => report(io_run::formats(&plugin)),
+        Some(Command::Serve {
+            project,
+            bind,
+            advertise,
+            code,
+            newcomers,
+            seconds,
+            invite,
+        }) => report(serve(
+            &project, bind, advertise, code, &newcomers, seconds, &invite,
+        )),
         Some(Command::Import {
             file,
             format,
@@ -453,6 +492,62 @@ fn main() -> ExitCode {
                 },
         }) => lidar_info(&path, classes, scheme.as_deref()),
     }
+}
+
+/// `ols serve`: hosts the project, prints who joins and leaves.
+fn serve(
+    project: &std::path::Path,
+    bind: std::net::SocketAddr,
+    advertise: Option<String>,
+    code: Option<String>,
+    newcomers: &str,
+    seconds: Option<u64>,
+    invite: &[String],
+) -> Result<(), String> {
+    let newcomers = match newcomers {
+        "none" => None,
+        r => Some(ols_session::Role::parse(r).map_err(|e| e.to_string())?),
+    };
+    let server = ols_server::server::Server::start(
+        project,
+        ols_server::server::Options {
+            bind,
+            advertise,
+            code,
+            newcomers,
+        },
+    )?;
+    println!("hosting {} on {}", project.display(), server.local_addr);
+    println!("invitation (newcomers): {}", server.invitation);
+    for user in invite {
+        println!("invitation for {user}: {}", server.invitation_for(user));
+    }
+    let started = std::time::Instant::now();
+    let mut shown: Vec<String> = Vec::new();
+    loop {
+        if seconds.is_some_and(|s| started.elapsed().as_secs() >= s) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let now: Vec<String> = server
+            .peers()
+            .iter()
+            .map(|p| format!("{} ({})", p.user, p.role.as_str()))
+            .collect();
+        if now != shown {
+            println!(
+                "connected: {}",
+                if now.is_empty() {
+                    "nobody".into()
+                } else {
+                    now.join(", ")
+                }
+            );
+            shown = now;
+        }
+    }
+    server.stop();
+    Ok(())
 }
 
 fn report(result: Result<(), String>) -> ExitCode {

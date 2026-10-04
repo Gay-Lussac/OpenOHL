@@ -2121,7 +2121,7 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
 /// used last); a library file saved goes into it; Export writes them out.
 #[test]
 fn the_project_keeps_its_libraries() {
-    let first = synthetic_project("libraries-kept");
+    let mut first = synthetic_project("libraries-kept");
     let file = first.sources.file.clone();
     assert!(first.library_dir.is_some());
     assert!(
@@ -3556,4 +3556,263 @@ fn the_python_console_drives_the_project() {
         "{out:?}"
     );
     harness.get_by_label_contains("Python 3.");
+}
+
+/// Server mode: two applications join a hosted project (File › Join a
+/// server); an edit in one reaches the other; a structure in a Move
+/// window is held; an admin makes a viewer a designer; undo is per user.
+#[test]
+fn two_applications_share_a_hosted_project() {
+    use crate::app::MoveDialog;
+    let model = synthetic_project("shared");
+    let file = model.sources.file.clone();
+    drop(model);
+    {
+        let s = ols_session::Session::open(&file).unwrap();
+        s.set_user("tester", "bob", ols_session::Role::Viewer)
+            .unwrap();
+    }
+    let server = ols_server::server::Server::start(
+        &file,
+        ols_server::server::Options {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            advertise: None,
+            code: None,
+            newcomers: None,
+        },
+    )
+    .unwrap();
+    let dir = std::env::temp_dir().join(format!("ols-app-shared-{}", std::process::id()));
+    let open = |user: &str| {
+        let mut app = App::empty(Sources::default(), None);
+        app.joined_dir = dir.join(user);
+        app.join_window = Some(crate::remote::JoinWindow {
+            invitation: server.invitation_for(user).to_string(),
+            user: user.into(),
+            ..Default::default()
+        });
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1500.0, 950.0))
+            .build_eframe(|_| app);
+        h.step();
+        h.get_by_label("Join").click();
+        run_until(&mut h, |a| {
+            a.ready()
+                .is_some_and(|r| r.model.remote.is_some() && !r.model.cases.is_empty())
+        });
+        h
+    };
+    let mut alice = open("tester");
+    let mut bob = open("bob");
+    assert!(
+        bob.state_mut().ready().unwrap().model.can_edit().is_err(),
+        "a viewer"
+    );
+    let id = alice.state_mut().ready().unwrap().model.line.structures[1]
+        .id
+        .clone();
+    let p0 = alice
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .structure(&id)
+        .unwrap()
+        .position;
+    let at = |h: &mut Harness<'_, App>| {
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .line
+            .structure(&id)
+            .unwrap()
+            .position
+    };
+
+    // Alice moves it: Bob's line follows, re-solved.
+    let p1 = [p0[0] + 4.0, p0[1], p0[2]];
+    assert!(
+        alice
+            .state_mut()
+            .ready()
+            .unwrap()
+            .perform(crate::edit::Action::Move {
+                id: id.clone(),
+                position: p1,
+            })
+    );
+    assert_eq!(at(&mut alice), p1);
+    run_until(&mut bob, |a| {
+        a.ready()
+            .unwrap()
+            .model
+            .line
+            .structure(&id)
+            .unwrap()
+            .position
+            == p1
+    });
+    assert_solved_fully(&bob.state_mut().ready().unwrap().model);
+    // Both see each other.
+    let peers = |h: &mut Harness<'_, App>| {
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .remote
+            .as_ref()
+            .unwrap()
+            .peers
+            .len()
+    };
+    run_until(&mut alice, |a| {
+        a.ready()
+            .unwrap()
+            .model
+            .remote
+            .as_ref()
+            .unwrap()
+            .peers
+            .len()
+            == 2
+    });
+    assert_eq!(peers(&mut bob), 2);
+
+    // The admin makes Bob a designer: he can edit.
+    alice.state_mut().ready().unwrap().project_op(
+        "bob made designer",
+        ols_server::Op::SetUser {
+            name: "bob".into(),
+            role: ols_session::Role::Designer,
+        },
+    );
+    run_until(&mut bob, |a| a.ready().unwrap().model.can_edit().is_ok());
+
+    // Alice's Move window holds the structure: Bob cannot take it.
+    alice.state_mut().ready().unwrap().move_dialog = Some(MoveDialog {
+        id: id.clone(),
+        start: p1,
+        position: p1,
+        on_ground: false,
+        shown: p1,
+    });
+    alice.step();
+    let target = ols_server::lock_target(ols_session::Kind::Structure, &id);
+    run_until(&mut bob, |a| {
+        a.ready().unwrap().model.locked_by_other(&target).is_some()
+    });
+    {
+        let r = bob.state_mut().ready().unwrap();
+        r.hotbar.hold(crate::tools::Tool::Move);
+        r.use_tool_on(&id);
+        assert!(r.move_dialog.is_none());
+        let status = r.status.clone().unwrap().0;
+        assert!(status.contains("being moved by tester"), "{status}");
+        // The server refuses his command too.
+        assert!(!r.perform(crate::edit::Action::Move {
+            id: id.clone(),
+            position: p0,
+        }));
+    }
+    alice.state_mut().ready().unwrap().move_dialog = None;
+    alice.step();
+    run_until(&mut bob, |a| {
+        a.ready().unwrap().model.locked_by_other(&target).is_none()
+    });
+
+    // Bob's undo: nothing of his; Alice undoes her move.
+    {
+        let r = bob.state_mut().ready().unwrap();
+        assert!(!r.perform(crate::edit::Action::Undo));
+    }
+    assert!(
+        alice
+            .state_mut()
+            .ready()
+            .unwrap()
+            .perform(crate::edit::Action::Undo)
+    );
+    run_until(&mut bob, |a| {
+        a.ready()
+            .unwrap()
+            .model
+            .line
+            .structure(&id)
+            .unwrap()
+            .position
+            == p0
+    });
+    // People lists both, with the invitation.
+    {
+        let r = alice.state_mut().ready().unwrap();
+        r.open_page = Some((crate::app::Tab::People, None));
+    }
+    alice.step();
+    alice.step();
+    alice.get_by_label("Copy");
+    alice.get_by_label_contains("(you)");
+    drop(alice);
+    drop(bob);
+    server.stop();
+    let s = ols_session::Session::open(&file).unwrap();
+    assert_eq!(s.line().structure(&id).unwrap().position, p0);
+    assert_eq!(s.role("bob").unwrap(), Some(ols_session::Role::Designer));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// File › Host this project: the application hosts and joins its own
+/// server (its edits go through it); Stop hosting opens the project file
+/// again, with the edits.
+#[test]
+fn an_application_hosts_its_project() {
+    let model = synthetic_project("hosting");
+    let file = model.sources.file.clone();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    {
+        let app = harness.state_mut();
+        app.joined_dir = file.parent().unwrap().join("joined");
+        app.template.user = Some("tester".into());
+        app.file_action = Some(crate::files::FileAction::Host);
+    }
+    harness.step();
+    harness.state_mut().host_window.as_mut().unwrap().port = 0;
+    harness.step();
+    harness.get_by_label("Start hosting").click();
+    run_until(&mut harness, |a| {
+        a.hosting.is_some()
+            && a.ready()
+                .is_some_and(|r| r.model.remote.is_some() && !r.model.cases.is_empty())
+    });
+    let (id, p0) = {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.model.can_edit().is_ok());
+        assert!(r.model.remote.as_ref().unwrap().hosting);
+        let s = &r.model.line.structures[0];
+        (s.id.clone(), s.position)
+    };
+    let p1 = [p0[0], p0[1] + 3.0, p0[2]];
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .perform(crate::edit::Action::Move {
+                id: id.clone(),
+                position: p1,
+            })
+    );
+    // Stop hosting: the project file itself again, moved.
+    harness.state_mut().file_action = Some(crate::files::FileAction::Leave);
+    run_until(&mut harness, |a| {
+        a.hosting.is_none()
+            && a.ready()
+                .is_some_and(|r| r.model.remote.is_none() && r.model.sources.file == file)
+    });
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.line.structure(&id).unwrap().position, p1);
+    assert!(r.model.can_edit().is_ok());
 }

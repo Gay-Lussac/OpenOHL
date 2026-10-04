@@ -191,6 +191,11 @@ pub struct Model {
     )>,
     /// The project to edit, or why the model is read-only.
     pub editing: Result<Editing, String>,
+    /// The project's session when it is read-only for this user (a
+    /// viewer): kept for a joined project's replica.
+    pub viewer_session: Option<ols_session::Session>,
+    /// The server, when the project is joined (server mode).
+    pub remote: Option<crate::remote::Remote>,
     /// Sections drawn in their own weather cases (indices; the first one
     /// is reported and picked), instead of the cases shown (Sections table).
     pub display_cases: std::collections::BTreeMap<String, Vec<usize>>,
@@ -267,21 +272,34 @@ fn load_line(path: &Path) -> Result<(Line, Option<ols_session::Session>), String
     }
 }
 
-/// Who edits, and whether they may.
-fn editing(session: Option<ols_session::Session>, user: Option<&str>) -> Result<Editing, String> {
+/// Who edits, and whether they may; the session when they may not.
+fn editing(
+    session: Option<ols_session::Session>,
+    user: Option<&str>,
+) -> (Result<Editing, String>, Option<ols_session::Session>) {
     let Some(session) = session else {
-        return Err("a line file: open a project (.ols) to edit (ols project import)".into());
+        return (
+            Err("a line file: open a project (.ols) to edit (ols project import)".into()),
+            None,
+        );
     };
     let user = user
         .map(str::to_owned)
         .or_else(|| std::env::var("USER").ok())
         .unwrap_or_default();
-    match session.role(&user).map_err(|e| e.to_string())? {
-        Some(ols_session::Role::Viewer) => Err(format!("user {user} is a viewer of this project")),
-        Some(_) => Ok(Editing { session, user }),
-        None => Err(format!(
-            "user {user} has no role in this project (an admin adds users: ols project user)"
-        )),
+    match session.role(&user) {
+        Err(e) => (Err(e.to_string()), Some(session)),
+        Ok(Some(ols_session::Role::Viewer)) => (
+            Err(format!("user {user} is a viewer of this project")),
+            Some(session),
+        ),
+        Ok(Some(_)) => (Ok(Editing { session, user }), None),
+        Ok(None) => (
+            Err(format!(
+                "user {user} has no role in this project (an admin adds users: ols project user)"
+            )),
+            Some(session),
+        ),
     }
 }
 
@@ -562,16 +580,24 @@ impl Model {
     /// (after a library page or the weather case table saved one): every
     /// file of the working folder put, files no longer there removed.
     /// Nothing for a line file or libraries read from their files.
-    pub fn store_libraries(&self) -> Result<usize, String> {
+    pub fn store_libraries(&mut self) -> Result<usize, String> {
         let (Some(work), Ok(e)) = (&self.library_dir, &self.editing) else {
             return Ok(0);
         };
+        // What changed, as project edits (sent to the server when joined).
+        let mut ops = Vec::new();
         let mut n = 0;
         for (kind, ext) in PROJECT_LIBRARIES {
             let dir = work.join(kind);
             if !dir.is_dir() {
                 continue;
             }
+            let stored: std::collections::BTreeMap<String, String> = e
+                .session
+                .library_files(kind)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .collect();
             let files = files_at(&dir, ext);
             let names: Vec<String> = files
                 .iter()
@@ -579,18 +605,27 @@ impl Model {
                 .collect();
             for (f, name) in files.iter().zip(&names) {
                 let text = std::fs::read_to_string(f).map_err(|e| format!("{name}: {e}"))?;
-                e.session
-                    .put_library_file(&e.user, kind, name, &text)
-                    .map_err(|e| e.to_string())?;
                 n += 1;
-            }
-            for (name, _) in e.session.library_files(kind).map_err(|e| e.to_string())? {
-                if !names.contains(&name) {
-                    e.session
-                        .delete_library_file(&e.user, kind, &name)
-                        .map_err(|e| e.to_string())?;
+                if stored.get(name) != Some(&text) {
+                    ops.push(ols_server::Op::PutLibrary {
+                        kind: kind.to_owned(),
+                        name: name.clone(),
+                        text,
+                    });
                 }
             }
+            for name in stored.keys() {
+                if !names.contains(name) {
+                    ops.push(ols_server::Op::DeleteLibrary {
+                        kind: kind.to_owned(),
+                        name: name.clone(),
+                    });
+                }
+            }
+        }
+        for op in ops {
+            let what = op.describe();
+            self.project_op(&what, op).map_err(|e| e.to_string())?;
         }
         Ok(n)
     }
@@ -991,7 +1026,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
             ground = Some(g);
         }
     }
-    let editing = editing(session, sources.user.as_deref());
+    let (editing, viewer_session) = editing(session, sources.user.as_deref());
     let points_percent = editing
         .as_ref()
         .ok()
@@ -1028,5 +1063,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         class_counts,
         points_percent,
         library_dir,
+        viewer_session,
+        remote: None,
     })
 }

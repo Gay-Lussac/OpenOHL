@@ -14,6 +14,7 @@
 - [Coordinate systems](user-guide/coordinates.md)
 - [Import and export](user-guide/import-export.md)
 - [Project files and point clouds (.ols)](user-guide/project.md)
+- [Server mode](user-guide/server.md)
 
 # Theory manual
 

@@ -39,7 +39,8 @@
 | Crate | Responsibility |
 |---|---|
 | `ols-core` | Data model, units, geometry, CRS, spatial chunk index, plugin registry, schema & migrations |
-| `ols-session` | Project file (`.ols`), commands, operation log, per-user undo/redo, admin rollback, roles, dirty tracking; later sync protocol, server & client |
+| `ols-session` | Project file (`.ols`), commands, operation log, per-user undo/redo, admin rollback, roles, dirty tracking |
+| `ols-server` | Server mode (alpha): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, personal invitations |
 | `ols-pointcloud` | Point clouds in the project file (chunk × class blocks), point-source interface |
 | `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors |
 | `ols-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines |
@@ -76,7 +77,8 @@
                               engines recompute affected sections
 ```
 
-- Desktop single-user = the same session running in-process.
+- Desktop single-user = the same session running in-process; joined, the application keeps a replica of the project and applies the server's broadcasts with the same code (`ols-server`).
+- Server mode alpha (`ols-server`, [Server mode](user-guide/server.md)): edits are requests answered after the broadcast; no optimistic prediction, whole-project copy on join, QUIC only.
 - Commands are validated, applied atomically, appended to the log, and broadcast as change sets.
 - Recalculation is incremental: a change marks dependent objects dirty (structure → its sections → their clearances) and only those are recomputed.
 - See ADR-0005.

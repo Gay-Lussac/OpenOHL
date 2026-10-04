@@ -31,6 +31,7 @@ mod plugins;
 mod profile;
 mod properties;
 mod python;
+mod remote;
 mod scene;
 mod selection;
 mod survey_io;

@@ -33,6 +33,7 @@ OLS-CAD/
 │   ├── ols-core/      Data model, units, time budgets (exit clauses)
 │   ├── ols-validation/ Validation framework (`ols validate`)
 │   ├── ols-plugins/   Plugin manifests + sandboxed WebAssembly host (WIT interface)
+│   ├── ols-server/    Server mode: a project hosted for several users (QUIC)
 │   ├── ols-py/        Python bindings (`import ols`)
 │   ├── ols-cables/    Conductor library
 │   ├── ols-weather/   Weather cases and wire loads

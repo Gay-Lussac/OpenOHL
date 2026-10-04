@@ -115,7 +115,7 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] Section calculations: Initial / Creep / Load / Max Sag × RS / FE (Sections table, section editor); Criteria › Creep-Stretch (weather cases for final after creep and after load); cable models nonlinear, linear with creep ∝ creep-case tension, linear with a temperature increase; bimetallic curves per material in the wire library editor
 - [x] Plugin manager UI: plugins installed and found in folders, what they provide, why one cannot be used, on/off, install, remove; their formats in File › Import into the line / Export (run on a worker)
 - [x] Python scripting console inside the application: embedded interpreter on its own thread, the `ols` module reads the line and results and edits through session commands (undoable), Stop and a time limit, plugin scripts
-- [ ] **Server mode (alpha)**: host a project, multiple users connect over LAN/Internet, live change broadcast, presence, soft locks, per-user undo, roles & permissions, admin rollback
+- [x] **Server mode (alpha)** (`ols-server`, `ols serve`, File › Host / Join): host a project, multiple users connect over LAN/Internet (QUIC, TLS pinned by the invitation), live change broadcast to replicas, presence (People page, plan markers), soft locks (Move window), per-user undo, roles & permissions (personal invitations; admins set roles), admin rollback (Edit › History) *(still open: optimistic prediction, chunk-based interest management, WebSocket fallback, OIDC)*
 
 **Deliverable:** alpha release of the desktop app, including shared multi-user sessions.
 

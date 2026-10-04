@@ -43,11 +43,13 @@ pub enum Tab {
     Lod,
     /// The Python console.
     Python,
+    /// Who works on the project (server mode).
+    People,
 }
 
 impl Tab {
     /// The pages of the View menu (library pages: the Libraries menu).
-    pub const VIEWS: [Tab; 7] = [
+    pub const VIEWS: [Tab; 8] = [
         Tab::View3d,
         Tab::Plan,
         Tab::Profile,
@@ -55,6 +57,7 @@ impl Tab {
         Tab::Model,
         Tab::Clearances,
         Tab::Lod,
+        Tab::People,
     ];
 
     /// Title on its tab.
@@ -70,6 +73,7 @@ impl Tab {
             Tab::Table(k) => k.title(),
             Tab::Lod => "Level of detail",
             Tab::Python => "Python console",
+            Tab::People => "People",
         }
     }
 }
@@ -191,6 +195,8 @@ pub struct Ready {
     pub plugin_request: Option<PluginRequest>,
     /// The Python console's page.
     pub console: crate::python::Console,
+    /// Edit › History is open.
+    pub history_open: bool,
     /// Parameters › Controls: the window of a view's controls, when open.
     pub controls_window: Option<ControlsPage>,
     /// Criteria › Creep-Stretch, when open: the weather cases chosen.
@@ -245,6 +251,7 @@ impl Ready {
             reopen: false,
             plugin_request: None,
             console: Default::default(),
+            history_open: false,
             controls_window: None,
             creep_stretch_window: None,
             jumper_from: None,
@@ -286,10 +293,24 @@ pub struct App {
     pub recent: crate::files::Recent,
     /// The plugin manager, and the formats of File › Import / Export.
     pub plugins: crate::plugins::Plugins,
+    /// The server this application hosts.
+    pub hosting: Option<ols_server::server::Server>,
+    /// The project file hosted (opened again when hosting stops).
+    hosted_file: Option<PathBuf>,
+    /// File › Host this project.
+    pub host_window: Option<crate::remote::HostWindow>,
+    /// File › Join a server.
+    pub join_window: Option<crate::remote::JoinWindow>,
+    /// Hosting: joining its own server.
+    hosting_join: Option<std::sync::mpsc::Receiver<crate::remote::JoinEvent>>,
+    /// Joined: given to the model once it is loaded.
+    pub pending_remote: Option<Box<crate::remote::Remote>>,
+    /// Where joined projects are kept.
+    pub joined_dir: PathBuf,
     /// Options for files opened from the File menu (point budget, user…).
-    template: Sources,
+    pub template: Sources,
     /// What the File menu asked for, done after the frame.
-    file_action: Option<crate::files::FileAction>,
+    pub file_action: Option<crate::files::FileAction>,
     /// The New project window.
     new_project: Option<crate::files::NewProject>,
     /// An action waiting for "discard the unsaved changes?".
@@ -328,6 +349,13 @@ impl App {
             lod: Default::default(),
             recent: Default::default(),
             plugins: Default::default(),
+            hosting: None,
+            hosted_file: None,
+            host_window: None,
+            join_window: None,
+            hosting_join: None,
+            pending_remote: None,
+            joined_dir: crate::remote::default_joined_dir(),
             template: Sources {
                 file: PathBuf::new(),
                 library: None,
@@ -424,13 +452,43 @@ impl App {
         use crate::files::FileAction;
         let leaves = matches!(
             action,
-            FileAction::Open(_) | FileAction::Close | FileAction::Quit
+            FileAction::Open(_) | FileAction::Close | FileAction::Quit | FileAction::Leave
         );
         if leaves && !confirmed && !self.unsaved().is_empty() {
             self.confirm_discard = Some(action);
             return;
         }
+        if matches!(
+            action,
+            FileAction::Open(_) | FileAction::Close | FileAction::Quit | FileAction::New
+        ) {
+            self.stop_hosting();
+        }
         match action {
+            FileAction::Join => {
+                self.join_window = Some(crate::remote::JoinWindow {
+                    user: crate::files::user(),
+                    ..Default::default()
+                });
+            }
+            FileAction::Host => self.host_window = Some(Default::default()),
+            FileAction::Leave => {
+                let hosted = self.hosted_file.take();
+                self.stop_hosting();
+                self.close();
+                match hosted {
+                    Some(file) => self.start(
+                        Sources {
+                            file,
+                            ..self.template.clone()
+                        },
+                        ctx,
+                    ),
+                    None => {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Title("OLS CAD".into()));
+                    }
+                }
+            }
             FileAction::New => self.new_project = Some(Default::default()),
             FileAction::Open(path) => {
                 if let Some(file) = path.or_else(crate::files::pick_file) {
@@ -454,6 +512,149 @@ impl App {
         }
     }
 
+    /// Stops the server this application hosts (if it does).
+    fn stop_hosting(&mut self) {
+        self.hosting_join = None;
+        if let Some(s) = self.hosting.take() {
+            // The replica's connection goes first.
+            if let State::Ready(r) = &mut self.state {
+                r.model.remote = None;
+            }
+            s.stop();
+        }
+    }
+
+    /// Hosts the project open: a server on its file, joined by this
+    /// application like any client.
+    fn start_hosting(&mut self, ctx: &egui::Context) {
+        let Some(w) = &mut self.host_window else {
+            return;
+        };
+        let State::Ready(r) = &self.state else {
+            return;
+        };
+        let file = r.model.sources.file.clone();
+        let user = r
+            .model
+            .editing
+            .as_ref()
+            .map(|e| e.user.clone())
+            .unwrap_or_else(|_| crate::files::user());
+        if let Ok(e) = &r.model.editing {
+            let _ = e.session.checkpoint();
+        }
+        let options = ols_server::server::Options {
+            bind: std::net::SocketAddr::from(([0, 0, 0, 0], w.port)),
+            advertise: None,
+            code: None,
+            newcomers: w.newcomers,
+        };
+        match ols_server::server::Server::start(&file, options) {
+            Ok(server) => {
+                let mut own = server.invitation_for(&user);
+                own.address = format!("127.0.0.1:{}", server.local_addr.port());
+                self.hosting_join = Some(crate::remote::start_join(
+                    own,
+                    user,
+                    self.joined_dir.clone(),
+                    true,
+                    ctx.clone(),
+                ));
+                self.hosting = Some(server);
+                self.hosted_file = Some(file);
+                self.host_window = None;
+            }
+            Err(e) => w.error = Some(e),
+        }
+    }
+
+    /// Joined (from File › Join a server, or hosting): the replica opens,
+    /// the connection is given to it once loaded.
+    fn joined(
+        &mut self,
+        file: PathBuf,
+        mut remote: Box<crate::remote::Remote>,
+        ctx: &egui::Context,
+    ) {
+        if let Some(s) = &self.hosting {
+            remote.invitation = s.invitation.clone();
+            remote.secret = Some(s.secret().to_owned());
+        }
+        let user = remote.link.user.clone();
+        let sources = Sources {
+            file,
+            user: Some(user),
+            ..self.template.clone()
+        };
+        // Opening closes the file open (not the server).
+        self.start(sources, ctx);
+        self.pending_remote = Some(remote);
+    }
+
+    /// The server-mode windows: Host, Join, hosting's own join.
+    fn share_windows(&mut self, ctx: &egui::Context) {
+        if self.host_window.is_some() {
+            let mut open = true;
+            let start = self
+                .host_window
+                .as_mut()
+                .is_some_and(|w| w.ui(ctx, &mut open));
+            if start {
+                self.start_hosting(ctx);
+            } else if !open {
+                self.host_window = None;
+            }
+        }
+        if let Some(w) = &mut self.join_window {
+            let mut open = true;
+            let done = w.ui(ctx, &mut open, &self.joined_dir.clone());
+            if !open {
+                self.join_window = None;
+            }
+            if let Some((file, remote)) = done {
+                self.join_window = None;
+                self.stop_hosting();
+                self.joined(file, remote, ctx);
+            }
+        }
+        if let Some(rx) = &self.hosting_join {
+            let mut done = None;
+            while let Ok(e) = rx.try_recv() {
+                if let crate::remote::JoinEvent::Done(r) = e {
+                    done = Some(r);
+                }
+            }
+            match done {
+                Some(Ok((file, remote))) => {
+                    self.hosting_join = None;
+                    self.joined(file, remote, ctx);
+                }
+                Some(Err(e)) => {
+                    self.hosting_join = None;
+                    self.hosted_file = None;
+                    if let Some(s) = self.hosting.take() {
+                        s.stop();
+                    }
+                    self.host_window = Some(crate::remote::HostWindow {
+                        error: Some(format!("joining the server: {e}")),
+                        ..Default::default()
+                    });
+                }
+                None => {
+                    egui::Window::new("Starting the server")
+                        .collapsible(false)
+                        .show(ctx, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                ui.label("copying the project for this application…");
+                            });
+                        });
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                }
+            }
+        }
+    }
+
     /// An app showing an already loaded model (tests).
     #[cfg(test)]
     pub fn with_model(model: Model, render_state: Option<egui_wgpu::RenderState>) -> Self {
@@ -469,6 +670,13 @@ impl App {
             lod: Default::default(),
             recent: Default::default(),
             plugins: Default::default(),
+            hosting: None,
+            hosted_file: None,
+            host_window: None,
+            join_window: None,
+            hosting_join: None,
+            pending_remote: None,
+            joined_dir: crate::remote::default_joined_dir(),
             template: Sources::default(),
             file_action: None,
             new_project: None,
@@ -607,6 +815,19 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Clearances => {
                 clearance_panel(ui, r);
+                None
+            }
+            Tab::People => {
+                match crate::remote::people_ui(ui, &mut r.model) {
+                    Some(crate::remote::PeopleAction::GoTo(c)) => {
+                        if let Some(cam) = r.view3d.camera.as_mut() {
+                            cam.target = c;
+                        }
+                        r.plan.centre_on(c);
+                    }
+                    Some(crate::remote::PeopleAction::Op(what, op)) => r.project_op(&what, op),
+                    None => {}
+                }
                 None
             }
             Tab::Python => {
@@ -1263,6 +1484,11 @@ impl Ready {
         }
         match tool {
             Tool::Move => {
+                let target = ols_server::lock_target(ols_session::Kind::Structure, id);
+                if let Some(user) = self.model.locked_by_other(&target) {
+                    self.status = Some((format!("{id} is being moved by {user}"), true));
+                    return;
+                }
                 // A preview still open goes back first (it may be this one).
                 self.cancel_move_preview();
                 if let Some(p) = self.model.line.structure(id).map(|s| s.position) {
@@ -1294,6 +1520,56 @@ impl Ready {
         {
             self.perform(crate::edit::Action::CancelPreview { id: d.id });
         }
+    }
+
+    /// A project edit (library, user, project line, rollback…), reported
+    /// in the status bar; the views follow.
+    pub fn project_op(&mut self, what: &str, op: ols_server::Op) {
+        self.status = Some(match self.model.project_op(what, op) {
+            Ok(report) => {
+                self.clearances.stale = true;
+                (report, false)
+            }
+            Err(e) => (e.to_string(), true),
+        });
+        self.refresh_views();
+    }
+
+    /// Server mode, every frame: what others did, what this user shows
+    /// them, the locks of what they edit.
+    pub fn remote_frame(&mut self) {
+        if self.model.remote.is_none() {
+            return;
+        }
+        if let Some(report) = self.model.poll_remote() {
+            if !report.0.is_empty() {
+                self.status = Some(report);
+            }
+            self.clearances.stale = true;
+            self.refresh_views();
+        }
+        let presence = ols_server::Presence {
+            selection: self.selection.describe(),
+            camera: self.view3d.camera.as_ref().map(|c| c.target),
+        };
+        self.model.show_presence(presence);
+        if let Some(r) = &self.model.remote {
+            let peers: Vec<(String, [f64; 3])> = r
+                .peers
+                .iter()
+                .filter(|p| p.user != r.link.user)
+                .filter_map(|p| Some((p.user.clone(), p.presence.camera?)))
+                .collect();
+            if peers != self.plan.peers {
+                self.plan.peers = peers;
+            }
+        }
+        let wanted = self
+            .move_dialog
+            .iter()
+            .map(|d| ols_server::lock_target(ols_session::Kind::Structure, &d.id))
+            .collect();
+        self.model.hold(wanted);
     }
 
     /// Performs an edit and updates the views; whether it was made.
@@ -2054,6 +2330,23 @@ fn creep_stretch_window(ctx: &egui::Context, r: &mut Ready) {
     r.creep_stretch_window = (open && !ok && !cancel).then_some(draft);
 }
 
+/// Edit › History: the operation log; admins reverse entries.
+fn history_window(ctx: &egui::Context, r: &mut Ready) {
+    if !r.history_open {
+        return;
+    }
+    let mut open = true;
+    let mut op = None;
+    egui::Window::new("History")
+        .open(&mut open)
+        .default_width(760.0)
+        .show(ctx, |ui| op = crate::remote::history_ui(ui, &r.model));
+    r.history_open = open;
+    if let Some((what, op)) = op {
+        r.project_op(&what, op);
+    }
+}
+
 /// The Import / Export LAS/LAZ windows and the job they started.
 fn survey_io_windows(ctx: &egui::Context, r: &mut Ready) {
     if let Some(d) = &mut r.survey_import {
@@ -2386,10 +2679,13 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
         if draft.percent != r.model.points_percent {
             // The 3D view reads the points again at the new share.
             r.model.points_percent = draft.percent;
-            if let Ok(e) = &r.model.editing
-                && let Err(err) = e.session.set_setting(
-                    crate::model::LIDAR_PERCENT_SETTING,
-                    Some(&draft.percent.to_string()),
+            if r.model.can_edit().is_ok()
+                && let Err(err) = r.model.project_op(
+                    "LiDAR share kept",
+                    ols_server::Op::SetSetting {
+                        key: crate::model::LIDAR_PERCENT_SETTING.into(),
+                        value: Some(draft.percent.to_string()),
+                    },
                 )
             {
                 log::warn!("keeping the LiDAR share: {err}");
@@ -2549,14 +2845,26 @@ fn lines_window(ctx: &egui::Context, r: &mut Ready) {
         return;
     };
     let result = match &w {
-        LinesWindow::Create(name, note) => e
-            .session
-            .save_snapshot(&e.user, name, note)
-            .map(|()| format!("project line \"{}\" saved", name.trim())),
-        LinesWindow::Delete(name) => e
-            .session
-            .delete_snapshot(&e.user, name)
-            .map(|()| format!("project line \"{name}\" deleted")),
+        LinesWindow::Create(name, note) => {
+            let what = format!("project line \"{}\" saved", name.trim());
+            r.model
+                .project_op(
+                    &what,
+                    ols_server::Op::SaveSnapshot {
+                        name: name.clone(),
+                        note: note.clone(),
+                    },
+                )
+                .map(|_| what)
+                .map_err(|e| e.to_string())
+        }
+        LinesWindow::Delete(name) => {
+            let what = format!("project line \"{name}\" deleted");
+            r.model
+                .project_op(&what, ols_server::Op::DeleteSnapshot { name: name.clone() })
+                .map(|_| what)
+                .map_err(|e| e.to_string())
+        }
         LinesWindow::Restore(name) => match e.session.snapshot(name) {
             Ok(line) => {
                 // One command: undone with the others.
@@ -2569,7 +2877,7 @@ fn lines_window(ctx: &egui::Context, r: &mut Ready) {
                 r.lines_window = None;
                 return;
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.to_string()),
         },
     };
     match result {
@@ -2582,7 +2890,7 @@ fn lines_window(ctx: &egui::Context, r: &mut Ready) {
             r.lines_window = None;
         }
         Err(e) => {
-            r.status = Some((e.to_string(), true));
+            r.status = Some((e, true));
             r.lines_window = Some(w);
         }
     }
@@ -3068,6 +3376,14 @@ fn menus(
         });
         item(ui, Command::ClearSelection, out);
         item(ui, Command::GoTo, out);
+        if ui
+            .button("History…")
+            .on_hover_text("The operation log: who did what; admins reverse entries")
+            .clicked()
+        {
+            r.history_open = true;
+            ui.close();
+        }
         ui.separator();
         ui.menu_button("Snap: what can be clicked", |ui| {
             snap_panel(ui, &mut r.snaps)
@@ -3446,7 +3762,10 @@ impl eframe::App for App {
                 }
             }
             match done {
-                Some(Ok(model)) => {
+                Some(Ok(mut model)) => {
+                    if let Some(remote) = self.pending_remote.take() {
+                        model.attach(*remote);
+                    }
                     let mut ready = Ready::new(*model);
                     ready.view3d.controls = self.controls.clone();
                     ready.snaps = self.snaps.clone();
@@ -3464,7 +3783,14 @@ impl eframe::App for App {
             // Only the File menu without a model.
             egui::Panel::top("top").show(ui, |ui| {
                 egui::MenuBar::new().ui(ui, |ui| {
-                    crate::files::file_menu(ui, &self.recent, None, &mut self.file_action, |_| {});
+                    crate::files::file_menu(
+                        ui,
+                        &self.recent,
+                        None,
+                        crate::files::Shared::No,
+                        &mut self.file_action,
+                        |_| {},
+                    );
                 });
             });
         }
@@ -3490,6 +3816,8 @@ impl eframe::App for App {
                 });
             }
             State::Ready(ready) => {
+                ready.remote_frame();
+                history_window(ui.ctx(), ready);
                 goto_key(ui.ctx(), ready);
                 edit_keys(ui.ctx(), ready);
                 clearance_frame(ui.ctx(), ready);
@@ -3524,10 +3852,16 @@ impl eframe::App for App {
                 egui::Panel::top("top").show(ui, |ui| {
                     egui::MenuBar::new().ui(ui, |ui| {
                         let path = ready.model.sources.file.clone();
+                        let shared = match (&ready.model.remote, &self.hosting) {
+                            (None, _) => crate::files::Shared::No,
+                            (Some(_), Some(_)) => crate::files::Shared::Hosting,
+                            (Some(_), None) => crate::files::Shared::Joined,
+                        };
                         crate::files::file_menu(
                             ui,
                             &self.recent,
                             Some(&path),
+                            shared,
                             &mut self.file_action,
                             |ui| file_entries(ui, ready, &mut commands),
                         );
@@ -3636,6 +3970,7 @@ impl eframe::App for App {
             }
         }
         // The File menu's windows and actions.
+        self.share_windows(&ctx);
         if let Some(np) = &mut self.new_project {
             let mut open = true;
             if let Some(path) = np.ui(&ctx, &mut open) {

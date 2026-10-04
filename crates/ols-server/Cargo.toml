@@ -1,0 +1,24 @@
+[package]
+name = "ols-server"
+description = "OLS CAD server mode: a project hosted for several users (QUIC), the clients' replicas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-session.workspace = true
+ols-line.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "io-util", "fs"] }
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rcgen = "0.14"
+sha2 = "0.10"
+getrandom = "0.3"
+
+[lints]
+workspace = true

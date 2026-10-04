@@ -57,11 +57,12 @@ impl Model {
 
     /// The session's line, structure types resolved.
     fn session_line(&self) -> Result<Line, EditError> {
-        let e = self
-            .editing
-            .as_ref()
-            .map_err(|why| EditError::ReadOnly(why.clone()))?;
-        let line = e.session.export();
+        // A read-only replica follows the server too.
+        let line = match (&self.editing, &self.viewer_session) {
+            (Ok(e), _) => e.session.export(),
+            (Err(_), Some(s)) => s.export(),
+            (Err(why), None) => return Err(EditError::ReadOnly(why.clone())),
+        };
         let mut line = match &self.types {
             Some((s, i)) => line
                 .resolve(s, i)
@@ -76,7 +77,7 @@ impl Model {
 
     /// Brings the model up to the session after `applied`: re-solves its
     /// dirty sections in every case. Returns a one-line report.
-    fn sync(
+    pub(crate) fn sync(
         &mut self,
         what: &str,
         applied: Applied,
@@ -115,6 +116,9 @@ impl Model {
 
     /// Applies a command as the editing user.
     pub fn apply(&mut self, what: &str, command: Command) -> Result<String, EditError> {
+        if self.remote.is_some() {
+            return self.remote_request(what, ols_server::Op::Do { command });
+        }
         let started = Instant::now();
         let user = self.user()?;
         let applied = self
@@ -128,6 +132,9 @@ impl Model {
 
     /// Undoes the user's last command.
     pub fn undo(&mut self) -> Result<String, EditError> {
+        if self.remote.is_some() {
+            return self.remote_request("undo", ols_server::Op::Undo);
+        }
         let started = Instant::now();
         let user = self.user()?;
         let applied = self
@@ -141,6 +148,9 @@ impl Model {
 
     /// Redoes the user's last undo.
     pub fn redo(&mut self) -> Result<String, EditError> {
+        if self.remote.is_some() {
+            return self.remote_request("redo", ols_server::Op::Redo);
+        }
         let started = Instant::now();
         let user = self.user()?;
         let applied = self

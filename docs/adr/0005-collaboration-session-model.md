@@ -27,3 +27,6 @@ Several users must be able to work on one project at the same time, like players
 ## Consequences
 - Every edit in the codebase must be a command: no direct mutation of the model from the GUI.
 - Requires a running session even offline (in-process, invisible to the user).
+
+## Implementation (alpha, 2026-10)
+`ols-server`: one authority thread owns the session; clients join with an invitation (address, access code, certificate fingerprint), receive a consistent copy of the project file (`VACUUM INTO`), and replay the broadcast operations with the same session code, checking the log sequence numbers (a mismatch: join again). Users known to the project join only with a personal invitation (its code derived from the server's secret and the name). Not yet: optimistic prediction (edits wait for the answer), interest management (the whole project is copied), the WebSocket fallback, OIDC.

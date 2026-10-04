@@ -241,7 +241,8 @@ pub enum Role {
 }
 
 impl Role {
-    fn as_str(self) -> &'static str {
+    /// The name: `viewer`, `designer` or `admin`.
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Viewer => "viewer",
             Self::Designer => "designer",
@@ -989,6 +990,22 @@ impl Session {
             params![kind, name],
         )?;
         Ok(())
+    }
+
+    /// Writes a consistent copy of the project file to `path` (which must
+    /// not exist): what a client joining a server receives. Takes about as
+    /// long as reading the file.
+    pub fn copy_to(&self, path: &Path) -> Result<(), SessionError> {
+        self.conn
+            .execute("VACUUM INTO ?1", params![path.to_string_lossy()])?;
+        Ok(())
+    }
+
+    /// The last log entry's sequence number (0: none).
+    pub fn last_seq(&self) -> Result<i64, SessionError> {
+        Ok(self
+            .conn
+            .query_row("SELECT COALESCE(MAX(seq), 0) FROM oplog", [], |r| r.get(0))?)
     }
 
     /// Writes everything into the project file itself (no change is ever

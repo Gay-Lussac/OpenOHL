@@ -18,6 +18,7 @@ doc = false
 ols-core.workspace = true
 ols-validation.workspace = true
 ols-plugins.workspace = true
+ols-server.workspace = true
 ols-cables.workspace = true
 ols-sagtension.workspace = true
 ols-weather.workspace = true
