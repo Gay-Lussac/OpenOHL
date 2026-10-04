@@ -1209,12 +1209,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     let mut scheme = ols_lidar::ClassScheme::asprs();
     if let Some(spec) = cloud.clone() {
         let t = Instant::now();
-        let (file, name) = match spec.split_once('#') {
-            Some((f, n)) => (f.to_owned(), Some(n.to_owned())),
-            None => (spec.clone(), None),
-        };
-        let source = ols_pointcloud::CloudSource::open(Path::new(&file), name.as_deref())
-            .map_err(|e| e.to_string())?;
+        let (file, name) = ols_lidar::cloud_spec(&spec);
+        let source = ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?;
         if let Some(text) = ols_pointcloud::PointSource::class_scheme(&source) {
             scheme = ols_lidar::ClassScheme::parse(&text)?;
         }
@@ -1242,18 +1238,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
             is_ground[c as usize] = true;
         }
         // Corridor along the spans' chords.
-        let polylines: Vec<Vec<[f64; 2]>> = line
-            .sections
-            .iter()
-            .map(|s| {
-                s.points
-                    .iter()
-                    .filter_map(|p| line.attachment(p))
-                    .map(|a| [a.wire_point[0], a.wire_point[1]])
-                    .collect()
-            })
-            .collect();
-        let corridor = ols_lidar::Corridor::new(&polylines, sources.corridor);
+        let corridor = ols_lidar::Corridor::along_spans(&line, sources.corridor);
         // Every class shown, of the whole cloud: a class of up to
         // SMALL_CLASS points whole, the others every n-th point, n from
         // the cloud's size. (Thinning every class alike and leaving out the
@@ -1261,13 +1246,13 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         // roads, water, bridges, and classes of 6 to 500 points.)
         let info = source.cloud().clone();
         let stride = (info.points as usize / sources.point_budget.max(1)).max(1);
-        class_counts = ols_pointcloud::Store::open(Path::new(&file))
+        class_counts = ols_pointcloud::Store::open(file)
             .and_then(|s| s.class_counts(&info))
             .map_err(|e| e.to_string())?;
         let mut thinning = Thinning::new(&class_counts, stride);
-        let mut cells: std::collections::HashMap<(i64, i64), usize> =
-            std::collections::HashMap::new();
-        let mut ground_points: Vec<[f64; 3]> = Vec::new();
+        // The ground as the surface window builds it from LiDAR.
+        let build = crate::surfaces::LidarBuild::default();
+        let mut ground_points = ols_lidar::LowestPerCell::new(Some(build.cell));
         let mm = |v: f64, i: usize| ((v - origin[i]) * 1000.0).round() as i32;
         // A surface or survey file gives the ground: no LiDAR ground then.
         let need_ground = ground.is_none();
@@ -1281,16 +1266,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
                 }
                 // The ground surface: ground classes in the corridor.
                 if need_ground && is_ground[c as usize] && corridor.contains(x, y) {
-                    // Lowest point per 1 m cell for the surface.
-                    let key = (x.floor() as i64, y.floor() as i64);
-                    match cells.get(&key) {
-                        Some(&i) if ground_points[i][2] <= z => {}
-                        Some(&i) => ground_points[i] = [x, y, z],
-                        None => {
-                            cells.insert(key, ground_points.len());
-                            ground_points.push([x, y, z]);
-                        }
-                    }
+                    ground_points.add(x, y, z);
                 }
             })
             .map_err(|e| e.to_string())?;
@@ -1300,13 +1276,15 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
                 stats.points_visited,
                 t.elapsed(),
                 points.len(),
-                ground_points.len()
+                ground_points.points().len()
             ),
             &mut log,
         );
-        if ground.is_none() && ground_points.len() >= 3 {
+        if ground.is_none() && ground_points.points().len() >= 3 {
             let t = Instant::now();
-            let g = Terrain::from_xyz(&ground_points, Some(50.0)).map_err(|e| e.to_string())?;
+            let g = ground_points
+                .terrain(Some(build.max_edge))
+                .map_err(|e| e.to_string())?;
             step(
                 format!(
                     "ground: {} triangles from LiDAR in {:.1?}",

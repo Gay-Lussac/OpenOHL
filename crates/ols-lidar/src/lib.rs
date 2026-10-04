@@ -120,6 +120,23 @@ pub struct Corridor {
 }
 
 impl Corridor {
+    /// Corridor around the chords of a line's spans (attachment to
+    /// attachment, in plan).
+    pub fn along_spans(line: &ols_line::Line, half_width: f64) -> Self {
+        let polylines: Vec<Vec<[f64; 2]>> = line
+            .sections
+            .iter()
+            .map(|s| {
+                s.points
+                    .iter()
+                    .filter_map(|p| line.attachment(p))
+                    .map(|a| [a.wire_point[0], a.wire_point[1]])
+                    .collect()
+            })
+            .collect();
+        Self::new(&polylines, half_width)
+    }
+
     /// Corridor around polylines (x, y).
     pub fn new(polylines: &[Vec<[f64; 2]>], half_width: f64) -> Self {
         let segments: Vec<[[f64; 2]; 2]> = polylines
@@ -227,6 +244,61 @@ impl Corridor {
     /// Whether there is no segment.
     pub fn is_empty(&self) -> bool {
         self.segments.is_empty()
+    }
+}
+
+/// A point cloud named as `FILE` or `FILE#cloud-name`: the project file
+/// and the cloud's name.
+pub fn cloud_spec(spec: &str) -> (&Path, Option<&str>) {
+    match spec.split_once('#') {
+        Some((file, name)) => (Path::new(file), Some(name)),
+        None => (Path::new(spec), None),
+    }
+}
+
+/// Ground points: the lowest in each square plan cell, or every point.
+#[derive(Debug, Clone, Default)]
+pub struct LowestPerCell {
+    cell: Option<f64>,
+    cells: HashMap<(i64, i64), usize>,
+    points: Vec<[f64; 3]>,
+}
+
+impl LowestPerCell {
+    /// Keeps the lowest point per `cell` m square (`None`: every point).
+    pub fn new(cell: Option<f64>) -> Self {
+        Self {
+            cell,
+            ..Self::default()
+        }
+    }
+
+    /// Takes one point into account.
+    pub fn add(&mut self, x: f64, y: f64, z: f64) {
+        let Some(cell) = self.cell else {
+            self.points.push([x, y, z]);
+            return;
+        };
+        let key = ((x / cell).floor() as i64, (y / cell).floor() as i64);
+        match self.cells.get(&key) {
+            Some(&k) if self.points[k][2] <= z => {}
+            Some(&k) => self.points[k] = [x, y, z],
+            None => {
+                self.cells.insert(key, self.points.len());
+                self.points.push([x, y, z]);
+            }
+        }
+    }
+
+    /// The points kept.
+    pub fn points(&self) -> &[[f64; 3]] {
+        &self.points
+    }
+
+    /// Their Delaunay TIN, without triangle sides longer than `max_edge`
+    /// (no ground invented across gaps).
+    pub fn terrain(&self, max_edge: Option<f64>) -> Result<Terrain, TerrainError> {
+        Terrain::from_xyz(&self.points, max_edge)
     }
 }
 
@@ -369,30 +441,15 @@ pub fn read_ground(
         keep_class[c as usize] = true;
     }
     let mut classes = vec![0u64; 256];
-    let mut points: Vec<[f64; 3]> = Vec::new();
-    let mut cells: HashMap<(i64, i64), usize> = HashMap::new();
+    let mut kept = LowestPerCell::new(filter.thin);
     let (tiles_read, tiles_skipped, points_read) =
         for_each_point(tiles, filter.corridor.as_ref(), budget, |x, y, z, class| {
             classes[class as usize] += 1;
-            if !keep_class[class as usize] {
-                return;
-            }
-            let p = [x, y, z];
-            match filter.thin {
-                None => points.push(p),
-                Some(cell) => {
-                    let key = ((x / cell).floor() as i64, (y / cell).floor() as i64);
-                    match cells.get(&key) {
-                        Some(&k) if points[k][2] <= z => {}
-                        Some(&k) => points[k] = p,
-                        None => {
-                            cells.insert(key, points.len());
-                            points.push(p);
-                        }
-                    }
-                }
+            if keep_class[class as usize] {
+                kept.add(x, y, z);
             }
         })?;
+    let points = kept.points;
     let stats = ReadStats {
         tiles_read,
         tiles_skipped,
@@ -422,6 +479,29 @@ mod tests {
     use super::*;
     use las::point::Classification;
     use las::{Builder, Point, Writer};
+
+    #[test]
+    fn lowest_point_per_cell_and_cloud_names() {
+        let mut k = LowestPerCell::new(Some(2.0));
+        for (x, y, z) in [
+            (0.5, 0.5, 3.0),
+            (1.5, 1.0, 2.0),
+            (1.9, 1.9, 2.5),
+            (2.5, 0.0, 9.0),
+        ] {
+            k.add(x, y, z);
+        }
+        assert_eq!(k.points(), [[1.5, 1.0, 2.0], [2.5, 0.0, 9.0]]);
+        let mut all = LowestPerCell::new(None);
+        all.add(0.0, 0.0, 1.0);
+        all.add(0.0, 0.0, 0.0);
+        assert_eq!(all.points().len(), 2);
+        assert_eq!(cloud_spec("p.ols"), (Path::new("p.ols"), None));
+        assert_eq!(
+            cloud_spec("p.ols#scan 2"),
+            (Path::new("p.ols"), Some("scan 2"))
+        );
+    }
 
     /// Writes a small LAZ tile: a 1 m grid of ground points on a plane and,
     /// every 5th point, a vegetation point 10 m above it.

@@ -825,21 +825,9 @@ impl SurfacesWindow {
                     return false;
                 };
                 let build = self.lidar.clone();
-                let corridor = build.corridor.then(|| {
-                    let line = &model.line;
-                    let polylines: Vec<Vec<[f64; 2]>> = line
-                        .sections
-                        .iter()
-                        .map(|s| {
-                            s.points
-                                .iter()
-                                .filter_map(|p| line.attachment(p))
-                                .map(|a| [a.wire_point[0], a.wire_point[1]])
-                                .collect()
-                        })
-                        .collect();
-                    ols_lidar::Corridor::new(&polylines, model.sources.corridor)
-                });
+                let corridor = build
+                    .corridor
+                    .then(|| ols_lidar::Corridor::along_spans(&model.line, model.sources.corridor));
                 let (file, user) = (project.to_owned(), user.to_owned());
                 self.spawn(format!("building {}", build.name), ctx, move || {
                     Done::Stored(build_from_lidar(
@@ -925,39 +913,28 @@ fn build_from_lidar(
     project: &Path,
     user: &str,
 ) -> Result<Vec<String>, String> {
-    let (file, name) = match cloud.split_once('#') {
-        Some((f, n)) => (f.to_owned(), Some(n.to_owned())),
-        None => (cloud.to_owned(), None),
-    };
-    let source = ols_pointcloud::CloudSource::open(Path::new(&file), name.as_deref())
-        .map_err(|e| e.to_string())?;
+    let (file, name) = ols_lidar::cloud_spec(cloud);
+    let source = ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?;
     let mut is_ground = [false; 256];
     for c in scheme.codes_with_role("ground") {
         is_ground[c as usize] = true;
     }
-    let mut cells: std::collections::HashMap<(i64, i64), usize> = std::collections::HashMap::new();
-    let mut points: Vec<[f64; 3]> = Vec::new();
     let cell = build.cell.max(0.1);
+    let mut points = ols_lidar::LowestPerCell::new(Some(cell));
     let budget = ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
     ols_pointcloud::PointSource::visit(&source, None, None, &budget, &mut |x, y, z, c| {
         if !is_ground[c as usize] || corridor.as_ref().is_some_and(|k| !k.contains(x, y)) {
             return;
         }
-        let key = ((x / cell).floor() as i64, (y / cell).floor() as i64);
-        match cells.get(&key) {
-            Some(&i) if points[i][2] <= z => {}
-            Some(&i) => points[i] = [x, y, z],
-            None => {
-                cells.insert(key, points.len());
-                points.push([x, y, z]);
-            }
-        }
+        points.add(x, y, z);
     })
     .map_err(|e| e.to_string())?;
-    if points.len() < 3 {
+    if points.points().len() < 3 {
         return Err("fewer than three ground points (classes with the ground role)".into());
     }
-    let t = Terrain::from_xyz(&points, Some(build.max_edge)).map_err(|e| e.to_string())?;
+    let t = points
+        .terrain(Some(build.max_edge))
+        .map_err(|e| e.to_string())?;
     let source = format!(
         "LiDAR ground classes, {} m cells, sides ≤ {} m{}",
         cell,

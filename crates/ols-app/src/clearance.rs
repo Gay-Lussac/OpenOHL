@@ -221,24 +221,10 @@ pub fn run(input: &Input) -> Result<Report, String> {
                 .notes
                 .push("point rules: no point cloud in this model".into()),
             Some(spec) => {
-                let (file, name) = match spec.split_once('#') {
-                    Some((f, n)) => (f, Some(n)),
-                    None => (spec.as_str(), None),
-                };
-                let source = ols_pointcloud::CloudSource::open(Path::new(file), name)
-                    .map_err(|e| e.to_string())?;
-                let polylines: Vec<Vec<[f64; 2]>> = line
-                    .sections
-                    .iter()
-                    .map(|s| {
-                        s.points
-                            .iter()
-                            .filter_map(|p| line.attachment(p))
-                            .map(|a| [a.wire_point[0], a.wire_point[1]])
-                            .collect()
-                    })
-                    .collect();
-                let corridor = ols_lidar::Corridor::new(&polylines, input.corridor);
+                let (file, name) = ols_lidar::cloud_spec(spec);
+                let source =
+                    ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?;
+                let corridor = ols_lidar::Corridor::along_spans(line, input.corridor);
                 let classes: Vec<u8> = (0..=255u8).filter(|c| wanted[*c as usize]).collect();
                 // Exit clause: ~1 s per 10⁷ points decoded; 10 min is far
                 // beyond any line.

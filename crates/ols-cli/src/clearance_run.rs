@@ -239,13 +239,9 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
     // Points: a project's point cloud or LAS/LAZ tiles, one interface.
     let source: Option<Box<dyn ols_pointcloud::PointSource>> = match (o.pointcloud, o.lidar) {
         (Some(spec), _) => {
-            let (file, name) = match spec.split_once('#') {
-                Some((f, n)) => (f, Some(n)),
-                None => (spec, None),
-            };
+            let (file, name) = ols_lidar::cloud_spec(spec);
             Some(Box::new(
-                ols_pointcloud::CloudSource::open(Path::new(file), name)
-                    .map_err(|e| e.to_string())?,
+                ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?,
             ))
         }
         (None, Some(dir)) => Some(Box::new(ols_pointcloud::TileSource {
@@ -307,24 +303,11 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
             wanted.dedup();
             // Corridor around the spans' chords (attachment to attachment):
             // the same for every weather case.
-            let polylines: Vec<Vec<[f64; 2]>> = line
-                .sections
-                .iter()
-                .map(|s| {
-                    s.points
-                        .iter()
-                        .filter_map(|p| line.attachment(p))
-                        .map(|a| [a.wire_point[0], a.wire_point[1]])
-                        .collect()
-                })
-                .collect();
-            let corridor = ols_lidar::Corridor::new(&polylines, o.corridor);
+            let corridor = ols_lidar::Corridor::along_spans(line, o.corridor);
             // Exit clause: ~1 min per 10⁸ points from LAZ; 30 min is far beyond.
             let budget =
                 ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(1800));
-            let mut ground_points: Vec<[f64; 3]> = Vec::new();
-            let mut cells: std::collections::HashMap<(i64, i64), usize> =
-                std::collections::HashMap::new();
+            let mut ground_points = ols_lidar::LowestPerCell::new(o.thin);
             let mm = |v: f64, k: usize| ((v - origin[k]) * 1000.0).round() as i32;
             let stats = source.visit(
                 Some(&corridor),
@@ -332,20 +315,7 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
                 &budget,
                 &mut |x, y, z, c| {
                     if is_ground[c as usize] {
-                        match o.thin {
-                            None => ground_points.push([x, y, z]),
-                            Some(cell) => {
-                                let key = ((x / cell).floor() as i64, (y / cell).floor() as i64);
-                                match cells.get(&key) {
-                                    Some(&k) if ground_points[k][2] <= z => {}
-                                    Some(&k) => ground_points[k] = [x, y, z],
-                                    None => {
-                                        cells.insert(key, ground_points.len());
-                                        ground_points.push([x, y, z]);
-                                    }
-                                }
-                            }
-                        }
+                        ground_points.add(x, y, z);
                     }
                     if is_needed[c as usize] {
                         points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
@@ -361,10 +331,14 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
                 stats.points_read,
                 stats.points_visited,
                 scheme.name,
-                ground_points.len(),
+                ground_points.points().len(),
                 points.len()
             );
-            Some(Terrain::from_xyz(&ground_points, Some(o.max_edge)).map_err(|e| e.to_string())?)
+            Some(
+                ground_points
+                    .terrain(Some(o.max_edge))
+                    .map_err(|e| e.to_string())?,
+            )
         }
         (None, None) => None,
     };
