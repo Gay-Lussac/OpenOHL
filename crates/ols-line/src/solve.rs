@@ -679,73 +679,38 @@ fn settled(
         .collect()
 }
 
-/// Sag of a catenary of parameter `c` (H / w) over a span of horizontal
-/// length `s` and rise `h`: the largest vertical distance below the chord.
-fn catenary_sag(c: f64, s: f64, h: f64) -> f64 {
-    // y(x) = c·cosh((x − x0)/c) through (0, 0) and (s, h).
-    let x0 = s / 2.0 - c * (h / (2.0 * c * (s / (2.0 * c)).sinh())).asinh();
-    let y = |x: f64| c * (((x - x0) / c).cosh() - (x0 / c).cosh());
-    // Deepest below the chord where the slope equals the chord's.
-    let x = (x0 + c * (h / s).asinh()).clamp(0.0, s);
-    h * x / s - y(x)
-}
-
 /// The horizontal tension giving sag `sag` (m) in span `span` between the
 /// `clamps` (none: in the ruling span \\( \sqrt{\sum S^3 / \sum S} \\), level),
-/// for weight `w` (N/m). Bisection on the tension; exit clause: 200 steps.
+/// for weight `w` (N/m) ([`ols_sagtension::catenary::tension_for_sag`]).
 pub(crate) fn tension_for_sag(
     clamps: &[Vector3<f64>],
     span: Option<usize>,
     sag: f64,
     w: f64,
 ) -> Result<f64, String> {
-    let spans: Vec<(f64, f64)> = clamps
+    use ols_core::units::{ForcePerLength, Length};
+    use ols_sagtension::catenary::{SpanGeometry, default_solver_budget};
+    let spans: Vec<SpanGeometry> = clamps
         .windows(2)
-        .map(|c| ((c[1] - c[0]).xy().norm(), c[1].z - c[0].z))
+        .map(|c| SpanGeometry {
+            span: Length::from_si((c[1] - c[0]).xy().norm()),
+            rise: Length::from_si(c[1].z - c[0].z),
+        })
         .collect();
-    let (s, h) = match span {
+    let geometry = match span {
         Some(k) => *spans.get(k).ok_or_else(|| format!("no span {}", k + 1))?,
-        None => {
-            let (cubes, sum) = spans
-                .iter()
-                .fold((0.0, 0.0), |(c, t), (s, _)| (c + s * s * s, t + s));
-            ((cubes / sum).sqrt(), 0.0)
-        }
+        None => SpanGeometry::level(
+            ols_sagtension::section::ruling_span(&spans).map_err(|e| e.to_string())?,
+        ),
     };
-    if !(s > 0.0 && sag > 0.0) {
-        return Err("span and sag must be above 0".into());
-    }
-    let sag_for = |hh: f64| catenary_sag(hh / w, s, h);
-    // Parabola estimate, then bracket and bisect (sag falls as H grows).
-    let estimate = w * s * s / (8.0 * sag);
-    let (mut lo, mut hi) = (estimate / 2.0, estimate * 2.0);
-    let mut steps = 0;
-    let mut step = || {
-        steps += 1;
-        if steps > 200 {
-            Err("no tension found in 200 steps".to_owned())
-        } else {
-            Ok(())
-        }
-    };
-    while sag_for(lo) <= sag {
-        step()?;
-        lo /= 2.0;
-    }
-    while sag_for(hi) >= sag {
-        step()?;
-        hi *= 2.0;
-    }
-    while hi - lo > 1e-10 * hi {
-        step()?;
-        let mid = 0.5 * (lo + hi);
-        if sag_for(mid) > sag {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    Ok(0.5 * (lo + hi))
+    ols_sagtension::catenary::tension_for_sag(
+        geometry,
+        ForcePerLength::from_si(w),
+        Length::from_si(sag),
+        &default_solver_budget(),
+    )
+    .map(|c| c.horizontal_tension.si())
+    .map_err(|e| e.to_string())
 }
 
 /// A section in the blocks in a weather case: its unstressed length (the
@@ -1364,10 +1329,7 @@ fn solve_fe(
             .iter()
             .min_by(|x, y| x.z.total_cmp(&y.z))
             .expect("points");
-        let sag = points
-            .iter()
-            .map(|q| a.z + chord.z * along(q) / horizontal - q.z)
-            .fold(0.0, f64::max);
+        let sag = crate::jumper::sag_below_chord(&points, a, b);
         spans.push(SpanShape {
             points: points.iter().map(|q| p(*q)).collect(),
             horizontal_tension: solution.cables[elements[0]].horizontal,
@@ -1752,16 +1714,6 @@ mod tests {
                 span.horizontal_tension
             );
         }
-    }
-
-    #[test]
-    fn catenary_sag_matches_the_parabola_for_a_shallow_span() {
-        // Level 300 m span, c = 2000 m: sag ≈ S²/(8c) = 5.625 m (+0.04 %).
-        let sag = super::catenary_sag(2000.0, 300.0, 0.0);
-        assert!((sag - 5.625).abs() < 0.01, "{sag}");
-        // Inclined: the sag from the chord is about the same.
-        let inclined = super::catenary_sag(2000.0, 300.0, 30.0);
-        assert!((inclined - sag).abs() < 0.05, "{inclined}");
     }
 
     /// Sagged to 8 m in its second span: solving in the stringing state

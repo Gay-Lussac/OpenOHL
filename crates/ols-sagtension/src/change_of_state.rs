@@ -56,15 +56,6 @@ pub struct LoadState {
     pub temperature: Temperature,
 }
 
-/// Total of tension along the cable, \\( \int_0^L T\,ds \\), in N·m.
-fn tension_integral(solution: &SpanSolution) -> f64 {
-    let s = solution.geometry.span.si();
-    let c = solution.catenary.parameter().si();
-    let xm = solution.low_point_x().si();
-    solution.catenary.horizontal_tension.si()
-        * (s / 2.0 + c / 2.0 * (s / c).sinh() * ((s - 2.0 * xm) / c).cosh())
-}
-
 /// A cable installed in a span, defined by its unstressed length.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InstalledSpan {
@@ -90,7 +81,7 @@ impl InstalledSpan {
         check_cable(cable)?;
         let solution = Catenary::new(horizontal_tension, state.load)?.solve(geometry)?;
         let length = solution.length().si();
-        let mean_strain = tension_integral(&solution) / length / cable.axial_stiffness.si();
+        let mean_strain = solution.tension_integral() / length / cable.axial_stiffness.si();
         Ok(Self {
             geometry,
             cable,
@@ -110,7 +101,7 @@ impl InstalledSpan {
         let thermal = (self.cable.thermal_expansion
             * (state.temperature - self.reference_temperature).kelvin())
         .exp();
-        let elastic = tension_integral(&solution) / length / self.cable.axial_stiffness.si();
+        let elastic = solution.tension_integral() / length / self.cable.axial_stiffness.si();
         Some(length - self.unstressed_length.si() * thermal * (1.0 + elastic))
     }
 

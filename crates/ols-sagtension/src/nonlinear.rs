@@ -34,12 +34,7 @@ use crate::change_of_state::LoadState;
 use crate::section::SectionSolution;
 
 fn mean_tension(solution: &SpanSolution) -> f64 {
-    let s = solution.geometry.span.si();
-    let c = solution.catenary.parameter().si();
-    let xm = solution.low_point_x().si();
-    let integral = solution.catenary.horizontal_tension.si()
-        * (s / 2.0 + c / 2.0 * (s / c).sinh() * ((s - 2.0 * xm) / c).cosh());
-    integral / solution.length().si()
+    solution.tension_integral() / solution.length().si()
 }
 
 fn cable_error(e: ols_cables::CableError) -> SagTensionError {

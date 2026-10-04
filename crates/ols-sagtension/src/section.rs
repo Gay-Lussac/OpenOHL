@@ -45,13 +45,8 @@ pub fn ruling_span(spans: &[SpanGeometry]) -> Result<Length, SagTensionError> {
 /// Stressed length / (1 + mean strain) of one span: its unstressed length
 /// at the current temperature.
 fn unstrained_length(solution: &SpanSolution, cable: ElasticCable) -> f64 {
-    let s = solution.geometry.span.si();
-    let c = solution.catenary.parameter().si();
-    let xm = solution.low_point_x().si();
-    let integral = solution.catenary.horizontal_tension.si()
-        * (s / 2.0 + c / 2.0 * (s / c).sinh() * ((s - 2.0 * xm) / c).cosh());
     let length = solution.length().si();
-    length / (1.0 + integral / length / cable.axial_stiffness.si())
+    length / (1.0 + solution.tension_integral() / length / cable.axial_stiffness.si())
 }
 
 /// A cable strung through a tension section.

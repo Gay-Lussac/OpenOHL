@@ -176,7 +176,7 @@ fn resample(points: &[Vector3<f64>], n: usize) -> Vec<Vector3<f64>> {
 
 /// Largest vertical distance of `points` below the chord from `a` to `b`
 /// (chord height interpolated by horizontal position along it).
-fn sag_below_chord(points: &[Vector3<f64>], a: Vector3<f64>, b: Vector3<f64>) -> f64 {
+pub(crate) fn sag_below_chord(points: &[Vector3<f64>], a: Vector3<f64>, b: Vector3<f64>) -> f64 {
     let chord = b - a;
     let h2 = chord.xy().norm_squared();
     points

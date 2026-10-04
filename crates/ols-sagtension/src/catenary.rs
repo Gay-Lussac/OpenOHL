@@ -251,6 +251,15 @@ impl SpanSolution {
     pub fn midspan_sag(&self) -> Length {
         self.sag_at(self.geometry.span / 2.0)
     }
+
+    /// Total of tension along the cable, \\( \int_0^L T\,ds \\), in N·m.
+    pub fn tension_integral(&self) -> f64 {
+        let s = self.geometry.span.si();
+        let c = self.catenary.parameter().si();
+        let xm = self.low_point_x().si();
+        self.catenary.horizontal_tension.si()
+            * (s / 2.0 + c / 2.0 * (s / c).sinh() * ((s - 2.0 * xm) / c).cosh())
+    }
 }
 
 /// Default exit clauses for [`tension_for_sag`]: bisection halves the
