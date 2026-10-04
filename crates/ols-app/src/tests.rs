@@ -2645,3 +2645,52 @@ fn files_are_created_opened_and_closed() {
     }
     assert!(harness.state_mut().ready().is_some());
 }
+
+/// Terrain › Survey data › Survey data display options: a window that
+/// stays open while classes are shown and hidden, several in a row.
+#[test]
+fn the_survey_window_stays_open_for_several_classes() {
+    let mut model = synthetic();
+    // Ground (2), low and high vegetation (3, 5), building (6).
+    model.points = vec![
+        ([0, 0, 0], 2),
+        ([1000, 0, 0], 3),
+        ([2000, 0, 0], 5),
+        ([3000, 0, 0], 6),
+    ];
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Terrain").click();
+    harness.run();
+    harness.get_by_label("TIN (ground surface)");
+    harness.get_by_label_contains("Survey data").click();
+    harness.run();
+    harness.get_by_label("Survey data display options…").click();
+    harness.run();
+    let hidden = |h: &mut Harness<'_, App>| {
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .hidden_classes
+            .iter()
+            .copied()
+            .collect::<Vec<u8>>()
+    };
+    harness.get_by_label("None").click();
+    harness.run();
+    assert_eq!(hidden(&mut harness), vec![2, 3, 5, 6]);
+    // Still open: vegetation back, then everything.
+    harness.get_by_label("vegetation").click();
+    harness.run();
+    assert_eq!(hidden(&mut harness), vec![2, 6]);
+    harness.get_by_label("Invert").click();
+    harness.run();
+    assert_eq!(hidden(&mut harness), vec![3, 5]);
+    harness.get_by_label("All").click();
+    harness.run();
+    assert!(hidden(&mut harness).is_empty());
+    assert!(harness.state_mut().ready().unwrap().survey_window.is_some());
+}

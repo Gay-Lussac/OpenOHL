@@ -37,7 +37,7 @@ The **menu bar** holds what needs no view:
 | Lines | Project lines (saved states of the line to show next to the working line, or to make the working line), Create line, Delete line (see [Project lines](#project-lines)) |
 | Tools | the tool inventory (E); hold any tool |
 | Checks | calculations run **on demand** — they never change the model: Clearances (Run checks, also after every edit, rule file, Show results); more checks to come |
-| Terrain | the ground surface (TIN) shown or not; the survey data: LiDAR points shown or not and **LiDAR classes shown** (every class of the point cloud, with the points shown of its total; tick each one; a hidden class is neither drawn nor clicked; All / None; noise is drawn magenta) |
+| Terrain | the ground surface (TIN) shown or not; **Survey data**: LiDAR points shown or not, and **Survey data display options…** — a window that stays open: a tick per LiDAR class of the point cloud (the points shown of its total), All, None, Invert, by kind (ground, vegetation, buildings, wires and structures, traffic, noise), a filter by name or role; each change shows at once; a hidden class is neither drawn nor clicked; noise is drawn magenta |
 | Structures | libraries: structure types, insulators (see [Library editors](#library-editors)); tables: structures, strings, alignment points (see [Tables](#tables)) |
 | Sections | libraries: wires, weather cases; tables: sections, jumpers, electrical systems, weather cases; Display weather cases |
 | Plugins | to come (the plugin manager) |

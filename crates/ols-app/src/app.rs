@@ -160,6 +160,8 @@ pub struct Ready {
     pub display_window: Option<Vec<bool>>,
     /// A window of the Lines menu, when open.
     pub lines_window: Option<LinesWindow>,
+    /// The "Survey data display options" window, when open: its filter.
+    pub survey_window: Option<String>,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
     /// A page to bring to the front (with a table filter), from a tool.
@@ -202,6 +204,7 @@ impl Ready {
             tables: Default::default(),
             display_window: None,
             lines_window: None,
+            survey_window: None,
             jumper_from: None,
             open_page: None,
             clearances: crate::clearance::Clearances::new(
@@ -1662,6 +1665,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     move_window(ctx, r);
     editor_window(ctx, r);
     display_window(ctx, r);
+    survey_window(ctx, r);
     lines_window(ctx, r);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
@@ -1727,61 +1731,183 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
         ui.add_enabled(false, egui::Button::new("TIN: none loaded"));
     }
     ui.separator();
-    ui.label(egui::RichText::new("Survey data").small().weak());
-    if r.model.points.is_empty() {
-        ui.add_enabled(false, egui::Button::new("LiDAR: no point cloud"));
-        return;
-    }
-    layer(ui, Layer::Points, "LiDAR points", r);
-    ui.menu_button("LiDAR classes shown", |ui| {
-        // Loaded per class; every class of the cloud is listed (a class
-        // without points loaded too).
-        let mut loaded: std::collections::BTreeMap<u8, u64> = Default::default();
-        for (_, c) in &r.model.points {
-            *loaded.entry(*c).or_default() += 1;
+    ui.menu_button("Survey data", |ui| {
+        if r.model.points.is_empty() {
+            ui.add_enabled(false, egui::Button::new("LiDAR: no point cloud"));
+            return;
         }
-        let mut classes: std::collections::BTreeMap<u8, Option<u64>> =
-            loaded.keys().map(|c| (*c, None)).collect();
-        for (c, n) in &r.model.class_counts {
-            classes.insert(*c, Some(*n));
-        }
-        let mut changed = false;
-        ui.horizontal(|ui| {
-            if ui.small_button("All").clicked() {
-                r.model.hidden_classes.clear();
-                changed = true;
-            }
-            if ui.small_button("None").clicked() {
-                r.model.hidden_classes = classes.keys().copied().collect();
-                changed = true;
-            }
-        });
-        for (code, total) in &classes {
-            let name = r
-                .model
-                .scheme
-                .class(*code)
-                .map_or_else(|| "unknown".to_owned(), |c| c.name.clone());
-            let n = loaded.get(code).copied().unwrap_or(0);
-            let mut on = !r.model.hidden_classes.contains(code);
-            let label = match total {
-                Some(t) if *t == n => format!("{code} {name} — {n} points"),
-                Some(t) => format!("{code} {name} — {n} of {t} points shown"),
-                None => format!("{code} {name} — {n} points"),
-            };
-            if ui.checkbox(&mut on, label).changed() {
-                if on {
-                    r.model.hidden_classes.remove(code);
-                } else {
-                    r.model.hidden_classes.insert(*code);
-                }
-                changed = true;
-            }
-        }
-        if changed {
-            r.view3d.dirty.insert(Layer::Points);
+        layer(ui, Layer::Points, "LiDAR points", r);
+        if ui
+            .button("Survey data display options…")
+            .on_hover_text("The LiDAR classes shown: tick or untick as many as you like")
+            .clicked()
+        {
+            r.survey_window.get_or_insert_with(String::new);
+            ui.close();
         }
     });
+}
+
+/// A LiDAR class: code, name, roles, points loaded, points in the cloud.
+type SurveyClass = (u8, String, Vec<String>, u64, Option<u64>);
+
+/// The LiDAR classes of the point cloud (every class of the cloud, loaded
+/// or not).
+fn survey_classes(m: &Model) -> Vec<SurveyClass> {
+    let mut loaded: std::collections::BTreeMap<u8, u64> = Default::default();
+    for (_, c) in &m.points {
+        *loaded.entry(*c).or_default() += 1;
+    }
+    let mut total: std::collections::BTreeMap<u8, Option<u64>> =
+        loaded.keys().map(|c| (*c, None)).collect();
+    for (c, n) in &m.class_counts {
+        total.insert(*c, Some(*n));
+    }
+    total
+        .into_iter()
+        .map(|(code, t)| {
+            let def = m.scheme.class(code);
+            (
+                code,
+                def.map_or_else(|| "unknown".to_owned(), |c| c.name.clone()),
+                def.map_or_else(Vec::new, |c| c.roles.clone()),
+                loaded.get(&code).copied().unwrap_or(0),
+                t,
+            )
+        })
+        .collect()
+}
+
+/// Groups of classes by role, for showing or hiding them together.
+const SURVEY_GROUPS: [(&str, &[&str]); 6] = [
+    ("ground", &["ground"]),
+    ("vegetation", &["vegetation"]),
+    ("buildings", &["building", "substation", "tank"]),
+    (
+        "wires and structures",
+        &[
+            "conductor",
+            "wire",
+            "jumper",
+            "structure",
+            "pole",
+            "insulator",
+        ],
+    ),
+    ("traffic", &["road", "railway", "ropeway", "bridge"]),
+    ("noise", &["noise"]),
+];
+
+/// The "Survey data display options" window: a tick per LiDAR class, kept
+/// open while classes are ticked and unticked (each change shows at once);
+/// all, none, invert, by group, a filter.
+fn survey_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(mut filter) = r.survey_window.clone() else {
+        return;
+    };
+    let classes = survey_classes(&r.model);
+    let mut open = true;
+    let mut changed = false;
+    let hidden = &mut r.model.hidden_classes;
+    egui::Window::new("Survey data display options")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(true)
+        .default_size([520.0, 520.0])
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Classes shown:");
+                if ui.button("All").clicked() {
+                    hidden.clear();
+                    changed = true;
+                }
+                if ui.button("None").clicked() {
+                    *hidden = classes.iter().map(|c| c.0).collect();
+                    changed = true;
+                }
+                if ui.button("Invert").clicked() {
+                    for c in &classes {
+                        if !hidden.remove(&c.0) {
+                            hidden.insert(c.0);
+                        }
+                    }
+                    changed = true;
+                }
+            });
+            ui.horizontal_wrapped(|ui| {
+                ui.label("By kind:");
+                for (name, roles) in SURVEY_GROUPS {
+                    let members: Vec<u8> = classes
+                        .iter()
+                        .filter(|c| c.2.iter().any(|r| roles.iter().any(|g| r.contains(g))))
+                        .map(|c| c.0)
+                        .collect();
+                    if members.is_empty() {
+                        continue;
+                    }
+                    let all_shown = members.iter().all(|c| !hidden.contains(c));
+                    let mut on = all_shown;
+                    if ui
+                        .checkbox(&mut on, name)
+                        .on_hover_text(format!("{} classes", members.len()))
+                        .changed()
+                    {
+                        for c in members {
+                            if on {
+                                hidden.remove(&c);
+                            } else {
+                                hidden.insert(c);
+                            }
+                        }
+                        changed = true;
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Filter:");
+                ui.text_edit_singleline(&mut filter);
+            });
+            ui.separator();
+            let f = filter.to_lowercase();
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::Grid::new("survey-classes")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label("");
+                        ui.strong("class");
+                        ui.strong("points shown / in the cloud");
+                        ui.end_row();
+                        for (code, name, roles, loaded, total) in &classes {
+                            let text = format!("{code} {name}");
+                            if !f.is_empty()
+                                && !text.to_lowercase().contains(&f)
+                                && !roles.iter().any(|r| r.contains(&f))
+                            {
+                                continue;
+                            }
+                            let mut on = !hidden.contains(code);
+                            if ui.checkbox(&mut on, "").changed() {
+                                if on {
+                                    hidden.remove(code);
+                                } else {
+                                    hidden.insert(*code);
+                                }
+                                changed = true;
+                            }
+                            ui.label(text).on_hover_text(roles.join(", "));
+                            ui.label(match total {
+                                Some(t) if t != loaded => format!("{loaded} / {t}"),
+                                _ => loaded.to_string(),
+                            });
+                            ui.end_row();
+                        }
+                    });
+            });
+        });
+    if changed {
+        r.view3d.dirty.insert(Layer::Points);
+    }
+    r.survey_window = open.then_some(filter);
 }
 
 fn lines_menu(ui: &mut egui::Ui, r: &mut Ready) {
