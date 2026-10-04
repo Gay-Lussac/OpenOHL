@@ -102,6 +102,12 @@ pub struct SectionShape {
     pub estimated_weights: Vec<Option<f64>>,
     /// Newton iterations used.
     pub iterations: u64,
+    /// The loads the section puts on its structures (finite elements
+    /// only; empty from the ruling span): at every point of the section,
+    /// for each support (insulator top, or the clamp of a wire fixed to
+    /// the structure), where it is and the force on the structure, N (the
+    /// whole bundle's; the support's reaction reversed).
+    pub attachment_loads: Vec<Vec<(Point, Point)>>,
 }
 
 struct Built {
@@ -112,6 +118,9 @@ struct Built {
     span_elements: Vec<Vec<usize>>,
     /// For each section point, its insulator trusses.
     members: Vec<Vec<usize>>,
+    /// For each section point, its fixed nodes (insulator tops, or the
+    /// clamp of a wire fixed to the structure).
+    supports: Vec<Vec<usize>>,
 }
 
 fn is_suspension(insulator: Vector3<f64>, wire: Vector3<f64>) -> bool {
@@ -257,9 +266,11 @@ fn build(
     let mut model = Model::default();
     let mut clamps = Vec::with_capacity(n);
     let mut members = Vec::with_capacity(n);
+    let mut supports = Vec::with_capacity(n);
     for (k, clamp) in layout.iter().enumerate() {
         match clamp {
             Clamp::Fixed(p) => {
+                supports.push(vec![model.nodes.len()]);
                 clamps.push(model.nodes.len());
                 model.nodes.push(Node::fixed(*p));
                 members.push(vec![]);
@@ -271,6 +282,7 @@ fn build(
                 ..
             } => {
                 let first = model.nodes.len();
+                supports.push(vec![first, first + 1]);
                 model.nodes.push(Node::fixed(tops[0]));
                 model.nodes.push(Node::fixed(tops[1]));
                 let clamp_node = model.nodes.len();
@@ -300,6 +312,7 @@ fn build(
                 ..
             } => {
                 let top_node = model.nodes.len();
+                supports.push(vec![top_node]);
                 model.nodes.push(Node::fixed(*top));
                 clamps.push(model.nodes.len());
                 model.nodes.push(Node::free(reference.clamps[k]));
@@ -397,6 +410,7 @@ fn build(
         clamps,
         span_elements,
         members,
+        supports,
     })
 }
 
@@ -1231,6 +1245,7 @@ fn solve_rs(
         insulators: vec![Vec::new(); n],
         iterations: 0,
         estimated_weights: vec![None; n],
+        attachment_loads: Vec::new(),
     })
 }
 
@@ -1331,6 +1346,17 @@ fn solve_fe(
             .collect(),
         iterations: solution.iterations,
         estimated_weights,
+        attachment_loads: built
+            .supports
+            .iter()
+            .map(|nodes| {
+                let bundle = f64::from(section.bundle.max(1));
+                nodes
+                    .iter()
+                    .map(|&n| (p(pos[n]), p(-solution.reactions[n] * bundle)))
+                    .collect()
+            })
+            .collect(),
     })
 }
 
@@ -1810,6 +1836,54 @@ mod tests {
             "\"creep-rs\""
         );
         assert!(Calculation::default().is_default());
+    }
+
+    /// The loads on the structures balance the section: their sum is the
+    /// weight of the wires (and strings) hanging from them; one support per
+    /// string top, the wind pushes them sideways.
+    #[test]
+    fn attachment_loads_balance_the_section() {
+        let lib = library();
+        let mut line = crate::tests::example();
+        line.sections[0].loads.clear();
+        let cable = lib.get(&line.sections[0].cable).unwrap();
+        let budget = default_fe_budget();
+        let still = WeatherCase::still("t", Temperature::from_celsius(15.0));
+        let shape = solve_section(&line, &line.sections[0], cable, &still, &budget).unwrap();
+        assert_eq!(shape.attachment_loads.len(), line.sections[0].points.len());
+        let bundle = f64::from(line.sections[0].bundle.max(1));
+        let wires: f64 = shape
+            .spans
+            .iter()
+            .map(|s| {
+                s.points
+                    .windows(2)
+                    .map(|w| (v(w[1]) - v(w[0])).norm())
+                    .sum::<f64>()
+            })
+            .sum::<f64>()
+            * cable.weight().si()
+            * bundle;
+        let down: f64 = shape
+            .attachment_loads
+            .iter()
+            .flatten()
+            .map(|(_, f)| -f[2])
+            .sum();
+        assert!(down >= wires * 0.999, "{down} vs wires {wires}");
+        assert!(down < wires * 1.2, "{down} vs wires {wires}");
+        // Wind: the structures are pushed with it.
+        let mut windy = still.clone();
+        windy.wind_pressure = Stress::from_pascals(500.0);
+        let blown = solve_section(&line, &line.sections[0], cable, &windy, &budget).unwrap();
+        let side = |s: &SectionShape| -> nalgebra::Vector2<f64> {
+            s.attachment_loads
+                .iter()
+                .flatten()
+                .map(|(_, f)| nalgebra::Vector2::new(f[0], f[1]))
+                .sum()
+        };
+        assert!((side(&blown) - side(&shape)).norm() > 100.0);
     }
 
     /// The ruling span (one tension, clamps held) and the finite elements

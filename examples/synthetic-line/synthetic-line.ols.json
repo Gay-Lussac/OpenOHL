@@ -11,7 +11,7 @@
         0,
         500
       ],
-      "orientation_deg": 90.0,
+      "orientation_deg": -90.0,
       "attachments": [
         {
           "set": 1,
@@ -52,7 +52,7 @@
         0,
         505
       ],
-      "orientation_deg": 90.0,
+      "orientation_deg": -90.0,
       "attachments": [
         {
           "set": 1,
@@ -95,7 +95,7 @@
         0,
         498
       ],
-      "orientation_deg": 94.76,
+      "orientation_deg": -85.24,
       "attachments": [
         {
           "set": 1,
@@ -153,7 +153,7 @@
         52.094,
         510
       ],
-      "orientation_deg": 100.0,
+      "orientation_deg": -80.0,
       "attachments": [
         {
           "set": 1,
@@ -196,7 +196,7 @@
         107.662,
         503
       ],
-      "orientation_deg": 100.0,
+      "orientation_deg": -80.0,
       "attachments": [
         {
           "set": 1,
@@ -237,7 +237,7 @@
         280.0,
         504.0
       ],
-      "orientation_deg": 180.0,
+      "orientation_deg": 0.0,
       "attachments": [
         {
           "set": 1,
@@ -264,7 +264,7 @@
         560.0,
         496.0
       ],
-      "orientation_deg": 180.0,
+      "orientation_deg": 0.0,
       "attachments": [
         {
           "set": 1,

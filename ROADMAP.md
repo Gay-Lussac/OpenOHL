@@ -122,13 +122,13 @@ The open Phase 2 items above, grouped into four work packages:
 ## Phase 4 — Loading & structural checks
 *Goal: design-code compliant loading.*
 
-- [ ] `ols-loads`: load case framework (weather × load factors × wire condition)
+- [x] `ols-loads`: load case framework (weather × load factors × wire condition), `.olslc` files kept in the project, edited in the app
 - [ ] Design code plugins: NESC (ANSI C2), CSA C22.3, IEC 60826, EN 50341 (+ national NNAs), ASCE MOP 74, GO 95 — each as a separate plugin
 - [ ] Structure capacity Method 1: allowable spans (wind/weight span, line angle)
 - [ ] Method 2: interaction diagrams / allowable load trees
 - [x] Finite-element wire system (SAPS-style, `ols-wirefe`): exact elastic catenary elements, I- and V-strings (tension-only legs), 3D wind blowout, insulator swing, broken span, point loads, unequal spans *(delivered early, in Phase 1)*
 - [ ] FE wire system extensions: strain insulators, jumpers, general linked assemblies from the structure library, bundles, non-linear stress-strain and creep in elements
-- [ ] Structure loads output (attachment point loads per load case)
+- [x] Structure loads output (attachment point loads per load case): line and structure axes, unfactored and factored; Structure loads page, CSV (`ols line --load-cases --loads-csv`) *(wind on structures and jumper loads still open)*
 - [ ] Usage / utilisation reports
 
 **Deliverable:** code-checked line design with structure loading reports.

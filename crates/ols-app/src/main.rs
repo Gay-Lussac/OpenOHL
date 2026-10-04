@@ -23,6 +23,7 @@ mod edit;
 mod editors;
 mod files;
 mod library;
+mod loads;
 mod lod;
 mod menu;
 mod model;
@@ -82,6 +83,10 @@ struct Args {
     /// .olsr next to the file.
     #[arg(long)]
     rules: Option<PathBuf>,
+    /// Load cases (.olslc) for the structure loads; default: the
+    /// project's own, else the first .olslc next to the file.
+    #[arg(long)]
+    load_cases: Option<PathBuf>,
     /// Instead of opening a window: load, render the 3D view to this PNG
     /// file and exit (checks, documentation).
     #[arg(long)]
@@ -120,6 +125,7 @@ fn main() -> std::process::ExitCode {
         corridor: args.corridor,
         user: args.user,
         rules: args.rules,
+        load_cases: args.load_cases,
     };
     if let Some(path) = args.screenshot {
         if !open {

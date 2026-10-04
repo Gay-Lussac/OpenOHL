@@ -594,6 +594,7 @@ fn synthetic_project(name: &str) -> model::Model {
             file: path,
             library: Some(root().join("libraries/cables")),
             weather: Some(ex.join("weather-cases.olswc")),
+            load_cases: Some(ex.join("load-cases.olslc")),
             point_budget: 1000,
             corridor: 60.0,
             user: Some("tester".into()),
@@ -3815,4 +3816,47 @@ fn an_application_hosts_its_project() {
     let r = harness.state_mut().ready().unwrap();
     assert_eq!(r.model.line.structure(&id).unwrap().position, p1);
     assert!(r.model.can_edit().is_ok());
+}
+
+/// Checks › Structure loads: computed in the background from the
+/// project's load cases (kept in the project), shown per load case; a
+/// structure's link goes to it.
+#[test]
+fn structure_loads_are_computed_and_shown() {
+    let model = synthetic_project("loads");
+    assert!(
+        model
+            .sources
+            .load_cases
+            .as_ref()
+            .is_some_and(|p| p.ancestors().any(|a| a.ends_with("ols-cad-libraries"))),
+        "kept in the project: {:?}",
+        model.sources.load_cases
+    );
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Checks").click();
+    harness.run();
+    harness.get_by_label("Compute structure loads").click();
+    run_until(&mut harness, |a| {
+        let r = a.ready().unwrap();
+        r.loads.poll();
+        r.loads.results.is_some()
+    });
+    harness.step();
+    harness.step();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let results = r.loads.results.as_ref().unwrap().as_ref().unwrap();
+        assert_eq!(results.len(), 3);
+        assert!(results[0].failed.is_empty());
+        assert!(!results[0].loads.is_empty());
+    }
+    harness.get_by_label("transverse kN");
+    harness.get_all_by_label("T2").next().unwrap().click();
+    harness.step();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.selection, Selection::Structure("T2".into()));
 }

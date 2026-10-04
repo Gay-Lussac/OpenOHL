@@ -9,6 +9,7 @@
 - [Wire library files (.olsw)](user-guide/wire-library.md)
 - [Line files (.ols.json)](user-guide/line-file.md)
 - [Weather cases (.olswc)](user-guide/weather.md)
+- [Load cases and structure loads (.olslc)](user-guide/loads.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
 - [Terrain and ground clearance](user-guide/terrain.md)
 - [Coordinate systems](user-guide/coordinates.md)

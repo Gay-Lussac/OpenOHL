@@ -40,6 +40,7 @@
 |---|---|
 | `ols-core` | Data model, units, geometry, CRS, spatial chunk index, plugin registry, schema & migrations |
 | `ols-session` | Project file (`.ols`), commands, operation log, per-user undo/redo, admin rollback, roles, dirty tracking |
+| `ols-loads` | Load cases (`.olslc`: weather × wire condition × load factors) and the loads on the structures at every attachment |
 | `ols-server` | Server mode (alpha): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, personal invitations |
 | `ols-pointcloud` | Point clouds in the project file (chunk × class blocks), point-source interface |
 | `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors |

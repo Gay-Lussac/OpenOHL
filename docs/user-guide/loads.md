@@ -1,0 +1,60 @@
+# Load cases and structure loads
+
+A **load case** combines a weather case, the wires' condition and load factors. The **structure loads** are the forces the wires and strings put on the structures at every attachment, in each load case: the starting point of the structure checks (Phase 4).
+
+## Load case files (`.olslc`)
+
+```toml
+format = "ols-load-cases"
+version = 1
+name = "Synthetic example load cases"
+
+[[case]]
+name = "wind"
+description = "high wind, factored"
+weather = "high wind"      # a weather case of the model, by name
+condition = "initial"      # initial, creep, load or max_sag
+vertical = 1.0             # factor on the vertical loads
+transverse = 1.4           # factor on the transverse loads
+longitudinal = 1.0         # factor on the longitudinal loads
+strength = 1.0             # strength (resistance) factor, for the capacity checks
+tags = ["ULS"]
+```
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `name` | yes | | Unique in the file. |
+| `description` | no | | E.g. the code clause it stands for. |
+| `weather` | yes | | A weather case of the model's weather case file. |
+| `condition` | no | `initial` | The wires' condition ([Calculations](line-file.md#calculations-condition-and-method)). After creep or after load needs the line's creep-stretch criteria. |
+| `vertical`, `transverse`, `longitudinal` | no | 1 | Load factors, 0 to 100. |
+| `strength` | no | 1 | Strength factor of the capacity checks; more than 0. |
+| `tags` | no | | Code, limit state… |
+
+Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files. OLS CAD ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.olslc` only shows the format.
+
+In a project, the load case files are kept in the project like the other libraries (Libraries › Load cases edits them).
+
+## Structure loads
+
+Every section is solved in each load case with the finite elements (strings swing, each span its own tension), in the load case's condition and weather. At every attachment the load is the force the section puts on the structure: the reaction at the insulator top reversed (V-strings: one per leg), or at the clamp of a wire fixed to the structure. It is the whole bundle's load, and includes the strings' weight.
+
+Each load is given:
+
+- **in the line's axes:** x east, y north, z up, in N;
+- **in the structure's axes:** transverse (along the structure's local x, to the right of the line looking ahead — `orientation_deg`), longitudinal (ahead), and vertical (down);
+- **unfactored, and factored** by the load case's vertical, transverse and longitudinal factors.
+
+A section that does not solve in a load case is listed, with why. Its loads are then missing.
+
+**In the application:** Checks › **Compute structure loads** runs in the background (the model is not changed) and opens the **Structure loads** page. It shows one load case at a time (factored, or unfactored), a filter by structure, a structure's link to go to it, and **Export CSV…** for every case.
+
+**From the command line:**
+
+```bash
+ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-csv loads.csv
+```
+
+The CSV columns: `case,structure,set,phase,label,support,x,y,z,transverse,longitudinal,vertical,factored_transverse,factored_longitudinal,factored_vertical`.
+
+Not yet included: wind on the structures themselves, and jumper loads.

@@ -44,6 +44,9 @@ pub struct Sources {
     pub user: Option<String>,
     /// Clearance rules (`.olsr`).
     pub rules: Option<PathBuf>,
+    /// Load cases (`.olslc`) for the structure loads; default: the
+    /// project's own, else the first `.olslc` next to the file.
+    pub load_cases: Option<PathBuf>,
 }
 
 /// One solved weather case.
@@ -414,11 +417,12 @@ pub fn remember_weather(session: &ols_session::Session, path: &Path) {
 }
 
 /// The libraries a project keeps: kind (in the project) and file extension.
-pub const PROJECT_LIBRARIES: [(&str, &str); 4] = [
+pub const PROJECT_LIBRARIES: [(&str, &str); 5] = [
     ("cables", "olsw"),
     ("structures", "olss"),
     ("insulators", "olsi"),
     ("weather", "olswc"),
+    ("loadcases", "olslc"),
 ];
 
 /// Where the working copies of projects' libraries go.
@@ -487,6 +491,7 @@ fn project_libraries(
             "cables" => sources.library.is_some(),
             "structures" => sources.structures.is_some(),
             "insulators" => sources.insulators.is_some(),
+            "loadcases" => sources.load_cases.is_some(),
             _ => sources.weather.is_some(),
         };
         let stored = session.library_files(kind).map_err(|e| e.to_string())?;
@@ -496,6 +501,10 @@ fn project_libraries(
                 "cables" => Some(library_path(sources)),
                 "structures" => Some(structures_dir(sources)),
                 "insulators" => Some(insulators_dir(sources)),
+                "loadcases" => sources
+                    .load_cases
+                    .clone()
+                    .or_else(|| files_at(&model_dir(sources), "olslc").into_iter().next()),
                 _ => sources.weather.clone().or_else(|| {
                     remembered
                         .as_deref()
@@ -510,7 +519,7 @@ fn project_libraries(
             if !files.is_empty() {
                 let copy = || -> Result<(), String> {
                     // Given: replaces the project's (weather: adds a file).
-                    if given && kind != "weather" {
+                    if given && kind != "weather" && kind != "loadcases" {
                         for (name, _) in &stored {
                             session
                                 .delete_library_file(&user, kind, name)
@@ -556,6 +565,17 @@ fn project_libraries(
             "cables" => sources.library = Some(dir),
             "structures" => sources.structures = Some(dir),
             "insulators" => sources.insulators = Some(dir),
+            "loadcases" => {
+                let wanted = sources
+                    .load_cases
+                    .as_deref()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().into_owned());
+                let name = wanted
+                    .filter(|n| stored.iter().any(|(s, _)| s == n))
+                    .unwrap_or_else(|| stored[0].0.clone());
+                sources.load_cases = Some(dir.join(name));
+            }
             _ => {
                 // The file given, else the one used last, else the first.
                 let wanted = sources

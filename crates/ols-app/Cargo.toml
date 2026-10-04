@@ -25,6 +25,7 @@ ols-session.workspace = true
 ols-clearance.workspace = true
 ols-io.workspace = true
 ols-server.workspace = true
+ols-loads.workspace = true
 ols-plugins.workspace = true
 serde_json.workspace = true
 serde.workspace = true

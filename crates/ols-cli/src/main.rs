@@ -197,6 +197,13 @@ struct LineArgs {
     /// Write one row per span (tensions, sag, mid and low points) as CSV.
     #[arg(long)]
     spans_csv: Option<PathBuf>,
+    /// Load cases (.olslc): the loads on the structures in each (their
+    /// weather cases from --weather).
+    #[arg(long, requires = "weather")]
+    load_cases: Option<PathBuf>,
+    /// Write the structure loads (every attachment, every load case) as CSV.
+    #[arg(long, requires = "load_cases")]
+    loads_csv: Option<PathBuf>,
     /// Print stationing, offsets and line angles of every route.
     #[arg(long)]
     stations: bool,
@@ -886,6 +893,8 @@ fn line(args: &LineArgs) -> ExitCode {
         html,
         csv,
         spans_csv,
+        load_cases,
+        loads_csv,
         stations,
         terrain,
         lidar,
@@ -991,6 +1000,55 @@ fn line(args: &LineArgs) -> ExitCode {
         };
         if cases.is_empty() {
             return Err("no weather case to run".into());
+        }
+        if let (Some(lc), Some(w)) = (load_cases, weather) {
+            let set = ols_loads::LoadCases::load(lc)?;
+            let all = WeatherCases::load(w)?.cases;
+            let started = std::time::Instant::now();
+            let results = ols_loads::structure_loads(
+                &line,
+                &library,
+                &all,
+                &set.cases,
+                &ols_wirefe::default_fe_budget(),
+            )?;
+            println!(
+                "structure loads: {} load cases in {:.1?}",
+                results.len(),
+                started.elapsed()
+            );
+            for r in &results {
+                let max = |k: usize| {
+                    r.loads
+                        .iter()
+                        .map(|l| l.factored[k].abs())
+                        .fold(0.0, f64::max)
+                        / 1000.0
+                };
+                println!(
+                    "  {:<24} {:>4} supports  largest factored kN: transverse {:>8.2}  \
+                     longitudinal {:>8.2}  vertical {:>8.2}{}",
+                    r.case.name,
+                    r.loads.len(),
+                    max(0),
+                    max(1),
+                    max(2),
+                    if r.failed.is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            "  ({} sections failed: {})",
+                            r.failed.len(),
+                            r.failed.join("; ")
+                        )
+                    }
+                );
+            }
+            if let Some(out) = loads_csv {
+                std::fs::write(out, ols_loads::to_csv(&results))
+                    .map_err(|e| format!("{}: {e}", out.display()))?;
+                println!("  written to {}", out.display());
+            }
         }
         if *stations {
             for route in line.effective_routes() {

@@ -31,6 +31,7 @@ ols-io = { path = "crates/ols-io" }
 ols-validation = { path = "crates/ols-validation" }
 ols-plugins = { path = "crates/ols-plugins" }
 ols-server = { path = "crates/ols-server" }
+ols-loads = { path = "crates/ols-loads" }
 ols-render = { path = "crates/ols-render" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

@@ -45,6 +45,8 @@ pub enum Tab {
     Python,
     /// Who works on the project (server mode).
     People,
+    /// The loads on the structures.
+    Loads,
 }
 
 impl Tab {
@@ -74,6 +76,7 @@ impl Tab {
             Tab::Lod => "Level of detail",
             Tab::Python => "Python console",
             Tab::People => "People",
+            Tab::Loads => "Structure loads",
         }
     }
 }
@@ -197,6 +200,8 @@ pub struct Ready {
     pub console: crate::python::Console,
     /// Edit › History is open.
     pub history_open: bool,
+    /// Checks › Structure loads.
+    pub loads: crate::loads::LoadsPage,
     /// Parameters › Controls: the window of a view's controls, when open.
     pub controls_window: Option<ControlsPage>,
     /// Criteria › Creep-Stretch, when open: the weather cases chosen.
@@ -252,6 +257,7 @@ impl Ready {
             plugin_request: None,
             console: Default::default(),
             history_open: false,
+            loads: Default::default(),
             controls_window: None,
             creep_stretch_window: None,
             jumper_from: None,
@@ -815,6 +821,13 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Clearances => {
                 clearance_panel(ui, r);
+                None
+            }
+            Tab::Loads => {
+                r.loads.poll();
+                if let Some(id) = r.loads.ui(ui, &r.model) {
+                    r.go_to(Selection::Structure(id));
+                }
                 None
             }
             Tab::People => {
@@ -3446,6 +3459,22 @@ fn menus(
                 .weak(),
         );
         ui.separator();
+        ui.label(egui::RichText::new("Structure loads").strong());
+        if ui
+            .button("Compute structure loads")
+            .on_hover_text(
+                "The loads on the structures at every attachment, in each load case \
+                 (Libraries › Load cases)",
+            )
+            .clicked()
+        {
+            if !r.loads.running() {
+                r.loads.start(&r.model, ui.ctx());
+            }
+            r.open_page = Some((Tab::Loads, None));
+            ui.close();
+        }
+        ui.separator();
         ui.label(egui::RichText::new("Clearances").strong());
         item(ui, Command::RunChecks, out);
         let c = &mut r.clearances;
@@ -3512,6 +3541,7 @@ fn menus(
             ui.close();
         }
         item(ui, Command::Library(LibraryKind::WeatherCases), out);
+        item(ui, Command::Library(LibraryKind::LoadCases), out);
         if ui
             .button("Creep-Stretch…")
             .on_hover_text(

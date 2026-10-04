@@ -3413,6 +3413,7 @@ dependencies = [
  "ols-io",
  "ols-lidar",
  "ols-line",
+ "ols-loads",
  "ols-plugins",
  "ols-pointcloud",
  "ols-render",
@@ -3466,6 +3467,7 @@ dependencies = [
  "ols-io",
  "ols-lidar",
  "ols-line",
+ "ols-loads",
  "ols-plugins",
  "ols-pointcloud",
  "ols-sagtension",
@@ -3547,6 +3549,19 @@ dependencies = [
  "ols-wirefe",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ols-loads"
+version = "0.0.1"
+dependencies = [
+ "ols-cables",
+ "ols-core",
+ "ols-line",
+ "ols-weather",
+ "ols-wirefe",
+ "serde",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]

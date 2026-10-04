@@ -29,6 +29,8 @@ pub enum LibraryKind {
     StructureTypes,
     /// Weather cases (`.olswc`, several per file).
     WeatherCases,
+    /// Load cases (`.olslc`, several per file).
+    LoadCases,
 }
 
 /// A field that can be added: key, example value (TOML), help.
@@ -146,6 +148,40 @@ const CASE: &[Field] = &[
     ),
 ];
 
+const LOAD_CASE: &[Field] = &[
+    ("name", "\"new load case\"", "unique name"),
+    (
+        "description",
+        "\"\"",
+        "what it stands for (e.g. a code clause)",
+    ),
+    ("weather", "\"everyday\"", "the weather case, by name"),
+    (
+        "condition",
+        "\"initial\"",
+        "the wires' condition: initial, creep, load or max_sag",
+    ),
+    ("vertical", "1.0", "factor on the vertical loads"),
+    ("transverse", "1.0", "factor on the transverse loads"),
+    ("longitudinal", "1.0", "factor on the longitudinal loads"),
+    (
+        "strength",
+        "1.0",
+        "strength (resistance) factor of the capacity checks",
+    ),
+    (
+        "tags",
+        "[\"ULS\"]",
+        "for choosing cases (code, limit state…)",
+    ),
+];
+
+const LOAD_FILE: &[Field] = &[
+    ("format", "\"ols-load-cases\"", "file format"),
+    ("version", "1", "format version"),
+    ("name", "\"Load cases\"", "name of the set (e.g. the code)"),
+];
+
 const WEATHER_FILE: &[Field] = &[
     ("format", "\"ols-weather-cases\"", "file format"),
     ("version", "1", "format version"),
@@ -231,11 +267,12 @@ const BODY: &[Field] = &[(
 
 impl LibraryKind {
     /// Every kind (the Libraries menu).
-    pub const ALL: [LibraryKind; 4] = [
+    pub const ALL: [LibraryKind; 5] = [
         LibraryKind::Cables,
         LibraryKind::Insulators,
         LibraryKind::StructureTypes,
         LibraryKind::WeatherCases,
+        LibraryKind::LoadCases,
     ];
 
     /// Title of its page.
@@ -245,6 +282,7 @@ impl LibraryKind {
             LibraryKind::Insulators => "Insulators",
             LibraryKind::StructureTypes => "Structure types",
             LibraryKind::WeatherCases => "Weather cases",
+            LibraryKind::LoadCases => "Load cases",
         }
     }
 
@@ -255,6 +293,7 @@ impl LibraryKind {
             LibraryKind::Insulators => "olsi",
             LibraryKind::StructureTypes => "olss",
             LibraryKind::WeatherCases => "olswc",
+            LibraryKind::LoadCases => "olslc",
         }
     }
 
@@ -262,7 +301,7 @@ impl LibraryKind {
     fn items_key(self) -> Option<&'static str> {
         match self {
             LibraryKind::Cables => Some("cable"),
-            LibraryKind::WeatherCases => Some("case"),
+            LibraryKind::WeatherCases | LibraryKind::LoadCases => Some("case"),
             _ => None,
         }
     }
@@ -275,6 +314,8 @@ impl LibraryKind {
             (LibraryKind::Cables, "outer" | "core") => COMPONENT,
             (LibraryKind::WeatherCases, "case") => CASE,
             (LibraryKind::WeatherCases, "") => WEATHER_FILE,
+            (LibraryKind::LoadCases, "case") => LOAD_CASE,
+            (LibraryKind::LoadCases, "") => LOAD_FILE,
             (LibraryKind::Insulators, "") => INSULATOR,
             (LibraryKind::StructureTypes, "") => STRUCTURE,
             (LibraryKind::StructureTypes, "attachment") => ATTACHMENT,
@@ -300,6 +341,10 @@ impl LibraryKind {
             LibraryKind::StructureTypes => crate::model::structures_dir(sources),
             LibraryKind::WeatherCases => sources
                 .weather
+                .clone()
+                .unwrap_or_else(|| crate::model::model_dir(sources)),
+            LibraryKind::LoadCases => sources
+                .load_cases
                 .clone()
                 .unwrap_or_else(|| crate::model::model_dir(sources)),
         }
@@ -344,6 +389,7 @@ impl LibraryKind {
         match self {
             LibraryKind::Cables => sources.library = Some(path.to_path_buf()),
             LibraryKind::WeatherCases => sources.weather = Some(path.to_path_buf()),
+            LibraryKind::LoadCases => sources.load_cases = Some(path.to_path_buf()),
             LibraryKind::Insulators => sources.insulators = folder(),
             LibraryKind::StructureTypes => sources.structures = folder(),
         }
@@ -363,6 +409,7 @@ impl LibraryKind {
                 .add_toml(path, text)
                 .map_err(|e| e.to_string()),
             LibraryKind::WeatherCases => ols_weather::WeatherCases::parse(text).map(|_| ()),
+            LibraryKind::LoadCases => ols_loads::LoadCases::parse(text).map(|_| ()),
             LibraryKind::StructureTypes => ols_structures::StructureType::parse(path, text)
                 .map(|_| ())
                 .map_err(|e| e.to_string()),
@@ -383,6 +430,10 @@ impl LibraryKind {
                 "# OLS CAD weather cases (.olswc)\nformat = \"ols-weather-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
                 self.item_template("everyday")
             ),
+            LibraryKind::LoadCases => format!(
+                "# OLS CAD load cases (.olslc)\nformat = \"ols-load-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
+                self.item_template("everyday")
+            ),
             LibraryKind::Insulators => format!(
                 "format = \"ols-insulator\"\nversion = 1\nid = \"{id}\"\nname = \"{id}\"\nkind = \"suspension\"\nlength = \"4.5 m\"\nweight = \"1500 N\"\n"
             ),
@@ -401,6 +452,9 @@ impl LibraryKind {
             LibraryKind::WeatherCases => {
                 format!("[[case]]\nname = \"{id}\"\ntemperature = \"15 °C\"\n")
             }
+            LibraryKind::LoadCases => format!(
+                "[[case]]\nname = \"{id}\"\nweather = \"everyday\"\ncondition = \"initial\"\nvertical = 1.0\ntransverse = 1.0\nlongitudinal = 1.0\n"
+            ),
             _ => String::new(),
         }
     }
@@ -461,6 +515,7 @@ impl LibraryPage {
         };
         let first = match kind {
             LibraryKind::WeatherCases => sources.weather.clone(),
+            LibraryKind::LoadCases => sources.load_cases.clone(),
             _ => None,
         }
         .or_else(|| page.files.first().cloned());
@@ -780,6 +835,7 @@ impl LibraryPage {
                     .on_hover_text(match kind {
                         LibraryKind::Cables => "Read the model's wires from this file",
                         LibraryKind::WeatherCases => "Solve the model in these weather cases",
+                        LibraryKind::LoadCases => "Compute the structure loads in these load cases",
                         LibraryKind::Insulators => "Read the insulators from this file's folder",
                         LibraryKind::StructureTypes => {
                             "Read the structure types from this file's folder"
