@@ -44,6 +44,7 @@
 - [Validation cases](development/validation.md)
 - [Writing plugins](development/plugins.md)
 - [Performance and time budgets](development/performance.md)
+- [Desktop app conventions](development/ui.md)
 
 # Validation
 

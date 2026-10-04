@@ -502,20 +502,24 @@ impl View3d {
             egui::Color32::WHITE,
         );
         // Section labels and sags (Sections › Display options).
+        // The nearest first: they win the place over farther ones.
+        let project = camera.projector(size);
+        let screen =
+            |p: [f64; 3]| project(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32));
+        let eye = camera.eye();
+        let mut placed: Vec<(f64, egui::Pos2, crate::annotations::Note)> =
+            crate::annotations::notes(model, case, crate::annotations::View::ThreeD)
+                .into_iter()
+                .filter_map(|note| {
+                    let p = crate::annotations::anchor(&note, rect, screen)?;
+                    let d = (0..3).map(|i| (note.at[i] - eye[i]).powi(2)).sum::<f64>();
+                    Some((d, p, note))
+                })
+                .collect();
+        placed.sort_by(|a, b| a.0.total_cmp(&b.0));
         let mut placer = crate::annotations::Placer::default();
-        for note in crate::annotations::notes(model, case, crate::annotations::View::ThreeD) {
-            let screen = |p: [f64; 3]| {
-                camera
-                    .project(p, size)
-                    .map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32))
-            };
-            if let (Some(p), Some(a), Some(b)) =
-                (screen(note.at), screen(note.ends[0]), screen(note.ends[1]))
-                && rect.contains(p)
-                && a.distance(b) >= crate::annotations::MIN_SPAN_PX
-            {
-                placer.paint(&painter, p, &note);
-            }
+        for (_, p, note) in &placed {
+            placer.paint(&painter, *p, note);
         }
         // Label of the selection.
         if let Some(f) = selection.focus(model, case)

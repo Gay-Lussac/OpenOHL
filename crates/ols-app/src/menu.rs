@@ -12,6 +12,20 @@ use eframe::egui;
 use crate::library::LibraryKind;
 use crate::tools::Tool;
 
+/// A menu (or a submenu) of options to tick, e.g. display options: ticking
+/// a box never closes it — several are often ticked in a row — only a
+/// click outside it or a command (which closes it itself) does. Every menu
+/// of display options is made with it.
+pub fn options_menu<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) {
+    use egui::containers::menu::{MenuButton, MenuConfig, SubMenuButton, is_in_menu};
+    let config = MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+    if is_in_menu(ui) {
+        SubMenuButton::new(title).config(config).ui(ui, add);
+    } else {
+        MenuButton::new(title).config(config).ui(ui, add);
+    }
+}
+
 /// A command of the menus and the quick bar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Command {

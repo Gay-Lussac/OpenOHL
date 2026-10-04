@@ -3534,11 +3534,11 @@ fn menus(
             ui.close();
         }
         ui.separator();
-        ui.menu_button("Snap: what can be clicked", |ui| {
+        crate::menu::options_menu(ui, "Snap: what can be clicked", |ui| {
             snap_panel(ui, &mut r.snaps)
         });
     });
-    ui.menu_button("View", |ui| {
+    crate::menu::options_menu(ui, "View", |ui| {
         item(ui, Command::FitViews, out);
         ui.separator();
         ui.label(egui::RichText::new("Pages").small().weak());
@@ -3553,7 +3553,7 @@ fn menus(
             }
         }
         ui.separator();
-        ui.menu_button("Layers", |ui| {
+        crate::menu::options_menu(ui, "Layers", |ui| {
             for layer in Layer::ALL {
                 let mut on = r.visible.contains(&layer);
                 if ui.checkbox(&mut on, layer.name()).changed() {
@@ -3572,7 +3572,7 @@ fn menus(
             ui.close();
         }
     });
-    ui.menu_button("Lines", |ui| lines_menu(ui, r));
+    crate::menu::options_menu(ui, "Lines", |ui| lines_menu(ui, r));
     ui.menu_button("Tools", |ui| {
         item(ui, Command::Inventory, out);
         ui.separator();
@@ -3639,7 +3639,7 @@ fn menus(
         ui.add_enabled(false, egui::Button::new("Tension limits (to come)"));
         ui.add_enabled(false, egui::Button::new("Insulator swing (to come)"));
     });
-    ui.menu_button("Terrain", |ui| terrain_menu(ui, r));
+    crate::menu::options_menu(ui, "Terrain", |ui| terrain_menu(ui, r));
     ui.menu_button("Structures", |ui| {
         use crate::library::LibraryKind;
         use crate::tables::TableKind;
@@ -3664,7 +3664,7 @@ fn menus(
         item(ui, Command::Table(TableKind::Systems), out);
         ui.separator();
         item(ui, Command::DisplayCases, out);
-        ui.menu_button("Display options", |ui| {
+        crate::menu::options_menu(ui, "Display options", |ui| {
             ui.label(
                 egui::RichText::new("Written next to the wires, in each view (yours only)")
                     .small()

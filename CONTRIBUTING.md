@@ -59,3 +59,4 @@ Every source file starts with the MPL-2.0 header (copy it from an existing file)
 - Branch from `main`, keep PRs focused on one module.
 - Labels: `module:*` for the area, `phase:*` for the roadmap phase, `type:*` for the kind of work.
 - Architecture changes go through an ADR in `docs/adr/`.
+- Desktop app changes follow [the app conventions](docs/development/ui.md) (e.g. menus of options stay open while boxes are ticked).

@@ -60,7 +60,19 @@ impl SectionDisplay {
             for (name, ticks) in [("Section label", &mut self.label), ("Sag", &mut self.sag)] {
                 ui.label(name);
                 for v in View::ALL {
-                    changed |= ui.checkbox(&mut ticks[v as usize], "").changed();
+                    let on = &mut ticks[v as usize];
+                    let r = ui.checkbox(on, "");
+                    // Named for screen readers (and tests): "Sag in Plan".
+                    let checked = *on;
+                    r.widget_info(|| {
+                        egui::WidgetInfo::selected(
+                            egui::WidgetType::Checkbox,
+                            true,
+                            checked,
+                            format!("{name} in {}", v.name()),
+                        )
+                    });
+                    changed |= r.changed();
                 }
                 ui.end_row();
             }
@@ -90,6 +102,9 @@ pub struct Note {
     pub at: [f64; 3],
     /// The span's first and last point.
     pub ends: [[f64; 3]; 2],
+    /// The span's points (where else to write the note when its
+    /// mid-point is out of sight).
+    pub points: Vec<[f64; 3]>,
     /// Label or sag.
     pub kind: Kind,
     /// The text.
@@ -124,6 +139,7 @@ pub fn notes(model: &Model, case: usize, view: View) -> Vec<Note> {
                     *span.points.first().unwrap_or(&span.mid_point),
                     *span.points.last().unwrap_or(&span.mid_point),
                 ],
+                points: span.points.clone(),
                 kind,
                 text,
                 color,
@@ -149,6 +165,34 @@ pub fn notes(model: &Model, case: usize, view: View) -> Vec<Note> {
 /// overlap).
 pub const MIN_SPAN_PX: f32 = 40.0;
 
+/// Where to write a note in a perspective view: at the span's mid-point
+/// when it is in sight, else at the point of the wire in sight nearest the
+/// view's centre (close to a wire, its middle may be behind the camera or
+/// off the side). `None`: no part in sight, or the span too short on
+/// screen. `screen` gives a point's screen position, `None` behind the
+/// camera.
+pub fn anchor(
+    note: &Note,
+    rect: egui::Rect,
+    screen: impl Fn([f64; 3]) -> Option<egui::Pos2>,
+) -> Option<egui::Pos2> {
+    // Too short on screen only when both ends are in front of the camera.
+    if let (Some(a), Some(b)) = (screen(note.ends[0]), screen(note.ends[1]))
+        && a.distance(b) < MIN_SPAN_PX
+    {
+        return None;
+    }
+    if let Some(p) = screen(note.at).filter(|p| rect.contains(*p)) {
+        return Some(p);
+    }
+    let centre = rect.center();
+    note.points
+        .iter()
+        .filter_map(|p| screen(*p))
+        .filter(|p| rect.shrink(20.0).contains(*p))
+        .min_by(|a, b| a.distance(centre).total_cmp(&b.distance(centre)))
+}
+
 /// Writes notes on a view, leaving out those that would overlap one
 /// already written (parallel wires: the first one's note).
 #[derive(Default)]
@@ -157,31 +201,28 @@ pub struct Placer {
 }
 
 impl Placer {
-    /// Writes a note at screen point `p` (the wire's mid-point): labels
-    /// above the wire in the section's colour, sags below it.
+    /// Writes a note at screen point `p` (on the wire), in the section's
+    /// colour: labels above the wire, sags below it.
     pub fn paint(&mut self, painter: &egui::Painter, p: egui::Pos2, note: &Note) {
-        let (offset, align, font, color) = match note.kind {
+        let color = egui::Color32::from_rgb(note.color[0], note.color[1], note.color[2]);
+        let (offset, align, font) = match note.kind {
             Kind::Label => (
-                egui::vec2(0.0, -6.0),
+                egui::vec2(0.0, -5.0),
                 egui::Align2::CENTER_BOTTOM,
                 egui::FontId::proportional(12.0),
-                egui::Color32::from_rgb(note.color[0], note.color[1], note.color[2]),
             ),
             Kind::Sag => (
-                egui::vec2(0.0, 6.0),
+                egui::vec2(0.0, 5.0),
                 egui::Align2::CENTER_TOP,
                 egui::FontId::proportional(11.0),
-                egui::Color32::from_gray(220),
             ),
         };
         let galley = painter.layout_no_wrap(note.text.clone(), font, color);
-        let rect = align.anchor_size(p + offset, galley.size()).expand(1.5);
-        if self.taken.iter().any(|r| r.intersects(rect)) {
+        let rect = align.anchor_size(p + offset, galley.size());
+        if self.taken.iter().any(|r| r.intersects(rect.expand(1.0))) {
             return;
         }
         self.taken.push(rect);
-        // A dark halo keeps the text readable over wires and ground.
-        painter.rect_filled(rect, 2.0, egui::Color32::from_black_alpha(140));
-        painter.galley(rect.shrink(1.5).min, galley, color);
+        painter.galley(rect.min, galley, color);
     }
 }

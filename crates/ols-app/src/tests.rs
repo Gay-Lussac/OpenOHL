@@ -4216,3 +4216,26 @@ fn section_labels_and_sags_per_view() {
         serde_json::from_str(&serde_json::to_string(&prefs).unwrap()).unwrap();
     assert!(back.section_display.sag[View::ThreeD as usize]);
 }
+
+/// Menus of display options stay open while boxes are ticked: several are
+/// ticked in a row.
+#[test]
+fn display_options_stay_open_while_ticking() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Sections").click();
+    harness.run();
+    harness.get_by_label_contains("Display options").hover();
+    harness.run();
+    harness.get_by_label("Sag in Plan").click();
+    harness.run();
+    // Still open: the next box can be ticked.
+    harness.get_by_label("Section label in 3D").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.section_display.sag[crate::annotations::View::Plan as usize]);
+    assert!(r.model.section_display.label[crate::annotations::View::ThreeD as usize]);
+}
