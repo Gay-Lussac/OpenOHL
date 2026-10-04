@@ -176,7 +176,7 @@ impl CableProperties {
         // stalls at its iteration limit (a real earth wire: 3e-12 m left).
         let floor = |h: f64| 64.0 * f64::EPSILON * (h / w + l0 + hx + vz.abs());
         let mut tol = (1e-12 * (hx + vz.abs() + l0)).max(floor(h));
-        while residual > tol {
+        while residual > tol || residual.is_nan() {
             run.step()
                 .map_err(|stop| ElementError::NotConverged { stop, residual })?;
             let step = flex.try_inverse().map(|inv| inv * (target - pos)).ok_or(

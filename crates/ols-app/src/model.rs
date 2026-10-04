@@ -391,10 +391,7 @@ fn editing(
             None,
         );
     };
-    let user = user
-        .map(str::to_owned)
-        .or_else(|| std::env::var("USER").ok())
-        .unwrap_or_default();
+    let user = user.map(str::to_owned).unwrap_or_else(crate::files::user);
     match session.role(&user) {
         Err(e) => (Err(e.to_string()), Some(session)),
         Ok(Some(ols_session::Role::Viewer)) => (
@@ -582,11 +579,7 @@ fn project_libraries(
     session: &ols_session::Session,
     log: &mut dyn FnMut(String),
 ) -> Result<PathBuf, String> {
-    let user = sources
-        .user
-        .clone()
-        .or_else(|| std::env::var("USER").ok())
-        .unwrap_or_default();
+    let user = sources.user.clone().unwrap_or_else(crate::files::user);
     // The weather file used last, when none is given and it is a file.
     let remembered = session.setting(WEATHER_SETTING).ok().flatten();
     let work = library_workdir(&sources.file);
@@ -664,6 +657,9 @@ fn project_libraries(
         let dir = work.join(kind);
         std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         for (name, text) in &stored {
+            if !ols_session::safe_file_name(name) {
+                return Err(format!("library file \"{name}\": not a plain file name"));
+            }
             std::fs::write(dir.join(name), text).map_err(|e| format!("{name}: {e}"))?;
         }
         match kind {

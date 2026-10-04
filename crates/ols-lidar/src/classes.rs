@@ -73,7 +73,7 @@ impl ClassDef {
 /// `#rrggbb` as RGB.
 pub fn parse_rgb(s: &str) -> Option<[u8; 3]> {
     let h = s.strip_prefix('#')?;
-    if h.len() != 6 {
+    if h.len() != 6 || !h.is_ascii() {
         return None;
     }
     let b = |k: usize| u8::from_str_radix(&h[k..k + 2], 16).ok();
@@ -190,6 +190,13 @@ impl ClassScheme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn colours_with_other_characters_are_refused() {
+        assert_eq!(parse_rgb("#aé123"), None);
+        assert_eq!(parse_rgb("#zz0000"), None);
+        assert_eq!(parse_rgb("#A0b0C0"), Some([0xa0, 0xb0, 0xc0]));
+    }
 
     #[test]
     fn colours_are_read_checked_and_written() {

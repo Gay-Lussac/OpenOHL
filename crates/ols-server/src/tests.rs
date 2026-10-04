@@ -342,3 +342,35 @@ fn lock_targets_of_commands() {
     );
     assert_eq!(Op::Undo.targets(), Some(vec![]));
 }
+
+#[test]
+fn viewers_may_not_change_settings_and_names_are_checked() {
+    let dir = temp("roles");
+    let path = project(&dir);
+    let mut s = Session::open(&path).unwrap();
+    crate::execute(
+        &mut s,
+        "alice",
+        &Op::SetUser {
+            name: "carol".into(),
+            role: Role::Viewer,
+        },
+    )
+    .unwrap();
+    let set = Op::SetSetting {
+        key: "app.check_surface".into(),
+        value: Some("x".into()),
+    };
+    assert!(crate::execute(&mut s, "carol", &set).is_err());
+    assert!(crate::execute(&mut s, "bob", &set).is_ok());
+    assert!(crate::check_name("bob").is_ok());
+    for bad in ["", " bob", "bob\n", &"x".repeat(crate::MAX_NAME + 1)] {
+        assert!(crate::check_name(bad).is_err(), "{bad:?}");
+    }
+    assert!(crate::same_code("abc123", "abc123"));
+    assert!(!crate::same_code("abc123", "abc124") && !crate::same_code("abc", "abc1"));
+    // Multi-byte characters in the fingerprint: refused, not a panic.
+    let fp = "é".repeat(32);
+    assert!(format!("ols://h:1/c/{fp}").parse::<Invitation>().is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}

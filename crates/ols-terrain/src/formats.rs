@@ -64,9 +64,44 @@ fn attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
     None
 }
 
+/// Metres per unit of a LandXML file's `<Units>` (`<Metric>` or
+/// `<Imperial>` with its `linearUnit`; metres when not given).
+fn landxml_scale(text: &str) -> Result<f64, TerrainError> {
+    let Some(k) = text.find("<Units") else {
+        return Ok(1.0);
+    };
+    let units = &text[k..];
+    let units = &units[..units.find("</Units>").unwrap_or(units.len())];
+    for system in ["<Metric", "<Imperial"] {
+        let Some(k) = units.find(system) else {
+            continue;
+        };
+        let tag = &units[k..];
+        let tag = &tag[..tag.find('>').unwrap_or(tag.len())];
+        let unit = attribute(tag, "linearUnit").unwrap_or(if system == "<Metric" {
+            "meter"
+        } else {
+            "foot"
+        });
+        return match unit {
+            "meter" => Ok(1.0),
+            "millimeter" => Ok(0.001),
+            "centimeter" => Ok(0.01),
+            "kilometer" => Ok(1000.0),
+            "foot" | "internationalFoot" => Ok(0.3048),
+            "USSurveyFoot" => Ok(1200.0 / 3937.0),
+            other => Err(bad(format!(
+                "LandXML: linear unit \"{other}\" not supported"
+            ))),
+        };
+    }
+    Ok(1.0)
+}
+
 /// Reads the TIN surfaces of a LandXML file (surfaces without faces are
 /// left out). Point ids may be any text; faces refer to them.
 pub fn read_landxml(text: &str) -> Result<Vec<Mesh>, TerrainError> {
+    let scale = landxml_scale(text)?;
     let mut out = Vec::new();
     let mut rest = text;
     let mut n = 0;
@@ -109,8 +144,9 @@ pub fn read_landxml(text: &str) -> Result<Vec<Mesh>, TerrainError> {
                 .find('>')
                 .ok_or_else(|| bad("LandXML: <P> not closed".into()))?;
             let tag = &t[..close];
-            let content_end = t
+            let content_end = t[close..]
                 .find("</P>")
+                .map(|e| close + e)
                 .ok_or_else(|| bad("LandXML: </P> missing".into()))?;
             let content = &t[close + 1..content_end];
             let v: Vec<f64> = content
@@ -126,7 +162,7 @@ pub fn read_landxml(text: &str) -> Result<Vec<Mesh>, TerrainError> {
             let id = attribute(tag, "id").unwrap_or("");
             ids.insert(id, points.len() as u32);
             // Northing, easting, elevation.
-            points.push([v[1], v[0], v[2]]);
+            points.push([v[1] * scale, v[0] * scale, v[2] * scale]);
             b = &t[content_end + 4..];
         }
         let mut f = body;
@@ -140,8 +176,9 @@ pub fn read_landxml(text: &str) -> Result<Vec<Mesh>, TerrainError> {
                 .find('>')
                 .ok_or_else(|| bad("LandXML: <F> not closed".into()))?;
             let tag = &t[..close];
-            let content_end = t
+            let content_end = t[close..]
                 .find("</F>")
+                .map(|e| close + e)
                 .ok_or_else(|| bad("LandXML: </F> missing".into()))?;
             let content = &t[close + 1..content_end];
             f = &t[content_end + 4..];
@@ -329,6 +366,24 @@ mod tests {
         assert_eq!(m.triangles, vec![[0, 1, 2]]);
         assert!(read_landxml("<LandXML/>").is_err());
         assert!(read_landxml("<Surface><Faces><F>1 2 9</F></Faces></Surface>").is_err());
+    }
+
+    #[test]
+    fn landxml_units_and_malformed_tags() {
+        let surface = r#"<Surfaces><Surface name="S"><Definition><Pnts><P id="a">0 0 10</P><P id="b">0 10 10</P><P id="c">10 0 10</P></Pnts><Faces><F>a b c</F></Faces></Definition></Surface></Surfaces>"#;
+        let feet =
+            format!(r#"<LandXML><Units><Imperial linearUnit="foot"/></Units>{surface}</LandXML>"#);
+        let m = &read_landxml(&feet).unwrap()[0];
+        assert!((m.points[0][2] - 3.048).abs() < 1e-12);
+        let mm = format!(
+            r#"<LandXML><Units><Metric linearUnit="millimeter"/></Units>{surface}</LandXML>"#
+        );
+        assert!((read_landxml(&mm).unwrap()[0].points[1][0] - 0.01).abs() < 1e-12);
+        let odd =
+            format!(r#"<LandXML><Units><Imperial linearUnit="chain"/></Units>{surface}</LandXML>"#);
+        assert!(read_landxml(&odd).is_err());
+        // A tag closed after its end tag: an error, not a panic.
+        assert!(read_landxml("<Surface name='S'><P </P> 1 2 3></Surface>").is_err());
     }
 
     #[test]

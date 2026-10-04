@@ -198,7 +198,12 @@ impl Mechanics {
         let mut components = Vec::new();
         for (label, component) in [("outer", Some(&cable.outer)), ("core", cable.core.as_ref())] {
             let Some(component) = component else { continue };
-            let curves = match &component.stress_strain {
+            // The linear models leave the curves aside (kept in the file).
+            let data = component
+                .stress_strain
+                .as_ref()
+                .filter(|_| cable.model == crate::CableModel::Nonlinear);
+            let curves = match data {
                 None => None,
                 Some(data) => {
                     if reference.is_some_and(|r| r != data.reference_temperature) {
@@ -226,6 +231,14 @@ impl Mechanics {
             components,
             reference_temperature: reference.unwrap_or_else(default_reference_temperature),
         })
+    }
+
+    /// The largest compressive load of the outer strands, N: the cable's
+    /// bimetallic behaviour and its curves' own limit, whichever is lower.
+    pub fn outer_compression_limit(&self) -> f64 {
+        self.components
+            .first()
+            .map_or(f64::INFINITY, |c| c.max_compression)
     }
 
     /// Temperature at which the total strain is measured.

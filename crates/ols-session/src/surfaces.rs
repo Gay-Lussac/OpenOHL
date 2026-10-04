@@ -67,7 +67,11 @@ fn decode(data: &[u8]) -> Result<Mesh, SessionError> {
     }
     let n = u64::from_le_bytes(raw[0..8].try_into().expect("8 bytes")) as usize;
     let m = u64::from_le_bytes(raw[8..16].try_into().expect("8 bytes")) as usize;
-    if raw.len() != 16 + n * 24 + m * 12 {
+    let size = n
+        .checked_mul(24)
+        .zip(m.checked_mul(12))
+        .and_then(|(a, b)| a.checked_add(b)?.checked_add(16));
+    if size != Some(raw.len()) {
         return Err(bad("size does not match"));
     }
     let f = |o: usize| f64::from_le_bytes(raw[o..o + 8].try_into().expect("8 bytes"));

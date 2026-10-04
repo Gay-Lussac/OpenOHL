@@ -587,7 +587,7 @@ fn reference(
             .iter()
             .zip(&previous)
             .map(|(new, old)| (new - old).norm())
-            .fold(0.0, f64::max);
+            .fold(0.0, worst);
         if moved < 1e-6 {
             return Ok(reference);
         }
@@ -595,6 +595,12 @@ fn reference(
     Err(invalid(
         "stringing equilibrium did not settle in 20 passes".into(),
     ))
+}
+
+/// The larger of two distances, NaN counting as infinite (a pass that went
+/// wrong never looks settled).
+fn worst(m: f64, d: f64) -> f64 {
+    if d.is_nan() { f64::INFINITY } else { m.max(d) }
 }
 
 /// The clamps for the next pass of a fixed point: the solved positions,
@@ -746,7 +752,7 @@ fn rolled(
             .iter()
             .zip(&r.clamps)
             .map(|(a, b)| (a - b).norm())
-            .fold(0.0, f64::max);
+            .fold(0.0, worst);
         if moved < 1e-6 {
             return Ok(r);
         }
@@ -912,13 +918,17 @@ pub fn solve_section(
         Condition::MaxSag => {
             // Whichever of the two sags more in this weather case.
             let max_sag = |s: &SectionShape| s.spans.iter().map(|x| x.sag).fold(0.0, f64::max);
-            let creep = final_state(line, section, cable, Condition::Creep, budget);
-            let load = final_state(line, section, cable, Condition::Load, budget);
-            let shapes: Vec<SectionShape> = [creep, load]
-                .into_iter()
-                .filter_map(Result::ok)
-                .map(|f| solve(Some(&f)))
-                .collect::<Result<_, _>>()?;
+            // Only the conditions whose weather case is given; any other
+            // failure is the section's.
+            let cases = &line.condition_cases;
+            let shapes: Vec<SectionShape> = [
+                (Condition::Creep, cases.creep.is_some()),
+                (Condition::Load, !cases.loads.is_empty()),
+            ]
+            .into_iter()
+            .filter(|(_, given)| *given)
+            .map(|(c, _)| solve(Some(&final_state(line, section, cable, c, budget)?)))
+            .collect::<Result<_, _>>()?;
             shapes
                 .into_iter()
                 .max_by(|a, b| max_sag(a).total_cmp(&max_sag(b)))
@@ -1262,13 +1272,15 @@ fn solve_fe(
     let (layout, estimated_weights) =
         estimate_strain_weights(section, clamps_of(line, section)?, cable, budget)?;
     let mut reference = reference(section, &layout, cable, budget)?;
-    if !section.stringing.clipped() && reference.lengths.len() > 1 {
-        reference = rolled(section, &layout, &reference, cable, case, budget)?;
-    }
+    // Stretched before rolling: in the blocks, the longer wire is shared
+    // out again so that the spans keep one horizontal tension.
     if stretch != 0.0 {
         for l in &mut reference.lengths {
             *l *= 1.0 + stretch;
         }
+    }
+    if !section.stringing.clipped() && reference.lengths.len() > 1 {
+        reference = rolled(section, &layout, &reference, cable, case, budget)?;
     }
     let (mut built, mut solution) =
         solve_built(section, &layout, &reference, cable, case, true, budget)?;
@@ -1375,7 +1387,11 @@ fn core_branch(
     built: &Built,
     solution: &ols_wirefe::Solution,
 ) -> Option<(Cable, f64)> {
-    let limit = cable.outer_compression_limit();
+    // The same limit as the ruling-span path (curves included).
+    let limit = ols_cables::mechanics::Mechanics::from_cable(cable).map_or_else(
+        |_| cable.outer_compression_limit(),
+        |m| m.outer_compression_limit(),
+    );
     let core_part = cable.core.as_ref()?;
     if !limit.is_finite() {
         return None;

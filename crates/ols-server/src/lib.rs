@@ -49,6 +49,15 @@ pub const ALPN: &[u8] = b"ols/1";
 /// Largest message, bytes (an exit clause against garbage).
 pub const MAX_MESSAGE: usize = 64 << 20;
 
+/// Largest hello (before the access code is checked), bytes.
+pub const MAX_HELLO: usize = 16 << 10;
+
+/// Longest user name, characters.
+pub const MAX_NAME: usize = 64;
+
+/// Longest presence selection or lock target, bytes.
+pub const MAX_LABEL: usize = 1024;
+
 /// An edit of the project, as requested and as broadcast. Executed by the
 /// server and then by every replica, in the server's order ([`execute`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -227,6 +236,7 @@ pub fn execute(
             None
         }
         Op::SetSetting { key, value } => {
+            session.require(user, Role::Designer)?;
             session.set_setting(key, value.as_deref())?;
             None
         }
@@ -388,7 +398,7 @@ impl std::str::FromStr for Invitation {
         else {
             return Err(bad());
         };
-        if address.is_empty() || code.is_empty() || fp.len() != 64 {
+        if address.is_empty() || code.is_empty() || fp.len() != 64 || !fp.is_ascii() {
             return Err(bad());
         }
         let mut fingerprint = [0u8; 32];
@@ -448,6 +458,14 @@ pub async fn write_msg<T: Serialize>(
 pub async fn read_msg<T: for<'de> Deserialize<'de>>(
     stream: &mut quinn::RecvStream,
 ) -> Result<Option<T>, String> {
+    read_msg_max(stream, MAX_MESSAGE).await
+}
+
+/// Reads a message of at most `max` bytes (`None`: the stream ended).
+pub async fn read_msg_max<T: for<'de> Deserialize<'de>>(
+    stream: &mut quinn::RecvStream,
+    max: usize,
+) -> Result<Option<T>, String> {
     let mut len = [0u8; 4];
     match stream.read_exact(&mut len).await {
         Ok(()) => {}
@@ -455,7 +473,7 @@ pub async fn read_msg<T: for<'de> Deserialize<'de>>(
         Err(e) => return Err(e.to_string()),
     }
     let len = u32::from_be_bytes(len) as usize;
-    if len > MAX_MESSAGE {
+    if len > max {
         return Err(format!("message of {len} bytes: too large"));
     }
     let mut buf = vec![0u8; len];
@@ -466,6 +484,31 @@ pub async fn read_msg<T: for<'de> Deserialize<'de>>(
     serde_json::from_slice(&buf)
         .map(Some)
         .map_err(|e| format!("bad message: {e}"))
+}
+
+/// Compares access codes in a time that does not depend on where they
+/// differ.
+pub fn same_code(a: &str, b: &str) -> bool {
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
+}
+
+/// Checks a user name: not empty, no surrounding spaces, no control
+/// characters, at most [`MAX_NAME`] characters.
+pub fn check_name(name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("no user name".into());
+    }
+    if name.trim() != name || name.chars().any(char::is_control) {
+        return Err("a user name without surrounding spaces or control characters".into());
+    }
+    if name.chars().count() > MAX_NAME {
+        return Err(format!("a user name of at most {MAX_NAME} characters"));
+    }
+    Ok(())
 }
 
 /// Random letters and digits (access codes).

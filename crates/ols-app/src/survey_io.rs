@@ -113,10 +113,17 @@ impl Job {
 
     /// Takes the messages since the last frame.
     pub fn poll(&mut self) {
-        while let Ok(m) = self.rx.try_recv() {
-            match m {
-                Msg::Progress(t, f) => self.progress = (t, f),
-                Msg::Done(r) => self.done = Some(r),
+        loop {
+            match self.rx.try_recv() {
+                Ok(Msg::Progress(t, f)) => self.progress = (t, f),
+                Ok(Msg::Done(r)) => self.done = Some(r),
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    if self.done.is_none() {
+                        self.done = Some(Err("the import stopped".into()));
+                    }
+                    break;
+                }
             }
         }
     }

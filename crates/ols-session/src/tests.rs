@@ -852,3 +852,30 @@ fn library_files_are_kept_in_the_project() {
     assert_eq!(s.library_files("cables").unwrap().len(), 1);
     assert_eq!(s.library_files("weather").unwrap().len(), 1);
 }
+
+#[test]
+fn library_file_names_are_plain() {
+    for good in [
+        "cables.olsw",
+        "type-01.olss",
+        "I-0.10m.olsi",
+        "Zürich (2).olss",
+    ] {
+        assert!(crate::safe_file_name(good), "{good}");
+    }
+    for bad in [
+        "",
+        "..",
+        ".hidden",
+        "a/b",
+        "a\\b",
+        "C:evil.olsw",
+        "x:stream",
+        "CON.olsw",
+        "lpt1",
+        "end.",
+        "end ",
+    ] {
+        assert!(!crate::safe_file_name(bad), "{bad}");
+    }
+}

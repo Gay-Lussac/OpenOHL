@@ -3946,10 +3946,17 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if let State::Loading { rx, progress } = &mut self.state {
             let mut done = None;
-            while let Ok(m) = rx.try_recv() {
-                match m {
-                    Message::Progress(p) => progress.push(p),
-                    Message::Done(r) => done = Some(r),
+            loop {
+                match rx.try_recv() {
+                    Ok(Message::Progress(p)) => progress.push(p),
+                    Ok(Message::Done(r)) => done = Some(r),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        if done.is_none() {
+                            done = Some(Err("loading stopped (see the terminal)".into()));
+                        }
+                        break;
+                    }
                 }
             }
             match done {

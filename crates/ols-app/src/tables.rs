@@ -1425,18 +1425,7 @@ impl TableKind {
                 // The systems are part of the line settings.
                 out.commands.push((
                     "changed electrical systems".into(),
-                    Command::Put {
-                        kind: Kind::Meta,
-                        id: "line".into(),
-                        value: serde_json::json!({
-                            "name": stored.name,
-                            "crs": stored.crs,
-                            "alignment": stored.alignment,
-                            "display": stored.display,
-                            "systems": systems,
-                        }),
-                        ord: None,
-                    },
+                    ols_session::line_settings_put(stored, None, Some(systems)),
                 ));
             }
             TableKind::Alignments => {
@@ -2035,18 +2024,7 @@ fn alignment_commands(
         list.sort_by(|a, b| a.0.total_cmp(&b.0));
         let alignment: Vec<ols_line::AlignmentPoint> = list.into_iter().map(|x| x.1).collect();
         let command = if route == "line" {
-            Command::Put {
-                kind: Kind::Meta,
-                id: "line".into(),
-                value: serde_json::json!({
-                    "name": stored.name,
-                    "crs": stored.crs,
-                    "alignment": alignment,
-                    "display": stored.display,
-                    "systems": stored.systems,
-                }),
-                ord: None,
-            }
+            ols_session::line_settings_put(stored, Some(alignment), None)
         } else {
             let mut r = stored
                 .routes

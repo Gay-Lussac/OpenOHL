@@ -437,8 +437,14 @@ impl Model {
         let free_residual = |eval: &Evaluation| -> (f64, usize) {
             let mut worst = (0.0, 0);
             for (i, f) in eval.forces.iter().enumerate() {
-                if dof[i].is_some() && f.norm() > worst.0 {
-                    worst = (f.norm(), i);
+                // NaN counts as infinite: never converged.
+                let norm = if f.norm().is_nan() {
+                    f64::INFINITY
+                } else {
+                    f.norm()
+                };
+                if dof[i].is_some() && norm > worst.0 {
+                    worst = (norm, i);
                 }
             }
             worst
@@ -477,7 +483,7 @@ impl Model {
             * (0..n_dof)
                 .map(|d| eval.stiffness[(d, d)].abs())
                 .fold(0.0, f64::max);
-        while residual > tolerance {
+        while residual > tolerance || residual.is_nan() {
             run.step().map_err(|stop| FeError::NotConverged {
                 stop,
                 residual,

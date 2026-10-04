@@ -103,12 +103,15 @@ impl Columns {
 
     /// Decodes the coordinates of `n` points (x sorted ascending).
     pub fn decode_xyz(blob: &[u8], n: usize) -> Result<Xyz, String> {
-        let bytes = zstd::decode_all(blob).map_err(|e| e.to_string())?;
+        // At most the size expected: a damaged block cannot blow up.
+        let bytes = zstd::bulk::decompress(blob, 12 * n).map_err(|e| e.to_string())?;
         let words = unshuffle(&bytes, 3 * n)?;
         let mut x = Vec::with_capacity(n);
         let mut acc = 0u32;
         for &d in &words[..n] {
-            acc += d;
+            acc = acc
+                .checked_add(d)
+                .ok_or("point block: coordinates out of range")?;
             x.push(acc);
         }
         Ok((x, words[n..2 * n].to_vec(), words[2 * n..].to_vec()))
@@ -116,7 +119,7 @@ impl Columns {
 
     /// Decodes intensities of `n` points.
     pub fn decode_intensity(blob: &[u8], n: usize) -> Result<Vec<u16>, String> {
-        let bytes = zstd::decode_all(blob).map_err(|e| e.to_string())?;
+        let bytes = zstd::bulk::decompress(blob, 2 * n).map_err(|e| e.to_string())?;
         if bytes.len() != 2 * n {
             return Err("intensity block size".into());
         }

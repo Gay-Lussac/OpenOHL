@@ -150,7 +150,11 @@ impl WeatherCase {
     /// not negative, density positive.
     pub fn validate(&self) -> Result<(), String> {
         let bad = |m: &str| Err(format!("weather case \"{}\": {m}", self.name));
-        if self.ice_thickness.si() < 0.0 || self.wind_pressure.si() < 0.0 {
+        let non_negative = |x: f64| x >= 0.0 && x.is_finite();
+        if !non_negative(self.ice_thickness.si())
+            || !non_negative(self.wind_pressure.si())
+            || !self.temperature.celsius().is_finite()
+        {
             return bad("ice thickness and wind pressure must be ≥ 0");
         }
         if self
@@ -160,7 +164,7 @@ impl WeatherCase {
             return bad("the air density factor must be > 0");
         }
         if let Some(w) = self.ice_load {
-            if w.si() < 0.0 {
+            if !non_negative(w.si()) {
                 return bad("ice load must be ≥ 0");
             }
             if self.ice_thickness.si() > 0.0 {

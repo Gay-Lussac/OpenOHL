@@ -542,6 +542,10 @@ impl RuleSet {
                 {
                     return bad("case_pairs are for wire rules (same_line, other_lines)");
                 }
+                let not_negative = |l: Option<Length>| l.is_none_or(|l| l.si() >= 0.0);
+                if !not_negative(r.vertical_band) || !not_negative(r.search_margin) {
+                    return bad("vertical_band and search_margin must be ≥ 0");
+                }
                 Ok(Rule {
                     name: r.name,
                     target,

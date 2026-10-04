@@ -77,7 +77,14 @@ impl LoadsPage {
         let Some((t, rx)) = &self.running else {
             return;
         };
-        if let Ok(r) = rx.try_recv() {
+        let r = match rx.try_recv() {
+            Ok(r) => Some(r),
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Some(Err("the computation stopped".into()))
+            }
+        };
+        if let Some(r) = r {
             self.took = Some(t.elapsed());
             if let Ok(v) = &r
                 && self.case >= v.len()

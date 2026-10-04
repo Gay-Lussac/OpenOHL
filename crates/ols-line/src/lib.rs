@@ -824,8 +824,25 @@ impl Line {
             if ids.insert(s.id.as_str(), ()).is_some() {
                 return invalid(format!("duplicate structure id {}", s.id));
             }
+            let finite = |p: &Point| p.iter().all(|x| x.is_finite());
+            if !finite(&s.position) || !s.orientation_deg.is_finite() {
+                return invalid(format!(
+                    "structure {}: position or orientation not a number",
+                    s.id
+                ));
+            }
             let mut seen = BTreeMap::new();
             for a in &s.attachments {
+                let points_ok = finite(&a.insulator_point)
+                    && finite(&a.wire_point)
+                    && a.legs.iter().flatten().all(finite)
+                    && a.insulator_weight.is_finite();
+                if !points_ok {
+                    return invalid(format!(
+                        "structure {}: set {} phase {}: a point or weight is not a number",
+                        s.id, a.set, a.phase
+                    ));
+                }
                 if seen.insert((a.set, a.phase), ()).is_some() {
                     return invalid(format!(
                         "structure {}: duplicate attachment set {} phase {}",

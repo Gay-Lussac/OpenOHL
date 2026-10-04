@@ -474,9 +474,8 @@ impl PointCheck {
 /// Vertical and radial clearances of every wire to the ground surface.
 /// Vertical: under every wire piece at every TIN edge crossing (exact for
 /// the polyline). Radial: wire samples every [`GROUND_STEP`] to the
-/// triangles near them, searched only where the ground is within the
-/// rule's reach below the wire (the radial distance is never larger than
-/// the vertical one).
+/// triangles within the rule's reach (narrowed to the vertical clearance
+/// where that is smaller: the radial distance is never larger).
 pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireResult> {
     wires
         .iter()
@@ -485,7 +484,6 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
             let reach = result.required.largest() + rule.search_margin;
             // Bundles: the lowest subconductor for the vertical clearance.
             let (lowest, _) = wire.vertical_extent();
-            let radius_of_bundle = wire.bundle_radius();
             for s in wire.points.windows(2) {
                 let (a, b) = (s[0], s[1]);
                 let (mut vertical_bad, mut radial_bad) = (false, false);
@@ -513,22 +511,14 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
                         a[1] + (b[1] - a[1]) * t,
                         a[2] + (b[2] - a[2]) * t,
                     ];
-                    // Each subconductor of a bundle (one point for a wire),
-                    // when the centre line is within reach.
-                    if terrain
-                        .height(centre[0], centre[1])
-                        .is_some_and(|g| centre[2] - g - radius_of_bundle > reach)
-                    {
-                        continue;
-                    }
+                    // Each subconductor of a bundle (one point for a wire).
+                    // The ground straight below bounds the search (radial is
+                    // never larger than vertical); where it is far below or
+                    // missing (a hole), the ground beside may still be near:
+                    // searched over the whole reach.
                     for p in wire.subconductors(centre, a, b) {
-                        let Some(below) = terrain.height(p[0], p[1]) else {
-                            continue;
-                        };
-                        let radius = (p[2] - below).max(0.0).min(reach);
-                        if p[2] - below > reach {
-                            continue;
-                        }
+                        let below = terrain.height(p[0], p[1]);
+                        let radius = below.map_or(reach, |g| (p[2] - g).max(0.0).min(reach));
                         let mut best: Option<(f64, P3)> = None;
                         terrain.triangles_near(p[0], p[1], radius, |[ta, tb, tc]| {
                             let q = closest_on_triangle(p, ta, tb, tc);
@@ -538,7 +528,11 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
                             }
                         });
                         if let Some((d, q)) = best {
-                            let d = if p[2] < below { -d } else { d };
+                            let d = if below.is_some_and(|g| p[2] < g) {
+                                -d
+                            } else {
+                                d
+                            };
                             let hit = Hit {
                                 distance: d,
                                 wire: p,
@@ -899,6 +893,39 @@ mod tests {
         assert!((res.vertical.unwrap().distance - 10.0).abs() < 1e-9);
         let radial = res.radial.unwrap().distance;
         assert!((radial - 10.0 / 2f64.sqrt()).abs() < 1e-9, "{radial}");
+        assert!(res.radial_violations > 0 && res.vertical_violations == 0);
+    }
+
+    #[test]
+    fn ground_radial_beside_a_wire_high_above_the_valley() {
+        // Valley floor z = 0 up to y = 4, a cliff rising to z = 20 at
+        // y = 6. Wire along x at y = 0, z = 15: vertical 15 (beyond the
+        // reach), but the cliff is about 5 m to the side.
+        let mut points = Vec::new();
+        for i in 0..=10 {
+            for j in -5..=5 {
+                let (x, y) = (i as f64 * 10.0, j as f64 * 2.0);
+                points.push(SurveyPoint {
+                    x,
+                    y,
+                    z: if y <= 4.0 { 0.0 } else { 20.0 },
+                    code: String::new(),
+                    line: String::new(),
+                });
+            }
+        }
+        let terrain = Terrain::from_points(&points, None).unwrap();
+        let wires = vec![straight("S", "L1", [10.0, 0.0, 15.0], [90.0, 0.0, 15.0])];
+        let r = rule("[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 6.0\nradial = 8.0");
+        let res = &ground_check(&r, &wires, &terrain)[0];
+        let radial = res.radial.unwrap().distance;
+        // To the cliff face from (4, 0) to (6, 20).
+        let expected = {
+            let (dy, dz) = (2.0f64, 20.0f64);
+            let t = ((0.0 - 4.0) * dy + 15.0 * dz) / (dy * dy + dz * dz);
+            (4.0 + t * dy).hypot(t * dz - 15.0)
+        };
+        assert!((radial - expected).abs() < 1e-6, "{radial} vs {expected}");
         assert!(res.radial_violations > 0 && res.vertical_violations == 0);
     }
 

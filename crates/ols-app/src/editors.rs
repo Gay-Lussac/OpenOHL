@@ -176,18 +176,11 @@ pub fn alignment_put(
     alignment: Vec<ols_line::AlignmentPoint>,
 ) -> Result<Command, String> {
     if key == "line" {
-        return Ok(Command::Put {
-            kind: Kind::Meta,
-            id: "line".into(),
-            value: serde_json::json!({
-                "name": stored.name,
-                "crs": stored.crs,
-                "alignment": alignment,
-                "display": stored.display,
-                "systems": stored.systems,
-            }),
-            ord: None,
-        });
+        return Ok(ols_session::line_settings_put(
+            stored,
+            Some(alignment),
+            None,
+        ));
     }
     let mut r = stored
         .routes

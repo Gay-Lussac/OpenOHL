@@ -17,9 +17,16 @@ use ols_session::{Role, Session};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::{
-    ALPN, ClientMsg, Invitation, Op, PROTOCOL, Peer, Presence, ServerMsg, execute, fingerprint,
-    lock_target, random_code, read_msg, write_msg,
+    ALPN, ClientMsg, Invitation, MAX_HELLO, Op, PROTOCOL, Peer, Presence, ServerMsg, execute,
+    fingerprint, lock_target, random_code, read_msg, read_msg_max, write_msg,
 };
+
+/// Messages waiting for a client before its forwarder stops taking
+/// broadcasts.
+const OUT_QUEUE: usize = 256;
+
+/// Locks one user may hold.
+const MAX_LOCKS: usize = 256;
 
 /// How a server is started.
 #[derive(Debug, Clone)]
@@ -132,11 +139,9 @@ impl Authority {
     }
 
     fn join(&mut self, user: &str, code: &str) -> Result<Joined, String> {
-        if user.trim().is_empty() {
-            return Err("no user name".into());
-        }
-        let personal = code == crate::access_code(&self.secret, Some(user));
-        let general = code == crate::access_code(&self.secret, None);
+        crate::check_name(user)?;
+        let personal = crate::same_code(code, &crate::access_code(&self.secret, Some(user)));
+        let general = crate::same_code(code, &crate::access_code(&self.secret, None));
         if !personal && !general {
             return Err("wrong access code".into());
         }
@@ -253,9 +258,18 @@ impl Authority {
     }
 
     fn lock(&mut self, user: &str, target: String) -> Result<(), String> {
+        if self.peers.get(user).is_none_or(|p| p.role < Role::Designer) {
+            return Err(format!("{user} may not edit, so holds no lock"));
+        }
+        if target.len() > crate::MAX_LABEL {
+            return Err("lock target too long".into());
+        }
         match self.locks.get(&target) {
             Some(u) if u != user => Err(format!("{target} is being edited by {u}")),
             Some(_) => Ok(()),
+            None if self.locks.values().filter(|u| *u == user).count() >= MAX_LOCKS => {
+                Err(format!("{user} holds {MAX_LOCKS} locks already"))
+            }
             None => {
                 self.locks.insert(target, user.to_owned());
                 self.broadcast(ServerMsg::Locks {
@@ -303,7 +317,14 @@ impl Authority {
                 } => {
                     let _ = reply.send(self.request(client, &user, id, op));
                 }
-                Job::Presence { user, presence } => {
+                Job::Presence { user, mut presence } => {
+                    if presence.selection.len() > crate::MAX_LABEL {
+                        let mut end = crate::MAX_LABEL;
+                        while !presence.selection.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        presence.selection.truncate(end);
+                    }
                     if let Some(p) = self.peers.get_mut(&user)
                         && p.presence != presence
                     {
@@ -536,7 +557,7 @@ async fn connection(
         .map_err(|_| "no stream in 10 s".to_owned())?
         .map_err(|e| e.to_string())?;
     let hello: Option<ClientMsg> =
-        tokio::time::timeout(Duration::from_secs(10), read_msg(&mut recv))
+        tokio::time::timeout(Duration::from_secs(10), read_msg_max(&mut recv, MAX_HELLO))
             .await
             .map_err(|_| "no hello in 10 s".to_owned())??;
     let (user, code) = match hello {
@@ -589,17 +610,22 @@ async fn serve(
     joined: Joined,
     jobs: &std_mpsc::Sender<Job>,
 ) -> Result<(), String> {
-    write_msg(send, &joined.welcome).await?;
-    // The copy, on its own stream.
-    let sent = send_file(conn, &joined.copy).await;
+    // The copy, on its own stream; removed whatever happens.
+    let sent = match write_msg(send, &joined.welcome).await {
+        Ok(()) => send_file(conn, &joined.copy).await,
+        Err(e) => Err(e),
+    };
     let _ = tokio::fs::remove_file(&joined.copy).await;
     sent?;
     // One writer: broadcasts (with the answers to this client's requests
     // right after their edits) and this client's notices.
-    let (out, mut out_rx) = mpsc::unbounded_channel::<ServerMsg>();
+    // Bounded: a client that stops reading holds the forwarder, which then
+    // lags behind the broadcasts and drops the client.
+    let (out, mut out_rx) = mpsc::channel::<ServerMsg>(OUT_QUEUE);
     let mut events = joined.events;
     let forward = {
         let out = out.clone();
+        let conn = conn.clone();
         tokio::spawn(async move {
             loop {
                 match events.recv().await {
@@ -613,19 +639,22 @@ async fn serve(
                             }
                             _ => None,
                         };
-                        if out.send(msg).is_err() {
+                        if out.send(msg).await.is_err() {
                             break;
                         }
                         if let Some(a) = answer
-                            && out.send(a).is_err()
+                            && out.send(a).await.is_err()
                         {
                             break;
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => {
-                        let _ = out.send(ServerMsg::Notice {
+                        let _ = out.try_send(ServerMsg::Notice {
                             text: "too far behind the server: join again".into(),
                         });
+                        // A client that reads gets the notice first.
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        conn.close(0u32.into(), b"too far behind");
                         break;
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
@@ -651,7 +680,7 @@ async fn serve(
                     })
                     .map_err(|_| "server stopped")?;
                     if let Err(e) = rx.await.map_err(|_| "server stopped")? {
-                        let _ = out.send(ServerMsg::Response { id, result: Err(e) });
+                        let _ = out.send(ServerMsg::Response { id, result: Err(e) }).await;
                     }
                 }
                 ClientMsg::Presence(presence) => {
@@ -669,7 +698,7 @@ async fn serve(
                     })
                     .map_err(|_| "server stopped")?;
                     if let Err(e) = rx.await.map_err(|_| "server stopped")? {
-                        let _ = out.send(ServerMsg::Notice { text: e });
+                        let _ = out.send(ServerMsg::Notice { text: e }).await;
                     }
                 }
                 ClientMsg::Unlock { target } => {

@@ -253,6 +253,22 @@ impl Manifest {
             message: e.to_string(),
         })?;
         manifest.dir = dir.to_owned();
+        // The entry stays inside the plugin's folder (it is copied there on
+        // install).
+        let inside = manifest
+            .plugin
+            .entry
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+        if !inside || manifest.plugin.entry.as_os_str().is_empty() {
+            return Err(PluginError::Manifest {
+                path: dir.join(MANIFEST_FILE),
+                message: format!(
+                    "entry {}: a path inside the plugin's folder",
+                    manifest.plugin.entry.display()
+                ),
+            });
+        }
         Ok(manifest)
     }
 
@@ -433,11 +449,19 @@ pub fn install(from: &Path, root: &Path, replace: bool) -> Result<PathBuf, Plugi
     match manifest.plugin.tier {
         Tier::Wasm => {
             std::fs::copy(from.join(MANIFEST_FILE), to.join(MANIFEST_FILE)).map_err(io)?;
+            let source = manifest.entry_path();
+            let real = |p: &Path| p.canonicalize().map_err(io);
+            if !real(&source)?.starts_with(real(from)?) {
+                return Err(PluginError::Runtime(format!(
+                    "{name}: entry {} is outside the plugin's folder",
+                    source.display()
+                )));
+            }
             let entry = to.join(&manifest.plugin.entry);
             if let Some(parent) = entry.parent() {
                 std::fs::create_dir_all(parent).map_err(io)?;
             }
-            std::fs::copy(manifest.entry_path(), entry).map_err(io)?;
+            std::fs::copy(source, entry).map_err(io)?;
         }
         Tier::Python => copy_tree(from, &to, 0).map_err(io)?,
     }
@@ -1053,6 +1077,22 @@ mod tests {
         assert_eq!(m.plugin.extension_points, ["checks"]);
         assert_eq!(m.entry_path(), Path::new("/plugins/t/t.wasm"));
         assert!(!m.permissions.network);
+    }
+
+    #[test]
+    fn the_entry_stays_inside_the_plugin_folder() {
+        for entry in ["../x.wasm", "a/../../x.wasm", "/etc/x.wasm", ""] {
+            let text = format!(
+                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.1\"\ntier=\"wasm\"\nentry=\"{entry}\""
+            );
+            assert!(
+                Manifest::parse(&text, Path::new("/plugins/t")).is_err(),
+                "{entry}"
+            );
+        }
+        let text =
+            "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.1\"\ntier=\"wasm\"\nentry=\"bin/t.wasm\"";
+        assert!(Manifest::parse(text, Path::new("/plugins/t")).is_ok());
     }
 
     #[test]

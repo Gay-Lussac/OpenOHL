@@ -184,6 +184,30 @@ impl From<rusqlite::Error> for SessionError {
     }
 }
 
+/// Whether `name` is a plain file name, safe to write in a folder on every
+/// system: letters, digits, spaces and `. _ - + ( )`, not starting with a
+/// dot or a space, not a Windows device name, at most 255 bytes.
+pub fn safe_file_name(name: &str) -> bool {
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end()
+        .to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ((stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.len() == 4
+            && stem.as_bytes()[3].is_ascii_digit());
+    !name.is_empty()
+        && name.len() <= 255
+        && !name.starts_with(['.', ' '])
+        && !name.ends_with(['.', ' '])
+        && !device
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || " ._-+()".contains(c))
+}
+
 pub(crate) fn refused(m: impl Into<String>) -> SessionError {
     SessionError::Refused(m.into())
 }
@@ -495,6 +519,30 @@ struct Meta {
         skip_serializing_if = "ols_line::condition::CreepStretch::is_empty"
     )]
     creep_stretch: ols_line::condition::CreepStretch,
+}
+
+/// The put of the line's settings (name, CRS, alignment, display, systems,
+/// creep stretch) as in `line`, with a new alignment and/or new systems.
+/// Every field is written: the put replaces the whole object.
+pub fn line_settings_put(
+    line: &Line,
+    alignment: Option<Vec<ols_line::AlignmentPoint>>,
+    systems: Option<Vec<ols_line::electrical::System>>,
+) -> Command {
+    let meta = Meta {
+        name: line.name.clone(),
+        crs: line.crs.clone(),
+        alignment: alignment.unwrap_or_else(|| line.alignment.clone()),
+        display: line.display.clone(),
+        systems: systems.unwrap_or_else(|| line.systems.clone()),
+        creep_stretch: line.creep_stretch.clone(),
+    };
+    Command::Put {
+        kind: Kind::Meta,
+        id: "line".into(),
+        value: json(&meta),
+        ord: None,
+    }
 }
 
 /// A raw log row: seq, time, user, kind, command, inverse, objects,
@@ -964,7 +1012,7 @@ impl Session {
         text: &str,
     ) -> Result<(), SessionError> {
         self.require(user, Role::Designer)?;
-        if kind.is_empty() || name.is_empty() || name.contains(['/', '\\']) {
+        if kind.is_empty() || !safe_file_name(name) {
             return Err(refused(format!(
                 "library file \"{name}\" of \"{kind}\": bad name"
             )));
@@ -1072,7 +1120,8 @@ impl Session {
         .collect()
     }
 
-    fn require(&self, user: &str, at_least: Role) -> Result<(), SessionError> {
+    /// Refuses unless `user` has at least the role `at_least`.
+    pub fn require(&self, user: &str, at_least: Role) -> Result<(), SessionError> {
         match self.role(user)? {
             Some(r) if r >= at_least => Ok(()),
             Some(r) => Err(refused(format!(

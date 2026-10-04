@@ -310,31 +310,7 @@ impl ChunkIndex {
                 if let Some(g) = &model.ground {
                     let area = self.grid.bounds(tile);
                     let step = detail(level).max(0.5);
-                    let n = ((area.max[0] - area.min[0]) / step).ceil() as usize;
-                    let at = |i: usize, j: usize| {
-                        let (x, y) = (
-                            (area.min[0] + i as f64 * step).min(area.max[0]),
-                            (area.min[1] + j as f64 * step).min(area.max[1]),
-                        );
-                        g.height(x, y).map(|z| [x, y, z])
-                    };
-                    let heights: Vec<Vec<Option<[f64; 3]>>> = (0..=n)
-                        .map(|i| (0..=n).map(|j| at(i, j)).collect())
-                        .collect();
-                    for i in 0..n {
-                        for j in 0..n {
-                            let (Some(a), Some(b), Some(c), Some(d)) = (
-                                heights[i][j],
-                                heights[i + 1][j],
-                                heights[i + 1][j + 1],
-                                heights[i][j + 1],
-                            ) else {
-                                continue;
-                            };
-                            s.triangle([a, b, c], [scene::ground_color(a, b, c); 3]);
-                            s.triangle([a, c, d], [scene::ground_color(a, c, d); 3]);
-                        }
-                    }
+                    grid_surface(&mut s, g, area, step, scene::ground_color);
                 }
             }
         }

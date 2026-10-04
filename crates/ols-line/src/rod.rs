@@ -400,7 +400,12 @@ impl Rod {
             let mut worst: f64 = 0.0;
             for (k, v) in r.iter().enumerate() {
                 let tol = if k < 2 * n { moment_tol } else { gap_tol };
-                worst = worst.max(v.abs() / tol);
+                let r = v.abs() / tol;
+                worst = if r.is_nan() {
+                    f64::INFINITY
+                } else {
+                    worst.max(r)
+                };
             }
             worst
         };
@@ -423,7 +428,7 @@ impl Rod {
             let mut r = self.residual(&d, lambda, mu, taut);
             let mut merit = scaled(&r);
             let mut damping = 1e-6;
-            while merit > 1.0 {
+            while merit > 1.0 || merit.is_nan() {
                 run.step().map_err(|stop| {
                     format!("rod did not converge: {stop}; residual {merit:.2e}× the tolerance")
                 })?;

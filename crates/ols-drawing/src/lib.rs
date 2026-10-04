@@ -317,6 +317,8 @@ pub fn build(
 
 /// Station as `km+m`, e.g. `1+250.0`.
 pub fn format_station(s: f64) -> String {
+    // Rounded to what is shown first: 1999.96 is 2+000.0, not 1+1000.0.
+    let s = (s * 10.0).round() / 10.0;
     let km = (s / 1000.0).floor();
     format!("{}+{:05.1}", km as i64, s - km * 1000.0)
 }
@@ -1035,6 +1037,13 @@ mod tests {
             .collect();
         let terrain = Terrain::load(&root.join("synthetic-survey.csv")).unwrap();
         (line, shapes, jumpers, terrain)
+    }
+
+    #[test]
+    fn stations_round_before_the_kilometre() {
+        assert_eq!(format_station(1999.96), "2+000.0");
+        assert_eq!(format_station(1250.04), "1+250.0");
+        assert_eq!(format_station(12.3), "0+012.3");
     }
 
     #[test]
