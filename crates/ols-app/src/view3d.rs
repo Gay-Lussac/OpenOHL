@@ -501,6 +501,22 @@ impl View3d {
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
+        // Section labels and sags (Sections › Display options).
+        let mut placer = crate::annotations::Placer::default();
+        for note in crate::annotations::notes(model, case, crate::annotations::View::ThreeD) {
+            let screen = |p: [f64; 3]| {
+                camera
+                    .project(p, size)
+                    .map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32))
+            };
+            if let (Some(p), Some(a), Some(b)) =
+                (screen(note.at), screen(note.ends[0]), screen(note.ends[1]))
+                && rect.contains(p)
+                && a.distance(b) >= crate::annotations::MIN_SPAN_PX
+            {
+                placer.paint(&painter, p, &note);
+            }
+        }
         // Label of the selection.
         if let Some(f) = selection.focus(model, case)
             && let Some((q, _)) = camera.project(f, size)

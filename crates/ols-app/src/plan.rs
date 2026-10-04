@@ -275,6 +275,13 @@ impl PlanView {
                 painter.circle_stroke(to_screen(st.position), 4.0, egui::Stroke::new(1.5, col));
             }
         }
+        let mut placer = crate::annotations::Placer::default();
+        for note in crate::annotations::notes(model, case, crate::annotations::View::Plan) {
+            let [a, b] = note.ends.map(to_screen);
+            if a.distance(b) >= crate::annotations::MIN_SPAN_PX {
+                placer.paint(&painter, to_screen(note.at), &note);
+            }
+        }
         let labels = scale > 0.08;
         for s in &line.structures {
             let p = to_screen(s.position);

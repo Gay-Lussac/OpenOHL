@@ -72,6 +72,9 @@ pub struct ViewPrefs {
     /// Class scheme file used instead of the point cloud's own.
     #[serde(default)]
     pub class_scheme: Option<PathBuf>,
+    /// What is written next to the wires in each view.
+    #[serde(default)]
+    pub section_display: crate::annotations::SectionDisplay,
 }
 
 /// The [`ViewPrefs`] of every project opened, by file (remembered).
@@ -322,6 +325,9 @@ pub struct Model {
     /// Working folder of the project's libraries (the project holds them);
     /// `None`: read from their files (a line file, or read-only).
     pub library_dir: Option<PathBuf>,
+    /// What is written next to the wires in each view (Sections › Display
+    /// options; this user's choice).
+    pub section_display: crate::annotations::SectionDisplay,
 }
 
 fn dir_of(file: &Path) -> PathBuf {
@@ -836,6 +842,7 @@ impl Model {
             lidar_percent: Some(self.points_percent),
             hidden_classes: self.hidden_classes.clone(),
             class_scheme: self.sources.class_scheme.clone(),
+            section_display: self.section_display.clone(),
         }
     }
 
@@ -1395,6 +1402,11 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .map(|v| v.hidden_classes.clone())
         .unwrap_or_default();
+    let section_display = sources
+        .view
+        .as_ref()
+        .map(|v| v.section_display.clone())
+        .unwrap_or_default();
     Ok(Model {
         sources,
         line,
@@ -1420,6 +1432,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         class_counts,
         points_percent,
         library_dir,
+        section_display,
         viewer_session,
         remote: None,
         solving: Vec::new(),

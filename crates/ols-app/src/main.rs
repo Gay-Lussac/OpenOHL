@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use eframe::egui;
 
+mod annotations;
 mod app;
 mod chunks;
 mod class_colors;

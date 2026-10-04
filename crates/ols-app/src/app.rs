@@ -3664,6 +3664,14 @@ fn menus(
         item(ui, Command::Table(TableKind::Systems), out);
         ui.separator();
         item(ui, Command::DisplayCases, out);
+        ui.menu_button("Display options", |ui| {
+            ui.label(
+                egui::RichText::new("Written next to the wires, in each view (yours only)")
+                    .small()
+                    .weak(),
+            );
+            r.model.section_display.ui(ui);
+        });
     });
     ui.menu_button("Criteria", |ui| {
         use crate::library::LibraryKind;

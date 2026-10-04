@@ -226,6 +226,39 @@ impl ProfileView {
                 ),
             ));
         }
+        // Section labels and sags (Sections › Display options), on this
+        // route's traces of the spans.
+        let notes = crate::annotations::notes(model, case, crate::annotations::View::Profile);
+        if !notes.is_empty() {
+            let mut placer = crate::annotations::Placer::default();
+            for w in &d.wires {
+                let Some(Selection::Span { section, span }) = trace_selection(&w.label) else {
+                    continue;
+                };
+                let (Some(first), Some(last)) = (w.points.first(), w.points.last()) else {
+                    continue;
+                };
+                let (a, b) = (to_screen(first[0], first[2]), to_screen(last[0], last[2]));
+                if a.distance(b) < crate::annotations::MIN_SPAN_PX {
+                    continue;
+                }
+                // The trace's point at mid-station.
+                let mid = 0.5 * (first[0] + last[0]);
+                let Some(m) = w
+                    .points
+                    .iter()
+                    .min_by(|p, q| (p[0] - mid).abs().total_cmp(&(q[0] - mid).abs()))
+                else {
+                    continue;
+                };
+                for note in notes
+                    .iter()
+                    .filter(|n| n.section == section && n.span == span)
+                {
+                    placer.paint(&painter, to_screen(m[0], m[2]), note);
+                }
+            }
+        }
         painter.text(
             rect.left_top() + egui::vec2(8.0, 6.0),
             egui::Align2::LEFT_TOP,

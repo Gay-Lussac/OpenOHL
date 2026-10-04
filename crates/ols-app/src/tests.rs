@@ -4188,3 +4188,31 @@ fn class_colours_come_from_a_scheme_file() {
     );
     let _ = ClassAction::Recolor;
 }
+
+/// Section display options: nothing by default; a label per section and a
+/// sag per span in the views ticked only; kept in the view preferences.
+#[test]
+fn section_labels_and_sags_per_view() {
+    use crate::annotations::{Kind, View, notes};
+    let mut m = synthetic();
+    for v in View::ALL {
+        assert!(notes(&m, 0, v).is_empty());
+    }
+    m.section_display.label[View::Plan as usize] = true;
+    m.section_display.sag[View::ThreeD as usize] = true;
+    let plan = notes(&m, 0, View::Plan);
+    assert_eq!(plan.len(), m.line.sections.len());
+    assert!(plan.iter().all(|n| n.kind == Kind::Label));
+    assert!(notes(&m, 0, View::Profile).is_empty());
+    let sags = notes(&m, 0, View::ThreeD);
+    let spans: usize = m.cases[0].shapes.iter().map(|s| s.spans.len()).sum();
+    assert_eq!(sags.len(), spans);
+    let first = &m.cases[0].shapes[0].spans[0];
+    assert_eq!(sags[0].text, format!("{:.2} m", first.sag));
+    // Remembered with this user's view of the project.
+    let prefs = m.view_prefs();
+    assert_eq!(prefs.section_display, m.section_display);
+    let back: crate::model::ViewPrefs =
+        serde_json::from_str(&serde_json::to_string(&prefs).unwrap()).unwrap();
+    assert!(back.section_display.sag[View::ThreeD as usize]);
+}
