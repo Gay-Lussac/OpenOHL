@@ -845,6 +845,7 @@ impl LibraryPage {
                                 "file",
                                 &mut self.buffers,
                                 true,
+                                None,
                             );
                         }
                     });
@@ -864,6 +865,7 @@ impl LibraryPage {
                                 &format!("{key}{}", self.item),
                                 &mut self.buffers,
                                 false,
+                                None,
                             );
                         }
                     });
@@ -880,6 +882,7 @@ impl LibraryPage {
                         "",
                         &mut self.buffers,
                         false,
+                        None,
                     );
                 });
             }
@@ -906,6 +909,243 @@ fn repr(v: &Value) -> String {
     let mut c = v.clone();
     c.decor_mut().clear();
     c.to_string()
+}
+
+/// The cable models (`model` of a cable): key, name in the list.
+pub const CABLE_MODELS: [(&str, &str); 3] = [
+    (
+        "nonlinear",
+        "Nonlinear (polynomials for the initial and creep behaviour of the outer and core materials)",
+    ),
+    (
+        "linear_creep_tension",
+        "Linear elastic, permanent stretch due to creep proportional to the creep weather case tension",
+    ),
+    (
+        "linear_creep_temperature",
+        "Linear elastic, permanent stretch due to creep given as a temperature increase",
+    ),
+];
+
+/// Example curves of a core (steel-like, on the total area, no creep):
+/// to be replaced by the cable's data.
+const CORE_CURVES: &str = "{ stress_unit = \"MPa\", strain = \"percent\", basis = \"total\", initial = [0.0, 250.0, 0.0, 0.0, 0.0], final_modulus = 250.0, reference_temperature = \"20 °C\" }";
+
+/// A cable's model (default `nonlinear`).
+fn cable_model(table: &Table) -> String {
+    table
+        .get("model")
+        .and_then(Item::as_str)
+        .unwrap_or("nonlinear")
+        .to_owned()
+}
+
+/// The fields `model` needs that `table` (a cable) lacks: cable fields
+/// by key, and components (`outer`, `core` if there is one) lacking their
+/// curves.
+fn missing_for_model(table: &Table, model: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let needs: &[&str] = match model {
+        "linear_creep_tension" => &["creep_temperature_shift", "creep_shift_tension"],
+        "linear_creep_temperature" => &["creep_temperature_shift"],
+        _ => &[],
+    };
+    out.extend(
+        needs
+            .iter()
+            .filter(|k| !table.contains_key(k))
+            .map(|k| (*k).to_owned()),
+    );
+    if model == "nonlinear" {
+        for c in ["outer", "core"] {
+            let has = match table.get(c) {
+                None if c == "core" => true,
+                None => false,
+                Some(Item::Table(t)) => t.contains_key("stress_strain"),
+                Some(Item::Value(Value::InlineTable(t))) => t.contains_key("stress_strain"),
+                Some(_) => true,
+            };
+            if !has {
+                out.push(format!("{c}.stress_strain"));
+            }
+        }
+    }
+    out
+}
+
+/// Adds what `model` needs to a cable table, with the example values:
+/// the creep shift (and tension), or the components' curves.
+fn add_for_model(table: &mut Table, model: &str) {
+    let example = |key: &str, fields: &[Field]| {
+        fields
+            .iter()
+            .find(|f| f.0 == key)
+            .and_then(|f| f.1.parse::<Value>().ok())
+    };
+    for k in missing_for_model(table, model) {
+        match k.split_once('.') {
+            None => {
+                if let Some(v) = example(&k, CABLE) {
+                    table.insert(&k, Item::Value(v));
+                }
+            }
+            Some((component, field)) => {
+                // A core: steel-like example curves (no creep).
+                let v = if component == "core" && field == "stress_strain" {
+                    CORE_CURVES.parse::<Value>().ok()
+                } else {
+                    example(field, COMPONENT)
+                };
+                let Some(v) = v else {
+                    continue;
+                };
+                match table.get_mut(component) {
+                    Some(Item::Table(t)) => {
+                        t.insert(field, Item::Value(v));
+                    }
+                    Some(Item::Value(Value::InlineTable(t))) => {
+                        t.insert(field, v);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// The fields of a table that cannot be removed: what the reader needs,
+/// and what the cable's model needs (`parent_model`: the cable's, for its
+/// components).
+fn required(
+    kind: LibraryKind,
+    context: &str,
+    table: &Table,
+    parent_model: Option<&str>,
+) -> Vec<String> {
+    let base: &[&str] = match (kind, context) {
+        (LibraryKind::Cables, "cable") => &[
+            "id",
+            "name",
+            "kind",
+            "diameter",
+            "mass_per_length",
+            "rated_tensile_strength",
+            "outer",
+        ],
+        (LibraryKind::Cables, "outer" | "core") => &["area", "modulus", "thermal_expansion"],
+        (LibraryKind::Cables, "stress_strain") => &["stress_unit", "initial", "final_modulus"],
+        (LibraryKind::WeatherCases, "case") => &["name", "temperature"],
+        (LibraryKind::Insulators | LibraryKind::StructureTypes, "") => &["format", "version", "id"],
+        _ => &[],
+    };
+    let mut out: Vec<String> = base.iter().map(|k| (*k).to_owned()).collect();
+    match (kind, context) {
+        (LibraryKind::Cables, "cable") => {
+            // The core goes with the Bimetallic tick.
+            if table.contains_key("core") {
+                out.push("core".into());
+            }
+            let model = cable_model(table);
+            out.extend(
+                ["creep_temperature_shift", "creep_shift_tension"]
+                    .into_iter()
+                    .filter(|k| used_by_model(k, &model))
+                    .map(str::to_owned),
+            );
+        }
+        (LibraryKind::Cables, "outer" | "core") if parent_model == Some("nonlinear") => {
+            out.push("stress_strain".into());
+        }
+        _ => {}
+    }
+    out
+}
+
+/// Whether a cable field is used by `model`.
+fn used_by_model(key: &str, model: &str) -> bool {
+    match key {
+        "creep_temperature_shift" => model != "nonlinear",
+        "creep_shift_tension" => model == "linear_creep_tension",
+        _ => true,
+    }
+}
+
+/// The model row of a cable: a list of the three models; choosing one
+/// adds the fields it needs. True when changed.
+fn cable_model_ui(ui: &mut egui::Ui, table: &mut Table, path: &str) -> bool {
+    let model = cable_model(table);
+    let mut chosen = model.clone();
+    let mut changed = false;
+    ui.label("model")
+        .on_hover_text("How sag and tension are modelled; the fields it needs are added");
+    egui::ComboBox::from_id_salt(("cable-model", path))
+        .selected_text(
+            CABLE_MODELS
+                .iter()
+                .find(|m| m.0 == model)
+                .map_or(model.as_str(), |m| m.1),
+        )
+        .width(280.0)
+        .show_ui(ui, |ui| {
+            for (key, name) in CABLE_MODELS {
+                ui.selectable_value(&mut chosen, key.to_owned(), name);
+            }
+        });
+    if chosen != model {
+        table.insert("model", toml_edit::value(chosen.clone()));
+        add_for_model(table, &chosen);
+        changed = true;
+    }
+    ui.label("");
+    ui.end_row();
+    // Bimetallic: a core of another material (its own curves).
+    let mut bimetallic = table.contains_key("core");
+    ui.label("bimetallic")
+        .on_hover_text("Different materials for the outer strands and the core");
+    if ui
+        .checkbox(
+            &mut bimetallic,
+            "Bimetallic conductor (outer strands and a core)",
+        )
+        .on_hover_text(
+            "Ticked: a core with its own area, modulus, expansion and (non-linear model) \
+             curves; unticked: the core is removed (Discard brings it back before saving)",
+        )
+        .changed()
+    {
+        if bimetallic {
+            if let Some(v) = CABLE
+                .iter()
+                .find(|f| f.0 == "core")
+                .and_then(|f| f.1.parse::<Value>().ok())
+            {
+                table.insert("core", Item::Value(v));
+            }
+            add_for_model(table, &chosen);
+        } else {
+            table.remove("core");
+        }
+        changed = true;
+    }
+    ui.label("");
+    ui.end_row();
+    let missing = missing_for_model(table, &chosen);
+    if !missing.is_empty() {
+        ui.label("");
+        ui.horizontal(|ui| {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                format!("this model needs: {}", missing.join(", ")),
+            );
+            if ui.small_button("Add them").clicked() {
+                add_for_model(table, &chosen);
+                changed = true;
+            }
+        });
+        ui.label("");
+        ui.end_row();
+    }
+    changed
 }
 
 /// Edits one value; true when changed.
@@ -974,6 +1214,7 @@ fn value_ui(
 /// arrays of tables; true when changed. `context`: the key of the array it
 /// is in (`""`: top level). `only_known`: show only the context's fields
 /// (the file's own fields next to the items).
+#[allow(clippy::too_many_arguments)]
 fn table_ui(
     ui: &mut egui::Ui,
     kind: LibraryKind,
@@ -982,31 +1223,55 @@ fn table_ui(
     path: &str,
     buffers: &mut HashMap<String, String>,
     only_known: bool,
+    parent_model: Option<&str>,
 ) -> bool {
     let fields = kind.fields(context);
+    let locked = required(kind, context, table, parent_model);
     let help = |k: &str| fields.iter().find(|f| f.0 == k).map(|f| f.2);
     let mut changed = false;
     let keys: Vec<String> = table.iter().map(|(k, _)| k.to_owned()).collect();
     let mut remove: Option<String> = None;
+    // A cable: its model as a list (first), the fields it needs added.
+    let cable = kind == LibraryKind::Cables && context == "cable";
     egui::Grid::new(("table", path))
         .num_columns(3)
         .striped(true)
         .show(ui, |ui| {
+            if cable {
+                changed |= cable_model_ui(ui, table, path);
+            }
+            let model = cable.then(|| cable_model(table));
             for k in &keys {
                 if only_known && help(k).is_none() {
                     continue;
                 }
+                if cable && k == "model" {
+                    continue;
+                }
+                let unused = model.as_deref().is_some_and(|m| !used_by_model(k, m));
                 let Some(Item::Value(v)) = table.get_mut(k) else {
                     continue;
                 };
-                let r = ui.label(k);
+                let r = if unused {
+                    ui.label(egui::RichText::new(k).weak())
+                        .on_hover_text("not used by this model (kept in the file)")
+                } else {
+                    ui.label(k)
+                };
                 if let Some(h) = help(k) {
                     r.on_hover_text(h);
                 }
                 changed |= value_ui(ui, v, &format!("{path}.{k}"), buffers);
+                let needed = locked.contains(k);
                 if ui
-                    .small_button("🗑")
+                    .add_enabled(!needed, egui::Button::new("🗑").small())
                     .on_hover_text("Remove this field")
+                    .on_disabled_hover_text(match &model {
+                        Some(m) if !used_by_model(k, "nonlinear") || k == "stress_strain" => {
+                            format!("needed by the {m} model")
+                        }
+                        _ => "needed: it cannot be removed".to_owned(),
+                    })
                     .clicked()
                 {
                     remove = Some(k.clone());
@@ -1014,12 +1279,45 @@ fn table_ui(
                 ui.end_row();
             }
         });
+    // Sub-tables written as sections (`[cable.outer]`, its curves…).
+    let model_here = if kind == LibraryKind::Cables && context == "cable" {
+        Some(cable_model(table))
+    } else {
+        parent_model.map(str::to_owned)
+    };
+    let subs: Vec<String> = keys
+        .iter()
+        .filter(|k| matches!(table.get(k), Some(Item::Table(_))))
+        .cloned()
+        .collect();
+    for k in subs {
+        if let Some(Item::Table(sub)) = table.get_mut(&k) {
+            egui::CollapsingHeader::new(&k)
+                .id_salt(("sub", path, &k))
+                .default_open(true)
+                .show(ui, |ui| {
+                    changed |= table_ui(
+                        ui,
+                        kind,
+                        sub,
+                        &k,
+                        &format!("{path}.{k}"),
+                        buffers,
+                        false,
+                        model_here.as_deref(),
+                    );
+                });
+        }
+    }
     if let Some(k) = remove {
         table.remove(&k);
         buffers.retain(|p, _| !p.starts_with(&format!("{path}.{k}")));
         changed = true;
     }
-    let missing: Vec<&Field> = fields.iter().filter(|f| !table.contains_key(f.0)).collect();
+    let missing: Vec<&Field> = fields
+        .iter()
+        .filter(|f| !table.contains_key(f.0) && !(cable && f.0 == "model"))
+        .collect();
     if !missing.is_empty() {
         let mut add: Option<&Field> = None;
         egui::ComboBox::from_id_salt(("add-field", path))
@@ -1090,6 +1388,7 @@ fn table_ui(
                                     &format!("{path}.{key}{i}"),
                                     buffers,
                                     false,
+                                    None,
                                 );
                                 ui.horizontal(|ui| {
                                     if ui.small_button("Duplicate").clicked() {
@@ -1231,5 +1530,77 @@ mod tests {
         assert!(!LibraryKind::Cables.in_use(&s, &other));
         LibraryKind::Cables.use_for(&mut s, &other);
         assert!(LibraryKind::Cables.in_use(&s, &other));
+    }
+
+    /// The cable models add the fields they need; those, and what the
+    /// reader needs, cannot be removed; the bimetallic tick adds a core;
+    /// the cable still reads.
+    #[test]
+    fn cable_models_add_and_lock_their_fields() {
+        let kind = LibraryKind::Cables;
+        let mut doc: DocumentMut = kind.template("c1").parse().unwrap();
+        let cable = doc
+            .get_mut("cable")
+            .and_then(Item::as_array_of_tables_mut)
+            .and_then(|a| a.get_mut(0))
+            .unwrap();
+        assert_eq!(cable_model(cable), "nonlinear");
+        // Linear, creep ∝ tension: its shift and tension, locked.
+        cable.insert("model", toml_edit::value("linear_creep_tension"));
+        add_for_model(cable, "linear_creep_tension");
+        assert!(missing_for_model(cable, "linear_creep_tension").is_empty());
+        let locked = required(kind, "cable", cable, None);
+        for k in [
+            "creep_temperature_shift",
+            "creep_shift_tension",
+            "id",
+            "outer",
+        ] {
+            assert!(locked.iter().any(|x| x == k), "{k} locked");
+        }
+        kind.check(Path::new("x.olsw"), &doc.to_string()).unwrap();
+        // Non-linear: the outer curves; with a core, its own.
+        let cable = doc
+            .get_mut("cable")
+            .and_then(Item::as_array_of_tables_mut)
+            .and_then(|a| a.get_mut(0))
+            .unwrap();
+        cable.insert("model", toml_edit::value("nonlinear"));
+        cable.insert(
+            "core",
+            Item::Value(
+                "{ area = \"50 mm²\", modulus = \"190 GPa\", thermal_expansion = 11.5e-6 }"
+                    .parse()
+                    .unwrap(),
+            ),
+        );
+        assert_eq!(
+            missing_for_model(cable, "nonlinear"),
+            vec!["outer.stress_strain", "core.stress_strain"]
+        );
+        add_for_model(cable, "nonlinear");
+        assert!(missing_for_model(cable, "nonlinear").is_empty());
+        let locked = required(kind, "cable", cable, None);
+        assert!(
+            locked.iter().any(|x| x == "core"),
+            "goes with the tick only"
+        );
+        assert!(!locked.iter().any(|x| x == "creep_shift_tension"));
+        let outer = Table::new();
+        assert!(
+            required(kind, "outer", &outer, Some("nonlinear")).contains(&"stress_strain".into())
+        );
+        assert!(
+            !required(kind, "outer", &outer, Some("linear_creep_temperature"))
+                .contains(&"stress_strain".into())
+        );
+        let text = doc.to_string();
+        kind.check(Path::new("x.olsw"), &text).unwrap();
+        let mut lib = ols_cables::Library::default();
+        lib.add_toml(Path::new("x.olsw"), &text).unwrap();
+        let c = lib.iter().next().unwrap();
+        assert!(
+            c.outer.stress_strain.is_some() && c.core.as_ref().unwrap().stress_strain.is_some()
+        );
     }
 }

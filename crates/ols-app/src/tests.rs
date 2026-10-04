@@ -3273,3 +3273,52 @@ outer = { area = "550 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
             .is_err()
     );
 }
+
+/// The wire library page: the model is a list at the top (the fields it
+/// needs appear, not removable), with the Bimetallic tick.
+#[test]
+fn the_cable_model_is_a_list_and_adds_its_fields() {
+    use crate::library::LibraryKind;
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().open_page =
+        Some((crate::app::Tab::Library(LibraryKind::Cables), None));
+    harness.run();
+    harness.run();
+    // The example's first cable: ACSR, a core.
+    let bimetallic = "Bimetallic conductor (outer strands and a core)";
+    harness.get_by_label(bimetallic);
+    // The list shows the model chosen (nonlinear by default).
+    harness
+        .get_by_value(crate::library::CABLE_MODELS[0].1)
+        .click();
+    harness.run();
+    harness
+        .get_by_label(
+            "Linear elastic, permanent stretch due to creep given as a temperature increase",
+        )
+        .click();
+    harness.run();
+    harness.get_by_label("creep_temperature_shift");
+    let text = {
+        let r = harness.state_mut().ready().unwrap();
+        r.libraries[&LibraryKind::Cables].text().unwrap()
+    };
+    assert!(
+        text.contains("model = \"linear_creep_temperature\""),
+        "{text}"
+    );
+    assert!(text.contains("creep_temperature_shift"));
+    // Unticking Bimetallic removes the core.
+    harness.get_by_label(bimetallic).click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let page = &r.libraries[&LibraryKind::Cables];
+    let text = page.text().unwrap();
+    let first = text.split("[[cable]]").nth(1).unwrap();
+    assert!(!first.contains("core"), "{first}");
+    assert!(page.dirty());
+}

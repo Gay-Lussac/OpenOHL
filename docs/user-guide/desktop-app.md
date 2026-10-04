@@ -159,6 +159,8 @@ The **Structures** and **Sections** menus open an editor for the wire library (`
 
 **Use for the model** makes the model read the file open: the wire library or the weather case file itself; the folder of an insulator or structure type file. The model is solved again; a wire library without every cable the line uses is refused (the cables missing are named) and the model keeps its own.
 
+A cable starts with its **model** — a list of the three cable models (non-linear; linear with creep proportional to the creep case tension; linear with a temperature increase) — and the **Bimetallic conductor** tick (a core with its own data; unticked, the core goes): choosing a model adds the fields it needs (the outer and core curves, or the creep temperature shift and tension) with example values, fields it does not use are shown dimmed (kept in the file), and the fields a cable or its model needs cannot be removed (their 🗑 is greyed). Sections written as `[cable.outer]` tables are edited like inline ones.
+
 Every field is shown as written in the file, with its units (`"28.1 mm"`, `"55 GPa"`, `"-5 °C"`); numbers and lists as TOML (`23e-6`, `["clearance", "loads"]`). **add a field…** offers the fields of that kind not yet given, with an example and their meaning; 🗑 removes one. A structure type's attachments, extensions and body lines are listed below its fields (add, duplicate, remove). Comments and layout of the file are kept.
 
 The file is checked as you type with the library's own reader; the error is shown and **Save** waits until it reads. After saving, the model reads its libraries again, resolves the structure types and solves every weather case; a page with unsaved changes shows * and does not close. 
