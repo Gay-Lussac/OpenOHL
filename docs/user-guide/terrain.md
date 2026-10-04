@@ -210,6 +210,8 @@ The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.olsc`](ht
 
 On a real 25 km line (private data, checked locally), ground built this way from 99.6 million LiDAR points (11.3 million in the utility's ground classes, 22.6 million triangles, about one minute) gave span clearances matching those on the TIN of a commercial program to a median of 2 mm (94 % of 930 spans within 10 cm).
 
+A class may have a display **colour**, `color = "#rrggbb"`; without one, its colour comes from its roles (ground brown, vegetation green, buildings red, water blue, wires yellow…). In the application, Terrain › Survey data › **Class colours…** edits them per class and saves the scheme to a file; the scheme used is each user's choice (for a project or every project), so the same point cloud can be read with another scheme (e.g. a utility's own class numbers stored as ASPRS).
+
 ## The ground surface
 
 The points are triangulated (constrained Delaunay, the

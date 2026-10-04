@@ -158,6 +158,18 @@ pub fn rgb(hex: &str) -> [u8; 3] {
 /// Display colour of a LiDAR class, by its roles (noise magenta: shown
 /// unless hidden in Terrain › LiDAR classes shown).
 pub fn class_color(scheme: &ols_lidar::ClassScheme, code: u8) -> Option<[u8; 3]> {
+    // The scheme's own colour, else one from the roles.
+    if let Some(c) = scheme
+        .class(code)
+        .and_then(ols_lidar::classes::ClassDef::rgb)
+    {
+        return Some(c);
+    }
+    role_color(scheme, code)
+}
+
+/// The colour of a class from its roles.
+pub fn role_color(scheme: &ols_lidar::ClassScheme, code: u8) -> Option<[u8; 3]> {
     let roles: Vec<&str> = scheme
         .class(code)
         .map(|c| c.roles.iter().map(String::as_str).collect())

@@ -22,6 +22,7 @@
 //! code = 1
 //! name = "Terrain"
 //! roles = ["ground"]
+//! color = "#96805f"   # display colour (optional; else from the roles)
 //! ```
 //!
 //! Roles used by OLS CAD so far: `ground` (terrain surface). Suggested for
@@ -34,7 +35,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// File extension of class schemes.
 pub const CLASS_FILE_EXTENSION: &str = "olsc";
@@ -44,7 +45,7 @@ pub const CLASS_FILE_FORMAT: &str = "ols-lidar-classes";
 const ASPRS: &str = include_str!("../../../libraries/lidar-classes/asprs-las-1.4.olsc");
 
 /// One class of a scheme.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClassDef {
     /// Class number in the point cloud.
@@ -55,12 +56,37 @@ pub struct ClassDef {
     #[serde(default)]
     pub roles: Vec<String>,
     /// Notes.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    /// Display colour `#rrggbb` (none: from the roles).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+impl ClassDef {
+    /// The display colour given, as RGB.
+    pub fn rgb(&self) -> Option<[u8; 3]> {
+        self.color.as_deref().and_then(parse_rgb)
+    }
+}
+
+/// `#rrggbb` as RGB.
+pub fn parse_rgb(s: &str) -> Option<[u8; 3]> {
+    let h = s.strip_prefix('#')?;
+    if h.len() != 6 {
+        return None;
+    }
+    let b = |k: usize| u8::from_str_radix(&h[k..k + 2], 16).ok();
+    Some([b(0)?, b(2)?, b(4)?])
+}
+
+/// RGB as `#rrggbb`.
+pub fn format_rgb(c: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
 
 /// A class scheme.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClassScheme {
     /// `"ols-lidar-classes"` (optional header).
@@ -74,7 +100,7 @@ pub struct ClassScheme {
     /// Name.
     pub name: String,
     /// Where the scheme comes from.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     /// Classes.
     #[serde(rename = "class", default)]
@@ -96,6 +122,11 @@ impl ClassScheme {
             if !codes.insert(c.code) {
                 return Err(format!("class {} is defined twice", c.code));
             }
+            if let Some(col) = &c.color
+                && parse_rgb(col).is_none()
+            {
+                return Err(format!("class {}: color \"{col}\" is not #rrggbb", c.code));
+            }
             if let Some(r) = c.roles.iter().find(|r| {
                 r.is_empty()
                     || !r
@@ -115,6 +146,14 @@ impl ClassScheme {
     pub fn load(path: &Path) -> Result<Self, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    /// The scheme as a file (`.olsc`).
+    pub fn to_toml(&self) -> String {
+        let mut s = self.clone();
+        s.format = Some(CLASS_FILE_FORMAT.into());
+        s.version = Some(1);
+        toml::to_string(&s).unwrap_or_default()
     }
 
     /// The ASPRS LAS 1.4 standard classes (`libraries/lidar-classes`).
@@ -151,6 +190,22 @@ impl ClassScheme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn colours_are_read_checked_and_written() {
+        let text = "id = \"x\"\nname = \"X\"\n[[class]]\ncode = 3\nname = \"Tree\"\nroles = [\"vegetation\"]\ncolor = \"#40a050\"\n[[class]]\ncode = 4\nname = \"Other\"\n";
+        let s = ClassScheme::parse(text).unwrap();
+        assert_eq!(s.class(3).unwrap().rgb(), Some([0x40, 0xa0, 0x50]));
+        assert_eq!(s.class(4).unwrap().rgb(), None);
+        assert_eq!(ClassScheme::parse(&s.to_toml()).unwrap(), {
+            let mut t = s.clone();
+            t.format = Some(CLASS_FILE_FORMAT.into());
+            t.version = Some(1);
+            t
+        });
+        assert!(ClassScheme::parse(&text.replace("#40a050", "green")).is_err());
+        assert_eq!(format_rgb([1, 2, 255]), "#0102ff");
+    }
 
     #[test]
     fn asprs_scheme_has_ground_and_wires() {

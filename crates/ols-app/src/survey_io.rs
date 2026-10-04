@@ -148,7 +148,12 @@ impl ImportDialog {
             cloud: clouds.first().cloned().unwrap_or_else(|| "lidar".into()),
             crs: model.line.crs.clone(),
             chunk: ols_pointcloud::DEFAULT_CHUNK,
-            scheme: None,
+            // The class scheme this user uses (Class colours), if a file.
+            scheme: model
+                .sources
+                .class_scheme
+                .clone()
+                .filter(|p| !p.as_os_str().is_empty()),
             error: project_of(model).err(),
         }
     }

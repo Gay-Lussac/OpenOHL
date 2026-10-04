@@ -204,6 +204,8 @@ pub struct Ready {
     pub loads: crate::loads::LoadsPage,
     /// Terrain › Terrain surfaces (TIN).
     pub surfaces: crate::surfaces::SurfacesWindow,
+    /// Terrain › Survey data › Class colours, when open.
+    pub class_window: Option<crate::class_colors::ClassWindow>,
     /// Parameters › Controls: the window of a view's controls, when open.
     pub controls_window: Option<ControlsPage>,
     /// Criteria › Creep-Stretch, when open: the weather cases chosen.
@@ -261,6 +263,7 @@ impl Ready {
             history_open: false,
             loads: Default::default(),
             surfaces: Default::default(),
+            class_window: None,
             controls_window: None,
             creep_stretch_window: None,
             jumper_from: None,
@@ -302,6 +305,8 @@ pub struct App {
     pub recent: crate::files::Recent,
     /// What this user shows of each project (remembered locally).
     pub view_prefs: crate::model::ViewPrefsStore,
+    /// The LiDAR class scheme (.olsc) used for every project (remembered).
+    pub default_class_scheme: Option<PathBuf>,
     /// The plugin manager, and the formats of File › Import / Export.
     pub plugins: crate::plugins::Plugins,
     /// The server this application hosts.
@@ -364,6 +369,7 @@ impl App {
             lod: Default::default(),
             recent: Default::default(),
             view_prefs: Default::default(),
+            default_class_scheme: None,
             plugins: Default::default(),
             hosting: None,
             hosted_file: None,
@@ -397,6 +403,15 @@ impl App {
         self.close();
         if sources.view.is_none() {
             sources.view = self.view_prefs.get(&sources.file);
+        }
+        // The class scheme: given, else this project's choice (an empty
+        // path: the point cloud's own), else the one for every project.
+        if sources.class_scheme.is_none() {
+            sources.class_scheme = sources
+                .view
+                .as_ref()
+                .and_then(|v| v.class_scheme.clone())
+                .or_else(|| self.default_class_scheme.clone());
         }
         if !sources.file.as_os_str().is_empty() {
             self.recent.add(&sources.file);
@@ -759,6 +774,7 @@ impl App {
             lod: Default::default(),
             recent: Default::default(),
             view_prefs: Default::default(),
+            default_class_scheme: None,
             plugins: Default::default(),
             hosting: None,
             hosted_file: None,
@@ -2230,6 +2246,17 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
             if r.survey_window.is_none() {
                 r.survey_window = Some(SurveyDraft::of(&r.model));
             }
+            ui.close();
+        }
+        if ui
+            .button("Class colours…")
+            .on_hover_text(
+                "The display colour of the points by class number, from a class scheme file \
+                 (.olsc)",
+            )
+            .clicked()
+        {
+            r.class_window.get_or_insert_with(Default::default);
             ui.close();
         }
     });
@@ -3908,6 +3935,12 @@ impl eframe::App for App {
                 .set(&r.model.sources.file, r.model.view_prefs());
         }
         self.view_prefs.save(storage);
+        storage.set_string(
+            "class-scheme",
+            self.default_class_scheme
+                .as_ref()
+                .map_or(String::new(), |p| p.display().to_string()),
+        );
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -4107,6 +4140,33 @@ impl eframe::App for App {
                     });
                 }
                 self.plugins.manager_ui(&ctx);
+                if let Some(mut w) = ready.class_window.take() {
+                    let mut open = true;
+                    let default = self.default_class_scheme.clone();
+                    let action = w.ui(&ctx, &mut open, &mut ready.model, default.as_ref());
+                    if let Some(a) = action {
+                        use crate::class_colors::ClassAction;
+                        let chosen = match a {
+                            ClassAction::Recolor => None,
+                            ClassAction::UseForProject(p) => Some(p),
+                            ClassAction::UseForAll(p) => {
+                                self.default_class_scheme = p.clone();
+                                Some(p)
+                            }
+                        };
+                        if let Some(p) = chosen {
+                            match ready.model.use_class_scheme(p) {
+                                Ok(()) => w.dirty = false,
+                                Err(e) => w.status = Some((e, true)),
+                            }
+                        }
+                        ready.view3d.recolor_points();
+                        ready.refresh_views();
+                    }
+                    if open {
+                        ready.class_window = Some(w);
+                    }
+                }
                 if ready.surfaces.ui(&ctx, &mut ready.model, &mut self.plugins) {
                     ready.visible.insert(Layer::Ground);
                     if !ready.model.other_surfaces.is_empty() {

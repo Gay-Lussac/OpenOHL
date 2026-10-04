@@ -4133,3 +4133,50 @@ fn a_project_is_created_from_another_programs_file() {
     assert_eq!(r.model.cases.len(), 5);
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+/// Terrain › Survey data › Class colours: a class's colour picked, the
+/// scheme saved to a file and used for the project (this user's choice);
+/// back to the cloud's own.
+#[test]
+fn class_colours_come_from_a_scheme_file() {
+    use crate::class_colors::{ClassAction, set_color};
+    let model = synthetic_project("class-colours");
+    let dir = model.sources.file.parent().unwrap().to_owned();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // (Terrain › Survey data › Class colours…, with a point cloud.)
+    harness.state_mut().ready().unwrap().class_window = Some(Default::default());
+    harness.run();
+    harness.get_by_label_contains("Scheme: ");
+    let file = dir.join("mine.olsc");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        set_color(&mut r.model.scheme, 2, Some("#123456".into()));
+        set_color(&mut r.model.scheme, 77, Some("#abcdef".into()));
+        assert_eq!(
+            crate::scene::class_color(&r.model.scheme, 2),
+            Some([0x12, 0x34, 0x56])
+        );
+        std::fs::write(&file, r.model.scheme.to_toml()).unwrap();
+        r.model.use_class_scheme(Some(file.clone())).unwrap();
+        assert_eq!(
+            r.model.view_prefs().class_scheme.as_deref(),
+            Some(file.as_path())
+        );
+    }
+    // The file holds the colours and the class added.
+    let s = ols_lidar::ClassScheme::load(&file).unwrap();
+    assert_eq!(crate::scene::class_color(&s, 77), Some([0xab, 0xcd, 0xef]));
+    assert_eq!(s.class(77).unwrap().name, "Class 77");
+    // Back to the cloud's own: no file; remembered as such (an empty path).
+    let r = harness.state_mut().ready().unwrap();
+    r.model.use_class_scheme(None).unwrap();
+    assert!(r.model.scheme.class(77).is_none());
+    assert_eq!(
+        r.model.view_prefs().class_scheme,
+        Some(std::path::PathBuf::new())
+    );
+    let _ = ClassAction::Recolor;
+}

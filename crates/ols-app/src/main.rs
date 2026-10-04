@@ -17,6 +17,7 @@ use eframe::egui;
 
 mod app;
 mod chunks;
+mod class_colors;
 mod clearance;
 mod controls;
 mod edit;
@@ -88,6 +89,10 @@ struct Args {
     /// project's own, else the first .olslc next to the file.
     #[arg(long)]
     load_cases: Option<PathBuf>,
+    /// LiDAR class scheme (.olsc: class names, roles, display colours)
+    /// used instead of the point cloud's own.
+    #[arg(long)]
+    class_scheme: Option<PathBuf>,
     /// Instead of opening a window: load, render the 3D view to this PNG
     /// file and exit (checks, documentation).
     #[arg(long)]
@@ -128,6 +133,7 @@ fn main() -> std::process::ExitCode {
         rules: args.rules,
         load_cases: args.load_cases,
         view: None,
+        class_scheme: args.class_scheme,
     };
     if let Some(path) = args.screenshot {
         if !open {
@@ -167,6 +173,10 @@ fn main() -> std::process::ExitCode {
             if let Some(st) = cc.storage {
                 app.recent = files::Recent::load(st);
                 app.view_prefs = model::ViewPrefsStore::load(st);
+                app.default_class_scheme = st
+                    .get_string("class-scheme")
+                    .filter(|s| !s.is_empty())
+                    .map(std::path::PathBuf::from);
             }
             if open {
                 app.start(sources, &cc.egui_ctx);

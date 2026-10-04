@@ -49,6 +49,9 @@ pub struct Sources {
     pub load_cases: Option<PathBuf>,
     /// What this user showed of the file last time ([`ViewPrefs`]).
     pub view: Option<ViewPrefs>,
+    /// Class scheme (`.olsc`: names, roles, colours) used instead of the
+    /// point cloud's own (this user's choice).
+    pub class_scheme: Option<PathBuf>,
 }
 
 /// What one user shows of a project — the ground surface used and the
@@ -66,6 +69,9 @@ pub struct ViewPrefs {
     /// LiDAR classes hidden.
     #[serde(default)]
     pub hidden_classes: std::collections::BTreeSet<u8>,
+    /// Class scheme file used instead of the point cloud's own.
+    #[serde(default)]
+    pub class_scheme: Option<PathBuf>,
 }
 
 /// The [`ViewPrefs`] of every project opened, by file (remembered).
@@ -806,12 +812,34 @@ impl Model {
         }
     }
 
+    /// Uses the class scheme file `path` (`None`: the point cloud's own)
+    /// for this project: names, roles and colours of the LiDAR classes.
+    pub fn use_class_scheme(&mut self, path: Option<PathBuf>) -> Result<(), String> {
+        self.scheme = match &path {
+            Some(p) => ols_lidar::ClassScheme::load(p)?,
+            None => {
+                let own = crate::chunks::cloud_of(self).and_then(|(file, name)| {
+                    let source = ols_pointcloud::CloudSource::open(&file, name.as_deref()).ok()?;
+                    ols_pointcloud::PointSource::class_scheme(&source)
+                });
+                match own {
+                    Some(text) => ols_lidar::ClassScheme::parse(&text)?,
+                    None => ols_lidar::ClassScheme::asprs(),
+                }
+            }
+        };
+        // Remembered: an empty path is "the cloud's own".
+        self.sources.class_scheme = Some(path.unwrap_or_default());
+        Ok(())
+    }
+
     /// What this user shows of the project now (remembered locally).
     pub fn view_prefs(&self) -> ViewPrefs {
         ViewPrefs {
             surfaces: self.surface_settings.clone(),
             lidar_percent: Some(self.points_percent),
             hidden_classes: self.hidden_classes.clone(),
+            class_scheme: self.sources.class_scheme.clone(),
         }
     }
 
@@ -1226,6 +1254,24 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
             .map_err(|e| e.to_string())?;
         if let Some(text) = ols_pointcloud::PointSource::class_scheme(&source) {
             scheme = ols_lidar::ClassScheme::parse(&text)?;
+        }
+        // This user's scheme (names, roles, colours), if chosen (an empty
+        // path: the cloud's own).
+        if let Some(p) = sources
+            .class_scheme
+            .as_ref()
+            .filter(|p| !p.as_os_str().is_empty())
+        {
+            match ols_lidar::ClassScheme::load(p) {
+                Ok(s) => {
+                    step(
+                        format!("class scheme {}: {}", s.name, p.display()),
+                        &mut log,
+                    );
+                    scheme = s;
+                }
+                Err(e) => step(format!("class scheme not read: {e}"), &mut log),
+            }
         }
         let ground_classes = scheme.codes_with_role("ground");
         let mut is_ground = [false; 256];

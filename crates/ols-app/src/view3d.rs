@@ -90,6 +90,13 @@ impl View3d {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(!on));
     }
 
+    /// The LiDAR points read again with new colours (the class scheme
+    /// changed).
+    pub fn recolor_points(&mut self) {
+        self.stream = None;
+        self.dirty.insert(Layer::Points);
+    }
+
     /// Marks every layer for rebuilding.
     pub fn rebuild_all(&mut self) {
         self.dirty.extend(Layer::ALL);
