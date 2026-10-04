@@ -67,6 +67,15 @@ fn solve_one(
 }
 
 impl SolvedLine {
+    /// Nothing solved yet, in `case`.
+    pub fn empty(case: &WeatherCase) -> Self {
+        Self {
+            case: case.clone(),
+            sections: BTreeMap::new(),
+            jumpers: BTreeMap::new(),
+        }
+    }
+
     /// Solves every section and jumper of `line`.
     pub fn solve(line: &Line, library: &ols_cables::Library, case: &WeatherCase) -> Self {
         let mut solved = Self {

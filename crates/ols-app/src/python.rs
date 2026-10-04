@@ -411,15 +411,18 @@ pub fn serve(r: &mut crate::app::Ready, what: &str, arg: &str) -> Result<String,
         "case" => json!(r.model.cases.get(r.case).map(|c| c.case.name.clone())),
         "selection" => json!(r.selection.describe()),
         "results" => {
-            let solved = match arg.as_str() {
+            let k = match arg.as_str() {
                 Some(name) => r
                     .model
                     .cases
                     .iter()
-                    .find(|c| c.case.name == name)
+                    .position(|c| c.case.name == name)
                     .ok_or_else(|| format!("no weather case {name}"))?,
-                None => r.model.cases.get(r.case).ok_or("no weather case")?,
+                None => r.case,
             };
+            // Solved now if it is not yet.
+            r.model.ensure_solved(k);
+            let solved = r.model.cases.get(k).ok_or("no weather case")?;
             json!({
                 "case": solved.case.name,
                 "sections": solved.shapes.iter().map(|s| json!({

@@ -16,21 +16,32 @@ fn root() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
 }
 
+/// Every weather case solved (the application solves the others when
+/// they are shown; the tests look at all of them).
+fn solved_all(mut m: model::Model) -> model::Model {
+    for k in 0..m.cases.len() {
+        m.ensure_solved(k);
+    }
+    m
+}
+
 fn synthetic() -> model::Model {
     let ex = root().join("examples/synthetic-line");
-    model::load(
-        Sources {
-            file: ex.join("synthetic-line.ols.json"),
-            library: Some(root().join("libraries/cables")),
-            terrain: Some(ex.join("synthetic-survey.csv")),
-            weather: Some(ex.join("weather-cases.olswc")),
-            point_budget: 1000,
-            corridor: 60.0,
-            ..Sources::default()
-        },
-        &|_| {},
+    solved_all(
+        model::load(
+            Sources {
+                file: ex.join("synthetic-line.ols.json"),
+                library: Some(root().join("libraries/cables")),
+                terrain: Some(ex.join("synthetic-survey.csv")),
+                weather: Some(ex.join("weather-cases.olswc")),
+                point_budget: 1000,
+                corridor: 60.0,
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap(),
     )
-    .unwrap()
 }
 
 #[test]
@@ -589,25 +600,27 @@ fn synthetic_project(name: &str) -> model::Model {
         .unwrap()
         .import(&line, "tester")
         .unwrap();
-    model::load(
-        Sources {
-            file: path,
-            library: Some(root().join("libraries/cables")),
-            weather: Some(ex.join("weather-cases.olswc")),
-            load_cases: Some(ex.join("load-cases.olslc")),
-            point_budget: 1000,
-            corridor: 60.0,
-            user: Some("tester".into()),
-            ..Sources::default()
-        },
-        &|_| {},
+    solved_all(
+        model::load(
+            Sources {
+                file: path,
+                library: Some(root().join("libraries/cables")),
+                weather: Some(ex.join("weather-cases.olswc")),
+                load_cases: Some(ex.join("load-cases.olslc")),
+                point_budget: 1000,
+                corridor: 60.0,
+                user: Some("tester".into()),
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap(),
     )
-    .unwrap()
 }
 
-/// Every case equals a full solve of the current line.
+/// Every case solved equals a full solve of the current line.
 fn assert_solved_fully(m: &model::Model) {
-    for c in &m.cases {
+    for c in m.cases.iter().filter(|c| c.ready) {
         let full = model::Solved::new(&m.line, &m.library, c.case.clone());
         assert_eq!(c.shapes, full.shapes, "{}", c.case.name);
         assert_eq!(c.jumpers, full.jumpers, "{}", c.case.name);
@@ -3859,4 +3872,43 @@ fn structure_loads_are_computed_and_shown() {
     harness.step();
     let r = harness.state_mut().ready().unwrap();
     assert_eq!(r.selection, Selection::Structure("T2".into()));
+}
+
+/// Only the weather case shown is solved when the model loads; another is
+/// solved in the background once shown, from the line as it is then;
+/// cases never shown stay unsolved.
+#[test]
+fn weather_cases_are_solved_when_shown() {
+    let ex = root().join("examples/synthetic-line");
+    let model = model::load(
+        Sources {
+            file: ex.join("synthetic-line.ols.json"),
+            library: Some(root().join("libraries/cables")),
+            weather: Some(ex.join("weather-cases.olswc")),
+            point_budget: 1000,
+            corridor: 60.0,
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    assert!(model.cases[0].ready);
+    assert!(model.cases.len() > 2);
+    assert!(
+        model.cases[1..]
+            .iter()
+            .all(|c| !c.ready && c.shapes.is_empty())
+    );
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.step();
+    // Show the third case (Display weather cases): solved in the
+    // background.
+    harness.state_mut().ready().unwrap().model.shown_cases = vec![2];
+    run_until(&mut harness, |a| a.ready().unwrap().model.cases[2].ready);
+    let m = &harness.state_mut().ready().unwrap().model;
+    assert!(!m.cases[1].ready, "not shown: not solved");
+    assert_solved_fully(m);
+    assert!(!m.cases[2].shapes.is_empty());
 }

@@ -98,6 +98,7 @@ impl Model {
             solved += c.update(&line, &self.library, dirty);
         }
         self.line = line;
+        self.line_version += 1;
         Ok(format!(
             "{what} (log entry {}): {} sections touched, {solved} re-solved over {} weather cases in {:.0?}",
             applied.seq,
@@ -179,6 +180,7 @@ impl Model {
             return;
         };
         self.line.structures[k] = self.line.structures[k].moved_to(position);
+        self.line_version += 1;
         let dirty = self.sections_through(id);
         if let Some(c) = self.cases.get_mut(case) {
             c.update(&self.line, &self.library, &dirty);
@@ -192,6 +194,7 @@ impl Model {
         };
         let dirty = self.sections_through(id);
         self.line = line;
+        self.line_version += 1;
         if let Some(c) = self.cases.get_mut(case) {
             c.update(&self.line, &self.library, &dirty);
         }

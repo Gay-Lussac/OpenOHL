@@ -45,6 +45,8 @@ The **menu bar** holds what needs no view:
 | Plugins | **Plugin manager…** (see [Plugins](#plugins)), **Python console** (see [Python console](#python-console)) |
 | Help | version, keys and mouse |
 
+**Weather cases are solved when needed:** opening a model solves only the weather case shown first. Another case is solved in the background the first time it is shown (Display weather cases, a section's own display case); the status bar says which are being solved. A check or a script that needs a case solves it first. Edits re-solve the cases already solved; the others are solved from the line as it is when they are first shown. The Model page lists the cases not solved yet.
+
 Under it, the **quick bar**: the line's name, **Weather: …** (the weather cases shown — a click opens Display weather cases), the selection, then the commands chosen for it (default Undo, Redo, Fit views, Run checks). **⚙** (or View › Customize the quick bar) adds any command of the menus — commands, library editors, tools — removes and orders them; the bar is remembered.
 
 **Pages** work like browser tabs: each has a tab with a close button; drag a tab to rearrange, or out of the window to make a floating, resizable window with its own row of tabs (drop more pages on it). Closed pages come back from View. Library editors open together in a floating window.

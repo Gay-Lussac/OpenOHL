@@ -1548,6 +1548,22 @@ impl Ready {
         self.refresh_views();
     }
 
+    /// Every frame: the weather cases shown (and the sections' own) are
+    /// solved in the background when they are not yet; finished ones
+    /// replace their placeholder.
+    pub fn solving_frame(&mut self, ctx: &egui::Context) {
+        let mut need = self.model.shown(self.case);
+        need.push(self.case);
+        need.extend(self.model.display_cases.values().flatten().copied());
+        self.model.want(need, ctx);
+        let done = self.model.poll_solving();
+        if !done.is_empty() {
+            self.status = Some((format!("solved: {}", done.join(", ")), false));
+            self.clearances.stale = true;
+            self.refresh_views();
+        }
+    }
+
     /// Server mode, every frame: what others did, what this user shows
     /// them, the locks of what they edit.
     pub fn remote_frame(&mut self) {
@@ -3119,6 +3135,8 @@ fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
 }
 
 fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
+    // The check needs its weather case solved.
+    r.model.ensure_solved(r.case);
     let m = &r.model;
     let Some(solved) = m.cases.get(r.case) else {
         return;
@@ -3722,6 +3740,20 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
         // Each one a link: that weather case is shown and the views go to
         // the section or jumper (to its structure when it has no shape).
         let mut clicked: Option<(usize, String)> = None;
+        let pending: Vec<&str> = r
+            .model
+            .cases
+            .iter()
+            .filter(|c| !c.ready)
+            .map(|c| c.case.name.as_str())
+            .collect();
+        if !pending.is_empty() {
+            ui.label(
+                egui::RichText::new(format!("Solved when shown: {}", pending.join(", ")))
+                    .small()
+                    .weak(),
+            );
+        }
         for (k, c) in r.model.cases.iter().enumerate() {
             if c.failed.is_empty() {
                 continue;
@@ -3847,6 +3879,7 @@ impl eframe::App for App {
             }
             State::Ready(ready) => {
                 ready.remote_frame();
+                ready.solving_frame(ui.ctx());
                 history_window(ui.ctx(), ready);
                 goto_key(ui.ctx(), ready);
                 edit_keys(ui.ctx(), ready);
@@ -3867,6 +3900,21 @@ impl eframe::App for App {
                                 ui.label(egui::RichText::new(format!("read-only: {why}")).small())
                             }
                         };
+                        if !ready.model.solving.is_empty() {
+                            ui.separator();
+                            ui.spinner();
+                            let names: Vec<&str> = ready
+                                .model
+                                .solving
+                                .iter()
+                                .filter_map(|(k, _, _)| ready.model.cases.get(*k))
+                                .map(|c| c.case.name.as_str())
+                                .collect();
+                            ui.label(
+                                egui::RichText::new(format!("solving {}…", names.join(", ")))
+                                    .small(),
+                            );
+                        }
                         if let Some((text, error)) = &ready.status {
                             ui.separator();
                             let t = egui::RichText::new(text).small();

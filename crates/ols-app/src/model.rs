@@ -64,6 +64,9 @@ pub struct Solved {
     pub bundles: ols_line::bundles::BundleLines,
     /// The solution kept for re-solving only what an edit touches.
     pub live: ols_line::incremental::SolvedLine,
+    /// Solved (else not yet: solved when first shown or checked,
+    /// [`Model::want`]).
+    pub ready: bool,
 }
 
 impl Solved {
@@ -71,6 +74,19 @@ impl Solved {
     pub fn new(line: &Line, library: &ols_cables::Library, case: WeatherCase) -> Self {
         let live = ols_line::incremental::SolvedLine::solve(line, library, &case);
         Self::from_live(line, case, live)
+    }
+
+    /// `case`, not solved yet (nothing drawn, nothing failed).
+    pub fn pending(case: WeatherCase) -> Self {
+        Self {
+            live: ols_line::incremental::SolvedLine::empty(&case),
+            case,
+            shapes: Vec::new(),
+            jumpers: Vec::new(),
+            failed: Vec::new(),
+            bundles: Default::default(),
+            ready: false,
+        }
     }
 
     /// The shapes, failures and bundles of a solution.
@@ -86,6 +102,7 @@ impl Solved {
             failed: Vec::new(),
             bundles: Default::default(),
             live,
+            ready: true,
         };
         s.refresh(line);
         s
@@ -117,6 +134,10 @@ impl Solved {
         library: &ols_cables::Library,
         dirty: &[String],
     ) -> usize {
+        // Not solved yet: solved from the line as it is when wanted.
+        if !self.ready {
+            return 0;
+        }
         let u = self.live.update(line, library, dirty);
         self.refresh(line);
         u.solved
@@ -199,6 +220,12 @@ pub struct Model {
     pub viewer_session: Option<ols_session::Session>,
     /// The server, when the project is joined (server mode).
     pub remote: Option<crate::remote::Remote>,
+    /// Weather cases being solved in the background: index, the line's
+    /// version they started from, the answer.
+    pub solving: Vec<(usize, u64, std::sync::mpsc::Receiver<Solved>)>,
+    /// Counts the changes of `line` (a solve started before one is
+    /// dropped).
+    pub line_version: u64,
     /// Sections drawn in their own weather cases (indices; the first one
     /// is reported and picked), instead of the cases shown (Sections table).
     pub display_cases: std::collections::BTreeMap<String, Vec<usize>>,
@@ -683,6 +710,60 @@ fn load_cases(sources: &Sources) -> Result<Vec<WeatherCase>, String> {
 }
 
 impl Model {
+    /// Solves the weather cases `wanted` that are not solved yet, in the
+    /// background (one thread each); [`Model::poll_solving`] takes them.
+    pub fn want(&mut self, wanted: impl IntoIterator<Item = usize>, ctx: &eframe::egui::Context) {
+        for k in wanted {
+            let Some(c) = self.cases.get(k) else {
+                continue;
+            };
+            if c.ready || self.solving.iter().any(|(j, _, _)| *j == k) {
+                continue;
+            }
+            let (line, library, case) = (self.line.clone(), self.library.clone(), c.case.clone());
+            let (tx, rx) = std::sync::mpsc::channel();
+            let ctx = ctx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(Solved::new(&line, &library, case));
+                ctx.request_repaint();
+            });
+            self.solving.push((k, self.line_version, rx));
+        }
+    }
+
+    /// Takes the weather cases solved in the background; their names. A
+    /// case solved from a line changed since is dropped (wanted again, it
+    /// is solved again).
+    pub fn poll_solving(&mut self) -> Vec<String> {
+        let mut done = Vec::new();
+        let version = self.line_version;
+        let mut keep = Vec::new();
+        for (k, v, rx) in std::mem::take(&mut self.solving) {
+            match rx.try_recv() {
+                Ok(s) if v == version && k < self.cases.len() => {
+                    done.push(s.case.name.clone());
+                    self.cases[k] = s;
+                }
+                Ok(_) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
+                Err(std::sync::mpsc::TryRecvError::Empty) => keep.push((k, v, rx)),
+            }
+        }
+        self.solving = keep;
+        done
+    }
+
+    /// Solves weather case `k` now if it is not (a check or a script
+    /// needs it).
+    pub fn ensure_solved(&mut self, k: usize) {
+        if let Some(c) = self.cases.get(k)
+            && !c.ready
+        {
+            let s = Solved::new(&self.line, &self.library, c.case.clone());
+            self.solving.retain(|(j, _, _)| *j != k);
+            self.cases[k] = s;
+        }
+    }
+
     /// The weather cases section `section` is drawn in: its own display
     /// cases, else the cases shown for the line, else `case`.
     pub fn section_cases(&self, section: &str, case: usize) -> Vec<usize> {
@@ -806,9 +887,26 @@ impl Model {
             ols_cables::Library::load(&library_path(&self.sources)).map_err(|e| e.to_string())?;
         let cases = load_cases(&self.sources)?;
         line.set_weather_cases(&cases);
+        // The cases solved before (by name, and the first) again; the
+        // others when shown.
+        let was: Vec<String> = self
+            .cases
+            .iter()
+            .filter(|c| c.ready)
+            .map(|c| c.case.name.clone())
+            .collect();
+        self.solving.clear();
+        self.line_version += 1;
         self.cases = cases
             .into_iter()
-            .map(|c| Solved::new(&line, &library, c))
+            .enumerate()
+            .map(|(k, c)| {
+                if k == 0 || was.contains(&c.name) {
+                    Solved::new(&line, &library, c)
+                } else {
+                    Solved::pending(c)
+                }
+            })
             .collect();
         // Project lines shown: solved again in the new cases.
         let others: Vec<String> = self.other_lines.drain(..).map(|o| o.name).collect();
@@ -915,8 +1013,15 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
             &mut log,
         );
     }
+    // Only the weather case shown first is solved now; the others when
+    // they are shown or a check needs them (Model::want).
     let mut solved = Vec::new();
-    for case in cases {
+    let others = cases.len().saturating_sub(1);
+    for (k, case) in cases.into_iter().enumerate() {
+        if k > 0 {
+            solved.push(Solved::pending(case));
+            continue;
+        }
         let t = Instant::now();
         let name = case.name.clone();
         let one = Solved::new(&line, &library, case);
@@ -933,6 +1038,12 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
             &mut log,
         );
         solved.push(one);
+    }
+    if others > 0 {
+        step(
+            format!("{others} other weather case(s): solved when shown"),
+            &mut log,
+        );
     }
     let origin = line.structures.first().map_or([0.0; 3], |s| s.position);
     let mut ground = match &sources.terrain {
@@ -1085,5 +1196,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         library_dir,
         viewer_session,
         remote: None,
+        solving: Vec::new(),
+        line_version: 0,
     })
 }
