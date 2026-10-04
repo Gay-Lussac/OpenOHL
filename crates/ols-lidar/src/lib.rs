@@ -357,6 +357,66 @@ pub struct LidarPoint {
     pub number_of_returns: u8,
 }
 
+/// How far, m, a tile may lie from the nearest structure before reading it
+/// warns (it is read anyway: a substation at a line's end, another
+/// structure worth having).
+pub const FAR_FROM_LINE: f64 = 2000.0;
+
+/// The tiles lying more than `limit` (plan, m) from every point of `near`
+/// (e.g. the line's structures), with that distance, by their headers'
+/// bounds; none without points. A warning only: such tiles are read too.
+pub fn far_tiles(
+    tiles: &[PathBuf],
+    near: &[[f64; 2]],
+    limit: f64,
+) -> Result<Vec<(PathBuf, f64)>, LidarError> {
+    if near.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut far = Vec::new();
+    for path in tiles {
+        let reader =
+            Reader::from_path(path).map_err(|e| LidarError::File(path.clone(), e.to_string()))?;
+        let b = reader.header().bounds();
+        let d = near
+            .iter()
+            .map(|p| {
+                let dx = (b.min.x - p[0]).max(p[0] - b.max.x).max(0.0);
+                let dy = (b.min.y - p[1]).max(p[1] - b.max.y).max(0.0);
+                dx.hypot(dy)
+            })
+            .fold(f64::INFINITY, f64::min);
+        if d > limit {
+            far.push((path.clone(), d));
+        }
+    }
+    Ok(far)
+}
+
+/// One line per tile of [`far_tiles`] from a line's structures.
+pub fn far_tile_warnings(tiles: &[PathBuf], line: &ols_line::Line) -> Vec<String> {
+    let near: Vec<[f64; 2]> = line
+        .structures
+        .iter()
+        .map(|s| [s.position[0], s.position[1]])
+        .collect();
+    match far_tiles(tiles, &near, FAR_FROM_LINE) {
+        Ok(far) => far
+            .into_iter()
+            .map(|(p, d)| {
+                format!(
+                    "{}: {:.1} km from the nearest structure of the line — read anyway \
+                     (check it belongs to this project)",
+                    p.file_name()
+                        .map_or(String::new(), |f| f.to_string_lossy().into_owned()),
+                    d / 1000.0
+                )
+            })
+            .collect(),
+        Err(e) => vec![e.to_string()],
+    }
+}
+
 /// Like [`for_each_point`], with every attribute kept by OLS CAD.
 pub fn for_each_record(
     tiles: &[PathBuf],
@@ -365,23 +425,13 @@ pub fn for_each_record(
     mut visit: impl FnMut(&LidarPoint),
 ) -> Result<(usize, usize, u64), LidarError> {
     let run = budget.start();
-    let (mut read, mut skipped, mut points) = (0, 0, 0u64);
+    let (mut read, skipped, mut points) = (0, 0, 0u64);
     for path in tiles {
         let file_error = |e: las::Error| LidarError::File(path.clone(), e.to_string());
         let mut reader = Reader::from_path(path).map_err(file_error)?;
         let header = reader.header().clone();
-        let b = header.bounds();
-        let local = match corridor {
-            Some(c) => {
-                let local = c.local([b.min.x, b.min.y], [b.max.x, b.max.y]);
-                if local.is_empty() {
-                    skipped += 1;
-                    continue;
-                }
-                Some(local)
-            }
-            None => None,
-        };
+        // Every tile is read: its header's bounds are not trusted (a
+        // program may leave them wrong), so a tile is never skipped on them.
         read += 1;
         let mut data = PointDataBuilder::new().for_header(&header).build();
         loop {
@@ -394,10 +444,8 @@ pub fn for_each_record(
             points += n;
             for point in data.points() {
                 let point = point.map_err(file_error)?;
-                if local
-                    .as_ref()
-                    .is_some_and(|c| !c.contains(point.x, point.y))
-                {
+                // Withheld: deleted by whoever made the survey.
+                if point.is_withheld || corridor.is_some_and(|c| !c.contains(point.x, point.y)) {
                     continue;
                 }
                 visit(&LidarPoint {
@@ -416,9 +464,9 @@ pub fn for_each_record(
 }
 
 /// Calls `visit(x, y, z, class)` for every point of `tiles` inside the
-/// corridor (all points without one); tiles that do not touch the corridor
-/// are skipped without decompressing them. Returns the tiles read and
-/// skipped, and the points read.
+/// corridor (all points without one), withheld points left out. Every tile
+/// is read whole (its header's bounds are not trusted). Returns the tiles
+/// read and skipped (none), and the points read.
 pub fn for_each_point(
     tiles: &[PathBuf],
     corridor: Option<&Corridor>,
@@ -547,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn ground_only_inside_the_corridor_and_tiles_skipped() {
+    fn ground_only_inside_the_corridor_every_tile_read() {
         let dir = scratch("corridor");
         write_tile(&dir.join("a.laz"), 0.0, 0.0, 50);
         write_tile(&dir.join("b.laz"), 1000.0, 0.0, 50);
@@ -560,7 +608,9 @@ mod tests {
             ..GroundFilter::default()
         };
         let (points, stats) = read_ground(&tiles, &filter, &Budget::new()).unwrap();
-        assert_eq!((stats.tiles_read, stats.tiles_skipped), (1, 1));
+        // Every tile read (headers' bounds are not trusted), only the
+        // points inside kept.
+        assert_eq!((stats.tiles_read, stats.tiles_skipped), (2, 0));
         // Counts inside the corridor: 11 ground rows; vegetation (offset
         // +0.5 m) on rows y = 20..=29, every 5th point: 10 × 10.
         assert_eq!(stats.classes[GROUND as usize], 550);
@@ -572,6 +622,43 @@ mod tests {
         let (terrain, _) = build_terrain(&tiles, &filter, Some(3.0), &Budget::new()).unwrap();
         assert!((terrain.height(30.3, 24.6).unwrap() - (400.0 + 3.03)).abs() < 1e-6);
         assert_eq!(terrain.height(30.0, 40.0), None);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn withheld_points_are_left_out_and_far_tiles_said() {
+        let dir = scratch("withheld");
+        let path = dir.join("w.laz");
+        let mut builder = Builder::from((1, 4));
+        builder.point_format.is_compressed = true;
+        let mut writer = Writer::from_path(&path, builder.into_header().unwrap()).unwrap();
+        for (k, withheld) in [false, true, false].into_iter().enumerate() {
+            writer
+                .write_point(Point {
+                    x: k as f64,
+                    y: 0.0,
+                    z: 400.0,
+                    is_withheld: withheld,
+                    classification: Classification::Ground,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+        writer.close().unwrap();
+        let tiles = vec![path];
+        let mut xs = Vec::new();
+        for_each_point(&tiles, None, &Budget::new(), |x, _, _, _| xs.push(x)).unwrap();
+        assert_eq!(xs, [0.0, 2.0]);
+        // 5 km from the only structure: said so (it is read anyway).
+        let far = far_tiles(&tiles, &[[5000.0, 0.0]], FAR_FROM_LINE).unwrap();
+        assert_eq!(far.len(), 1);
+        assert!((far[0].1 - 4998.0).abs() < 1e-9, "{}", far[0].1);
+        assert!(
+            far_tiles(&tiles, &[[100.0, 50.0]], FAR_FROM_LINE)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(far_tiles(&tiles, &[], FAR_FROM_LINE).unwrap().is_empty());
         std::fs::remove_dir_all(dir).ok();
     }
 

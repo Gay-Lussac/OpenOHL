@@ -298,6 +298,12 @@ pub(crate) fn import(
     report: &dyn Fn(String, f32),
 ) -> Result<String, String> {
     let started = std::time::Instant::now();
+    // Tiles far from the line: said so, read anyway.
+    let far = ols_session::Session::open(file)
+        .ok()
+        .filter(|s| s.has_line())
+        .map(|s| ols_lidar::far_tile_warnings(files, s.line()))
+        .unwrap_or_default();
     let mut store = ols_pointcloud::Store::open(file).map_err(|e| e.to_string())?;
     let budget = ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(7200));
     let total = files.len();
@@ -323,14 +329,19 @@ pub(crate) fn import(
             },
         )
         .map_err(|e| e.to_string())?;
-    Ok(format!(
+    let mut done = format!(
         "{} points from {} files imported into \"{}\" in {:.0?}; it now has {} points",
         stats.points_read,
         stats.read,
         cloud.name,
         started.elapsed(),
         cloud.points
-    ))
+    );
+    for w in far {
+        done.push_str("\n⚠ ");
+        done.push_str(&w);
+    }
+    Ok(done)
 }
 
 impl ExportDialog {

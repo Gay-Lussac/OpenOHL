@@ -658,6 +658,15 @@ fn pointcloud(command: PointcloudCommand) -> ExitCode {
                     None => None,
                 };
                 let tiles = ols_lidar::tiles_in(&tiles).map_err(|e| e.to_string())?;
+                // Tiles far from the line: said so, read anyway.
+                if let Some(s) = ols_session::Session::open(&into)
+                    .ok()
+                    .filter(|s| s.has_line())
+                {
+                    for w in ols_lidar::far_tile_warnings(&tiles, s.line()) {
+                        eprintln!("warning: {w}");
+                    }
+                }
                 let mut store = ols_pointcloud::Store::open(&into).map_err(|e| e.to_string())?;
                 let started = std::time::Instant::now();
                 // Exit clause: ~1 min per 10⁸ points; 2 h is far beyond.

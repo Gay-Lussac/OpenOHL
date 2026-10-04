@@ -107,6 +107,12 @@ those 28 in 4.6 ms (command, log and solve), against 11.7 ms for all 554.
 
 ## Point clouds
 
+Every point of every tile is imported, except points flagged *withheld*
+(deleted by whoever made the survey). A tile more than 2 km from every
+structure of the line is imported too — it may hold a substation at the
+line's end or another structure worth having — but the import warns about
+it, in case it belongs to another project.
+
 ```bash
 ols pointcloud import TILES_DIR --into project.ols --name lidar-2025 \
   --classes classes.olsc --crs EPSG:2056

@@ -179,7 +179,7 @@ cargo run --release -p ols-cli -- line LINE.ols.json --lidar TILES_DIR \
 | `--lidar PATH` | LAS / LAZ file or directory of tiles. |
 | `--lidar-classes FILE` | Class scheme (below); default: ASPRS LAS 1.4 standard classes. |
 | `--ground-role ROLE` | Classes with this role make the ground surface (default `ground`). |
-| `--corridor M` | Only points within M of the spans (default 60 m); tiles outside are not decompressed. |
+| `--corridor M` | Only points within M of the spans (default 60 m). Every tile is read (the bounds in tile headers are not trusted); points flagged *withheld* are left out. |
 | `--max-edge M` | Longest triangle side (default 50 m): no ground is invented across larger gaps. |
 | `--thin M` | Optional: keep the lowest ground point per M × M cell. |
 
