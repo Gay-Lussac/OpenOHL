@@ -27,8 +27,10 @@ mod lod;
 mod menu;
 mod model;
 mod plan;
+mod plugins;
 mod profile;
 mod properties;
+mod python;
 mod scene;
 mod selection;
 mod survey_io;
@@ -176,6 +178,7 @@ fn main() -> std::process::ExitCode {
             if let Some(q) = cc.storage.and_then(menu::QuickBar::load) {
                 app.quickbar = q;
             }
+            app.plugins = plugins::Plugins::load(cc.storage, plugins::Plugins::default_user_dir());
             Ok(Box::new(app))
         }),
     );

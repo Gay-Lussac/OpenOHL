@@ -283,6 +283,158 @@ impl Manifest {
     }
 }
 
+/// A plugin directory found by [`discover`]: its manifest, or why it does
+/// not read.
+#[derive(Debug, Clone)]
+pub struct Found {
+    /// The plugin's directory (holding `ols-plugin.toml`).
+    pub dir: PathBuf,
+    /// The manifest, or the error reading it.
+    pub manifest: Result<Manifest, String>,
+}
+
+impl Found {
+    /// Why the plugin cannot be used here (unreadable manifest, other
+    /// interface version, permissions not granted, entry file missing);
+    /// `None` when it can.
+    pub fn problem(&self) -> Option<String> {
+        let m = match &self.manifest {
+            Err(e) => return Some(e.clone()),
+            Ok(m) => m,
+        };
+        if let Err(e) = m.check_compatible() {
+            return Some(e.to_string());
+        }
+        if let Err(e) = m.check_permissions() {
+            return Some(e.to_string());
+        }
+        if !m.entry_path().is_file() {
+            return Some(format!(
+                "entry file {} not found (not built?)",
+                m.entry_path().display()
+            ));
+        }
+        None
+    }
+
+    /// The plugin's name (the directory's when the manifest does not read).
+    pub fn name(&self) -> String {
+        match &self.manifest {
+            Ok(m) => m.plugin.name.clone(),
+            Err(_) => self
+                .dir
+                .file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+        }
+    }
+}
+
+/// The plugins in `root`: `root` itself when it holds a manifest, else each
+/// directory directly in it that does (sorted by directory name). A missing
+/// `root` holds none.
+pub fn discover(root: &Path) -> Vec<Found> {
+    let found = |dir: &Path| Found {
+        dir: dir.to_owned(),
+        manifest: Manifest::load(dir).map_err(|e| e.to_string()),
+    };
+    if root.join(MANIFEST_FILE).is_file() {
+        return vec![found(root)];
+    }
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.join(MANIFEST_FILE).is_file())
+        .collect();
+    dirs.sort();
+    dirs.iter().map(|d| found(d)).collect()
+}
+
+/// Installs the plugin in directory `from` into `root` (the user's plugin
+/// directory), as `root/<name>`: the manifest and its entry file for a
+/// WebAssembly plugin (not its build tree); the whole directory, without
+/// `target` and hidden entries, for a Python plugin. Refused when the
+/// plugin cannot be used ([`Found::problem`]) or, unless `replace`, when
+/// it is installed already. Returns the installed directory.
+pub fn install(from: &Path, root: &Path, replace: bool) -> Result<PathBuf, PluginError> {
+    let io = |e: std::io::Error| PluginError::Runtime(e.to_string());
+    let found = Found {
+        dir: from.to_owned(),
+        manifest: Manifest::load(from).map_err(|e| e.to_string()),
+    };
+    if let Some(problem) = found.problem() {
+        return Err(PluginError::Runtime(problem));
+    }
+    let manifest = found.manifest.expect("no problem: it reads");
+    let name = &manifest.plugin.name;
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        || name.starts_with('.')
+    {
+        return Err(PluginError::Runtime(format!(
+            "plugin name \"{name}\": use letters, digits, - _ ."
+        )));
+    }
+    let to = root.join(name);
+    if std::fs::canonicalize(&to).ok() == std::fs::canonicalize(from).ok() && to.exists() {
+        return Err(PluginError::Runtime(format!(
+            "{name} is installed from there"
+        )));
+    }
+    if to.exists() {
+        if !replace {
+            return Err(PluginError::Runtime(format!(
+                "{name} is installed already ({})",
+                to.display()
+            )));
+        }
+        std::fs::remove_dir_all(&to).map_err(io)?;
+    }
+    std::fs::create_dir_all(&to).map_err(io)?;
+    match manifest.plugin.tier {
+        Tier::Wasm => {
+            std::fs::copy(from.join(MANIFEST_FILE), to.join(MANIFEST_FILE)).map_err(io)?;
+            let entry = to.join(&manifest.plugin.entry);
+            if let Some(parent) = entry.parent() {
+                std::fs::create_dir_all(parent).map_err(io)?;
+            }
+            std::fs::copy(manifest.entry_path(), entry).map_err(io)?;
+        }
+        Tier::Python => copy_tree(from, &to, 0).map_err(io)?,
+    }
+    Ok(to)
+}
+
+/// Copies a directory tree, without `target` and hidden entries; at most
+/// 16 levels deep (an exit clause against link loops).
+fn copy_tree(from: &Path, to: &Path, depth: usize) -> std::io::Result<()> {
+    if depth > 16 {
+        return Err(std::io::Error::other(
+            "directory tree deeper than 16 levels",
+        ));
+    }
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let text = name.to_string_lossy();
+        if text.starts_with('.') || text == "target" || text == "__pycache__" {
+            continue;
+        }
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &to.join(&name), depth + 1)?;
+        } else if kind.is_file() {
+            std::fs::copy(entry.path(), to.join(&name))?;
+        }
+    }
+    Ok(())
+}
+
 /// Exit clauses applied to every plugin call.
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
@@ -681,6 +833,46 @@ mod tests {
                 limits.deadline_ticks()
             );
         }
+    }
+
+    #[test]
+    fn plugins_are_found_and_installed() {
+        let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/examples");
+        let found = discover(&examples);
+        let names: Vec<String> = found.iter().map(Found::name).collect();
+        for n in ["geojson", "hello-python", "hello-wasm"] {
+            assert!(names.iter().any(|x| x == n), "{names:?}");
+        }
+        // One plugin directory: itself.
+        assert_eq!(discover(&examples.join("hello-python")).len(), 1);
+        assert!(discover(Path::new("/no/such/dir")).is_empty());
+        // A Python plugin is installed with its files; again only replacing.
+        let root = std::env::temp_dir().join(format!("ols-plugins-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let to = install(&examples.join("hello-python"), &root, false).unwrap();
+        assert!(to.join("hello.py").is_file());
+        assert!(install(&examples.join("hello-python"), &root, false).is_err());
+        install(&examples.join("hello-python"), &root, true).unwrap();
+        let installed = discover(&root);
+        assert_eq!(installed.len(), 1);
+        assert_eq!(installed[0].problem(), None);
+        // Another interface version: found, not usable, not installed.
+        let other = root.join("other-src");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(
+            other.join(MANIFEST_FILE),
+            "[plugin]\nname=\"other\"\nversion=\"1\"\nsdk=\"9.0\"\ntier=\"python\"\nentry=\"x.py\"",
+        )
+        .unwrap();
+        std::fs::write(other.join("x.py"), "").unwrap();
+        let f = discover(&other);
+        assert!(
+            f[0].problem().unwrap().contains("9.0"),
+            "{:?}",
+            f[0].problem()
+        );
+        assert!(install(&other, &root, false).is_err());
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

@@ -3354,3 +3354,206 @@ fn the_cable_model_is_a_list_and_adds_its_fields() {
     assert!(!first.contains("bimetallic_behavior"), "{first}");
     assert!(page.dirty());
 }
+
+/// Runs frames until `done` (at most 30 s: an exit clause).
+fn run_until(h: &mut Harness<'_, App>, mut done: impl FnMut(&mut App) -> bool) {
+    let started = std::time::Instant::now();
+    while !done(h.state_mut()) {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "not done in 30 s"
+        );
+        h.step();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// Plugins › Plugin manager lists the example plugins with what they
+/// provide; turned off, a format plugin's formats go; File › Export and
+/// Import into the line run on the worker (the import one command,
+/// undoable).
+#[test]
+fn plugins_are_managed_and_give_their_formats() {
+    let model = synthetic_project("plugins");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    let user = std::env::temp_dir().join(format!("ols-app-plugins-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&user);
+    let examples = root().join("plugins/examples");
+    let geojson_built = examples
+        .join("geojson/target/wasm32-wasip2/release/geojson.wasm")
+        .is_file();
+    assert!(
+        geojson_built || std::env::var_os("OLS_REQUIRE_PLUGIN_TESTS").is_none(),
+        "geojson plugin not built"
+    );
+    {
+        let app = harness.state_mut();
+        app.plugins = crate::plugins::Plugins::load(None, Some(user.clone()));
+        app.plugins.folders = vec![examples.clone()];
+        app.plugins.refresh();
+        app.ready().unwrap().plugin_request = Some(crate::app::PluginRequest::Manager);
+    }
+    run_until(&mut harness, |a| a.plugins.formats.is_some());
+    harness.step();
+    harness.get_by_label("Plugin manager");
+    harness.get_by_label("hello-python");
+    let has_geojson = |a: &App| {
+        a.plugins
+            .formats
+            .as_ref()
+            .unwrap()
+            .exporters
+            .iter()
+            .any(|e| e.id == "geojson")
+    };
+    assert_eq!(has_geojson(harness.state_mut()), geojson_built);
+    if geojson_built {
+        harness.get_by_label_contains("export geojson");
+        // Turned off: its formats go.
+        let name = "geojson";
+        harness.get_by_label(name).click();
+        harness.step();
+        run_until(&mut harness, |a| {
+            a.plugins.formats.is_some() && !has_geojson(a)
+        });
+        assert!(harness.state_mut().plugins.disabled.contains(name));
+    }
+    // Install the Python example for the user.
+    {
+        let p = &mut harness.state_mut().plugins;
+        p.install(&examples.join("hello-python"), false).unwrap();
+        assert!(
+            p.listed
+                .iter()
+                .any(|l| l.installed && l.found.name() == "hello-python")
+        );
+        assert!(
+            p.listed.iter().any(|l| l.duplicate),
+            "the folder's copy comes second"
+        );
+        assert_eq!(p.python_scripts().len(), 1);
+    }
+    // Export the structures as CSV, move one in the file, import it back.
+    let csv = user.join("structures.csv");
+    let run = |h: &mut Harness<'_, App>, export: bool, format: &str| {
+        let app = h.state_mut();
+        let mut w = crate::plugins::FormatWindow {
+            export,
+            format: format.into(),
+            ..Default::default()
+        };
+        let mut plugins = std::mem::take(&mut app.plugins);
+        plugins.run(&mut w, &app.ready().unwrap().model, csv.clone());
+        assert!(w.busy, "{:?}", w.error);
+        plugins.window = Some(w);
+        app.plugins = plugins;
+    };
+    run(&mut harness, true, "structures-csv");
+    run_until(&mut harness, |a| a.plugins.window.is_none());
+    let text = std::fs::read_to_string(&csv).unwrap();
+    let first = text.lines().nth(1).unwrap().to_owned();
+    let mut fields: Vec<String> = first.split(',').map(str::to_owned).collect();
+    let id = fields[0].clone();
+    let x: f64 = fields[1].parse().unwrap();
+    fields[1] = format!("{}", x + 5.0);
+    std::fs::write(&csv, text.replace(&first, &fields.join(","))).unwrap();
+    run(&mut harness, false, "structures-csv");
+    run_until(&mut harness, |a| a.plugins.window.is_none());
+    harness.run();
+    let position = |a: &mut App| {
+        a.ready()
+            .unwrap()
+            .model
+            .line
+            .structures
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .position[0]
+    };
+    assert!((position(harness.state_mut()) - (x + 5.0)).abs() < 1e-6);
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    assert!((position(harness.state_mut()) - x).abs() < 1e-6, "undone");
+    std::fs::remove_dir_all(&user).unwrap();
+}
+
+/// Plugins › Python console: a script reads the line and results, moves a
+/// structure with a session command (solved again, undoable), undoes it;
+/// a refused command raises in the script.
+#[cfg(feature = "python")]
+#[test]
+fn the_python_console_drives_the_project() {
+    use crate::python::Line;
+    let _turn = crate::python::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let model = synthetic_project("python");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Plugins").click();
+    harness.run();
+    harness.get_by_label("Python console").click();
+    harness.run();
+    let (id, x) = {
+        let r = harness.state_mut().ready().unwrap();
+        let s = &r.model.line.structures[1];
+        (s.id.clone(), s.position)
+    };
+    let submit = |h: &mut Harness<'_, App>, code: String| {
+        h.state_mut().ready().unwrap().console.submit(code);
+        run_until(h, |a| a.ready().unwrap().console.running.is_none());
+        h.state_mut().ready().unwrap().console.lines.last().cloned()
+    };
+    let out = submit(
+        &mut harness,
+        "len(ols.line()['structures']), ols.case(), len(ols.results()['sections']) > 0".into(),
+    );
+    let n = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .structures
+        .len();
+    let case = harness.state_mut().ready().unwrap().model.cases[0]
+        .case
+        .name
+        .clone();
+    assert_eq!(out, Some(Line::Out(format!("({n}, '{case}', True)\n"))));
+    // Move a structure 3 m east.
+    submit(
+        &mut harness,
+        format!(
+            "p = [s for s in ols.line()['structures'] if s['id'] == '{id}'][0]['position']\n\
+             p[0] += 3.0\n\
+             ols.apply({{'op': 'move_structure', 'id': '{id}', 'position': p}}, 'moved by a script')"
+        ),
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r.model.line.structures.iter().find(|s| s.id == id).unwrap();
+        assert!((s.position[0] - x[0] - 3.0).abs() < 1e-9);
+        assert_solved_fully(&r.model);
+    }
+    submit(&mut harness, "ols.undo()".into());
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r.model.line.structures.iter().find(|s| s.id == id).unwrap();
+        assert_eq!(s.position, x, "undone");
+    }
+    // Refused: raised in the script.
+    let out = submit(
+        &mut harness,
+        "ols.apply({'op': 'move_structure', 'id': 'no-such', 'position': [0, 0, 0]})".into(),
+    );
+    assert!(
+        matches!(&out, Some(Line::Err(t)) if t.contains("no-such")),
+        "{out:?}"
+    );
+    harness.get_by_label_contains("Python 3.");
+}

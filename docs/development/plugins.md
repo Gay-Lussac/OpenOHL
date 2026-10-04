@@ -48,4 +48,6 @@ extension-points = ["io"]
 
 ## Python plugins
 
-Python plugins use the `ols` module built from `crates/ols-py`. See `plugins/examples/hello-python`. Running Python plugins from inside the application is planned; today they run as scripts.
+Python plugins are scripts (`tier = "python"`, `entry` the script). Outside the application they use the `ols` package built from `crates/ols-py`; inside it, the Python console runs them (Plugins › Python console › Plugin scripts) with the `ols` module of the application, which also reads and edits the open project ([Python console](../user-guide/desktop-app.md#python-console)). See `plugins/examples/hello-python`.
+
+The desktop application embeds Python through its `python` feature (on by default): building it needs a shared Python 3.10+ (`PYO3_PYTHON` chooses which; a static one, such as Anaconda's, cannot be embedded). Without the feature (`--no-default-features`), the console says so.

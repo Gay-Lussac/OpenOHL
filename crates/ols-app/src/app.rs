@@ -41,6 +41,8 @@ pub enum Tab {
     Table(crate::tables::TableKind),
     /// The level-of-detail table of the 3D view.
     Lod,
+    /// The Python console.
+    Python,
 }
 
 impl Tab {
@@ -67,6 +69,7 @@ impl Tab {
             Tab::Library(k) => k.title(),
             Tab::Table(k) => k.title(),
             Tab::Lod => "Level of detail",
+            Tab::Python => "Python console",
         }
     }
 }
@@ -101,6 +104,17 @@ pub enum LinesWindow {
     Delete(String),
     /// Make a project line the working line.
     Restore(String),
+}
+
+/// A plugin window asked for from the menus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginRequest {
+    /// Plugins › Plugin manager.
+    Manager,
+    /// File › Import into the line.
+    Import,
+    /// File › Export.
+    Export,
 }
 
 /// What is shown once the model is loaded.
@@ -173,6 +187,10 @@ pub struct Ready {
     pub survey_job: Option<crate::survey_io::Job>,
     /// Open the project again (after an import).
     pub reopen: bool,
+    /// The plugin manager or a format window asked for (from the menus).
+    pub plugin_request: Option<PluginRequest>,
+    /// The Python console's page.
+    pub console: crate::python::Console,
     /// Parameters › Controls: the window of a view's controls, when open.
     pub controls_window: Option<ControlsPage>,
     /// Criteria › Creep-Stretch, when open: the weather cases chosen.
@@ -225,6 +243,8 @@ impl Ready {
             survey_export: None,
             survey_job: None,
             reopen: false,
+            plugin_request: None,
+            console: Default::default(),
             controls_window: None,
             creep_stretch_window: None,
             jumper_from: None,
@@ -264,6 +284,8 @@ pub struct App {
     pub lod: crate::lod::LodSettings,
     /// Files opened recently.
     pub recent: crate::files::Recent,
+    /// The plugin manager, and the formats of File › Import / Export.
+    pub plugins: crate::plugins::Plugins,
     /// Options for files opened from the File menu (point budget, user…).
     template: Sources,
     /// What the File menu asked for, done after the frame.
@@ -305,6 +327,7 @@ impl App {
             quickbar: Default::default(),
             lod: Default::default(),
             recent: Default::default(),
+            plugins: Default::default(),
             template: Sources {
                 file: PathBuf::new(),
                 library: None,
@@ -445,6 +468,7 @@ impl App {
             quickbar: Default::default(),
             lod: Default::default(),
             recent: Default::default(),
+            plugins: Default::default(),
             template: Sources::default(),
             file_action: None,
             new_project: None,
@@ -496,6 +520,8 @@ struct Viewer<'a> {
     ready: &'a mut Ready,
     rs: Option<&'a egui_wgpu::RenderState>,
     lod: &'a mut crate::lod::LodSettings,
+    /// The Python plugins' scripts (for the console).
+    scripts: Vec<(String, PathBuf)>,
 }
 
 impl TabViewer for Viewer<'_> {
@@ -581,6 +607,12 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Clearances => {
                 clearance_panel(ui, r);
+                None
+            }
+            Tab::Python => {
+                if let Some(path) = r.console.ui(ui, &self.scripts) {
+                    r.console.run_file(path);
+                }
                 None
             }
             Tab::Lod => {
@@ -2928,6 +2960,7 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
     let group = |t: &Tab| match t {
         Tab::Library(_) => 1,
         Tab::Table(_) => 2,
+        Tab::Python => 3,
         _ => 0,
     };
     if group(&tab) > 0 {
@@ -2962,6 +2995,27 @@ fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
     use crate::menu::Command;
     if Command::Save.menu_item(ui) {
         out.push(Command::Save);
+        ui.close();
+    }
+    if ui
+        .button("Import into the line…")
+        .on_hover_text(
+            "Read a file into the working line (built-in formats and those of the plugins); \
+             one command, undoable",
+        )
+        .clicked()
+    {
+        r.plugin_request = Some(PluginRequest::Import);
+        ui.close();
+    }
+    if ui
+        .button("Export…")
+        .on_hover_text(
+            "Write the line and its solved wires in a format (built-in or from a plugin)",
+        )
+        .clicked()
+    {
+        r.plugin_request = Some(PluginRequest::Export);
         ui.close();
     }
     if ui
@@ -3171,7 +3225,25 @@ fn menus(
         });
     });
     ui.menu_button("Plugins", |ui| {
-        ui.add_enabled(false, egui::Button::new("Plugin manager (to come)"));
+        if ui
+            .button("Plugin manager…")
+            .on_hover_text("The plugins installed and found: turn on or off, install, remove")
+            .clicked()
+        {
+            r.plugin_request = Some(PluginRequest::Manager);
+            ui.close();
+        }
+        if ui
+            .button("Python console")
+            .on_hover_text(
+                "Scripts driving the project through the ols module: read the line and results, \
+                 edit with session commands (undoable)",
+            )
+            .clicked()
+        {
+            r.open_page = Some((Tab::Python, None));
+            ui.close();
+        }
     });
     ui.menu_button("Help", |ui| {
         ui.label(format!("OLS CAD {}", env!("CARGO_PKG_VERSION")));
@@ -3361,6 +3433,7 @@ impl eframe::App for App {
         self.quickbar.save(storage);
         self.lod.save(storage);
         self.recent.save(storage);
+        self.plugins.save(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -3503,6 +3576,28 @@ impl eframe::App for App {
                 for c in commands {
                     run_command(ui.ctx(), ready, &mut self.dock, c);
                 }
+                match ready.plugin_request.take() {
+                    Some(PluginRequest::Manager) => {
+                        self.plugins.open = true;
+                        self.plugins.refresh();
+                    }
+                    Some(PluginRequest::Import) => self.plugins.open_window(false),
+                    Some(PluginRequest::Export) => self.plugins.open_window(true),
+                    None => {}
+                }
+                for (what, arg) in ready.console.poll(&ctx) {
+                    let answer = crate::python::serve(ready, &what, &arg);
+                    crate::python::answer(answer);
+                }
+                if let Some(line) = self.plugins.poll(&ctx) {
+                    ready.perform(crate::edit::Action::Command {
+                        what: format!("imported {}", line.name),
+                        command: ols_session::Command::ReplaceLine { line },
+                    });
+                }
+                self.plugins.manager_ui(&ctx);
+                let editable = ready.model.can_edit().map_err(|e| e.to_string());
+                self.plugins.format_ui(&ctx, &ready.model, editable);
                 if std::mem::take(&mut ready.reopen) {
                     self.file_action = Some(crate::files::FileAction::Open(Some(
                         ready.model.sources.file.clone(),
@@ -3534,6 +3629,7 @@ impl eframe::App for App {
                                     ready,
                                     rs: self.render_state.as_ref(),
                                     lod: &mut self.lod,
+                                    scripts: self.plugins.python_scripts(),
                                 },
                             );
                     });

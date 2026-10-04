@@ -1,0 +1,833 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! The plugin manager (Plugins › Plugin manager): the plugins installed
+//! for the user and those of the folders added, each with what it
+//! provides, why it cannot be used, and a tick to turn it off; install
+//! from a folder, remove. File-format plugins give File › Import into the
+//! line and File › Export their formats, next to the built-in ones; the
+//! formats run on a worker thread (a plugin may take a while; its own
+//! exit clauses, ADR-0003, stop it).
+
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, Sender, channel};
+
+use eframe::egui;
+use ols_plugins::{Found, Tier};
+
+/// A plugin listed: where it was found and what can be done with it.
+#[derive(Debug, Clone)]
+pub struct Listed {
+    /// The plugin directory and its manifest.
+    pub found: Found,
+    /// In the user's plugin directory (it can be removed).
+    pub installed: bool,
+    /// Another plugin of this name was found first (this one is not used).
+    pub duplicate: bool,
+}
+
+impl Listed {
+    /// Why it cannot be used, if it cannot.
+    pub fn problem(&self) -> Option<String> {
+        if self.duplicate {
+            return Some(format!(
+                "another plugin named {} is used (found first)",
+                self.found.name()
+            ));
+        }
+        self.found.problem()
+    }
+
+    /// A file-format plugin (WebAssembly, extension point `io`).
+    pub fn is_io(&self) -> bool {
+        self.found.manifest.as_ref().is_ok_and(|m| {
+            m.plugin.tier == Tier::Wasm && m.plugin.extension_points.iter().any(|p| p == "io")
+        })
+    }
+}
+
+/// A format of the registry, as listed in the windows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormatInfo {
+    /// Id.
+    pub id: String,
+    /// File extension, without the dot.
+    pub extension: String,
+    /// One line.
+    pub description: String,
+    /// "built-in" or "plugin NAME".
+    pub origin: String,
+}
+
+/// The formats available (built-in and from the plugins turned on).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Formats {
+    /// Exporters.
+    pub exporters: Vec<FormatInfo>,
+    /// Importers.
+    pub importers: Vec<FormatInfo>,
+    /// Plugins whose formats could not be loaded, with why.
+    pub errors: Vec<String>,
+}
+
+enum Job {
+    /// Load the built-in formats and those of these plugin directories.
+    Reload(Vec<PathBuf>),
+    Export {
+        format: String,
+        model: Box<ols_io::ExportModel>,
+        options: ols_io::Options,
+        path: PathBuf,
+    },
+    Import {
+        format: String,
+        path: PathBuf,
+        base: Box<ols_line::Line>,
+        options: ols_io::Options,
+    },
+}
+
+enum Reply {
+    Formats(Formats),
+    Exported(Result<String, String>),
+    Imported(Result<Box<ols_line::Line>, String>),
+}
+
+/// The thread holding the format registry (plugin instances stay on it).
+struct Worker {
+    jobs: Sender<Job>,
+    replies: Receiver<Reply>,
+}
+
+impl Worker {
+    fn start() -> Self {
+        let (jobs, rx) = channel::<Job>();
+        let (tx, replies) = channel();
+        std::thread::Builder::new()
+            .name("formats".into())
+            .spawn(move || {
+                let mut registry = ols_io::Registry::with_builtin();
+                let host = ols_plugins::WasmHost::new();
+                while let Ok(job) = rx.recv() {
+                    let reply = match job {
+                        Job::Reload(dirs) => {
+                            registry = ols_io::Registry::with_builtin();
+                            let mut errors = Vec::new();
+                            for dir in dirs {
+                                let r = match &host {
+                                    Ok(h) => registry.add_plugin(h, &dir).map(|_| ()),
+                                    Err(e) => Err(e.to_string()),
+                                };
+                                if let Err(e) = r {
+                                    errors.push(format!("{}: {e}", dir.display()));
+                                }
+                            }
+                            Reply::Formats(formats_of(&registry, errors))
+                        }
+                        Job::Export {
+                            format,
+                            model,
+                            options,
+                            path,
+                        } => {
+                            Reply::Exported(export(&mut registry, &format, &model, &options, &path))
+                        }
+                        Job::Import {
+                            format,
+                            path,
+                            base,
+                            options,
+                        } => {
+                            Reply::Imported(import(&mut registry, &format, &path, &base, &options))
+                        }
+                    };
+                    if tx.send(reply).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("formats thread");
+        Self { jobs, replies }
+    }
+}
+
+fn formats_of(r: &ols_io::Registry, errors: Vec<String>) -> Formats {
+    Formats {
+        exporters: r
+            .exporters()
+            .map(|e| FormatInfo {
+                id: e.id().into(),
+                extension: e.extension().into(),
+                description: e.description().into(),
+                origin: e.origin(),
+            })
+            .collect(),
+        importers: r
+            .importers()
+            .map(|e| FormatInfo {
+                id: e.id().into(),
+                extension: e.extension().into(),
+                description: e.description().into(),
+                origin: e.origin(),
+            })
+            .collect(),
+        errors,
+    }
+}
+
+fn export(
+    r: &mut ols_io::Registry,
+    format: &str,
+    model: &ols_io::ExportModel,
+    options: &ols_io::Options,
+    path: &Path,
+) -> Result<String, String> {
+    let e = r
+        .exporter(format)
+        .ok_or_else(|| format!("no exporter {format}"))?;
+    let started = std::time::Instant::now();
+    let bytes = e.export(model, options)?;
+    std::fs::write(path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(format!(
+        "exported {} ({format}, {} bytes, {:.1?})",
+        path.display(),
+        bytes.len(),
+        started.elapsed()
+    ))
+}
+
+fn import(
+    r: &mut ols_io::Registry,
+    format: &str,
+    path: &Path,
+    base: &ols_line::Line,
+    options: &ols_io::Options,
+) -> Result<Box<ols_line::Line>, String> {
+    let i = r
+        .importer(format)
+        .ok_or_else(|| format!("no importer {format}"))?;
+    let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let line = i
+        .import(&data, Some(base), options)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    line.validate().map_err(|e| e.to_string())?;
+    Ok(Box::new(line))
+}
+
+/// Import into the line or Export: the format, the file, its options.
+#[derive(Debug, Clone, Default)]
+pub struct FormatWindow {
+    /// Export (else import).
+    pub export: bool,
+    /// Format id.
+    pub format: String,
+    /// Options, one `KEY=VALUE` per line.
+    pub options: String,
+    /// Running.
+    pub busy: bool,
+    /// The last error.
+    pub error: Option<String>,
+}
+
+/// The plugin manager's state (remembered: the folders added, the plugins
+/// turned off).
+#[derive(Default)]
+pub struct Plugins {
+    /// The user's plugin directory (installs go there); none: none listed.
+    pub user_dir: Option<PathBuf>,
+    /// Folders added, their plugins used in place.
+    pub folders: Vec<PathBuf>,
+    /// Plugins turned off, by name.
+    pub disabled: BTreeSet<String>,
+    /// What was found (see [`Plugins::refresh`]).
+    pub listed: Vec<Listed>,
+    /// The manager window is open.
+    pub open: bool,
+    /// The last thing done, error or not.
+    pub status: Option<(String, bool)>,
+    /// A removal waiting for confirmation.
+    pub confirm_remove: Option<PathBuf>,
+    /// The formats, once the worker loaded them.
+    pub formats: Option<Formats>,
+    /// The Import / Export window.
+    pub window: Option<FormatWindow>,
+    worker: Option<Worker>,
+    /// The formats need loading again (plugins changed).
+    stale: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct Saved {
+    folders: Vec<PathBuf>,
+    disabled: BTreeSet<String>,
+}
+
+impl Plugins {
+    /// The user's plugin directory: `plugins` in the application's data
+    /// directory.
+    pub fn default_user_dir() -> Option<PathBuf> {
+        eframe::storage_dir("OLS CAD").map(|d| d.join("plugins"))
+    }
+
+    /// As remembered, listing `user_dir` and the folders added.
+    pub fn load(storage: Option<&dyn eframe::Storage>, user_dir: Option<PathBuf>) -> Self {
+        let saved: Saved = storage
+            .and_then(|s| s.get_string("plugins"))
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let mut p = Self {
+            user_dir,
+            folders: saved.folders,
+            disabled: saved.disabled,
+            ..Self::default()
+        };
+        p.refresh();
+        p
+    }
+
+    /// Remembers the folders added and the plugins turned off.
+    pub fn save(&self, storage: &mut dyn eframe::Storage) {
+        let saved = Saved {
+            folders: self.folders.clone(),
+            disabled: self.disabled.clone(),
+        };
+        if let Ok(t) = serde_json::to_string(&saved) {
+            storage.set_string("plugins", t);
+        }
+    }
+
+    /// Lists the plugins again: the user's first, then each folder's; a
+    /// name found again is a duplicate. The formats are loaded again.
+    pub fn refresh(&mut self) {
+        let mut listed: Vec<Listed> = Vec::new();
+        let mut names = BTreeSet::new();
+        let roots = self
+            .user_dir
+            .iter()
+            .map(|d| (d.clone(), true))
+            .chain(self.folders.iter().map(|d| (d.clone(), false)));
+        for (root, installed) in roots {
+            for found in ols_plugins::discover(&root) {
+                let duplicate = !names.insert(found.name());
+                listed.push(Listed {
+                    found,
+                    installed,
+                    duplicate,
+                });
+            }
+        }
+        self.listed = listed;
+        self.stale = true;
+    }
+
+    /// Whether the plugin is used (no problem, not turned off).
+    pub fn enabled(&self, l: &Listed) -> bool {
+        l.problem().is_none() && !self.disabled.contains(&l.found.name())
+    }
+
+    /// The Python plugins in use: name, entry script.
+    pub fn python_scripts(&self) -> Vec<(String, PathBuf)> {
+        self.listed
+            .iter()
+            .filter(|l| self.enabled(l))
+            .filter_map(|l| {
+                let m = l.found.manifest.as_ref().ok()?;
+                (m.plugin.tier == Tier::Python).then(|| (m.plugin.name.clone(), m.entry_path()))
+            })
+            .collect()
+    }
+
+    /// Installs the plugin of folder `from` for the user (replacing it when
+    /// `replace`).
+    pub fn install(&mut self, from: &Path, replace: bool) -> Result<PathBuf, String> {
+        let root = self
+            .user_dir
+            .clone()
+            .ok_or("no plugin directory for this user")?;
+        let to = ols_plugins::install(from, &root, replace).map_err(|e| e.to_string())?;
+        self.refresh();
+        Ok(to)
+    }
+
+    /// Removes an installed plugin (its directory in the user's plugin
+    /// directory only).
+    pub fn remove(&mut self, dir: &Path) -> Result<(), String> {
+        let root = self.user_dir.as_ref().ok_or("no plugin directory")?;
+        if dir.parent() != Some(root.as_path()) {
+            return Err(format!("{} is not an installed plugin", dir.display()));
+        }
+        std::fs::remove_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        self.refresh();
+        Ok(())
+    }
+
+    /// Starts the worker (once) and loads the formats again when the
+    /// plugins changed; takes the worker's replies. Returns an imported
+    /// line, when one came.
+    pub fn poll(&mut self, ctx: &egui::Context) -> Option<Box<ols_line::Line>> {
+        // Started when first needed.
+        if self.worker.is_none() && !self.open && self.window.is_none() {
+            return None;
+        }
+        let dirs: Vec<PathBuf> = self
+            .listed
+            .iter()
+            .filter(|l| l.is_io() && self.enabled(l))
+            .map(|l| l.found.dir.clone())
+            .collect();
+        let worker = self.worker.get_or_insert_with(Worker::start);
+        if self.stale {
+            self.stale = false;
+            let _ = worker.jobs.send(Job::Reload(dirs));
+            self.formats = None;
+        }
+        let mut imported = None;
+        while let Ok(reply) = worker.replies.try_recv() {
+            match reply {
+                Reply::Formats(f) => self.formats = Some(f),
+                Reply::Exported(r) => {
+                    if let Some(w) = &mut self.window {
+                        w.busy = false;
+                        match r {
+                            Ok(t) => {
+                                self.status = Some((t, false));
+                                self.window = None;
+                            }
+                            Err(e) => w.error = Some(e),
+                        }
+                    }
+                }
+                Reply::Imported(r) => {
+                    if let Some(w) = &mut self.window {
+                        w.busy = false;
+                        match r {
+                            Ok(line) => {
+                                imported = Some(line);
+                                self.window = None;
+                            }
+                            Err(e) => w.error = Some(e),
+                        }
+                    }
+                }
+            }
+        }
+        let waiting = ((self.open || self.window.is_some()) && self.formats.is_none())
+            || self.window.as_ref().is_some_and(|w| w.busy);
+        if waiting {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        imported
+    }
+
+    /// The manager window.
+    pub fn manager_ui(&mut self, ctx: &egui::Context) {
+        if !self.open {
+            return;
+        }
+        let mut open = true;
+        let mut toggle: Option<String> = None;
+        let mut remove: Option<PathBuf> = None;
+        let mut drop_folder: Option<usize> = None;
+        egui::Window::new("Plugin manager")
+            .open(&mut open)
+            .default_width(900.0)
+            .show(ctx, |ui| {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Plugins add file formats (WebAssembly, sandboxed: no files, no network) \
+                         and scripts (Python, run in Plugins › Python console). Interface version \
+                         {}.{}. Installed plugins are kept in {}.",
+                        ols_plugins::SDK_VERSION.0,
+                        ols_plugins::SDK_VERSION.1,
+                        self.user_dir
+                            .as_ref()
+                            .map_or("(none)".into(), |d| d.display().to_string())
+                    ))
+                    .small()
+                    .weak(),
+                );
+                ui.horizontal(|ui| {
+                    if ui
+                        .button("Install from a folder…")
+                        .on_hover_text(
+                            "Copy a plugin (a folder with ols-plugin.toml) into your plugins",
+                        )
+                        .clicked()
+                        && let Some(dir) = rfd::FileDialog::new().pick_folder()
+                    {
+                        let replace = self.listed.iter().any(|l| {
+                            l.installed
+                                && ols_plugins::Manifest::load(&dir)
+                                    .is_ok_and(|m| m.plugin.name == l.found.name())
+                        });
+                        self.status = Some(match self.install(&dir, replace) {
+                            Ok(to) => (format!("installed in {}", to.display()), false),
+                            Err(e) => (format!("install: {e}"), true),
+                        });
+                    }
+                    if ui
+                        .button("Add a plugin folder…")
+                        .on_hover_text(
+                            "Use the plugins of a folder where they are (e.g. while writing one)",
+                        )
+                        .clicked()
+                        && let Some(dir) = rfd::FileDialog::new().pick_folder()
+                    {
+                        if !self.folders.contains(&dir) {
+                            self.folders.push(dir);
+                        }
+                        self.refresh();
+                    }
+                    if ui
+                        .button("Reload")
+                        .on_hover_text("Look for plugins again")
+                        .clicked()
+                    {
+                        self.refresh();
+                    }
+                });
+                for (k, f) in self.folders.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(format!("folder {}", f.display())).small());
+                        if ui
+                            .small_button("✖")
+                            .on_hover_text("Stop using this folder")
+                            .clicked()
+                        {
+                            drop_folder = Some(k);
+                        }
+                    });
+                }
+                ui.separator();
+                if self.listed.is_empty() {
+                    ui.label("No plugins.");
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(420.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new("plugins")
+                            .striped(true)
+                            .spacing([10.0, 4.0])
+                            .show(ui, |ui| {
+                                for h in ["plugin", "version", "kind", "provides", "status", ""] {
+                                    ui.strong(h);
+                                }
+                                ui.end_row();
+                                for l in &self.listed {
+                                    let name = l.found.name();
+                                    let problem = l.problem();
+                                    let mut on = self.enabled(l);
+                                    if ui
+                                        .add_enabled(
+                                            problem.is_none(),
+                                            egui::Checkbox::new(&mut on, &name),
+                                        )
+                                        .on_hover_text(format!(
+                                            "Use this plugin ({})",
+                                            l.found.dir.display()
+                                        ))
+                                        .changed()
+                                    {
+                                        toggle = Some(name.clone());
+                                    }
+                                    match &l.found.manifest {
+                                        Ok(m) => {
+                                            ui.label(&m.plugin.version);
+                                            ui.label(m.plugin.tier.to_string());
+                                            let provides = if l.is_io() {
+                                                self.formats_of(&name)
+                                            } else if m.plugin.tier == Tier::Python {
+                                                "a script".into()
+                                            } else {
+                                                m.plugin.extension_points.join(", ")
+                                            };
+                                            ui.label(provides).on_hover_text(&m.plugin.description);
+                                        }
+                                        Err(_) => {
+                                            for _ in 0..3 {
+                                                ui.label("");
+                                            }
+                                        }
+                                    }
+                                    match &problem {
+                                        Some(p) => ui.colored_label(egui::Color32::LIGHT_RED, p),
+                                        None if !on => ui.label("off"),
+                                        None if l.installed => ui.label("installed"),
+                                        None => ui.label("in its folder"),
+                                    };
+                                    if l.installed {
+                                        if ui
+                                            .small_button("Remove")
+                                            .on_hover_text("Delete this installed copy")
+                                            .clicked()
+                                        {
+                                            remove = Some(l.found.dir.clone());
+                                        }
+                                    } else {
+                                        ui.label("");
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                if let Some(f) = &self.formats {
+                    for e in &f.errors {
+                        ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    }
+                }
+                if let Some((t, error)) = &self.status {
+                    if *error {
+                        ui.colored_label(egui::Color32::LIGHT_RED, t);
+                    } else {
+                        ui.label(t);
+                    }
+                }
+            });
+        self.open = open;
+        if let Some(name) = toggle {
+            if !self.disabled.remove(&name) {
+                self.disabled.insert(name);
+            }
+            self.stale = true;
+        }
+        if let Some(k) = drop_folder {
+            self.folders.remove(k);
+            self.refresh();
+        }
+        if let Some(dir) = remove {
+            self.confirm_remove = Some(dir);
+        }
+        if let Some(dir) = self.confirm_remove.clone() {
+            let mut answer = None;
+            egui::Window::new("Remove the plugin?")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(format!("Delete {} and everything in it?", dir.display()));
+                    ui.horizontal(|ui| {
+                        if ui.button("Remove").clicked() {
+                            answer = Some(true);
+                        }
+                        if ui.button("Cancel").clicked() {
+                            answer = Some(false);
+                        }
+                    });
+                });
+            if let Some(yes) = answer {
+                self.confirm_remove = None;
+                if yes {
+                    self.status = Some(match self.remove(&dir) {
+                        Ok(()) => (format!("removed {}", dir.display()), false),
+                        Err(e) => (format!("remove: {e}"), true),
+                    });
+                }
+            }
+        }
+    }
+
+    /// The formats a plugin gives (once loaded).
+    fn formats_of(&self, name: &str) -> String {
+        let Some(f) = &self.formats else {
+            return "formats (loading…)".into();
+        };
+        let origin = format!("plugin {name}");
+        let list: Vec<String> = f
+            .exporters
+            .iter()
+            .map(|e| (e, "export"))
+            .chain(f.importers.iter().map(|i| (i, "import")))
+            .filter(|(e, _)| e.origin == origin)
+            .map(|(e, d)| format!("{d} {}", e.id))
+            .collect();
+        if list.is_empty() {
+            "formats (none loaded)".into()
+        } else {
+            list.join(", ")
+        }
+    }
+
+    /// Opens File › Import into the line (`export` false) or File ›
+    /// Export.
+    pub fn open_window(&mut self, export: bool) {
+        self.window = Some(FormatWindow {
+            export,
+            ..Default::default()
+        });
+    }
+
+    /// The Import / Export window; the job goes to the worker.
+    pub fn format_ui(
+        &mut self,
+        ctx: &egui::Context,
+        model: &crate::model::Model,
+        editable: Result<(), String>,
+    ) {
+        let Some(mut w) = self.window.take() else {
+            return;
+        };
+        let mut open = true;
+        let mut start: Option<PathBuf> = None;
+        let title = if w.export {
+            "Export"
+        } else {
+            "Import into the line"
+        };
+        let list: Vec<FormatInfo> = match &self.formats {
+            Some(f) if w.export => f.exporters.clone(),
+            Some(f) => f.importers.clone(),
+            None => Vec::new(),
+        };
+        if !list.iter().any(|f| f.id == w.format)
+            && let Some(f) = list.first()
+        {
+            w.format = f.id.clone();
+        }
+        egui::Window::new(title)
+            .open(&mut open)
+            .collapsible(false)
+            .default_width(520.0)
+            .show(ctx, |ui| {
+                if self.formats.is_none() {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label("loading the formats…");
+                    });
+                    return;
+                }
+                let chosen = list.iter().find(|f| f.id == w.format);
+                egui::ComboBox::from_label("format")
+                    .selected_text(
+                        chosen.map_or(String::new(), |f| format!("{} (.{})", f.id, f.extension)),
+                    )
+                    .width(320.0)
+                    .show_ui(ui, |ui| {
+                        for f in &list {
+                            ui.selectable_value(
+                                &mut w.format,
+                                f.id.clone(),
+                                format!("{} (.{}) — {}", f.id, f.extension, f.origin),
+                            )
+                            .on_hover_text(&f.description);
+                        }
+                    });
+                if let Some(f) = chosen {
+                    ui.label(egui::RichText::new(&f.description).small().weak());
+                }
+                ui.label("Options (one KEY=VALUE per line)");
+                ui.add(
+                    egui::TextEdit::multiline(&mut w.options)
+                        .desired_rows(2)
+                        .desired_width(480.0),
+                );
+                if w.export {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "The line and its {} solved weather case(s).",
+                            model.cases.len()
+                        ))
+                        .small()
+                        .weak(),
+                    );
+                } else {
+                    ui.label(
+                        egui::RichText::new(
+                            "The file is read into the working line: one command, undoable.",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                    if let Err(why) = &editable {
+                        ui.colored_label(egui::Color32::LIGHT_RED, format!("read-only: {why}"));
+                    }
+                }
+                if let Some(e) = &w.error {
+                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                }
+                if w.busy {
+                    ui.spinner();
+                } else if let Some(f) = chosen {
+                    let can = w.export || editable.is_ok();
+                    let label = if w.export {
+                        "Export to…"
+                    } else {
+                        "Choose the file…"
+                    };
+                    if ui.add_enabled(can, egui::Button::new(label)).clicked() {
+                        let dialog = rfd::FileDialog::new()
+                            .add_filter(&f.id, std::slice::from_ref(&f.extension));
+                        start = if w.export {
+                            dialog
+                                .set_file_name(format!("{}.{}", model.line.name, f.extension))
+                                .save_file()
+                        } else {
+                            dialog.pick_file()
+                        };
+                    }
+                }
+            });
+        if let Some(path) = start {
+            self.run(&mut w, model, path);
+        }
+        if open {
+            self.window = Some(w);
+        }
+    }
+
+    /// Sends the window's job for `path` to the worker.
+    pub fn run(&mut self, w: &mut FormatWindow, model: &crate::model::Model, path: PathBuf) {
+        let options = match options(&w.options) {
+            Ok(o) => o,
+            Err(e) => {
+                w.error = Some(e);
+                return;
+            }
+        };
+        let Some(worker) = &self.worker else {
+            return;
+        };
+        let job = if w.export {
+            let cases: Vec<_> = model
+                .cases
+                .iter()
+                .map(|c| {
+                    (
+                        c.case.name.clone(),
+                        c.case.summary(),
+                        c.shapes.clone(),
+                        c.jumpers.clone(),
+                    )
+                })
+                .collect();
+            Job::Export {
+                format: w.format.clone(),
+                model: Box::new(ols_io::ExportModel::new(&model.line, &cases)),
+                options,
+                path,
+            }
+        } else {
+            Job::Import {
+                format: w.format.clone(),
+                path,
+                base: Box::new(model.line.clone()),
+                options,
+            }
+        };
+        w.error = None;
+        w.busy = worker.jobs.send(job).is_ok();
+    }
+}
+
+/// `KEY=VALUE` lines.
+fn options(text: &str) -> Result<ols_io::Options, String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            l.split_once('=')
+                .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
+                .ok_or_else(|| format!("option \"{l}\": use KEY=VALUE"))
+        })
+        .collect()
+}

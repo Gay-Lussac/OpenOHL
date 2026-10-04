@@ -31,7 +31,7 @@ The **menu bar** holds what needs no view:
 
 | Menu | |
 |---|---|
-| File | **New project…** (⌘N / Ctrl+N: a line name and coordinate system, then where to save the `.ols` file; it starts with an empty line, you its admin, its libraries from the default folders), **Open…** (⌘O / Ctrl+O: a project `.ols` or a line file `.ols.json`), **Open recent**, the file open, Save (⌘S / Ctrl+S), Export libraries, **Close** (the project is written through; back to the start page), Quit. Opening or closing with library pages not saved or table changes not applied asks first |
+| File | **New project…** (⌘N / Ctrl+N: a line name and coordinate system, then where to save the `.ols` file; it starts with an empty line, you its admin, its libraries from the default folders), **Open…** (⌘O / Ctrl+O: a project `.ols` or a line file `.ols.json`), **Open recent**, the file open, Save (⌘S / Ctrl+S), **Import into the line…** and **Export…** (the built-in formats and those of the plugins turned on — see [Import and export](import-export.md); an import is one command, undoable), Export libraries, **Close** (the project is written through; back to the start page), Quit. Opening or closing with library pages not saved or table changes not applied asks first |
 | Edit | Undo, Redo, Delete selected, Clear selection, Go to structure; **Snap: what can be clicked** |
 | View | Fit views; the pages to show (tick to open, untick to close), among them **Level of detail** (see [Level of detail](#level-of-detail)); layers; Display weather cases; Customize the quick bar |
 | Lines | Project lines (saved states of the line to show next to the working line, or to make the working line), Create line, Delete line (see [Project lines](#project-lines)) |
@@ -42,7 +42,7 @@ The **menu bar** holds what needs no view:
 | Sections | library: wires; tables: sections, jumpers, electrical systems; Display weather cases |
 | Criteria | **Creep-Stretch…** — the weather case for the final after creep and the weather case(s) for the final after load (the one stretching each wire most is used); one command, undoable; every section is solved again. **Weather cases** — every case in one table, one row each, the columns of a criteria table (name above, unit below, a grid; every row the same widths): name, description, tags, air density factor Q, wind velocity, wind pressure (P = Q·V²: typing the velocity or Q sets the pressure), wind from, ice thickness, density and load, wire and ambient temperature; the weather case files' editor; Display weather cases |
 | Parameters | **Controls** › **3D** (navigation scheme, speed, look sensitivity, every key and mouse action), **Plan**, **Profile** (their mouse actions) |
-| Plugins | to come (the plugin manager) |
+| Plugins | **Plugin manager…** (see [Plugins](#plugins)), **Python console** (see [Python console](#python-console)) |
 | Help | version, keys and mouse |
 
 Under it, the **quick bar**: the line's name, **Weather: …** (the weather cases shown — a click opens Display weather cases), the selection, then the commands chosen for it (default Undo, Redo, Fit views, Run checks). **⚙** (or View › Customize the quick bar) adds any command of the menus — commands, library editors, tools — removes and orders them; the bar is remembered.
@@ -192,3 +192,36 @@ The speed (m/s) and, for the first-person scheme, the look sensitivity are set t
 Clicking an object in any view selects it everywhere: a structure anywhere along the lines it is drawn with (mast or stick drawing, arms, insulator strings), a span anywhere along its wire, a jumper anywhere along it (drawn as a bundle like its section). The properties of a jumper show its cable, section, bundle (and whether it is its own or its section's), length or sag, support string, and results in every weather case. Tabs can be dragged to rearrange the window.
 
 Loading runs in the background. On a real 25 km line with 99.6 million LiDAR points stored in its project, the window is ready in about 8 s (release build): the whole cloud decoded (every one of its 31 classes shown, 2.1 million points), a 5-million-triangle ground surface.
+
+## Plugins
+
+Plugins › **Plugin manager…** lists the plugins found: those installed for you (in the application's data folder, `plugins/`) and those of the folders you added (used where they are — handy while writing one). For each: its version, kind (WebAssembly or Python), what it provides (a file-format plugin's formats), and why it cannot be used if it cannot (another interface version, permissions asked for that cannot be granted, its entry file missing — e.g. not built). The tick turns a plugin on or off (remembered). **Install from a folder…** copies a plugin into your plugins (a WebAssembly plugin's manifest and `.wasm`; a Python plugin's folder); **Remove** deletes an installed copy (after a confirmation). A plugin name found twice is used from the first place (your plugins, then the folders in order).
+
+File-format plugins add their formats to File › Import into the line / Export, next to the built-in ones. They run on a worker thread, sandboxed, with time and memory limits ([Writing plugins](../development/plugins.md)).
+
+## Python console
+
+Plugins › **Python console** opens a page with a Python interpreter in the application (Python 3.10+, the one OLS CAD was built with). Type code and press Enter (Shift+Enter: a new line; ↑ ↓: history); the value of a last expression is printed. **Run a file…** runs a script as `__main__`; **Plugin scripts** lists the Python plugins turned on. **Stop** interrupts a script (`KeyboardInterrupt`); a script running longer than the **time limit** (default 300 s) is stopped.
+
+The `ols` module drives the open project:
+
+| Call | |
+|---|---|
+| `ols.line()` | the working line, as in a line file (a dict) |
+| `ols.cases()`, `ols.case()` | the weather cases, the one shown |
+| `ols.results(case=None)` | the solved sections of a case: per span sag, horizontal and largest tension, mid and low points; what failed |
+| `ols.selection()` | the selection, in words |
+| `ols.apply(command, what=None)` | a session command (as in the operation log, e.g. `{"op": "move_structure", "id": "T2", "position": [x, y, z]}`): validated, logged, undoable; what it touches is solved again. A refused command raises |
+| `ols.batch(commands, what=None)` | several commands as one (all or none, one undo) |
+| `ols.undo()`, `ols.redo()` | your last command |
+| `ols.status(text)` | text in the status bar |
+| `ols.convert(kind, value, unit)` | unit conversion, as in the `ols` package |
+
+```python
+import ols
+for s in ols.results("everyday")["sections"]:
+    print(s["section"], max(p["sag"] for p in s["spans"]))
+```
+
+Each call is answered by the application at its next frame, so a script always sees the line as it is now; many edits go faster (and undo at once) in one `ols.batch`. A read-only project refuses edits.
+

@@ -113,8 +113,8 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] Strain assemblies always free members (move with the weather, in the calculation); weights of geometry-only strings estimated from their data position in the stringing state
 - [x] Libraries (wires, structure types, insulators, weather cases) kept in the project file; export to files to share or compare; Terrain / Structures / Sections menus; LiDAR classes shown; table defaults shown
 - [x] Section calculations: Initial / Creep / Load / Max Sag × RS / FE (Sections table, section editor); Criteria › Creep-Stretch (weather cases for final after creep and after load); cable models nonlinear, linear with creep ∝ creep-case tension, linear with a temperature increase; bimetallic curves per material in the wire library editor
-- [ ] Plugin manager UI
-- [ ] Python scripting console inside the application
+- [x] Plugin manager UI: plugins installed and found in folders, what they provide, why one cannot be used, on/off, install, remove; their formats in File › Import into the line / Export (run on a worker)
+- [x] Python scripting console inside the application: embedded interpreter on its own thread, the `ols` module reads the line and results and edits through session commands (undoable), Stop and a time limit, plugin scripts
 - [ ] **Server mode (alpha)**: host a project, multiple users connect over LAN/Internet, live change broadcast, presence, soft locks, per-user undo, roles & permissions, admin rollback
 
 **Deliverable:** alpha release of the desktop app, including shared multi-user sessions.
