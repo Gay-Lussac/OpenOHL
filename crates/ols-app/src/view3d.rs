@@ -109,6 +109,9 @@ impl View3d {
         lod: &crate::lod::LodSettings,
     ) -> Option<selection::Use> {
         let Some(rs) = rs else {
+            // Shown (its page in front), only without an image.
+            self.rect = Some(ui.max_rect());
+            self.drawn = true;
             ui.centered_and_justified(|ui| ui.label("3D view needs a GPU (wgpu)."));
             return None;
         };
@@ -515,34 +518,15 @@ impl View3d {
                 );
                 painter.line_segment([c + a, c + b], egui::Stroke::new(2.0, egui::Color32::WHITE));
             }
+            // Only how to get out; every key: Parameters › Controls › 3D.
             painter.text(
                 rect.center_top() + egui::vec2(0.0, 8.0),
                 egui::Align2::CENTER_TOP,
-                format!(
-                    "Esc: free the mouse · click: select at the crosshair · W A S D Space Shift · Ctrl faster · Ctrl + wheel: speed {:.0} m/s",
-                    self.controls.speed
-                ),
+                "Esc: free the mouse",
                 egui::FontId::proportional(12.0),
                 egui::Color32::WHITE,
             );
         }
-        painter.text(
-            rect.left_bottom() + egui::vec2(8.0, -8.0),
-            egui::Align2::LEFT_BOTTOM,
-            format!(
-                "{}: W A S D move · Space up · Shift down · Ctrl faster · {} · right-drag: pan · scroll: zoom · double-click: fly to",
-                self.controls.name,
-                if self.controls.capture {
-                    "click: capture the mouse (Esc frees it)"
-                } else if self.controls.left == Drag::Look {
-                    "drag: look around"
-                } else {
-                    "drag: turn"
-                }
-            ),
-            egui::FontId::proportional(11.0),
-            egui::Color32::from_gray(150),
-        );
         used
     }
 }

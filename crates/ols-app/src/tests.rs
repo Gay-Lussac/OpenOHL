@@ -2292,10 +2292,10 @@ fn jumpers_are_added_where_none_are() {
     assert!(matches!(r.selection, Selection::Jumper(_)));
 }
 
-/// ⌘S writes the project file through and says so; the hotbar sits on the
-/// plan when the plan is in front.
+/// ⌘S writes the project file through and says so; the hotbar is at the
+/// bottom of the 3D view and goes with it when another page is in front.
 #[test]
-fn command_s_saves_and_the_hotbar_follows_the_view_in_front() {
+fn command_s_saves_and_the_hotbar_goes_with_the_3d_view() {
     let model = synthetic_project("save");
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
@@ -2308,15 +2308,53 @@ fn command_s_saves_and_the_hotbar_follows_the_view_in_front() {
         assert!(text.starts_with("saved: project file"), "{text}");
         assert!(!error);
     }
-    harness.state_mut().show_tab(crate::app::Tab::Plan);
+    let hotbar_shown = |h: &Harness<'_, App>| {
+        h.query_by_label("Select — right-click an object to select it · 1–9 or wheel (captured) · E: inventory (arrange)").is_some()
+        || h.query_all_by_label_contains("E: inventory").next().is_some()
+    };
+    harness.state_mut().show_tab(crate::app::Tab::View3d);
     harness.run();
-    harness.run();
-    let plan = harness.state_mut().ready().unwrap().plan.drawn.unwrap();
+    let view = harness.state_mut().ready().unwrap().view3d.rect.unwrap();
     let bar = harness
         .ctx
         .memory(|m| m.area_rect(egui::Id::new("hotbar")))
         .unwrap();
-    assert!(plan.contains_rect(bar), "{bar:?} in {plan:?}");
+    assert!(view.contains_rect(bar), "{bar:?} in {view:?}");
+    assert!(hotbar_shown(&harness));
+    // The plan in front: no hotbar.
+    harness.state_mut().show_tab(crate::app::Tab::Plan);
+    harness.run();
+    harness.run();
+    assert!(!hotbar_shown(&harness));
+}
+
+/// Parameters › Controls › 3D, Plan, Profile: a window each; the 3D one
+/// chooses the navigation scheme (no longer in the Model page or written
+/// over the 3D view).
+#[test]
+fn parameters_show_the_controls_of_each_view() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    assert!(harness.query_by_label("Controls (3D)").is_none());
+    for (page, line) in [
+        ("3D", "Navigation scheme"),
+        ("Plan", "zoom at the pointer"),
+        ("Profile", "move along the route"),
+    ] {
+        harness.get_by_label("Parameters").click();
+        harness.run();
+        harness.get_by_label_contains("Controls").click();
+        harness.run();
+        harness.get_by_label(page).click();
+        harness.run();
+        harness.get_by_label(&format!("Controls: {page}"));
+        harness.get_by_label_contains(line);
+        harness.state_mut().ready().unwrap().controls_window = None;
+        harness.run();
+    }
 }
 
 /// Going to an object (from the 3D view, a table, a failure) before the

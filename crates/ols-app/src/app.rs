@@ -173,6 +173,8 @@ pub struct Ready {
     pub survey_job: Option<crate::survey_io::Job>,
     /// Open the project again (after an import).
     pub reopen: bool,
+    /// Parameters › Controls: the window of a view's controls, when open.
+    pub controls_window: Option<ControlsPage>,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
     /// A page to bring to the front (with a table filter), from a tool.
@@ -221,6 +223,7 @@ impl Ready {
             survey_export: None,
             survey_job: None,
             reopen: false,
+            controls_window: None,
             jumper_from: None,
             open_page: None,
             clearances: crate::clearance::Clearances::new(
@@ -1666,16 +1669,18 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
 /// The tool windows: hotbar, inventory, Go to, Move structure, the
 /// editor, the confirmation of a deletion.
 fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
-    // At the bottom of the 3D view, else of the plan (the view in front).
-    let view = match (r.view3d.drawn, r.plan.drawn) {
-        (true, _) => r.view3d.rect,
-        (false, Some(p)) => Some(p),
-        (false, None) => r.view3d.rect,
-    };
+    // At the bottom of the 3D view, only while it is shown (and while the
+    // inventory arranges it).
+    let shown = r.view3d.drawn;
     r.view3d.drawn = false;
     r.plan.drawn = None;
-    let at = view.map_or(ctx.content_rect().center_bottom(), |v| v.center_bottom());
-    crate::tools::hotbar_ui(ctx, &mut r.hotbar, at, r.inventory);
+    if shown || r.inventory {
+        let at = match (shown, r.view3d.rect) {
+            (true, Some(v)) => v.center_bottom(),
+            _ => ctx.content_rect().center_bottom(),
+        };
+        crate::tools::hotbar_ui(ctx, &mut r.hotbar, at, r.inventory);
+    }
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
     move_window(ctx, r);
@@ -1683,6 +1688,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     display_window(ctx, r);
     survey_window(ctx, r);
     survey_io_windows(ctx, r);
+    controls_window(ctx, r);
     lines_window(ctx, r);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
@@ -1786,6 +1792,131 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
             ui.close();
         }
     });
+}
+
+/// The views whose controls Parameters › Controls shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlsPage {
+    /// The 3D view.
+    View3d,
+    /// The plan.
+    Plan,
+    /// The profile.
+    Profile,
+}
+
+impl ControlsPage {
+    /// Every page, in the menu's order.
+    pub const ALL: [ControlsPage; 3] = [
+        ControlsPage::View3d,
+        ControlsPage::Plan,
+        ControlsPage::Profile,
+    ];
+
+    /// Name in the menu.
+    pub fn name(self) -> &'static str {
+        match self {
+            ControlsPage::View3d => "3D",
+            ControlsPage::Plan => "Plan",
+            ControlsPage::Profile => "Profile",
+        }
+    }
+}
+
+/// A grid of input → action rows.
+fn controls_grid(ui: &mut egui::Ui, id: &str, rows: &[(String, String)]) {
+    egui::Grid::new(id).striped(true).show(ui, |ui| {
+        for (k, v) in rows {
+            ui.label(egui::RichText::new(k).strong());
+            ui.label(v);
+            ui.end_row();
+        }
+    });
+}
+
+/// Parameters › Controls › 3D / Plan / Profile: how the view is moved and
+/// used (the 3D view: its navigation scheme, speed, look sensitivity).
+fn controls_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(page) = r.controls_window else {
+        return;
+    };
+    let mut open = true;
+    let row = |k: &str, v: &str| (k.to_owned(), v.to_owned());
+    egui::Window::new(format!("Controls: {}", page.name()))
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| match page {
+            ControlsPage::View3d => {
+                let c = &mut r.view3d.controls;
+                ui.horizontal(|ui| {
+                    ui.label("Navigation scheme");
+                    egui::ComboBox::from_id_salt("controls")
+                        .selected_text(c.name)
+                        .show_ui(ui, |ui| {
+                            for p in crate::controls::Controls::presets() {
+                                if ui.selectable_label(c.name == p.name, p.name).clicked() {
+                                    log::info!("controls: {}", p.name);
+                                    // Keep the chosen speed.
+                                    let speed = c.speed;
+                                    *c = p;
+                                    c.speed = speed;
+                                }
+                            }
+                        });
+                });
+                ui.add(
+                    egui::Slider::new(&mut c.speed, 1.0..=2000.0)
+                        .text("speed, m/s")
+                        .logarithmic(true),
+                );
+                if c.capture {
+                    // Shown ×1000 (milliradians per pixel): a readable number.
+                    let mut mrad = c.mouse_sensitivity * 1000.0;
+                    if ui
+                        .add(
+                            egui::Slider::new(&mut mrad, 0.3..=10.0)
+                                .text("look sensitivity")
+                                .logarithmic(true),
+                        )
+                        .changed()
+                    {
+                        c.mouse_sensitivity = mrad / 1000.0;
+                    }
+                }
+                ui.separator();
+                let mut rows = c.describe();
+                rows.push(row("right-click", "use the tool held (hotbar)"));
+                rows.push(row("1–9, wheel", "choose a tool of the hotbar"));
+                rows.push(row("E", "tool inventory"));
+                controls_grid(ui, "controls-3d", &rows);
+            }
+            ControlsPage::Plan => controls_grid(
+                ui,
+                "controls-plan",
+                &[
+                    row("drag", "pan"),
+                    row("scroll", "zoom at the pointer"),
+                    row("click", "select"),
+                    row("double-click", "select and centre on it"),
+                    row("right-click", "use the tool held (hotbar)"),
+                ],
+            ),
+            ControlsPage::Profile => controls_grid(
+                ui,
+                "controls-profile",
+                &[
+                    row("drag", "move along the route"),
+                    row("scroll", "zoom along the route at the pointer"),
+                    row("click", "select"),
+                    row("double-click", "show the whole route"),
+                    row("right-click", "use the tool held (hotbar)"),
+                ],
+            ),
+        });
+    if !open {
+        r.controls_window = None;
+    }
 }
 
 /// The Import / Export LAS/LAZ windows and the job they started.
@@ -2898,6 +3029,20 @@ fn menus(
         ui.separator();
         item(ui, Command::DisplayCases, out);
     });
+    ui.menu_button("Parameters", |ui| {
+        ui.menu_button("Controls", |ui| {
+            for page in ControlsPage::ALL {
+                if ui
+                    .button(page.name())
+                    .on_hover_text(format!("How the {} view is moved and used", page.name()))
+                    .clicked()
+                {
+                    r.controls_window = Some(page);
+                    ui.close();
+                }
+            }
+        });
+    });
     ui.menu_button("Plugins", |ui| {
         ui.add_enabled(false, egui::Button::new("Plugin manager (to come)"));
     });
@@ -2905,10 +3050,10 @@ fn menus(
         ui.label(format!("OLS CAD {}", env!("CARGO_PKG_VERSION")));
         if ui
             .button("Keys and mouse")
-            .on_hover_text("In the Model page: the 3D controls and every key")
+            .on_hover_text("Parameters › Controls › 3D: the navigation scheme and every key")
             .clicked()
         {
-            open_page(dock, Tab::Model);
+            r.controls_window = Some(ControlsPage::View3d);
             ui.close();
         }
     });
@@ -3026,54 +3171,6 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
                     .logarithmic(true),
             );
         }
-        ui.separator();
-        ui.label(egui::RichText::new("Controls (3D)").strong());
-        let c = &mut r.view3d.controls;
-        egui::ComboBox::from_id_salt("controls")
-            .selected_text(c.name)
-            .show_ui(ui, |ui| {
-                for p in crate::controls::Controls::presets() {
-                    if ui.selectable_label(c.name == p.name, p.name).clicked() {
-                        log::info!("controls: {}", p.name);
-                        // Keep the chosen speed.
-                        let speed = c.speed;
-                        *c = p;
-                        c.speed = speed;
-                    }
-                }
-            });
-        ui.add(
-            egui::Slider::new(&mut c.speed, 1.0..=2000.0)
-                .text("m/s")
-                .logarithmic(true),
-        );
-        if c.capture {
-            // Shown ×1000 (milliradians per pixel) for a readable number.
-            let mut mrad = c.mouse_sensitivity * 1000.0;
-            if ui
-                .add(
-                    egui::Slider::new(&mut mrad, 0.3..=10.0)
-                        .text("look sensitivity")
-                        .logarithmic(true),
-                )
-                .changed()
-            {
-                c.mouse_sensitivity = mrad / 1000.0;
-            }
-        }
-        egui::CollapsingHeader::new("keys and mouse")
-            .id_salt("controls-list")
-            .show(ui, |ui| {
-                egui::Grid::new("controls-grid")
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for (k, v) in c.describe() {
-                            ui.label(egui::RichText::new(k).small().strong());
-                            ui.label(egui::RichText::new(v).small());
-                            ui.end_row();
-                        }
-                    });
-            });
         ui.separator();
         // Failures by weather case (the cases are chosen with Display
         // weather cases).
