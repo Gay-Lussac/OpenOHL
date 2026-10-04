@@ -31,6 +31,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::Model;
 
+/// The project setting naming the surface the checks use (clearances):
+/// one for everyone, unlike what each user shows. None: each user's
+/// ground.
+pub const CHECK_SETTING: &str = "app.check_surface";
+
+/// The surface the checks use, as kept in the project.
+pub fn check_surface(session: &ols_session::Session) -> Option<String> {
+    session.setting(CHECK_SETTING).ok().flatten()
+}
+
 /// The project setting of earlier builds (active surface and those
 /// shown): read when this user has no choice of their own yet.
 pub const SETTING: &str = "app.surfaces";
@@ -98,6 +108,8 @@ fn session(model: &Model) -> Option<&ols_session::Session> {
 enum Done {
     /// A surface read: the ground (`true`) or one shown.
     Loaded(String, bool, Result<Arc<Terrain>, String>),
+    /// The surface of the checks read.
+    Check(String, Result<Arc<Terrain>, String>),
     /// Surfaces kept in the project.
     Stored(Result<Vec<String>, String>),
     /// A file written.
@@ -199,6 +211,34 @@ impl SurfacesWindow {
         });
     }
 
+    /// Loads surface `name` for the checks.
+    pub fn load_check(&mut self, model: &Model, name: &str, ctx: &egui::Context) {
+        let file = model.sources.file.clone();
+        let n = name.to_owned();
+        self.spawn(format!("reading {name} for the checks"), ctx, move || {
+            Done::Check(n.clone(), load(&file, &n).map(Arc::new))
+        });
+    }
+
+    /// The project's surface for the checks (an edit: with a server, it
+    /// follows everyone).
+    fn set_check(&mut self, model: &mut Model, name: Option<String>, ctx: &egui::Context) {
+        let op = ols_server::Op::SetSetting {
+            key: CHECK_SETTING.into(),
+            value: name.clone(),
+        };
+        match model.project_op("surface of the checks", op) {
+            Ok(_) => {
+                model.check_surface = name.clone();
+                model.check_ground = None;
+                if let Some(n) = name {
+                    self.load_check(model, &n, ctx);
+                }
+            }
+            Err(e) => self.status = Some((e.to_string(), true)),
+        }
+    }
+
     /// Takes finished jobs: surfaces read go into the model (the views
     /// follow: returns true when the ground or the shown surfaces
     /// changed).
@@ -231,6 +271,15 @@ impl SurfacesWindow {
                             changed = true;
                         }
                         self.status = Some((format!("{name} read in {:.1?}", t.elapsed()), false));
+                    }
+                    Err(e) => self.status = Some((format!("{what}: {e}"), true)),
+                },
+                Ok(Done::Check(name, r)) => match r {
+                    Ok(terrain) => {
+                        if model.check_surface.as_deref() == Some(name.as_str()) {
+                            model.check_ground = Some(terrain);
+                            changed = true;
+                        }
                     }
                     Err(e) => self.status = Some((format!("{what}: {e}"), true)),
                 },
@@ -321,6 +370,13 @@ impl SurfacesWindow {
                     .weak(),
                 );
                 ui.label(format!(
+                    "Checks use: {}",
+                    model
+                        .check_surface
+                        .as_deref()
+                        .map_or("each user's ground".to_owned(), |n| format!("surface {n}"))
+                ));
+                ui.label(format!(
                     "Ground now: {}",
                     if model.ground.is_none() {
                         "none".to_owned()
@@ -346,7 +402,8 @@ impl SurfacesWindow {
                     .spacing([10.0, 4.0])
                     .show(ui, |ui| {
                         for h in [
-                            "active", "shown", "name", "points", "triangles", "source", "kept", "",
+                            "ground", "shown", "checks", "name", "points", "triangles", "source",
+                            "kept", "",
                         ] {
                             ui.strong(h);
                         }
@@ -378,6 +435,17 @@ impl SurfacesWindow {
                                     }
                                 }
                             });
+                            let checks = model.check_surface.as_deref() == Some(s.name.as_str());
+                            if ui
+                                .add_enabled(editable.is_ok(), egui::RadioButton::new(checks, ""))
+                                .on_hover_text(
+                                    "The surface the checks (clearances) use, for everyone; a \
+                                     second click: each user's ground",
+                                )
+                                .clicked()
+                            {
+                                action = Some(Action::Check((!checks).then(|| s.name.clone())));
+                            }
                             match &mut self.rename {
                                 Some((n, new)) if *n == s.name => {
                                     let r = ui.text_edit_singleline(new);
@@ -605,6 +673,10 @@ impl SurfacesWindow {
                 self.load(model, &name, true, ctx);
                 true
             }
+            Action::Check(name) => {
+                self.set_check(model, name, ctx);
+                true
+            }
             Action::Show(name, on) => {
                 let mut s = model.surface_settings.clone();
                 if on {
@@ -651,6 +723,15 @@ impl SurfacesWindow {
                         if let Some(c) = s.shown.remove(&from) {
                             s.shown.insert(to.clone(), c);
                         }
+                        if model.check_surface.as_deref() == Some(from.as_str()) {
+                            let op = ols_server::Op::SetSetting {
+                                key: CHECK_SETTING.into(),
+                                value: Some(to.clone()),
+                            };
+                            if model.project_op("surface of the checks", op).is_ok() {
+                                model.check_surface = Some(to.clone());
+                            }
+                        }
                         for o in &mut model.other_surfaces {
                             if o.name == from {
                                 o.name = to.clone();
@@ -681,6 +762,9 @@ impl SurfacesWindow {
                         if s.shown.remove(&name).is_some() {
                             model.other_surfaces.retain(|o| o.name != name);
                             changed = true;
+                        }
+                        if model.check_surface.as_deref() == Some(name.as_str()) {
+                            self.set_check(model, None, ctx);
                         }
                         self.set(model, s);
                         self.status = Some((format!("{name} deleted"), false));
@@ -775,6 +859,7 @@ impl SurfacesWindow {
 /// A user's choice in the window.
 pub(crate) enum Action {
     Activate(String),
+    Check(Option<String>),
     Show(String, bool),
     Color(String, [u8; 3]),
     Rename(String, String),

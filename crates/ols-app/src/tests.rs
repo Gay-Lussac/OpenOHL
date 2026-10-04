@@ -4019,6 +4019,28 @@ fn terrain_surfaces_are_kept_in_the_project() {
     assert_eq!(again.other_surfaces.len(), 1);
     assert_eq!(again.other_surfaces[0].name, "raised");
     drop(again);
+    // The checks use "raised" for everyone (a project setting), while
+    // this user's ground stays the survey.
+    act(&mut harness, Action::Check(Some("raised".into())));
+    run_until(&mut harness, |a| {
+        a.ready().unwrap().model.check_ground.is_some()
+    });
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let (check, shown) = (
+            r.model.ground_for_checks().unwrap(),
+            r.model.ground.clone().unwrap(),
+        );
+        let (x, y) = (shown.points()[0][0], shown.points()[0][1]);
+        assert!((check.height(x, y).unwrap() - shown.height(x, y).unwrap() - 1.0).abs() < 1e-9);
+        let s = ols_session::Session::open(&file).unwrap();
+        assert_eq!(
+            s.setting(crate::surfaces::CHECK_SETTING)
+                .unwrap()
+                .as_deref(),
+            Some("raised")
+        );
+    }
     // Rename the ground; delete the other.
     act(
         &mut harness,

@@ -3151,8 +3151,9 @@ fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
 }
 
 fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
-    // The check needs its weather case solved.
+    // The check needs its weather case solved, and its ground.
     r.model.ensure_solved(r.case);
+    r.model.ensure_check_ground();
     let m = &r.model;
     let Some(solved) = m.cases.get(r.case) else {
         return;
@@ -3165,7 +3166,7 @@ fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
         rules,
         scheme: m.scheme.clone(),
         cloud: m.cloud.clone(),
-        ground: m.ground.clone(),
+        ground: m.ground_for_checks(),
         corridor: m.sources.corridor,
     });
 }

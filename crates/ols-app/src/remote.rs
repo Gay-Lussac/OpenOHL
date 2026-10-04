@@ -186,6 +186,14 @@ impl Model {
                 {
                     self.role_changed(*role);
                 }
+                // The surface of the checks (read when a check needs it).
+                if let Op::SetSetting { key, value } = &op
+                    && key == crate::surfaces::CHECK_SETTING
+                    && *value != self.check_surface
+                {
+                    self.check_surface = value.clone();
+                    self.check_ground = None;
+                }
                 if me.as_deref() != Some(user.as_str()) {
                     others.push(format!("{user}: {}", op.describe()));
                 }

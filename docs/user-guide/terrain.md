@@ -238,7 +238,8 @@ Terrain › **Terrain surfaces (TIN)…** manages them:
   The first surface kept becomes the ground when there is none.
 - **Build from the LiDAR ground classes:** the lowest point of each cell (default 1 m), near the line or the whole cloud, triangulated with a longest side (default 50 m).
 - **Keep the ground shown as a surface:** the ground built at opening (from the LiDAR or a survey file), kept so the next opening reads it.
-- **Active** (radio) and **shown** (tick, colour) are your own choice: remembered on this computer for this project, never written to the project nor sent to a server — everyone working on a hosted project decides what they show. The surface you choose as the ground is also the one your clearance checks use.
+- **Active** (radio) and **shown** (tick, colour) are your own choice: remembered on this computer for this project, never written to the project nor sent to a server — everyone working on a hosted project decides what they show.
+- **Checks** (radio): the surface the checks (clearances) use, chosen for the project — one for everyone (a project setting; needs edit rights). None chosen: each user's ground. (The clearance checks will be reworked around the LiDAR points.)
 - **Rename**, **Export…** (LandXML `.xml` or OBJ `.obj`), **Delete** (confirmed; it cannot be undone — export first to keep a copy).
 
 Reading, building and storing run in the background. With a project joined on a server, surfaces are imported and built on the hosting computer.

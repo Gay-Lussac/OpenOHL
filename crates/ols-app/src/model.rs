@@ -263,6 +263,11 @@ pub struct Model {
     pub surface_settings: crate::surfaces::SurfaceSettings,
     /// Other terrain surfaces shown.
     pub other_surfaces: Vec<crate::surfaces::OtherSurface>,
+    /// The surface the checks use, for everyone (a project setting;
+    /// `None`: this user's ground).
+    pub check_surface: Option<String>,
+    /// That surface, read.
+    pub check_ground: Option<std::sync::Arc<Terrain>>,
     /// The point cloud read (`FILE.ols` or `FILE.ols#name`).
     pub cloud: Option<String>,
     /// LiDAR points shown (thinned to the budget).
@@ -777,6 +782,30 @@ fn load_cases(sources: &Sources) -> Result<Vec<WeatherCase>, String> {
 }
 
 impl Model {
+    /// The ground the checks use: the project's surface for them, else
+    /// this user's ground.
+    pub fn ground_for_checks(&self) -> Option<std::sync::Arc<Terrain>> {
+        match &self.check_surface {
+            Some(n) if self.surface_settings.active.as_ref() == Some(n) => self.ground.clone(),
+            Some(_) => self.check_ground.clone(),
+            None => self.ground.clone(),
+        }
+    }
+
+    /// Reads the surface of the checks when it is not read yet (a check
+    /// needs it).
+    pub fn ensure_check_ground(&mut self) {
+        if let Some(n) = &self.check_surface
+            && self.surface_settings.active.as_ref() != Some(n)
+            && self.check_ground.is_none()
+        {
+            match crate::surfaces::load(&self.sources.file, n) {
+                Ok(g) => self.check_ground = Some(std::sync::Arc::new(g)),
+                Err(e) => log::warn!("surface of the checks {n}: {e}"),
+            }
+        }
+    }
+
     /// What this user shows of the project now (remembered locally).
     pub fn view_prefs(&self) -> ViewPrefs {
         ViewPrefs {
@@ -1280,6 +1309,19 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
             ground = Some(g);
         }
     }
+    // The surface of the checks (the project's choice).
+    let check_surface = session.as_ref().and_then(crate::surfaces::check_surface);
+    let check_ground = match &check_surface {
+        None => None,
+        Some(n) if Some(n) == surface_settings.active.as_ref() && ground.is_some() => None,
+        Some(n) => match crate::surfaces::load(&sources.file, n) {
+            Ok(g) => Some(std::sync::Arc::new(g)),
+            Err(e) => {
+                step(format!("surface of the checks {n} not read: {e}"), &mut log);
+                None
+            }
+        },
+    };
     let (editing, viewer_session) = editing(session, sources.user.as_deref());
     let points_percent = sources
         .view
@@ -1313,6 +1355,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         line,
         cases: solved,
         ground: ground.map(std::sync::Arc::new),
+        check_surface,
+        check_ground,
         ground_source,
         surface_settings,
         other_surfaces,
