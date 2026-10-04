@@ -329,11 +329,14 @@ impl SurfacesWindow {
 impl SurfacesWindow {
     /// The window. Returns true when the views must follow (the ground or
     /// the surfaces shown changed).
+    /// `ground_shown`: whether the ground (the active surface) is drawn —
+    /// its tick in the "shown" column.
     pub fn ui(
         &mut self,
         ctx: &egui::Context,
         model: &mut Model,
         plugins: &mut crate::plugins::Plugins,
+        ground_shown: &mut bool,
     ) -> bool {
         let mut changed = self.poll(model, plugins);
         if let Some(name) = self.pending_ground.take() {
@@ -421,8 +424,17 @@ impl SurfacesWindow {
                             }
                             let mut shown = model.surface_settings.shown.contains_key(&s.name);
                             ui.horizontal(|ui| {
-                                if ui
-                                    .add_enabled(!active, egui::Checkbox::new(&mut shown, ""))
+                                if active {
+                                    // The ground: shown or hidden.
+                                    if ui
+                                        .checkbox(ground_shown, "")
+                                        .on_hover_text("The ground: shown or hidden")
+                                        .changed()
+                                    {
+                                        changed = true;
+                                    }
+                                } else if ui
+                                    .checkbox(&mut shown, "")
                                     .on_hover_text("Show it too, in its colour")
                                     .changed()
                                 {

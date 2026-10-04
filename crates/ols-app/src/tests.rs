@@ -3951,12 +3951,20 @@ fn terrain_surfaces_are_kept_in_the_project() {
         r.surfaces.show(&r.model);
     }
     // Import the survey points: triangulated, kept, made the ground.
+    // (Nothing waiting to be drawn: the import must ask for the ground.)
+    harness.state_mut().ready().unwrap().view3d.dirty.clear();
     let survey = root().join("examples/synthetic-line/synthetic-survey.csv");
     act(&mut harness, Action::Import(survey));
     run_until(&mut harness, |a| {
         a.ready().unwrap().model.ground_source == "surface synthetic-survey"
     });
     harness.get_by_label("Terrain surfaces (TIN)");
+    {
+        // Drawn at once (no reopening), shown.
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.view3d.dirty.contains(&crate::scene::Layer::Ground));
+        assert!(r.visible.contains(&crate::scene::Layer::Ground));
+    }
     let n = harness
         .state_mut()
         .ready()

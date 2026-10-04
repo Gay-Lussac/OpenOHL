@@ -4167,11 +4167,28 @@ impl eframe::App for App {
                         ready.class_window = Some(w);
                     }
                 }
-                if ready.surfaces.ui(&ctx, &mut ready.model, &mut self.plugins) {
-                    ready.visible.insert(Layer::Ground);
+                let ground_was = ready.model.ground.as_ref().map(std::sync::Arc::as_ptr);
+                let mut ground_shown = ready.visible.contains(&Layer::Ground);
+                let shown_before = ground_shown;
+                if ready
+                    .surfaces
+                    .ui(&ctx, &mut ready.model, &mut self.plugins, &mut ground_shown)
+                {
+                    // A new ground is shown; the tick shows or hides it.
+                    let new_ground =
+                        ready.model.ground.as_ref().map(std::sync::Arc::as_ptr) != ground_was;
+                    if new_ground || (ground_shown && !shown_before) {
+                        ready.visible.insert(Layer::Ground);
+                    } else if !ground_shown && shown_before {
+                        ready.visible.remove(&Layer::Ground);
+                    }
                     if !ready.model.other_surfaces.is_empty() {
                         ready.visible.insert(Layer::Surfaces);
                     }
+                    // The surfaces themselves are drawn again (the other
+                    // layers follow them: draped alignments, clearances).
+                    ready.view3d.dirty.insert(Layer::Ground);
+                    ready.view3d.dirty.insert(Layer::Surfaces);
                     ready.clearances.stale = true;
                     ready.refresh_views();
                 }
