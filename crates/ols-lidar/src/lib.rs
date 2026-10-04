@@ -156,29 +156,17 @@ impl Corridor {
         }
     }
 
-    fn near_segment(s: &[[f64; 2]; 2], x: f64, y: f64, r2: f64) -> bool {
-        let (a, b) = (s[0], s[1]);
-        let d = [b[0] - a[0], b[1] - a[1]];
-        let len2 = d[0] * d[0] + d[1] * d[1];
-        let t = if len2 > 0.0 {
-            (((x - a[0]) * d[0] + (y - a[1]) * d[1]) / len2).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let (px, py) = (a[0] + d[0] * t - x, a[1] + d[1] * t - y);
-        px * px + py * py <= r2
-    }
-
     /// Whether (x, y) is inside.
     pub fn contains(&self, x: f64, y: f64) -> bool {
-        let r2 = self.half_width * self.half_width;
         let key = (
             (x / self.cell).floor() as i64,
             (y / self.cell).floor() as i64,
         );
         self.cells.get(&key).is_some_and(|ids| {
-            ids.iter()
-                .any(|&k| Self::near_segment(&self.segments[k as usize], x, y, r2))
+            ids.iter().any(|&k| {
+                let [a, b] = self.segments[k as usize];
+                ols_core::geometry::distance_to_segment([x, y], a, b) <= self.half_width
+            })
         })
     }
 

@@ -331,23 +331,15 @@ pub fn run(input: &Input) -> Result<Report, String> {
 }
 
 /// Rule files to choose from: the one given, the `*.olsr` next to the
-/// model, those in `libraries/clearance-rules`.
+/// model, those in the shipped `libraries/clearance-rules`.
 pub fn rule_files(model_file: &Path, given: Option<&Path>) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = given.map(Path::to_path_buf).into_iter().collect();
-    let dir = model_file
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    for d in [dir, Path::new("libraries/clearance-rules")] {
-        let Ok(entries) = std::fs::read_dir(d) else {
-            continue;
-        };
-        let mut found: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().is_some_and(|x| x == "olsr"))
-            .collect();
-        found.sort();
-        for p in found {
+    let dirs = [
+        ols_core::files::dir_of(model_file),
+        ols_core::files::shipped_library("clearance-rules"),
+    ];
+    for d in &dirs {
+        for p in ols_core::files::files_with_extension(d, "olsr") {
             if !out.iter().any(|q| q == &p) {
                 out.push(p);
             }

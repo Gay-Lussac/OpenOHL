@@ -61,6 +61,8 @@ use crate::{Library, LibraryItem};
 pub const STRUCTURE_FILE_EXTENSION: &str = "olss";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ols-structure";
+/// Newest format version read.
+pub const STRUCTURE_FILE_VERSION: u32 = 1;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -220,16 +222,13 @@ impl LibraryItem for StructureType {
     }
 
     fn check(&self) -> Result<(), String> {
-        if let Some(f) = self
-            .format
-            .as_deref()
-            .filter(|f| *f != STRUCTURE_FILE_FORMAT)
-        {
-            return Err(format!("format \"{f}\" is not \"{STRUCTURE_FILE_FORMAT}\""));
-        }
-        if self.version.is_some_and(|v| v > 1) {
-            return Err("structure format version newer than supported (1)".into());
-        }
+        ols_core::files::check_header(
+            self.format.as_deref(),
+            self.version,
+            STRUCTURE_FILE_FORMAT,
+            STRUCTURE_FILE_VERSION,
+            "structure",
+        )?;
         let mut seen = std::collections::BTreeSet::new();
         for a in &self.attachments {
             if !seen.insert((a.set, a.phase)) {

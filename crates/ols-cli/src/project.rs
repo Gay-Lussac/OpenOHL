@@ -70,9 +70,9 @@ pub enum ProjectCommand {
         /// touched, and report both (what the application does live).
         #[arg(long)]
         solve: bool,
-        /// Wire library for --solve.
-        #[arg(long, default_value = "libraries/cables")]
-        library: PathBuf,
+        /// Wire library for --solve (default: the shipped libraries/cables).
+        #[arg(long)]
+        library: Option<PathBuf>,
         /// Cable temperature for --solve, °C.
         #[arg(long, default_value_t = 15.0)]
         temperature: f64,
@@ -282,6 +282,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 report(&s.apply(&user, command).map_err(|e| e.to_string())?);
                 return Ok(());
             }
+            let library = library.unwrap_or_else(|| ols_core::files::shipped_library("cables"));
             let library = ols_cables::Library::load(&library).map_err(|e| e.to_string())?;
             let case = ols_weather::WeatherCase::still(
                 "state",

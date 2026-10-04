@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 ols-cables.workspace = true
+ols-core.workspace = true
 ols-crs.workspace = true
 ols-line.workspace = true
 ols-plugins.workspace = true
@@ -18,7 +19,6 @@ serde_json.workspace = true
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [dev-dependencies]
-ols-core.workspace = true
 ols-weather.workspace = true
 
 [lints]

@@ -35,12 +35,15 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use ols_core::text::parse_rgb;
 use serde::{Deserialize, Serialize};
 
 /// File extension of class schemes.
 pub const CLASS_FILE_EXTENSION: &str = "olsc";
 /// Format identifier.
 pub const CLASS_FILE_FORMAT: &str = "ols-lidar-classes";
+/// Newest format version read and the one written.
+pub const CLASS_FILE_VERSION: u32 = 1;
 
 const ASPRS: &str = include_str!("../../../libraries/lidar-classes/asprs-las-1.4.olsc");
 
@@ -70,21 +73,6 @@ impl ClassDef {
     }
 }
 
-/// `#rrggbb` as RGB.
-pub fn parse_rgb(s: &str) -> Option<[u8; 3]> {
-    let h = s.strip_prefix('#')?;
-    if h.len() != 6 || !h.is_ascii() {
-        return None;
-    }
-    let b = |k: usize| u8::from_str_radix(&h[k..k + 2], 16).ok();
-    Some([b(0)?, b(2)?, b(4)?])
-}
-
-/// RGB as `#rrggbb`.
-pub fn format_rgb(c: [u8; 3]) -> String {
-    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
-}
-
 /// A class scheme.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -111,12 +99,13 @@ impl ClassScheme {
     /// Parses and checks a scheme.
     pub fn parse(text: &str) -> Result<Self, String> {
         let scheme: Self = toml::from_str(text).map_err(|e| e.to_string())?;
-        if let Some(f) = scheme.format.as_deref().filter(|f| *f != CLASS_FILE_FORMAT) {
-            return Err(format!("format \"{f}\" is not \"{CLASS_FILE_FORMAT}\""));
-        }
-        if scheme.version.is_some_and(|v| v > 1) {
-            return Err("class scheme version newer than supported (1)".into());
-        }
+        ols_core::files::check_header(
+            scheme.format.as_deref(),
+            scheme.version,
+            CLASS_FILE_FORMAT,
+            CLASS_FILE_VERSION,
+            "class scheme",
+        )?;
         let mut codes = BTreeSet::new();
         for c in &scheme.classes {
             if !codes.insert(c.code) {
@@ -152,7 +141,7 @@ impl ClassScheme {
     pub fn to_toml(&self) -> String {
         let mut s = self.clone();
         s.format = Some(CLASS_FILE_FORMAT.into());
-        s.version = Some(1);
+        s.version = Some(CLASS_FILE_VERSION);
         toml::to_string(&s).unwrap_or_default()
     }
 
@@ -192,13 +181,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn colours_with_other_characters_are_refused() {
-        assert_eq!(parse_rgb("#aé123"), None);
-        assert_eq!(parse_rgb("#zz0000"), None);
-        assert_eq!(parse_rgb("#A0b0C0"), Some([0xa0, 0xb0, 0xc0]));
-    }
-
-    #[test]
     fn colours_are_read_checked_and_written() {
         let text = "id = \"x\"\nname = \"X\"\n[[class]]\ncode = 3\nname = \"Tree\"\nroles = [\"vegetation\"]\ncolor = \"#40a050\"\n[[class]]\ncode = 4\nname = \"Other\"\n";
         let s = ClassScheme::parse(text).unwrap();
@@ -211,7 +193,6 @@ mod tests {
             t
         });
         assert!(ClassScheme::parse(&text.replace("#40a050", "green")).is_err());
-        assert_eq!(format_rgb([1, 2, 255]), "#0102ff");
     }
 
     #[test]

@@ -146,13 +146,7 @@ pub fn jumper_lines(
 
 /// `#rrggbb` → sRGB bytes (grey if not a colour).
 pub fn rgb(hex: &str) -> [u8; 3] {
-    let h = hex.trim_start_matches('#');
-    let byte = |i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or("b0"), 16).unwrap_or(176);
-    if h.len() == 6 {
-        [byte(0), byte(2), byte(4)]
-    } else {
-        [176, 184, 192]
-    }
+    ols_core::text::parse_rgb(hex).unwrap_or([176, 184, 192])
 }
 
 /// Display colour of a LiDAR class, by its roles (noise magenta: shown

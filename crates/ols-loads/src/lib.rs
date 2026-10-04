@@ -42,6 +42,8 @@ use serde::Deserialize;
 
 /// `format` of a load case file.
 pub const LOAD_CASE_FORMAT: &str = "ols-load-cases";
+/// Newest format version read.
+pub const LOAD_CASE_VERSION: u32 = 1;
 
 fn one() -> f64 {
     1.0
@@ -160,12 +162,13 @@ impl LoadCases {
     /// Parses and checks a file.
     pub fn parse(text: &str) -> Result<Self, String> {
         let set: Self = toml::from_str(text).map_err(|e| e.to_string())?;
-        if let Some(f) = set.format.as_deref().filter(|f| *f != LOAD_CASE_FORMAT) {
-            return Err(format!("format \"{f}\" is not \"{LOAD_CASE_FORMAT}\""));
-        }
-        if set.version.is_some_and(|v| v > 1) {
-            return Err("load case format version newer than supported (1)".into());
-        }
+        ols_core::files::check_header(
+            set.format.as_deref(),
+            set.version,
+            LOAD_CASE_FORMAT,
+            LOAD_CASE_VERSION,
+            "load case",
+        )?;
         let mut names = std::collections::BTreeSet::new();
         for c in &set.cases {
             c.validate()?;
@@ -345,13 +348,7 @@ pub fn to_csv(results: &[CaseLoads]) -> String {
         "case,structure,set,phase,label,support,x,y,z,transverse,longitudinal,vertical,\
          factored_transverse,factored_longitudinal,factored_vertical\n",
     );
-    let quote = |s: &str| {
-        if s.contains([',', '"', '\n']) {
-            format!("\"{}\"", s.replace('"', "\"\""))
-        } else {
-            s.to_owned()
-        }
-    };
+    let quote = ols_core::text::csv_field;
     for r in results {
         for l in &r.loads {
             let _ = writeln!(

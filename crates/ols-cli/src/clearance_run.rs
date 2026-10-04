@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use ols_clearance::{
     PairMode, PairResult, PointCheck, Rule, RuleSet, Target, Wire, WireResult, WireSet, wires_of,
 };
+use ols_core::text::csv_field;
 use ols_line::Line;
 use ols_line::electrical::{Potential, SystemKind};
 use ols_line::export::ViewerExtras;
@@ -162,10 +163,10 @@ fn csv_rows(out: &mut String, rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireR
         let _ = writeln!(
             out,
             "{},{kind},{},{},{},{},{:.3},{},{count},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{}",
-            rule.name,
-            a.section,
+            csv_field(&rule.name),
+            csv_field(&a.section),
             a.span,
-            b.map_or(String::new(), |w| w.section.clone()),
+            b.map_or(String::new(), |w| csv_field(&w.section)),
             b.map_or(String::new(), |w| w.span.to_string()),
             h.distance,
             required.map_or(String::new(), |v| format!("{v:.3}")),
@@ -524,7 +525,7 @@ fn report_pairs(
 
 /// Appends rows prefixed with the case (and an empty governing case).
 fn push_rows(csv: &mut String, case: &str, rows: &str) {
-    let name = case.replace(',', ";");
+    let name = csv_field(case);
     for row in rows.lines() {
         let _ = writeln!(csv, "{name},{row},");
     }
@@ -854,9 +855,9 @@ pub fn envelope_report(p: &Prepared, env: &ols_clearance::Envelope, csv: &mut St
                 let _ = writeln!(
                     csv,
                     "envelope,{},{measure},{},,{},,{:.3},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{}",
-                    rule.name,
-                    e.a.replace(',', ";"),
-                    e.b.as_deref().unwrap_or("").replace(',', ";"),
+                    csv_field(&rule.name),
+                    csv_field(&e.a),
+                    csv_field(e.b.as_deref().unwrap_or("")),
                     h.distance,
                     required.map_or(String::new(), |v| format!("{v:.3}")),
                     e.violated_in.len(),
@@ -867,7 +868,7 @@ pub fn envelope_report(p: &Prepared, env: &ols_clearance::Envelope, csv: &mut St
                     h.target[1],
                     h.target[2],
                     h.class.map_or(String::new(), |c| c.to_string()),
-                    c.replace(',', ";")
+                    csv_field(c)
                 );
             }
         }

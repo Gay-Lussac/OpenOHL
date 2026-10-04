@@ -14,6 +14,7 @@
 use std::fmt::Write as _;
 use std::io::Write as _;
 
+use ols_core::text::{csv_field, parse_rgb};
 use ols_crs::{Crs, Heights, Transformation};
 use ols_line::{Line, Structure};
 
@@ -36,14 +37,6 @@ const STRUCTURES_HEADER: &str = "structure,x,y,z,orientation_deg,type,extension"
 /// it lists, with their attachments, legs and stick drawings, and adds the
 /// new ones; without a line, it makes a line of structures only.
 pub struct StructuresCsv;
-
-fn csv_field(text: &str) -> String {
-    if text.contains([',', '"', '\n']) {
-        format!("\"{}\"", text.replace('"', "\"\""))
-    } else {
-        text.to_owned()
-    }
-}
 
 /// Splits one CSV record (fields may be quoted).
 fn csv_fields(line: &str) -> Vec<String> {
@@ -266,12 +259,9 @@ fn xml(text: &str) -> String {
 
 /// `#rrggbb` → KML `ffbbggrr`.
 fn kml_color(color: &str) -> String {
-    let hex = color.trim_start_matches('#');
-    if hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        format!("ff{}{}{}", &hex[4..6], &hex[2..4], &hex[0..2]).to_ascii_lowercase()
-    } else {
-        "ffc0b8b0".into()
-    }
+    parse_rgb(color).map_or("ffc0b8b0".into(), |[r, g, b]| {
+        format!("ff{b:02x}{g:02x}{r:02x}")
+    })
 }
 
 /// The KML document of a model.

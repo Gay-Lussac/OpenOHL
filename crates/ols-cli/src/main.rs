@@ -152,17 +152,19 @@ enum Command {
 struct LineArgs {
     /// Line file (.ols.json) or project file (.ols).
     file: PathBuf,
-    /// Wire library: .olsw file or directory.
-    #[arg(long, default_value = "libraries/cables")]
-    library: PathBuf,
+    /// Wire library: .olsw file or directory (default: the shipped
+    /// libraries/cables, in the current folder or next to the program).
+    #[arg(long)]
+    library: Option<PathBuf>,
     /// Structure type directory (.olss pylon files), for typed structures
     /// (default: the `Structures` folder next to the line or project file,
     /// else libraries/structures).
     #[arg(long)]
     structures: Option<PathBuf>,
-    /// Insulator assembly library directory (.olsi).
-    #[arg(long, default_value = "libraries/insulators")]
-    insulators: PathBuf,
+    /// Insulator assembly library directory (.olsi) (default: the shipped
+    /// libraries/insulators).
+    #[arg(long)]
+    insulators: Option<PathBuf>,
     /// Cable temperature, °C.
     #[arg(long, default_value_t = 15.0)]
     temperature: f64,
@@ -927,7 +929,12 @@ fn line(args: &LineArgs) -> ExitCode {
         export_options,
         plugin,
     } = args;
+    use ols_core::files::shipped_library;
     use ols_core::units::{Density, ForcePerLength, Length, Stress, Temperature};
+    let library = &library.clone().unwrap_or_else(|| shipped_library("cables"));
+    let insulator_dir = &insulator_dir
+        .clone()
+        .unwrap_or_else(|| shipped_library("insulators"));
     use ols_weather::{WeatherCase, WeatherCases};
     // Pylon files: given, else the project's Structures/ folder, else the
     // shared library.
@@ -941,7 +948,7 @@ fn line(args: &LineArgs) -> ExitCode {
             if local.is_dir() {
                 local
             } else {
-                PathBuf::from("libraries/structures")
+                shipped_library("structures")
             }
         }
     };

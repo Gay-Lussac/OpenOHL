@@ -246,6 +246,8 @@ impl WeatherCase {
 pub const WEATHER_FILE_EXTENSION: &str = "olswc";
 /// Format identifier.
 pub const WEATHER_FILE_FORMAT: &str = "ols-weather-cases";
+/// Newest format version read.
+pub const WEATHER_FILE_VERSION: u32 = 1;
 
 /// A set of weather cases (`*.olswc`).
 ///
@@ -298,12 +300,13 @@ impl WeatherCases {
     /// Parses and checks a case file.
     pub fn parse(text: &str) -> Result<Self, String> {
         let set: Self = toml::from_str(text).map_err(|e| e.to_string())?;
-        if let Some(f) = set.format.as_deref().filter(|f| *f != WEATHER_FILE_FORMAT) {
-            return Err(format!("format \"{f}\" is not \"{WEATHER_FILE_FORMAT}\""));
-        }
-        if set.version.is_some_and(|v| v > 1) {
-            return Err("weather case format version newer than supported (1)".into());
-        }
+        ols_core::files::check_header(
+            set.format.as_deref(),
+            set.version,
+            WEATHER_FILE_FORMAT,
+            WEATHER_FILE_VERSION,
+            "weather case",
+        )?;
         let mut names = std::collections::BTreeSet::new();
         for c in &set.cases {
             if !names.insert(c.name.as_str()) {

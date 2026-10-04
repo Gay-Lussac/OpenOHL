@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use ols_core::files::{dir_of, files_with_extension, shipped_library};
 use ols_line::Line;
 use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;
@@ -324,32 +325,6 @@ pub struct Model {
     pub library_dir: Option<PathBuf>,
 }
 
-fn dir_of(file: &Path) -> PathBuf {
-    file.parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."))
-        .to_path_buf()
-}
-
-/// A folder of the libraries shipped with OLS CAD (`libraries/<kind>`):
-/// in the folder the app was started in, else next to the program or
-/// above it (a build in `target/release` of the source tree).
-pub fn default_library(kind: &str) -> PathBuf {
-    let rel = Path::new("libraries").join(kind);
-    if rel.is_dir() {
-        return rel;
-    }
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| {
-            exe.ancestors()
-                .skip(1)
-                .map(|d| d.join(&rel))
-                .find(|d| d.is_dir())
-        })
-        .unwrap_or(rel)
-}
-
 /// The wire library: given, else the `*.olsw` files next to the model,
 /// else `libraries/cables`.
 pub fn library_path(s: &Sources) -> PathBuf {
@@ -363,7 +338,7 @@ pub fn library_path(s: &Sources) -> PathBuf {
     if has_olsw {
         dir
     } else {
-        default_library("cables")
+        shipped_library("cables")
     }
 }
 
@@ -416,7 +391,7 @@ pub fn structures_dir(sources: &Sources) -> PathBuf {
         if local.is_dir() {
             local
         } else {
-            default_library("structures")
+            shipped_library("structures")
         }
     })
 }
@@ -426,7 +401,7 @@ pub fn insulators_dir(sources: &Sources) -> PathBuf {
     sources
         .insulators
         .clone()
-        .unwrap_or_else(|| default_library("insulators"))
+        .unwrap_or_else(|| shipped_library("insulators"))
 }
 
 /// The directory next to the model.
@@ -557,15 +532,7 @@ fn files_at(at: &Path, extension: &str) -> Vec<PathBuf> {
     if at.is_file() {
         return vec![at.to_path_buf()];
     }
-    let mut out: Vec<PathBuf> = std::fs::read_dir(at)
-        .map(|it| {
-            it.filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.extension().is_some_and(|x| x == extension))
-                .collect()
-        })
-        .unwrap_or_default();
-    out.sort();
-    out
+    files_with_extension(at, extension)
 }
 
 /// The project's libraries: each kind the project does not hold yet is
