@@ -1807,6 +1807,9 @@ const SURVEY_GROUPS: [(&str, &[&str]); 6] = [
 /// The "Survey data display options" window: a tick per LiDAR class, kept
 /// open while classes are ticked and unticked (each change shows at once);
 /// all, none, invert, by group, a filter.
+/// Height of the class list of the survey window, points (it scrolls).
+const SURVEY_LIST_HEIGHT: f32 = 340.0;
+
 /// What the "Survey data display options" window changes, kept there
 /// until applied: reloading the points at every tick lagged, and a drag
 /// over several classes missed some of them.
@@ -1854,8 +1857,8 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
     egui::Window::new("Survey data display options")
         .open(&mut open)
         .collapsible(false)
-        .resizable(true)
-        .default_size([520.0, 520.0])
+        .resizable([true, false])
+        .default_width(520.0)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Classes shown:");
@@ -1927,9 +1930,11 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
             }
             // The list scrolls inside the window (a cloud may have dozens
             // of classes).
+            // A fixed height: sized from the space left, the window grew a
+            // little every frame until it filled the screen.
             egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .max_height(ui.available_height() - 70.0)
+                .auto_shrink([false, true])
+                .max_height(SURVEY_LIST_HEIGHT)
                 .show(ui, |ui| {
                     for (code, name, roles, loaded, total) in &classes {
                         let text = format!("{code} {name}");

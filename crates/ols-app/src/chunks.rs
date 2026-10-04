@@ -27,6 +27,11 @@ use crate::lod::{DetailKind, LodRow};
 use crate::model::Model;
 use crate::scene::{self, Layer, Prim};
 
+/// How far above its block's base height a LiDAR point may lie, m (a
+/// chunk's slope and the tallest pylons and trees; a box too tall only
+/// culls a little less).
+const POINTS_ABOVE_BASE: f64 = 300.0;
+
 /// What a chunk holds.
 #[derive(Debug)]
 enum Content {
@@ -101,21 +106,26 @@ impl ChunkIndex {
             Layer::Points if cloud_of(model).is_some() => {
                 // The tiles of the stored cloud: read when needed.
                 let (file, name) = cloud_of(model).expect("checked");
+                // Every tile a chunk overlaps (chunks of any size), its
+                // heights from its blocks: the cloud's stored bounds lack
+                // the top on older files, and boxes reaching to 0 m culled
+                // and mis-levelled the tiles of a line climbing to 1 000 m
+                // (flickering, vanishing points).
                 let tiles = ols_pointcloud::Store::open(&file).and_then(|s| {
                     let cloud = s.cloud(name.as_deref())?;
-                    Ok((s.tiles(&cloud, &grid, 0)?, cloud))
+                    s.tile_extents(&cloud, &grid, 0)
                 });
-                let Ok((counts, cloud)) = tiles else {
+                let Ok(tiles) = tiles else {
                     return Self::empty(grid);
                 };
                 let mut out = HashMap::new();
-                for (tile, _) in counts.tiles {
+                for (tile, z) in tiles {
                     let area = grid.bounds(&tile);
                     bounds.insert(
                         tile,
                         Some(Bounds {
-                            min: [area.min[0], area.min[1], cloud.bounds[0][2]],
-                            max: [area.max[0], area.max[1], cloud.bounds[1][2]],
+                            min: [area.min[0], area.min[1], z[0]],
+                            max: [area.max[0], area.max[1], z[1] + POINTS_ABOVE_BASE],
                         }),
                     );
                     out.insert(tile, Content::Stored);
@@ -314,8 +324,8 @@ pub struct Loaded {
     pub level: usize,
     /// Settings it was read with ([`PointStream::generation`]).
     pub generation: u64,
-    /// Its points.
-    pub scene: Result<Scene, String>,
+    /// Its points; `None`: not read, no longer wanted.
+    pub scene: Option<Result<Scene, String>>,
 }
 
 /// LiDAR points streamed from the project's point cloud: tiles read on a
@@ -329,6 +339,9 @@ pub struct PointStream {
     pub generation: u64,
     /// Tiles asked for and not back yet.
     in_flight: std::collections::HashSet<(Tile, usize)>,
+    /// What the view wants now: the reader skips requests no longer in
+    /// it (the camera moved on), so the queue never lags behind.
+    wanted: Arc<std::sync::Mutex<std::collections::HashSet<(Tile, usize)>>>,
 }
 
 impl std::fmt::Debug for PointStream {
@@ -350,39 +363,50 @@ impl PointStream {
         let origin = model.origin;
         let (tx, requests) = std::sync::mpsc::channel::<Request>();
         let (done, rx) = std::sync::mpsc::channel();
+        let wanted: Arc<std::sync::Mutex<std::collections::HashSet<(Tile, usize)>>> =
+            Default::default();
+        let still = wanted.clone();
         std::thread::spawn(move || {
             let store = ols_pointcloud::Store::open(&file)
                 .and_then(|s| s.cloud(name.as_deref()).map(|c| (s, c)));
             let budget =
                 ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(60));
             for r in requests {
-                let scene = match &store {
-                    Err(e) => Err(e.to_string()),
-                    Ok((store, cloud)) => {
-                        let mut s = Scene::new(origin);
-                        let mut seen = [0usize; 256];
-                        let classes: Vec<u8> =
-                            (0..=255u8).filter(|c| !r.hidden[*c as usize]).collect();
-                        store
-                            .visit_rect(
-                                cloud,
-                                r.area.0,
-                                r.area.1,
-                                Some(&classes),
-                                &budget,
-                                &mut |x, y, z, c| {
-                                    let n = &mut seen[c as usize];
-                                    *n += 1;
-                                    if (r.whole[c as usize] || (*n).is_multiple_of(r.every))
-                                        && let Some(col) = colors[c as usize]
-                                    {
-                                        s.point([x, y, z], [col[0], col[1], col[2], 255], 2.0);
-                                    }
-                                },
-                            )
-                            .map(|_| s)
-                            .map_err(|e| e.to_string())
-                    }
+                let skip = still
+                    .lock()
+                    .map(|w| !w.contains(&(r.tile, r.level)))
+                    .unwrap_or(false);
+                let scene = if skip {
+                    None
+                } else {
+                    Some(match &store {
+                        Err(e) => Err(e.to_string()),
+                        Ok((store, cloud)) => {
+                            let mut s = Scene::new(origin);
+                            let mut seen = [0usize; 256];
+                            let classes: Vec<u8> =
+                                (0..=255u8).filter(|c| !r.hidden[*c as usize]).collect();
+                            store
+                                .visit_rect(
+                                    cloud,
+                                    r.area.0,
+                                    r.area.1,
+                                    Some(&classes),
+                                    &budget,
+                                    &mut |x, y, z, c| {
+                                        let n = &mut seen[c as usize];
+                                        *n += 1;
+                                        if (r.whole[c as usize] || (*n).is_multiple_of(r.every))
+                                            && let Some(col) = colors[c as usize]
+                                        {
+                                            s.point([x, y, z], [col[0], col[1], col[2], 255], 2.0);
+                                        }
+                                    },
+                                )
+                                .map(|_| s)
+                                .map_err(|e| e.to_string())
+                        }
+                    })
                 };
                 let sent = done.send(Loaded {
                     tile: r.tile,
@@ -403,7 +427,17 @@ impl PointStream {
             rx,
             generation: 0,
             in_flight: Default::default(),
+            wanted,
         })
+    }
+
+    /// The tiles and levels the view wants now (the reader skips the
+    /// others still queued).
+    pub fn want(&self, now: impl IntoIterator<Item = (Tile, usize)>) {
+        if let Ok(mut w) = self.wanted.lock() {
+            w.clear();
+            w.extend(now);
+        }
     }
 
     /// Other settings: what is being read is no longer wanted.

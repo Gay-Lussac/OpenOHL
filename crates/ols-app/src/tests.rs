@@ -2606,11 +2606,14 @@ fn files_are_created_opened_and_closed() {
     harness
         .state_mut()
         .file_action_for_test(FileAction::Open(Some(path.clone())));
-    for _ in 0..200 {
+    // Loading runs in the background: wait for it (exit clause 30 s).
+    let started = std::time::Instant::now();
+    while harness.state_mut().ready().is_none()
+        && harness.state().failure().is_none()
+        && started.elapsed() < std::time::Duration::from_secs(30)
+    {
         harness.step();
-        if harness.state_mut().ready().is_some() {
-            break;
-        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert_eq!(harness.state().failure(), None);
     {
@@ -2637,11 +2640,14 @@ fn files_are_created_opened_and_closed() {
     harness
         .state_mut()
         .file_action_for_test(FileAction::Open(Some(again)));
-    for _ in 0..200 {
+    // Loading runs in the background: wait for it (exit clause 30 s).
+    let started = std::time::Instant::now();
+    while harness.state_mut().ready().is_none()
+        && harness.state().failure().is_none()
+        && started.elapsed() < std::time::Duration::from_secs(30)
+    {
         harness.step();
-        if harness.state_mut().ready().is_some() {
-            break;
-        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert!(harness.state_mut().ready().is_some());
 }
@@ -2781,6 +2787,14 @@ fn the_survey_list_scrolls() {
         .get_by_label_contains("Points shown near the camera")
         .rect();
     assert!(slider.bottom() < 900.0, "{slider:?}");
+    // It keeps its size (it grew every frame until it filled the screen).
+    for _ in 0..60 {
+        harness.step();
+    }
+    let later = harness
+        .get_by_label_contains("Points shown near the camera")
+        .rect();
+    assert_eq!(later, slider);
 }
 
 /// A survey stored in the project: its points are read by tile as they

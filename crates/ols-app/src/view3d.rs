@@ -366,11 +366,15 @@ impl View3d {
                 if other {
                     stream.restart();
                 }
-                // The tiles read since the last frame.
+                // The tiles read since the last frame (skipped ones: asked
+                // again if still wanted).
                 for l in stream.take() {
                     match l.scene {
-                        Ok(s) => c.set.insert(&l.tile, l.level, GpuScene::new(device, &s)),
-                        Err(e) => log::warn!("LiDAR tile {:?}: {e}", l.tile),
+                        Some(Ok(s)) => {
+                            c.set.insert(&l.tile, l.level, GpuScene::new(device, &s));
+                        }
+                        Some(Err(e)) => log::warn!("LiDAR tile {:?}: {e}", l.tile),
+                        None => {}
                     }
                 }
             }
@@ -379,7 +383,11 @@ impl View3d {
                 c.set.reset(c.index.keys());
             }
             c.row = row;
-            for w in c.set.plan(&frustum, &row.rule()) {
+            let planned = c.set.plan(&frustum, &row.rule());
+            if streamed && let Some((stream, _)) = &self.stream {
+                stream.want(planned.iter().map(|w| (w.key, w.level)));
+            }
+            for w in planned {
                 wanted.push((layer, w));
             }
         }

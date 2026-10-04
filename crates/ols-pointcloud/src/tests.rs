@@ -277,3 +277,47 @@ fn a_rectangle_gives_exactly_its_points() {
     drop(store);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// Chunks that do not nest in the grid's tiles (50 m chunks, 64 m tiles):
+/// every point's tile is listed, its points at or above the tile's lowest
+/// block base and the highest base below the top point.
+#[test]
+fn tile_extents_cover_chunks_across_tile_borders() {
+    let dir = scratch("extents");
+    write_tile(&dir.join("a.laz"), 0.0, 120.0);
+    let tiles = ols_lidar::tiles_in(&dir).unwrap();
+    let db = dir.join("project.ols");
+    let mut store = Store::open(&db).unwrap();
+    let (cloud, _) = store
+        .import_tiles(
+            "survey",
+            &tiles,
+            "EPSG:2056",
+            None,
+            50.0,
+            0.001,
+            &Budget::new(),
+            |_, _, _| {},
+        )
+        .unwrap();
+    let grid = ols_core::grid::Grid::new(64.0).unwrap();
+    let extents: std::collections::BTreeMap<_, _> = store
+        .tile_extents(&cloud, &grid, 0)
+        .unwrap()
+        .into_iter()
+        .collect();
+    let mut low: std::collections::BTreeMap<ols_core::grid::Tile, f64> = Default::default();
+    store
+        .visit(&cloud, None, None, &Budget::new(), &mut |x, y, z, _| {
+            let t = grid.tile_at(0, [x, y]);
+            let e = extents.get(&t).expect("every point's tile listed");
+            assert!(z >= e[0] - 1e-6, "{z} below the lowest base {}", e[0]);
+            let l = low.entry(t).or_insert(z);
+            *l = l.min(z);
+        })
+        .unwrap();
+    // Tiles x 0..1 (0-128 m wide survey of 120 m): both listed.
+    assert!(extents.keys().any(|t| t.x == 1));
+    drop(store);
+    std::fs::remove_dir_all(dir).ok();
+}
