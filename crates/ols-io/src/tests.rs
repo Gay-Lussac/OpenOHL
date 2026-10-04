@@ -331,3 +331,59 @@ fn terrain_plugin_reads_a_grid() {
             .contains("plugin esri-grid")
     );
 }
+
+/// The example project plugin once built: a bundle becomes a line and its
+/// library files; clipping in fixes each span's length.
+#[test]
+fn project_plugin_reads_a_bundle() {
+    let dir = root().join("plugins/examples/project-bundle");
+    if !dir
+        .join("target/wasm32-wasip2/release/project_bundle.wasm")
+        .exists()
+    {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_PLUGIN_TESTS").is_none(),
+            "project-bundle plugin not built"
+        );
+        eprintln!("skipping: project-bundle plugin not built");
+        return;
+    }
+    let ex = root().join("examples/synthetic-line");
+    let line: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(ex.join("synthetic-line.ols.json")).unwrap())
+            .unwrap();
+    let cables =
+        std::fs::read_to_string(root().join("libraries/cables/acsr-examples.olsw")).unwrap();
+    let bundle = serde_json::json!({
+        "line": line,
+        "libraries": [{"kind": "cables", "name": "acsr-examples.olsw", "text": cables}],
+    });
+    let host = ols_plugins::WasmHost::new().unwrap();
+    let mut r = Registry::with_builtin();
+    assert_eq!(r.add_plugin(&host, &dir).unwrap(), "project-bundle");
+    let i = r.project_importer("olsb").unwrap();
+    assert_eq!(i.origin(), "plugin project-bundle");
+    let mut options = Options::new();
+    options.insert("name".into(), "Bundled".into());
+    let mut p = i.import(bundle.to_string().as_bytes(), &options).unwrap();
+    assert_eq!(p.line.name, "Bundled");
+    assert_eq!(p.libraries.len(), 1);
+    assert_eq!(p.notes, ["1 library files"]);
+    let before = p
+        .line
+        .sections
+        .iter()
+        .filter(|s| s.stringing.clipped())
+        .count();
+    let (n, failed) = p.clip_in();
+    assert!(failed.is_empty(), "{failed:?}");
+    assert_eq!(n, p.line.sections.len() - before);
+    assert!(p.line.sections.iter().all(|s| s.stringing.clipped()));
+    assert!(
+        r.project_importer("olsb")
+            .unwrap()
+            .import(b"{}", &Options::new())
+            .unwrap_err()
+            .contains("no line")
+    );
+}

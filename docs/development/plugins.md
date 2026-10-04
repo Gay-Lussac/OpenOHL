@@ -67,6 +67,15 @@ memory-mib = 1024
 
 A plugin also suits formats that should not be in the open-source code — e.g. one read from a private specification — kept and installed only where it may be used.
 
+## Project plugins
+
+A plugin that reads another program's project files implements the `project-plugin` world and lists the extension point `project` (with `[limits]` for large files, as above):
+
+- `formats()` lists the formats it reads.
+- `import-project(format, data, options)` returns a **project**: the line as a line file (JSON), its **library files** (`kind` — `cables`, `weather`, `loadcases`, `structures`, `insulators` — `name` and TOML `text`, as OLS CAD writes them) and **notes**: what was read, what was left out, what was assumed. The host checks the line and creates a new project file with it and its libraries (File › New project from another program, `ols project import-from`), and shows the notes.
+
+`plugins/examples/project-bundle` reads a JSON bundle `{"line": …, "libraries": [{"kind", "name", "text"}]}` — the shape such a reader returns. Readers of formats that should stay out of the open-source code are installed only where they may be used.
+
 ## Python plugins
 
 Python plugins are scripts (`tier = "python"`, `entry` the script). Outside the application they use the `ols` package built from `crates/ols-py`; inside it, the Python console runs them (Plugins › Python console › Plugin scripts) with the `ols` module of the application, which also reads and edits the open project ([Python console](../user-guide/desktop-app.md#python-console)). See `plugins/examples/hello-python`.

@@ -47,7 +47,7 @@ impl Listed {
                 && m.plugin
                     .extension_points
                     .iter()
-                    .any(|p| p == "io" || p == "terrain")
+                    .any(|p| p == "io" || p == "terrain" || p == "project")
         })
     }
 }
@@ -74,6 +74,8 @@ pub struct Formats {
     pub importers: Vec<FormatInfo>,
     /// Terrain surface readers.
     pub surfaces: Vec<FormatInfo>,
+    /// Project readers.
+    pub projects: Vec<FormatInfo>,
     /// Plugins whose formats could not be loaded, with why.
     pub errors: Vec<String>,
 }
@@ -94,6 +96,24 @@ enum Job {
         options: ols_io::Options,
     },
     StoreSurfaces(SurfaceImport),
+    CreateProject(ProjectImport),
+}
+
+/// Another program's file made a new project.
+#[derive(Debug, Clone)]
+pub struct ProjectImport {
+    /// The file.
+    pub path: PathBuf,
+    /// Format id (`None`: from the file extension).
+    pub format: Option<String>,
+    /// Format options.
+    pub options: ols_io::Options,
+    /// The new project file (must not exist).
+    pub into: PathBuf,
+    /// The user (its admin).
+    pub user: String,
+    /// Clip the sections in at their stringing condition.
+    pub clip_in: bool,
 }
 
 /// A terrain surface file to read and keep in a project.
@@ -118,6 +138,7 @@ enum Reply {
     Exported(Result<String, String>),
     Imported(Result<Box<ols_line::Line>, String>),
     SurfacesStored(Result<Vec<String>, String>),
+    ProjectCreated(Result<(PathBuf, Vec<String>), String>),
 }
 
 /// The thread holding the format registry (plugin instances stay on it).
@@ -169,6 +190,9 @@ impl Worker {
                         }
                         Job::StoreSurfaces(job) => {
                             Reply::SurfacesStored(store_surfaces(&mut registry, &job))
+                        }
+                        Job::CreateProject(job) => {
+                            Reply::ProjectCreated(create_project(&mut registry, &job))
                         }
                     };
                     if tx.send(reply).is_err() {
@@ -240,6 +264,49 @@ fn store_surfaces(r: &mut ols_io::Registry, job: &SurfaceImport) -> Result<Vec<S
     Ok(out)
 }
 
+/// Reads another program's file into a new project (line and library
+/// files); its path and the reader's notes.
+fn create_project(
+    r: &mut ols_io::Registry,
+    job: &ProjectImport,
+) -> Result<(PathBuf, Vec<String>), String> {
+    let into = job.into.with_extension("ols");
+    if into.exists() {
+        return Err(format!("{} exists already", into.display()));
+    }
+    let id = job.format.clone().unwrap_or_else(|| {
+        job.path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    });
+    let importer = r.project_importer(&id).ok_or_else(|| {
+        format!("no project format for \"{id}\": a project plugin (Plugins › Plugin manager)")
+    })?;
+    let data = std::fs::read(&job.path).map_err(|e| format!("{}: {e}", job.path.display()))?;
+    let mut p = importer.import(&data, &job.options)?;
+    if job.clip_in {
+        let (n, failed) = p.clip_in();
+        p.notes.push(format!(
+            "{n} sections clipped in at their stringing condition"
+        ));
+        p.notes
+            .extend(failed.into_iter().map(|f| format!("not clipped in: {f}")));
+    }
+    if let Err(e) = p.line.validate() {
+        p.notes.push(format!("the line does not check yet: {e}"));
+    }
+    let mut s = ols_session::Session::open(&into).map_err(|e| e.to_string())?;
+    s.import(&p.line, &job.user).map_err(|e| e.to_string())?;
+    for (kind, name, text) in &p.libraries {
+        s.put_library_file(&job.user, kind, name, text)
+            .map_err(|e| e.to_string())?;
+    }
+    s.checkpoint().map_err(|e| e.to_string())?;
+    Ok((into, p.notes))
+}
+
 fn formats_of(r: &ols_io::Registry, errors: Vec<String>) -> Formats {
     Formats {
         exporters: r
@@ -253,6 +320,15 @@ fn formats_of(r: &ols_io::Registry, errors: Vec<String>) -> Formats {
             .collect(),
         importers: r
             .importers()
+            .map(|e| FormatInfo {
+                id: e.id().into(),
+                extension: e.extension().into(),
+                description: e.description().into(),
+                origin: e.origin(),
+            })
+            .collect(),
+        projects: r
+            .project_importers()
             .map(|e| FormatInfo {
                 id: e.id().into(),
                 extension: e.extension().into(),
@@ -358,6 +434,10 @@ pub struct Plugins {
     reloading: bool,
     /// The surfaces an import kept (taken by the surface manager).
     pub surfaces_stored: Option<Result<Vec<String>, String>>,
+    /// A project being created from another program's file.
+    pub creating: bool,
+    /// The project created (its file and the reader's notes), or why not.
+    pub project_created: Option<Result<(PathBuf, Vec<String>), String>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
@@ -505,6 +585,10 @@ impl Plugins {
                         }
                     }
                 }
+                Reply::ProjectCreated(r) => {
+                    self.creating = false;
+                    self.project_created = Some(r);
+                }
                 Reply::SurfacesStored(r) => {
                     self.storing = false;
                     self.surfaces_stored = Some(r);
@@ -525,7 +609,8 @@ impl Plugins {
         }
         let waiting = ((self.open || self.window.is_some()) && self.formats.is_none())
             || self.window.as_ref().is_some_and(|w| w.busy)
-            || self.storing;
+            || self.storing
+            || self.creating;
         if waiting {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
@@ -756,6 +841,16 @@ impl Plugins {
             "formats (none loaded)".into()
         } else {
             list.join(", ")
+        }
+    }
+
+    /// Creates a project from another program's file (on the worker); the
+    /// result comes in [`Plugins::project_created`].
+    pub fn create_project(&mut self, job: ProjectImport) {
+        let worker = self.worker.get_or_insert_with(Worker::start);
+        if worker.jobs.send(Job::CreateProject(job)).is_ok() {
+            self.creating = true;
+            self.project_created = None;
         }
     }
 

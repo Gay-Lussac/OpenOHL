@@ -27,6 +27,8 @@ pub enum FileAction {
     Host,
     /// Leave the server (stop hosting).
     Leave,
+    /// A new project from another program's file.
+    ImportProject,
 }
 
 /// Files opened, most recent first (remembered).
@@ -142,6 +144,17 @@ pub fn file_menu(
             });
         });
         if ui
+            .button("New project from another program…")
+            .on_hover_text(
+                "Read another program's file (a project plugin's format) into a new project: \
+                 the line, its wires, weather cases, load cases",
+            )
+            .clicked()
+        {
+            *action = Some(FileAction::ImportProject);
+            ui.close();
+        }
+        if ui
             .button("Join a server…")
             .on_hover_text("Work on a project someone hosts, with their invitation")
             .clicked()
@@ -223,6 +236,9 @@ pub fn start_page(ui: &mut egui::Ui, recent: &Recent, action: &mut Option<FileAc
         if ui.button("Open…").clicked() {
             *action = Some(FileAction::Open(None));
         }
+        if ui.button("New project from another program…").clicked() {
+            *action = Some(FileAction::ImportProject);
+        }
         if ui.button("Join a server…").clicked() {
             *action = Some(FileAction::Join);
         }
@@ -244,6 +260,132 @@ pub fn start_page(ui: &mut egui::Ui, recent: &Recent, action: &mut Option<FileAc
             }
         }
     });
+}
+
+/// File › New project from another program.
+#[derive(Debug, Clone, Default)]
+pub struct ImportProjectWindow {
+    /// The file to read.
+    pub file: Option<PathBuf>,
+    /// Format id (empty: from the extension).
+    pub format: String,
+    /// Options, `KEY=VALUE` separated by commas.
+    pub options: String,
+    /// Clip the sections in at their stringing condition.
+    pub clip_in: bool,
+    /// Why the last attempt failed.
+    pub error: Option<String>,
+}
+
+impl ImportProjectWindow {
+    /// The window; a job to run once the file and the new project are
+    /// chosen.
+    pub fn ui(
+        &mut self,
+        ctx: &egui::Context,
+        open: &mut bool,
+        formats: &[crate::plugins::FormatInfo],
+        busy: bool,
+    ) -> Option<crate::plugins::ProjectImport> {
+        let mut job = None;
+        egui::Window::new("New project from another program")
+            .open(open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(520.0)
+            .show(ctx, |ui| {
+                if formats.is_empty() {
+                    ui.colored_label(
+                        egui::Color32::LIGHT_RED,
+                        "No project format: install a project plugin (Plugins › Plugin manager).",
+                    );
+                }
+                for f in formats {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} (.{}) — {} — {}",
+                            f.id, f.extension, f.description, f.origin
+                        ))
+                        .small(),
+                    );
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("Choose the file…").clicked()
+                        && let Some(p) = rfd::FileDialog::new().pick_file()
+                    {
+                        self.file = Some(p);
+                    }
+                    ui.label(
+                        self.file
+                            .as_ref()
+                            .map_or("no file".into(), |p| p.display().to_string()),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("format");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.format)
+                            .hint_text("from the extension")
+                            .desired_width(140.0),
+                    );
+                    ui.label("options");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.options)
+                            .hint_text("KEY=VALUE, …")
+                            .desired_width(200.0),
+                    );
+                });
+                ui.checkbox(
+                    &mut self.clip_in,
+                    "Clip the sections in at their stringing condition",
+                )
+                .on_hover_text(
+                    "Each span keeps the length of its condition (sections the reader left in \
+                         the blocks)",
+                );
+                if let Some(e) = &self.error {
+                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                }
+                if busy {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label("reading…");
+                    });
+                } else if ui
+                    .add_enabled(
+                        self.file.is_some(),
+                        egui::Button::new("Create the project…"),
+                    )
+                    .clicked()
+                    && let Some(file) = &self.file
+                    && let Some(into) = rfd::FileDialog::new()
+                        .add_filter("OLS CAD project", &["ols"])
+                        .set_file_name(format!(
+                            "{}.ols",
+                            file.file_stem()
+                                .map_or("project".into(), |s| s.to_string_lossy())
+                        ))
+                        .save_file()
+                {
+                    job = Some(crate::plugins::ProjectImport {
+                        path: file.clone(),
+                        format: (!self.format.trim().is_empty()).then(|| self.format.trim().into()),
+                        options: self
+                            .options
+                            .split(',')
+                            .filter_map(|kv| {
+                                kv.split_once('=')
+                                    .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
+                            })
+                            .collect(),
+                        into,
+                        user: user(),
+                        clip_in: self.clip_in,
+                    });
+                }
+            });
+        job
+    }
 }
 
 /// The New project window's values.

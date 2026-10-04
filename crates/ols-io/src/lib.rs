@@ -16,6 +16,7 @@
 
 pub mod formats;
 pub mod plugin;
+pub mod projects;
 pub mod surfaces;
 
 use std::collections::BTreeMap;
@@ -220,6 +221,7 @@ pub struct Registry {
     exporters: Vec<Box<dyn Exporter>>,
     importers: Vec<Box<dyn Importer>>,
     surface_importers: Vec<Box<dyn surfaces::SurfaceImporter>>,
+    project_importers: Vec<Box<dyn projects::ProjectImporter>>,
 }
 
 impl Registry {
@@ -248,6 +250,35 @@ impl Registry {
     pub fn add_surface_importer(&mut self, i: Box<dyn surfaces::SurfaceImporter>) {
         self.surface_importers.retain(|x| x.id() != i.id());
         self.surface_importers.push(i);
+    }
+
+    /// Adds a project reader (a later one with the same id replaces it).
+    pub fn add_project_importer(&mut self, i: Box<dyn projects::ProjectImporter>) {
+        self.project_importers.retain(|x| x.id() != i.id());
+        self.project_importers.push(i);
+    }
+
+    /// Project readers (from plugins).
+    pub fn project_importers(&self) -> impl Iterator<Item = &dyn projects::ProjectImporter> {
+        self.project_importers.iter().map(|i| i.as_ref())
+    }
+
+    /// The project reader with this id, or for this file extension.
+    pub fn project_importer(
+        &mut self,
+        id_or_extension: &str,
+    ) -> Option<&mut Box<dyn projects::ProjectImporter>> {
+        let key = id_or_extension.to_ascii_lowercase();
+        let k = self
+            .project_importers
+            .iter()
+            .position(|e| e.id() == key)
+            .or_else(|| {
+                self.project_importers
+                    .iter()
+                    .position(|e| e.extension() == key)
+            })?;
+        self.project_importers.get_mut(k)
     }
 
     /// Terrain surface readers.
@@ -289,9 +320,12 @@ impl Registry {
         if points.iter().any(|p| p == "terrain") {
             name = Some(surfaces::register_plugin(self, host, dir)?);
         }
+        if points.iter().any(|p| p == "project") {
+            name = Some(projects::register_plugin(self, host, dir)?);
+        }
         name.ok_or_else(|| {
             format!(
-                "plugin {}: no format extension point (io or terrain)",
+                "plugin {}: no format extension point (io, terrain or project)",
                 manifest.plugin.name
             )
         })

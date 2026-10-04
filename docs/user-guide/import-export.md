@@ -52,3 +52,19 @@ ols import points.geojson --plugin plugins/examples/geojson --into line.ols.json
 ```
 
 A plugin error, a crash, or a plugin exceeding its time or memory limit is reported as the format's error; the line is never half-written.
+
+## Projects from other programs
+
+A **project plugin** reads another program's project file into a new OLS CAD project: the line (structures and attachments, sections and their stringing, circuits as electrical systems, jumpers, point loads, alignment) and its libraries (wires, weather cases, load cases), with notes on what was read, left out or assumed.
+
+- **In the application:** File › **New project from another program…** (also on the start page): the file, the format (default: from the extension), options, then where to save the new `.ols`. It runs in the background; the project opens with a window of the reader's notes.
+- **From the command line:**
+
+  ```bash
+  ols project import-from FILE --into new.ols --user ann --plugin DIR [--format F] [--option KEY=VALUE] [--clip-in]
+  ```
+
+**Clip in** (`--clip-in`, or the window's tick): sections the reader left in the blocks are clipped in at their stringing condition, so each span keeps its length — as programs that sag a section with a ruling span and then solve it with fixed lengths do.
+
+Terrain (TIN) and point clouds are imported apart: Terrain › Terrain surfaces, Terrain › Survey data.
+

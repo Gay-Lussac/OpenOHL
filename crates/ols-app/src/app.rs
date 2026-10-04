@@ -312,6 +312,10 @@ pub struct App {
     pub host_window: Option<crate::remote::HostWindow>,
     /// File › Join a server.
     pub join_window: Option<crate::remote::JoinWindow>,
+    /// File › New project from another program.
+    pub import_project: Option<crate::files::ImportProjectWindow>,
+    /// What the reader said of the project it created.
+    pub import_notes: Option<(PathBuf, Vec<String>)>,
     /// Hosting: joining its own server.
     hosting_join: Option<std::sync::mpsc::Receiver<crate::remote::JoinEvent>>,
     /// Joined: given to the model once it is loaded.
@@ -365,6 +369,8 @@ impl App {
             hosted_file: None,
             host_window: None,
             join_window: None,
+            import_project: None,
+            import_notes: None,
             hosting_join: None,
             pending_remote: None,
             joined_dir: crate::remote::default_joined_dir(),
@@ -489,6 +495,9 @@ impl App {
                 });
             }
             FileAction::Host => self.host_window = Some(Default::default()),
+            FileAction::ImportProject => {
+                self.import_project = Some(Default::default());
+            }
             FileAction::Leave => {
                 let hosted = self.hosted_file.take();
                 self.stop_hosting();
@@ -608,6 +617,69 @@ impl App {
         self.pending_remote = Some(remote);
     }
 
+    /// File › New project from another program: the window, the job on
+    /// the format worker, the project opened with the reader's notes.
+    fn import_project_windows(&mut self, ctx: &egui::Context) {
+        if self.import_project.is_some() {
+            self.plugins.want_formats();
+            // The worker answers between frames (also without a project).
+            if !matches!(self.state, State::Ready(_)) {
+                let _ = self.plugins.poll(ctx);
+            }
+            let formats = self
+                .plugins
+                .formats
+                .as_ref()
+                .map(|f| f.projects.clone())
+                .unwrap_or_default();
+            let busy = self.plugins.creating;
+            let mut open = true;
+            let job = self
+                .import_project
+                .as_mut()
+                .and_then(|w| w.ui(ctx, &mut open, &formats, busy));
+            if let Some(job) = job {
+                self.plugins.create_project(job);
+            }
+            match self.plugins.project_created.take() {
+                Some(Ok((file, notes))) => {
+                    self.import_project = None;
+                    self.import_notes = Some((file.clone(), notes));
+                    self.file_action = Some(crate::files::FileAction::Open(Some(file)));
+                }
+                Some(Err(e)) => {
+                    if let Some(w) = &mut self.import_project {
+                        w.error = Some(e);
+                    }
+                }
+                None if !open => self.import_project = None,
+                None => {}
+            }
+        }
+        if let Some((file, notes)) = &self.import_notes {
+            let mut open = true;
+            egui::Window::new("Project created")
+                .open(&mut open)
+                .default_width(640.0)
+                .show(ctx, |ui| {
+                    ui.label(format!(
+                        "{} — what was read, left out or assumed:",
+                        file.display()
+                    ));
+                    egui::ScrollArea::vertical()
+                        .max_height(400.0)
+                        .show(ui, |ui| {
+                            for n in notes {
+                                ui.label(format!("• {n}"));
+                            }
+                        });
+                });
+            if !open {
+                self.import_notes = None;
+            }
+        }
+    }
+
     /// The server-mode windows: Host, Join, hosting's own join.
     fn share_windows(&mut self, ctx: &egui::Context) {
         if self.host_window.is_some() {
@@ -692,6 +764,8 @@ impl App {
             hosted_file: None,
             host_window: None,
             join_window: None,
+            import_project: None,
+            import_notes: None,
             hosting_join: None,
             pending_remote: None,
             joined_dir: crate::remote::default_joined_dir(),
@@ -4082,6 +4156,7 @@ impl eframe::App for App {
         }
         // The File menu's windows and actions.
         self.share_windows(&ctx);
+        self.import_project_windows(&ctx);
         if let Some(np) = &mut self.new_project {
             let mut open = true;
             if let Some(path) = np.ui(&ctx, &mut open) {

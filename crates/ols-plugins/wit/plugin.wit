@@ -110,3 +110,45 @@ world terrain-plugin {
     /// Reads the surfaces of `data` in format `format`.
     export import-surfaces: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<list<surface>, string>;
 }
+
+/// Types of project plugins.
+interface project-types {
+    /// A library file of the project (as OLS CAD writes them).
+    record library-file {
+        /// Library kind: "cables" (.olsw), "weather" (.olswc),
+        /// "loadcases" (.olslc), "structures" (.olss), "insulators"
+        /// (.olsi).
+        kind: string,
+        /// File name, with its extension.
+        name: string,
+        /// The file's text (TOML).
+        text: string,
+    }
+
+    /// A project read from another program's file.
+    record project {
+        /// The line, as a line file (.ols.json) in JSON.
+        line: string,
+        /// Its libraries.
+        libraries: list<library-file>,
+        /// What was read, what was left out or assumed (shown to the user).
+        notes: list<string>,
+    }
+}
+
+/// World of project plugins: read a whole project (line and libraries)
+/// from another program's file.
+world project-plugin {
+    use types.{plugin-info};
+    use io-types.{format};
+    use project-types.{project};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    /// The project formats this plugin reads (importers).
+    export formats: func() -> list<format>;
+
+    /// Reads a project from `data` in format `format`.
+    export import-project: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<project, string>;
+}

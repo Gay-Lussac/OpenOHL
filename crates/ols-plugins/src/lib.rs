@@ -63,6 +63,15 @@ mod terrain_bindings {
 
 pub use terrain_bindings::ols::plugin::terrain_types::Surface;
 
+mod project_bindings {
+    wasmtime::component::bindgen!({
+        world: "project-plugin",
+        path: "wit",
+    });
+}
+
+pub use project_bindings::ols::plugin::project_types::{LibraryFile, Project};
+
 pub use bindings::ols::plugin::types::PluginInfo;
 pub use io_bindings::ols::plugin::io_types::{Direction, Format};
 
@@ -734,6 +743,100 @@ impl WasmHost {
             instance,
             limits,
         })
+    }
+}
+
+impl WasmHost {
+    /// Loads a project plugin (`project-plugin` world, extension point
+    /// `project` in its manifest), with the limits its manifest asks for.
+    pub fn load_project(&self, dir: &Path) -> Result<WasmProjectPlugin, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm {
+            return Err(PluginError::UnsupportedTier(
+                manifest.plugin.tier.to_string(),
+            ));
+        }
+        manifest.check_compatible()?;
+        manifest.check_permissions()?;
+        if !manifest
+            .plugin
+            .extension_points
+            .iter()
+            .any(|e| e == "project")
+        {
+            return Err(PluginError::Manifest {
+                path: dir.join(MANIFEST_FILE),
+                message: "a project plugin lists the extension point \"project\"".into(),
+            });
+        }
+        let limits = self.limits.for_manifest(&manifest);
+        let component = Component::from_file(&self.engine, manifest.entry_path())?;
+        let state = HostState {
+            wasi: WasiCtxBuilder::new().build(),
+            table: ResourceTable::new(),
+            limits: StoreLimitsBuilder::new()
+                .memory_size(limits.max_memory_bytes)
+                .build(),
+        };
+        let mut store = Store::new(&self.engine, state);
+        store.limiter(|state| &mut state.limits);
+        store.set_epoch_deadline(limits.deadline_ticks());
+        store.set_hostcall_fuel(limits.max_memory_bytes);
+        let name = manifest.plugin.name.clone();
+        let instance =
+            project_bindings::ProjectPlugin::instantiate(&mut store, &component, &self.linker)
+                .map_err(|e| classify(e, &name, "instantiation", limits))?;
+        Ok(WasmProjectPlugin {
+            manifest,
+            store,
+            instance,
+            limits,
+        })
+    }
+}
+
+/// A loaded project plugin.
+pub struct WasmProjectPlugin {
+    manifest: Manifest,
+    store: Store<HostState>,
+    instance: project_bindings::ProjectPlugin,
+    limits: Limits,
+}
+
+impl WasmProjectPlugin {
+    /// The plugin's manifest.
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    /// Calls `formats` (their id, description, extension).
+    pub fn formats(&mut self) -> Result<Vec<(String, String, String)>, PluginError> {
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        let formats = self
+            .instance
+            .call_formats(&mut self.store)
+            .map_err(|e| classify(e, &name, "formats", limits))?;
+        Ok(formats
+            .into_iter()
+            .map(|f| (f.id, f.description, f.extension))
+            .collect())
+    }
+
+    /// Calls `import-project` (inner `Err`: the plugin's own error).
+    pub fn import_project(
+        &mut self,
+        format: &str,
+        data: &[u8],
+        options: &[(String, String)],
+    ) -> Result<Result<Project, String>, PluginError> {
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        self.instance
+            .call_import_project(&mut self.store, format, data, options)
+            .map_err(|e| classify(e, &name, "import-project", limits))
     }
 }
 

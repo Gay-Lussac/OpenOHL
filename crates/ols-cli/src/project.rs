@@ -23,6 +23,32 @@ pub enum ProjectCommand {
         #[arg(long)]
         user: String,
     },
+    /// Create a project from another program's file (a project plugin's
+    /// format): the line, its libraries; prints what was read and left
+    /// out.
+    ImportFrom {
+        /// The file.
+        file: PathBuf,
+        /// New project file (.ols; must not exist).
+        #[arg(long)]
+        into: PathBuf,
+        /// User (the project's admin).
+        #[arg(long)]
+        user: String,
+        /// Format id (default: from the file extension).
+        #[arg(long)]
+        format: Option<String>,
+        /// Format option KEY=VALUE (repeatable).
+        #[arg(long = "option")]
+        options: Vec<String>,
+        /// Project plugin directory (repeatable).
+        #[arg(long)]
+        plugin: Vec<PathBuf>,
+        /// Clip the sections in: each span keeps the length of its
+        /// stringing condition (as the source program solves it).
+        #[arg(long)]
+        clip_in: bool,
+    },
     /// Write the project's line as a line file (.ols.json).
     Export {
         /// Project file.
@@ -165,6 +191,65 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 line.sections.len(),
                 line.jumpers.len(),
                 into.display()
+            );
+            report(&a);
+        }
+        ProjectCommand::ImportFrom {
+            file,
+            into,
+            user,
+            format,
+            options,
+            plugin,
+            clip_in,
+        } => {
+            if into.exists() {
+                return Err(format!("{} exists already", into.display()));
+            }
+            let started = std::time::Instant::now();
+            let mut r = crate::io_run::registry(&plugin)?;
+            let id = format.unwrap_or_else(|| {
+                file.extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase()
+            });
+            let importer = r.project_importer(&id).ok_or_else(|| {
+                format!("no project format \"{id}\" (a project plugin: --plugin DIR)")
+            })?;
+            let data = std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+            let mut p = importer.import(&data, &crate::io_run::options(&options)?)?;
+            if clip_in {
+                let (n, failed) = p.clip_in();
+                p.notes.push(format!(
+                    "{n} sections clipped in at their stringing condition"
+                ));
+                for f in failed {
+                    p.notes.push(format!("not clipped in: {f}"));
+                }
+            }
+            println!("read {} in {:.1?}", file.display(), started.elapsed());
+            for n in &p.notes {
+                println!("  - {n}");
+            }
+            if let Err(e) = p.line.validate() {
+                println!("  ! the line does not check: {e}");
+            }
+            let mut s = open(&into)?;
+            let a = s.import(&p.line, &user).map_err(|e| e.to_string())?;
+            for (kind, name, text) in &p.libraries {
+                s.put_library_file(&user, kind, name, text)
+                    .map_err(|e| e.to_string())?;
+            }
+            s.checkpoint().map_err(|e| e.to_string())?;
+            println!(
+                "created {}: {} structures, {} sections, {} jumpers, {} library files, in {:.1?}",
+                into.display(),
+                p.line.structures.len(),
+                p.line.sections.len(),
+                p.line.jumpers.len(),
+                p.libraries.len(),
+                started.elapsed()
             );
             report(&a);
         }

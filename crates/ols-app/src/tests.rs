@@ -4062,3 +4062,74 @@ fn terrain_surfaces_are_kept_in_the_project() {
     assert_eq!(names, ["survey"]);
     assert_eq!(r.model.surface_settings.active.as_deref(), Some("survey"));
 }
+
+/// File › New project from another program (no file open): a project
+/// plugin's format read on the worker into a new project, opened, its
+/// notes shown.
+#[test]
+fn a_project_is_created_from_another_programs_file() {
+    let dir = root().join("plugins/examples/project-bundle");
+    let built = dir
+        .join("target/wasm32-wasip2/release/project_bundle.wasm")
+        .exists();
+    assert!(
+        built || std::env::var_os("OLS_REQUIRE_PLUGIN_TESTS").is_none(),
+        "project-bundle plugin not built"
+    );
+    if !built {
+        return;
+    }
+    let tmp = std::env::temp_dir().join(format!("ols-app-import-project-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let ex = root().join("examples/synthetic-line");
+    let bundle = serde_json::json!({
+        "line": serde_json::from_str::<serde_json::Value>(
+            &std::fs::read_to_string(ex.join("synthetic-line.ols.json")).unwrap()).unwrap(),
+        "libraries": [
+            {"kind": "cables", "name": "acsr-examples.olsw",
+             "text": std::fs::read_to_string(root().join("libraries/cables/acsr-examples.olsw")).unwrap()},
+            {"kind": "weather", "name": "weather-cases.olswc",
+             "text": std::fs::read_to_string(ex.join("weather-cases.olswc")).unwrap()},
+        ],
+    });
+    let file = tmp.join("line.olsb");
+    std::fs::write(&file, bundle.to_string()).unwrap();
+    let mut app = App::empty(Sources::default(), None);
+    app.plugins = crate::plugins::Plugins::load(None, None);
+    app.plugins.folders = vec![dir];
+    app.plugins.refresh();
+    app.file_action = Some(crate::files::FileAction::ImportProject);
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| app);
+    h.step();
+    h.step();
+    h.get_by_label("New project from another program");
+    let into = tmp.join("imported.ols");
+    h.state_mut()
+        .plugins
+        .create_project(crate::plugins::ProjectImport {
+            path: file,
+            format: None,
+            options: [("name".to_owned(), "Imported".to_owned())].into(),
+            into: into.clone(),
+            user: crate::files::user(),
+            clip_in: true,
+        });
+    run_until(&mut h, |a| {
+        a.ready()
+            .is_some_and(|r| r.model.line.name == "Imported" && !r.model.cases.is_empty())
+    });
+    h.step();
+    h.get_by_label("Project created");
+    let app = h.state_mut();
+    let notes = &app.import_notes.as_ref().unwrap().1;
+    assert!(notes.iter().any(|n| n.contains("clipped in")), "{notes:?}");
+    let r = app.ready().unwrap();
+    assert_eq!(r.model.sources.file, into);
+    assert!(r.model.line.sections.iter().all(|s| s.stringing.clipped()));
+    // Its libraries are the project's: five weather cases.
+    assert_eq!(r.model.cases.len(), 5);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
