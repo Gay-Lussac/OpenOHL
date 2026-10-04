@@ -369,6 +369,161 @@ impl Store {
         Ok(out.into_iter().collect())
     }
 
+    /// Writes the points of `cloud` to a LAS file, or LAZ when `path` ends
+    /// in `.laz`: LAS 1.4, point format 6 (classes 0–255), the cloud's
+    /// coordinate scale, intensities and return numbers as imported.
+    /// `classes`: only these (all without them); `area`: only points in this
+    /// rectangle (min, max; x, y). `progress(points written, points to
+    /// read)` after every block.
+    ///
+    /// Cost: decoding (~50 ns per point) and, for LAZ, compressing (~1 µs
+    /// per point: 100 million points in about 2 min). Exit clause: `budget`,
+    /// checked per block; the file is then incomplete and removed.
+    pub fn export_las(
+        &self,
+        cloud: &CloudInfo,
+        path: &Path,
+        classes: Option<&[u8]>,
+        area: Option<([f64; 2], [f64; 2])>,
+        budget: &Budget,
+        mut progress: impl FnMut(u64, u64),
+    ) -> Result<Stats, StoreError> {
+        let run = budget.start();
+        let mut wanted = [true; 256];
+        if let Some(cs) = classes {
+            wanted = [false; 256];
+            for &c in cs {
+                wanted[c as usize] = true;
+            }
+        }
+        let c = cloud.chunk_size;
+        let (cx, cy) = match area {
+            Some((lo, hi)) => (
+                [(lo[0] / c).floor() as i64, (hi[0] / c).floor() as i64],
+                [(lo[1] / c).floor() as i64, (hi[1] / c).floor() as i64],
+            ),
+            None => ([i64::MIN, i64::MAX], [i64::MIN, i64::MAX]),
+        };
+        let mut stmt = self.conn.prepare(
+            "SELECT id, cx, cy, class, count, z0 FROM pointcloud_block
+             WHERE cloud = ?1 AND cx BETWEEN ?2 AND ?3 AND cy BETWEEN ?4 AND ?5
+             ORDER BY cx, cy, class",
+        )?;
+        let blocks: Vec<(i64, i64, i64, u8, usize, i64)> = stmt
+            .query_map(params![cloud.id, cx[0], cx[1], cy[0], cy[1]], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get::<_, i64>(3)? as u8,
+                    r.get::<_, i64>(4)? as usize,
+                    r.get(5)?,
+                ))
+            })?
+            .collect::<Result<_, _>>()?;
+        let blocks: Vec<_> = blocks
+            .into_iter()
+            .filter(|b| wanted[b.3 as usize])
+            .collect();
+        let total: u64 = blocks.iter().map(|b| b.4 as u64).sum();
+        // Offsets: the lower corner of what is written, on the scale.
+        let s = cloud.scale;
+        let low = |k: usize| -> f64 {
+            let v = match (area, k) {
+                (Some((lo, _)), 0 | 1) => lo[k],
+                _ => match k {
+                    0 => blocks.iter().map(|b| b.1).min().unwrap_or(0) as f64 * c,
+                    1 => blocks.iter().map(|b| b.2).min().unwrap_or(0) as f64 * c,
+                    _ => blocks.iter().map(|b| b.5).min().unwrap_or(0) as f64 * s,
+                },
+            };
+            (v / s).floor() * s
+        };
+        let mut builder = las::Builder::from((1, 4));
+        builder.point_format = las::point::Format::new(6).map_err(|e| err(e.to_string()))?;
+        builder.point_format.is_compressed = path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("laz"));
+        builder.generating_software = format!("OLS CAD {}", env!("CARGO_PKG_VERSION"));
+        for (k, t) in [
+            &mut builder.transforms.x,
+            &mut builder.transforms.y,
+            &mut builder.transforms.z,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.scale = s;
+            t.offset = low(k);
+        }
+        let header = builder.into_header().map_err(|e| err(e.to_string()))?;
+        let mut writer = las::Writer::from_path(path, header)
+            .map_err(|e| err(format!("{}: {e}", path.display())))?;
+        let mut stats = Stats::default();
+        let units = (c / s).round() as i64;
+        let mut blob = self
+            .conn
+            .prepare("SELECT xyz, intensity, returns FROM pointcloud_block WHERE id = ?1")?;
+        let result = (|| -> Result<(), StoreError> {
+            for (id, cx, cy, class, n, z0) in &blocks {
+                run.check()
+                    .map_err(|stop| err(format!("stopped: {stop}")))?;
+                let (xyz, intensity, returns): (Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>) =
+                    blob.query_row(params![id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+                let (x, y, z) = Columns::decode_xyz(&xyz, *n).map_err(err)?;
+                let intensity = match &intensity {
+                    Some(b) => Columns::decode_intensity(b, *n).map_err(err)?,
+                    None => vec![0; *n],
+                };
+                let returns = match &returns {
+                    Some(b) => Columns::decode_returns(b, *n).map_err(err)?,
+                    None => vec![0x11; *n],
+                };
+                // Class 12 is "overlap" to the las crate: written as code 12.
+                let classification = las::point::Classification::new(*class)
+                    .unwrap_or(las::point::Classification::Reserved(*class));
+                stats.read += 1;
+                for i in 0..*n {
+                    let p = [
+                        (cx * units + x[i] as i64) as f64 * s,
+                        (cy * units + y[i] as i64) as f64 * s,
+                        (z0 + z[i] as i64) as f64 * s,
+                    ];
+                    if let Some((lo, hi)) = area
+                        && !(p[0] >= lo[0] && p[0] < hi[0] && p[1] >= lo[1] && p[1] < hi[1])
+                    {
+                        continue;
+                    }
+                    let r = returns[i];
+                    writer
+                        .write_point(las::Point {
+                            x: p[0],
+                            y: p[1],
+                            z: p[2],
+                            intensity: intensity[i],
+                            return_number: (r >> 4).max(1),
+                            number_of_returns: (r & 0x0f).max(1),
+                            classification,
+                            gps_time: Some(0.0),
+                            ..Default::default()
+                        })
+                        .map_err(|e| err(e.to_string()))?;
+                    stats.points_visited += 1;
+                }
+                stats.points_read += *n as u64;
+                progress(stats.points_visited, total);
+            }
+            writer.close().map_err(|e| err(e.to_string()))?;
+            Ok(())
+        })();
+        if let Err(e) = result {
+            drop(writer);
+            let _ = std::fs::remove_file(path);
+            return Err(e);
+        }
+        Ok(stats)
+    }
+
     /// Imports LAS/LAZ tiles into the cloud `name` (created if missing,
     /// with `crs`, `class_scheme` text, `chunk_size` and `scale`; an
     /// existing cloud keeps its settings and gets the points added).

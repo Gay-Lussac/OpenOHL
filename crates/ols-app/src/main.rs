@@ -31,6 +31,7 @@ mod profile;
 mod properties;
 mod scene;
 mod selection;
+mod survey_io;
 mod tables;
 mod tools;
 mod view3d;

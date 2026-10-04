@@ -165,6 +165,14 @@ pub struct Ready {
     pub survey_window: Option<SurveyDraft>,
     /// Dragging over its classes: the state they all get (shown).
     pub survey_paint: Option<bool>,
+    /// The Import LAS/LAZ window.
+    pub survey_import: Option<crate::survey_io::ImportDialog>,
+    /// The Export LAS/LAZ window.
+    pub survey_export: Option<crate::survey_io::ExportDialog>,
+    /// An import or export running.
+    pub survey_job: Option<crate::survey_io::Job>,
+    /// Open the project again (after an import).
+    pub reopen: bool,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
     /// A page to bring to the front (with a table filter), from a tool.
@@ -209,6 +217,10 @@ impl Ready {
             lines_window: None,
             survey_window: None,
             survey_paint: None,
+            survey_import: None,
+            survey_export: None,
+            survey_job: None,
+            reopen: false,
             jumper_from: None,
             open_page: None,
             clearances: crate::clearance::Clearances::new(
@@ -1670,6 +1682,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     editor_window(ctx, r);
     display_window(ctx, r);
     survey_window(ctx, r);
+    survey_io_windows(ctx, r);
     lines_window(ctx, r);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
@@ -1736,6 +1749,27 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
     }
     ui.separator();
     ui.menu_button("Survey data", |ui| {
+        let busy = r.survey_job.is_some();
+        if ui
+            .add_enabled(!busy, egui::Button::new("Import LAS/LAZ…"))
+            .on_hover_text("Add LiDAR tiles to the project's point cloud (or a new one)")
+            .clicked()
+        {
+            r.survey_import = Some(crate::survey_io::ImportDialog::new(&r.model));
+            ui.close();
+        }
+        if ui
+            .add_enabled(
+                !busy && r.model.cloud.is_some(),
+                egui::Button::new("Export LAS/LAZ…"),
+            )
+            .on_hover_text("Write the project's point cloud (or part of it) to a LAS/LAZ file")
+            .clicked()
+        {
+            r.survey_export = Some(Default::default());
+            ui.close();
+        }
+        ui.separator();
         if r.model.points.is_empty() {
             ui.add_enabled(false, egui::Button::new("LiDAR: no point cloud"));
             return;
@@ -1752,6 +1786,37 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
             ui.close();
         }
     });
+}
+
+/// The Import / Export LAS/LAZ windows and the job they started.
+fn survey_io_windows(ctx: &egui::Context, r: &mut Ready) {
+    if let Some(d) = &mut r.survey_import {
+        let mut open = true;
+        if let Some(job) = d.ui(ctx, &r.model, &mut open) {
+            r.survey_job = Some(job);
+            open = false;
+        }
+        if !open {
+            r.survey_import = None;
+        }
+    }
+    if let Some(d) = &mut r.survey_export {
+        let mut open = true;
+        if let Some(job) = d.ui(ctx, &r.model, &mut open) {
+            r.survey_job = Some(job);
+            open = false;
+        }
+        if !open {
+            r.survey_export = None;
+        }
+    }
+    if let Some(job) = &mut r.survey_job
+        && crate::survey_io::job_window(ctx, job)
+    {
+        // An import succeeded: the project again, with its new points.
+        r.reopen = job.reopen && matches!(job.done, Some(Ok(_)));
+        r.survey_job = None;
+    }
 }
 
 /// A LiDAR class: code, name, roles, points loaded, points in the cloud.
@@ -3213,6 +3278,11 @@ impl eframe::App for App {
                 });
                 for c in commands {
                     run_command(ui.ctx(), ready, &mut self.dock, c);
+                }
+                if std::mem::take(&mut ready.reopen) {
+                    self.file_action = Some(crate::files::FileAction::Open(Some(
+                        ready.model.sources.file.clone(),
+                    )));
                 }
                 if let Some((tab, filter)) = ready.open_page.take() {
                     open_page(&mut self.dock, tab);

@@ -363,6 +363,24 @@ enum PointcloudCommand {
         #[arg(long, default_value_t = ols_pointcloud::DEFAULT_CHUNK)]
         chunk: f64,
     },
+    /// Write a point cloud of a project file to LAS / LAZ (by extension):
+    /// LAS 1.4, point format 6, with its class scheme next to it.
+    Export {
+        /// Project file (.ols).
+        file: PathBuf,
+        /// LAS / LAZ file to write.
+        #[arg(long)]
+        out: PathBuf,
+        /// Point cloud (default: the only one).
+        #[arg(long)]
+        name: Option<String>,
+        /// Only these classes, comma separated (e.g. 2,5,14).
+        #[arg(long, value_delimiter = ',')]
+        classes: Vec<u8>,
+        /// Only this rectangle: xmin,ymin,xmax,ymax.
+        #[arg(long, value_delimiter = ',', num_args = 4)]
+        area: Vec<f64>,
+    },
     /// Point clouds of a project file and their points per class.
     Info {
         /// Project file (.ols).
@@ -565,6 +583,42 @@ fn pointcloud(command: PointcloudCommand) -> ExitCode {
                     started.elapsed(),
                     cloud.points,
                     size as f64 / 1e6
+                );
+            }
+            PointcloudCommand::Export {
+                file,
+                out,
+                name,
+                classes,
+                area,
+            } => {
+                let started = std::time::Instant::now();
+                let store = ols_pointcloud::Store::open(&file).map_err(|e| e.to_string())?;
+                let cloud = store.cloud(name.as_deref()).map_err(|e| e.to_string())?;
+                let area = (area.len() == 4).then(|| ([area[0], area[1]], [area[2], area[3]]));
+                // Exit clause: ~1 µs per point for LAZ; 2 h is far beyond.
+                let budget = ols_core::budget::Budget::new()
+                    .time_limit(std::time::Duration::from_secs(7200));
+                let stats = store
+                    .export_las(
+                        &cloud,
+                        &out,
+                        (!classes.is_empty()).then_some(classes.as_slice()),
+                        area,
+                        &budget,
+                        |_, _| {},
+                    )
+                    .map_err(|e| e.to_string())?;
+                if let Some(text) = &cloud.class_scheme {
+                    let olsc = out.with_extension("olsc");
+                    std::fs::write(&olsc, text).map_err(|e| format!("{}: {e}", olsc.display()))?;
+                }
+                println!(
+                    "{} points of \"{}\" written to {} in {:.1?}",
+                    stats.points_visited,
+                    cloud.name,
+                    out.display(),
+                    started.elapsed()
                 );
             }
             PointcloudCommand::Info { file } => {

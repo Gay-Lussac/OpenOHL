@@ -2921,3 +2921,141 @@ fn stored_points_are_streamed_at_the_share_chosen() {
         "{tenth} of {all}"
     );
 }
+
+/// Writes a LAZ survey of 0.5 m grid points over [x0, x0 + w) × [-40, 40):
+/// ground and high vegetation alternating.
+fn write_survey(path: &std::path::Path, x0: f64, w: usize) {
+    let mut b = las::Builder::from((1, 4));
+    b.point_format.is_compressed = true;
+    for t in [
+        &mut b.transforms.x,
+        &mut b.transforms.y,
+        &mut b.transforms.z,
+    ] {
+        t.scale = 0.001;
+    }
+    let mut wr = las::Writer::from_path(path, b.into_header().unwrap()).unwrap();
+    for i in 0..w {
+        for j in 0..160 {
+            let veg = (i + j) % 2 == 0;
+            wr.write_point(las::Point {
+                x: x0 + i as f64 * 0.5,
+                y: -40.0 + j as f64 * 0.5,
+                z: if veg { 530.0 } else { 520.0 },
+                classification: if veg {
+                    las::point::Classification::HighVegetation
+                } else {
+                    las::point::Classification::Ground
+                },
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    }
+    wr.close().unwrap();
+}
+
+/// Survey data › Import LAS/LAZ and Export LAS/LAZ: tiles imported into
+/// the project's point cloud; exported again, every class or one, the
+/// whole survey or around the line, with the class scheme next to it.
+#[test]
+fn surveys_are_imported_and_exported() {
+    let first = synthetic_project("survey-io");
+    let file = first.sources.file.clone();
+    // A line file cannot take a point cloud; the project can.
+    let line_file = synthetic();
+    assert!(
+        crate::survey_io::ImportDialog::new(&line_file)
+            .error
+            .is_some()
+    );
+    assert!(crate::survey_io::ImportDialog::new(&first).error.is_none());
+    drop(first);
+    let dir = file.parent().unwrap().to_path_buf();
+    let laz = dir.join("tile.laz");
+    write_survey(&laz, 600.0, 200);
+    let progress = std::cell::RefCell::new(Vec::new());
+    let report = crate::survey_io::import(
+        &file,
+        &[laz],
+        "lidar",
+        "EPSG:2056",
+        64.0,
+        Some(
+            &std::fs::read_to_string(root().join("libraries/lidar-classes/asprs-las-1.4.olsc"))
+                .unwrap(),
+        ),
+        &|t, f| progress.borrow_mut().push((t, f)),
+    )
+    .unwrap();
+    assert!(report.contains("32000 points"), "{report}");
+    assert_eq!(progress.borrow().last().unwrap().1, 1.0);
+    // Opened again: the cloud is the project's.
+    let model = model::load(
+        Sources {
+            file: file.clone(),
+            point_budget: 100_000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    assert!(model.cloud.is_some());
+    assert_eq!(model.class_counts.iter().map(|c| c.1).sum::<u64>(), 32_000);
+    // Exported: all, then the vegetation only, around the line.
+    let out = dir.join("all.laz");
+    let r = crate::survey_io::export(&file, None, &out, None, None, true, &|_, _| {}).unwrap();
+    assert!(r.contains("32000 points"), "{r}");
+    // The class scheme stored at import, next to it.
+    let olsc = std::fs::read_to_string(out.with_extension("olsc")).unwrap();
+    assert!(ols_lidar::ClassScheme::parse(&olsc).is_ok());
+    let only = dir.join("veg.las");
+    let r = crate::survey_io::export(
+        &file,
+        None,
+        &only,
+        Some(&[5]),
+        Some(([600.0, -40.0], [650.0, 40.0])),
+        false,
+        &|_, _| {},
+    )
+    .unwrap();
+    // 100 columns of 160 points in 600–650 m, half of them vegetation.
+    assert!(r.contains("8000 points"), "{r}");
+    assert!(!only.with_extension("olsc").exists());
+}
+
+/// Terrain › Survey data opens the import window (export needs a point
+/// cloud: disabled without one).
+#[test]
+fn the_survey_menu_opens_import_and_export() {
+    use egui_kittest::kittest::NodeT;
+    let model = synthetic_project("survey-menu");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Terrain").click();
+    harness.run();
+    harness.get_by_label_contains("Survey data").click();
+    harness.run();
+    assert!(
+        harness
+            .get_by_label("Export LAS/LAZ…")
+            .accesskit_node()
+            .is_disabled()
+    );
+    harness.get_by_label("Import LAS/LAZ…").click();
+    harness.run();
+    harness.get_by_label("Choose files…");
+    harness.get_by_label("Choose a folder…");
+    assert!(
+        harness
+            .get_by_label("Import")
+            .accesskit_node()
+            .is_disabled(),
+        "no file chosen yet"
+    );
+}

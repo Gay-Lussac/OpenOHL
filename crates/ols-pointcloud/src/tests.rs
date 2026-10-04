@@ -321,3 +321,118 @@ fn tile_extents_cover_chunks_across_tile_borders() {
     drop(store);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// A small LAS 1.4 tile (point format 6) with classes above 31 and 12.
+fn write_high_classes(path: &Path) {
+    let mut b = Builder::from((1, 4));
+    b.point_format = las::point::Format::new(6).unwrap();
+    for t in [
+        &mut b.transforms.x,
+        &mut b.transforms.y,
+        &mut b.transforms.z,
+    ] {
+        t.scale = 0.001;
+    }
+    let mut w = Writer::from_path(path, b.into_header().unwrap()).unwrap();
+    for (i, class) in [12u8, 31, 72, 98].into_iter().enumerate() {
+        for k in 0..50 {
+            w.write_point(Point {
+                x: 10.0 + f64::from(k) * 0.5,
+                y: 5.0 + i as f64,
+                z: 400.0 + i as f64,
+                intensity: 100 + k as u16,
+                return_number: 1,
+                number_of_returns: 2,
+                classification: Classification::new(class)
+                    .unwrap_or(Classification::Reserved(class)),
+                gps_time: Some(0.0),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    }
+    w.close().unwrap();
+}
+
+/// Exported to LAZ and imported again: the same points, classes (above
+/// 31 too) and intensities; classes and an area can be chosen.
+#[test]
+fn export_and_import_again_give_the_same_points() {
+    let dir = scratch("export");
+    write_tile(&dir.join("a.laz"), 0.0, 60.0);
+    write_high_classes(&dir.join("b.las"));
+    let tiles = ols_lidar::tiles_in(&dir).unwrap();
+    let db = dir.join("project.ols");
+    let mut store = Store::open(&db).unwrap();
+    let (cloud, _) = store
+        .import_tiles(
+            "survey",
+            &tiles,
+            "EPSG:2056",
+            None,
+            50.0,
+            0.001,
+            &Budget::new(),
+            |_, _, _| {},
+        )
+        .unwrap();
+    let out = dir.join("out").join("export.laz");
+    std::fs::create_dir_all(out.parent().unwrap()).unwrap();
+    let mut last = (0, 0);
+    let stats = store
+        .export_las(&cloud, &out, None, None, &Budget::new(), |a, b| {
+            last = (a, b)
+        })
+        .unwrap();
+    assert_eq!(stats.points_visited, cloud.points);
+    assert_eq!(last, (cloud.points, cloud.points));
+    // Imported again into another project: the same points.
+    let db2 = dir.join("again.ols");
+    let mut again = Store::open(&db2).unwrap();
+    let (cloud2, _) = again
+        .import_tiles(
+            "back",
+            std::slice::from_ref(&out),
+            "EPSG:2056",
+            None,
+            50.0,
+            0.001,
+            &Budget::new(),
+            |_, _, _| {},
+        )
+        .unwrap();
+    assert_eq!(cloud2.points, cloud.points);
+    drop(again);
+    assert_eq!(
+        collect(&CloudSource::open(&db2, None).unwrap(), None, None),
+        collect(&CloudSource::open(&db, None).unwrap(), None, None)
+    );
+    assert_eq!(
+        Store::open(&db2).unwrap().class_counts(&cloud2).unwrap(),
+        store.class_counts(&cloud).unwrap()
+    );
+    // Intensities kept.
+    let mut intensities = Vec::new();
+    ols_lidar::for_each_record(std::slice::from_ref(&out), None, &Budget::new(), |p| {
+        if p.class == 72 {
+            intensities.push(p.intensity);
+        }
+    })
+    .unwrap();
+    assert_eq!(intensities, (100..150).collect::<Vec<u16>>());
+    // Only class 98, in a rectangle.
+    let part = dir.join("out").join("part.las");
+    let stats = store
+        .export_las(
+            &cloud,
+            &part,
+            Some(&[98, 72]),
+            Some(([10.0, 8.0], [20.0, 9.0])),
+            &Budget::new(),
+            |_, _| {},
+        )
+        .unwrap();
+    assert_eq!(stats.points_visited, 20, "class 98 (y = 8), x 10-20 m");
+    drop(store);
+    std::fs::remove_dir_all(dir).ok();
+}

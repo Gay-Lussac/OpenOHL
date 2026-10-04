@@ -111,8 +111,25 @@ those 28 in 4.6 ms (command, log and solve), against 11.7 ms for all 554.
 ols pointcloud import TILES_DIR --into project.ols --name lidar-2025 \
   --classes classes.olsc --crs EPSG:2056
 ols pointcloud info project.ols
+ols pointcloud export project.ols --out survey.laz          # every point
+ols pointcloud export project.ols --out wires.las --classes 14,15 \
+  --area 2600000,1200000,2601000,1201000                     # classes, a rectangle
 ols line project.ols --pointcloud project.ols --rules rules.olsr
 ```
+
+The desktop app does the same from **Terrain › Survey data › Import
+LAS/LAZ…** (files or a folder, into the project's point cloud or a new one,
+in the background; the project is opened again to show them) and **Export
+LAS/LAZ…** (every class or the classes shown, the whole survey or around the
+line).
+
+**Export** writes LAS 1.4, point format 6 (classes 0–255: schemes with codes
+above 31 survive), LAZ when the file ends in `.laz`, with the survey's
+coordinate scale, intensities and return numbers as imported, and the class
+scheme next to it (`.olsc`) — to share a survey or compare it with other
+data. Exported and imported again, a survey gives the same points, classes
+and intensities. On the real line, the 1.09 million points within 150 m of a
+structure are written in 0.3 s (6.9 MB of LAZ).
 
 LAS/LAZ tiles are only the way in: points are stored in the project in
 blocks of one 64 m chunk (a quarter of a grid tile, below) × one class (coordinates in mm relative to the
