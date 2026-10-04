@@ -215,6 +215,25 @@ fn dir_of(file: &Path) -> PathBuf {
         .to_path_buf()
 }
 
+/// A folder of the libraries shipped with OLS CAD (`libraries/<kind>`):
+/// in the folder the app was started in, else next to the program or
+/// above it (a build in `target/release` of the source tree).
+pub fn default_library(kind: &str) -> PathBuf {
+    let rel = Path::new("libraries").join(kind);
+    if rel.is_dir() {
+        return rel;
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            exe.ancestors()
+                .skip(1)
+                .map(|d| d.join(&rel))
+                .find(|d| d.is_dir())
+        })
+        .unwrap_or(rel)
+}
+
 /// The wire library: given, else the `*.olsw` files next to the model,
 /// else `libraries/cables`.
 pub fn library_path(s: &Sources) -> PathBuf {
@@ -228,7 +247,7 @@ pub fn library_path(s: &Sources) -> PathBuf {
     if has_olsw {
         dir
     } else {
-        PathBuf::from("libraries/cables")
+        default_library("cables")
     }
 }
 
@@ -271,7 +290,7 @@ pub fn structures_dir(sources: &Sources) -> PathBuf {
         if local.is_dir() {
             local
         } else {
-            PathBuf::from("libraries/structures")
+            default_library("structures")
         }
     })
 }
@@ -281,7 +300,7 @@ pub fn insulators_dir(sources: &Sources) -> PathBuf {
     sources
         .insulators
         .clone()
-        .unwrap_or_else(|| PathBuf::from("libraries/insulators"))
+        .unwrap_or_else(|| default_library("insulators"))
 }
 
 /// The directory next to the model.

@@ -8,7 +8,10 @@ cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.jso
     --weather examples/synthetic-line/weather-cases.olswc
 
 cargo run --release -p ols-app -- project.ols          # with the project's point cloud
+cargo run --release -p ols-app                         # the start page: File › New project, Open
 ```
+
+On macOS, double-click **Start OLS CAD.command** at the top of the source tree: it builds and starts the app on its start page (new project, open, the files opened recently). Libraries given on the command line apply to the file given there only; files opened from the File menu use their own (a project's are kept in it).
 
 | Option | Meaning |
 |---|---|
@@ -28,7 +31,7 @@ The **menu bar** holds what needs no view:
 
 | Menu | |
 |---|---|
-| File | the model's file, Save (⌘S / Ctrl+S), Quit |
+| File | **New project…** (⌘N / Ctrl+N: a line name and coordinate system, then where to save the `.ols` file; it starts with an empty line, you its admin, its libraries from the default folders), **Open…** (⌘O / Ctrl+O: a project `.ols` or a line file `.ols.json`), **Open recent**, the file open, Save (⌘S / Ctrl+S), Export libraries, **Close** (the project is written through; back to the start page), Quit. Opening or closing with library pages not saved or table changes not applied asks first |
 | Edit | Undo, Redo, Delete selected, Clear selection, Go to structure; **Snap: what can be clicked** |
 | View | Fit views; the pages to show (tick to open, untick to close), among them **Level of detail** (see [Level of detail](#level-of-detail)); layers; Display weather cases; Customize the quick bar |
 | Lines | Project lines (saved states of the line to show next to the working line, or to make the working line), Create line, Delete line (see [Project lines](#project-lines)) |

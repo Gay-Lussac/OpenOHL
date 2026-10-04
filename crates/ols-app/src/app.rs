@@ -6,6 +6,7 @@
 //! dockable views that share the weather case and the selection.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 
 use eframe::egui;
@@ -213,6 +214,8 @@ impl Ready {
 }
 
 enum State {
+    /// No file open: the start page.
+    Empty,
     Loading {
         rx: Receiver<Message>,
         progress: Vec<String>,
@@ -234,6 +237,16 @@ pub struct App {
     pub quickbar: crate::menu::QuickBar,
     /// Level of detail of the 3D view.
     pub lod: crate::lod::LodSettings,
+    /// Files opened recently.
+    pub recent: crate::files::Recent,
+    /// Options for files opened from the File menu (point budget, user…).
+    template: Sources,
+    /// What the File menu asked for, done after the frame.
+    file_action: Option<crate::files::FileAction>,
+    /// The New project window.
+    new_project: Option<crate::files::NewProject>,
+    /// An action waiting for "discard the unsaved changes?".
+    confirm_discard: Option<crate::files::FileAction>,
     /// The "Customize the quick bar" window is open.
     customize: bool,
     state: State,
@@ -253,30 +266,12 @@ pub fn default_dock() -> DockState<Tab> {
 }
 
 impl App {
-    /// Starts loading `sources`.
-    pub fn new(
-        sources: Sources,
-        render_state: Option<egui_wgpu::RenderState>,
-        ctx: &egui::Context,
-    ) -> Self {
-        let (tx, rx) = channel();
-        let s = sources.clone();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let report = |m: String| {
-                let _ = tx.send(Message::Progress(m));
-                ctx.request_repaint();
-            };
-            let result = model::load(s, &report).map(Box::new);
-            let _ = tx.send(Message::Done(result));
-            ctx.request_repaint();
-        });
+    /// No file open (the start page); files opened later take `template`'s
+    /// options (point budget, corridor, user).
+    pub fn empty(template: Sources, render_state: Option<egui_wgpu::RenderState>) -> Self {
         Self {
-            sources,
-            state: State::Loading {
-                rx,
-                progress: Vec::new(),
-            },
+            sources: template.clone(),
+            state: State::Empty,
             dock: default_dock(),
             render_state,
             controls: crate::controls::Controls::default(),
@@ -284,7 +279,130 @@ impl App {
             hotbar: crate::tools::Hotbar::default(),
             quickbar: Default::default(),
             lod: Default::default(),
+            recent: Default::default(),
+            template: Sources {
+                file: PathBuf::new(),
+                library: None,
+                structures: None,
+                insulators: None,
+                weather: None,
+                terrain: None,
+                pointcloud: None,
+                rules: None,
+                ..template
+            },
+            file_action: None,
+            new_project: None,
+            confirm_discard: None,
             customize: false,
+        }
+    }
+
+    /// Loads `sources` in the background (the file open is closed first).
+    pub fn start(&mut self, sources: Sources, ctx: &egui::Context) {
+        self.close();
+        if !sources.file.as_os_str().is_empty() {
+            self.recent.add(&sources.file);
+        }
+        let (tx, rx) = channel();
+        let s = sources.clone();
+        let c = ctx.clone();
+        std::thread::spawn(move || {
+            let report = |m: String| {
+                let _ = tx.send(Message::Progress(m));
+                c.request_repaint();
+            };
+            let result = model::load(s, &report).map(Box::new);
+            let _ = tx.send(Message::Done(result));
+            c.request_repaint();
+        });
+        let name = sources
+            .file
+            .file_name()
+            .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("{name} — OLS CAD")));
+        self.sources = sources;
+        self.state = State::Loading {
+            rx,
+            progress: Vec::new(),
+        };
+    }
+
+    /// Closes the file open: the project is written through, the view
+    /// settings are kept for the next file; the start page shows.
+    pub fn close(&mut self) {
+        if let State::Ready(r) = &self.state {
+            if let Ok(e) = &r.model.editing
+                && let Err(err) = e.session.checkpoint()
+            {
+                log::warn!("closing: {err}");
+            }
+            self.controls = r.view3d.controls.clone();
+            self.snaps = r.snaps.clone();
+            self.hotbar = r.hotbar.clone();
+        }
+        self.state = State::Empty;
+    }
+
+    /// Whether the file open has changes not saved yet (library pages,
+    /// table edits waiting for Apply).
+    fn unsaved(&self) -> Vec<String> {
+        let State::Ready(r) = &self.state else {
+            return Vec::new();
+        };
+        let mut out: Vec<String> = r
+            .libraries
+            .iter()
+            .filter(|(_, p)| p.dirty())
+            .map(|(k, _)| format!("{} library page", k.title()))
+            .collect();
+        out.extend(
+            r.tables
+                .iter()
+                .filter(|(_, p)| p.pending() > 0)
+                .map(|(k, p)| format!("{} table: {} changes not applied", k.title(), p.pending())),
+        );
+        out
+    }
+
+    /// Does what the File menu asked for; `confirmed`: unsaved changes may
+    /// go.
+    fn file_action(
+        &mut self,
+        ctx: &egui::Context,
+        action: crate::files::FileAction,
+        confirmed: bool,
+    ) {
+        use crate::files::FileAction;
+        let leaves = matches!(
+            action,
+            FileAction::Open(_) | FileAction::Close | FileAction::Quit
+        );
+        if leaves && !confirmed && !self.unsaved().is_empty() {
+            self.confirm_discard = Some(action);
+            return;
+        }
+        match action {
+            FileAction::New => self.new_project = Some(Default::default()),
+            FileAction::Open(path) => {
+                if let Some(file) = path.or_else(crate::files::pick_file) {
+                    self.start(
+                        Sources {
+                            file,
+                            ..self.template.clone()
+                        },
+                        ctx,
+                    );
+                }
+            }
+            FileAction::Close => {
+                self.close();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title("OLS CAD".into()));
+            }
+            FileAction::Quit => {
+                self.close();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
     }
 
@@ -301,6 +419,11 @@ impl App {
             hotbar: crate::tools::Hotbar::default(),
             quickbar: Default::default(),
             lod: Default::default(),
+            recent: Default::default(),
+            template: Sources::default(),
+            file_action: None,
+            new_project: None,
+            confirm_discard: None,
             customize: false,
         }
     }
@@ -311,6 +434,27 @@ impl App {
         if let Some(path) = self.dock.find_tab(&tab) {
             let _ = self.dock.set_active_tab(path);
         }
+    }
+
+    /// Asks for a File menu action (tests).
+    #[cfg(test)]
+    pub fn file_action_for_test(&mut self, action: crate::files::FileAction) {
+        self.file_action = Some(action);
+    }
+
+    /// Why loading failed, if it did (tests).
+    #[cfg(test)]
+    pub fn failure(&self) -> Option<&str> {
+        match &self.state {
+            State::Failed(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    /// Whether no file is open (tests).
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        matches!(self.state, State::Empty)
     }
 
     /// The shown model, once loaded.
@@ -2229,8 +2373,40 @@ fn close_page(dock: &mut DockState<Tab>, tab: Tab) {
     }
 }
 
-/// The menus: File, Edit (with Snap), View (pages, layers, cases), Tools,
-/// Checks, Libraries, Tables, Plugins, Help. Commands go to `out`.
+/// The open file's entries of the File menu: Save, Export libraries.
+fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Command>) {
+    use crate::menu::Command;
+    if Command::Save.menu_item(ui) {
+        out.push(Command::Save);
+        ui.close();
+    }
+    if ui
+        .add_enabled(
+            r.model.library_dir.is_some(),
+            egui::Button::new("Export libraries…"),
+        )
+        .on_hover_text(
+            "Write the project's libraries (wires, structure types, insulators, weather \
+             cases) as files into a folder: to share them or compare them",
+        )
+        .clicked()
+    {
+        ui.close();
+        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+            r.status = Some(match r.model.export_libraries(&dir) {
+                Ok(n) => (
+                    format!("{n} library files written to {}", dir.display()),
+                    false,
+                ),
+                Err(e) => (format!("export: {e}"), true),
+            });
+        }
+    }
+}
+
+/// The menus after File: Edit (with Snap), View (pages, layers, cases),
+/// Lines, Tools, Checks, Terrain, Structures, Sections, Plugins, Help.
+/// Commands go to `out`.
 fn menus(
     ui: &mut egui::Ui,
     r: &mut Ready,
@@ -2245,38 +2421,6 @@ fn menus(
             ui.close();
         }
     };
-    ui.menu_button("File", |ui| {
-        ui.label(egui::RichText::new(r.model.sources.file.display().to_string()).small());
-        ui.separator();
-        item(ui, Command::Save, out);
-        ui.separator();
-        if ui
-            .add_enabled(
-                r.model.library_dir.is_some(),
-                egui::Button::new("Export libraries…"),
-            )
-            .on_hover_text(
-                "Write the project's libraries (wires, structure types, insulators, weather \
-                 cases) as files into a folder: to share them or compare them",
-            )
-            .clicked()
-        {
-            ui.close();
-            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                r.status = Some(match r.model.export_libraries(&dir) {
-                    Ok(n) => (
-                        format!("{n} library files written to {}", dir.display()),
-                        false,
-                    ),
-                    Err(e) => (format!("export: {e}"), true),
-                });
-            }
-        }
-        ui.separator();
-        if ui.button("Quit").clicked() {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-        }
-    });
     ui.menu_button("Edit", |ui| {
         let editable = r.model.can_edit().is_ok();
         ui.add_enabled_ui(editable, |ui| {
@@ -2642,6 +2786,7 @@ impl eframe::App for App {
         }
         self.quickbar.save(storage);
         self.lod.save(storage);
+        self.recent.save(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -2666,7 +2811,22 @@ impl eframe::App for App {
             }
         }
         let file = self.sources.file.display().to_string();
+        let ctx = ui.ctx().clone();
+        crate::files::file_keys(&ctx, &mut self.file_action);
+        if !matches!(self.state, State::Ready(_)) {
+            // Only the File menu without a model.
+            egui::Panel::top("top").show(ui, |ui| {
+                egui::MenuBar::new().ui(ui, |ui| {
+                    crate::files::file_menu(ui, &self.recent, None, &mut self.file_action, |_| {});
+                });
+            });
+        }
         match &mut self.state {
+            State::Empty => {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    crate::files::start_page(ui, &self.recent, &mut self.file_action);
+                });
+            }
             State::Loading { progress, .. } => {
                 egui::CentralPanel::default().show(ui, |ui| {
                     ui.heading(format!("Loading {file}"));
@@ -2716,6 +2876,14 @@ impl eframe::App for App {
                 let mut commands: Vec<crate::menu::Command> = Vec::new();
                 egui::Panel::top("top").show(ui, |ui| {
                     egui::MenuBar::new().ui(ui, |ui| {
+                        let path = ready.model.sources.file.clone();
+                        crate::files::file_menu(
+                            ui,
+                            &self.recent,
+                            Some(&path),
+                            &mut self.file_action,
+                            |ui| file_entries(ui, ready, &mut commands),
+                        );
                         menus(
                             ui,
                             ready,
@@ -2791,6 +2959,50 @@ impl eframe::App for App {
                             );
                     });
             }
+        }
+        // The File menu's windows and actions.
+        if let Some(np) = &mut self.new_project {
+            let mut open = true;
+            if let Some(path) = np.ui(&ctx, &mut open) {
+                self.new_project = None;
+                self.file_action = Some(crate::files::FileAction::Open(Some(path)));
+            } else if !open {
+                self.new_project = None;
+            }
+        }
+        if let Some(action) = self.confirm_discard.clone() {
+            let lost = self.unsaved();
+            let mut choice = None;
+            egui::Window::new("Unsaved changes")
+                .collapsible(false)
+                .resizable(false)
+                .show(&ctx, |ui| {
+                    ui.label("These changes are not saved:");
+                    for l in &lost {
+                        ui.label(format!("• {l}"));
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("Discard them").clicked() {
+                            choice = Some(true);
+                        }
+                        if ui.button("Cancel").clicked() {
+                            choice = Some(false);
+                        }
+                    });
+                });
+            match choice {
+                Some(true) => {
+                    self.confirm_discard = None;
+                    self.file_action(&ctx, action, true);
+                }
+                Some(false) => self.confirm_discard = None,
+                None => {}
+            }
+        }
+        if let Some(action) = self.file_action.take() {
+            self.file_action(&ctx, action, false);
+            // Its window or the next state shows now, not at the next input.
+            ctx.request_repaint();
         }
     }
 }

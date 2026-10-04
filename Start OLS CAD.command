@@ -1,0 +1,17 @@
+#!/bin/zsh
+# Double-click (macOS) to build and start OLS CAD on its start page: then
+# File > New project or Open. The first start after a code change compiles
+# for about a minute; later starts take a few seconds.
+
+cd "${0:A:h}" || exit 1
+export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
+
+echo "Building and starting OLS CAD…"
+cargo run --release -p ols-app
+status=$?
+
+if [ $status -ne 0 ]; then
+    echo
+    echo "OLS CAD stopped with an error (exit code $status) — see the messages above."
+    read -k 1 "?Press any key to close this window."
+fi

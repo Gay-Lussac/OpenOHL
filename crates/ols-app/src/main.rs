@@ -21,6 +21,7 @@ mod clearance;
 mod controls;
 mod edit;
 mod editors;
+mod files;
 mod library;
 mod lod;
 mod menu;
@@ -41,8 +42,9 @@ mod tests;
 #[derive(Parser)]
 #[command(name = "ols-cad", version)]
 struct Args {
-    /// Line file (.ols.json) or project file (.ols).
-    file: PathBuf,
+    /// Line file (.ols.json) or project file (.ols); none: the start page
+    /// (File › New project, Open).
+    file: Option<PathBuf>,
     /// Wire library (file or directory); default: *.olsw next to the file,
     /// else libraries/cables.
     #[arg(long)]
@@ -101,8 +103,9 @@ fn main() -> std::process::ExitCode {
     )
     .init();
     let args = Args::parse();
+    let open = args.file.is_some();
     let sources = model::Sources {
-        file: args.file,
+        file: args.file.unwrap_or_default(),
         library: args.library,
         structures: args.structures,
         insulators: args.insulators,
@@ -115,6 +118,10 @@ fn main() -> std::process::ExitCode {
         rules: args.rules,
     };
     if let Some(path) = args.screenshot {
+        if !open {
+            eprintln!("error: --screenshot needs a file");
+            return std::process::ExitCode::FAILURE;
+        }
         return match screenshot(sources, &path, args.focus.as_deref(), args.distance) {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(e) => {
@@ -143,7 +150,14 @@ fn main() -> std::process::ExitCode {
         "OLS CAD",
         options,
         Box::new(move |cc| {
-            let mut app = app::App::new(sources, cc.wgpu_render_state.clone(), &cc.egui_ctx);
+            let rs = cc.wgpu_render_state.clone();
+            let mut app = app::App::empty(sources.clone(), rs);
+            if let Some(st) = cc.storage {
+                app.recent = files::Recent::load(st);
+            }
+            if open {
+                app.start(sources, &cc.egui_ctx);
+            }
             // Given, else the one used last, else the default.
             app.controls = chosen
                 .or_else(|| cc.storage.and_then(controls::Controls::load))

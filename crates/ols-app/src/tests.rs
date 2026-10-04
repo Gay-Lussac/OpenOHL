@@ -2572,3 +2572,76 @@ fn every_lidar_class_is_loaded() {
         assert!(crate::scene::class_color(&scheme, code).is_some(), "{code}");
     }
 }
+
+/// File: a new project (an empty line, the user its admin), opened from
+/// the start page; Close goes back to it, asking first when a table has
+/// changes not applied; Open recent opens it again.
+#[test]
+fn files_are_created_opened_and_closed() {
+    use crate::files::FileAction;
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-files", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("fresh.ols");
+    std::fs::remove_file(&path).ok();
+    let created =
+        crate::files::create_project(&dir.join("fresh"), "Fresh line", "EPSG:2056", "tester")
+            .unwrap();
+    assert_eq!(created, path);
+    // Never replaced.
+    assert!(crate::files::create_project(&path, "Again", "EPSG:2056", "tester").is_err());
+    let template = Sources {
+        point_budget: 1000,
+        corridor: 60.0,
+        user: Some("tester".into()),
+        library: Some(root().join("libraries/cables")),
+        ..Sources::default()
+    };
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::empty(template, None));
+    harness.run();
+    assert!(harness.state().is_empty());
+    harness.get_by_label("New project…");
+    // Open (as the menu or the start page would).
+    harness
+        .state_mut()
+        .file_action_for_test(FileAction::Open(Some(path.clone())));
+    for _ in 0..200 {
+        harness.step();
+        if harness.state_mut().ready().is_some() {
+            break;
+        }
+    }
+    assert_eq!(harness.state().failure(), None);
+    {
+        let r = harness.state_mut().ready().expect("loaded");
+        assert_eq!(r.model.line.name, "Fresh line");
+        assert!(r.model.line.structures.is_empty());
+        assert!(r.model.can_edit().is_ok(), "the creator edits it");
+        // A table change not applied.
+        r.tables
+            .entry(crate::tables::TableKind::Structures)
+            .or_default()
+            .added
+            .push(vec![String::new(); 9]);
+    }
+    harness.run();
+    harness.state_mut().file_action_for_test(FileAction::Close);
+    harness.run();
+    harness.get_by_label("Discard them").click();
+    harness.run();
+    assert!(harness.state().is_empty());
+    assert_eq!(harness.state().recent.0.len(), 1);
+    // Open recent.
+    let again = harness.state().recent.0[0].clone();
+    harness
+        .state_mut()
+        .file_action_for_test(FileAction::Open(Some(again)));
+    for _ in 0..200 {
+        harness.step();
+        if harness.state_mut().ready().is_some() {
+            break;
+        }
+    }
+    assert!(harness.state_mut().ready().is_some());
+}
