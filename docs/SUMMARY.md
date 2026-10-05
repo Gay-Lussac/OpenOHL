@@ -16,6 +16,7 @@
 - [Import and export](user-guide/import-export.md)
 - [Project files and point clouds (.ols)](user-guide/project.md)
 - [Server mode](user-guide/server.md)
+- [Versions, branches and reviews](user-guide/versions.md)
 
 # Theory manual
 
@@ -38,6 +39,7 @@
   - [ADR-0007 Point clouds in the project](adr/0007-point-clouds-in-the-project.md)
   - [ADR-0008 Spatial chunk index](adr/0008-spatial-chunk-index.md)
   - [ADR-0009 GUI toolkit](adr/0009-gui-toolkit.md)
+  - [ADR-0010 Version control](adr/0010-version-control.md)
 
 # Development
 
