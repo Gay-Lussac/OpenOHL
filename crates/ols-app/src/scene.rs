@@ -252,13 +252,14 @@ pub fn structures(
     let mut clamps: std::collections::HashMap<(&str, u32, u32), Vec<[f64; 3]>> =
         std::collections::HashMap::new();
     for sec in &line.sections {
-        for k in model.section_cases(&sec.id, case) {
-            let Some(shape) = cases
-                .get(k)
-                .and_then(|c| c.shapes.iter().find(|x| x.section == sec.id))
-            else {
-                continue;
-            };
+        // Both wind sides shown: the strings to each side's clamps.
+        let shapes = model
+            .section_cases(&sec.id, case)
+            .into_iter()
+            .filter_map(|k| cases.get(k))
+            .flat_map(|c| c.drawn())
+            .filter_map(|c| c.shapes.iter().find(|x| x.section == sec.id));
+        for shape in shapes {
             for (p, c) in sec.points.iter().zip(&shape.clamps) {
                 clamps
                     .entry((p.structure.as_str(), p.set, p.phase))
