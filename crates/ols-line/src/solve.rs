@@ -145,6 +145,7 @@ pub(crate) fn span_load(case: &WeatherCase, cable: &Cable, d: Vector3<f64>) -> V
 
 /// Stringing reference of a section: clamp positions and unstressed lengths
 /// at a reference temperature.
+#[derive(Clone)]
 struct Reference {
     clamps: Vec<Vector3<f64>>,
     lengths: Vec<f64>,
@@ -884,14 +885,7 @@ pub fn solve_section(
     use crate::condition::{Condition, Method};
     let calc = section.calculation;
     let solve = |final_state: Option<&FinalState>| match calc.method() {
-        Method::Fe => solve_fe(
-            line,
-            section,
-            cable,
-            case,
-            final_state.map_or(0.0, |f| f.stretch),
-            budget,
-        ),
+        Method::Fe => solve_fe(line, section, cable, case, final_state, budget),
         Method::Rs => solve_rs(line, section, cable, case, final_state, budget),
     };
     match calc.condition() {
@@ -1259,21 +1253,85 @@ fn solve_rs(
     })
 }
 
-/// Finite-element solution of a section in `case`, its cable longer by
-/// the permanent `stretch` (unit strain; 0: initial).
+/// The cable's stress-strain curves, when its model uses them (the
+/// non-linear model with curves given).
+fn curves_of(cable: &Cable) -> Option<ols_cables::mechanics::Mechanics> {
+    if cable.model != ols_cables::CableModel::Nonlinear {
+        return None;
+    }
+    ols_cables::mechanics::Mechanics::from_cable(cable)
+        .ok()
+        .filter(|m| m.is_nonlinear())
+}
+
+/// Mean tension of each span's elements (weighted by their unstressed
+/// lengths), N.
+fn span_tensions(built: &Built, solution: &ols_wirefe::Solution) -> Vec<f64> {
+    built
+        .span_elements
+        .iter()
+        .map(|elements| {
+            let (mut sum, mut length) = (0.0, 0.0);
+            for &e in elements {
+                let l = built.model.cables[e].properties.unstressed_length;
+                let st = &solution.cables[e];
+                sum += 0.5 * (st.tension_i + st.tension_j) * l;
+                length += l;
+            }
+            if length > 0.0 { sum / length } else { 0.0 }
+        })
+        .collect()
+}
+
+/// Passes of the secant iteration on the stress-strain curves (exit
+/// clause; it converges in 3–6).
+const CURVE_PASSES: usize = 30;
+
+/// Finite-element solution of a section in `case`, in the permanent
+/// state `final_state` (none: initial).
+///
+/// Cables with stress-strain curves (non-linear model): the elements stay
+/// elastic catenaries with the cable's EA, and each span's unstressed
+/// length is set so that, at the span's mean tension, its length is the
+/// curves' in the case's material state (initial, after creep or after
+/// load: the permanent set comes with it) — a secant iteration on the
+/// spans' tensions, re-solved until those lengths stop changing
+/// (\\( 10^{-9} \\) relative, at most [`CURVE_PASSES`] solves). The stringing
+/// state fixes each span's length at zero strain. Other cables: linear,
+/// longer by the final state's permanent stretch.
 fn solve_fe(
     line: &Line,
     section: &Section,
     cable: &Cable,
     case: &WeatherCase,
-    stretch: f64,
+    final_state: Option<&FinalState>,
     budget: &Budget,
 ) -> Result<SectionShape, LineError> {
     let (layout, estimated_weights) =
         estimate_strain_weights(section, clamps_of(line, section)?, cable, budget)?;
     let mut reference = reference(section, &layout, cable, budget)?;
-    // Stretched before rolling: in the blocks, the longer wire is shared
-    // out again so that the spans keep one horizontal tension.
+    let curves = curves_of(cable);
+    // Curves: each span's tension in the stringing state (still air at the
+    // reference temperature), where the reference lengths are cut.
+    let strung = match &curves {
+        Some(_) => {
+            let stringing = WeatherCase::still(
+                "stringing",
+                ols_core::units::Temperature::from_celsius(reference.temperature),
+            );
+            let (b, sol) = solve_built(
+                section, &layout, &reference, cable, &stringing, false, budget,
+            )?;
+            Some(span_tensions(&b, &sol))
+        }
+        None => None,
+    };
+    // Linear: stretched before rolling: in the blocks, the longer wire is
+    // shared out again so that the spans keep one horizontal tension.
+    let stretch = match (&curves, final_state) {
+        (None, Some(f)) => f.stretch,
+        _ => 0.0,
+    };
     if stretch != 0.0 {
         for l in &mut reference.lengths {
             *l *= 1.0 + stretch;
@@ -1284,9 +1342,58 @@ fn solve_fe(
     }
     let (mut built, mut solution) =
         solve_built(section, &layout, &reference, cable, case, true, budget)?;
-    // Bimetallic cables: past the transition, outer strands limited in
-    // compression leave the core alone ([`core_branch`]).
-    if let Some((core, offset)) = core_branch(cable, case, &reference, &built, &solution) {
+    if let (Some(m), Some(strung)) = (&curves, &strung) {
+        use ols_cables::mechanics::MaterialState;
+        use ols_core::units::{Force, Temperature};
+        let material = final_state.map_or(MaterialState::Initial, |f| f.material.clone());
+        let ea = cable.axial_stiffness().si();
+        let thermal = (cable.thermal_expansion()
+            * (case.temperature.celsius() - reference.temperature))
+            .exp();
+        let t_ref = Temperature::from_celsius(reference.temperature);
+        let strain = |t: f64, at: Temperature, state: &MaterialState| {
+            m.strain(Force::from_si(t), at, state)
+                .map_err(|e| LineError::Invalid(format!("section {}: {e}", section.id)))
+        };
+        // Physical length per unit reference length at stringing, and the
+        // curves' strain there (the zero-strain length between them).
+        let at_stringing: Vec<(f64, f64)> = strung
+            .iter()
+            .map(|&t| Ok((1.0 + t / ea, strain(t, t_ref, &MaterialState::Initial)?)))
+            .collect::<Result<_, LineError>>()?;
+        let base = reference.lengths.clone();
+        let mut factors = vec![1.0; base.len()];
+        let mut settled = false;
+        for _ in 0..CURVE_PASSES {
+            let tensions = span_tensions(&built, &solution);
+            let mut change: f64 = 0.0;
+            for (s, &t) in tensions.iter().enumerate() {
+                let (stretched, eps_ref) = at_stringing[s];
+                let eps = strain(t, case.temperature, &material)?;
+                let k = stretched * (1.0 + eps) / ((1.0 + eps_ref) * thermal * (1.0 + t / ea));
+                change = change.max(((k - factors[s]) / factors[s]).abs());
+                factors[s] = k;
+            }
+            if change < 1e-9 {
+                settled = true;
+                break;
+            }
+            for (l, (b, k)) in reference.lengths.iter_mut().zip(base.iter().zip(&factors)) {
+                *l = b * k;
+            }
+            (built, solution) =
+                solve_built(section, &layout, &reference, cable, case, true, budget)?;
+        }
+        if !settled {
+            return Err(LineError::Invalid(format!(
+                "section {}: the stress-strain iteration did not settle in {CURVE_PASSES} solves",
+                section.id
+            )));
+        }
+    } else if let Some((core, offset)) = core_branch(cable, case, &reference, &built, &solution) {
+        // Bimetallic cables without curves: past the transition, outer
+        // strands limited in compression leave the core alone
+        // ([`core_branch`]).
         for l in &mut reference.lengths {
             *l *= 1.0 + offset;
         }
@@ -2059,6 +2166,71 @@ mod tests {
         )
         .unwrap();
         assert_eq!(f.stretch, 0.0);
+    }
+
+    /// Cables with curves: the finite elements follow the stress-strain
+    /// curves (secant iteration), so FE and RS agree on a span where both
+    /// hold — one section with no strings swinging (a dead-end to
+    /// dead-end span in still air): within the thermal forms' difference.
+    #[test]
+    fn finite_elements_follow_the_curves() {
+        use crate::condition::Calculation;
+        let lib = with_nonlinear(library());
+        let cable = lib.get("synthetic").unwrap();
+        let mut line = crate::tests::example();
+        // The branch S3: two dead-end spans… take its first span alone.
+        line.sections.retain(|s| s.id == "S3");
+        let s = &mut line.sections[0];
+        s.cable = "synthetic".into();
+        s.points.truncate(2);
+        s.stringing = Stringing::Tension {
+            horizontal_tension: 20_000.0,
+            temperature: 15.0,
+        };
+        // Wires fixed at the structures: no strings moving with the tension
+        // (RS holds the clamps, FE would let strain strings swing).
+        let ends = line.sections[0].points.clone();
+        for p in &ends {
+            let st = line
+                .structures
+                .iter_mut()
+                .find(|x| x.id == p.structure)
+                .unwrap();
+            let a = st
+                .attachments
+                .iter_mut()
+                .find(|a| a.set == p.set && a.phase == p.phase)
+                .unwrap();
+            a.insulator_point = a.wire_point;
+            a.insulator_weight = 0.0;
+        }
+        let budget = default_fe_budget();
+        let sag = |line: &Line, c: Calculation, t: f64| {
+            let mut section = line.sections[0].clone();
+            section.calculation = c;
+            let case = WeatherCase::still("t", Temperature::from_celsius(t));
+            let shape = solve_section(line, &section, cable, &case, &budget).unwrap();
+            (shape.spans[0].horizontal_tension, shape.spans[0].sag)
+        };
+        for t in [-20.0, 15.0, 60.0] {
+            let (fe, rs) = (
+                sag(&line, Calculation::InitialFe, t),
+                sag(&line, Calculation::InitialRs, t),
+            );
+            // Tensions within 0.1 %, sags within 1 cm (the methods measure
+            // sag on slightly different chords: 5 mm here at stringing too).
+            let (h_fe, h_rs) = (fe.0, rs.0);
+            assert!(
+                (h_fe - h_rs).abs() < 1e-3 * h_rs,
+                "{t} °C: H FE {h_fe} RS {h_rs}"
+            );
+            assert!(
+                (fe.1 - rs.1).abs() < 0.01,
+                "{t} °C: sag FE {} RS {}",
+                fe.1,
+                rs.1
+            );
+        }
     }
 
     /// The non-linear model: creep and a heavy load stretch the cable
