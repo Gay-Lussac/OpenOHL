@@ -3583,6 +3583,7 @@ name = "ols-pointcloud"
 version = "0.0.1"
 dependencies = [
  "las",
+ "laz",
  "ols-core",
  "ols-lidar",
  "rusqlite",
