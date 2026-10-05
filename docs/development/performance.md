@@ -8,7 +8,7 @@ Performance-sensitive code has [criterion](https://github.com/bheisler/criterion
 cargo bench --workspace --bench '*'
 ```
 
-CI runs them on every change and fails if a benchmark becomes more than 1.5× slower than the last result on `main`. Shared CI machines are noisy, so the threshold is deliberately loose; local runs give precise numbers.
+The CI workflow is started by hand (GitHub Actions › CI › Run workflow); with **full** ticked it also runs the benchmarks: it benchmarks the parent commit on the same machine first and fails if a benchmark becomes more than 1.5× slower. Shared CI machines are noisy, so the threshold is deliberately loose; local runs give precise numbers.
 
 Example: `units/total_load_typed_10k` vs `units/total_load_raw_10k` check that typed quantities cost nothing compared with plain `f64`.
 

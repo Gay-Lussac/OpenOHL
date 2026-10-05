@@ -1,6 +1,6 @@
 # Contributing to OLS CAD
 
-Thanks for your interest! The project is in its foundation phase — the most valuable contributions right now are reviews of the [roadmap](ROADMAP.md) and [architecture](docs/ARCHITECTURE.md), and validation cases with known reference results.
+Thanks for your interest! The project is pre-alpha — the most valuable contributions right now are validation cases with known reference results, reviews of the theory manual (`docs/theory/`), the [roadmap](ROADMAP.md) and the [architecture](docs/ARCHITECTURE.md), and reports from trying it on real lines.
 
 ## Clean-room policy (important)
 
@@ -30,7 +30,7 @@ Every calculation PR must include:
    cargo run -p ols-cli -- info
    ```
 
-3. Before pushing, run the same checks as CI:
+3. Before pushing, run the same checks as CI (the CI workflow is started by hand, so these local checks are what keeps `main` green):
 
    ```bash
    cargo fmt --all

@@ -1,4 +1,4 @@
-# Design Goals & Core Requirements
+# Design goals and core requirements
 
 OLS CAD aims to be **faster and more user-friendly** than existing overhead line design tools. This document records the requirements that every module must respect. Changes go through an ADR.
 
@@ -78,8 +78,8 @@ This is a **core** requirement, not a GUI feature, because it dictates how the d
   - Some actions are admin-only by default (rollback of others' work, deleting sections, changing project-wide criteria, kicking/banning users).
   - All permission changes and admin actions are recorded in the history.
 - **Compute placement**: calculations can run on the server (shared results, thin clients) or locally on clients.
-- **Transport**: binary protocol over WebSocket/QUIC, encrypted; works on LAN and Internet. A future web client can join the same session.
-- Offline work with later sync is a stretch goal.
+- **Transport**: binary protocol over WebSocket/QUIC, encrypted; works on LAN and Internet. A web client (browser) joins the same session.
+- Offline work: a branch carried back in a bundle and merged ([ADR-0010](adr/0010-version-control.md)); automatic sync is a stretch goal.
 
 ## 5. Render distance, LOD and streaming
 
@@ -136,7 +136,7 @@ Project changes must be tracked like source code in git, built on the command lo
 - **Export/import of history** for archiving and audit (regulatory traceability).
 - Libraries stored as text files remain compatible with plain git.
 
-Foundation (command log, stable object IDs) is in the core from Phase 2; the user-facing version control comes later, partly as plugins.
+Built on the command log and stable object IDs: revisions, history, diff with engineering impact, branches, merge, tags and revert are in the project file ([ADR-0010](adr/0010-version-control.md), [Versions](user-guide/versions.md)); visual diff, cherry-pick and history export are still to come.
 
 ## 8. Exports and interoperability
 
@@ -186,7 +186,7 @@ Each **structure type** (pylon, pole, portal…) is a file of its own (`*.olss`,
 - **Body outline** (optional): simple polylines for drawings and the 3D view (detailed meshes and LOD come with the renderer).
 - **Placement in a line**: a structure instance references a type, a position, a rotation (local x axis direction) and an extension; global attachment points are computed. Per-attachment overrides remain possible.
 - **Deriving types from an existing line**: attachment points of instances are transformed back to local coordinates and identical geometries are grouped into one type — a draft library from any imported line.
-- Later: strength data (allowable loads, Method 1/2 — Phase 4), full frame models (`ols-structures-fe`, Phase 5).
+- Strength data: allowable spans and load trees (`[capacity]`, Methods 1 and 2), structure models and poles (`ols-structures-fe`) — see [Structure libraries](user-guide/structure-library.md#capacity) and [Structure analysis](user-guide/structure-analysis.md).
 
 ### Simple pylon files
 
@@ -210,6 +210,6 @@ Each **insulator assembly** is a file of its own (`*.olsi`, TOML) in an insulato
 - **Two measures, always**: **vertical** clearance (wire height above a target directly below it) and **radial** clearance (shortest 3D distance between wire and target). Each rule requires one or both.
 - **Targets**: the ground surface (TIN); LiDAR / survey points selected by class or by class role (§ LiDAR class schemes) — vegetation, buildings, roads, water, objects…; wires of **other lines** (crossings, parallel lines); and other wires of the **same line** — within the same span (phase to phase, circuit to circuit) and between spans (e.g. a branch passing under the main line).
 - **Rules are data** (`.olsr` files): a rule names its target and required distances; a later tool (GUI or plugin) edits them per LiDAR class, per crossing, per design code. Design codes (EN 50341, Swiss LeV, NESC…) are plugins that produce rule sets.
-- **Per weather case**, and later as **envelopes** over several cases (hot, iced, blown-out wires), including different cases for the two wires of a wire-to-wire check (e.g. upper wire iced, lower wire cold).
-- **Exclusion zones** (later): parts of a wire near supports, terminations and cable transitions (where wires converge and come down to the ground by design) can be excluded from a rule, e.g. within a distance of the attachment points.
-- Results per span and rule: smallest vertical and radial clearance with their locations, number of violating points or places; marked in the viewer and exported (CSV, later reports and drawings).
+- **Per weather case**, and as **envelopes** over several cases (hot, iced, blown-out wires), including different cases for the two wires of a wire-to-wire check (e.g. upper wire iced, lower wire cold).
+- **Exclusion zones**: parts of a wire near supports, terminations and cable transitions (where wires converge and come down to the ground by design) can be excluded from a rule, e.g. within a distance of the attachment points.
+- Results per span and rule: smallest vertical and radial clearance with their locations, number of violating points or places; marked in the viewer and exported (CSV, drawings).
