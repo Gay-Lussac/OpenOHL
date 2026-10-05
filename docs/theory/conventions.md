@@ -16,15 +16,15 @@ All values are stored and computed in **SI base units**, as `f64`:
 | Speed | m/s | m/s / mph |
 | Temperature | K | °C / °F |
 
-Conversion factors are the exact definitions (international foot = 0.3048 m, avoirdupois pound = 0.453 592 37 kg, standard gravity \\( g_n = 9.806\,65 \\) m/s²). They are checked against NIST SP 811 in the validation suite.
+Conversion factors are the exact definitions (international foot = 0.3048 m, avoirdupois pound = 0.453 592 37 kg, standard gravity \\( g_n = 9.806\\,65 \\) m/s²). They are checked against NIST SP 811 in the validation suite.
 
 The type system enforces dimensional consistency, e.g. a distributed load times a length is a force:
 
-\\[ F = w \, L \qquad [\mathrm{N}] = [\mathrm{N/m}] \cdot [\mathrm{m}] \\]
+\\[ F = w \\, L \qquad [\mathrm{N}] = [\mathrm{N/m}] \cdot [\mathrm{m}] \\]
 
 and a wind pressure on a conductor diameter is a load per unit length:
 
-\\[ w_{wind} = q \, d \qquad [\mathrm{N/m}] = [\mathrm{Pa}] \cdot [\mathrm{m}] \\]
+\\[ w_{wind} = q \\, d \qquad [\mathrm{N/m}] = [\mathrm{Pa}] \cdot [\mathrm{m}] \\]
 
 ## Numerical exit clauses
 

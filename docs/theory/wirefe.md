@@ -24,7 +24,7 @@ Unknowns: positions of the free nodes. Each iteration assembles the stiffness of
 - **Levenberg–Marquardt damping** \\( \mu \\): negligible next to stiff string directions (a string picks up its load in one step) but keeps steps moderate where the structure is still soft — a string at zero force has no pendulum stiffness yet. \\( \mu \\) falls after good steps, so the end is plain Newton (quadratic convergence).
 - **Swing-arc projection**: a straight Newton step moves a swinging clamp along the tangent of its arc; with a nearly rigid string, the fake stretch \\( \delta^2/2L \\) creates huge forces. The step keeps Newton's intended string length but puts the clamp back on its arc.
 - **Line search** on the largest unbalanced nodal force.
-- **Tolerance**: \\( 10^{-9} \\) of the loads, but not below the floating-point floor \\( 64\,\varepsilon\, k_{max} |x| \\) of stiff members.
+- **Tolerance**: \\( 10^{-9} \\) of the loads, but not below the floating-point floor \\( 64\\,\varepsilon\\, k_{max} |x| \\) of stiff members.
 - **Exit clauses**: 100 iterations (the time limit, 120 s, only guards against a solve that never ends); the error names the node with the largest unbalanced force. `OLS_FE_TRACE=1` prints the iteration history.
 
 ## Sections: sagging and clamping

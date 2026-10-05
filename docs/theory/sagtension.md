@@ -9,7 +9,7 @@ Left support at \\( (0,0) \\), right support at \\( (S,h) \\); uniform load \\( 
 \\[ x_m = \frac{S}{2} - C \operatorname{asinh}\frac{h}{2C\sinh a}, \qquad
    y(x) = 2C \sinh\frac{x - 2x_m}{2C} \sinh\frac{x}{2C} \\]
 
-\\[ L = \sqrt{h^2 + (2C\sinh a)^2}, \qquad T(x) = H\cosh\frac{x - x_m}{C}, \qquad T_B - T_A = w\,h \\]
+\\[ L = \sqrt{h^2 + (2C\sinh a)^2}, \qquad T(x) = H\cosh\frac{x - x_m}{C}, \qquad T_B - T_A = w\\,h \\]
 
 The product forms avoid cancellation for taut spans. Maximum sag is where the cable is parallel to the chord: \\( x^\* = x_m + C\operatorname{asinh}(h/S) \\). For taut spans the sag tends to \\( wS^2 / (8H\cos\theta) \\) (\\( \theta \\): chord angle — the weight acts per unit of cable length).
 
@@ -19,10 +19,10 @@ The product forms avoid cancellation for taut spans. Maximum sag is where the ca
 
 A cable has a fixed unstressed length \\( L_0 \\) at a reference temperature \\( t_0 \\). Under temperature \\( t \\) and load \\( w \\):
 
-\\[ L = L_0\, e^{\alpha (t - t_0)} \left(1 + \frac{\bar T}{EA}\right), \qquad
-   \int_0^L T\,ds = H\left[\frac{S}{2} + \frac{C}{2}\sinh\frac{S}{C}\cosh\frac{S - 2x_m}{C}\right] \\]
+\\[ L = L_0\\, e^{\alpha (t - t_0)} \left(1 + \frac{\bar T}{EA}\right), \qquad
+   \int_0^L T\\,ds = H\left[\frac{S}{2} + \frac{C}{2}\sinh\frac{S}{C}\cosh\frac{S - 2x_m}{C}\right] \\]
 
-The exponential thermal factor is the exact integral of \\( dL/(L\,dT) = \alpha \\). The common additive form \\( 1 + \alpha\Delta t + \bar T/EA \\) agrees to second order but is **not path independent**: defining a span at 15 °C, solving at 75 °C, re-defining from that result and solving back gave 28.009 kN instead of 28 kN (span slack magnifies tiny length errors). The multiplicative form makes every state give the same unstressed length.
+The exponential thermal factor is the exact integral of \\( dL/(L\\,dT) = \alpha \\). The common additive form \\( 1 + \alpha\Delta t + \bar T/EA \\) agrees to second order but is **not path independent**: defining a span at 15 °C, solving at 75 °C, re-defining from that result and solving back gave 28.009 kN instead of 28 kN (span slack magnifies tiny length errors). The multiplicative form makes every state give the same unstressed length.
 
 The length mismatch decreases strictly with \\( H \\): unique solution, found by bracketed bisection (limit: 200 iterations; typical: ~60 iterations, a few µs; the time limit only guards against a loop).
 
@@ -34,12 +34,12 @@ OLS CAD combines thermal and elastic strain in two ways, depending on the calcul
 
 | Form | Formula | Used by |
 |---|---|---|
-| Multiplicative | \\( L = L_0\, e^{\alpha\Delta t}\,(1 + \bar T/EA) \\) | the linear-elastic change of state and tension sections above; the finite-element wire model (every *FE* calculation of a section: the unstressed lengths are scaled by \\( e^{\alpha\Delta t} \\), then stretched elastically); jumpers |
+| Multiplicative | \\( L = L_0\\, e^{\alpha\Delta t}\\,(1 + \bar T/EA) \\) | the linear-elastic change of state and tension sections above; the finite-element wire model (every *FE* calculation of a section: the unstressed lengths are scaled by \\( e^{\alpha\Delta t} \\), then stretched elastically); jumpers |
 | Additive | \\( \varepsilon = \varepsilon_{mech}(\bar T) + \alpha\Delta t \\), \\( L = L_0 (1 + \varepsilon) \\) | the non-linear stress-strain model (below) and so every *RS* (ruling-span) calculation of a section; each component's mechanical strain is \\( \varepsilon - \alpha_k \Delta t \\) |
 
 **Why two.** The multiplicative form is exact and path independent (see above). The additive form is how published stress-strain curves are defined and used — total strain is mechanical strain plus \\( \alpha\Delta t \\) — and it is what PLS-CADD and the Aluminum Association method use, so the non-linear model keeps it to stay comparable with them.
 
-**How large the difference is.** Expanding both: \\( e^{\alpha\Delta t}(1+\varepsilon_e) - (1 + \alpha\Delta t + \varepsilon_e) \approx (\alpha\Delta t)^2/2 + \alpha\Delta t\,\varepsilon_e \\). For an ACSR at 80 °C strung at 20 °C (\\( \alpha\Delta t \approx 1.2\times10^{-3} \\)) and an elastic strain of \\( 10^{-3} \\), that is about \\( 2\times10^{-6} \\): 0.6 mm on a 300 m span, a few millimetres of sag. In hot cases a section's FE and RS results therefore differ by up to about 0.1–0.2 % in tension for this reason alone (the validation compares them within 0.2 %). In cold cases \\( \Delta t < 0 \\) and the difference changes sign.
+**How large the difference is.** Expanding both: \\( e^{\alpha\Delta t}(1+\varepsilon_e) - (1 + \alpha\Delta t + \varepsilon_e) \approx (\alpha\Delta t)^2/2 + \alpha\Delta t\\,\varepsilon_e \\). For an ACSR at 80 °C strung at 20 °C (\\( \alpha\Delta t \approx 1.2\times10^{-3} \\)) and an elastic strain of \\( 10^{-3} \\), that is about \\( 2\times10^{-6} \\): 0.6 mm on a 300 m span, a few millimetres of sag. In hot cases a section's FE and RS results therefore differ by up to about 0.1–0.2 % in tension for this reason alone (the validation compares them within 0.2 %). In cold cases \\( \Delta t < 0 \\) and the difference changes sign.
 
 **Choosing.** The FE and RS methods of a section are both available in the Sections table (*Initial/Creep/Load/Max Sag × FE/RS*); the difference above is part of the difference between them, alongside what really differs (strings swinging and unequal span tensions in FE). Unifying the two forms is planned once comparisons with PLS-CADD on real lines say which to keep.
 
@@ -47,7 +47,7 @@ OLS CAD combines thermal and elastic strain in two ways, depending on the calcul
 
 Suspension insulators equalise the horizontal tension along a section. OLS CAD solves the section exactly: one \\( H \\) for all spans, total unstressed length conserved:
 
-\\[ \sum_i \frac{L_i(H)}{1 + \bar T_i(H)/EA} = L_0\, e^{\alpha (t - t_0)} \\]
+\\[ \sum_i \frac{L_i(H)}{1 + \bar T_i(H)/EA} = L_0\\, e^{\alpha (t - t_0)} \\]
 
 The classic ruling span \\( S_r = \sqrt{\sum S_i^3 / \sum S_i} \\) is also reported. For the inclined 4-span validation section it is 0.116 % off in tension; the exact solution costs about 60 µs for 20 spans.
 
