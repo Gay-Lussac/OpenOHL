@@ -1129,15 +1129,68 @@ impl Session {
     pub fn status(&self) -> Result<Status, SessionError> {
         let head = self.head()?;
         let revision = self.head_revision()?;
-        let base = match &revision {
-            Some(id) => self.revision_state(id)?,
-            None => State::default(),
+        let working = self.working_state()?;
+        let changes = match &revision {
+            Some(id) => self.diff_to(id, &working)?,
+            None => diff(&State::default(), &working),
         };
         Ok(Status {
             head,
             revision,
-            changes: diff(&base, &self.working_state()?),
+            changes,
         })
+    }
+
+    /// The differences from revision `id` to `state`, reading only the
+    /// objects and files whose hashes differ (hashing the state: about
+    /// 2 µs per object).
+    pub fn diff_to(&self, id: &str, state: &State) -> Result<Diff, SessionError> {
+        let rev = self.revision(id)?;
+        let (now, _) = tree_of(state);
+        if hash(&tree_text(&now)) == rev.tree {
+            return Ok(Diff::default());
+        }
+        let then: Tree = serde_json::from_str(&self.read_blob(&rev.tree)?).map_err(store)?;
+        let index = |t: &Tree| -> BTreeMap<(Kind, String), (i64, String)> {
+            t.objects
+                .iter()
+                .map(|(k, id, ord, h)| ((*k, id.clone()), (*ord, h.clone())))
+                .collect()
+        };
+        let files = |t: &Tree| -> BTreeMap<(String, String), String> {
+            t.libraries
+                .iter()
+                .map(|(k, n, h)| ((k.clone(), n.clone()), h.clone()))
+                .collect()
+        };
+        // Only what differs, on both sides: their diff is the whole diff.
+        let (mut a, mut b) = (State::default(), State::default());
+        let (ia, ib) = (index(&then), index(&now));
+        for key in ia.keys().chain(ib.keys()) {
+            if ia.get(key) == ib.get(key) || a.objects.contains_key(key) {
+                continue;
+            }
+            if let Some((ord, h)) = ia.get(key) {
+                let value = serde_json::from_str(&self.read_blob(h)?).map_err(store)?;
+                a.objects.insert(key.clone(), (*ord, value));
+            }
+            if let Some(x) = state.objects.get(key) {
+                b.objects.insert(key.clone(), x.clone());
+            }
+        }
+        let (fa, fb) = (files(&then), files(&now));
+        for key in fa.keys().chain(fb.keys()) {
+            if fa.get(key) == fb.get(key) {
+                continue;
+            }
+            if let Some(h) = fa.get(key) {
+                a.libraries.insert(key.clone(), self.read_blob(h)?);
+            }
+            if let Some(t) = state.libraries.get(key) {
+                b.libraries.insert(key.clone(), t.clone());
+            }
+        }
+        Ok(diff(&a, &b))
     }
 
     fn require_clean(&self) -> Result<(), SessionError> {
