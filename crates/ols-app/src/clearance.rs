@@ -146,19 +146,12 @@ pub fn run(input: &Input) -> Result<Report, String> {
         let Some(spec) = &input.cloud else {
             return Ok(());
         };
-        let (file, name) = ols_lidar::cloud_spec(spec);
-        let source = ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?;
+        let source = ols_pointcloud::open_source(spec)?;
         let corridor = ols_lidar::Corridor::along_spans(line, input.corridor);
         // Exit clause: ~1 s per 10⁷ points decoded; 10 min is far beyond
         // any line.
         let budget = ols_core::budget::Budget::new().time_limit(Duration::from_secs(600));
-        let stats = ols_pointcloud::PointSource::visit(
-            &source,
-            Some(&corridor),
-            Some(classes),
-            &budget,
-            visit,
-        )?;
+        let stats = source.visit(Some(&corridor), Some(classes), &budget, visit)?;
         visited = Some(stats.points_visited);
         Ok(())
     };

@@ -953,7 +953,10 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Lod => {
                 let view3d = &r.view3d;
-                if self.lod.ui(ui, &|l| view3d.lod_stats(l)) {
+                if self
+                    .lod
+                    .ui(ui, &|l| view3d.lod_stats(l), view3d.stream_stats())
+                {
                     ui.ctx().request_repaint();
                 }
                 None

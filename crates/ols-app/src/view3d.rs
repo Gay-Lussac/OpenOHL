@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use eframe::egui;
 use eframe::egui_wgpu;
 use ols_core::grid::Tile;
+use ols_pointcloud::octree::NodeCache;
 use ols_render::lod::{ChunkSet, Frustum};
 use ols_render::{Camera, GpuScene, Renderer};
 
@@ -31,9 +32,9 @@ pub struct View3d {
     /// Chunked layers: their index, chunks on the GPU, the row they were
     /// built with ([`crate::lod`]).
     chunks: HashMap<Layer, Chunked>,
-    /// LiDAR points read from the project's point cloud as tiles come in
-    /// view, and the share of the cloud they were asked with.
-    stream: Option<(crate::chunks::PointStream, f64)>,
+    /// The point cloud (the project's or a COPC file), streamed by node
+    /// under the point budget.
+    points: Option<Streamed>,
     /// Layers to rebuild before the next frame.
     pub dirty: HashSet<Layer>,
     texture: Option<egui::TextureId>,
@@ -58,14 +59,34 @@ struct Chunked {
     row: crate::lod::LodRow,
 }
 
+/// A point cloud streamed by node: its nodes on the GPU, those drawn.
+struct Streamed {
+    /// The cloud (`FILE.ols`, `FILE.ols#name` or a COPC file).
+    spec: String,
+    octree: crate::octree::PointOctree,
+    cache: NodeCache<GpuScene>,
+    drawn: Vec<usize>,
+}
+
 /// Time for building chunks in one frame (the nearest first; the rest in
 /// the next frames).
 const BUILD_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
 
 impl View3d {
-    /// Points drawn by a chunked layer in the last frame (tests).
+    /// Points drawn by a chunked or streamed layer in the last frame
+    /// (tests).
     #[cfg(test)]
     pub fn drawn_points(&self, layer: Layer) -> u32 {
+        if layer == Layer::Points
+            && let Some(p) = &self.points
+        {
+            return p
+                .drawn
+                .iter()
+                .filter_map(|&i| p.cache.peek(i))
+                .map(|g| g.counts().1)
+                .sum();
+        }
         self.chunks
             .get(&layer)
             .map_or(0, |c| c.set.drawn().map(|g| g.counts().1).sum())
@@ -74,6 +95,69 @@ impl View3d {
     /// What a chunked layer drew in the last frame.
     pub fn lod_stats(&self, layer: Layer) -> Option<ols_render::lod::PlanStats> {
         self.chunks.get(&layer).map(|c| c.set.stats)
+    }
+
+    /// What the point cloud streamed by node did in the last frame.
+    pub fn stream_stats(&self) -> Option<crate::octree::StreamStats> {
+        self.points.as_ref().map(|p| p.octree.stats)
+    }
+
+    /// One frame of the point cloud streamed by node: the settings of
+    /// the model (hidden classes, colours, share shown) and of the Level
+    /// of detail page, the nodes read since uploaded, the view's nodes
+    /// picked and the missing ones asked for.
+    fn stream_points(
+        p: &mut Streamed,
+        model: &Model,
+        lod: &crate::lod::LodSettings,
+        frustum: &Frustum,
+        pixels_per_radian: f64,
+        device: &eframe::wgpu::Device,
+    ) {
+        let colors: Vec<Option<[u8; 3]>> = (0..=255u8)
+            .map(|c| scene::class_color(&model.scheme, c))
+            .collect();
+        let classes: Vec<u8> = (0..=255u8)
+            .filter(|c| !model.hidden_classes.contains(c) && colors[*c as usize].is_some())
+            .collect();
+        let whole: Vec<u8> = model
+            .class_counts
+            .iter()
+            .filter(|(_, n)| *n <= crate::model::SMALL_CLASS)
+            .map(|(c, _)| *c)
+            .collect();
+        let every = (100.0 / model.points_percent.clamp(0.01, 100.0))
+            .round()
+            .max(1.0) as u64;
+        let changed = p.octree.set(crate::octree::LoadSettings {
+            classes: Some(classes),
+            whole,
+            every,
+            colors: std::sync::Arc::new(colors),
+        });
+        if changed {
+            p.cache.clear();
+        }
+        let bounds = |b: &ols_pointcloud::octree::Box3| ols_render::Bounds {
+            min: b[0],
+            max: b[1],
+        };
+        let distance = |b: &ols_pointcloud::octree::Box3| frustum.distance(&bounds(b));
+        let sees = |b: &ols_pointcloud::octree::Box3| frustum.sees(&bounds(b));
+        let view = ols_pointcloud::octree::LodView {
+            distance: &distance,
+            sees: &sees,
+            pixels_per_radian,
+            render_distance: lod.row(Layer::Points).render_distance,
+        };
+        let limits = ols_pointcloud::octree::LodLimits {
+            point_budget: lod.points.budget,
+            max_error: lod.points.max_error,
+            share: 1.0 / every as f64,
+        };
+        p.drawn = p
+            .octree
+            .frame(&mut p.cache, &view, &limits, |s| GpuScene::new(device, s));
     }
 
     /// Captures (`on`) or frees the mouse: captured, it is locked and
@@ -93,7 +177,7 @@ impl View3d {
     /// The LiDAR points read again with new colours (the class scheme
     /// changed).
     pub fn recolor_points(&mut self) {
-        self.stream = None;
+        self.points = None;
         self.dirty.insert(Layer::Points);
     }
 
@@ -319,22 +403,40 @@ impl View3d {
         // Upload changed layers, render, show.
         let device = &rs.device;
         for layer in self.dirty.drain() {
+            if layer == Layer::Points
+                && let Some(spec) = &model.cloud
+            {
+                // The point cloud: streamed by node (hidden classes and
+                // shares are applied every frame).
+                self.chunks.remove(&layer);
+                if self.points.as_ref().is_none_or(|p| &p.spec != spec) {
+                    self.points = match crate::octree::PointOctree::open(
+                        spec,
+                        model.origin,
+                        Some(ui.ctx().clone()),
+                    ) {
+                        Ok(octree) => Some(Streamed {
+                            spec: spec.clone(),
+                            octree,
+                            cache: NodeCache::default(),
+                            drawn: Vec::new(),
+                        }),
+                        Err(e) => {
+                            log::warn!("LiDAR not streamed: {e}");
+                            None
+                        }
+                    };
+                }
+                continue;
+            }
+            if layer == Layer::Points {
+                self.points = None;
+            }
             if crate::lod::CHUNKED.contains(&layer) {
                 // Indexed now, built by chunk as the view needs them.
                 let index = crate::chunks::ChunkIndex::new(model, layer, case);
                 let mut set = ChunkSet::default();
                 set.reset(index.keys());
-                if index.streamed() {
-                    // Hidden classes or another cloud: read again.
-                    match &mut self.stream {
-                        Some((s, _)) => s.restart(),
-                        None => {
-                            self.stream =
-                                crate::chunks::PointStream::new(model, Some(ui.ctx().clone()))
-                                    .map(|s| (s, model.points_percent));
-                        }
-                    }
-                }
                 self.chunks.insert(
                     layer,
                     Chunked {
@@ -366,38 +468,12 @@ impl View3d {
                 continue;
             }
             let row = lod.row(layer);
-            let streamed = layer == Layer::Points && c.index.streamed();
-            let mut other = row.detail != c.row.detail;
-            if streamed && let Some((stream, percent)) = &mut self.stream {
-                if *percent != model.points_percent {
-                    *percent = model.points_percent;
-                    other = true;
-                }
-                if other {
-                    stream.restart();
-                }
-                // The tiles read since the last frame (skipped ones: asked
-                // again if still wanted).
-                for l in stream.take() {
-                    match l.scene {
-                        Some(Ok(s)) => {
-                            c.set.insert(&l.tile, l.level, GpuScene::new(device, &s));
-                        }
-                        Some(Err(e)) => log::warn!("LiDAR tile {:?}: {e}", l.tile),
-                        None => {}
-                    }
-                }
-            }
-            if other {
+            if row.detail != c.row.detail {
                 // Other details: the levels built go.
                 c.set.reset(c.index.keys());
             }
             c.row = row;
-            let planned = c.set.plan(&frustum, &row.rule());
-            if streamed && let Some((stream, _)) = &self.stream {
-                stream.want(planned.iter().map(|w| (w.key, w.level)));
-            }
-            for w in planned {
+            for w in c.set.plan(&frustum, &row.rule()) {
                 wanted.push((layer, w));
             }
         }
@@ -412,20 +488,6 @@ impl View3d {
             let Some(c) = self.chunks.get_mut(layer) else {
                 continue;
             };
-            if *layer == Layer::Points
-                && c.index.streamed()
-                && let Some((stream, percent)) = &mut self.stream
-            {
-                // Read in the background: the share of the cloud of the
-                // tile's level.
-                let near = *percent / 100.0;
-                let share = match w.level {
-                    0 => near,
-                    l => near * c.row.detail[l - 1] / 100.0,
-                };
-                stream.request(&c.index, w.key, w.level, share, model);
-                continue;
-            }
             let s = c.index.build(model, *layer, &w.key, w.level, &c.row);
             c.set.insert(&w.key, w.level, GpuScene::new(device, &s));
             built.insert(*layer);
@@ -438,20 +500,24 @@ impl View3d {
                 c.set.plan(&frustum, &rule);
             }
         }
-        let streaming = self.stream.as_ref().is_some_and(|(s, _)| s.pending() > 0);
-        if streaming {
-            // The tiles come back on the reader's repaints; keep planning.
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(50));
-        }
-        let built_all = wanted
-            .iter()
-            .filter(|(l, _)| {
-                !(*l == Layer::Points && self.chunks.get(l).is_some_and(|c| c.index.streamed()))
-            })
-            .count();
-        if built_all > n_built {
+        if wanted.len() > n_built {
             ui.ctx().request_repaint();
+        }
+        // The point cloud: the nodes for this view within the budget.
+        if let Some(p) = &mut self.points {
+            if visible.contains(&Layer::Points) {
+                let px_height = f64::from(rect.height() * ui.ctx().pixels_per_point()).max(1.0);
+                let pixels_per_radian = 0.5 * px_height / (0.5 * camera.fov_y).tan();
+                Self::stream_points(p, model, lod, &frustum, pixels_per_radian, device);
+                if p.octree.stats.pending > 0 {
+                    // The nodes come back on the readers' repaints; keep
+                    // planning.
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(50));
+                }
+            } else {
+                p.drawn.clear();
+            }
         }
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));
         let ppp = ui.ctx().pixels_per_point();
@@ -461,9 +527,12 @@ impl View3d {
         ];
         let mut layers: Vec<&GpuScene> = Vec::new();
         for l in Layer::ALL.iter().filter(|l| visible.contains(l)) {
-            match self.chunks.get(l) {
-                Some(c) => layers.extend(c.set.drawn()),
-                None => layers.extend(self.gpu.get(l)),
+            match (self.chunks.get(l), &self.points) {
+                (_, Some(p)) if *l == Layer::Points => {
+                    layers.extend(p.drawn.iter().filter_map(|&i| p.cache.peek(i)));
+                }
+                (Some(c), _) => layers.extend(c.set.drawn()),
+                (None, _) => layers.extend(self.gpu.get(l)),
             }
         }
         let texture = renderer.render(device, &rs.queue, &layers, camera, px);
