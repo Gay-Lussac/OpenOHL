@@ -4257,3 +4257,70 @@ fn display_options_stay_open_while_ticking() {
     assert!(r.model.section_display.sag[crate::annotations::View::Plan as usize]);
     assert!(r.model.section_display.label[crate::annotations::View::ThreeD as usize]);
 }
+
+/// Checks › Bill of materials prices the typed example with the cost file
+/// next to it; Tools › Spot structures proposes structures along the main
+/// route on the survey, in the background.
+#[test]
+fn bill_of_materials_and_spotting_windows() {
+    let ex = root().join("examples/synthetic-line");
+    let model = model::load(
+        Sources {
+            file: ex.join("synthetic-line-typed.ols.json"),
+            library: Some(root().join("libraries/cables")),
+            structures: Some(ex.join("Structures")),
+            terrain: Some(ex.join("synthetic-survey.csv")),
+            point_budget: 1000,
+            corridor: 60.0,
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Checks").click();
+    harness.run();
+    harness.get_by_label("Bill of materials…").click();
+    run_until(&mut harness, |a| {
+        let r = a.ready().unwrap();
+        r.bom.result.is_some() && !r.bom.running()
+    });
+    harness.step();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(
+            r.bom
+                .cost_path
+                .as_ref()
+                .is_some_and(|p| p.ends_with("unit-costs.olscost"))
+        );
+        let e = r.bom.result.as_ref().unwrap().as_ref().unwrap();
+        assert!(e.priced && e.missing.is_empty(), "{:?}", e.missing);
+        assert_eq!(e.bom.structures.iter().map(|s| s.count).sum::<usize>(), 7);
+    }
+    assert!(
+        harness
+            .query_all_by_label_contains("Total: ")
+            .next()
+            .is_some()
+    );
+
+    harness.get_by_label("Tools").click();
+    harness.run();
+    harness.get_by_label("Spot structures…").click();
+    harness.run();
+    harness.get_by_label("Spot").click();
+    run_until(&mut harness, |a| {
+        let r = a.ready().unwrap();
+        r.spot.result.is_some() && !r.spot.running()
+    });
+    harness.step();
+    let r = harness.state_mut().ready().unwrap();
+    let (_, s, line) = r.spot.result.as_ref().unwrap().as_ref().unwrap();
+    assert!(s.structures.len() >= 3);
+    assert_eq!(line.structures.len(), s.structures.len());
+    assert!(s.spans.iter().all(|x| x.clearance >= 7.0 - 1e-9));
+}

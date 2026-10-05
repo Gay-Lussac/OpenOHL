@@ -11,6 +11,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use ols_core::units::UnitSystem;
 
 mod clearance_run;
+mod cost_run;
 mod io_run;
 mod project;
 mod sagtension_job;
@@ -56,6 +57,11 @@ enum Command {
     },
     /// Solve a line model (.ols.json) in 3D for one weather state.
     Line(Box<LineArgs>),
+    /// Bill of materials of a line, priced with a cost file (.olscost).
+    Bom(Box<cost_run::BomArgs>),
+    /// Optimum structure spotting along a route: the least-cost structures
+    /// (types, extensions, positions) keeping the ground clearance.
+    Spot(Box<cost_run::SpotArgs>),
     /// Structure and insulator libraries.
     Structures {
         #[command(subcommand)]
@@ -454,6 +460,8 @@ fn main() -> ExitCode {
         Some(Command::Validate { path, report, list }) => validate(&path, report.as_deref(), list),
         Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
         Some(Command::Line(args)) => line(&args),
+        Some(Command::Bom(args)) => report(cost_run::bom(&args)),
+        Some(Command::Spot(args)) => report(cost_run::spot(&args)),
         Some(Command::Structures {
             command:
                 StructuresCommand::Derive {
