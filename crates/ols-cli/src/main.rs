@@ -1031,6 +1031,8 @@ fn line(args: &LineArgs) -> ExitCode {
         if cases.is_empty() {
             return Err("no weather case to run".into());
         }
+        // Report tables for the table formats (XLSX).
+        let mut extra_tables = Vec::new();
         if let (Some(lc), Some(w)) = (load_cases, weather) {
             let set = ols_loads::LoadCases::load(lc)?;
             let all = WeatherCases::load(w)?.cases;
@@ -1075,6 +1077,10 @@ fn line(args: &LineArgs) -> ExitCode {
                     }
                 );
             }
+            extra_tables.push(ols_io::tables::Table::from_csv(
+                "Structure loads",
+                &ols_loads::to_csv(&results),
+            ));
             if let Some(out) = loads_csv {
                 std::fs::write(out, ols_loads::to_csv(&results))
                     .map_err(|e| format!("{}: {e}", out.display()))?;
@@ -1107,6 +1113,10 @@ fn line(args: &LineArgs) -> ExitCode {
                     );
                 }
             }
+            extra_tables.push(ols_io::tables::Table::from_csv(
+                "Structure usage",
+                &ols_loads::capacity::usage_csv(&usage),
+            ));
             if let Some(out) = usage_csv {
                 std::fs::write(out, ols_loads::capacity::usage_csv(&usage))
                     .map_err(|e| format!("{}: {e}", out.display()))?;
@@ -1447,7 +1457,8 @@ fn line(args: &LineArgs) -> ExitCode {
                 .iter()
                 .map(|(c, s, j)| (c.name.clone(), c.summary(), s.clone(), j.clone()))
                 .collect();
-            let model = ols_io::ExportModel::new(&line, &solved);
+            let mut model = ols_io::ExportModel::new(&line, &solved);
+            model.tables = extra_tables;
             io_run::export(&model, export, &export_options, registry)?;
         }
         if failed > 0 {

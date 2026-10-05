@@ -49,6 +49,30 @@ pub enum ProjectCommand {
         #[arg(long)]
         clip_in: bool,
     },
+    /// Read a file of any line format (see ols formats: structure points
+    /// from CSV, GeoJSON or shapefiles, LandXML, OLS XML…) into a project
+    /// file: a new project gets the line, one holding a line gets it
+    /// updated (structures moved or added, the route) — one logged command.
+    ImportFile {
+        /// The file.
+        file: PathBuf,
+        /// Project file (.ols; created if missing).
+        #[arg(long)]
+        into: PathBuf,
+        /// User (the admin of a new project).
+        #[arg(long)]
+        user: String,
+        /// Format id (default: from the file extension).
+        #[arg(long)]
+        format: Option<String>,
+        /// Format option KEY=VALUE (repeatable), e.g. type=tangent,
+        /// crs=EPSG:2056.
+        #[arg(long = "option")]
+        options: Vec<String>,
+        /// File-format plugin directory (repeatable).
+        #[arg(long)]
+        plugin: Vec<PathBuf>,
+    },
     /// Write the project's line as a line file (.ols.json).
     Export {
         /// Project file.
@@ -228,6 +252,33 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 started.elapsed()
             );
             report(&made.applied);
+        }
+        ProjectCommand::ImportFile {
+            file,
+            into,
+            user,
+            format,
+            options,
+            plugin,
+        } => {
+            let mut r = crate::io_run::registry(&plugin)?;
+            let (a, line) = ols_io::neutral::import_into_project(
+                &mut r,
+                &file,
+                format.as_deref(),
+                &crate::io_run::options(&options)?,
+                &into,
+                &user,
+            )?;
+            println!(
+                "read {}: {} structures, {} sections, {} routes into {}",
+                file.display(),
+                line.structures.len(),
+                line.sections.len(),
+                line.effective_routes().len(),
+                into.display()
+            );
+            report(&a);
         }
         ProjectCommand::Export { project, out } => {
             let s = open(&project)?;
