@@ -43,6 +43,7 @@ OLS-CAD/
 │   ├── ols-wireloads/ Point and distributed loads on wires
 │   ├── ols-sagtension/ Catenary, change of state, sections, criteria
 │   ├── ols-wirefe/    Finite-element wire systems (SAPS-style)
+│   ├── ols-structures-fe/ Structure analysis: towers, frames, guys, poles
 │   └── ols-cli/       `ols` command-line tool
 ├── plugins/           Plugins: examples/ (WASM + Python), tests/ (runaway plugin)
 ├── benchmarks/        Validation cases with reference results

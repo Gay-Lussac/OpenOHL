@@ -5,6 +5,8 @@ id = "type-02"
 name = "type-02 (2 structures, e.g. T2)"
 kind = "other"
 source = "derived from: T2, T4"
+# Finite-element check: the invented lattice model next to this file.
+model = "type-02.olsfe"
 
 [[attachment]]
 set = 1

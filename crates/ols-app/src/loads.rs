@@ -8,8 +8,8 @@
 //! model is not changed. One load case shown at a time; factored or not;
 //! a click goes to the structure; CSV export. **Usage**: how much of its
 //! capacity each structure uses (its type's allowable spans and loads,
-//! [`ols_loads::capacity`]), the governing load case or one case, worst
-//! first.
+//! structure model and pole, [`ols_loads::capacity`]), the governing load
+//! case or one case, worst first.
 
 use std::sync::mpsc::{Receiver, channel};
 use std::time::Instant;
@@ -193,7 +193,7 @@ impl LoadsPage {
             ui.selectable_value(&mut self.show_usage, true, "Usage")
                 .on_hover_text(
                     "How much of its capacity each structure uses: its type's allowable spans \
-                     (Method 1) and allowable loads (Method 2)",
+                     (Method 1), allowable loads (Method 2), structure model (fe) and pole",
                 );
         });
         if self.show_usage {
@@ -433,6 +433,8 @@ impl LoadsPage {
                             "usage",
                             "spans",
                             "loads",
+                            "fe",
+                            "pole",
                             "governs",
                             "load case",
                             "angle °",
@@ -471,6 +473,8 @@ impl LoadsPage {
                             ui.label(pct(g));
                             ui.label(pct(s.spans.as_ref()));
                             ui.label(pct(s.loads.as_ref()));
+                            ui.label(pct(s.fe.as_ref()));
+                            ui.label(pct(s.pole.as_ref()));
                             match g {
                                 Some(g) => ui.label(&g.governs),
                                 None => ui.label(egui::RichText::new(s.notes.join("; ")).weak()),

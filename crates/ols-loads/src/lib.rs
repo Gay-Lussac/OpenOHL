@@ -31,6 +31,7 @@
 //! strength = 1.0
 //! ```
 
+mod analysis;
 pub mod capacity;
 
 use std::collections::BTreeMap;

@@ -92,6 +92,12 @@
 //! area = "14 m²"     # projected on a plane along the line
 //! drag = 3.0         # e.g. lattice faces about 2.8–3.2, round poles about 0.7–1.2
 //! ```
+//!
+//! **Analysis** (optional): a finite-element model of the structure
+//! (`model = "type.olsfe"`, next to this file; its nodes name the
+//! attachments they carry) and/or a pole (`pole = "id"`, a `.olsp` file
+//! in the same folder) — checked with the attachment loads of each load
+//! case (`ols_structures_fe`, through `ols_loads::capacity`).
 
 use ols_core::units::Length;
 use serde::Deserialize;
@@ -433,6 +439,14 @@ pub struct StructureType {
     /// The wind on the structure itself (structure loads).
     #[serde(default)]
     pub wind: Option<StructureWind>,
+    /// Structure model for the finite-element check (`.olsfe` file,
+    /// relative to this file's folder).
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Pole for the pole check (id of a `.olsp` file in this file's
+    /// folder).
+    #[serde(default)]
+    pub pole: Option<String>,
 }
 
 /// An attachment of a placed structure, in global coordinates.

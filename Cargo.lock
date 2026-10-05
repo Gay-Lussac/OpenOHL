@@ -3492,6 +3492,7 @@ dependencies = [
  "ols-session",
  "ols-spotting",
  "ols-structures",
+ "ols-structures-fe",
  "ols-terrain",
  "ols-thermal",
  "ols-validation",
@@ -3581,6 +3582,7 @@ dependencies = [
  "ols-core",
  "ols-line",
  "ols-structures",
+ "ols-structures-fe",
  "ols-weather",
  "ols-wirefe",
  "serde",
@@ -3691,6 +3693,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-structures-fe"
+version = "0.0.1"
+dependencies = [
+ "nalgebra",
+ "ols-core",
+ "serde",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
 name = "ols-terrain"
 version = "0.0.1"
 dependencies = [
@@ -3721,6 +3733,7 @@ dependencies = [
  "ols-crs",
  "ols-sagtension",
  "ols-spotting",
+ "ols-structures-fe",
  "ols-thermal",
  "ols-weather",
  "ols-wirefe",

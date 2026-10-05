@@ -1,0 +1,188 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! The structure checks by analysis ([`ols_structures_fe`]): a structure
+//! type's finite-element model (`model = "….olsfe"`) and its pole (`pole =
+//! "id"`, a `.olsp` file next to the type), loaded once per usage run and
+//! solved with each load case's factored attachment loads.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use ols_structures::{StructureLibrary, StructureType};
+use ols_structures_fe::check::worst;
+use ols_structures_fe::{Loads, Model, NodalLoad, Pole, PoleLoad};
+use ols_weather::WeatherCase;
+
+use crate::LoadCase;
+use crate::capacity::{Check, Method};
+
+/// Factored loads at one attachment: set, phase, (transverse,
+/// longitudinal, vertical down), N.
+pub(crate) type Factored = (u32, u32, [f64; 3]);
+
+/// The models and poles of the structure types, by type id (or why they
+/// could not be read).
+#[derive(Default)]
+pub(crate) struct Analyses {
+    models: BTreeMap<String, Result<Model, String>>,
+    poles: BTreeMap<String, Result<Pole, String>>,
+}
+
+impl Analyses {
+    /// Reads the models and poles the types name (each file once).
+    pub fn load(types: &StructureLibrary) -> Self {
+        let mut out = Self::default();
+        let mut pole_dirs: BTreeMap<PathBuf, Result<Vec<Pole>, String>> = BTreeMap::new();
+        for t in types.iter() {
+            let dir = types
+                .path(&t.id)
+                .and_then(Path::parent)
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
+            if let Some(file) = &t.model {
+                out.models
+                    .insert(t.id.clone(), Model::load(&dir.join(file)));
+            }
+            if let Some(id) = &t.pole {
+                let poles = pole_dirs
+                    .entry(dir.clone())
+                    .or_insert_with(|| ols_structures_fe::pole::load_poles(&dir));
+                let pole = match poles {
+                    Ok(list) => list.iter().find(|p| &p.id == id).cloned().ok_or_else(|| {
+                        format!("pole {id}: no .olsp file with this id in {}", dir.display())
+                    }),
+                    Err(e) => Err(e.clone()),
+                };
+                out.poles.insert(t.id.clone(), pole);
+            }
+        }
+        out
+    }
+
+    /// The finite-element check of a structure of type `t` (none: the
+    /// type has no model, or no member a capacity).
+    pub fn fe(
+        &self,
+        t: &StructureType,
+        loads: &[Factored],
+        case: &LoadCase,
+        notes: &mut Vec<String>,
+    ) -> Option<Check> {
+        let model = match self.models.get(&t.id)? {
+            Ok(m) => m,
+            Err(e) => {
+                notes.push(format!("model not read: {e}"));
+                return None;
+            }
+        };
+        let mut nodal = Vec::new();
+        for (set, phase, [tr, lo, ve]) in loads {
+            match model.attachment_node(*set, *phase) {
+                Some(node) => nodal.push(NodalLoad {
+                    node,
+                    force: [*tr, *lo, -ve],
+                    moment: [0.0; 3],
+                }),
+                None => notes.push(format!(
+                    "model: no node for attachment {set}:{phase} (its load left out)"
+                )),
+            }
+        }
+        let loads = Loads {
+            nodal,
+            self_weight: if model.analysis.self_weight {
+                case.vertical
+            } else {
+                0.0
+            },
+        };
+        match ols_structures_fe::analyse(
+            model,
+            &loads,
+            case.strength,
+            &ols_structures_fe::default_budget(),
+        ) {
+            Ok((_, usage)) => match worst(&usage) {
+                Some(w) => Some(Check {
+                    method: Method::Fe,
+                    usage: w.usage.unwrap_or(0.0),
+                    governs: format!("member {} {}", model.members[w.member].id, w.governs),
+                }),
+                None => {
+                    notes.push("model: no member has a capacity".into());
+                    None
+                }
+            },
+            Err(e) => Some(Check {
+                method: Method::Fe,
+                usage: f64::INFINITY,
+                governs: format!("model: {e}"),
+            }),
+        }
+    }
+
+    /// The pole check of a structure of type `t`: the loads at the type's
+    /// attachment points, the wind of `weather` on the pole.
+    pub fn pole(
+        &self,
+        t: &StructureType,
+        loads: &[Factored],
+        case: &LoadCase,
+        weather: Option<&WeatherCase>,
+        notes: &mut Vec<String>,
+    ) -> Option<Check> {
+        let pole = match self.poles.get(&t.id)? {
+            Ok(p) => p,
+            Err(e) => {
+                notes.push(e.clone());
+                return None;
+            }
+        };
+        let mut on_pole = Vec::new();
+        for (set, phase, [tr, lo, ve]) in loads {
+            match t
+                .attachments
+                .iter()
+                .find(|a| a.set == *set && a.phase == *phase)
+            {
+                Some(a) => on_pole.push(PoleLoad {
+                    point: a.point.map(|x| x.si()),
+                    force: [*tr, *lo, -ve],
+                }),
+                None => notes.push(format!(
+                    "pole: attachment {set}:{phase} not in the type (its load left out)"
+                )),
+            }
+        }
+        // The wind blows across the line: from the right, to −x.
+        let wind = weather.map_or([0.0; 2], |w| {
+            [
+                -w.wind_from.to_left() * w.wind_pressure.si() * case.transverse,
+                0.0,
+            ]
+        });
+        Some(
+            match ols_structures_fe::check_pole(
+                pole,
+                &on_pole,
+                wind,
+                case.strength,
+                true,
+                &ols_structures_fe::default_budget(),
+            ) {
+                Ok(c) => Check {
+                    method: Method::Pole,
+                    usage: c.usage,
+                    governs: format!("pole {}: {}", pole.id, c.governs),
+                },
+                Err(e) => Check {
+                    method: Method::Pole,
+                    usage: f64::INFINITY,
+                    governs: e,
+                },
+            },
+        )
+    }
+}

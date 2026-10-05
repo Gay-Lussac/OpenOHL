@@ -82,12 +82,15 @@ pub trait LibraryItem: Sized + for<'de> serde::Deserialize<'de> {
 #[derive(Debug, Clone)]
 pub struct Library<T> {
     items: BTreeMap<String, T>,
+    /// The file each item was read from.
+    paths: BTreeMap<String, PathBuf>,
 }
 
 impl<T> Default for Library<T> {
     fn default() -> Self {
         Self {
             items: BTreeMap::new(),
+            paths: BTreeMap::new(),
         }
     }
 }
@@ -126,8 +129,15 @@ impl<T: LibraryItem> Library<T> {
                 message: format!("duplicate {} id {id}", T::KIND),
             });
         }
+        self.paths.insert(id.clone(), path.to_owned());
         self.items.insert(id, item);
         Ok(())
+    }
+
+    /// The file an item was read from (files it names are relative to
+    /// its folder).
+    pub fn path(&self, id: &str) -> Option<&Path> {
+        self.paths.get(id).map(PathBuf::as_path)
     }
 
     /// Item by id.

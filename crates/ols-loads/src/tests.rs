@@ -331,3 +331,62 @@ fn wind_on_the_structures() {
             .all(|s| !s.notes.iter().any(|n| n.contains("0:0")))
     );
 }
+
+/// The example line with its own structure folder: type-02 (T2, T4) has
+/// an invented lattice model, type-05 (T6) an invented steel pole; both
+/// are checked in every load case and the CSV carries their usage.
+#[test]
+fn structure_analysis_on_the_example_line() {
+    let types = ols_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ols.json"))
+        .unwrap()
+        .resolve(&types, &ols_structures::InsulatorLibrary::default())
+        .unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    let (_, library, weather, cases) = setup();
+    let budget = ols_wirefe::default_fe_budget();
+    let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+    for c in &usage {
+        for s in &c.structures {
+            let typed_as = s.structure_type.as_deref();
+            if typed_as == Some("type-02") {
+                let fe = s.fe.as_ref().unwrap_or_else(|| panic!("{s:?}"));
+                assert_eq!(fe.method, capacity::Method::Fe);
+                assert!(fe.usage > 0.0 && fe.usage < 1.0, "{}: {fe:?}", c.case);
+                assert!(fe.governs.starts_with("member "), "{fe:?}");
+            } else {
+                assert!(s.fe.is_none());
+            }
+            if typed_as == Some("type-05") {
+                let pole = s.pole.as_ref().unwrap_or_else(|| panic!("{s:?}"));
+                assert!(
+                    pole.usage >= 0.0 && pole.usage < 1.0,
+                    "{}: {pole:?}",
+                    c.case
+                );
+                // The wind on the wires and on the pole bends it.
+                if c.case == "wind" {
+                    assert!(pole.usage > 0.05, "{pole:?}");
+                    assert!(pole.governs.contains("P-Delta"), "{pole:?}");
+                }
+            } else {
+                assert!(s.pole.is_none());
+            }
+            assert!(s.notes.is_empty(), "{s:?}");
+        }
+    }
+    // The wind case loads the tower more than still air.
+    let fe = |case: usize| {
+        usage[case]
+            .structures
+            .iter()
+            .find(|s| s.structure == "T2")
+            .and_then(|s| s.fe.as_ref())
+            .unwrap()
+            .usage
+    };
+    assert!(fe(1) > fe(0), "{} {}", fe(1), fe(0));
+    let csv = capacity::usage_csv(&usage);
+    assert!(csv.lines().next().unwrap().contains("fe_usage,pole_usage"));
+}

@@ -11,6 +11,7 @@
 - [Weather cases (.olswc)](user-guide/weather.md)
 - [Load cases and structure loads (.olslc)](user-guide/loads.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
+- [Structure analysis (.olsfe, .olsp)](user-guide/structure-analysis.md)
 - [Terrain and ground clearance](user-guide/terrain.md)
 - [Thermal rating (.olsta)](user-guide/thermal.md)
 - [Bill of materials and cost estimate (.olscost)](user-guide/bom-and-cost.md)
@@ -27,6 +28,7 @@
 - [Finite-element wire systems](theory/wirefe.md)
 - [Thermal rating](theory/thermal.md)
 - [Optimum structure spotting](theory/spotting.md)
+- [Structure analysis (frames, trusses, poles)](theory/structures-fe.md)
 
 # Design
 

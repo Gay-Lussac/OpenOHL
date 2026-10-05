@@ -138,8 +138,8 @@ The open Phase 2 items above, grouped into four work packages:
 ## Phase 5 — Advanced engineering modules
 *Goal: feature parity with professional workflows.*
 
-- [ ] `ols-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module
-- [ ] Wood/steel/concrete pole libraries and checks
+- [x] `ols-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module. *Base:* `.olsfe` models (truss, 3D Euler–Bernoulli frame, tension-only cables with pretension, supports, springs), first order or P-Delta (geometric stiffness, Newton iterations with exit clauses), skyline LDLᵀ with RCM ordering (1000 members in milliseconds), member usage (tension, compression with Euler buckling, linear N + M interaction), attachment nodes fed with each load case's factored loads (`fe` check in the structure usage, `ols structures fe`). *Simplified / later:* no corotational large rotations, no wind on the tower body, no code column curves or angle-section eccentricities, no member-load cases beyond self-weight, no 3D view of the model
+- [x] Wood/steel/concrete pole libraries and checks. *Base:* `.olsp` poles (taper by diameter or circumference, fibre stress for wood, moment capacity at the ground line or by height, hollow wall), moment along the pole from the factored attachment loads (both directions, offsets) plus wind on the pole, P-Delta amplification from a tapered frame model (`pole` check, `ols structures pole`). *Simplified / later:* one amplification factor for every height, no foundation/embedment check, no shear or deflection limits, no pole class tables (user data)
 - [x] LiDAR basics (`ols-lidar`, delivered early in Phase 2): LAS/LAZ tiles, class schemes with roles (`.olsc`, any classification), ground in a corridor, TIN from LiDAR — matched a commercial TIN's span clearances to a median of 2 mm on a real line
 - [ ] LiDAR: COPC, octree streaming and point budget (billions of points at 60 fps)
 - [ ] LiDAR: classification, vegetation & encroachment analysis, as-built wire extraction/fitting

@@ -56,7 +56,7 @@
 | `ols-line` | Line model (`.ols.json`): routes, structures, attachments, sections; 3D solving and exports |
 | `ols-structures` | Structure type library (`.olss`) and insulator assembly library (`.olsi`); placement of types into a line; deriving types from a line |
 | `ols-wirefe` | Non-linear FE of wire systems (general loads, broken wire, unbalanced ice) |
-| `ols-structures-fe` | 3D frame/truss FE of towers and poles |
+| `ols-structures-fe` | Structure analysis: 3D truss/frame/cable finite elements (`.olsfe` models, P-Delta, skyline solver), member usage, pole library (`.olsp`) and pole check |
 | `ols-loads` | Load-case engine; design codes are **plugins** |
 | `ols-clearance` | Clearance checks: vertical ground clearance of solved wires (v1); later feature clearances, envelopes |
 | `ols-rating` | Thermal rating (IEEE 738, CIGRE) |
