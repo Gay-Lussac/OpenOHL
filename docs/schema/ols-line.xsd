@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OLS XML, version 1: the line model of OLS CAD (the content of a line file,
+  .ols.json) as XML. See ols-line.md in this folder.
+
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at https://mozilla.org/MPL/2.0/.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:ols="urn:ols-cad:ols-line:1"
+           targetNamespace="urn:ols-cad:ols-line:1"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+  <xs:annotation>
+    <xs:documentation>
+      Lengths and coordinates in metres in the line's coordinate system (x
+      east, y north, z up), forces in newtons, temperatures in degrees
+      Celsius, angles in degrees. Attribute names are the keys of the line
+      file; an absent optional attribute is an absent value (or its default).
+    </xs:documentation>
+  </xs:annotation>
+
+  <!-- Simple types. -->
+
+  <xs:simpleType name="doubleList">
+    <xs:list itemType="xs:double"/>
+  </xs:simpleType>
+
+  <xs:simpleType name="color">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="#[0-9a-fA-F]{6}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="calculation">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="initial-rs"/>
+      <xs:enumeration value="creep-rs"/>
+      <xs:enumeration value="load-rs"/>
+      <xs:enumeration value="max-sag-rs"/>
+      <xs:enumeration value="initial-fe"/>
+      <xs:enumeration value="creep-fe"/>
+      <xs:enumeration value="load-fe"/>
+      <xs:enumeration value="max-sag-fe"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="systemKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ac"/>
+      <xs:enumeration value="dc"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="stringingKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="tension"/>
+      <xs:enumeration value="sag"/>
+      <xs:enumeration value="unstressed_lengths"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Building blocks. -->
+
+  <xs:attributeGroup name="xyz">
+    <xs:attribute name="x" type="xs:double" use="required"/>
+    <xs:attribute name="y" type="xs:double" use="required"/>
+    <xs:attribute name="z" type="xs:double" use="required"/>
+  </xs:attributeGroup>
+
+  <xs:complexType name="point">
+    <xs:attributeGroup ref="ols:xyz"/>
+  </xs:complexType>
+
+  <xs:complexType name="alignment">
+    <xs:annotation>
+      <xs:documentation>Alignment points (PIs) in order; a point with
+        "structure" is tied to (and lies under) that structure.</xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="point" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:attributeGroup ref="ols:xyz"/>
+          <xs:attribute name="structure" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="sectionPoint">
+    <xs:attribute name="structure" type="xs:string" use="required"/>
+    <xs:attribute name="set" type="xs:unsignedInt" use="required"/>
+    <xs:attribute name="phase" type="xs:unsignedInt" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="stringing">
+    <xs:annotation>
+      <xs:documentation>tension: horizontal_tension and temperature (in the
+        blocks). sag: sag, temperature and optionally the span (0 = first;
+        none: the ruling span). unstressed_lengths: clipped in, the lengths
+        of the spans at temperature, and the stringing it was sagged to
+        before (a nested stringing).</xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="lengths" type="ols:doubleList" minOccurs="0"/>
+      <xs:element name="stringing" type="ols:stringing" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="kind" type="ols:stringingKind" use="required"/>
+    <xs:attribute name="horizontal_tension" type="xs:double"/>
+    <xs:attribute name="sag" type="xs:double"/>
+    <xs:attribute name="span" type="xs:unsignedInt"/>
+    <xs:attribute name="temperature" type="xs:double" use="required"/>
+  </xs:complexType>
+
+  <!-- The document. -->
+
+  <xs:element name="line">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="alignment" type="ols:alignment" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>The alignment of the implicit single route
+              (lines without routes).</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="route" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="alignment" type="ols:alignment" minOccurs="0"/>
+              <xs:element name="structure" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="ref" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="name" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="structure" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="attachment" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="insulator_point" type="ols:point"/>
+                    <xs:element name="wire_point" type="ols:point"/>
+                    <xs:element name="leg" type="ols:point" minOccurs="0" maxOccurs="2">
+                      <xs:annotation>
+                        <xs:documentation>V-strings: the two legs' points on
+                          the structure (both or none).</xs:documentation>
+                      </xs:annotation>
+                    </xs:element>
+                  </xs:sequence>
+                  <xs:attribute name="set" type="xs:unsignedInt" use="required"/>
+                  <xs:attribute name="phase" type="xs:unsignedInt" use="required"/>
+                  <xs:attribute name="label" type="xs:string"/>
+                  <xs:attribute name="insulator_weight" type="xs:double" default="0"/>
+                  <xs:attribute name="insulator" type="xs:string"/>
+                  <xs:attribute name="insulator_wind_area" type="xs:double" default="0"/>
+                  <xs:attribute name="top_label" type="xs:string"/>
+                  <xs:attribute name="bottom_label" type="xs:string"/>
+                  <xs:attribute name="strain_member" type="xs:boolean" default="false"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="omit" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="set" type="xs:unsignedInt" use="required"/>
+                  <xs:attribute name="phase" type="xs:unsignedInt" use="required"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="member" type="ols:doubleList" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A polyline of the stick drawing: x y z
+                    triples.</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attributeGroup ref="ols:xyz"/>
+            <xs:attribute name="orientation_deg" type="xs:double" default="0"/>
+            <xs:attribute name="type" type="xs:string"/>
+            <xs:attribute name="extension" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="system" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="phase" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="label" type="xs:string" use="required"/>
+                  <xs:attribute name="angle_deg" type="xs:double"/>
+                  <xs:attribute name="polarity" type="xs:byte"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="name" type="xs:string"/>
+            <xs:attribute name="kind" type="ols:systemKind" default="ac"/>
+            <xs:attribute name="voltage_kv" type="xs:double" use="required"/>
+            <xs:attribute name="frequency_hz" type="xs:double"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="section" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="point" type="ols:sectionPoint" minOccurs="2" maxOccurs="unbounded"/>
+              <xs:element name="stringing" type="ols:stringing"/>
+              <xs:element name="load" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="span" type="xs:unsignedInt" use="required"/>
+                  <xs:attribute name="fraction" type="xs:double" use="required"/>
+                  <xs:attribute name="vertical" type="xs:double" use="required"/>
+                  <xs:attribute name="label" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="cable" type="xs:string" use="required"/>
+            <xs:attribute name="circuit" type="xs:string"/>
+            <xs:attribute name="phase_label" type="xs:string"/>
+            <xs:attribute name="system" type="xs:string"/>
+            <xs:attribute name="bundle" type="xs:unsignedInt" default="1"/>
+            <xs:attribute name="bundle_spacing" type="xs:double"/>
+            <xs:attribute name="bundle_rotation_deg" type="xs:double"/>
+            <xs:attribute name="color" type="ols:color"/>
+            <xs:attribute name="calculation" type="ols:calculation" default="initial-fe"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="jumper" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="from" type="ols:sectionPoint"/>
+              <xs:element name="to" type="ols:sectionPoint"/>
+              <xs:element name="support" minOccurs="0">
+                <xs:complexType>
+                  <xs:attribute name="length" type="xs:double" use="required"/>
+                  <xs:attribute name="weight" type="xs:double" default="0"/>
+                  <xs:attribute name="fraction" type="xs:double" default="0.5"/>
+                  <xs:attributeGroup ref="ols:xyz"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="cable" type="xs:string" use="required"/>
+            <xs:attribute name="length" type="xs:double"/>
+            <xs:attribute name="sag" type="xs:double"/>
+            <xs:attribute name="temperature" type="xs:double" default="15"/>
+            <xs:attribute name="bending_stiffness" type="xs:double"/>
+            <xs:attribute name="angle_from_deg" type="xs:double"/>
+            <xs:attribute name="angle_to_deg" type="xs:double"/>
+            <xs:attribute name="color" type="ols:color"/>
+            <xs:attribute name="bundle" type="xs:unsignedInt"/>
+            <xs:attribute name="bundle_spacing" type="xs:double"/>
+            <xs:attribute name="bundle_rotation_deg" type="xs:double"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="phase_color" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="label" type="xs:string" use="required"/>
+            <xs:attribute name="color" type="ols:color" use="required"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="creep_stretch" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="load_case" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="creep_case" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="format" type="xs:string" fixed="ols-line"/>
+      <xs:attribute name="version" type="xs:unsignedInt" default="1"/>
+      <xs:attribute name="name" type="xs:string" use="required"/>
+      <xs:attribute name="crs" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

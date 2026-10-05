@@ -1,6 +1,6 @@
 [package]
 name = "ols-io"
-description = "OLS CAD import/export: format interface, registry, built-in formats (CSV, KML/KMZ), plugin formats"
+description = "OLS CAD import/export: format interface, registry, built-in formats (CSV, KML/KMZ, OLS XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC, XLSX), plugin formats"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,8 @@ ols-line.workspace = true
 ols-plugins.workspace = true
 ols-session.workspace = true
 ols-terrain.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde.workspace = true
 serde_json.workspace = true
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 

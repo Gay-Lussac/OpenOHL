@@ -3420,7 +3420,7 @@ fn plugins_are_managed_and_give_their_formats() {
             .unwrap()
             .exporters
             .iter()
-            .any(|e| e.id == "geojson")
+            .any(|e| e.id == "geojson" && e.origin == "plugin geojson")
     };
     assert_eq!(has_geojson(harness.state_mut()), geojson_built);
     if geojson_built {
