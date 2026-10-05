@@ -66,6 +66,28 @@ impl Prepared {
     fn reach(&self, rule: &Rule) -> f64 {
         rule.reach(&self.voltages, &self.other_voltages)
     }
+
+    /// The rules.
+    pub fn rules(&self) -> &[Rule] {
+        &self.rules
+    }
+
+    /// Classes of each rule (empty but for point rules).
+    pub fn point_classes(&self) -> &[Vec<u8>] {
+        &self.point_classes
+    }
+
+    /// Feeds the points kept in memory to `visit`.
+    pub fn feed_points(&self, visit: &mut dyn FnMut(f64, f64, f64, u8)) {
+        for (q, c) in &self.points {
+            visit(
+                self.origin[0] + q[0] as f64 / 1000.0,
+                self.origin[1] + q[1] as f64 / 1000.0,
+                self.origin[2] + q[2] as f64 / 1000.0,
+                *c,
+            );
+        }
+    }
 }
 
 /// "380-1 (AC 380 kV, 50 Hz): 126 sections, …, earthed: 47 sections".
@@ -501,14 +523,7 @@ pub fn check(
     }
     // Point rules from the points in memory.
     let mut points = |_: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
-        for (q, c) in &p.points {
-            visit(
-                p.origin[0] + q[0] as f64 / 1000.0,
-                p.origin[1] + q[1] as f64 / 1000.0,
-                p.origin[2] + q[2] as f64 / 1000.0,
-                *c,
-            );
-        }
+        p.feed_points(visit);
         Ok(())
     };
     let checks = ols_clearance::check_case(

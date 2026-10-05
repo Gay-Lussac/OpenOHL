@@ -15,6 +15,7 @@ mod io_run;
 mod project;
 mod sagtension_job;
 mod surface;
+mod thermal_run;
 
 #[derive(Parser)]
 #[command(
@@ -111,6 +112,13 @@ enum Command {
     Surface {
         #[command(subcommand)]
         command: surface::SurfaceCommand,
+    },
+    /// Thermal ratings: ampacity, conductor temperature, transient, and
+    /// the clearance-limited temperature of a line (IEEE 738, CIGRE TB 601
+    /// / TB 207).
+    Thermal {
+        #[command(subcommand)]
+        command: thermal_run::ThermalCommand,
     },
     /// Inspect plugins.
     Plugin {
@@ -467,6 +475,7 @@ fn main() -> ExitCode {
         }) => plugin_info(&dir),
         Some(Command::Formats { plugin }) => report(io_run::formats(&plugin)),
         Some(Command::Surface { command }) => report(surface::run(command)),
+        Some(Command::Thermal { command }) => report(thermal_run::run(command)),
         Some(Command::Serve {
             project,
             bind,
