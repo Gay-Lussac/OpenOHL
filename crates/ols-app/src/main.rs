@@ -49,6 +49,7 @@ mod tables;
 mod thermal;
 mod tools;
 mod vegetation;
+mod versions;
 mod view3d;
 mod wirefit;
 

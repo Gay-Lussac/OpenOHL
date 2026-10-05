@@ -37,6 +37,8 @@ pub mod server;
 use std::collections::BTreeMap;
 use std::fmt;
 
+use ols_session::collab::Grant;
+use ols_session::versions::Choices;
 use ols_session::{Applied, Command, Kind, Role, Session, SessionError};
 use serde::{Deserialize, Serialize};
 
@@ -124,6 +126,118 @@ pub enum Op {
         /// Value (`None`: removed).
         value: Option<String>,
     },
+    /// Record the working state as a revision on the current branch.
+    Commit {
+        /// Message.
+        message: String,
+    },
+    /// Make a branch (at a revision, default the head's).
+    CreateBranch {
+        /// Name.
+        name: String,
+        /// Branch, tag or revision.
+        #[serde(default)]
+        at: Option<String>,
+    },
+    /// Name a revision for good (default the head's).
+    Tag {
+        /// Name.
+        name: String,
+        /// Branch, tag or revision.
+        #[serde(default)]
+        at: Option<String>,
+        /// Note.
+        #[serde(default)]
+        note: String,
+    },
+    /// Admin: protect a branch (or lift the protection).
+    ProtectBranch {
+        /// Branch.
+        name: String,
+        /// Protected.
+        protected: bool,
+    },
+    /// Delete a branch or tag (refused without `confirm`, listing what
+    /// goes with it).
+    DeleteRef {
+        /// Name.
+        name: String,
+        /// Confirms.
+        #[serde(default)]
+        confirm: bool,
+    },
+    /// Make a branch (or a revision, detached) the working state — for
+    /// every user of the server.
+    Checkout {
+        /// Branch, tag or revision.
+        target: String,
+    },
+    /// Merge a branch (tag, revision) into the current branch.
+    Merge {
+        /// Branch, tag or revision.
+        other: String,
+        /// Message of the merge revision.
+        #[serde(default)]
+        message: Option<String>,
+        /// Conflicts settled.
+        #[serde(default)]
+        choices: Choices,
+    },
+    /// A revision undoing another's changes.
+    Revert {
+        /// The revision.
+        revision: String,
+        /// Message.
+        #[serde(default)]
+        message: Option<String>,
+        /// Conflicts settled.
+        #[serde(default)]
+        choices: Choices,
+    },
+    /// Submit a branch for review.
+    SubmitReview {
+        /// Branch.
+        branch: String,
+        /// Branch to merge it into.
+        target: String,
+        /// Reviewers.
+        #[serde(default)]
+        reviewers: Vec<String>,
+        /// Note.
+        #[serde(default)]
+        note: String,
+    },
+    /// A reviewer approves or rejects a review.
+    DecideReview {
+        /// Review.
+        id: i64,
+        /// Approve (else reject).
+        approve: bool,
+        /// Comment.
+        #[serde(default)]
+        comment: String,
+    },
+    /// Merge an approved review into its target (the current branch).
+    MergeReview {
+        /// Review.
+        id: i64,
+        /// Message.
+        #[serde(default)]
+        message: Option<String>,
+        /// Conflicts settled.
+        #[serde(default)]
+        choices: Choices,
+    },
+    /// Admin: limit a user's (or role's) edits.
+    Grant {
+        /// The grant.
+        grant: Grant,
+    },
+    /// Admin: remove a grant.
+    Revoke {
+        /// Grant id.
+        id: i64,
+    },
 }
 
 impl Op {
@@ -175,6 +289,10 @@ impl Op {
                 let mut out = Vec::new();
                 of(command, &mut out).then_some(out)
             }
+            // The working state replaced at large.
+            Op::Checkout { .. } | Op::Merge { .. } | Op::Revert { .. } | Op::MergeReview { .. } => {
+                None
+            }
             _ => Some(Vec::new()),
         }
     }
@@ -197,6 +315,31 @@ impl Op {
             Op::SaveSnapshot { name, .. } => format!("project line {name} saved"),
             Op::DeleteSnapshot { name } => format!("project line {name} deleted"),
             Op::SetSetting { key, .. } => format!("setting {key}"),
+            Op::Commit { message } => format!("commit \"{message}\""),
+            Op::CreateBranch { name, .. } => format!("branch {name} made"),
+            Op::Tag { name, .. } => format!("tag {name} made"),
+            Op::ProtectBranch { name, protected } => format!(
+                "branch {name} {}",
+                if *protected {
+                    "protected"
+                } else {
+                    "unprotected"
+                }
+            ),
+            Op::DeleteRef { name, .. } => format!("{name} deleted"),
+            Op::Checkout { target } => format!("{target} checked out"),
+            Op::Merge { other, .. } => format!("{other} merged"),
+            Op::Revert { revision, .. } => format!("{revision} reverted"),
+            Op::SubmitReview { branch, target, .. } => {
+                format!("{branch} submitted for review into {target}")
+            }
+            Op::DecideReview { id, approve, .. } => format!(
+                "review #{id} {}",
+                if *approve { "approved" } else { "rejected" }
+            ),
+            Op::MergeReview { id, .. } => format!("review #{id} merged"),
+            Op::Grant { grant } => format!("{} may edit {}", grant.subject, grant.describe()),
+            Op::Revoke { id } => format!("grant {id} revoked"),
         }
     }
 }
@@ -238,6 +381,79 @@ pub fn execute(
         Op::SetSetting { key, value } => {
             session.require(user, Role::Designer)?;
             session.set_setting(key, value.as_deref())?;
+            None
+        }
+        Op::Commit { message } => {
+            session.commit(user, message)?;
+            None
+        }
+        Op::CreateBranch { name, at } => {
+            session.create_branch(user, name, at.as_deref())?;
+            None
+        }
+        Op::Tag { name, at, note } => {
+            session.tag(user, name, at.as_deref(), note)?;
+            None
+        }
+        Op::ProtectBranch { name, protected } => {
+            session.protect_branch(user, name, *protected)?;
+            None
+        }
+        Op::DeleteRef { name, confirm } => {
+            session.delete_ref(user, name, *confirm)?;
+            None
+        }
+        Op::Checkout { target } => session.checkout(user, target)?.0,
+        Op::Merge {
+            other,
+            message,
+            choices,
+        } => {
+            session
+                .merge(user, other, message.as_deref(), choices)?
+                .applied
+        }
+        Op::Revert {
+            revision,
+            message,
+            choices,
+        } => {
+            session
+                .revert(user, revision, message.as_deref(), choices)?
+                .applied
+        }
+        Op::SubmitReview {
+            branch,
+            target,
+            reviewers,
+            note,
+        } => {
+            session.submit_review(user, branch, target, reviewers, note)?;
+            None
+        }
+        Op::DecideReview {
+            id,
+            approve,
+            comment,
+        } => {
+            session.decide_review(user, *id, *approve, comment)?;
+            None
+        }
+        Op::MergeReview {
+            id,
+            message,
+            choices,
+        } => {
+            session
+                .merge_review(user, *id, message.as_deref(), choices)?
+                .applied
+        }
+        Op::Grant { grant } => {
+            session.grant(user, grant)?;
+            None
+        }
+        Op::Revoke { id } => {
+            session.revoke(user, *id)?;
             None
         }
     })

@@ -23,5 +23,7 @@ Projects can be very large (hundreds of km, many revisions), must open fast with
 - **`.ols.json` export/import** — full human-readable dump for exchange, archiving and plain-text diffs.
 - **Schema versioning** with automatic forward migrations on open.
 
+Version control in the file: [ADR-0010](0010-version-control.md).
+
 ## Consequences
 - Project files are binary (not line-diffable in git); version tracking is provided by OLS CAD itself (DESIGN_GOALS §7) and by the JSON export.

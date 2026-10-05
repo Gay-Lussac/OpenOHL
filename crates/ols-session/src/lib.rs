@@ -19,7 +19,11 @@
 //!   command, or everything after a point of the log
 //!   ([`Session::rollback_after`]).
 //! - **Roles**: `viewer` (read only), `designer` (edit), `admin` (edit,
-//!   rollback, manage users). Finer permissions come with server mode.
+//!   rollback, manage users). Admins can limit a user's or a role's edits
+//!   to some kinds, objects or a plan area ([`collab`]).
+//! - **Version control** ([`versions`]): revisions, branches, tags, diff,
+//!   merge and revert of the line and its libraries; reviews of branches
+//!   before they are merged ([`collab`]).
 //! - **Import / export**: [`Session::import`] loads a line (`.ols.json`)
 //!   into a project file, [`Session::export`] gives it back.
 //!
@@ -27,10 +31,12 @@
 //! attachments), sections (with stringing and loads) and jumpers, each a
 //! JSON row with a version number, in their order in the line.
 //!
-//! Schema (version 1, tables next to the point clouds of ADR-0007):
+//! Schema (version 2, tables next to the point clouds of ADR-0007; version
+//! 1 files are migrated when opened — version 2 added the tables of
+//! [`versions`] and [`collab`]):
 //!
 //! ```sql
-//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '1'
+//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '2'
 //! session_user(name PRIMARY KEY, role)
 //! model_object(kind, id, ord, version, json, PRIMARY KEY(kind, id))
 //! oplog(seq PRIMARY KEY, time, user, kind, command, inverse, objects,
@@ -54,7 +60,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Schema version of the session tables.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Errors of a session.
 #[derive(Debug, Clone, PartialEq)]
@@ -746,6 +752,8 @@ impl Session {
         }
         conn.execute_batch(spatial::SCHEMA)?;
         conn.execute_batch(surfaces::SCHEMA)?;
+        conn.execute_batch(versions::SCHEMA)?;
+        conn.execute_batch(collab::SCHEMA)?;
         // The chunk grid is fixed when the project is created.
         let grid_size: Option<String> = conn
             .query_row(
@@ -783,7 +791,15 @@ impl Session {
                     params![SCHEMA_VERSION.to_string()],
                 )?;
             }
-            Some(Ok(v)) if v <= SCHEMA_VERSION => {}
+            Some(Ok(v)) if v == SCHEMA_VERSION => {}
+            // Older files: the new tables were just made; nothing else
+            // changes.
+            Some(Ok(v)) if v < SCHEMA_VERSION => {
+                conn.execute(
+                    "UPDATE ols_meta SET value = ?1 WHERE key = 'session_schema'",
+                    params![SCHEMA_VERSION.to_string()],
+                )?;
+            }
             Some(_) => {
                 return Err(SessionError::Store(format!(
                     "{}: session schema newer than supported ({SCHEMA_VERSION})",
@@ -791,6 +807,7 @@ impl Session {
                 )));
             }
         }
+        versions::init(&conn)?;
         let mut objects = BTreeMap::new();
         {
             let mut stmt = conn.prepare("SELECT kind, id, ord, version, json FROM model_object")?;
@@ -1004,6 +1021,7 @@ impl Session {
         text: &str,
     ) -> Result<(), SessionError> {
         self.require(user, Role::Designer)?;
+        self.check_library_edit(user)?;
         if kind.is_empty() || !safe_file_name(name) {
             return Err(refused(format!(
                 "library file \"{name}\" of \"{kind}\": bad name"
@@ -1026,6 +1044,7 @@ impl Session {
         name: &str,
     ) -> Result<(), SessionError> {
         self.require(user, Role::Designer)?;
+        self.check_library_edit(user)?;
         self.conn.execute(
             "DELETE FROM library_file WHERE kind = ?1 AND name = ?2",
             params![kind, name],
@@ -1144,7 +1163,14 @@ impl Session {
                 ord: None,
             })
             .collect();
-        self.apply_as(user, Command::Batch { commands }, "import", None, true)
+        self.apply_as(
+            user,
+            Command::Batch { commands },
+            "import",
+            None,
+            true,
+            false,
+        )
     }
 
     /// The line as a line file.
@@ -1155,7 +1181,7 @@ impl Session {
     /// Applies a command of `user`.
     pub fn apply(&mut self, user: &str, command: Command) -> Result<Applied, SessionError> {
         self.require(user, Role::Designer)?;
-        self.apply_as(user, command, "do", None, false)
+        self.apply_as(user, command, "do", None, false, true)
     }
 
     /// The alignment of route `route` (`"line"`: the line's own).
@@ -1933,6 +1959,8 @@ impl Session {
     }
 
     /// Applies `command` (validated, atomic), logs it as `entry_kind`.
+    /// `cascade`: a user's command (deletions take their dependents, after
+    /// a confirmation); otherwise puts and deletes are applied as given.
     fn apply_as(
         &mut self,
         user: &str,
@@ -1940,10 +1968,11 @@ impl Session {
         entry_kind: &str,
         undoes: Option<i64>,
         import: bool,
+        cascade: bool,
     ) -> Result<Applied, SessionError> {
         let mut prims = Vec::new();
         let mut notes = Vec::new();
-        self.primitives(command, &mut prims, &mut notes, entry_kind == "do")?;
+        self.primitives(command, &mut prims, &mut notes, cascade)?;
         let note = (!notes.is_empty()).then(|| notes.join("; "));
         if prims.is_empty() {
             return Err(refused("empty command"));
@@ -1971,14 +2000,21 @@ impl Session {
                     let key = (*kind, id.clone());
                     match objects.get_mut(&key) {
                         Some(o) => {
+                            // A place given moves it among its kind (a
+                            // revision checked out); the inverse moves it
+                            // back.
+                            let moved = wanted.filter(|w| *w != o.ord);
                             inverse.push(Command::Put {
                                 kind: *kind,
                                 id: id.clone(),
                                 value: o.value.clone(),
-                                ord: None,
+                                ord: moved.map(|_| o.ord),
                             });
                             o.value = value.clone();
                             o.version += 1;
+                            if let Some(w) = moved {
+                                o.ord = w;
+                            }
                         }
                         None => {
                             inverse.push(Command::Delete {
@@ -2028,6 +2064,10 @@ impl Session {
         // Moved structures move their sections, jumpers and routes too:
         // the index is recomputed from the line, only differences written.
         let spatial = spatial::entries(&line, &self.grid);
+        // Edit rights limited to kinds, objects or an area (admins: all).
+        if !import {
+            self.check_edit(user, &changed, &self.spatial, &spatial)?;
+        }
 
         // Persist atomically: objects and log entry.
         let tx = self.conn.transaction()?;
@@ -2188,7 +2228,7 @@ impl Session {
             }
         }
         let inverse: Command = serde_json::from_str(&inverse).map_err(store)?;
-        let applied = self.apply_as(user, inverse, kind, Some(seq), false)?;
+        let applied = self.apply_as(user, inverse, kind, Some(seq), false, false)?;
         // Say what was reversed.
         self.conn.execute(
             "UPDATE oplog SET note = 'reverses ' || ?2 || COALESCE(': ' || (SELECT note FROM oplog WHERE seq = ?2), '') WHERE seq = ?1",
@@ -2320,6 +2360,7 @@ impl Session {
             "rollback",
             None,
             false,
+            false,
         )?;
         self.conn.execute(
             "UPDATE oplog SET undone_by = ?1 WHERE seq > ?2 AND seq < ?1 AND undone_by IS NULL",
@@ -2329,11 +2370,16 @@ impl Session {
     }
 }
 
+pub mod collab;
+pub mod impact;
 pub mod live;
 pub mod spatial;
 pub mod surfaces;
+pub mod versions;
 
 pub use live::Live;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod versions_tests;
