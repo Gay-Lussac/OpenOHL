@@ -4257,3 +4257,38 @@ fn display_options_stay_open_while_ticking() {
     assert!(r.model.section_display.sag[crate::annotations::View::Plan as usize]);
     assert!(r.model.section_display.label[crate::annotations::View::ThreeD as usize]);
 }
+
+/// File › Export drawings: the main route's profile from 0+100 to 0+900
+/// as PDF and DXF on A3, every solved case.
+#[test]
+fn drawings_export_in_the_background_job() {
+    let m = synthetic();
+    let dir = std::env::temp_dir().join(format!("ols-app-drawings-{}", std::process::id()));
+    let w = crate::drawings::DrawingsWindow {
+        route: Some(0),
+        formats: vec![
+            ols_drawing::export::Format::Pdf,
+            ols_drawing::export::Format::Dxf,
+        ],
+        range: true,
+        from: 100.0,
+        to: 900.0,
+        profile_only: true,
+        all_cases: true,
+        out: Some(dir.clone()),
+        ..Default::default()
+    };
+    let input = crate::drawings::Input::new(&m, 0, &w).unwrap();
+    assert_eq!(input.cases.len(), 5);
+    let report = crate::drawings::run(&input, &|_, _| {}).unwrap();
+    // On A3 (772 m per sheet) split at T3: two DXF sheets, the profile in
+    // model space, one PDF of two pages.
+    assert!(report.starts_with("4 files"), "{report}");
+    let pdf = std::fs::read(dir.join("main-profile.pdf")).unwrap();
+    assert_eq!(ols_drawing::pdf::read_back(&pdf).unwrap().len(), 2);
+    assert!(dir.join("main-profile-model.dxf").is_file());
+    let _ = std::fs::remove_dir_all(&dir);
+    // Without a folder it does not start.
+    let none = crate::drawings::DrawingsWindow::default();
+    assert!(crate::drawings::Input::new(&m, 0, &none).is_err());
+}

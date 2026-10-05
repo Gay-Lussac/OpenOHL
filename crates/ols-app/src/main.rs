@@ -21,6 +21,7 @@ mod chunks;
 mod class_colors;
 mod clearance;
 mod controls;
+mod drawings;
 mod edit;
 mod editors;
 mod files;
