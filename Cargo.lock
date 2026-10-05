@@ -3421,6 +3421,7 @@ dependencies = [
  "ols-session",
  "ols-structures",
  "ols-terrain",
+ "ols-thermal",
  "ols-weather",
  "png",
  "pyo3",

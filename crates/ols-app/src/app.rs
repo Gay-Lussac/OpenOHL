@@ -202,6 +202,8 @@ pub struct Ready {
     pub history_open: bool,
     /// Checks › Structure loads.
     pub loads: crate::loads::LoadsPage,
+    /// Checks › Thermal rating.
+    pub thermal: crate::thermal::ThermalWindow,
     /// Terrain › Terrain surfaces (TIN).
     pub surfaces: crate::surfaces::SurfacesWindow,
     /// Terrain › Survey data › Class colours, when open.
@@ -262,6 +264,7 @@ impl Ready {
             console: Default::default(),
             history_open: false,
             loads: Default::default(),
+            thermal: Default::default(),
             surfaces: Default::default(),
             class_window: None,
             controls_window: None,
@@ -2133,6 +2136,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     controls_window(ctx, r);
     creep_stretch_window(ctx, r);
     lines_window(ctx, r);
+    crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
     };
@@ -3633,6 +3637,19 @@ fn menus(
         }
         if ui.button("Show results").clicked() {
             open_page(dock, Tab::Clearances);
+            ui.close();
+        }
+        ui.separator();
+        ui.label(egui::RichText::new("Thermal rating").strong());
+        if ui
+            .button("Thermal rating…")
+            .on_hover_text(
+                "Ampacity per section and ambient case (IEEE 738, CIGRE TB 601 / 207), and the \
+                 highest temperature the clearances allow",
+            )
+            .clicked()
+        {
+            r.thermal.show(&r.model);
             ui.close();
         }
         ui.separator();
