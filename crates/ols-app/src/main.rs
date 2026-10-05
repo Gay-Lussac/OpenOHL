@@ -20,6 +20,7 @@ mod app;
 mod chunks;
 mod class_colors;
 mod clearance;
+mod codes;
 mod controls;
 mod edit;
 mod editors;
