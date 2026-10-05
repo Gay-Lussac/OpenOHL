@@ -99,6 +99,8 @@ load cases. The code's notes are shown in the window.
 Every plugin says in its notes what it leaves out. In this first version:
 security and failure-containment loads (broken wire, unbalanced ice) —
 use the broken-span solve and your own load cases; construction and
-maintenance loads; wind on structures; the NESC constant k (the notes give
+maintenance loads; wind on structures by the code's own method (the
+structure loads apply each weather case's wind pressure to the structure
+types' height bands, see [Load cases](loads.md)); the NESC constant k (the notes give
 its value to add by hand); per-wire ice loads that depend on the conductor
 diameter (LeV: one reference diameter per parameter file).

@@ -45,7 +45,7 @@ ols project apply project.ols --user ben '{"op": "move_structure", "id": "T6", "
 ols project diff project.ols                            # HEAD → working state, field by field
 ols project diff project.ols --impact                   # … and the sections solved on both sides
 ols project commit project.ols --user ben -m "T6 east of the road"
-ols project history project.ols                         # revisions with branches and tags
+ols project history project.ols                         # revisions with branches and tags (--limit, default 50)
 ols project checkout project.ols main --user ana
 ols project merge project.ols "route B" --user ana --preview
 ols project merge project.ols "route B" --user ana
@@ -117,7 +117,7 @@ the working state; changes made to the same fields since are conflicts.
 ## Branches and tags
 
 `ols project branch project.ols NAME --user U [--at REV]` makes a branch;
-`--protect` (admins) protects it: a **protected** branch is changed only by
+`--protect` (admins) protects it and `--unprotect` lifts that: a **protected** branch is changed only by
 admins or by merging an approved review. `--delete` lists what goes with the
 branch (open reviews closed; revisions only on it stay in the file, reachable
 by id) and deletes it with `--confirm`. Tags are made with `ols project tag`
@@ -174,7 +174,7 @@ ols project bundle project.ols --import field.json --user ben          # in the 
 ols project merge project.ols field --user ana
 ```
 
-The bundle holds the branch's revisions and their contents; ids and hashes
+The bundle holds the branch's revisions and their contents (`--as NAME` imports it under another branch name); ids and hashes
 are checked when it is read. Not yet: synchronising automatically when the
 copy reconnects.
 

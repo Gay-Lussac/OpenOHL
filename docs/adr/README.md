@@ -1,4 +1,4 @@
-# Architecture Decision Records
+# Architecture decision records
 
 | # | Title | Status |
 |---|---|---|

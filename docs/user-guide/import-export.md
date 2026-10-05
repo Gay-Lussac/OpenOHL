@@ -33,7 +33,7 @@ ols line examples/synthetic-line/synthetic-line.ols.json \
     --export line.kmz --export wires-csv=wires.csv --option crs=EPSG:2056
 ```
 
-`--export FILE` picks the format from the extension (the first exporter for it: `.csv` → `structures-csv`, `.xml` → `ols-xml`, `.zip` → `shapefile`); `--export FORMAT=FILE` names it, e.g. `landxml=line.xml`. `--option KEY=VALUE` passes options to the formats (repeatable). In the application, File › Export lists the same formats.
+`--export FILE` picks the format from the extension (the first exporter for it: `.csv` → `structures-csv`, `.xml` → `ols-xml`, `.zip` → `shapefile`); `--export FORMAT=FILE` names it, e.g. `landxml=line.xml`. `--option KEY=VALUE` passes options to the formats (repeatable). In the application, File › Export… lists the same formats.
 
 KML/KMZ options:
 
@@ -82,7 +82,7 @@ ols import survey.csv --format structures-csv --out new-line.ols.json
 ols import line.xml --out line.ols.json
 ```
 
-The format comes from `--format` or the file extension. With `--into`, the file updates that line; without, it makes a new line. The result is checked like any line file before it is written. In the application, File › Import reads a file into the open line as one command (undone at once).
+The format comes from `--format` or the file extension. With `--into`, the file updates that line; without, it makes a new line. The result is checked like any line file before it is written. In the application, File › Import into the line… reads a file into the open line as one command (undone at once).
 
 Into a project file — a new one, or one that holds a line — as one logged command:
 

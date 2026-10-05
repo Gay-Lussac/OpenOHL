@@ -5,7 +5,7 @@ Several people work on one project at the same time, like players on a game serv
 ## Hosting
 
 - **In the application:** File › **Host this project…** (a project file `.ols` open): the port (UDP, default 4433) and what happens to people the project does not know (they join as viewers, as designers, or are refused). The server runs inside the application, and the application joins it like everyone else. File › **Stop hosting** ends it and opens the project file again.
-- **Without the application:** `ols serve PROJECT.ols` (options `--bind 0.0.0.0:4433`, `--advertise HOST`, `--newcomers viewer|designer|none`, `--invite USER` repeatable, `--code SECRET`, `--web PORT` for the [web client](#web-client)). It prints the invitations and who joins and leaves, and runs until stopped (Ctrl+C). Every edit is already in the project file.
+- **Without the application:** `ols serve PROJECT.ols` (options `--bind 0.0.0.0:4433`, `--advertise HOST`, `--newcomers viewer|designer|none`, `--invite USER` repeatable, `--code SECRET`, `--web PORT` for the [web client](#web-client), `--seconds N` to stop after a time). It prints the invitations and who joins and leaves, and runs until stopped (Ctrl+C). Every edit is already in the project file.
 
 The project file stays on the hosting computer. The port must be reachable over UDP from the others' computers (firewall, port forwarding over the internet).
 

@@ -1,4 +1,4 @@
-# Project files (`.ols`)
+# Project files and point clouds (`.ols`)
 
 A project file is one SQLite database (ADR-0004) holding the line model, its
 **operation log**, its users, and its **point clouds** (ADR-0007). Line files
@@ -146,7 +146,7 @@ and intensities. On the real line, the 1.09 million points within 150 m of a
 structure are written in 0.3 s (6.9 MB of LAZ).
 
 LAS/LAZ tiles are only the way in: points are stored in the project in
-blocks of one 64 m chunk (a quarter of a grid tile, below) × one class (coordinates in mm relative to the
+blocks of one 64 m chunk (a quarter of a grid tile, below; `--chunk M` on import) × one class (coordinates in mm relative to the
 chunk, delta-encoded, byte-shuffled, zstd), with the class scheme. A check
 then reads only the blocks of the classes it needs inside its corridor,
 decompressed in parallel.

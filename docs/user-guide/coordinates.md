@@ -3,8 +3,7 @@
 Lines, surveys and point clouds are in a projected coordinate system in
 metres (the line file's `crs`, e.g. `"EPSG:2056"`). OLS CAD knows the EPSG
 registry and proj4 strings, and transforms points and whole lines between
-systems — pure Rust, no native library, the same in plugins and the future
-web client.
+systems — pure Rust, no native library, the same in WebAssembly plugins.
 
 ```bash
 ols crs info EPSG:2056

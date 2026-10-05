@@ -1,4 +1,4 @@
-# Structure analysis (.olsfe, .olsp)
+# Structure analysis (`.olsfe`, `.olsp`)
 
 Besides the allowable spans and load trees of a structure type ([Structure libraries](structure-library.md#capacity)), OLS CAD can check a structure by **analysis**:
 

@@ -1,4 +1,4 @@
-# Bill of materials and cost estimate
+# Bill of materials and cost estimate (`.olscost`)
 
 The **bill of materials** lists what a line is built from: structures by type and extension, insulator assemblies, wire lengths by cable, and hardware counted by rule. A **cost file** (`.olscost`) prices it; items without a price are listed so nothing is silently left out.
 
