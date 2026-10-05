@@ -24,6 +24,8 @@ mod controls;
 mod edit;
 mod editors;
 mod files;
+mod galloping;
+mod job;
 mod library;
 mod loads;
 mod lod;
@@ -41,7 +43,9 @@ mod surfaces;
 mod survey_io;
 mod tables;
 mod tools;
+mod vegetation;
 mod view3d;
+mod wirefit;
 
 #[cfg(test)]
 mod tests;

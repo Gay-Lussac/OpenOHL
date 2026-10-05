@@ -202,6 +202,12 @@ pub struct Ready {
     pub history_open: bool,
     /// Checks › Structure loads.
     pub loads: crate::loads::LoadsPage,
+    /// Checks › Galloping ellipses.
+    pub galloping: crate::galloping::GallopingWindow,
+    /// Checks › Vegetation.
+    pub vegetation: crate::vegetation::VegetationWindow,
+    /// Checks › As-built wires.
+    pub wirefit: crate::wirefit::WireFitWindow,
     /// Terrain › Terrain surfaces (TIN).
     pub surfaces: crate::surfaces::SurfacesWindow,
     /// Terrain › Survey data › Class colours, when open.
@@ -262,6 +268,9 @@ impl Ready {
             console: Default::default(),
             history_open: false,
             loads: Default::default(),
+            galloping: Default::default(),
+            vegetation: Default::default(),
+            wirefit: Default::default(),
             surfaces: Default::default(),
             class_window: None,
             controls_window: None,
@@ -3636,6 +3645,34 @@ fn menus(
             ui.close();
         }
         ui.separator();
+        ui.label(egui::RichText::new("Analyses").strong());
+        if ui
+            .button("Galloping ellipses…")
+            .on_hover_text(
+                "Ellipses of the wires of each span by a galloping parameter file (.olsg)",
+            )
+            .clicked()
+        {
+            r.galloping.show(&r.model, r.case);
+            ui.close();
+        }
+        if ui
+            .button("Vegetation…")
+            .on_hover_text("Vegetation points near the wires, growth and trees falling in")
+            .clicked()
+        {
+            r.vegetation.show(r.case);
+            ui.close();
+        }
+        if ui
+            .button("As-built wires…")
+            .on_hover_text("Catenaries fitted to the LiDAR wire points, against the model")
+            .clicked()
+        {
+            r.wirefit.open = true;
+            ui.close();
+        }
+        ui.separator();
         ui.add_enabled(false, egui::Button::new("Tension limits (to come)"));
         ui.add_enabled(false, egui::Button::new("Insulator swing (to come)"));
     });
@@ -4155,6 +4192,14 @@ impl eframe::App for App {
                     });
                 }
                 self.plugins.manager_ui(&ctx);
+                let go = [
+                    ready.galloping.ui(&ctx, &ready.model),
+                    ready.vegetation.ui(&ctx, &ready.model),
+                    ready.wirefit.ui(&ctx, &ready.model),
+                ];
+                if let Some(target) = go.into_iter().flatten().next() {
+                    ready.go_to(target);
+                }
                 if let Some(mut w) = ready.class_window.take() {
                     let mut open = true;
                     let default = self.default_class_scheme.clone();
