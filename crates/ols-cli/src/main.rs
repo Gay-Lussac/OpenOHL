@@ -56,6 +56,10 @@ enum Command {
     },
     /// Solve a line model (.ols.json) in 3D for one weather state.
     Line(Box<LineArgs>),
+    /// Plan and profile drawings and profile exports of a solved line:
+    /// SVG, DXF, PDF, PNG sheets and the profile as CSV or XML, for a
+    /// station range at chosen scales. Takes every option of `ols line`.
+    Drawing(Box<DrawingArgs>),
     /// Structure and insulator libraries.
     Structures {
         #[command(subcommand)]
@@ -267,11 +271,11 @@ struct LineArgs {
     /// this directory.
     #[arg(long)]
     drawings: Option<PathBuf>,
-    /// Horizontal scale of the drawings (2000 = 1:2000).
-    #[arg(long, default_value_t = 2000.0)]
+    /// Horizontal scale of the drawings: 1:2000 or 2000.
+    #[arg(long, default_value = "2000", value_parser = scale)]
     hscale: f64,
-    /// Vertical scale of the profile (200 = 1:200).
-    #[arg(long, default_value_t = 200.0)]
+    /// Vertical scale of the profile: 1:200 or 200.
+    #[arg(long, default_value = "200", value_parser = scale)]
     vscale: f64,
     /// Side ground profile at this offset, m (right positive; repeatable).
     #[arg(long, allow_hyphen_values = true)]
@@ -279,8 +283,9 @@ struct LineArgs {
     /// Half width of the plan view, m.
     #[arg(long, default_value_t = 40.0)]
     plan_width: f64,
-    /// Scale of the plan across the line (default: the horizontal scale).
-    #[arg(long)]
+    /// Scale of the plan across the line, 1:1000 or 1000 (default: the
+    /// horizontal scale).
+    #[arg(long, value_parser = scale)]
     plan_scale: Option<f64>,
     /// Split the drawings over sheets of this format, at structures: A0, A1,
     /// A2, A3, A4 (landscape) or WIDTHxHEIGHT in mm.
@@ -301,6 +306,94 @@ struct LineArgs {
     /// File-format plugin directory (repeatable).
     #[arg(long)]
     plugin: Vec<PathBuf>,
+}
+
+/// Arguments of `ols drawing`.
+#[derive(clap::Args)]
+struct DrawingArgs {
+    #[command(flatten)]
+    line: LineArgs,
+    /// Route to draw, by id (repeatable; default: every route).
+    #[arg(long)]
+    route: Vec<String>,
+    /// Formats: svg, dxf, pdf, png, csv, xml (comma-separated or
+    /// repeated).
+    #[arg(long, value_delimiter = ',', default_value = "svg")]
+    format: Vec<String>,
+    /// First station drawn: metres or km+m, e.g. 0+250 (default: the
+    /// route's start).
+    #[arg(long, value_parser = station, allow_hyphen_values = true)]
+    from: Option<f64>,
+    /// Last station drawn (default: the route's end).
+    #[arg(long, value_parser = station, allow_hyphen_values = true)]
+    to: Option<f64>,
+    /// The profile alone, without the plan.
+    #[arg(long)]
+    profile_only: bool,
+    /// Resolution of PNG images, dots per inch.
+    #[arg(long, default_value_t = 150.0)]
+    dpi: f64,
+    /// Output directory (created).
+    #[arg(long)]
+    out: PathBuf,
+}
+
+/// A scale denominator from `1:2000` or `2000`.
+fn scale(text: &str) -> Result<f64, String> {
+    ols_drawing::parse_scale(text).ok_or_else(|| format!("{text}: write 1:2000 or 2000"))
+}
+
+/// A station from metres or `km+m`.
+fn station(text: &str) -> Result<f64, String> {
+    ols_drawing::parse_station(text).ok_or_else(|| format!("{text}: write 1250 or 1+250"))
+}
+
+/// What drawings to write, where.
+struct DrawingSpec {
+    /// Routes by id (empty: every route).
+    routes: Vec<String>,
+    /// Formats, sheets, resolution.
+    export: ols_drawing::export::Export,
+    /// Station range (ends default to the route's).
+    from: Option<f64>,
+    to: Option<f64>,
+    /// The profile alone.
+    profile_only: bool,
+    /// Output directory.
+    out: PathBuf,
+}
+
+/// `ols drawing`: solves the line like `ols line`, then writes the
+/// drawings asked for.
+fn drawing_command(args: &DrawingArgs) -> ExitCode {
+    let formats: Result<Vec<_>, String> = args
+        .format
+        .iter()
+        .map(|f| {
+            ols_drawing::export::Format::parse(f)
+                .ok_or_else(|| format!("unknown format \"{f}\" (svg, dxf, pdf, png, csv or xml)"))
+        })
+        .collect();
+    let formats = match formats {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let spec = DrawingSpec {
+        routes: args.route.clone(),
+        export: ols_drawing::export::Export {
+            formats,
+            page: None, // from --page, read with the other drawing options
+            dpi: args.dpi,
+        },
+        from: args.from,
+        to: args.to,
+        profile_only: args.profile_only,
+        out: args.out.clone(),
+    };
+    line(&args.line, Some(&spec))
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -453,7 +546,8 @@ fn main() -> ExitCode {
         }
         Some(Command::Validate { path, report, list }) => validate(&path, report.as_deref(), list),
         Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
-        Some(Command::Line(args)) => line(&args),
+        Some(Command::Line(args)) => line(&args, None),
+        Some(Command::Drawing(args)) => drawing_command(&args),
         Some(Command::Structures {
             command:
                 StructuresCommand::Derive {
@@ -897,7 +991,7 @@ fn sagtension(job: &std::path::Path, units: Units, csv: Option<&std::path::Path>
     }
 }
 
-fn line(args: &LineArgs) -> ExitCode {
+fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
     let LineArgs {
         file,
         library,
@@ -1303,8 +1397,23 @@ fn line(args: &LineArgs) -> ExitCode {
             extras.ground = Some(g.mesh());
         }
         let ground = prepared.ground.as_ref();
-        if let Some(dir) = drawings {
-            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        // --drawings: SVG and profile CSV of every route, as before;
+        // `ols drawing`: what it asks for.
+        let legacy = drawings.as_ref().map(|dir| DrawingSpec {
+            routes: Vec::new(),
+            export: ols_drawing::export::Export {
+                formats: vec![
+                    ols_drawing::export::Format::Svg,
+                    ols_drawing::export::Format::Csv,
+                ],
+                ..Default::default()
+            },
+            from: None,
+            to: None,
+            profile_only: false,
+            out: dir.clone(),
+        });
+        for spec in legacy.iter().chain(drawing_spec) {
             let logos = logo
                 .iter()
                 .map(|spec| {
@@ -1353,11 +1462,27 @@ fn line(args: &LineArgs) -> ExitCode {
                 },
                 plan_offset_scale: *plan_scale,
                 logos,
+                stations: None,
+                plan: !spec.profile_only,
             };
-            for route in line.effective_routes() {
+            let target = ols_drawing::export::Export {
+                page: page.clone(),
+                ..spec.export.clone()
+            };
+            let routes = line.effective_routes();
+            for id in &spec.routes {
+                if !routes.iter().any(|r| &r.id == id) {
+                    let ids: Vec<&str> = routes.iter().map(|r| r.id.as_str()).collect();
+                    return Err(format!("no route \"{id}\" (routes: {})", ids.join(", ")));
+                }
+            }
+            for route in routes
+                .iter()
+                .filter(|r| spec.routes.is_empty() || spec.routes.contains(&r.id))
+            {
                 let mut d = ols_drawing::build(
                     &line,
-                    &route,
+                    route,
                     &shapes,
                     &extras.jumpers,
                     ground,
@@ -1370,7 +1495,7 @@ fn line(args: &LineArgs) -> ExitCode {
                 {
                     let other = ols_drawing::build(
                         &line,
-                        &route,
+                        route,
                         case_shapes,
                         case_jumpers,
                         None,
@@ -1383,47 +1508,38 @@ fn line(args: &LineArgs) -> ExitCode {
                         d.wires.push(w);
                     }
                 }
-                let svg_path = dir.join(format!("{}.svg", route.id));
-                let csv_path = dir.join(format!("{}-profile.csv", route.id));
-                match &page {
-                    None => std::fs::write(&svg_path, ols_drawing::svg(&d, &options))
-                        .map_err(|e| format!("{}: {e}", svg_path.display()))?,
-                    Some(page) => {
-                        let sheets = ols_drawing::sheets(&d, &options, page);
-                        for sheet in &sheets {
-                            let path =
-                                dir.join(format!("{}-sheet-{:02}.svg", route.id, sheet.number));
-                            std::fs::write(&path, &sheet.svg)
-                                .map_err(|e| format!("{}: {e}", path.display()))?;
-                            for w in &sheet.warnings {
-                                println!("  warning: sheet {}: {w}", sheet.number);
-                            }
-                        }
-                        println!(
-                            "  route {}: {} sheet(s) {} at 1:{} / 1:{}",
-                            route.id,
-                            sheets.len(),
-                            page.name,
-                            options.horizontal_scale,
-                            options.vertical_scale
-                        );
-                    }
+                let options = ols_drawing::Options {
+                    stations: (spec.from.is_some() || spec.to.is_some())
+                        .then(|| [spec.from.unwrap_or(0.0), spec.to.unwrap_or(d.length)]),
+                    ..options.clone()
+                };
+                // Exit clause: an hour per route (minutes are expected for
+                // hundreds of PNG sheets).
+                let budget = ols_core::budget::Budget::new()
+                    .time_limit(std::time::Duration::from_secs(3600));
+                let written =
+                    ols_drawing::export::write_route(&d, &options, &target, &spec.out, &budget)?;
+                for w in &written.warnings {
+                    println!("  warning: {w}");
                 }
-                std::fs::write(&csv_path, ols_drawing::profile_csv(&d))
-                    .map_err(|e| format!("{}: {e}", csv_path.display()))?;
+                if let Some(page) = &page {
+                    println!(
+                        "  route {}: {} sheet(s) {} at 1:{} / 1:{}",
+                        route.id,
+                        written.sheets,
+                        page.name,
+                        options.horizontal_scale,
+                        options.vertical_scale
+                    );
+                }
                 println!(
-                    "drawing: route {} ({:.0} m, {} structures, {} wires) → {}",
+                    "drawing: route {} ({:.0} m, {} structures, {} wires) → {} file(s) in {}",
                     route.id,
                     d.length,
                     d.structures.len(),
                     d.wires.len(),
-                    match &page {
-                        None => svg_path.display().to_string(),
-                        Some(_) => dir
-                            .join(format!("{}-sheet-NN.svg", route.id))
-                            .display()
-                            .to_string(),
-                    }
+                    written.files.len(),
+                    spec.out.display()
                 );
             }
         }
