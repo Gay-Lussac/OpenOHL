@@ -11,6 +11,7 @@
 - [Weather cases (.olswc)](user-guide/weather.md)
 - [Load cases and structure loads (.olslc)](user-guide/loads.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
+- [Structure analysis (.olsfe, .olsp)](user-guide/structure-analysis.md)
 - [Terrain and ground clearance](user-guide/terrain.md)
 - [Coordinate systems](user-guide/coordinates.md)
 - [Import and export](user-guide/import-export.md)
@@ -22,6 +23,7 @@
 - [Conventions and units](theory/conventions.md)
 - [Sag-tension](theory/sagtension.md)
 - [Finite-element wire systems](theory/wirefe.md)
+- [Structure analysis (frames, trusses, poles)](theory/structures-fe.md)
 
 # Design
 
