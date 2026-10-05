@@ -2291,9 +2291,19 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
     assert_eq!(r.model.section_cases("S1", 0), vec![0]);
     assert_eq!(r.model.section_cases("S2", 0), vec![0, wind]);
     r.model.cases_shown = crate::model::CasesShown::AllSections;
+    let strings_of = |m: &model::Model| {
+        crate::scene::layer(m, crate::scene::Layer::Structures, 0, &Selection::None)
+            .counts()
+            .0
+    };
+    let one_side = strings_of(&r.model);
     // Wind from both sides: the windy case solved twice, swung both ways.
     r.model.set_wind(crate::model::WindDisplay::Both);
     r.model.ensure_solved(wind);
+    assert!(
+        strings_of(&r.model) > one_side,
+        "strings drawn to both sides' clamps"
+    );
     let solved = &r.model.cases[wind];
     let mirror = solved.mirror.as_ref().expect("solved from the left too");
     assert_eq!(solved.case.wind_from, ols_weather::WindSide::Right);
