@@ -9,6 +9,12 @@
 //! command line and the application run them ([`case`]); the lowest
 //! clearances over several cases ([`envelope`]).
 //!
+//! Further checks of solved wires: galloping ellipses between the wires of
+//! a span ([`galloping`]), blown-out wires against the right of way
+//! ([`blowout`]), vegetation encroachment and fall-in ([`vegetation`]),
+//! and as-built wires fitted to LiDAR points and compared with the model
+//! ([`wirefit`]).
+//!
 //! Vertical ground clearance, for example, is found under every piece of
 //! the solved wire polyline (closely spaced points on the exact catenary)
 //! at every TIN edge crossing ([`Terrain::profile`]), where both the ground
@@ -20,18 +26,22 @@
 //!
 //! [`Terrain::profile`]: ols_terrain::Terrain::profile
 
+pub mod blowout;
 pub mod case;
 pub mod checks;
 pub mod envelope;
+pub mod galloping;
 pub mod geometry;
 pub mod rules;
+pub mod vegetation;
+pub mod wirefit;
 
 pub use case::{
     CaseTargets, Outcome, RuleCheck, Skipped, applies, check_case, lowest, voltages_of,
 };
 pub use checks::{Hit, PairMode, PairResult, PointCheck, Wire, WireResult, WireSet, wires_of};
 pub use envelope::{Envelope, EnvelopeEntry};
-pub use rules::{PairVoltage, Required, Requirement, Rule, RuleSet, Target};
+pub use rules::{CircuitFilter, PairVoltage, Required, Requirement, Rule, RuleSet, Target};
 
 #[cfg(test)]
 mod tests {

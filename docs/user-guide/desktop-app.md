@@ -127,6 +127,8 @@ Checks run **on demand**: **Run checks** (Checks menu or quick bar) or **Check n
 
 Rules for other lines and rules across pairs of weather cases are run by `ols line` only; the tab says so.
 
+**Checks › Analyses** opens windows that compute on demand in the background, each with a results table (click a span to go to it) and CSV export — see [Galloping, blowout, vegetation and as-built wires](analyses.md): **Galloping ellipses** (a `.olsg` parameter file and a weather case), **Vegetation** (the point cloud's vegetation classes near the wires of a case, growth, trees falling in), **As-built wires** (catenaries fitted to the wire points, the temperature at the survey).
+
 ## Tables
 
 **Tables** shows the line one object per row (headers with the unit below the name, a grid, every row the same column widths), in a floating window (each table a page): structures, sections, strings, jumpers, electrical systems, alignment points, weather cases. **Every value shown can be typed in**, except counts derived from other rows (shown dimmed) and what a string or an alignment point belongs to (typed in new rows). Where an object leaves a value to its **default**, the value used is shown, dimmed (hover: "default"): a jumper's bundle and spacing (its section's), bending stiffness (estimated from its cable) and clamp exit angles (30°); a section's electrical system (from its conductor path; "earthed") and the weather cases it is drawn in (those shown); a strain string's weight estimated from its position (strings given without a weight). Applying other changes leaves defaults unset; typing over one sets it on the object:

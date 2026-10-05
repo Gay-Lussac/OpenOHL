@@ -93,6 +93,7 @@ radial = "4.5 m"
 | `vertical_band` | Points count for vertical clearance within this horizontal distance of the wire (default 0.5 m). |
 | `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
 | `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
+| `circuits` | `same_line`: `"different"` checks only pairs of wires of different circuits (circuit to circuit, e.g. the two circuits of a double-circuit tower; a phase and an earth wire), `"same"` only pairs of the same circuit (phase to phase); default `"any"`. Combine with `case_pairs` for one circuit iced and the other not. |
 | `cases` | Weather cases the rule applies to, by name (`*` `?` wildcards); default: all cases run. |
 | `exclude_near_ends` | Exclusion zone: the wire within this horizontal distance of its ends (clamps) is not checked, e.g. `"10 m"` — where wires converge at supports by design. |
 | `exclude_spans_at` | Exclusion zone: spans ending at these structures are not checked, e.g. `["con_*"]` for down-leads into cable terminations (wildcards). |

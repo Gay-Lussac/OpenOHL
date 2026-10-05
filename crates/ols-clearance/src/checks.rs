@@ -108,7 +108,7 @@ impl Wire {
 
     /// The nearest point of the subconductors along `a`–`b` to `p`:
     /// (distance, its point).
-    fn nearest(&self, p: P3, a: P3, b: P3) -> (f64, P3) {
+    pub(crate) fn nearest(&self, p: P3, a: P3, b: P3) -> (f64, P3) {
         self.sub_segments(a, b)
             .into_iter()
             .map(|(s, t)| {
@@ -252,7 +252,7 @@ pub struct WireSet {
     /// The wires.
     pub wires: Vec<Wire>,
     /// Bundle radius of each wire, m.
-    radii: Vec<f64>,
+    pub(crate) radii: Vec<f64>,
     reach: f64,
     segments: Vec<(u32, u32)>,
     cells: HashMap<(i64, i64), Vec<u32>>,
@@ -298,7 +298,7 @@ impl WireSet {
 
     /// Segments (wire, first point index) that may be within `reach` of
     /// the plan position (x, y).
-    fn near(&self, x: f64, y: f64) -> impl Iterator<Item = (usize, usize)> + '_ {
+    pub(crate) fn near(&self, x: f64, y: f64) -> impl Iterator<Item = (usize, usize)> + '_ {
         self.cells
             .get(&(cell_of(x), cell_of(y)))
             .into_iter()
@@ -309,7 +309,7 @@ impl WireSet {
             })
     }
 
-    fn segment(&self, w: usize, k: usize) -> (P3, P3) {
+    pub(crate) fn segment(&self, w: usize, k: usize) -> (P3, P3) {
         let p = &self.wires[w].points;
         (p[k], p[k + 1])
     }
@@ -639,12 +639,17 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
             for (j, k) in candidates {
                 let other = &b.wires[j];
                 let same_phase = other.circuit == wire.circuit && other.phase == wire.phase;
+                let circuits = rule.circuits.admits(&wire.circuit, &other.circuit);
                 let skip = match mode {
                     PairMode::SameLine { include_same_phase } => {
-                        j <= i || (!include_same_phase && same_phase) || connected(wire, other)
+                        j <= i
+                            || !circuits
+                            || (!include_same_phase && same_phase)
+                            || connected(wire, other)
                     }
                     PairMode::SameLineOtherCase { include_same_phase } => {
                         (other.section == wire.section && other.span == wire.span)
+                            || !circuits
                             || (!include_same_phase && same_phase)
                             || connected(wire, other)
                     }
@@ -858,6 +863,50 @@ mod tests {
         assert_eq!(found, vec![(0, 1), (1, 0), (1, 2), (2, 1)], "{found:?}");
         let d = pairs[0].result.radial.unwrap().distance;
         assert!((d - 4.0f64.hypot(0.5)).abs() < 1e-9, "{d}");
+    }
+
+    #[test]
+    fn circuit_to_circuit_and_phase_to_phase() {
+        // A double-circuit span: circuit A phases at y = 0 and 4, circuit
+        // B at y = 10; B's wire in the second case 1 m lower (ice drop of
+        // the other circuit's wire), with case pairs.
+        let wire = |section: &str, circuit: &str, phase: &str, y: f64, z: f64| Wire {
+            circuit: circuit.into(),
+            ..straight(section, phase, [0.0, y, z], [100.0, y, z])
+        };
+        let case = |drop: f64| {
+            vec![
+                wire("A1", "A", "L1", 0.0, 20.0),
+                wire("A2", "A", "L2", 4.0, 20.0),
+                wire("B1", "B", "L1", 10.0, 20.0 - drop),
+            ]
+        };
+        let pairs_of = |text: &str, other: Vec<Wire>| {
+            let r = rule(text);
+            let set = WireSet::new(other, 20.0);
+            wire_pairs(
+                &r,
+                &case(0.0),
+                &set,
+                PairMode::SameLineOtherCase {
+                    include_same_phase: false,
+                },
+            )
+            .into_iter()
+            .map(|p| (p.a, p.b, p.result.radial.unwrap().distance))
+            .collect::<Vec<_>>()
+        };
+        let base = "[[rule]]\nname = \"x\"\ntarget = \"same_line\"\nradial = 3.0\n";
+        // Circuit to circuit: only pairs with B, both orderings.
+        let cc = pairs_of(&format!("{base}circuits = \"different\""), case(1.0));
+        let found: Vec<(usize, usize)> = cc.iter().map(|p| (p.0, p.1)).collect();
+        assert_eq!(found, vec![(1, 2), (2, 1)], "{cc:?}");
+        // A2 (cold) to the dropped B1: 6 m across, 1 m down.
+        assert!((cc[0].2 - 6.0f64.hypot(1.0)).abs() < 1e-9);
+        // Phase to phase: only A1–A2.
+        let pp = pairs_of(&format!("{base}circuits = \"same\""), case(1.0));
+        let found: Vec<(usize, usize)> = pp.iter().map(|p| (p.0, p.1)).collect();
+        assert_eq!(found, vec![(0, 1), (1, 0)], "{pp:?}");
     }
 
     #[test]

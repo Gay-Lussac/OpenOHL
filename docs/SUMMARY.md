@@ -17,6 +17,7 @@
 - [Thermal rating (.olsta)](user-guide/thermal.md)
 - [Bill of materials and cost estimate (.olscost)](user-guide/bom-and-cost.md)
 - [Optimum structure spotting](user-guide/spotting.md)
+- [Galloping, blowout, vegetation and as-built wires](user-guide/analyses.md)
 - [Coordinate systems](user-guide/coordinates.md)
 - [Import and export](user-guide/import-export.md)
 - [Project files and point clouds (.ols)](user-guide/project.md)
@@ -30,6 +31,8 @@
 - [Thermal rating](theory/thermal.md)
 - [Optimum structure spotting](theory/spotting.md)
 - [Structure analysis (frames, trusses, poles)](theory/structures-fe.md)
+- [Galloping ellipses and blowout](theory/galloping.md)
+- [LiDAR analyses](theory/lidar-analysis.md)
 
 # Design
 

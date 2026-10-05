@@ -43,7 +43,7 @@
 | `ols-loads` | Load cases (`.olslc`: weather × wire condition × load factors) and the loads on the structures at every attachment |
 | `ols-server` | Server mode (alpha): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, personal invitations |
 | `ols-pointcloud` | Point clouds in the project file (chunk × class blocks), point-source interface |
-| `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors |
+| `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors, classification (ground, height classes) |
 | `ols-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines |
 | `ols-io` | Import/export: format traits and registry, built-in formats (CSV, KML/KMZ), formats from WebAssembly plugins |
 | `ols-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming (`lod`); headless images |
@@ -58,7 +58,7 @@
 | `ols-wirefe` | Non-linear FE of wire systems (general loads, broken wire, unbalanced ice) |
 | `ols-structures-fe` | Structure analysis: 3D truss/frame/cable finite elements (`.olsfe` models, P-Delta, skyline solver), member usage, pole library (`.olsp`) and pole check |
 | `ols-loads` | Load-case engine; design codes are **plugins** |
-| `ols-clearance` | Clearance checks: vertical ground clearance of solved wires (v1); later feature clearances, envelopes |
+| `ols-clearance` | Clearance checks of solved wires by rule (ground, points, wires), envelopes; galloping ellipses, blowout against the right of way, vegetation, as-built wire fits |
 | `ols-rating` | Thermal rating (IEEE 738, CIGRE) |
 | `ols-spotting` | Optimum structure spotting: least-cost structure positions, types and extensions along a route profile (dynamic programming) |
 | `ols-bom` | Bill of materials (structures, insulators, cut lengths, hardware) and cost estimate from a cost file (`.olscost`) |
