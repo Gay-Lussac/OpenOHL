@@ -1,0 +1,71 @@
+# Unit costs for the synthetic example line. Every price is INVENTED for
+# the example; use your own cost data for real work.
+format = "ols-cost"
+version = 1
+name = "Synthetic example unit costs (invented)"
+currency = "EUR"
+
+[labour]
+per_structure = 3000.0   # erection of any structure without its own price
+per_span = 1500.0        # stringing, per span between two structures
+
+# Dead-end at the start of the main route.
+[[structure]]
+type = "type-01"
+price = 30000.0
+foundation = 9000.0
+
+# Tangent / small angle. A type with height extensions prices each one,
+# e.g. extensions = { "+3" = 15500.0, "+6" = 17000.0 }.
+[[structure]]
+type = "type-02"
+price = 14000.0
+foundation = 5000.0
+
+# Y pylon.
+[[structure]]
+type = "type-03"
+price = 26000.0
+foundation = 8000.0
+erection = 5000.0
+
+# Dead-end at the end of the main route.
+[[structure]]
+type = "type-04"
+price = 30000.0
+foundation = 9000.0
+
+[[structure]]
+type = "type-05"
+price = 12000.0
+foundation = 4500.0
+
+[[structure]]
+type = "type-06"
+price = 28000.0
+foundation = 8500.0
+
+# Inline strings of the pylon files, by the name the bill of materials
+# gives them.
+[[insulator]]
+id = "string suspension 3.500 m"
+price = 450.0
+
+[[insulator]]
+id = "string strain 5.025 m"
+price = 900.0
+
+[[cable]]
+id = "acsr-drake-26-7"
+price_per_m = 6.2
+stringing_per_m = 1.1
+
+[hardware]
+spacer_interval = "70 m"
+spacer_price = 40.0
+dampers_per_span = 2
+damper_price = 55.0
+
+[[fixed]]
+item = "Site establishment"
+price = 20000.0

@@ -1,0 +1,23 @@
+[package]
+name = "ols-bom"
+description = "OLS CAD bill of materials and cost estimate of a line (.olscost unit costs)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-core.workspace = true
+ols-cables.workspace = true
+ols-line.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+ols-structures.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

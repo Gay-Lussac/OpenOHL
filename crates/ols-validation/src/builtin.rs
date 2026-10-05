@@ -37,6 +37,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(WireFeSpan));
     registry.register(Box::new(WireFePointLoad));
     registry.register(Box::new(Nonlinear));
+    registry.register(Box::new(SpottingLevel));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -683,6 +684,61 @@ impl Calculation for Nonlinear {
             (
                 "final_cause",
                 if cause == FinalCause::Load { 1.0 } else { 0.0 },
+            ),
+        ]))
+    }
+}
+
+/// `spotting.level`: optimum spotting on level ground with a dead-end and
+/// a tangent type of the same height.
+struct SpottingLevel;
+
+impl Calculation for SpottingLevel {
+    fn id(&self) -> &'static str {
+        "spotting.level"
+    }
+
+    fn description(&self) -> &'static str {
+        "Optimum spotting on level ground (inputs: length, height, clearance, \
+         horizontal_tension, weight, step, dead_end_cost, tangent_cost)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ols_spotting::{Candidate, Problem, default_budget, spot};
+        let length = quantity_input::<Length>(inputs, "length")?.si();
+        let height = quantity_input::<Length>(inputs, "height")?.si();
+        let candidate = |id: &str, cost: f64, dead_end: bool| Candidate {
+            structure_type: id.into(),
+            extension: None,
+            height,
+            cost,
+            dead_end,
+            capacity: None,
+        };
+        let problem = Problem {
+            ground: vec![[0.0, 0.0], [length, 0.0]],
+            required: Vec::new(),
+            forbidden: Vec::new(),
+            candidates: vec![
+                candidate("dead-end", float_input(inputs, "dead_end_cost")?, true),
+                candidate("tangent", float_input(inputs, "tangent_cost")?, false),
+            ],
+            step: quantity_input::<Length>(inputs, "step")?.si(),
+            max_span: length,
+            min_span: 0.0,
+            clearance: quantity_input::<Length>(inputs, "clearance")?.si(),
+            horizontal_tension: quantity_input::<Force>(inputs, "horizontal_tension")?.si(),
+            weight: quantity_input::<ForcePerLength>(inputs, "weight")?.si(),
+            span_cost: 0.0,
+            wire_cost_per_m: 0.0,
+        };
+        let r = spot(&problem, &default_budget()).map_err(|e| e.to_string())?;
+        Ok(outputs([
+            ("structures", r.structures.len() as f64),
+            ("total_cost", r.total),
+            (
+                "longest_span_m",
+                r.spans.iter().map(|s| s.length).fold(0.0, f64::max),
             ),
         ]))
     }

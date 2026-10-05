@@ -3406,6 +3406,7 @@ dependencies = [
  "env_logger",
  "las",
  "log",
+ "ols-bom",
  "ols-cables",
  "ols-clearance",
  "ols-core",
@@ -3419,6 +3420,7 @@ dependencies = [
  "ols-render",
  "ols-server",
  "ols-session",
+ "ols-spotting",
  "ols-structures",
  "ols-terrain",
  "ols-weather",
@@ -3429,6 +3431,19 @@ dependencies = [
  "serde",
  "serde_json",
  "toml_edit",
+]
+
+[[package]]
+name = "ols-bom"
+version = "0.0.1"
+dependencies = [
+ "ols-cables",
+ "ols-core",
+ "ols-line",
+ "ols-structures",
+ "serde",
+ "serde_json",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -3459,6 +3474,7 @@ version = "0.0.1"
 dependencies = [
  "clap",
  "nalgebra",
+ "ols-bom",
  "ols-cables",
  "ols-clearance",
  "ols-core",
@@ -3473,6 +3489,7 @@ dependencies = [
  "ols-sagtension",
  "ols-server",
  "ols-session",
+ "ols-spotting",
  "ols-structures",
  "ols-terrain",
  "ols-validation",
@@ -3649,6 +3666,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-spotting"
+version = "0.0.1"
+dependencies = [
+ "ols-bom",
+ "ols-cables",
+ "ols-core",
+ "ols-line",
+ "ols-sagtension",
+ "ols-structures",
+ "ols-terrain",
+ "ols-weather",
+]
+
+[[package]]
 name = "ols-structures"
 version = "0.0.1"
 dependencies = [
@@ -3673,6 +3704,7 @@ dependencies = [
  "ols-core",
  "ols-crs",
  "ols-sagtension",
+ "ols-spotting",
  "ols-weather",
  "ols-wirefe",
  "ols-wireloads",

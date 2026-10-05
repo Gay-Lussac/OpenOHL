@@ -1,0 +1,36 @@
+# Optimum structure spotting on level ground: one dead-end type (at the ends)
+# and a cheaper tangent of the same height, limited only by the ground
+# clearance of the wire. The optimum follows by hand (fewest spans of the
+# longest usable length); see reference_spotting.py. Costs are invented.
+
+[[case]]
+id = "spotting-001"
+title = "Level 2000 m route, spans up to 409.5 m by clearance, 50 m grid"
+calculation = "spotting.level"
+reference = "Hand derivation: L_max = 2C·acosh(1 + (h − c)/C), fewest spans on the grid (benchmarks/spotting/reference_spotting.py)"
+max_seconds = 5.0
+inputs = { length = "2000 m", height = "20 m", clearance = "5 m", horizontal_tension = "21 kN", weight = "15 N/m", step = "50 m", dead_end_cost = 10.0, tangent_cost = 5.0 }
+expected.structures = { value = 6.0, abs_tol = 1e-9 }
+expected.total_cost = { value = 40.0, abs_tol = 1e-9 }
+expected.longest_span_m = { value = 400.0, abs_tol = 1e-9 }
+
+[[case]]
+id = "spotting-002"
+title = "Level 2150 m route: one span more than 2000 m"
+calculation = "spotting.level"
+reference = "Hand derivation (benchmarks/spotting/reference_spotting.py)"
+max_seconds = 5.0
+inputs = { length = "2150 m", height = "20 m", clearance = "5 m", horizontal_tension = "21 kN", weight = "15 N/m", step = "50 m", dead_end_cost = 10.0, tangent_cost = 5.0 }
+expected.structures = { value = 7.0, abs_tol = 1e-9 }
+expected.total_cost = { value = 45.0, abs_tol = 1e-9 }
+
+[[case]]
+id = "spotting-003"
+title = "Level 3000 m route, 28 m structures, spans up to 511.8 m, 25 m grid"
+calculation = "spotting.level"
+reference = "Hand derivation (benchmarks/spotting/reference_spotting.py)"
+max_seconds = 5.0
+inputs = { length = "3000 m", height = "28 m", clearance = "7 m", horizontal_tension = "25 kN", weight = "16 N/m", step = "25 m", dead_end_cost = 60.0, tangent_cost = 25.0 }
+expected.structures = { value = 7.0, abs_tol = 1e-9 }
+expected.total_cost = { value = 245.0, abs_tol = 1e-9 }
+expected.longest_span_m = { value = 500.0, abs_tol = 1e-9 }
