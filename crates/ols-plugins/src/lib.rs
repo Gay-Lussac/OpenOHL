@@ -72,6 +72,18 @@ mod project_bindings {
 
 pub use project_bindings::ols::plugin::project_types::{LibraryFile, Project};
 
+mod code_bindings {
+    wasmtime::component::bindgen!({
+        world: "code-plugin",
+        path: "wit",
+    });
+}
+
+pub use code_bindings::ols::plugin::code_types::{CodeInfo, Generated};
+
+/// Extension point of design-code plugins (`code-plugin` world).
+pub const DESIGN_CODE: &str = "design-code";
+
 pub use bindings::ols::plugin::types::PluginInfo;
 pub use io_bindings::ols::plugin::io_types::{Direction, Format};
 
@@ -366,6 +378,14 @@ impl Found {
             ));
         }
         None
+    }
+
+    /// Whether its manifest lists the extension point `point` (e.g.
+    /// [`DESIGN_CODE`]).
+    pub fn provides(&self, point: &str) -> bool {
+        self.manifest
+            .as_ref()
+            .is_ok_and(|m| m.plugin.extension_points.iter().any(|e| e == point))
     }
 
     /// The plugin's name (the directory's when the manifest does not read).
@@ -745,6 +765,71 @@ impl WasmHost {
             limits: p.limits,
         })
     }
+
+    /// Loads a design-code plugin (`code-plugin` world, extension point
+    /// [`DESIGN_CODE`] in its manifest), with the limits its manifest asks
+    /// for.
+    pub fn load_code(&self, dir: &Path) -> Result<WasmCodePlugin, PluginError> {
+        let mut p = self.prepare(dir, Some((DESIGN_CODE, "a design-code plugin")))?;
+        let instance =
+            code_bindings::CodePlugin::instantiate(&mut p.store, &p.component, &self.linker)
+                .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
+        Ok(WasmCodePlugin {
+            manifest: p.manifest,
+            store: p.store,
+            instance,
+            limits: p.limits,
+        })
+    }
+}
+
+/// A loaded design-code plugin.
+pub struct WasmCodePlugin {
+    manifest: Manifest,
+    store: Store<HostState>,
+    instance: code_bindings::CodePlugin,
+    limits: Limits,
+}
+
+impl WasmCodePlugin {
+    /// The plugin's manifest.
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    /// Calls `describe`.
+    pub fn describe(&mut self) -> Result<CodeInfo, PluginError> {
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        self.instance
+            .call_describe(&mut self.store)
+            .map_err(|e| classify(e, &name, "describe", limits))
+    }
+
+    /// Calls `generate` with a parameter file's text (inner `Err`: the
+    /// plugin's own error, about the file).
+    pub fn generate(&mut self, parameters: &str) -> Result<Result<Generated, String>, PluginError> {
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        self.instance
+            .call_generate(&mut self.store, parameters)
+            .map_err(|e| classify(e, &name, "generate", limits))
+    }
+}
+
+/// The design-code plugins in `roots` (each as [`discover`] reads it):
+/// those whose manifest lists [`DESIGN_CODE`], usable or not; a name
+/// found again is left out.
+pub fn discover_codes(roots: &[PathBuf]) -> Vec<Found> {
+    let mut names = std::collections::BTreeSet::new();
+    roots
+        .iter()
+        .flat_map(|r| discover(r))
+        .filter(|f| f.provides(DESIGN_CODE))
+        .filter(|f| names.insert(f.name()))
+        .collect()
 }
 
 /// A checked plugin, compiled, with its store ([`WasmHost::prepare`]).
