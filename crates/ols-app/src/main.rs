@@ -17,6 +17,7 @@ use eframe::egui;
 
 mod annotations;
 mod app;
+mod bom;
 mod chunks;
 mod class_colors;
 mod clearance;
@@ -37,6 +38,7 @@ mod python;
 mod remote;
 mod scene;
 mod selection;
+mod spot;
 mod surfaces;
 mod survey_io;
 mod tables;

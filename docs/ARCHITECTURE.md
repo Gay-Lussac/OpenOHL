@@ -60,7 +60,8 @@
 | `ols-loads` | Load-case engine; design codes are **plugins** |
 | `ols-clearance` | Clearance checks: vertical ground clearance of solved wires (v1); later feature clearances, envelopes |
 | `ols-rating` | Thermal rating (IEEE 738, CIGRE) |
-| `ols-spotting` | Optimum structure spotting |
+| `ols-spotting` | Optimum structure spotting: least-cost structure positions, types and extensions along a route profile (dynamic programming) |
+| `ols-bom` | Bill of materials (structures, insulators, cut lengths, hardware) and cost estimate from a cost file (`.olscost`) |
 | `ols-drafting` | Plan & profile sheets, DXF/PDF |
 | `ols-io` | Import/export formats (each format is a plugin) |
 | `ols-render` | GPU renderer: chunk streaming, LOD, culling, instancing |

@@ -204,6 +204,10 @@ pub struct Ready {
     pub loads: crate::loads::LoadsPage,
     /// Checks › Thermal rating.
     pub thermal: crate::thermal::ThermalWindow,
+    /// Checks › Bill of materials.
+    pub bom: crate::bom::BomWindow,
+    /// Tools › Spot structures.
+    pub spot: crate::spot::SpotWindow,
     /// Terrain › Terrain surfaces (TIN).
     pub surfaces: crate::surfaces::SurfacesWindow,
     /// Terrain › Survey data › Class colours, when open.
@@ -265,6 +269,8 @@ impl Ready {
             history_open: false,
             loads: Default::default(),
             thermal: Default::default(),
+            bom: Default::default(),
+            spot: Default::default(),
             surfaces: Default::default(),
             class_window: None,
             controls_window: None,
@@ -2137,6 +2143,8 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     creep_stretch_window(ctx, r);
     lines_window(ctx, r);
     crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
+    r.bom.show(ctx, &r.model);
+    r.spot.show(ctx, &r.model);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
     };
@@ -3579,6 +3587,14 @@ fn menus(
     crate::menu::options_menu(ui, "Lines", |ui| lines_menu(ui, r));
     ui.menu_button("Tools", |ui| {
         item(ui, Command::Inventory, out);
+        if ui
+            .button("Spot structures…")
+            .on_hover_text("The least-cost structures along a route (proposal saved as a new line)")
+            .clicked()
+        {
+            r.spot.open(&r.model);
+            ui.close();
+        }
         ui.separator();
         for t in crate::tools::Tool::ALL {
             let held = r.hotbar.tool() == t;
@@ -3650,6 +3666,18 @@ fn menus(
             .clicked()
         {
             r.thermal.show(&r.model);
+            ui.close();
+        }
+        ui.separator();
+        ui.label(egui::RichText::new("Quantities").strong());
+        if ui
+            .button("Bill of materials…")
+            .on_hover_text(
+                "Structures, insulators, wire lengths and hardware, priced with a cost file",
+            )
+            .clicked()
+        {
+            r.bom.open(&r.model, ui.ctx());
             ui.close();
         }
         ui.separator();

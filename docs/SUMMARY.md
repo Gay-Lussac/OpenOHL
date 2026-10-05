@@ -13,6 +13,8 @@
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
 - [Terrain and ground clearance](user-guide/terrain.md)
 - [Thermal rating (.olsta)](user-guide/thermal.md)
+- [Bill of materials and cost estimate (.olscost)](user-guide/bom-and-cost.md)
+- [Optimum structure spotting](user-guide/spotting.md)
 - [Coordinate systems](user-guide/coordinates.md)
 - [Import and export](user-guide/import-export.md)
 - [Project files and point clouds (.ols)](user-guide/project.md)
@@ -24,6 +26,7 @@
 - [Sag-tension](theory/sagtension.md)
 - [Finite-element wire systems](theory/wirefe.md)
 - [Thermal rating](theory/thermal.md)
+- [Optimum structure spotting](theory/spotting.md)
 
 # Design
 
