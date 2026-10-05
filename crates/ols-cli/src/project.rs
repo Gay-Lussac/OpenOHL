@@ -159,6 +159,9 @@ pub enum ProjectCommand {
         /// Role.
         role: String,
     },
+    /// Version control and collaboration.
+    #[command(flatten)]
+    Versions(crate::versions::VersionCommand),
 }
 
 fn report(a: &Applied) {
@@ -393,6 +396,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 }
             }
         }
+        ProjectCommand::Versions(c) => crate::versions::run(c)?,
         ProjectCommand::User {
             project,
             by,
