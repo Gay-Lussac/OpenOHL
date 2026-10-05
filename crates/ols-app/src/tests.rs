@@ -1539,7 +1539,7 @@ fn a_section_is_sagged_clipped_in_and_back_in_the_blocks() {
     assert_eq!(st, sag);
 }
 
-/// Libraries › Weather cases opens its page in a floating window; a saved
+/// Criteria › Weather cases opens its page in a floating window; a saved
 /// change reaches the model (solved again in the new cases).
 #[test]
 fn a_saved_library_reaches_the_model() {

@@ -3665,7 +3665,7 @@ fn menus(
             .button("Compute structure loads")
             .on_hover_text(
                 "The loads on the structures at every attachment, in each load case \
-                 (Libraries › Load cases)",
+                 (Criteria › Load cases)",
             )
             .clicked()
         {
