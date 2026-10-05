@@ -12,6 +12,7 @@
 - [Load cases and structure loads (.olslc)](user-guide/loads.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
 - [Terrain and ground clearance](user-guide/terrain.md)
+- [Galloping, blowout, vegetation and as-built wires](user-guide/analyses.md)
 - [Coordinate systems](user-guide/coordinates.md)
 - [Import and export](user-guide/import-export.md)
 - [Project files and point clouds (.ols)](user-guide/project.md)
@@ -22,6 +23,8 @@
 - [Conventions and units](theory/conventions.md)
 - [Sag-tension](theory/sagtension.md)
 - [Finite-element wire systems](theory/wirefe.md)
+- [Galloping ellipses and blowout](theory/galloping.md)
+- [LiDAR analyses](theory/lidar-analysis.md)
 
 # Design
 

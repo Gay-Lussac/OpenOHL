@@ -142,10 +142,10 @@ The open Phase 2 items above, grouped into four work packages:
 - [ ] Wood/steel/concrete pole libraries and checks
 - [x] LiDAR basics (`ols-lidar`, delivered early in Phase 2): LAS/LAZ tiles, class schemes with roles (`.olsc`, any classification), ground in a corridor, TIN from LiDAR — matched a commercial TIN's span clearances to a median of 2 mm on a real line
 - [ ] LiDAR: COPC, octree streaming and point budget (billions of points at 60 fps)
-- [ ] LiDAR: classification, vegetation & encroachment analysis, as-built wire extraction/fitting
+- [x] LiDAR: classification, vegetation & encroachment analysis, as-built wire extraction/fitting — base: ground by progressive morphological filter + height classes (`ols lidar classify`), vegetation encroachment with growth and fall-in per span, catenary fits per span with the survey temperature from the model (synthetic tests: sag within 2 cm, temperature within 2 °C); app windows. Still to come: buildings/wires/poles told apart from vegetation, leaning trees
 - [ ] Thermal rating: IEEE 738, CIGRE TB 601 / TB 207, max operating temperature from clearance
 - [ ] Optimum (automatic) structure spotting — cost-based optimisation
-- [ ] Galloping ellipses, blowout, phase-to-phase / circuit-to-circuit clearances
+- [x] Galloping ellipses, blowout, phase-to-phase / circuit-to-circuit clearances — base: ellipses by user coefficients (`.olsg`; Davison / RUS / CIGRE TB 322 forms, no coefficients shipped), swept along the span, per span pair (`ols clearance galloping`, app window); blown-out wires against the right of way (`ols clearance row`); `circuits = same|different` on wire rules with case pairs
 - [ ] Drafting: plan & profile sheets, title blocks, DXF/DWG-compatible output, PDF
 - [ ] Profile exports: ground/wire/clearance profiles with configurable scales and station ranges — DXF, PDF, SVG, CSV/XML, images (DESIGN_GOALS §8)
 - [ ] Bill of materials & cost estimation
