@@ -1,6 +1,6 @@
 [package]
 name = "ols-drawing"
-description = "OLS CAD plan and profile views per route (SVG, CSV)"
+description = "OLS CAD plan and profile drawings per route (SVG, DXF, PDF, PNG, CSV, XML)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,6 +12,8 @@ authors.workspace = true
 ols-core.workspace = true
 ols-line.workspace = true
 ols-terrain.workspace = true
+miniz_oxide = "0.8"
+resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts", "raster-images"] }
 
 [dev-dependencies]
 ols-cables.workspace = true
