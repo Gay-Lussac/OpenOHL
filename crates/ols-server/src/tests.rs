@@ -374,3 +374,111 @@ fn viewers_may_not_change_settings_and_names_are_checked() {
     assert!(format!("ols://h:1/c/{fp}").parse::<Invitation>().is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn replicas_follow_version_control() {
+    let dir = temp("versions");
+    let path = project(&dir);
+    let mut server = Session::open(&path).unwrap();
+    let copy = dir.join("replica.ols");
+    server.copy_to(&copy).unwrap();
+    let mut replica = Session::open(&copy).unwrap();
+    let id = server.line().structures[5].id.clone();
+    let p = position(&server, &id);
+    let ops = [
+        (
+            "alice",
+            Op::Commit {
+                message: "first".into(),
+            },
+        ),
+        (
+            "bob",
+            Op::CreateBranch {
+                name: "alt".into(),
+                at: None,
+            },
+        ),
+        (
+            "bob",
+            Op::Checkout {
+                target: "alt".into(),
+            },
+        ),
+        ("bob", moved(&id, [p[0] + 3.0, p[1], p[2]])),
+        (
+            "bob",
+            Op::Commit {
+                message: "moved".into(),
+            },
+        ),
+        (
+            "bob",
+            Op::Checkout {
+                target: "main".into(),
+            },
+        ),
+        (
+            "bob",
+            Op::SubmitReview {
+                branch: "alt".into(),
+                target: "main".into(),
+                reviewers: vec![],
+                note: String::new(),
+            },
+        ),
+        (
+            "alice",
+            Op::DecideReview {
+                id: 1,
+                approve: true,
+                comment: "ok".into(),
+            },
+        ),
+        (
+            "alice",
+            Op::MergeReview {
+                id: 1,
+                message: None,
+                choices: Default::default(),
+            },
+        ),
+        (
+            "alice",
+            Op::Tag {
+                name: "rev A".into(),
+                at: None,
+                note: String::new(),
+            },
+        ),
+    ];
+    for (user, op) in &ops {
+        let seq = crate::execute(&mut server, user, op)
+            .unwrap_or_else(|e| panic!("{}: {e}", op.describe()))
+            .map(|a| a.seq);
+        replay(&mut replica, user, op, seq).unwrap();
+    }
+    // The same revisions (ids are content hashes), branches and line.
+    let ids = |s: &Session| {
+        s.revisions()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(&server), ids(&replica));
+    assert_eq!(ids(&server).len(), 2);
+    assert_eq!(
+        server.head_revision().unwrap(),
+        replica.head_revision().unwrap()
+    );
+    assert_eq!(server.line(), replica.line());
+    assert_eq!(position(&replica, &id)[0], p[0] + 3.0);
+    assert!(
+        Op::Checkout {
+            target: "main".into()
+        }
+        .targets()
+        .is_none()
+    );
+}

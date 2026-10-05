@@ -103,7 +103,10 @@ those 28 in 4.6 ms (command, log and solve), against 11.7 ms for all 554.
   after entry `SEQ`, as one logged entry.
 - **Roles**: `viewer` (read only), `designer` (edit, own undo), `admin`
   (everything, rollback, users). The first user of a project is its admin.
-  Finer permissions come with server mode (ADR-0005).
+  Admins can limit a user's or a role's edits to some kinds, objects or a
+  plan area: see [Versions, branches and reviews](versions.md#who-may-edit-what).
+- **Revisions, branches, merges and reviews** of the project: see
+  [Versions, branches and reviews](versions.md).
 
 ## Point clouds
 

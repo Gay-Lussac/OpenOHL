@@ -11,5 +11,6 @@
 | [0007](0007-point-clouds-in-the-project.md) | Point clouds stored in the project file | Accepted |
 | [0008](0008-spatial-chunk-index.md) | Spatial chunk index | Accepted |
 | [0009](0009-gui-toolkit.md) | GUI toolkit: egui with wgpu | Accepted |
+| [0010](0010-version-control.md) | Version control, edit rights and reviews in the project file | Accepted |
 
 Template: copy `0000-template.md`, give it the next number, open a PR.

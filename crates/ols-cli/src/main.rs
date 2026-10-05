@@ -20,6 +20,7 @@ mod sagtension_job;
 mod structure_fe;
 mod surface;
 mod thermal_run;
+mod versions;
 
 #[derive(Parser)]
 #[command(
@@ -87,7 +88,8 @@ enum Command {
         #[command(subcommand)]
         command: LidarCommand,
     },
-    /// Project file (.ols): import/export, commands, undo, log, users.
+    /// Project file (.ols): import/export, commands, undo, log, users,
+    /// revisions, branches, merges, reviews.
     Project {
         #[command(subcommand)]
         command: project::ProjectCommand,
