@@ -57,7 +57,9 @@ ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-cs
 
 The CSV columns: `case,structure,set,phase,label,support,x,y,z,transverse,longitudinal,vertical,factored_transverse,factored_longitudinal,factored_vertical`.
 
-Not yet included: wind on the structures themselves, and jumper loads.
+**Wind on the structures themselves:** a structure type may give the area the wind blows on, by height band (`[[wind.band]]`, see [Structure libraries](structure-library.md#wind-on-the-structure)). In every load case with wind, each band adds a load across the line — wind pressure × drag coefficient × area, on the wind side of the weather case — at the band's mid-height on the structure's centre line, listed as set 0 ("wind on the structure"), factored by the transverse factor. The capacity checks' load trees are per attachment and leave these out. Height extensions are not added to the bands yet.
+
+Not yet included: jumper loads.
 
 ## Structure usage (capacity checks)
 

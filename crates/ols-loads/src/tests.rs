@@ -261,3 +261,73 @@ fn allowable_loads() {
     let rows: usize = usage.iter().map(|c| c.structures.len()).sum();
     assert_eq!(csv.lines().count(), rows + 1);
 }
+
+/// Wind on the structures: one load per band of the type, across the
+/// line, pressure × drag × area, factored by the transverse factor; none
+/// in still air; not an attachment for the capacity checks.
+#[test]
+fn wind_on_the_structures() {
+    let (line, mut types) = typed(ols_structures::Capacity::default());
+    let mut t2 = types.get("type-02").unwrap().clone();
+    t2.wind = Some(
+        toml::from_str::<ols_structures::StructureType>(
+            "id = \"x\"\nname = \"x\"\nkind = \"other\"\n[[wind.band]]\nfrom = \"0 m\"\nto = \"20 m\"\narea = \"10 m²\"\ndrag = 3.0\n",
+        )
+        .unwrap()
+        .wind
+        .unwrap(),
+    );
+    let mut with_wind = ols_structures::StructureLibrary::default();
+    for t in types.iter() {
+        let t = if t.id == "type-02" {
+            t2.clone()
+        } else {
+            t.clone()
+        };
+        with_wind
+            .insert(&PathBuf::from(format!("{}.olss", t.id)), t)
+            .unwrap();
+    }
+    types = with_wind;
+    let (_, library, weather, cases) = setup();
+    let budget = ols_wirefe::default_fe_budget();
+    let mut loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    let before: Vec<usize> = loads.iter().map(|r| r.loads.len()).collect();
+    add_structure_wind(&mut loads, &line, &types, &weather);
+    let typed2: Vec<&str> = line
+        .structures
+        .iter()
+        .filter(|s| s.structure_type.as_deref() == Some("type-02"))
+        .map(|s| s.id.as_str())
+        .collect();
+    for (r, n) in loads.iter().zip(before) {
+        let w = weather.iter().find(|w| w.name == r.case.weather).unwrap();
+        assert!(r.loads[n..].iter().all(|l| l.set == 0));
+        // Those of type-02 (one band here; the example's other types may
+        // have their own).
+        let added: Vec<&AttachmentLoad> = r.loads[n..]
+            .iter()
+            .filter(|l| typed2.contains(&l.structure.as_str()))
+            .collect();
+        if w.wind_pressure.si() == 0.0 {
+            assert_eq!(r.loads.len(), n);
+            continue;
+        }
+        assert_eq!(added.len(), typed2.len());
+        for l in added {
+            let f = w.wind_pressure.si() * 3.0 * 10.0;
+            assert!((l.local[0].abs() - f).abs() < 1e-9 && l.local[1] == 0.0 && l.local[2] == 0.0);
+            assert!((l.factored[0] - l.local[0] * r.case.transverse).abs() < 1e-9);
+            let s = line.structure(&l.structure).unwrap();
+            assert!((l.at[2] - (s.position[2] + 10.0)).abs() < 1e-9);
+        }
+    }
+    // The capacity checks see no attachment 0:0.
+    let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+    assert!(
+        usage
+            .iter()
+            .flat_map(|c| &c.structures)
+            .all(|s| !s.notes.iter().any(|n| n.contains("0:0")))
+    );
+}

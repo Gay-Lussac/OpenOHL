@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary};
 pub use structures::{
     AllowedSpans, AttachmentCapacity, Capacity, Interaction, PlacedAttachment, SpanLimit,
-    StructureLibrary, StructureType,
+    StructureLibrary, StructureType, StructureWind, WindBand,
 };
 
 /// Error loading a library item.

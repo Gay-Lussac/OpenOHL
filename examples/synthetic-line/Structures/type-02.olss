@@ -46,3 +46,16 @@ phase = 2
 vertical = "10 kN"
 transverse = "10 kN"
 longitudinal = "5 kN"
+
+# Wind on the structure (invented values for the example).
+[[wind.band]]
+from = "0 m"
+to = "15 m"
+area = "9 m²"
+drag = 3.0
+
+[[wind.band]]
+from = "15 m"
+to = "30 m"
+area = "6 m²"
+drag = 3.0

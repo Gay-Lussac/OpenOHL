@@ -88,6 +88,10 @@ impl LoadsPage {
                     &ols_loads::default_budget(),
                 )
             });
+            let mut r = r;
+            if let Ok(loads) = &mut r {
+                ols_loads::add_structure_wind(loads, &line, &types, &weather);
+            }
             let usage = r.as_ref().map_or_else(
                 |_| Vec::new(),
                 |loads| ols_loads::capacity::usage(&line, &types, &library, &weather, loads),

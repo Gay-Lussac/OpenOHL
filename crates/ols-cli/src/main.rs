@@ -1035,13 +1035,14 @@ fn line(args: &LineArgs) -> ExitCode {
             let set = ols_loads::LoadCases::load(lc)?;
             let all = WeatherCases::load(w)?.cases;
             let started = std::time::Instant::now();
-            let results = ols_loads::structure_loads(
+            let mut results = ols_loads::structure_loads(
                 &line,
                 &library,
                 &all,
                 &set.cases,
                 &ols_wirefe::default_fe_budget(),
             )?;
+            ols_loads::add_structure_wind(&mut results, &line, &types, &all);
             println!(
                 "structure loads: {} load cases in {:.1?}",
                 results.len(),

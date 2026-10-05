@@ -79,6 +79,19 @@
 //! longitudinal = "20 kN"
 //! interaction = "linear"      # optional: the ratios add up (default: each on its own)
 //! ```
+//!
+//! **Wind on the structure** ([`StructureWind`], optional): the area the
+//! wind blows on, by height band, with its drag (force) coefficient; the
+//! structure loads add the force of each band (weather case wind pressure
+//! × drag × area) at the band's mid-height:
+//!
+//! ```toml
+//! [[wind.band]]
+//! from = "0 m"
+//! to = "20 m"
+//! area = "14 m²"     # projected on a plane along the line
+//! drag = 3.0         # e.g. lattice faces about 2.8–3.2, round poles about 0.7–1.2
+//! ```
 
 use ols_core::units::Length;
 use serde::Deserialize;
@@ -336,6 +349,43 @@ impl Capacity {
     }
 }
 
+/// One height band of the wind on a structure.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindBand {
+    /// Bottom of the band, above the ground.
+    pub from: Length,
+    /// Top of the band.
+    pub to: Length,
+    /// Projected area facing the wind (across the line).
+    pub area: ols_core::units::Area,
+    /// Drag (force) coefficient.
+    pub drag: f64,
+}
+
+/// The wind on a structure: its height bands.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StructureWind {
+    /// Bands, any order.
+    #[serde(rename = "band", default)]
+    pub bands: Vec<WindBand>,
+}
+
+impl StructureWind {
+    fn check(&self) -> Result<(), String> {
+        for b in &self.bands {
+            let (from, to) = (b.from.si(), b.to.si());
+            if !(from >= 0.0 && to > from && b.area.si() > 0.0 && b.drag > 0.0) {
+                return Err(format!(
+                    "wind band {from}–{to} m: from ≥ 0, to above from, area and drag above 0"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// An outline polyline for drawings and the 3D view.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -380,6 +430,9 @@ pub struct StructureType {
     /// What it can carry (structure checks).
     #[serde(default)]
     pub capacity: Option<Capacity>,
+    /// The wind on the structure itself (structure loads).
+    #[serde(default)]
+    pub wind: Option<StructureWind>,
 }
 
 /// An attachment of a placed structure, in global coordinates.
@@ -457,6 +510,9 @@ impl LibraryItem for StructureType {
                     ));
                 }
             }
+        }
+        if let Some(w) = &self.wind {
+            w.check()?;
         }
         if let Some(c) = &self.capacity {
             c.check()?;

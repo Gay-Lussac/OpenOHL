@@ -342,6 +342,63 @@ pub fn structure_loads(
     Ok(out)
 }
 
+/// Adds the wind on the structures themselves to `results`: for every
+/// structure whose type gives wind bands (`[[wind.band]]`), one load per
+/// band — the load case's wind pressure × drag × area, across the line
+/// (the wind side of the weather case), at the band's mid-height on the
+/// structure's centre line — as set 0, phase 0, labelled "wind on the
+/// structure". Factored by the load case's transverse factor. Height
+/// extensions are not added to the bands.
+pub fn add_structure_wind(
+    results: &mut [CaseLoads],
+    line: &Line,
+    types: &ols_structures::StructureLibrary,
+    weather: &[WeatherCase],
+) {
+    for r in results {
+        let Some(w) = weather.iter().find(|w| w.name == r.case.weather) else {
+            continue;
+        };
+        let q = w.wind_pressure.si();
+        if q <= 0.0 {
+            continue;
+        }
+        for s in &line.structures {
+            let Some(bands) = s
+                .structure_type
+                .as_deref()
+                .and_then(|t| types.get(t))
+                .and_then(|t| t.wind.as_ref())
+            else {
+                continue;
+            };
+            let (right, _) = axes(s.orientation_deg);
+            for (k, b) in bands.bands.iter().enumerate() {
+                let (from, to) = (b.from.si(), b.to.si());
+                // Wind from the right blows towards the left (−x).
+                let f = q * b.drag * b.area.si() * w.wind_from.to_left();
+                let local = [-f, 0.0, 0.0];
+                r.loads.push(AttachmentLoad {
+                    structure: s.id.clone(),
+                    set: 0,
+                    phase: 0,
+                    label: format!("wind on the structure ({from}–{to} m)"),
+                    sections: Vec::new(),
+                    support: k,
+                    at: [
+                        s.position[0],
+                        s.position[1],
+                        s.position[2] + 0.5 * (from + to),
+                    ],
+                    force: [-f * right[0], -f * right[1], 0.0],
+                    local,
+                    factored: [local[0] * r.case.transverse, 0.0, 0.0],
+                });
+            }
+        }
+    }
+}
+
 /// The loads as CSV (one row per load case and support; forces in N):
 /// `case,structure,set,phase,label,support,x,y,z,transverse,longitudinal,
 /// vertical,factored_transverse,factored_longitudinal,factored_vertical`.

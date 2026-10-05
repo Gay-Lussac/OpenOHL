@@ -63,3 +63,10 @@ uplift = "2 kN"
 transverse = "45 kN"
 longitudinal = "10 kN"
 interaction = "linear"
+
+# Wind on the structure (invented values for the example).
+[[wind.band]]
+from = "0 m"
+to = "30 m"
+area = "18 m²"
+drag = 3.0

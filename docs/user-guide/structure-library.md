@@ -82,6 +82,18 @@ interaction = "linear"        # optional: the ratios add up (default: each on it
 
 Angles rise from 0; spans are above 0, the minimum weight span below the weight span. A direction without a value is not checked. Every `capacity.attachment` names an attachment of the type; attachments without one are reported as not in the load tree. The synthetic example's types (`examples/synthetic-line/Structures`) carry invented capacities.
 
+### Wind on the structure
+
+```toml
+[[wind.band]]
+from = "0 m"
+to = "20 m"
+area = "14 m²"     # projected area facing the wind (across the line)
+drag = 3.0         # drag (force) coefficient
+```
+
+Each band: bottom and top above the ground, projected area, drag coefficient (from the structure's design or the code used; e.g. about 2.8–3.2 for lattice faces, 0.7–1.2 for round poles). The structure loads add pressure × drag × area per band in every load case with wind ([Structure loads](loads.md#structure-loads)).
+
 ## Simple pylon files
 
 How much string detail is worth modelling depends on the pylon. A **simple pylon file** gives each string in the pylon itself: where it hangs, its length, and a label at its top (insulator attachment point) and at its bottom (wire attachment point) — no insulator library needed:

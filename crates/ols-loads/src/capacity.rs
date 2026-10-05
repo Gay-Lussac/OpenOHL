@@ -190,7 +190,8 @@ pub fn usage(
             // Per attachment: the factored loads (summed over the
             // supports) and the wires' unfactored vertical load.
             let mut at: BTreeMap<Key, AtPoint> = BTreeMap::new();
-            for l in &r.loads {
+            // Set 0: wind on the structure body, not an attachment.
+            for l in r.loads.iter().filter(|l| l.set != 0) {
                 let e = at.entry((l.structure.clone(), l.set, l.phase)).or_default();
                 for (sum, f) in e.factored.iter_mut().zip(l.factored) {
                     *sum += f;
