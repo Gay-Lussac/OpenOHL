@@ -41,6 +41,7 @@ mod surfaces;
 mod survey_io;
 mod tables;
 mod tools;
+mod versions;
 mod view3d;
 
 #[cfg(test)]

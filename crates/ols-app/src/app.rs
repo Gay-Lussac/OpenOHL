@@ -200,6 +200,8 @@ pub struct Ready {
     pub console: crate::python::Console,
     /// Edit › History is open.
     pub history_open: bool,
+    /// Edit › Versions: revisions, branches, merges, reviews.
+    pub versions: crate::versions::VersionsWindow,
     /// Checks › Structure loads.
     pub loads: crate::loads::LoadsPage,
     /// Terrain › Terrain surfaces (TIN).
@@ -261,6 +263,7 @@ impl Ready {
             plugin_request: None,
             console: Default::default(),
             history_open: false,
+            versions: Default::default(),
             loads: Default::default(),
             surfaces: Default::default(),
             class_window: None,
@@ -3533,6 +3536,14 @@ fn menus(
             r.history_open = true;
             ui.close();
         }
+        if ui
+            .button("Versions…")
+            .on_hover_text("Revisions, branches, tags, diff, merge, reviews and edit rights")
+            .clicked()
+        {
+            r.versions.open = true;
+            ui.close();
+        }
         ui.separator();
         crate::menu::options_menu(ui, "Snap: what can be clicked", |ui| {
             snap_panel(ui, &mut r.snaps)
@@ -4025,6 +4036,7 @@ impl eframe::App for App {
                 ready.remote_frame();
                 ready.solving_frame(ui.ctx());
                 history_window(ui.ctx(), ready);
+                crate::versions::window(ui.ctx(), ready);
                 goto_key(ui.ctx(), ready);
                 edit_keys(ui.ctx(), ready);
                 clearance_frame(ui.ctx(), ready);

@@ -4257,3 +4257,86 @@ fn display_options_stay_open_while_ticking() {
     assert!(r.model.section_display.sag[crate::annotations::View::Plan as usize]);
     assert!(r.model.section_display.label[crate::annotations::View::ThreeD as usize]);
 }
+
+/// Edit › Versions: commit, branch, check out and merge as project
+/// operations; the model follows (re-solved) and the window lists them.
+#[test]
+fn versions_commit_branch_checkout_and_merge() {
+    use ols_server::Op;
+    let mut m = synthetic_project("versions");
+    let p = m.line.structure("T6").unwrap().position;
+    for (what, op) in [
+        (
+            "commit",
+            Op::Commit {
+                message: "as imported".into(),
+            },
+        ),
+        (
+            "branch",
+            Op::CreateBranch {
+                name: "alt".into(),
+                at: None,
+            },
+        ),
+        (
+            "checkout",
+            Op::Checkout {
+                target: "alt".into(),
+            },
+        ),
+    ] {
+        m.project_op(what, op).unwrap();
+    }
+    m.apply(
+        "moved T6",
+        ols_session::Command::MoveStructure {
+            id: "T6".into(),
+            position: [p[0] + 4.0, p[1], p[2]],
+        },
+    )
+    .unwrap();
+    m.project_op(
+        "commit",
+        Op::Commit {
+            message: "T6 east".into(),
+        },
+    )
+    .unwrap();
+    m.project_op(
+        "checkout",
+        Op::Checkout {
+            target: "main".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(m.line.structure("T6").unwrap().position, p);
+    assert_solved_fully(&m);
+    m.project_op(
+        "merge",
+        Op::Merge {
+            other: "alt".into(),
+            message: None,
+            choices: Default::default(),
+        },
+    )
+    .unwrap();
+    assert_eq!(m.line.structure("T6").unwrap().position[0], p[0] + 4.0);
+    assert_solved_fully(&m);
+
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|cc| App::with_model(m, cc.wgpu_render_state.clone()));
+    harness.run();
+    harness.state_mut().ready().unwrap().versions.open = true;
+    harness.run();
+    assert!(harness.query_by_label_contains("On branch main").is_some());
+    assert!(harness.query_by_label("T6 east").is_some());
+    assert!(harness.query_by_label("as imported").is_some());
+    // The working state against the head: the same.
+    harness.get_by_label("Changes").click();
+    harness.run();
+    harness.get_by_label("Compare").click();
+    harness.run();
+    assert!(harness.query_by_label_contains("no differences").is_some());
+}
