@@ -433,10 +433,11 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
                 g.temperature
             )
         });
-        println!(
+        let head = format!(
             "  {:<12} {:<20} {:<18} {governing}",
             s.section, s.cable, status
         );
+        println!("{}", head.trim_end());
         let mut row = format!(
             "{},{},{},{},",
             csv_field(&s.section),

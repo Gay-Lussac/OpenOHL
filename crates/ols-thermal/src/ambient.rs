@@ -457,5 +457,14 @@ mod tests {
             .join("../../examples/synthetic-line/thermal-ambient.olsta");
         let set = AmbientCases::load(&path).unwrap();
         assert!(set.cases.len() >= 2);
+        // The example of docs/user-guide/thermal.md.
+        let doc = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/user-guide/thermal.md"),
+        )
+        .unwrap();
+        let block = &doc[doc.find("## Ambient cases").unwrap()..];
+        let code = &block[block.find("```toml\n").unwrap() + 8..];
+        let set = AmbientCases::parse(&code[..code.find("```").unwrap()]).unwrap();
+        assert_eq!(set.cases.len(), 2);
     }
 }

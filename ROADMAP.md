@@ -143,7 +143,7 @@ The open Phase 2 items above, grouped into four work packages:
 - [x] LiDAR basics (`ols-lidar`, delivered early in Phase 2): LAS/LAZ tiles, class schemes with roles (`.olsc`, any classification), ground in a corridor, TIN from LiDAR — matched a commercial TIN's span clearances to a median of 2 mm on a real line
 - [ ] LiDAR: COPC, octree streaming and point budget (billions of points at 60 fps)
 - [ ] LiDAR: classification, vegetation & encroachment analysis, as-built wire extraction/fitting
-- [ ] Thermal rating: IEEE 738, CIGRE TB 601 / TB 207, max operating temperature from clearance
+- [x] Thermal rating: IEEE 738, CIGRE TB 601 / TB 207, max operating temperature from clearance — `ols-thermal`: ampacity, temperature, transient, solar position; `.olsta` ambient cases; per-section clearance-limited temperature (ground and point rules); `ols thermal`, Checks › Thermal rating *(base: uniform conductor temperature, no radial gradient; no published TB 601 example in the validation yet)*
 - [ ] Optimum (automatic) structure spotting — cost-based optimisation
 - [ ] Galloping ellipses, blowout, phase-to-phase / circuit-to-circuit clearances
 - [ ] Drafting: plan & profile sheets, title blocks, DXF/DWG-compatible output, PDF

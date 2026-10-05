@@ -164,7 +164,7 @@ solar_absorptivity = 0.5
 | `ac_resistance` | list of `{ temperature, resistance }` | Resistance per length: `Ω/m`, `Ω/km`, `Ω/mi`, `Ω/kft` (or `ohm/…`). Linear between the temperatures given, and beyond them along the same line. |
 | `dc_resistance` | `{ temperature, resistance }` | |
 | `geometric_mean_radius` | length | For inductance; at most the cable's radius. |
-| `emissivity`, `solar_absorptivity` | number 0–1 | Surface coefficients for thermal rating. |
+| `emissivity`, `solar_absorptivity` | number 0–1 | Surface coefficients for [thermal rating](thermal.md) (0.8 when not given). |
 
 PLS-CADD cable files (`.wir`) hold the same data (AC resistances at two temperatures, DC resistance, geometric mean radius, emissivity); a PLS-CADD importer can fill this table.
 
