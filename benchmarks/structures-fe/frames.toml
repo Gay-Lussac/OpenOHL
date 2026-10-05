@@ -1,0 +1,325 @@
+# Structure analysis (ols-structures-fe): frames, trusses, guys and poles
+# against closed-form textbook results. Each model is an .olsfe text with
+# its own [[load]]s. E = 210 GPa throughout. The reference values are the
+# formulas in the notes, evaluated to double precision.
+
+[[case]]
+id = "structfe-001"
+title = "Cantilever, tip load: deflection PL³/3EI, rotation PL²/2EI, moment PL"
+calculation = "structures.fe"
+reference = "Euler–Bernoulli beam theory (e.g. Timoshenko & Gere, Mechanics of Materials); one frame element is exact"
+notes = "L = 4 m, I = 2e-6 m4, P = 1 kN down at the tip; first order"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "base"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "tip"
+point = ["4 m", "0 m", "0 m"]
+[[member]]
+id = "beam"
+nodes = ["base", "tip"]
+section = "s"
+kind = "frame"
+[[load]]
+node = "tip"
+force = ["0 N", "0 N", "-1 kN"]
+'''
+expected.u_tip_z = { value = -0.050793650793650794, rel_tol = 1e-9 }
+expected.u_tip_ry = { value = 0.01904761904761905, rel_tol = 1e-9 }
+expected.r_base_z = { value = 1000.0, rel_tol = 1e-9 }
+expected.r_base_ry = { value = -4000.0, rel_tol = 1e-9 }
+
+[[case]]
+id = "structfe-002"
+title = "Triangle truss, ridge load P: rafters −P/√2, tie +P/2, supports P/2"
+calculation = "structures.fe"
+reference = "Method of joints (statics)"
+notes = "Span 4 m, rise 2 m (45° rafters), P = 10 kN; out-of-plane y held at every node"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "B"
+point = ["4 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[node]]
+id = "C"
+point = ["2 m", "0 m", "2 m"]
+support = ["y"]
+[[member]]
+id = "AB"
+nodes = ["A", "B"]
+section = "s"
+[[member]]
+id = "AC"
+nodes = ["A", "C"]
+section = "s"
+[[member]]
+id = "BC"
+nodes = ["B", "C"]
+section = "s"
+[[load]]
+node = "C"
+force = ["0 N", "0 N", "-10 kN"]
+'''
+expected.n_AB = { value = 5000.0, rel_tol = 1e-9 }
+expected.n_AC = { value = -7071.067811865475, rel_tol = 1e-9 }
+expected.n_BC = { value = -7071.067811865475, rel_tol = 1e-9 }
+expected.r_A_z = { value = 5000.0, rel_tol = 1e-9 }
+expected.r_B_z = { value = 5000.0, rel_tol = 1e-9 }
+
+[[case]]
+id = "structfe-003"
+title = "P-Delta: cantilever column at half its buckling load with a tip load"
+calculation = "structures.fe"
+reference = "Timoshenko & Gere, Theory of Elastic Stability (1961), §1.11: δ = H(tan kL − kL)/(Pk), M = H tan(kL)/k, k = √(P/EI)"
+notes = "L = 10 m, I = 5e-6 m4, Pcr = π²EI/4L² = 25.908 kN, P = Pcr/2 = 12953.856 N, H = 1 kN; 8 frame elements with geometric stiffness (the first-order deflection is 0.3175 m: amplification 1.986)"
+max_seconds = 1.0
+inputs.model = '''
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10000 mm2"
+iy = "500 cm4"
+iz = "500 cm4"
+[[node]]
+id = "n0"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "n1"
+point = ["0 m", "0 m", "1.25 m"]
+[[node]]
+id = "n2"
+point = ["0 m", "0 m", "2.5 m"]
+[[node]]
+id = "n3"
+point = ["0 m", "0 m", "3.75 m"]
+[[node]]
+id = "n4"
+point = ["0 m", "0 m", "5 m"]
+[[node]]
+id = "n5"
+point = ["0 m", "0 m", "6.25 m"]
+[[node]]
+id = "n6"
+point = ["0 m", "0 m", "7.5 m"]
+[[node]]
+id = "n7"
+point = ["0 m", "0 m", "8.75 m"]
+[[node]]
+id = "top"
+point = ["0 m", "0 m", "10 m"]
+[[member]]
+id = "m1"
+nodes = ["n0", "n1"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "m2"
+nodes = ["n1", "n2"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "m3"
+nodes = ["n2", "n3"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "m4"
+nodes = ["n3", "n4"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "m5"
+nodes = ["n4", "n5"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "m6"
+nodes = ["n5", "n6"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "m7"
+nodes = ["n6", "n7"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "m8"
+nodes = ["n7", "top"]
+section = "s"
+kind = "frame"
+[[load]]
+node = "top"
+force = ["1 kN", "0 N", "-12953.855776429784 N"]
+'''
+expected.u_top_x = { value = 0.6305675632322993, rel_tol = 1e-4 }
+expected.r_n0_ry = { value = -18168.281271405976, rel_tol = 1e-4 }
+
+[[case]]
+id = "structfe-004"
+title = "Guyed mast: two pretensioned guys share a top load until one goes slack"
+calculation = "structures.fe"
+reference = "Statics and linear elasticity of tension-only members: u = H/(2k), k = (EA/L)cos²α; N = T0 ± H/(2cos α)"
+notes = "Guys from (±6 m, 0, 0) to the mast top at 8 m (L = 10 m, cos α = 0.6), EA = 200 MN, T0 = 20 kN, H = 10 kN; nearly rigid mast; first order"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "rigid"
+elasticity = "210 GPa"
+[[material]]
+id = "rope"
+elasticity = "200 GPa"
+[[section]]
+id = "mast"
+material = "rigid"
+area = "10000 m2"
+[[section]]
+id = "guy"
+material = "rope"
+area = "1000 mm2"
+[[node]]
+id = "base"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "top"
+point = ["0 m", "0 m", "8 m"]
+support = ["y"]
+[[node]]
+id = "left"
+point = ["-6 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "right"
+point = ["6 m", "0 m", "0 m"]
+support = "pinned"
+[[member]]
+id = "mast"
+nodes = ["base", "top"]
+section = "mast"
+[[member]]
+id = "guyL"
+nodes = ["left", "top"]
+section = "guy"
+kind = "cable"
+pretension = "20 kN"
+[[member]]
+id = "guyR"
+nodes = ["right", "top"]
+section = "guy"
+kind = "cable"
+pretension = "20 kN"
+[[load]]
+node = "top"
+force = ["10 kN", "0 N", "0 N"]
+'''
+expected.u_top_x = { value = 0.0006944444444444445, rel_tol = 1e-6 }
+expected.n_guyL = { value = 28333.333333333336, rel_tol = 1e-6 }
+expected.n_guyR = { value = 11666.666666666666, rel_tol = 1e-6 }
+
+[[case]]
+id = "structfe-005"
+title = "Simply supported beam under its own weight: midspan 5wL⁴/384EI"
+calculation = "structures.fe"
+reference = "Euler–Bernoulli beam theory; consistent nodal loads make the nodal deflections exact"
+notes = "L = 6 m, A = 4000 mm², I = 800 cm4, ρ = 7850 kg/m³, g = 9.80665 m/s² (w = 307.929 N/m); two frame elements; torsion held at one end"
+max_seconds = 1.0
+inputs.self_weight = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+density = "7850 kg/m3"
+[[section]]
+id = "s"
+material = "steel"
+area = "4000 mm2"
+iy = "800 cm4"
+iz = "800 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = ["x", "y", "z", "rx"]
+[[node]]
+id = "mid"
+point = ["3 m", "0 m", "0 m"]
+[[node]]
+id = "b"
+point = ["6 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m1"
+nodes = ["a", "mid"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "m2"
+nodes = ["mid", "b"]
+section = "s"
+kind = "frame"
+'''
+expected.u_mid_z = { value = -0.0030930349218749997, rel_tol = 1e-9 }
+expected.r_a_z = { value = 923.78643, rel_tol = 1e-7 }
+
+[[case]]
+id = "structfe-006"
+title = "Wood pole: ground-line moment of a load and of the wind on the taper"
+calculation = "structures.pole"
+reference = "Statics: M = F·h + p·(D₀H²/2 + (D₁ − D₀)H²/3) for a linear taper; capacity f·πD₀³/32"
+notes = "12 m pole, 2 m embedded, D 300 mm at the ground line, 200 mm at the top, fibre stress 50 MPa (invented); 5 kN at 9 m, 700 Pa wind; no P-Delta"
+max_seconds = 1.0
+inputs.pole = '''
+id = "wood"
+material = "wood"
+length = "12 m"
+embedment = "2 m"
+top_diameter = "200 mm"
+ground_diameter = "300 mm"
+fibre_stress = "50 MPa"
+'''
+inputs.load_point_x = "0 m"
+inputs.load_point_y = "0 m"
+inputs.load_point_z = "9 m"
+inputs.load_x = "5 kN"
+inputs.load_y = "0 N"
+inputs.load_z = "0 N"
+inputs.wind_pressure = "700 Pa"
+expected.wind_moment_nm = { value = 8166.666666666668, rel_tol = 1e-4 }
+expected.ground_moment_nm = { value = 53166.66666666667, rel_tol = 1e-4 }
+expected.ground_capacity_nm = { value = 132535.94007331936, rel_tol = 1e-9 }
+expected.ground_usage = { value = 0.40114905162520204, rel_tol = 1e-4 }

@@ -14,6 +14,7 @@ mod clearance_run;
 mod io_run;
 mod project;
 mod sagtension_job;
+mod structure_fe;
 mod surface;
 
 #[derive(Parser)]
@@ -56,7 +57,9 @@ enum Command {
     },
     /// Solve a line model (.ols.json) in 3D for one weather state.
     Line(Box<LineArgs>),
-    /// Structure and insulator libraries.
+    /// Structure and insulator libraries; structure analysis (finite
+    /// elements, poles).
+    #[command(alias = "structure")]
     Structures {
         #[command(subcommand)]
         command: StructuresCommand,
@@ -213,7 +216,8 @@ struct LineArgs {
     #[arg(long, requires = "load_cases")]
     loads_csv: Option<PathBuf>,
     /// Write how much of its capacity each structure uses (its type's
-    /// allowable spans and loads; every load case) as CSV.
+    /// allowable spans and loads, structure model and pole; every load
+    /// case) as CSV.
     #[arg(long, requires = "load_cases")]
     usage_csv: Option<PathBuf>,
     /// Print stationing, offsets and line angles of every route.
@@ -327,6 +331,13 @@ enum StructuresCommand {
         #[arg(long)]
         inline_strings: bool,
     },
+    /// Finite-element analysis of a structure model (.olsfe): member
+    /// forces and usage under the loads of one structure (a CSV of `ols
+    /// line --loads-csv`) or the model's own loads.
+    Fe(structure_fe::FeArgs),
+    /// Pole check (.olsp): bending moment along the pole from the loads at
+    /// a structure type's attachments, wind, P-Delta.
+    Pole(structure_fe::PoleArgs),
 }
 
 #[derive(Subcommand)]
@@ -462,6 +473,12 @@ fn main() -> ExitCode {
                     inline_strings,
                 },
         }) => structures_derive(&file, &out, inline_strings),
+        Some(Command::Structures {
+            command: StructuresCommand::Fe(args),
+        }) => report(structure_fe::fe(&args)),
+        Some(Command::Structures {
+            command: StructuresCommand::Pole(args),
+        }) => report(structure_fe::pole(&args)),
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),

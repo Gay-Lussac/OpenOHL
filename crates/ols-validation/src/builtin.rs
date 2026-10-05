@@ -37,6 +37,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(WireFeSpan));
     registry.register(Box::new(WireFePointLoad));
     registry.register(Box::new(Nonlinear));
+    registry.register(Box::new(StructureFe));
+    registry.register(Box::new(StructurePole));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -684,6 +686,107 @@ impl Calculation for Nonlinear {
                 "final_cause",
                 if cause == FinalCause::Load { 1.0 } else { 0.0 },
             ),
+        ]))
+    }
+}
+
+/// `structures.fe`: a structure model (`.olsfe` text) under its own loads.
+struct StructureFe;
+
+impl Calculation for StructureFe {
+    fn id(&self) -> &'static str {
+        "structures.fe"
+    }
+
+    fn description(&self) -> &'static str {
+        "Structure model under its own loads (inputs: model = .olsfe text, optional \
+         self_weight factor); outputs u_<node>_<dof> (m, rad), n_<member> (N), \
+         r_<node>_<dof> (N, N m), usage_<member>, iterations"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let model = ols_structures_fe::Model::parse(string_input(inputs, "model")?)?;
+        let weight = match inputs.get("self_weight") {
+            Some(_) => float_input(inputs, "self_weight")?,
+            None => 0.0,
+        };
+        let loads = ols_structures_fe::Loads {
+            nodal: model.loads.clone(),
+            self_weight: weight,
+        };
+        let (s, usage) =
+            ols_structures_fe::analyse(&model, &loads, 1.0, &ols_structures_fe::default_budget())
+                .map_err(|e| e.to_string())?;
+        let dofs = ols_structures_fe::solve::DOF_NAMES;
+        let mut out = Outputs::new();
+        for (n, d) in model.nodes.iter().zip(&s.displacements) {
+            for (k, v) in d.iter().enumerate() {
+                out.insert(format!("u_{}_{}", n.id, dofs[k]), *v);
+            }
+        }
+        for (m, f) in model.members.iter().zip(&s.members) {
+            out.insert(format!("n_{}", m.id), f.axial);
+        }
+        for r in &s.reactions {
+            let id = &model.nodes[r.node].id;
+            for k in 0..3 {
+                out.insert(format!("r_{id}_{}", dofs[k]), r.force[k]);
+                out.insert(format!("r_{id}_{}", dofs[3 + k]), r.moment[k]);
+            }
+        }
+        for u in &usage {
+            if let Some(x) = u.usage {
+                out.insert(format!("usage_{}", model.members[u.member].id), x);
+            }
+        }
+        out.insert("iterations".into(), s.iterations as f64);
+        Ok(out)
+    }
+}
+
+/// `structures.pole`: the pole check under one load and a wind pressure.
+struct StructurePole;
+
+impl Calculation for StructurePole {
+    fn id(&self) -> &'static str {
+        "structures.pole"
+    }
+
+    fn description(&self) -> &'static str {
+        "Pole check (inputs: pole = .olsp text, load_point_{x,y,z}, load_{x,y,z}, wind_pressure, \
+         optional p_delta); outputs ground_moment_nm, wind_moment_nm, ground_capacity_nm, \
+         ground_usage, usage, amplification"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let pole = ols_structures_fe::Pole::parse(string_input(inputs, "pole")?)?;
+        let at = vector_input::<Length>(inputs, "load_point")?;
+        let f = vector_input::<Force>(inputs, "load")?;
+        let load = ols_structures_fe::PoleLoad {
+            point: [at.x, at.y, at.z],
+            force: [f.x, f.y, f.z],
+        };
+        let wind = quantity_input::<Stress>(inputs, "wind_pressure")?.si();
+        let p_delta = inputs
+            .get("p_delta")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let c = ols_structures_fe::check_pole(
+            &pole,
+            &[load],
+            [wind, 0.0],
+            1.0,
+            p_delta,
+            &ols_structures_fe::default_budget(),
+        )?;
+        let cap = pole.capacity_at(0.0);
+        Ok(outputs([
+            ("ground_moment_nm", c.ground_moment),
+            ("wind_moment_nm", c.wind_moment),
+            ("ground_capacity_nm", cap),
+            ("ground_usage", c.ground_moment / cap),
+            ("usage", c.usage),
+            ("amplification", c.amplification),
         ]))
     }
 }

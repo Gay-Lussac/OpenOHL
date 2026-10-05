@@ -16,6 +16,7 @@ ols-cables.workspace = true
 ols-weather.workspace = true
 ols-wireloads.workspace = true
 ols-wirefe.workspace = true
+ols-structures-fe.workspace = true
 nalgebra.workspace = true
 serde.workspace = true
 toml.workspace = true
