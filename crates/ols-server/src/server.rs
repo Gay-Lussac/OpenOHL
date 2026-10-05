@@ -42,6 +42,9 @@ pub struct Options {
     /// Role given to users the project does not know (`None`: they are
     /// refused).
     pub newcomers: Option<Role>,
+    /// Also serve the web client (HTTPS and WebSocket over TCP) on this
+    /// address and port ([`crate::web`]).
+    pub web: Option<SocketAddr>,
 }
 
 impl Default for Options {
@@ -51,6 +54,7 @@ impl Default for Options {
             advertise: None,
             code: None,
             newcomers: Some(Role::Viewer),
+            web: None,
         }
     }
 }
@@ -61,6 +65,10 @@ pub struct Server {
     pub invitation: Invitation,
     /// Where it listens.
     pub local_addr: SocketAddr,
+    /// Where the web client is served, if it is.
+    pub web_addr: Option<SocketAddr>,
+    /// Host name or address given in the invitations.
+    host: String,
     secret: String,
     jobs: std_mpsc::Sender<Job>,
     stop: Option<oneshot::Sender<()>>,
@@ -70,21 +78,34 @@ pub struct Server {
 /// One broadcast: a message for everyone, with the request it answers
 /// (client, request id) when it is an edit.
 #[derive(Debug, Clone)]
-struct Event {
-    answers: Option<(u64, u64)>,
-    msg: ServerMsg,
+pub(crate) struct Event {
+    pub(crate) answers: Option<(u64, u64)>,
+    pub(crate) msg: ServerMsg,
 }
 
-struct Joined {
-    events: broadcast::Receiver<Event>,
-    copy: PathBuf,
-    welcome: ServerMsg,
+pub(crate) struct Joined {
+    pub(crate) events: broadcast::Receiver<Event>,
+    /// The project file's copy (none for web clients).
+    copy: Option<PathBuf>,
+    pub(crate) welcome: ServerMsg,
 }
 
-enum Job {
+/// What a web client's scene is made from: the line and the libraries
+/// as they are after `revision` edits.
+pub(crate) struct SceneSource {
+    pub(crate) revision: u64,
+    pub(crate) seq: i64,
+    pub(crate) line: ols_line::Line,
+    /// Kind → (file name, text), for the kinds a scene needs.
+    pub(crate) libraries: BTreeMap<String, Vec<(String, String)>>,
+}
+
+pub(crate) enum Job {
     Join {
         user: String,
         code: String,
+        /// Send a copy of the project file (QUIC clients).
+        copy: bool,
         reply: oneshot::Sender<Result<Joined, String>>,
     },
     Request {
@@ -113,6 +134,11 @@ enum Job {
     Peers {
         reply: std_mpsc::Sender<Vec<Peer>>,
     },
+    /// The scene's source, unless the revision is `have` still.
+    Scene {
+        have: Option<u64>,
+        reply: oneshot::Sender<Result<Option<SceneSource>, String>>,
+    },
     Stop,
 }
 
@@ -125,6 +151,8 @@ struct Authority {
     peers: BTreeMap<String, Peer>,
     locks: BTreeMap<String, String>,
     copies: PathBuf,
+    /// Edits of the line or its libraries since the server started.
+    revision: u64,
 }
 
 impl Authority {
@@ -138,7 +166,7 @@ impl Authority {
         }
     }
 
-    fn join(&mut self, user: &str, code: &str) -> Result<Joined, String> {
+    fn join(&mut self, user: &str, code: &str, copy: bool) -> Result<Joined, String> {
         crate::check_name(user)?;
         let personal = crate::same_code(code, &crate::access_code(&self.secret, Some(user)));
         let general = crate::same_code(code, &crate::access_code(&self.secret, None));
@@ -184,13 +212,18 @@ impl Authority {
         };
         // Subscribed before the copy: nothing applied after it is missed.
         let events = self.events.subscribe();
-        let copy = self.copies.join(format!(
-            "{}-{}.ols",
-            user.replace(['/', '\\'], "_"),
-            random_code(6)
-        ));
-        self.session.copy_to(&copy).map_err(|e| e.to_string())?;
-        let size = std::fs::metadata(&copy).map_err(|e| e.to_string())?.len();
+        let (copy, size) = if copy {
+            let copy = self.copies.join(format!(
+                "{}-{}.ols",
+                user.replace(['/', '\\'], "_"),
+                random_code(6)
+            ));
+            self.session.copy_to(&copy).map_err(|e| e.to_string())?;
+            let size = std::fs::metadata(&copy).map_err(|e| e.to_string())?.len();
+            (Some(copy), size)
+        } else {
+            (None, 0)
+        };
         let seq = self.session.last_seq().map_err(|e| e.to_string())?;
         self.peers.insert(
             user.to_owned(),
@@ -239,6 +272,9 @@ impl Authority {
             }
         }
         let applied = execute(&mut self.session, user, &op).map_err(|e| e.to_string())?;
+        if crate::web::changes_scene(&op) {
+            self.revision += 1;
+        }
         let role_changed = matches!(&op, Op::SetUser { .. });
         let _ = self.events.send(Event {
             answers: Some((client, id)),
@@ -302,11 +338,36 @@ impl Authority {
         }
     }
 
+    fn scene(&self, have: Option<u64>) -> Result<Option<SceneSource>, String> {
+        if have == Some(self.revision) {
+            return Ok(None);
+        }
+        let mut libraries = BTreeMap::new();
+        for kind in crate::web::SCENE_LIBRARIES {
+            let files = self
+                .session
+                .library_files(kind)
+                .map_err(|e| e.to_string())?;
+            libraries.insert(kind.to_string(), files);
+        }
+        Ok(Some(SceneSource {
+            revision: self.revision,
+            seq: self.session.last_seq().map_err(|e| e.to_string())?,
+            line: self.session.line().clone(),
+            libraries,
+        }))
+    }
+
     fn run(mut self, jobs: std_mpsc::Receiver<Job>) {
         while let Ok(job) = jobs.recv() {
             match job {
-                Job::Join { user, code, reply } => {
-                    let _ = reply.send(self.join(&user, &code));
+                Job::Join {
+                    user,
+                    code,
+                    copy,
+                    reply,
+                } => {
+                    let _ = reply.send(self.join(&user, &code, copy));
                 }
                 Job::Request {
                     client,
@@ -343,6 +404,9 @@ impl Authority {
                 Job::Leave { user } => self.leave(&user),
                 Job::Peers { reply } => {
                     let _ = reply.send(self.peers.values().cloned().collect());
+                }
+                Job::Scene { have, reply } => {
+                    let _ = reply.send(self.scene(have));
                 }
                 Job::Stop => break,
             }
@@ -398,10 +462,27 @@ impl Server {
         if !session.has_line() {
             return Err(format!("{}: no line in the project", path.display()));
         }
-        let cert = rcgen::generate_simple_self_signed(vec!["ols-server".into()])
-            .map_err(|e| e.to_string())?;
+        let host = options.advertise.clone().unwrap_or_else(|| {
+            if options.bind.ip().is_unspecified() {
+                local_ip()
+            } else {
+                options.bind.ip().to_string()
+            }
+        });
+        // Names a browser may check (it still warns: self-signed).
+        let mut names = vec!["ols-server".to_owned(), host.clone()];
+        for n in ["localhost", "127.0.0.1"] {
+            if !names.iter().any(|x| x == n) {
+                names.push(n.to_owned());
+            }
+        }
+        let cert = rcgen::generate_simple_self_signed(names).map_err(|e| e.to_string())?;
         let fp = fingerprint(cert.cert.der());
         let config = tls_server(&cert)?;
+        let acceptor = match options.web {
+            Some(_) => Some(crate::web::acceptor(&cert)?),
+            None => None,
+        };
         let secret = options.code.clone().unwrap_or_else(|| random_code(16));
         let code = crate::access_code(&secret, None);
         let copies = std::env::temp_dir().join(format!("ols-server-{}", random_code(8)));
@@ -416,6 +497,7 @@ impl Server {
             peers: BTreeMap::new(),
             locks: BTreeMap::new(),
             copies,
+            revision: 0,
         };
         let authority_thread = std::thread::Builder::new()
             .name("ols-authority".into())
@@ -426,6 +508,7 @@ impl Server {
         let net_jobs = jobs.clone();
         let stop_jobs = jobs.clone();
         let bind = options.bind;
+        let web_bind = options.web;
         let thread = std::thread::Builder::new()
             .name("ols-server".into())
             .spawn(move || {
@@ -448,7 +531,30 @@ impl Server {
                             return;
                         }
                     };
-                    let _ = ready_tx.send(endpoint.local_addr().map_err(|e| e.to_string()));
+                    let quic_addr = match endpoint.local_addr() {
+                        Ok(a) => a,
+                        Err(e) => {
+                            let _ = ready_tx.send(Err(e.to_string()));
+                            return;
+                        }
+                    };
+                    let web = match (web_bind, acceptor) {
+                        (Some(addr), Some(acceptor)) => {
+                            match tokio::net::TcpListener::bind(addr).await {
+                                Ok(l) => Some((l, acceptor)),
+                                Err(e) => {
+                                    let _ = ready_tx.send(Err(format!("{addr} (web): {e}")));
+                                    return;
+                                }
+                            }
+                        }
+                        _ => None,
+                    };
+                    let web_addr = web.as_ref().and_then(|(l, _)| l.local_addr().ok());
+                    let _ = ready_tx.send(Ok((quic_addr, web_addr)));
+                    let web_task = web.map(|(listener, acceptor)| {
+                        tokio::spawn(crate::web::listen(listener, acceptor, net_jobs.clone()))
+                    });
                     let mut next = 0u64;
                     let mut stop_rx = stop_rx;
                     loop {
@@ -466,6 +572,9 @@ impl Server {
                             }
                         }
                     }
+                    if let Some(t) = web_task {
+                        t.abort();
+                    }
                     endpoint.close(0u32.into(), b"server stopped");
                     endpoint.wait_idle().await;
                 });
@@ -473,16 +582,9 @@ impl Server {
                 let _ = authority_thread.join();
             })
             .map_err(|e| e.to_string())?;
-        let local_addr = ready_rx
+        let (local_addr, web_addr) = ready_rx
             .recv_timeout(Duration::from_secs(10))
             .map_err(|_| "the server did not start".to_owned())??;
-        let host = options.advertise.clone().unwrap_or_else(|| {
-            if local_addr.ip().is_unspecified() {
-                local_ip()
-            } else {
-                local_addr.ip().to_string()
-            }
-        });
         Ok(Server {
             invitation: Invitation {
                 address: format!("{host}:{}", local_addr.port()),
@@ -490,6 +592,8 @@ impl Server {
                 fingerprint: fp,
             },
             local_addr,
+            web_addr,
+            host,
             secret,
             jobs,
             stop: Some(stop),
@@ -509,6 +613,22 @@ impl Server {
             code: crate::access_code(&self.secret, Some(user)),
             ..self.invitation.clone()
         }
+    }
+
+    /// The web client's link (when it is served), with the general access
+    /// code or `user`'s personal one in the fragment, which browsers do
+    /// not send to the server: `https://HOST:PORT/#user=NAME&code=CODE`.
+    pub fn web_link(&self, user: Option<&str>) -> Option<String> {
+        let addr = self.web_addr?;
+        let code = crate::access_code(&self.secret, user);
+        let who = user
+            .map(|u| format!("user={}&", crate::web::fragment_escape(u)))
+            .unwrap_or_default();
+        Some(format!(
+            "https://{}:{}/#{who}code={code}",
+            self.host,
+            addr.port()
+        ))
     }
 
     /// The users connected.
@@ -541,7 +661,7 @@ impl Drop for Server {
     }
 }
 
-fn log(text: &str) {
+pub(crate) fn log(text: &str) {
     eprintln!("ols-server: {text}");
 }
 
@@ -580,6 +700,7 @@ async fn connection(
     jobs.send(Job::Join {
         user: user.clone(),
         code,
+        copy: true,
         reply: tx,
     })
     .map_err(|_| "server stopped")?;
@@ -611,11 +732,12 @@ async fn serve(
     jobs: &std_mpsc::Sender<Job>,
 ) -> Result<(), String> {
     // The copy, on its own stream; removed whatever happens.
+    let copy = joined.copy.ok_or("no copy of the project")?;
     let sent = match write_msg(send, &joined.welcome).await {
-        Ok(()) => send_file(conn, &joined.copy).await,
+        Ok(()) => send_file(conn, &copy).await,
         Err(e) => Err(e),
     };
-    let _ = tokio::fs::remove_file(&joined.copy).await;
+    let _ = tokio::fs::remove_file(&copy).await;
     sent?;
     // One writer: broadcasts (with the answers to this client's requests
     // right after their edits) and this client's notices.
@@ -667,46 +789,8 @@ async fn serve(
             let Some(msg) = read_msg::<ClientMsg>(recv).await? else {
                 return Ok::<(), String>(());
             };
-            match msg {
-                ClientMsg::Hello { .. } => return Err("hello twice".into()),
-                ClientMsg::Request { id, op } => {
-                    let (tx, rx) = oneshot::channel();
-                    jobs.send(Job::Request {
-                        client,
-                        user: user.to_owned(),
-                        id,
-                        op,
-                        reply: tx,
-                    })
-                    .map_err(|_| "server stopped")?;
-                    if let Err(e) = rx.await.map_err(|_| "server stopped")? {
-                        let _ = out.send(ServerMsg::Response { id, result: Err(e) }).await;
-                    }
-                }
-                ClientMsg::Presence(presence) => {
-                    let _ = jobs.send(Job::Presence {
-                        user: user.to_owned(),
-                        presence,
-                    });
-                }
-                ClientMsg::Lock { target } => {
-                    let (tx, rx) = oneshot::channel();
-                    jobs.send(Job::Lock {
-                        user: user.to_owned(),
-                        target,
-                        reply: tx,
-                    })
-                    .map_err(|_| "server stopped")?;
-                    if let Err(e) = rx.await.map_err(|_| "server stopped")? {
-                        let _ = out.send(ServerMsg::Notice { text: e }).await;
-                    }
-                }
-                ClientMsg::Unlock { target } => {
-                    let _ = jobs.send(Job::Unlock {
-                        user: user.to_owned(),
-                        target,
-                    });
-                }
+            if let Some(answer) = dispatch(msg, client, user, jobs).await? {
+                let _ = out.send(answer).await;
             }
         }
     };
@@ -728,6 +812,62 @@ async fn serve(
     };
     forward.abort();
     result
+}
+
+/// Passes a joined client's message to the authority; returns what to
+/// tell that client at once (a refusal), if anything. QUIC and web
+/// clients alike.
+pub(crate) async fn dispatch(
+    msg: ClientMsg,
+    client: u64,
+    user: &str,
+    jobs: &std_mpsc::Sender<Job>,
+) -> Result<Option<ServerMsg>, String> {
+    Ok(match msg {
+        ClientMsg::Hello { .. } => return Err("hello twice".into()),
+        ClientMsg::Request { id, op } => {
+            let (tx, rx) = oneshot::channel();
+            jobs.send(Job::Request {
+                client,
+                user: user.to_owned(),
+                id,
+                op,
+                reply: tx,
+            })
+            .map_err(|_| "server stopped")?;
+            rx.await
+                .map_err(|_| "server stopped")?
+                .err()
+                .map(|e| ServerMsg::Response { id, result: Err(e) })
+        }
+        ClientMsg::Presence(presence) => {
+            let _ = jobs.send(Job::Presence {
+                user: user.to_owned(),
+                presence,
+            });
+            None
+        }
+        ClientMsg::Lock { target } => {
+            let (tx, rx) = oneshot::channel();
+            jobs.send(Job::Lock {
+                user: user.to_owned(),
+                target,
+                reply: tx,
+            })
+            .map_err(|_| "server stopped")?;
+            rx.await
+                .map_err(|_| "server stopped")?
+                .err()
+                .map(|text| ServerMsg::Notice { text })
+        }
+        ClientMsg::Unlock { target } => {
+            let _ = jobs.send(Job::Unlock {
+                user: user.to_owned(),
+                target,
+            });
+            None
+        }
+    })
 }
 
 /// Sends a file on a new one-way stream (1 MiB pieces).

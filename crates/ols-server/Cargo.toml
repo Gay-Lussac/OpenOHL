@@ -1,6 +1,6 @@
 [package]
 name = "ols-server"
-description = "OLS CAD server mode: a project hosted for several users (QUIC), the clients' replicas"
+description = "OLS CAD server mode: a project hosted for several users (QUIC, and a web client over WebSocket), the clients' replicas"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,14 +11,21 @@ authors.workspace = true
 [dependencies]
 ols-session.workspace = true
 ols-line.workspace = true
+ols-core.workspace = true
+ols-cables.workspace = true
+ols-structures.workspace = true
+ols-weather.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "io-util", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "io-util", "fs", "net"] }
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rcgen = "0.14"
 sha2 = "0.10"
 getrandom = "0.3"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["handshake"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 
 [lints]
 workspace = true

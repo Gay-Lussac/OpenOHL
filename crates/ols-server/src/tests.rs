@@ -11,7 +11,7 @@ use crate::client::{Incoming, Joined, join, replay};
 use crate::server::{Options, Server};
 use crate::{ClientMsg, Invitation, Op, ServerMsg};
 
-fn temp(name: &str) -> PathBuf {
+pub(crate) fn temp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ols-server-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -19,7 +19,7 @@ fn temp(name: &str) -> PathBuf {
 }
 
 /// A project of the synthetic line: alice its admin, bob a designer.
-fn project(dir: &Path) -> PathBuf {
+pub(crate) fn project(dir: &Path) -> PathBuf {
     let line = ols_line::Line::load(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../examples/synthetic-line/synthetic-line.ols.json"),
@@ -33,23 +33,24 @@ fn project(dir: &Path) -> PathBuf {
     path
 }
 
-fn local(code: &str) -> Options {
+pub(crate) fn local(code: &str) -> Options {
     Options {
         bind: "127.0.0.1:0".parse().unwrap(),
         advertise: None,
         code: Some(code.into()),
         newcomers: Some(Role::Viewer),
+        web: None,
     }
 }
 
 /// A client with its replica.
-struct Client {
-    joined: Joined,
-    replica: Session,
+pub(crate) struct Client {
+    pub(crate) joined: Joined,
+    pub(crate) replica: Session,
 }
 
 impl Client {
-    fn join(inv: &Invitation, user: &str, dir: &Path) -> Result<Self, String> {
+    pub(crate) fn join(inv: &Invitation, user: &str, dir: &Path) -> Result<Self, String> {
         let file = dir.join(format!("{user}.ols"));
         let mut seen = 0;
         let joined = join(inv, user, &file, &mut |p| seen = p.received)?;
@@ -61,7 +62,7 @@ impl Client {
 
     /// Takes messages until `until` says stop (10 s at most), applying
     /// the edits to the replica; returns the messages.
-    fn pump(&mut self, mut until: impl FnMut(&ServerMsg) -> bool) -> Vec<ServerMsg> {
+    pub(crate) fn pump(&mut self, mut until: impl FnMut(&ServerMsg) -> bool) -> Vec<ServerMsg> {
         let started = Instant::now();
         let mut got = Vec::new();
         loop {
@@ -84,7 +85,7 @@ impl Client {
     }
 
     /// Requests an edit and waits for its answer.
-    fn request(&mut self, op: Op) -> Result<String, String> {
+    pub(crate) fn request(&mut self, op: Op) -> Result<String, String> {
         let id = self.joined.link.request(op).unwrap();
         let got = self.pump(|m| matches!(m, ServerMsg::Response { id: i, .. } if *i == id));
         match got.last() {
@@ -94,7 +95,7 @@ impl Client {
     }
 }
 
-fn position(s: &Session, id: &str) -> [f64; 3] {
+pub(crate) fn position(s: &Session, id: &str) -> [f64; 3] {
     s.line()
         .structures
         .iter()
@@ -103,7 +104,7 @@ fn position(s: &Session, id: &str) -> [f64; 3] {
         .position
 }
 
-fn moved(id: &str, p: [f64; 3]) -> Op {
+pub(crate) fn moved(id: &str, p: [f64; 3]) -> Op {
     Op::Do {
         command: Command::MoveStructure {
             id: id.into(),
