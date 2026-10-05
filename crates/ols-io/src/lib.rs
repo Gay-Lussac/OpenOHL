@@ -16,9 +16,19 @@
 
 pub mod codes;
 pub mod formats;
+pub mod geopackage;
+pub mod gis;
+pub mod ifc;
+pub mod landxml;
+pub mod neutral;
+pub mod olsxml;
 pub mod plugin;
 pub mod projects;
+pub mod shapefile;
 pub mod surfaces;
+pub mod tables;
+pub mod xlsx;
+pub mod xml;
 
 use std::collections::BTreeMap;
 
@@ -79,6 +89,12 @@ pub struct ExportWire {
     pub voltage: Option<f64>,
     /// Points in the line's coordinate system.
     pub points: Vec<[f64; 3]>,
+    /// Horizontal tension, N (per wire; none for jumpers).
+    pub horizontal_tension: Option<f64>,
+    /// Largest tension in the span, N (per wire).
+    pub max_tension: Option<f64>,
+    /// Sag, m (largest vertical distance below the chord).
+    pub sag: Option<f64>,
 }
 
 /// The wires of one weather case.
@@ -99,6 +115,9 @@ pub struct ExportModel {
     pub line: Line,
     /// Solved weather cases (may be empty: geometry only).
     pub cases: Vec<ExportCase>,
+    /// Further report tables (structure loads, usage…) for table formats
+    /// such as XLSX; empty unless the program solving the line adds them.
+    pub tables: Vec<tables::Table>,
 }
 
 impl ExportModel {
@@ -138,6 +157,9 @@ impl ExportModel {
                             system: system(&shape.section).0,
                             voltage: system(&shape.section).1,
                             points: span.points.clone(),
+                            horizontal_tension: Some(span.horizontal_tension),
+                            max_tension: Some(span.max_tension),
+                            sag: Some(span.sag),
                         });
                     }
                 }
@@ -157,6 +179,9 @@ impl ExportModel {
                         system: from.and_then(|s| system(&s.id).0),
                         voltage: from.and_then(|s| system(&s.id).1),
                         points: j.points.clone(),
+                        horizontal_tension: None,
+                        max_tension: Some(j.max_tension),
+                        sag: Some(j.sag),
                     });
                 }
                 ExportCase {
@@ -169,13 +194,15 @@ impl ExportModel {
         Self {
             line: line.clone(),
             cases,
+            tables: Vec::new(),
         }
     }
 
     /// The model as JSON for plugins:
     /// `{"format": "ols-export-model", "version": 1, "crs": …, "line": <line
     /// file>, "cases": [{"name", "summary", "wires": [{"section", "span",
-    /// "circuit", "phase", "color", "system", "voltage_kv", "points":
+    /// "circuit", "phase", "color", "system", "voltage_kv",
+    /// "horizontal_tension_n", "max_tension_n", "sag_m", "points":
     /// [[x, y, z], …]}]}]}`.
     pub fn to_json(&self) -> String {
         let line = serde_json::to_value(&self.line).expect("the line serialises");
@@ -194,6 +221,9 @@ impl ExportModel {
                         "color": w.color,
                         "system": w.system,
                         "voltage_kv": w.voltage,
+                        "horizontal_tension_n": w.horizontal_tension,
+                        "max_tension_n": w.max_tension,
+                        "sag_m": w.sag,
                         "points": w.points,
                     })).collect::<Vec<_>>(),
                 })
@@ -396,5 +426,7 @@ impl Registry {
     }
 }
 
+#[cfg(test)]
+mod format_tests;
 #[cfg(test)]
 mod tests;

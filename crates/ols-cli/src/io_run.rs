@@ -30,12 +30,12 @@ pub fn options(specs: &[String]) -> Result<Options, String> {
 pub fn formats(plugins: &[PathBuf]) -> Result<(), String> {
     let r = registry(plugins)?;
     println!(
-        "{:<16} {:<8} {:<8} {:<22} description",
+        "{:<20} {:<8} {:<8} {:<22} description",
         "id", "", "ext", "source"
     );
     for e in r.exporters() {
         println!(
-            "{:<16} {:<8} {:<8} {:<22} {}",
+            "{:<20} {:<8} {:<8} {:<22} {}",
             e.id(),
             "export",
             e.extension(),
@@ -45,7 +45,7 @@ pub fn formats(plugins: &[PathBuf]) -> Result<(), String> {
     }
     for i in r.importers() {
         println!(
-            "{:<16} {:<8} {:<8} {:<22} {}",
+            "{:<20} {:<8} {:<8} {:<22} {}",
             i.id(),
             "import",
             i.extension(),
