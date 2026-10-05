@@ -195,6 +195,7 @@ format = "ols-lidar-classes"
 version = 1
 id = "my-survey"
 name = "Survey company X, project Y"
+source = "Survey specification v2"   # optional: where the scheme comes from
 
 [[class]]
 code = 1
@@ -207,7 +208,7 @@ name = "Asphalt road"
 roles = ["ground", "road"]
 ```
 
-The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.olsc`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/libraries/lidar-classes/asprs-las-1.4.olsc) (ground: 2, water 9, road surface 11). Used by OLS CAD so far: `ground`. Suggested for clearance rules and later tools: `vegetation`, `building`, `water`, `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`, `shield_wire`, `load_object`, `other_line_structure`, `other_line_conductor`, `object`, `noise`, `temporary`, `unclassified`.
+The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.olsc`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/libraries/lidar-classes/asprs-las-1.4.olsc) (ground: 2, water 9, road surface 11). Used by OLS CAD: `ground` (the ground surface), `vegetation` (vegetation analysis), `conductor` and `shield_wire` (as-built wire fitting), and any role a clearance rule names; the application also colours points by role. Suggested: `vegetation`, `building`, `water`, `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`, `shield_wire`, `load_object`, `other_line_structure`, `other_line_conductor`, `object`, `noise`, `temporary`, `unclassified`.
 
 On a real 25 km line (private data, checked locally), ground built this way from 99.6 million LiDAR points (11.3 million in the utility's ground classes, 22.6 million triangles, about one minute) gave span clearances matching those on the TIN of a commercial program to a median of 2 mm (94 % of 930 spans within 10 cm).
 
@@ -271,7 +272,7 @@ polyline of closely spaced points on the exact catenary; between those
 points it lies slightly below its chords, so clearances can be high by at
 most the chord sag of a piece — a few millimetres.
 
-Planned next: clearance envelopes over several weather cases (and different cases for the two wires of a pair), exclusion zones near supports and terminations, and clearances in plan and profile drawings.
+Several weather cases are checked together with [envelopes](#envelopes-over-weather-cases); exclusion zones near the wire ends are rule fields (`exclude_near_ends`, `exclude_spans_at`); the plan and profile sheets draw the required-clearance line and the violations.
 
 ## Example data
 

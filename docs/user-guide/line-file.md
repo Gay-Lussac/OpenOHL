@@ -43,6 +43,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `extension` | no | Height extension of the type. |
 | `attachments` | yes, unless `type` | Attachment points (below); with a `type` they override the type's attachments with the same set and phase. |
 | `omit` | no | With a `type`: attachments of the type left out, as `[set, phase]` pairs (an explicit attachment with the same set and phase still counts). |
+| `members` | no | Stick drawing: polylines of `[x, y, z]` points, for views and drawings only; from the structure type when it is placed. |
 
 ### Attachments
 
@@ -53,8 +54,11 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `insulator_point` | yes | Where the insulator assembly attaches to the structure `[x, y, z]`. |
 | `wire_point` | yes | Where the wire is clamped `[x, y, z]`. |
 | `insulator_weight` | no (0) | Insulator weight, N. |
-| `insulator` | no | Insulator assembly id from the [insulator library](structure-library.md). With an assembly, a strain attachment is a free member; without, its clamp stays at `wire_point`. |
+| `insulator_wind_area` | no (0) | Area of the assembly the wind blows on, m² (from the insulator library when resolved); half its wind load goes on the clamp. |
+| `insulator` | no | Insulator assembly id from the [insulator library](structure-library.md). Strain attachments are free members with or without one (below). |
 | `legs` | no | V-string: the two leg attachment points `[[x,y,z], [x,y,z]]` on the structure. Both legs end at `wire_point` (which must hang below both); `insulator_point` is then informative (e.g. their centre). Generated from `v_string` assemblies for typed structures. |
+| `top_label`, `bottom_label` | no | Labels of the string's top (insulator point) and bottom (wire point). |
+| `strain_member` | no (false) | A strain string: in a section's middle or end it is solved as a free member along its conductor (like a library strain assembly) instead of holding the wire at `wire_point`. |
 
 The **assembly type follows from the geometry**: in the middle of a section, an attachment with `legs` is a **V-string** (two tension-only legs of lengths `|wire_point − leg|` to one free clamp, `insulator_weight` split between them); otherwise a wire point *below* its insulator point, swung less than 45°, is a **suspension string** of length `|wire_point − insulator_point|` that swings freely when solved. The first and last points of every section, and other attachments, are **strain assemblies**: a free member of length `|wire_point − insulator_point|` hanging from the insulator point, lined up with its conductor by equilibrium, so it moves with every weather case (droops when the wire is hot, swings with the wind) and its pull is in the calculation. A strain assembly given only as geometry, without `insulator_weight` (imported lines), gets the weight that holds it where `wire_point` puts it in the section's stringing state (still air at the stringing temperature): the moment of the wire's pull at the clamp balances that of the weight at the member's middle; its unstressed length is shortened by its stretch under that pull. A string whose data droops less than the wire pulls it down cannot be held there by any weight: its weight is 0 and it lines up with the wire. A point whose wire and insulator points coincide (within 1 cm) is fixed there. On a 930-span real line, mid-spans match the source's reported points as with clamps held at their data positions (median 1.5 cm, p90 3.3 cm).
 

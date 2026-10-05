@@ -1,6 +1,6 @@
-# Load cases and structure loads
+# Load cases and structure loads (`.olslc`)
 
-A **load case** combines a weather case, the wires' condition and load factors. The **structure loads** are the forces the wires and strings put on the structures at every attachment, in each load case: the starting point of the structure checks (Phase 4).
+A **load case** combines a weather case, the wires' condition and load factors. The **structure loads** are the forces the wires and strings put on the structures at every attachment, in each load case: the starting point of the structure checks.
 
 ## Load case files (`.olslc`)
 
@@ -33,7 +33,7 @@ tags = ["ULS"]
 
 Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OLS CAD ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.olslc` only shows the format.
 
-In a project, the load case files are kept in the project like the other libraries (Libraries › Load cases edits them).
+In a project, the load case files are kept in the project like the other libraries (Criteria › Load cases library edits them).
 
 ## Structure loads
 

@@ -1,4 +1,4 @@
-# Thermal rating
+# Thermal rating (`.olsta`)
 
 OLS CAD computes the current a conductor can carry (its **ampacity**) for a
 maximum conductor temperature, the conductor temperature for a current, the
