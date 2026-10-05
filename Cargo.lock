@@ -3618,6 +3618,8 @@ dependencies = [
  "ols-session",
  "ols-terrain",
  "ols-weather",
+ "rusqlite",
+ "serde",
  "serde_json",
  "zip",
 ]

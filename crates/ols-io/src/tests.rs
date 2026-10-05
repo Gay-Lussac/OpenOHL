@@ -13,13 +13,13 @@ use ols_weather::WeatherCase;
 use super::*;
 use crate::formats::{StructuresCsv, WiresCsv};
 
-fn root() -> &'static Path {
+pub(crate) fn root() -> &'static Path {
     Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
 }
 
 /// The synthetic example line, moved to LV95 around (2 600 000,
 /// 1 200 000), solved at 15 °C.
-fn model() -> ExportModel {
+pub(crate) fn model() -> ExportModel {
     let mut line =
         Line::load(&root().join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
     line.transform_coordinates(|pts| {
@@ -51,9 +51,35 @@ fn model() -> ExportModel {
 fn registry_lists_and_finds_formats() {
     let mut r = Registry::with_builtin();
     let ex: Vec<&str> = r.exporters().map(|e| e.id()).collect();
-    assert_eq!(ex, ["structures-csv", "wires-csv", "kml", "kmz"]);
+    assert_eq!(
+        ex,
+        [
+            "structures-csv",
+            "wires-csv",
+            "kml",
+            "kmz",
+            "spans-csv",
+            "ols-xml",
+            "landxml",
+            "geojson",
+            "shapefile",
+            "gpkg",
+            "ifc",
+            "xlsx"
+        ]
+    );
     let im: Vec<&str> = r.importers().map(|i| i.id()).collect();
-    assert_eq!(im, ["structures-csv"]);
+    assert_eq!(
+        im,
+        [
+            "structures-csv",
+            "ols-xml",
+            "structures-geojson",
+            "structures-shp"
+        ]
+    );
+    assert_eq!(r.exporter("xml").unwrap().id(), "ols-xml");
+    assert_eq!(r.importer("shp").unwrap().id(), "structures-shp");
     assert_eq!(r.exporter("KMZ").unwrap().id(), "kmz");
     // By extension: the first exporter for it.
     assert_eq!(r.exporter("csv").unwrap().id(), "structures-csv");
@@ -252,7 +278,7 @@ fn plugin_formats_export_and_import() {
     assert_eq!(line.sections, m.line.sections);
     // The plugin's own errors come back as the format's error.
     let err = r
-        .importer("geojson")
+        .importer("geojson-structures")
         .unwrap()
         .import(b"{\"features\": []}", None, &Options::new())
         .unwrap_err();
