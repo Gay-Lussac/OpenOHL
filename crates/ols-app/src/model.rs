@@ -77,6 +77,12 @@ pub struct ViewPrefs {
     /// What is written next to the wires in each view.
     #[serde(default)]
     pub section_display: crate::annotations::SectionDisplay,
+    /// The side the wind comes from in the weather cases shown.
+    #[serde(default)]
+    pub wind: WindDisplay,
+    /// How the display weather cases apply to the sections.
+    #[serde(default)]
+    pub cases_shown: CasesShown,
 }
 
 /// The [`ViewPrefs`] of every project opened, by file (remembered).
@@ -139,9 +145,95 @@ pub struct Solved {
     /// Solved (else not yet: solved when first shown or checked,
     /// [`Model::want`]).
     pub ready: bool,
+    /// The same case with the wind from the other side, when both sides
+    /// are shown ([`WindDisplay::Both`]) and the case has wind.
+    pub mirror: Option<Box<Solved>>,
+}
+
+/// Which side the wind of the weather cases comes from, looking ahead
+/// along the line: a display choice (Criteria › Display weather cases),
+/// not part of the weather case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindDisplay {
+    /// From the right.
+    #[default]
+    Right,
+    /// From the left.
+    Left,
+    /// Both sides drawn at once (the right one reported, checked, picked).
+    Both,
+}
+
+impl WindDisplay {
+    /// Every choice, in the menu's order.
+    pub const ALL: [WindDisplay; 3] = [WindDisplay::Right, WindDisplay::Left, WindDisplay::Both];
+
+    /// Name in the menu.
+    pub fn name(self) -> &'static str {
+        match self {
+            WindDisplay::Right => "from the right",
+            WindDisplay::Left => "from the left",
+            WindDisplay::Both => "both sides",
+        }
+    }
+
+    /// The side solved first (reported, checked, picked).
+    pub fn primary(self) -> ols_weather::WindSide {
+        match self {
+            WindDisplay::Left => ols_weather::WindSide::Left,
+            WindDisplay::Right | WindDisplay::Both => ols_weather::WindSide::Right,
+        }
+    }
+}
+
+/// How the display weather cases apply to the sections.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CasesShown {
+    /// The cases chosen for the line, for every section (the Sections
+    /// table's display cases are kept, not used).
+    #[default]
+    AllSections,
+    /// Each section's display cases from the Sections table (the line's
+    /// cases for sections without).
+    PerSection,
 }
 
 impl Solved {
+    /// Solves `line` in `case`, and with the wind from the other side too
+    /// when `wind` shows both and the case has wind.
+    pub fn with_wind(
+        line: &Line,
+        library: &ols_cables::Library,
+        mut case: WeatherCase,
+        wind: WindDisplay,
+    ) -> Self {
+        case.wind_from = wind.primary();
+        let mirrored = (wind == WindDisplay::Both && case.wind_pressure.si() > 0.0).then(|| {
+            let mut other = case.clone();
+            other.wind_from = ols_weather::WindSide::Left;
+            Box::new(Self::new(line, library, other))
+        });
+        let mut s = Self::new(line, library, case);
+        s.mirror = mirrored;
+        s
+    }
+
+    /// Whether it is solved as `wind` shows it (its side, its mirror).
+    pub fn solved_for(&self, wind: WindDisplay) -> bool {
+        let windy = self.case.wind_pressure.si() > 0.0;
+        self.ready
+            && (!windy
+                || (self.case.wind_from == wind.primary()
+                    && self.mirror.is_some() == (wind == WindDisplay::Both)))
+    }
+
+    /// The solutions drawn: this one, and its mirror if any.
+    pub fn drawn(&self) -> impl Iterator<Item = &Solved> {
+        std::iter::once(self).chain(self.mirror.as_deref())
+    }
+
     /// Solves `line` in `case`.
     pub fn new(line: &Line, library: &ols_cables::Library, case: WeatherCase) -> Self {
         let live = ols_line::incremental::SolvedLine::solve(line, library, &case);
@@ -158,6 +250,7 @@ impl Solved {
             failed: Vec::new(),
             bundles: Default::default(),
             ready: false,
+            mirror: None,
         }
     }
 
@@ -175,6 +268,7 @@ impl Solved {
             bundles: Default::default(),
             live,
             ready: true,
+            mirror: None,
         };
         s.refresh(line);
         s
@@ -212,6 +306,9 @@ impl Solved {
         }
         let u = self.live.update(line, library, dirty);
         self.refresh(line);
+        if let Some(m) = &mut self.mirror {
+            m.update(line, library, dirty);
+        }
         u.solved
     }
 }
@@ -330,6 +427,12 @@ pub struct Model {
     /// What is written next to the wires in each view (Sections › Display
     /// options; this user's choice).
     pub section_display: crate::annotations::SectionDisplay,
+    /// The side the wind comes from in the weather cases shown (this
+    /// user's choice).
+    pub wind: WindDisplay,
+    /// How the display weather cases apply to the sections (this user's
+    /// choice).
+    pub cases_shown: CasesShown,
 }
 
 /// The wire library: given, else the `*.olsw` files next to the model,
@@ -553,6 +656,19 @@ fn files_at(at: &Path, extension: &str) -> Vec<PathBuf> {
 /// replaces the project's. Then they are written to a working folder and
 /// `sources` points there. Without the right to change the project, the
 /// libraries it lacks are read from their files as before.
+/// A weather case file's text without the wind side of its cases
+/// (`wind_from`, a display choice since), `None` when it has none.
+pub fn without_wind_side(text: &str) -> Option<String> {
+    let mut doc: toml_edit::DocumentMut = text.parse().ok()?;
+    let mut changed = false;
+    if let Some(cases) = doc.get_mut("case").and_then(|c| c.as_array_of_tables_mut()) {
+        for case in cases.iter_mut() {
+            changed |= case.remove("wind_from").is_some();
+        }
+    }
+    changed.then(|| doc.to_string())
+}
+
 fn project_libraries(
     sources: &mut Sources,
     session: &ols_session::Session,
@@ -629,9 +745,26 @@ fn project_libraries(
         if kept_in_files {
             continue;
         }
-        let stored = session.library_files(kind).map_err(|e| e.to_string())?;
+        let mut stored = session.library_files(kind).map_err(|e| e.to_string())?;
         if stored.is_empty() {
             continue;
+        }
+        // Weather case files of earlier versions gave the wind side: now a
+        // display choice. Converted when the project opens (kept as an
+        // edit of the library file when this user may edit).
+        if kind == "weather" {
+            for (name, text) in &mut stored {
+                if let Some(converted) = without_wind_side(text) {
+                    match session.put_library_file(&user, kind, name, &converted) {
+                        Ok(()) => log(format!(
+                            "weather cases {name}: the wind side removed (now chosen in \
+                             Display weather cases)"
+                        )),
+                        Err(e) => log(format!("weather cases {name}: not converted ({e})")),
+                    }
+                    *text = converted;
+                }
+            }
         }
         let dir = work.join(kind);
         std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -816,6 +949,8 @@ impl Model {
             hidden_classes: self.hidden_classes.clone(),
             class_scheme: self.sources.class_scheme.clone(),
             section_display: self.section_display.clone(),
+            wind: self.wind,
+            cases_shown: self.cases_shown,
         }
     }
 
@@ -826,14 +961,15 @@ impl Model {
             let Some(c) = self.cases.get(k) else {
                 continue;
             };
-            if c.ready || self.solving.iter().any(|(j, _, _)| *j == k) {
+            if c.solved_for(self.wind) || self.solving.iter().any(|(j, _, _)| *j == k) {
                 continue;
             }
             let (line, library, case) = (self.line.clone(), self.library.clone(), c.case.clone());
+            let wind = self.wind;
             let (tx, rx) = std::sync::mpsc::channel();
             let ctx = ctx.clone();
             std::thread::spawn(move || {
-                let _ = tx.send(Solved::new(&line, &library, case));
+                let _ = tx.send(Solved::with_wind(&line, &library, case, wind));
                 ctx.request_repaint();
             });
             self.solving.push((k, self.line_version, rx));
@@ -865,9 +1001,9 @@ impl Model {
     /// needs it).
     pub fn ensure_solved(&mut self, k: usize) {
         if let Some(c) = self.cases.get(k)
-            && !c.ready
+            && !c.solved_for(self.wind)
         {
-            let s = Solved::new(&self.line, &self.library, c.case.clone());
+            let s = Solved::with_wind(&self.line, &self.library, c.case.clone(), self.wind);
             self.solving.retain(|(j, _, _)| *j != k);
             self.cases[k] = s;
         }
@@ -882,11 +1018,14 @@ impl Model {
                 .filter(|k| *k < self.cases.len())
                 .collect()
         };
-        let own = self
-            .display_cases
-            .get(section)
-            .map(valid)
-            .unwrap_or_default();
+        let own = match self.cases_shown {
+            CasesShown::AllSections => Vec::new(),
+            CasesShown::PerSection => self
+                .display_cases
+                .get(section)
+                .map(valid)
+                .unwrap_or_default(),
+        };
         if !own.is_empty() {
             return own;
         }
@@ -920,20 +1059,38 @@ impl Model {
             .find(|s| s.section == section)
     }
 
-    /// Every section in each weather case it is drawn in, in line order.
+    /// The wind side shown: every case's primary side set, mirrors dropped
+    /// or wanted ([`Model::want`] solves what is shown again).
+    pub fn set_wind(&mut self, wind: WindDisplay) {
+        self.wind = wind;
+        for c in &mut self.cases {
+            if c.case.wind_pressure.si() > 0.0 && c.case.wind_from != wind.primary() {
+                let mut case = c.case.clone();
+                case.wind_from = wind.primary();
+                *c = Solved::pending(case);
+            }
+            if wind != WindDisplay::Both {
+                c.mirror = None;
+            }
+        }
+        // Answers on their way were solved for the old side.
+        self.solving.clear();
+        self.line_version += 1;
+    }
+
+    /// Every section in each weather case it is drawn in, in line order
+    /// (both wind sides when shown).
     pub fn shapes_shown(&self, case: usize) -> Vec<SectionShape> {
         self.line
             .sections
             .iter()
             .flat_map(|s| {
-                self.section_cases(&s.id, case).into_iter().filter_map(|k| {
-                    self.cases
-                        .get(k)?
-                        .shapes
-                        .iter()
-                        .find(|x| x.section == s.id)
-                        .cloned()
-                })
+                self.section_cases(&s.id, case)
+                    .into_iter()
+                    .filter_map(|k| self.cases.get(k))
+                    .flat_map(|c| c.drawn())
+                    .filter_map(|c| c.shapes.iter().find(|x| x.section == s.id).cloned())
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
@@ -1009,9 +1166,10 @@ impl Model {
         self.cases = cases
             .into_iter()
             .enumerate()
-            .map(|(k, c)| {
+            .map(|(k, mut c)| {
+                c.wind_from = self.wind.primary();
                 if k == 0 || was.contains(&c.name) {
-                    Solved::new(&line, &library, c)
+                    Solved::with_wind(&line, &library, c, self.wind)
                 } else {
                     Solved::pending(c)
                 }
@@ -1129,14 +1287,20 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     // they are shown or a check needs them (Model::want).
     let mut solved = Vec::new();
     let others = cases.len().saturating_sub(1);
-    for (k, case) in cases.into_iter().enumerate() {
+    // The wind side is this user's display choice, not the file's.
+    let wind = sources
+        .view
+        .as_ref()
+        .map_or_else(WindDisplay::default, |v| v.wind);
+    for (k, mut case) in cases.into_iter().enumerate() {
+        case.wind_from = wind.primary();
         if k > 0 {
             solved.push(Solved::pending(case));
             continue;
         }
         let t = Instant::now();
         let name = case.name.clone();
-        let one = Solved::new(&line, &library, case);
+        let one = Solved::with_wind(&line, &library, case, wind);
         step(
             format!(
                 "case \"{name}\" solved in {:.0?}{}",
@@ -1388,6 +1552,10 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .map(|v| v.hidden_classes.clone())
         .unwrap_or_default();
+    let cases_shown = sources
+        .view
+        .as_ref()
+        .map_or_else(CasesShown::default, |v| v.cases_shown);
     let section_display = sources
         .view
         .as_ref()
@@ -1419,6 +1587,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         points_percent,
         library_dir,
         section_display,
+        wind,
+        cases_shown,
         viewer_session,
         remote: None,
         solving: Vec::new(),

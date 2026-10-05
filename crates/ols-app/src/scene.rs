@@ -367,7 +367,12 @@ pub fn wires(
         centre.thinned = true;
         out.push(centre);
     };
-    for (k, solved) in cases.iter().enumerate() {
+    // Both wind sides shown: each case's mirror drawn with it.
+    for (k, solved) in cases
+        .iter()
+        .enumerate()
+        .flat_map(|(k, c)| c.drawn().map(move |d| (k, d)))
+    {
         let this_case = shown == model.shown(case).contains(&k);
         for shape in &solved.shapes {
             if shown != model.section_cases(&shape.section, case).contains(&k) {

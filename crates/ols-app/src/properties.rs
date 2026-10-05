@@ -422,34 +422,36 @@ pub fn ui(
             );
             ui.separator();
             ui.label(egui::RichText::new("Weather cases").strong());
-            egui::Grid::new("jumper-cases")
-                .striped(true)
-                .show(ui, |ui| {
-                    for h in ["case", "length (m)", "sag (m)", "max T (N)", "low z (m)"] {
-                        ui.label(egui::RichText::new(h).small());
-                    }
-                    ui.end_row();
-                    for (k, solved) in model.cases.iter().enumerate() {
-                        let name = if k == case {
-                            egui::RichText::new(&solved.case.name).strong()
-                        } else {
-                            egui::RichText::new(&solved.case.name)
-                        };
-                        ui.label(name);
-                        match solved.jumpers.iter().find(|x| x.jumper == id) {
-                            Some(js) => {
-                                ui.label(format!("{:.3}", js.unstressed_length));
-                                ui.label(format!("{:.3}", js.sag));
-                                ui.label(format!("{:.0}", js.max_tension));
-                                ui.label(format!("{:.2}", js.low_point[2]));
-                            }
-                            None => {
-                                ui.label("not solved");
-                            }
+            cases_box(ui, "jumper-cases-scroll", |ui| {
+                egui::Grid::new("jumper-cases")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for h in ["case", "length (m)", "sag (m)", "max T (N)", "low z (m)"] {
+                            ui.label(egui::RichText::new(h).small());
                         }
                         ui.end_row();
-                    }
-                });
+                        for (k, solved) in model.cases.iter().enumerate() {
+                            let name = if k == case {
+                                egui::RichText::new(&solved.case.name).strong()
+                            } else {
+                                egui::RichText::new(&solved.case.name)
+                            };
+                            ui.label(name);
+                            match solved.jumpers.iter().find(|x| x.jumper == id) {
+                                Some(js) => {
+                                    ui.label(format!("{:.3}", js.unstressed_length));
+                                    ui.label(format!("{:.3}", js.sag));
+                                    ui.label(format!("{:.0}", js.max_tension));
+                                    ui.label(format!("{:.2}", js.low_point[2]));
+                                }
+                                None => {
+                                    ui.label("not solved");
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
             if let Some(why) = model
                 .cases
                 .get(case)
@@ -515,37 +517,49 @@ pub fn ui(
             );
             ui.separator();
             ui.label(egui::RichText::new("Weather cases").strong());
-            egui::Grid::new("cases").striped(true).show(ui, |ui| {
-                for h in ["case", "H (kN)", "max T (kN)", "sag (m)", "low z (m)"] {
-                    ui.label(egui::RichText::new(h).small());
-                }
-                ui.end_row();
-                let shown = model.section_case(&section, case);
-                for (k, solved) in model.cases.iter().enumerate() {
-                    let name = if k == shown {
-                        egui::RichText::new(&solved.case.name).strong()
-                    } else {
-                        egui::RichText::new(&solved.case.name)
-                    };
-                    ui.label(name);
-                    match solved
-                        .shapes
-                        .iter()
-                        .find(|x| x.section == section)
-                        .and_then(|x| x.spans.get(span))
-                    {
-                        Some(sp) => {
-                            ui.label(format!("{:.2}", sp.horizontal_tension / 1e3));
-                            ui.label(format!("{:.2}", sp.max_tension / 1e3));
-                            ui.label(format!("{:.3}", sp.sag));
-                            ui.label(format!("{:.2}", sp.low_point[2]));
-                        }
-                        None => {
-                            ui.label("not solved");
-                        }
+            cases_box(ui, "span-cases-scroll", |ui| {
+                egui::Grid::new("cases").striped(true).show(ui, |ui| {
+                    for h in ["case", "H (kN)", "max T (kN)", "sag (m)", "low z (m)"] {
+                        ui.label(egui::RichText::new(h).small());
                     }
                     ui.end_row();
-                }
+                    let shown = model.section_case(&section, case);
+                    // Both wind sides shown: the mirror after each case.
+                    let rows =
+                        model.cases.iter().enumerate().flat_map(|(k, c)| {
+                            c.drawn().enumerate().map(move |(m, d)| (k, m > 0, d))
+                        });
+                    for (k, mirrored, solved) in rows {
+                        let text = if mirrored {
+                            format!("{} (wind from the left)", solved.case.name)
+                        } else {
+                            solved.case.name.clone()
+                        };
+                        let name = if k == shown && !mirrored {
+                            egui::RichText::new(text).strong()
+                        } else {
+                            egui::RichText::new(text)
+                        };
+                        ui.label(name);
+                        match solved
+                            .shapes
+                            .iter()
+                            .find(|x| x.section == section)
+                            .and_then(|x| x.spans.get(span))
+                        {
+                            Some(sp) => {
+                                ui.label(format!("{:.2}", sp.horizontal_tension / 1e3));
+                                ui.label(format!("{:.2}", sp.max_tension / 1e3));
+                                ui.label(format!("{:.3}", sp.sag));
+                                ui.label(format!("{:.2}", sp.low_point[2]));
+                            }
+                            None => {
+                                ui.label("not solved");
+                            }
+                        }
+                        ui.end_row();
+                    }
+                });
             });
             if let Some(why) = model.cases.get(case).and_then(|c| {
                 c.failed
@@ -560,4 +574,20 @@ pub fn ui(
         *selection = n;
     }
     action
+}
+
+/// Height of the weather case lists in the properties, points: a fixed
+/// box, scrolled, so that long lists of cases take little room.
+const CASES_HEIGHT: f32 = 180.0;
+
+/// A weather case list in a box of fixed height, scrolled.
+fn cases_box(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        egui::ScrollArea::vertical()
+            .id_salt(id)
+            .min_scrolled_height(CASES_HEIGHT)
+            .max_height(CASES_HEIGHT)
+            .auto_shrink([false, false])
+            .show(ui, add);
+    });
 }
