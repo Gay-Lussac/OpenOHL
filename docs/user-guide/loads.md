@@ -31,7 +31,7 @@ tags = ["ULS"]
 | `strength` | no | 1 | Strength factor of the capacity checks; more than 0. |
 | `tags` | no | | Code, limit state… |
 
-Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files. OLS CAD ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.olslc` only shows the format.
+Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OLS CAD ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.olslc` only shows the format.
 
 In a project, the load case files are kept in the project like the other libraries (Libraries › Load cases edits them).
 
