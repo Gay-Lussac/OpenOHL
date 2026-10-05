@@ -28,6 +28,7 @@ ols-line.workspace = true
 ols-structures.workspace = true
 ols-terrain.workspace = true
 ols-clearance.workspace = true
+ols-thermal.workspace = true
 ols-lidar.workspace = true
 ols-pointcloud.workspace = true
 ols-session.workspace = true

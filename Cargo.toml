@@ -33,6 +33,7 @@ ols-plugins = { path = "crates/ols-plugins" }
 ols-server = { path = "crates/ols-server" }
 ols-loads = { path = "crates/ols-loads" }
 ols-render = { path = "crates/ols-render" }
+ols-thermal = { path = "crates/ols-thermal" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

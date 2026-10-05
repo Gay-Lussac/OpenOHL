@@ -1,0 +1,191 @@
+# Steady-state thermal ratings of Drake 26/7 ACSR (28.14 mm,
+# R(25 °C) = 7.283e-5 Ω/m, R(75 °C) = 8.688e-5 Ω/m, ε = α = 0.8 unless given).
+#
+# thermal-001 checks against the published worked example of IEEE Std 738
+# (Drake at 100 °C: 40 °C air, 0.61 m/s across the line, east-west line at
+# 30° N, 11:00 solar time on 10 June, clear air, sea level), whose results
+# are q_c ≈ 81.93 W/m, q_r ≈ 39.1 W/m, q_s ≈ 22.44 W/m, I ≈ 1025 A, solar
+# altitude ≈ 74.8°, azimuth ≈ 114°. Tolerances allow for the rounding of
+# the published values.
+#
+# The other cases check against an independent implementation of the same
+# published formulas (benchmarks/thermal/reference_thermal.py), not against
+# published results: they guard the formulas of each method, not the
+# methods themselves.
+
+[[case]]
+id = "thermal-001"
+title = "IEEE 738 worked example: Drake ampacity at 100 °C"
+calculation = "thermal.steady"
+reference = "IEEE Std 738-2012 (and 738-2006 Annex B) worked example for Drake 26/7 ACSR, published results"
+notes = "Outputs in A, W/m, degrees"
+[case.inputs]
+method = "ieee738"
+diameter = "28.14 mm"
+ac_resistance = [
+    { temperature = "25 °C", resistance = "7.283e-5 Ω/m" },
+    { temperature = "75 °C", resistance = "8.688e-5 Ω/m" },
+]
+emissivity = 0.8
+absorptivity = 0.8
+max_temperature = "100 °C"
+ambient = { name = "example", air_temperature = "40 °C", wind_speed = "0.61 m/s", latitude = "30 °", day_of_year = 161, time = "11:00", line_azimuth = "90 °", atmosphere = "clear" }
+[case.expected]
+current_a = { value = 1025.0, rel_tol = 0.005 }
+convection_w_per_m = { value = 81.93, rel_tol = 0.005 }
+radiation_w_per_m = { value = 39.1, rel_tol = 0.005 }
+solar_w_per_m = { value = 22.44, rel_tol = 0.01 }
+solar_altitude_deg = { value = 74.8, abs_tol = 0.3 }
+solar_azimuth_deg = { value = 114.0, abs_tol = 0.5 }
+
+[[case]]
+id = "thermal-002"
+title = "IEEE 738: elevation 1500 m, low wind at 30°, industrial air, afternoon"
+calculation = "thermal.steady"
+reference = "Independent evaluation of the IEEE 738-2012 formulas (benchmarks/thermal/reference_thermal.py)"
+[case.inputs]
+method = "ieee738"
+diameter = "28.14 mm"
+ac_resistance = [
+    { temperature = "25 °C", resistance = "7.283e-5 Ω/m" },
+    { temperature = "75 °C", resistance = "8.688e-5 Ω/m" },
+]
+emissivity = 0.6
+absorptivity = 0.7
+max_temperature = "80 °C"
+ambient = { name = "mountain", air_temperature = "30 °C", wind_speed = "0.3 m/s", wind_angle = "30 °", elevation = "1500 m", latitude = "47 °", day_of_year = 200, time = "14:30", line_azimuth = "30 °", atmosphere = "industrial" }
+[case.expected]
+current_a = { value = 673.379668, rel_tol = 1e-6 }
+convection_w_per_m = { value = 32.442236, rel_tol = 1e-6 }
+radiation_w_per_m = { value = 21.333522, rel_tol = 1e-6 }
+solar_w_per_m = { value = 13.743792, rel_tol = 1e-6 }
+solar_azimuth_deg = { value = 242.219835, abs_tol = 1e-5 }
+
+[[case]]
+id = "thermal-003"
+title = "IEEE 738: temperature of Drake at 1200 A in 3 m/s wind, 900 W/m²"
+calculation = "thermal.steady"
+reference = "Independent evaluation of the IEEE 738-2012 formulas (benchmarks/thermal/reference_thermal.py)"
+[case.inputs]
+method = "ieee738"
+diameter = "28.14 mm"
+ac_resistance = [
+    { temperature = "25 °C", resistance = "7.283e-5 Ω/m" },
+    { temperature = "75 °C", resistance = "8.688e-5 Ω/m" },
+]
+emissivity = 0.5
+absorptivity = 0.5
+roughness = 0.03
+current = 1200
+ambient = { name = "windy", air_temperature = "25 °C", wind_speed = "3 m/s", wind_angle = "45 °", elevation = "300 m", solar_flux = "900 W/m²" }
+[case.expected]
+temperature_c = { value = 67.655867, abs_tol = 1e-4 }
+
+[[case]]
+id = "thermal-004"
+title = "CIGRE TB 601: Drake at 100 °C in the IEEE example's weather"
+calculation = "thermal.steady"
+reference = "Independent evaluation of the CIGRE TB 601 formulas (benchmarks/thermal/reference_thermal.py)"
+notes = "Albedo 0.1, clearness ratio 1, roughness 0.09"
+[case.inputs]
+method = "cigre601"
+diameter = "28.14 mm"
+ac_resistance = [
+    { temperature = "25 °C", resistance = "7.283e-5 Ω/m" },
+    { temperature = "75 °C", resistance = "8.688e-5 Ω/m" },
+]
+emissivity = 0.8
+absorptivity = 0.8
+roughness = 0.09
+max_temperature = "100 °C"
+ambient = { name = "example", air_temperature = "40 °C", wind_speed = "0.61 m/s", latitude = "30 °", day_of_year = 161, time = "11:00", line_azimuth = "90 °", clearness_ratio = 1.0, albedo = 0.1 }
+[case.expected]
+current_a = { value = 1000.982752, rel_tol = 1e-6 }
+convection_w_per_m = { value = 83.608236, rel_tol = 1e-6 }
+radiation_w_per_m = { value = 39.131571, rel_tol = 1e-6 }
+solar_w_per_m = { value = 28.650146, rel_tol = 1e-6 }
+solar_altitude_deg = { value = 74.810508, abs_tol = 1e-5 }
+
+[[case]]
+id = "thermal-005"
+title = "CIGRE TB 601: elevation 1500 m, low wind at 30°, albedo 0.2"
+calculation = "thermal.steady"
+reference = "Independent evaluation of the CIGRE TB 601 formulas (benchmarks/thermal/reference_thermal.py)"
+[case.inputs]
+method = "cigre601"
+diameter = "28.14 mm"
+ac_resistance = [
+    { temperature = "25 °C", resistance = "7.283e-5 Ω/m" },
+    { temperature = "75 °C", resistance = "8.688e-5 Ω/m" },
+]
+emissivity = 0.6
+absorptivity = 0.7
+roughness = 0.09
+max_temperature = "80 °C"
+ambient = { name = "mountain", air_temperature = "30 °C", wind_speed = "0.3 m/s", wind_angle = "30 °", elevation = "1500 m", latitude = "47 °", day_of_year = 200, time = "14:30", line_azimuth = "30 °", clearness_ratio = 0.9, albedo = 0.2 }
+[case.expected]
+current_a = { value = 597.272397, rel_tol = 1e-6 }
+convection_w_per_m = { value = 33.459515, rel_tol = 1e-6 }
+solar_w_per_m = { value = 23.312996, rel_tol = 1e-6 }
+
+[[case]]
+id = "thermal-006"
+title = "CIGRE TB 601: temperature at 1200 A in 3 m/s wind (smooth surface)"
+calculation = "thermal.steady"
+reference = "Independent evaluation of the CIGRE TB 601 formulas (benchmarks/thermal/reference_thermal.py)"
+[case.inputs]
+method = "cigre601"
+diameter = "28.14 mm"
+ac_resistance = [
+    { temperature = "25 °C", resistance = "7.283e-5 Ω/m" },
+    { temperature = "75 °C", resistance = "8.688e-5 Ω/m" },
+]
+emissivity = 0.5
+absorptivity = 0.5
+roughness = 0.03
+current = 1200
+ambient = { name = "windy", air_temperature = "25 °C", wind_speed = "3 m/s", wind_angle = "45 °", elevation = "300 m", solar_flux = "900 W/m²" }
+[case.expected]
+temperature_c = { value = 70.264951, abs_tol = 1e-4 }
+
+[[case]]
+id = "thermal-007"
+title = "CIGRE TB 207: Drake at 100 °C and in the mountain case"
+calculation = "thermal.steady"
+reference = "Independent evaluation of the CIGRE TB 207 formulas (benchmarks/thermal/reference_thermal.py)"
+[case.inputs]
+method = "cigre207"
+diameter = "28.14 mm"
+ac_resistance = [
+    { temperature = "25 °C", resistance = "7.283e-5 Ω/m" },
+    { temperature = "75 °C", resistance = "8.688e-5 Ω/m" },
+]
+emissivity = 0.6
+absorptivity = 0.7
+roughness = 0.09
+max_temperature = "80 °C"
+ambient = { name = "mountain", air_temperature = "30 °C", wind_speed = "0.3 m/s", wind_angle = "30 °", elevation = "1500 m", latitude = "47 °", day_of_year = 200, time = "14:30", line_azimuth = "30 °", clearness_ratio = 0.9, albedo = 0.2 }
+[case.expected]
+current_a = { value = 652.365470, rel_tol = 1e-6 }
+convection_w_per_m = { value = 39.537618, rel_tol = 1e-6 }
+
+[[case]]
+id = "thermal-008"
+title = "CIGRE TB 207: Drake at 100 °C in the IEEE example's weather"
+calculation = "thermal.steady"
+reference = "Independent evaluation of the CIGRE TB 207 formulas (benchmarks/thermal/reference_thermal.py)"
+[case.inputs]
+method = "cigre207"
+diameter = "28.14 mm"
+ac_resistance = [
+    { temperature = "25 °C", resistance = "7.283e-5 Ω/m" },
+    { temperature = "75 °C", resistance = "8.688e-5 Ω/m" },
+]
+emissivity = 0.8
+absorptivity = 0.8
+roughness = 0.09
+max_temperature = "100 °C"
+ambient = { name = "example", air_temperature = "40 °C", wind_speed = "0.61 m/s", latitude = "30 °", day_of_year = 161, time = "11:00", line_azimuth = "90 °", clearness_ratio = 1.0, albedo = 0.1 }
+[case.expected]
+current_a = { value = 1010.422578, rel_tol = 1e-6 }
+convection_w_per_m = { value = 85.391240, rel_tol = 1e-6 }

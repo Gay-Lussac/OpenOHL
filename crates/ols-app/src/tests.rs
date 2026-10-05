@@ -4257,3 +4257,43 @@ fn display_options_stay_open_while_ticking() {
     assert!(r.model.section_display.sag[crate::annotations::View::Plan as usize]);
     assert!(r.model.section_display.label[crate::annotations::View::ThreeD as usize]);
 }
+
+/// Checks › Thermal rating: the ambient cases next to the model, an
+/// ampacity per section and case; the clearance-limited temperature in the
+/// background with the rule file next to the model.
+#[test]
+fn thermal_rating_window() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Checks").click();
+    harness.run();
+    harness.get_by_label("Thermal rating…").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.thermal.open);
+        assert!(matches!(&r.thermal.ambient, Some(Ok(set)) if set.cases.len() == 3));
+    }
+    harness.get_by_label("summer noon at 80 °C");
+    harness
+        .get_by_label("Clearance-limited temperature")
+        .click();
+    harness.step();
+    run_until(&mut harness, |a| {
+        let r = a.ready().unwrap();
+        r.thermal.poll();
+        !r.thermal.running() && r.thermal.limits.is_some()
+    });
+    harness.step();
+    harness.step();
+    let r = harness.state_mut().ready().unwrap();
+    let limits = r.thermal.limits.as_ref().unwrap().as_ref().unwrap();
+    assert_eq!(limits.len(), r.model.line.sections.len());
+    // S2 over the hill misses the 7 m ground rule even when cold.
+    let s2 = limits.iter().find(|l| l.section == "S2").unwrap();
+    assert_eq!(s2.result, Ok(ols_thermal::limit::Limit::BelowRange));
+    harness.get_by_label("clearance limit");
+}

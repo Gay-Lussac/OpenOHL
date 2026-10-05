@@ -40,6 +40,7 @@ mod selection;
 mod surfaces;
 mod survey_io;
 mod tables;
+mod thermal;
 mod tools;
 mod view3d;
 
