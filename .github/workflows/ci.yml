@@ -77,6 +77,7 @@ jobs:
           (cd plugins/examples/esri-grid && cargo build --release --target wasm32-wasip2)
           (cd plugins/examples/project-bundle && cargo build --release --target wasm32-wasip2)
           (cd plugins/tests/runaway && cargo build --release --target wasm32-wasip2)
+          for d in plugins/codes/*/; do [ -f "$d/ols-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done
       - run: cargo test --workspace --exclude ols-py --locked
 
   msrv:
