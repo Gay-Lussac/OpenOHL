@@ -76,6 +76,38 @@ A plugin that reads another program's project files implements the `project-plug
 
 `plugins/examples/project-bundle` reads a JSON bundle `{"line": …, "libraries": [{"kind", "name", "text"}]}` — the shape such a reader returns. Readers of formats that should stay out of the open-source code are installed only where they may be used.
 
+## Design-code plugins
+
+A plugin for a design code implements the `code-plugin` world
+(`crates/ols-plugins/wit/code.wit`) and lists the extension point
+`design-code`:
+
+```toml
+extension-points = ["design-code"]
+```
+
+- `describe()` returns its name, version, a one-line description and a
+  **parameters template**: a TOML parameter file with its schema in
+  comments and placeholder values.
+- `generate(parameters)` reads the user's parameter file (TOML text) and
+  returns **generated**: `weather-cases` (an `.olswc` file's text),
+  `load-cases` (an `.olslc` file's text, each case naming one of those
+  weather cases) and `notes` (what was computed, assumed or left out). A
+  wrong file is an error string, shown to the user.
+
+The host (`ols_io::codes`, `WasmHost::load_code`) checks both files as
+OLS CAD reads them before anything is written; `ols code generate` and
+Criteria › Design code write them. A plugin ships **no values of the
+standard**: it implements the code's method, every number comes from the
+parameter file, and the template's numbers are invented placeholders,
+marked as such.
+
+`plugins/codes/*` are such plugins (EN 50341 with a national annex overlay,
+Swiss LeV, IEC 60826, NESC, CSA C22.3, ASCE MOP 74, GO 95); they share
+`plugins/codes/common` (reading parameter files, writing the case files,
+the `code_plugin!` macro implementing the world). See
+[Design codes](../user-guide/design-codes.md).
+
 ## Python plugins
 
 Python plugins are scripts (`tier = "python"`, `entry` the script). Outside the application they use the `ols` package built from `crates/ols-py`; inside it, the Python console runs them (Plugins › Python console › Plugin scripts) with the `ols` module of the application, which also reads and edits the open project ([Python console](../user-guide/desktop-app.md#python-console)). See `plugins/examples/hello-python`.

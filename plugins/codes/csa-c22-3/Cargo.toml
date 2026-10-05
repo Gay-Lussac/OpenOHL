@@ -1,0 +1,23 @@
+[package]
+name = "csa-c22-3"
+description = "OLS CAD design-code plugin: CSA C22.3 No. 1 loading zones and construction grades"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+
+# Built separately from the main workspace, for the wasm32-wasip2 target.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.62"
+serde = { version = "1", features = ["derive"] }
+ols-code-common = { path = "../common" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

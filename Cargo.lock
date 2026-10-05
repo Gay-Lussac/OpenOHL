@@ -3539,6 +3539,7 @@ dependencies = [
  "ols-core",
  "ols-crs",
  "ols-line",
+ "ols-loads",
  "ols-plugins",
  "ols-session",
  "ols-terrain",

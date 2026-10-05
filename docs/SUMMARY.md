@@ -10,6 +10,7 @@
 - [Line files (.ols.json)](user-guide/line-file.md)
 - [Weather cases (.olswc)](user-guide/weather.md)
 - [Load cases and structure loads (.olslc)](user-guide/loads.md)
+- [Design codes](user-guide/design-codes.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
 - [Structure analysis (.olsfe, .olsp)](user-guide/structure-analysis.md)
 - [Terrain and ground clearance](user-guide/terrain.md)

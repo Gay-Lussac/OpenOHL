@@ -216,6 +216,8 @@ pub struct Ready {
     pub controls_window: Option<ControlsPage>,
     /// Criteria › Creep-Stretch, when open: the weather cases chosen.
     pub creep_stretch_window: Option<ols_line::condition::CreepStretch>,
+    /// Criteria › Design code.
+    pub design_code: crate::codes::DesignCodeWindow,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
     /// A page to bring to the front (with a table filter), from a tool.
@@ -275,6 +277,7 @@ impl Ready {
             class_window: None,
             controls_window: None,
             creep_stretch_window: None,
+            design_code: Default::default(),
             jumper_from: None,
             open_page: None,
             clearances: crate::clearance::Clearances::new(
@@ -3742,6 +3745,16 @@ fn menus(
             r.creep_stretch_window = Some(r.model.line.creep_stretch.clone());
             ui.close();
         }
+        if ui
+            .button("Design code…")
+            .on_hover_text(
+                "Weather and load cases from a design-code plugin and your parameter file",
+            )
+            .clicked()
+        {
+            r.design_code.open = true;
+            ui.close();
+        }
         ui.separator();
         item(ui, Command::DisplayCases, out);
     });
@@ -4200,6 +4213,7 @@ impl eframe::App for App {
                     });
                 }
                 self.plugins.manager_ui(&ctx);
+                crate::codes::window(&ctx, ready, &self.plugins);
                 if let Some(mut w) = ready.class_window.take() {
                     let mut open = true;
                     let default = self.default_class_scheme.clone();

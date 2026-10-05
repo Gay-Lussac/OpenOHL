@@ -1,0 +1,52 @@
+# Swiss LeV / OLEI (Leitungsverordnung, SR 734.31) parameter file for the
+# OLS CAD plugin "lev-ch".
+#
+# !!! EVERY NUMBER IN THIS FILE IS AN INVENTED PLACEHOLDER. !!!
+# None is taken from the LeV, its annexes or any other regulation or
+# standard. Replace each value with the one the LeV gives for your line.
+
+[project]
+name = "LeV example (invented values)"
+condition = "initial"        # initial, creep, load or max_sag
+
+[site]
+altitude = 650.0             # m above sea level: chooses the altitude zone
+# The additional (ice / snow) load per metre depends on the conductor
+# diameter: it is computed for this reference diameter, mm.
+reference_diameter = 30.0
+
+# Altitude zones, lowest first: the first whose up_to is at or above the
+# site altitude applies. Additional load = base + per_mm × diameter (N/m).
+[[altitude_zone]]
+up_to = 800.0                # m
+additional_load_base = 5.0   # N/m
+additional_load_per_mm = 0.4 # N/m per mm of diameter
+additional_load_density = 500.0  # kg/m³ (iced diameter for the wind)
+wind_pressure = 500.0        # Pa on the projected conductor diameter
+
+[[altitude_zone]]
+up_to = 5000.0
+additional_load_base = 8.0
+additional_load_per_mm = 0.6
+additional_load_density = 500.0
+wind_pressure = 650.0
+
+[temperatures]
+additional_load = 0.0        # °C with the additional load
+wind = 10.0                  # °C with the wind
+minimum = -20.0              # °C, no wind, no additional load
+
+# Additional load with wind: fractions of the zone's load and pressure.
+[load_with_wind]
+load_factor = 0.5
+wind_factor = 0.5
+
+# Safety factors: the strength factor of the load cases is 1 / factor.
+[safety]
+normal = 2.5
+
+# Optional: further cases as given (SI units).
+# [[extra_weather]]
+# name = "…"; temperature = …; wind_pressure = …; ice_load = …
+# [[extra_load_case]]
+# name = "…"; weather = "…"; vertical = …; transverse = …; strength = …

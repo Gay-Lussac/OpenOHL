@@ -45,6 +45,9 @@ Every calculation PR must include:
    (cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2)
    (cd plugins/examples/geojson && cargo build --release --target wasm32-wasip2)
    (cd plugins/tests/runaway && cargo build --release --target wasm32-wasip2)
+   (cd plugins/examples/esri-grid && cargo build --release --target wasm32-wasip2)
+   (cd plugins/examples/project-bundle && cargo build --release --target wasm32-wasip2)
+   for d in plugins/codes/*/; do [ -f "$d/ols-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done
    # Python bindings
    pip install maturin pytest && pip install ./crates/ols-py && pytest crates/ols-py/tests
    # Documentation book
