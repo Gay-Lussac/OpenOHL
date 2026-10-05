@@ -20,3 +20,16 @@ mass_per_length = "1.094 lbm/ft"
 rated_tensile_strength = "31200 lbf"
 outer = { area = "0.6245 in²", modulus = "55 GPa", thermal_expansion = 23.0e-6 }
 core = { area = "0.1017 in²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }
+
+# Electrical and thermal data for ratings: the AC resistances, emissivity and
+# absorptivity of the IEEE Std 738 worked example for Drake, and typical DC
+# resistance and GMR — typical values, not manufacturer data.
+[cable.electrical]
+ac_resistance = [
+    { temperature = "25 °C", resistance = "0.07283 Ω/km" },
+    { temperature = "75 °C", resistance = "0.08688 Ω/km" },
+]
+dc_resistance = { temperature = "20 °C", resistance = "0.0702 Ω/km" }
+geometric_mean_radius = "11.43 mm"
+emissivity = 0.8
+solar_absorptivity = 0.8

@@ -3475,6 +3475,7 @@ dependencies = [
  "ols-session",
  "ols-structures",
  "ols-terrain",
+ "ols-thermal",
  "ols-validation",
  "ols-weather",
  "ols-wirefe",
@@ -3665,6 +3666,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-thermal"
+version = "0.0.1"
+dependencies = [
+ "ols-cables",
+ "ols-clearance",
+ "ols-core",
+ "ols-line",
+ "ols-terrain",
+ "ols-weather",
+ "serde",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
 name = "ols-validation"
 version = "0.0.1"
 dependencies = [
@@ -3673,6 +3688,7 @@ dependencies = [
  "ols-core",
  "ols-crs",
  "ols-sagtension",
+ "ols-thermal",
  "ols-weather",
  "ols-wirefe",
  "ols-wireloads",

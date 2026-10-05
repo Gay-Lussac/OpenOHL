@@ -37,6 +37,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(WireFeSpan));
     registry.register(Box::new(WireFePointLoad));
     registry.register(Box::new(Nonlinear));
+    registry.register(Box::new(ThermalSteady));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -685,5 +686,84 @@ impl Calculation for Nonlinear {
                 if cause == FinalCause::Load { 1.0 } else { 0.0 },
             ),
         ]))
+    }
+}
+
+/// `thermal.steady`: steady-state thermal rating of a conductor.
+struct ThermalSteady;
+
+impl Calculation for ThermalSteady {
+    fn id(&self) -> &'static str {
+        "thermal.steady"
+    }
+
+    fn description(&self) -> &'static str {
+        "Steady-state thermal rating (inputs: method, diameter, ac_resistance [{temperature, \
+         resistance}], emissivity, absorptivity, optional roughness, ambient = one .olsta case, \
+         and max_temperature or current A; outputs: current_a, temperature_c, heat terms W/m, \
+         solar_altitude_deg, solar_azimuth_deg)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ols_thermal::{Conductor, Method};
+        let method = Method::parse(string_input(inputs, "method")?)?;
+        let ac_resistance: Vec<ols_cables::ResistanceAt> = inputs
+            .get("ac_resistance")
+            .ok_or("missing input \"ac_resistance\"")?
+            .clone()
+            .try_into()
+            .map_err(|e| format!("input \"ac_resistance\": {e}"))?;
+        let conductor = Conductor {
+            diameter: quantity_input::<Length>(inputs, "diameter")?.si(),
+            electrical: ols_cables::Electrical {
+                ac_resistance,
+                emissivity: Some(float_input(inputs, "emissivity")?),
+                solar_absorptivity: Some(float_input(inputs, "absorptivity")?),
+                ..Default::default()
+            },
+            heat_capacity: Vec::new(),
+            roughness: match inputs.get("roughness") {
+                Some(_) => float_input(inputs, "roughness")?,
+                None => ols_thermal::DEFAULT_ROUGHNESS,
+            },
+        };
+        let ambient = inputs
+            .get("ambient")
+            .and_then(|v| v.as_table())
+            .ok_or("input \"ambient\" must be a table (one .olsta case)")?;
+        let mut file = toml::Table::new();
+        file.insert(
+            "case".into(),
+            toml::Value::Array(vec![toml::Value::Table(ambient.clone())]),
+        );
+        let text = toml::to_string(&file).map_err(|e| e.to_string())?;
+        let ambient = ols_thermal::AmbientCases::parse(&text)?.cases.remove(0);
+        let balance = if inputs.contains_key("max_temperature") {
+            let t = quantity_input::<Temperature>(inputs, "max_temperature")?.celsius();
+            ols_thermal::ampacity(method, &conductor, &ambient, t)
+        } else {
+            ols_thermal::temperature(
+                method,
+                &conductor,
+                &ambient,
+                float_input(inputs, "current")?,
+                &ols_thermal::default_steady_budget(),
+            )
+        }
+        .map_err(|e| e.to_string())?;
+        let mut out = outputs([
+            ("current_a", balance.current),
+            ("temperature_c", balance.temperature),
+            ("joule_w_per_m", balance.joule),
+            ("solar_w_per_m", balance.solar.heat),
+            ("convection_w_per_m", balance.convection),
+            ("radiation_w_per_m", balance.radiation),
+            ("irradiance_w_per_m2", balance.solar.irradiance),
+        ]);
+        if let Some(sun) = balance.solar.sun {
+            out.insert("solar_altitude_deg".into(), sun.altitude);
+            out.insert("solar_azimuth_deg".into(), sun.azimuth);
+        }
+        Ok(out)
     }
 }
