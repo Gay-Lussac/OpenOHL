@@ -9,7 +9,7 @@ Spotting chooses positions, types and heights of the structures along a route so
 - **Candidates** \\( k \\) (a structure type with an extension): cost \\( C_k \\), height of the lowest wire point \\( h_k \\), dead-end or not, allowable spans by line angle. At each station only the candidates that may stand there are kept: dead-ends at the ends; at an angle point those whose allowable spans reach its angle.
 - **A span** from \\( (i, k) \\) to \\( (j, l) \\), of length \\( L = s_j - s_i \\), is feasible when \\( L_{min} \le L \le L_{max} \\) and the wire keeps the clearance \\( c \\).
 - **Each structure** \\( (j, l) \\) between spans \\( L_b \\) (back) and \\( L_a \\) (ahead) must keep its **wind span** \\( (L_b + L_a)/2 \\) and **weight span** \\( (L_b - x_b) + x_a \\) — \\( x \\) the horizontal distance of a span's low point from its back structure — within its allowable spans at its line angle (the start has only \\( L_a \\), the end only \\( L_b \\)).
-- **Cost**: \\( \sum C_k \\) over the structures \\( + \sum (C_{span} + p\,\ell) \\) over the spans, with \\( \ell \\) the wire length of a span and \\( p \\) the price per metre of all its wires.
+- **Cost**: \\( \sum C_k \\) over the structures \\( + \sum (C_{span} + p\\,\ell) \\) over the spans, with \\( \ell \\) the wire length of a span and \\( p \\) the price per metre of all its wires.
 
 ## The wire and the clearance
 
@@ -23,7 +23,7 @@ clamped to the piece. The smallest clearance of the span is the least of these v
 
 The state is \\( (j, l, i) \\): a structure of candidate \\( l \\) at station \\( j \\) whose back span starts at station \\( i \\). Its value \\( V(j, l, i) \\) is the least cost of a chain of structures from the start to it:
 
-\\[ V(j, l, i) = C_l + \min_{k,\,h} \left[ V(i, k, h) + C_{span} + p\,\ell(i,k \to j,l) \right] \\]
+\\[ V(j, l, i) = C_l + \min_{k,\\,h} \left[ V(i, k, h) + C_{span} + p\\,\ell(i,k \to j,l) \right] \\]
 
 over the candidates \\( k \\) at \\( i \\) and the back stations \\( h \\) of \\( i \\), for feasible spans only, and where the structure \\( (i, k) \\) keeps its wind span \\( (s_i - s_h + s_j - s_i)/2 \\) and weight span. The answer is the least \\( V(N-1, l, i) \\) whose end structure keeps its own limits; the placement follows back from it.
 

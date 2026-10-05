@@ -61,7 +61,7 @@ The outer strands expand more with temperature than the core. Above a transition
 | `compression` (default) | the outer strands go into compression, up to `max_virtual_compression` |
 | `bird_cage` | the outer strands take no compression: the core carries the whole tension |
 
-Virtual stress = actual stress × Ao / At (Ao the outer strands' area, At the total area). Past the limit the core alone carries the tension, so a hot cable expands as the core does. Both methods use this: the ruling span through the cable's stress-strain model, and the finite elements with one branch per section (the core alone when, at the section's mean tension, the outer strands are past their limit). A curve's own `max_compression` (below) still applies, whichever is smaller.
+Virtual stress = actual stress × Ao / At (Ao the outer strands' area, At the total area). Past the limit the core alone carries the tension, so a hot cable expands as the core does. Both methods use this: the ruling span through the cable's stress-strain model; the finite elements through the same curves when the cable has them (each span's length follows the curves, see [Finite-element wire systems](../theory/wirefe.md#non-linear-stress-strain-in-the-elements)), otherwise with one branch per section (the core alone when, at the section's mean tension, the outer strands are past their limit). A curve's own `max_compression` (below) still applies, whichever is smaller.
 
 ## Components: `[cable.outer]`, `[cable.core]`
 
