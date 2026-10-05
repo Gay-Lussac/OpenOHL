@@ -13,14 +13,13 @@ ols-cables.workspace = true
 ols-core.workspace = true
 ols-crs.workspace = true
 ols-line.workspace = true
+ols-loads.workspace = true
 ols-plugins.workspace = true
 ols-session.workspace = true
 ols-terrain.workspace = true
+ols-weather.workspace = true
 serde_json.workspace = true
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-
-[dev-dependencies]
-ols-weather.workspace = true
 
 [lints]
 workspace = true

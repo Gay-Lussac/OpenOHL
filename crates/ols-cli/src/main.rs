@@ -11,6 +11,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use ols_core::units::UnitSystem;
 
 mod clearance_run;
+mod code_run;
 mod io_run;
 mod project;
 mod sagtension_job;
@@ -111,6 +112,12 @@ enum Command {
     Surface {
         #[command(subcommand)]
         command: surface::SurfaceCommand,
+    },
+    /// Design codes (plugins): weather and load cases from a parameter
+    /// file.
+    Code {
+        #[command(subcommand)]
+        command: code_run::CodeCommand,
     },
     /// Inspect plugins.
     Plugin {
@@ -466,6 +473,7 @@ fn main() -> ExitCode {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
         Some(Command::Formats { plugin }) => report(io_run::formats(&plugin)),
+        Some(Command::Code { command }) => report(code_run::run(command)),
         Some(Command::Surface { command }) => report(surface::run(command)),
         Some(Command::Serve {
             project,
