@@ -1,6 +1,6 @@
 # Architecture
 
-> Draft — subject to the ADRs in [adr/](adr/). Requirements in [DESIGN_GOALS.md](DESIGN_GOALS.md).
+> Subject to the [architecture decisions](adr/README.md). Requirements in [Design goals](DESIGN_GOALS.md).
 
 ## Principles
 
@@ -17,64 +17,64 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Clients     Desktop GUI (native, GPU)  ·  CLI  ·  Python scripts  │
-│             · future web client                                   │
+│ Clients     Desktop app (ols-app) · CLI (ols-cli) · Python (ols-py)│
+│             · web client (served by ols-server)                    │
 ├──────────────────────────────────────────────────────────────────┤
-│ Session     ols-session: authoritative model, command log,        │
-│             undo/redo, change broadcast, permissions, presence    │
-│             (in-process for single user, network server for many)│
+│ Session     ols-session: project file, commands, operation log,    │
+│             undo/redo, versions, grants; ols-server: many users    │
 ├──────────────────────────────────────────────────────────────────┤
-│ Engines     sagtension · wirefe · loads · clearance · structures-fe│
-│             rating · spotting · drafting · reports                │
+│ Engines     sagtension · wirefe · line · loads · structures-fe ·   │
+│             clearance · thermal · spotting · bom · drawing · io    │
 ├──────────────────────────────────────────────────────────────────┤
-│ Domain      cables · terrain · structures · weather · io          │
+│ Domain      cables · weather · wireloads · structures · terrain ·  │
+│             lidar · pointcloud · crs                               │
 ├──────────────────────────────────────────────────────────────────┤
-│ Core        ols-core: data model, units, geometry, CRS, spatial   │
-│             chunk index, plugin registry, change events           │
+│ Core        ols-core: units, geometry, project grid, time budgets  │
+│             ols-plugins (WASM host) · ols-render · ols-validation  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## Modules (Rust crates unless noted)
+## Modules
+
+Every module is a Rust crate under `crates/` (the workspace's members):
 
 | Crate | Responsibility |
 |---|---|
-| `ols-core` | Data model, units, geometry, CRS, spatial chunk index, plugin registry, schema & migrations |
-| `ols-session` | Project file (`.ols`), commands, operation log, per-user undo/redo, admin rollback, roles, dirty tracking; version control (revisions, branches, merge — ADR-0010), edit grants and reviews |
-| `ols-loads` | Load cases (`.olslc`: weather × wire condition × load factors) and the loads on the structures at every attachment |
-| `ols-server` | Server mode (alpha): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, personal invitations |
-| `ols-pointcloud` | Point clouds in the project file (chunk × class blocks), point-source interface |
-| `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors, classification (ground, height classes) |
-| `ols-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines |
-| `ols-io` | Import/export: format traits and registry, built-in formats (CSV, KML/KMZ, OLS XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC4, XLSX), neutral imports of structures along a route, formats from WebAssembly plugins |
-| `ols-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming (`lod`); headless images |
-| `ols-app` | Desktop application `ols-cad` (egui, ADR-0009): 3D, plan, profile, properties |
-| `ols-cables` | Cable/conductor library, stress-strain & creep models |
-| `ols-weather` | Weather cases, load case definitions (code-agnostic) |
+| `ols-core` | Units (SI inside, US customary and SI at the boundary), geometry, the project grid of spatial chunks, time budgets and cancellation (exit clauses), text and file helpers |
+| `ols-cables` | Cable library (`.olsw`): components, composite properties, stress-strain and creep curves, cable models, electrical data |
+| `ols-weather` | Weather cases (`.olswc`: temperature, wind, ice) and the loads they put on wires; code-agnostic |
 | `ols-wireloads` | Additional loads on wires: point loads (N) and distributed loads (N/m), permanent or per load case |
-| `ols-sagtension` | Catenary (incl. segmented catenary with point loads), change of state, ruling span, stringing charts |
-| `ols-terrain` | Survey points (CSV/XYZ, feature codes, breaklines), TIN, ground heights and exact profiles; later LiDAR and chunked tiles |
-| `ols-line` | Line model (`.ols.json`): routes, structures, attachments, sections; 3D solving and exports |
-| `ols-structures` | Structure type library (`.olss`) and insulator assembly library (`.olsi`); placement of types into a line; deriving types from a line |
-| `ols-wirefe` | Non-linear FE of wire systems (general loads, broken wire, unbalanced ice) |
-| `ols-structures-fe` | Structure analysis: 3D truss/frame/cable finite elements (`.olsfe` models, P-Delta, skyline solver), member usage, pole library (`.olsp`) and pole check |
-| `ols-loads` | Load-case engine; design codes are **plugins** |
-| `ols-clearance` | Clearance checks of solved wires by rule (ground, points, wires), envelopes; galloping ellipses, blowout against the right of way, vegetation, as-built wire fits |
-| `ols-rating` | Thermal rating (IEEE 738, CIGRE) |
+| `ols-sagtension` | Catenary (also segmented, with point loads), change of state, tension sections (ruling span and exact equal-H), non-linear cables, tension criteria, stringing charts |
+| `ols-wirefe` | Finite-element wire systems: exact elastic catenary elements, truss strings, 3D Newton solver |
+| `ols-line` | Line model (`.ols.json`): routes, structures, attachments, sections, jumpers, electrical systems; 3D solving (RS and FE, elements following the curves), incremental re-solving, exports |
+| `ols-structures` | Structure type library (`.olss`) and insulator library (`.olsi`); placement of types into a line; deriving types from a line |
+| `ols-structures-fe` | Structure analysis: 3D truss/frame/cable finite elements (`.olsfe`, P-Delta, skyline solver), member usage, poles (`.olsp`) and the pole check |
+| `ols-loads` | Load cases (`.olslc`: weather × wire condition × load factors), the loads on the structures at every attachment, wind on structures, capacity checks (Method 1 allowable spans, Method 2 load trees, FE and pole) |
+| `ols-terrain` | Survey points (CSV/XYZ, feature codes, breaklines), TIN, ground heights and exact profiles |
+| `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors, classification (ground filter, height classes) |
+| `ols-pointcloud` | Point clouds in the project file (chunk × class blocks with levels of detail), COPC read and write, point-source interface |
+| `ols-clearance` | Clearances of solved wires by rule (`.olsr`: ground, points, other lines, same line), envelopes; galloping ellipses, blowout against the right of way, vegetation, as-built wire fits |
+| `ols-thermal` | Thermal rating: IEEE 738, CIGRE TB 601 / TB 207, transient, solar position, ambient cases (`.olsta`), clearance-limited temperature |
 | `ols-spotting` | Optimum structure spotting: least-cost structure positions, types and extensions along a route profile (dynamic programming) |
-| `ols-bom` | Bill of materials (structures, insulators, cut lengths, hardware) and cost estimate from a cost file (`.olscost`) |
-| `ols-drafting` | Plan & profile sheets, DXF/PDF |
-| `ols-io` | Import/export formats (each format is a plugin) |
-| `ols-render` | GPU renderer: chunk streaming, LOD, culling, instancing |
-| `ols-gui` | Desktop application |
-| `ols-py` | Python bindings (PyO3) for scripting and Python plugins |
-| `ols-sdk` | Plugin API, templates, test helpers |
+| `ols-bom` | Bill of materials (structures, insulators, cut lengths, hardware) and cost estimate (`.olscost`) |
+| `ols-drawing` | Plan and profile drawings per route and profile exports: SVG, DXF, PDF, PNG, CSV, XML |
+| `ols-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines; pure Rust |
+| `ols-io` | Import/export: format traits and registry, built-in formats (CSV, KML/KMZ, OLS XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC4, XLSX), structures along a route, formats and projects from WebAssembly plugins |
+| `ols-session` | Project file (`.ols`, SQLite), validated commands, operation log, per-user undo/redo, admin rollback, roles, live incremental solving; version control (revisions, branches, merge — ADR-0010), edit grants and reviews; spatial index |
+| `ols-server` | Server mode (alpha): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, invitations; the web client (HTTPS + WebSocket) |
+| `ols-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming; headless images |
+| `ols-plugins` | Plugin manifests (`ols-plugin.toml`), compatibility checks, the sandboxed WebAssembly component host (WIT worlds for formats, projects, terrain, design codes) |
+| `ols-validation` | Validation framework: cases (`benchmarks/`), runner and reports (`ols validate`) |
+| `ols-app` | Desktop application `ols-cad` (egui, ADR-0009): 3D, plan, profile, properties, tools, tables, library editors, checks, Python console, plugin manager |
+| `ols-cli` | The `ols` command-line tool |
+| `ols-py` | Python bindings (PyO3, `import ols`) for scripts and Python plugins |
 
 ## Session & collaboration
 
 ```
  Client A ──┐  commands ►                    ◄ change sets
  Client B ──┼──────────────►  ols-session  ─────────────► all clients
- Client C ──┘                (authoritative)   (only chunks they view)
+ Client C ──┘                (authoritative)
                                    │
                               engines recompute affected sections
 ```
@@ -88,11 +88,12 @@
 ## Rendering, LOD & streaming
 
 - World split into a fixed quadtree grid of spatial chunks (project CRS); render distance per layer.
-- Terrain quadtree, point-cloud octree (COPC), structure mesh LODs, adaptive wire tessellation, GPU instancing.
+- Terrain, LiDAR points, structures and wires drawn by chunk at three levels of detail; point clouds streamed by node (stored levels of detail, or a COPC octree) under a point budget ([Level of detail](user-guide/desktop-app.md#level-of-detail)).
+- Not yet: GPU instancing, structure mesh LODs from the library, wires tessellated on the GPU, sending a joined user only the chunks they view.
 - Background loading threads; the UI thread never waits on I/O or computation.
 - See ADR-0006.
 
-## Plugin system (proposal — ADR-0003)
+## Plugin system (ADR-0003)
 
 Three tiers, same API surface:
 
@@ -102,15 +103,16 @@ Three tiers, same API surface:
 | **WebAssembly** | Third-party calculations, design codes, checks | Near-native speed, any language (Rust, C, C++, Zig…), sandboxed — safe to run on a shared server |
 | **Python** | Scripts, reports, glue, prototyping, I/O formats | Easiest for engineers; not in hot loops |
 
-Extension points: `cable_models`, `wire_loads`, `design_codes`, `importers`/`exporters`, `checks`, `reports`, `solvers`, `commands`, `gui_tools`. Each plugin declares the SDK version it targets.
+WebAssembly plugins implement a WIT world of `crates/ols-plugins/wit/`: `io-plugin` (file formats, extension point `io`), `terrain-plugin` (`terrain`), `project-plugin` (`project`, projects from other programs) and `code-plugin` (`design-code`). Python plugins are scripts run by the application's console. Each plugin declares the interface version it targets in its manifest; see [Writing plugins](development/plugins.md). Further extension points (cable models, checks, reports, solvers, GUI tools) are planned.
 
-## Tech stack (proposal — ADR-0002)
+## Tech stack (ADR-0002)
 
-- **Core & engines**: Rust (speed, memory safety, fearless multithreading via `rayon`), `nalgebra`/`faer` for linear algebra, sparse solvers for FE.
-- **Renderer**: `wgpu` (Vulkan / Metal / DirectX 12, and WebGPU for a future browser client).
-- **GUI toolkit**: deferred to the start of Phase 3 (prototype-based choice) — candidates: Slint, egui, Qt via cxx-qt. Criteria: polish, docking panels, accessibility, performance.
-- **Networking**: QUIC (`quinn`) / WebSocket, binary serialisation.
-- **Geospatial**: PROJ, GDAL bindings where needed, COPC/LAZ for point clouds.
+- **Core & engines**: Rust (speed, memory safety, background threads), `nalgebra` for linear algebra, a skyline LDLᵀ solver for structure FE.
+- **Renderer**: `wgpu` (Vulkan / Metal / DirectX 12; WebGPU in the browser).
+- **GUI toolkit**: egui with wgpu ([ADR-0009](adr/0009-gui-toolkit.md)).
+- **Networking**: QUIC (`quinn`, TLS via `rustls`) for the application; HTTPS + WebSocket (`tokio-tungstenite`) for the web client.
+- **Geospatial**: pure Rust, no native GIS library: `proj4rs` with EPSG definitions, `las`/`laz` for point clouds (COPC read and written), formats written from their public specifications.
 - **Scripting**: Python via PyO3 (`ols-py`), WASM runtime (`wasmtime`) for plugins.
-- **Quality**: cargo test, proptest, clippy, criterion benchmarks in CI; pytest for bindings.
-- **Docs**: mdBook or MkDocs (theory manual + API).
+- **Storage**: SQLite (`rusqlite`) for the project file, `zstd` compression of point and surface blocks.
+- **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ols validate`); pytest for bindings.
+- **Docs**: mdBook (this book: user guide, theory manual, design) and `cargo doc` (API).
