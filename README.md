@@ -38,7 +38,7 @@ cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.jso
     --weather examples/synthetic-line/weather-cases.olswc
 ```
 
-The [documentation book](docs/introduction.md) (`mdbook build`) has the user guide and the theory manual.
+The [documentation book](docs/introduction.md) has the user guide and the theory manual: on macOS double-click `Open the manual.command` (it installs mdBook the first time), or run `mdbook serve --open`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
 
