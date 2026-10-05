@@ -34,7 +34,8 @@ pub struct Sources {
     pub weather: Option<PathBuf>,
     /// Survey points for the ground (CSV/XYZ).
     pub terrain: Option<PathBuf>,
-    /// Point cloud: a project file (`FILE.ols` or `FILE.ols#name`);
+    /// Point cloud: a project file (`FILE.ols` or `FILE.ols#name`) or a
+    /// COPC file (`FILE.copc.laz`);
     /// default: the project's own, if it has one.
     pub pointcloud: Option<String>,
     /// Most LiDAR points shown (the ground surface uses all ground points).
@@ -442,6 +443,11 @@ fn load_types(
 /// are thinned to the point budget).
 pub const SMALL_CLASS: u64 = 20_000;
 
+/// A point cloud of more points is not read whole on opening: its ground
+/// classes in the corridor, and its points shown from its levels of
+/// detail (decoding every point takes ~1 s per 10⁷ points).
+pub const SAMPLED_ABOVE: u64 = 20_000_000;
+
 /// Which LiDAR points are loaded: every class, a small class (up to
 /// [`SMALL_CLASS`] points) whole, every `stride`-th point of the others.
 #[derive(Debug)]
@@ -787,10 +793,10 @@ impl Model {
         self.scheme = match &path {
             Some(p) => ols_lidar::ClassScheme::load(p)?,
             None => {
-                let own = crate::chunks::cloud_of(self).and_then(|(file, name)| {
-                    let source = ols_pointcloud::CloudSource::open(&file, name.as_deref()).ok()?;
-                    ols_pointcloud::PointSource::class_scheme(&source)
-                });
+                let own = self
+                    .cloud
+                    .as_ref()
+                    .and_then(|spec| ols_pointcloud::open_source(spec).ok()?.class_scheme());
                 match own {
                     Some(text) => ols_lidar::ClassScheme::parse(&text)?,
                     None => ols_lidar::ClassScheme::asprs(),
@@ -1219,9 +1225,9 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     let mut scheme = ols_lidar::ClassScheme::asprs();
     if let Some(spec) = cloud.clone() {
         let t = Instant::now();
-        let (file, name) = ols_lidar::cloud_spec(&spec);
-        let source = ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?;
-        if let Some(text) = ols_pointcloud::PointSource::class_scheme(&source) {
+        // A project's cloud or a COPC file.
+        let source = ols_pointcloud::open_source(&spec)?;
+        if let Some(text) = source.class_scheme() {
             scheme = ols_lidar::ClassScheme::parse(&text)?;
         }
         // This user's scheme (names, roles, colours), if chosen (an empty
@@ -1254,11 +1260,10 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         // the cloud's size. (Thinning every class alike and leaving out the
         // ground classes, as before, lost whole classes of a real survey:
         // roads, water, bridges, and classes of 6 to 500 points.)
-        let info = source.cloud().clone();
-        let stride = (info.points as usize / sources.point_budget.max(1)).max(1);
-        class_counts = ols_pointcloud::Store::open(file)
-            .and_then(|s| s.class_counts(&info))
-            .map_err(|e| e.to_string())?;
+        let total = source.points().unwrap_or(0);
+        let stride = (total as usize / sources.point_budget.max(1)).max(1);
+        let known = source.class_counts();
+        class_counts = known.clone().unwrap_or_default();
         let mut thinning = Thinning::new(&class_counts, stride);
         // The ground as the surface window builds it from LiDAR.
         let build = crate::surfaces::LidarBuild::default();
@@ -1269,8 +1274,9 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         // Exit clause: decoding is ~1 s per 10⁷ points; 10 min is far beyond.
         let budget =
             ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
-        let stats =
-            ols_pointcloud::PointSource::visit(&source, None, None, &budget, &mut |x, y, z, c| {
+        let stats = if total <= SAMPLED_ABOVE && known.is_some() {
+            // One pass over every point.
+            source.visit(None, None, &budget, &mut |x, y, z, c| {
                 if thinning.keep(c) {
                     points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
                 }
@@ -1278,12 +1284,47 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
                 if need_ground && is_ground[c as usize] && corridor.contains(x, y) {
                     ground_points.add(x, y, z);
                 }
-            })
-            .map_err(|e| e.to_string())?;
+            })?
+        } else {
+            // A large cloud (or a COPC file): the ground classes in the
+            // corridor, then the points shown from the levels of detail —
+            // a small part of the data, not every point.
+            let mut stats = ols_pointcloud::Stats::default();
+            if need_ground && !ground_classes.is_empty() {
+                stats = source.visit(
+                    Some(&corridor),
+                    Some(&ground_classes),
+                    &budget,
+                    &mut |x, y, z, _| ground_points.add(x, y, z),
+                )?;
+            }
+            let whole: Vec<u8> = class_counts
+                .iter()
+                .filter(|(_, n)| *n <= SMALL_CLASS)
+                .map(|(c, _)| *c)
+                .collect();
+            let mut seen = [0u64; 256];
+            let sample =
+                source.visit_sample(1.0 / stride as f64, &whole, &budget, &mut |x, y, z, c| {
+                    seen[c as usize] += 1;
+                    points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
+                })?;
+            if known.is_none() {
+                // Counts estimated from the sample.
+                class_counts = (0..=255u8)
+                    .filter(|c| seen[*c as usize] > 0)
+                    .map(|c| (c, seen[c as usize] * stride as u64))
+                    .collect();
+            }
+            stats.points_read += sample.points_read;
+            stats.points_visited += sample.points_visited;
+            stats
+        };
         step(
             format!(
-                "points: {} decoded in {:.1?}; {} shown, {} ground cells",
-                stats.points_visited,
+                "points: {} decoded of {} in {:.1?}; {} shown, {} ground cells",
+                stats.points_read,
+                total,
                 t.elapsed(),
                 points.len(),
                 ground_points.points().len()

@@ -913,22 +913,21 @@ fn build_from_lidar(
     project: &Path,
     user: &str,
 ) -> Result<Vec<String>, String> {
-    let (file, name) = ols_lidar::cloud_spec(cloud);
-    let source = ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?;
-    let mut is_ground = [false; 256];
-    for c in scheme.codes_with_role("ground") {
-        is_ground[c as usize] = true;
-    }
+    // A project's cloud or a COPC file: only the ground classes' blocks
+    // (nodes) in the corridor are read.
+    let source = ols_pointcloud::open_source(cloud)?;
+    let ground = scheme.codes_with_role("ground");
     let cell = build.cell.max(0.1);
     let mut points = ols_lidar::LowestPerCell::new(Some(cell));
     let budget = ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
-    ols_pointcloud::PointSource::visit(&source, None, None, &budget, &mut |x, y, z, c| {
-        if !is_ground[c as usize] || corridor.as_ref().is_some_and(|k| !k.contains(x, y)) {
-            return;
-        }
-        points.add(x, y, z);
-    })
-    .map_err(|e| e.to_string())?;
+    source
+        .visit(
+            corridor.as_ref(),
+            Some(&ground),
+            &budget,
+            &mut |x, y, z, _| points.add(x, y, z),
+        )
+        .map_err(|e| e.to_string())?;
     if points.points().len() < 3 {
         return Err("fewer than three ground points (classes with the ground role)".into());
     }

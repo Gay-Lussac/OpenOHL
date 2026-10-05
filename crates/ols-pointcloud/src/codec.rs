@@ -80,14 +80,6 @@ impl Columns {
     pub fn encode(&mut self) -> Result<Blobs, String> {
         self.sort();
         let n = self.len();
-        let mut words = Vec::with_capacity(3 * n);
-        let mut prev = 0u32;
-        for &x in &self.x {
-            words.push(x - prev);
-            prev = x;
-        }
-        words.extend_from_slice(&self.y);
-        words.extend_from_slice(&self.z);
         let z = |bytes: &[u8]| zstd::encode_all(bytes, LEVEL).map_err(|e| e.to_string());
         let intensity: Vec<u8> = {
             let mut planes = vec![0u8; 2 * n];
@@ -98,7 +90,11 @@ impl Columns {
             }
             planes
         };
-        Ok((z(&shuffle(&words))?, z(&intensity)?, z(&self.returns)?))
+        Ok((
+            encode_xyz(&self.x, &self.y, &self.z)?,
+            z(&intensity)?,
+            z(&self.returns)?,
+        ))
     }
 
     /// Decodes the coordinates of `n` points (x sorted ascending).
@@ -136,6 +132,21 @@ impl Columns {
         }
         Ok(bytes)
     }
+}
+
+/// Encodes coordinates already sorted by (x, y) — a block's, or a subset
+/// of them in their order: what [`Columns::decode_xyz`] reads.
+pub fn encode_xyz(x: &[u32], y: &[u32], z: &[u32]) -> Result<Vec<u8>, String> {
+    let n = x.len();
+    let mut words = Vec::with_capacity(3 * n);
+    let mut prev = 0u32;
+    for &v in x {
+        words.push(v.checked_sub(prev).ok_or("coordinates not sorted")?);
+        prev = v;
+    }
+    words.extend_from_slice(y);
+    words.extend_from_slice(z);
+    zstd::encode_all(&shuffle(&words)[..], LEVEL).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

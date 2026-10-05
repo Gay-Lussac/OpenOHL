@@ -123,7 +123,12 @@ ols pointcloud info project.ols
 ols pointcloud export project.ols --out survey.laz          # every point
 ols pointcloud export project.ols --out wires.las --classes 14,15 \
   --area 2600000,1200000,2601000,1201000                     # classes, a rectangle
+ols pointcloud export project.ols --out survey.copc.laz     # COPC
+ols pointcloud info survey.copc.laz                         # its octree
+ols pointcloud import survey.copc.laz --into other.ols      # COPC in
+ols pointcloud octree old-project.ols                       # levels of detail
 ols line project.ols --pointcloud project.ols --rules rules.olsr
+ols line project.ols --pointcloud survey.copc.laz --rules rules.olsr
 ```
 
 The desktop app does the same from **Terrain › Survey data › Import
@@ -155,6 +160,49 @@ buildings, other lines' wires, phase-to-phase) 25 s from the project against
 `--pointcloud FILE#name` chooses a cloud when the project has several. Other
 point sources (a point database, a web service) will be plugins implementing
 the same point-source interface.
+
+### Levels of detail
+
+Every block also stores the coordinates of its points of **levels 1, 2 and
+3** — about a 4th, a 16th and a 64th of them, picked by a hash of the
+point's place in the block, so they are spread evenly and the same every
+time; each level holds the coarser ones. They cost a third more coordinate
+data (intensities and returns are stored once). A view far away reads a
+level instead of the whole block — the 3D view streams by them under a
+point budget (see the desktop app's [Level of detail](desktop-app.md#level-of-detail)),
+and opening a cloud of more than 20 million points takes the points shown
+from them (the ground surface still from every ground point in the corridor).
+
+Imports build the levels. Projects from before (point-cloud schema 1) are
+read as they are — the levels are then picked from the whole blocks while
+reading, the same points, only slower — and `ols pointcloud octree FILE`
+builds them once (the schema becomes 2; older versions of OLS CAD then refuse
+the file's point clouds). `ols pointcloud info` says whether they are there.
+
+### COPC
+
+A **COPC** file (Cloud Optimized Point Cloud, [copc.io](https://copc.io)) is a
+LAS 1.4 LAZ file whose points are grouped by the nodes of an octree, each
+node a thinned sample of its cube that its children refine. OLS CAD:
+
+- reads it **directly** as a point source — `--pointcloud survey.copc.laz` for
+  `ols line` and the desktop app: a query reads only the nodes of its area
+  (the corridor, a rectangle), down to a depth when it asks for less detail;
+  the class scheme is the `.olsc` file next to it (`survey.copc.olsc` or
+  `survey.olsc`), else ASPRS;
+- **imports** it like any LAZ file (`ols pointcloud import`);
+- **writes** it (`ols pointcloud export … --out FILE.copc.laz`): point format
+  6, nodes split while they hold more than 100 000 points (each keeping one
+  point per cell of a 128³ grid over its cube), one hierarchy page. The
+  export holds the points in memory (32 bytes each: 10⁸ points need 3.2 GB).
+  Files written are read by other COPC readers (checked with copc-rs), and
+  files written by other tools (copc-rs, hierarchies in several pages) are
+  read by OLS CAD.
+- `ols pointcloud info FILE.copc.laz` lists the octree: nodes, points and
+  spacing per level.
+
+Points flagged withheld are left out, as for LAS/LAZ. Point formats 6–8 are
+read (what COPC allows); colours, GPS times and extra bytes are not kept.
 
 ## Spatial index and tiles
 

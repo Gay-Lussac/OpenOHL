@@ -8,7 +8,7 @@
 | [0004](0004-project-file-format.md) | Project file format (SQLite + JSON export) | Accepted |
 | [0005](0005-collaboration-session-model.md) | Collaboration / session model | Accepted |
 | [0006](0006-rendering-lod-streaming.md) | Rendering, LOD & streaming | Accepted |
-| [0007](0007-point-clouds-in-the-project.md) | Point clouds stored in the project file | Accepted |
+| [0007](0007-point-clouds-in-the-project.md) | Point clouds stored in the project file (amended: levels of detail, COPC) | Accepted |
 | [0008](0008-spatial-chunk-index.md) | Spatial chunk index | Accepted |
 | [0009](0009-gui-toolkit.md) | GUI toolkit: egui with wgpu | Accepted |
 | [0010](0010-version-control.md) | Version control, edit rights and reviews in the project file | Accepted |

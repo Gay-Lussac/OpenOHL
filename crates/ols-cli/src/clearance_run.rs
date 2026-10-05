@@ -219,11 +219,9 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
     }
     // Points: a project's point cloud or LAS/LAZ tiles, one interface.
     let source: Option<Box<dyn ols_pointcloud::PointSource>> = match (o.pointcloud, o.lidar) {
+        // A project's cloud or a COPC file.
         (Some(spec), _) => {
-            let (file, name) = ols_lidar::cloud_spec(spec);
-            Some(Box::new(
-                ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?,
-            ))
+            Some(ols_pointcloud::open_source(spec)? as Box<dyn ols_pointcloud::PointSource>)
         }
         (None, Some(dir)) => Some(Box::new(ols_pointcloud::TileSource {
             tiles: ols_lidar::tiles_in(dir).map_err(|e| e.to_string())?,

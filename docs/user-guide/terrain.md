@@ -177,7 +177,7 @@ cargo run --release -p ols-cli -- line LINE.ols.json --lidar TILES_DIR \
 
 | Option | Meaning |
 |---|---|
-| `--lidar PATH` | LAS / LAZ file or directory of tiles. |
+| `--lidar PATH` | LAS / LAZ file or directory of tiles. (`--pointcloud` instead reads a project's point cloud or a COPC file, only the blocks or octree nodes of the corridor: [Point clouds](project.md#point-clouds).) |
 | `--lidar-classes FILE` | Class scheme (below); default: ASPRS LAS 1.4 standard classes. |
 | `--ground-role ROLE` | Classes with this role make the ground surface (default `ground`). |
 | `--corridor M` | Only points within M of the spans (default 60 m). Every tile is read (the bounds in tile headers are not trusted); points flagged *withheld* are left out. |
