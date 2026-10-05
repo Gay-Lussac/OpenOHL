@@ -1,0 +1,76 @@
+# EN 50341-1 (general approach) parameter file for the OLS CAD plugin
+# "en50341", with a national normative annex (NNA) overlay.
+#
+# !!! EVERY NUMBER IN THIS FILE IS AN INVENTED PLACEHOLDER. !!!
+# None is taken from EN 50341-1, from any national annex (SN EN 50341-2-x
+# included) or from any other standard. Replace each value with the one
+# your standard and national annex give for your line before using the
+# generated cases.
+
+[project]
+name = "EN 50341 example (invented values)"
+# Wire condition of every load case: initial, creep, load or max_sag.
+condition = "initial"
+
+# Wind on conductors. Peak wind pressure q_p = c_e(h) · ½ρ·v_b²; the
+# pressure on the projected conductor diameter is q_p · G_c · C_c.
+[wind]
+basic_velocity = 24.0        # v_b, m/s
+air_density = 1.25           # ρ, kg/m³
+exposure_factor = 2.1        # c_e(h): terrain category and height
+structural_factor = 0.8      # G_c (span and gust effects on conductors)
+drag_factor = 1.0            # C_c, bare conductor
+temperature = 10.0           # °C, coincident with the extreme wind
+# Wind at the minimum temperature: its velocity as a fraction of v_b.
+min_temperature_velocity_factor = 0.7
+
+# Characteristic ice: a load per metre (load) or a radial thickness in mm
+# (thickness), with its density.
+[ice]
+load = 15.0                  # I_k, N/m
+density = 500.0              # kg/m³
+temperature = -5.0           # °C
+
+# Combined wind and ice: the ice (as a fraction of I_k, or of the
+# thickness) and the wind velocity with ice (as a fraction of v_b).
+[ice_wind]
+ice_factor = 1.0
+velocity_factor = 0.6
+drag_factor = 1.1            # C_c of the iced conductor
+
+[temperatures]
+minimum = -20.0              # °C, no wind, no ice
+
+# Partial factors γ and combination factors ψ.
+[partial_factors]
+permanent = 1.0              # γ_G
+wind = 1.2                   # γ_W
+ice = 1.3                    # γ_I
+psi_wind = 0.5               # ψ_W: wind accompanying dominant ice
+psi_ice = 0.4                # ψ_I: ice accompanying dominant wind
+material = 1.1               # γ_M: strength factor 1/γ_M
+
+# National normative annex: any table above, given again here, replaces
+# the general values key by key; extra weather and load cases are added.
+[nna]
+country = "CH (placeholder: values invented, not from the Swiss NNA)"
+notes = ["Replace every value with those of your national annex."]
+
+[nna.wind]
+basic_velocity = 26.0
+
+[[nna.extra_weather]]
+name = "NNA heavy wet snow"
+description = "a national case (invented)"
+temperature = 0.0
+ice_load = 25.0
+ice_density = 400.0
+tags = ["loads"]
+
+[[nna.extra_load_case]]
+name = "NNA wet snow"
+weather = "NNA heavy wet snow"
+vertical = 1.3
+transverse = 1.3
+longitudinal = 1.3
+strength = 0.9

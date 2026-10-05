@@ -1,0 +1,43 @@
+# ASCE Manual of Practice 74 (transmission line structural loading)
+# parameter file for the OLS CAD plugin "asce-mop74". SI units.
+#
+# !!! EVERY NUMBER IN THIS FILE IS AN INVENTED PLACEHOLDER. !!!
+# None is taken from ASCE MOP 74, ASCE 7 or any other standard or map.
+# Replace each value with the one for your line's site and return period.
+
+[project]
+name = "ASCE MOP 74 example (invented values)"
+condition = "initial"        # initial, creep, load or max_sag
+return_period = 50           # years, for the record
+
+# Extreme wind on wires: pressure = Q · k_z · K_zt · V² · G_w · C_f.
+[wind]
+speed = 40.0                 # V, 3-s gust, m/s
+air_density_factor = 0.613   # Q, Pa/(m/s)²
+exposure_factor = 1.1        # k_z, at the wires' effective height
+topographic_factor = 1.0     # K_zt
+gust_response_factor = 0.85  # G_w, wires
+force_coefficient = 1.0      # C_f
+temperature = 15.0           # °C
+
+# Ice with concurrent wind (same factors, the concurrent gust speed).
+[ice]
+thickness = 25.0             # mm, radial
+density = 900.0              # kg/m³
+concurrent_wind_speed = 15.0 # m/s
+force_coefficient = 1.0      # C_f of the iced wire
+temperature = -10.0          # °C
+
+[temperatures]
+minimum = -30.0              # °C, no wind, no ice
+
+# Load factors γ (return period adjustment) and the strength factor.
+[load_factors]
+weight = 1.0
+wind = 1.0
+ice = 1.0
+concurrent_wind = 1.0
+strength = 0.9
+
+# Optional: further cases as given (SI units), as [[extra_weather]] and
+# [[extra_load_case]] tables.

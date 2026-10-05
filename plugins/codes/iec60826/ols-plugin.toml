@@ -1,0 +1,8 @@
+[plugin]
+name = "iec60826"
+version = "0.1.0"
+description = "IEC 60826: reliability-based wind, ice and combined cases from your parameter file"
+sdk = "0.1"
+tier = "wasm"
+entry = "target/wasm32-wasip2/release/iec60826.wasm"
+extension-points = ["design-code"]

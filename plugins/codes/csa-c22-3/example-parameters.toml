@@ -1,0 +1,51 @@
+# CSA C22.3 No. 1 (overhead systems) parameter file for the OLS CAD plugin
+# "csa-c22-3".
+#
+# !!! EVERY NUMBER IN THIS FILE IS AN INVENTED PLACEHOLDER. !!!
+# None is taken from CSA C22.3 No. 1 or any other standard; the zone names
+# are made up. Replace each value with the one the standard gives for your
+# line.
+
+[project]
+name = "CSA C22.3 example (invented values)"
+condition = "initial"        # initial, creep, load or max_sag
+zone = "heavy-example"       # the loading zone, one of the [[zone]] tables
+grade = "1"                  # the construction grade, one of the [[grade]] tables
+
+# Loading zones: radial ice, its density, wind pressure on the iced
+# conductor, temperature.
+[[zone]]
+name = "heavy-example"
+ice_thickness = 11.0         # mm
+ice_density = 900.0          # kg/m³
+wind_pressure = 350.0        # Pa
+temperature = -18.0          # °C
+
+[[zone]]
+name = "light-example"
+ice_thickness = 3.0
+ice_density = 900.0
+wind_pressure = 300.0
+temperature = -10.0
+
+# Construction grades: overload factors on the vertical, transverse and
+# longitudinal loads, and the strength factor of the structures.
+[[grade]]
+name = "1"
+vertical = 1.4
+transverse = 2.1
+longitudinal = 1.4
+strength = 0.8
+
+[[grade]]
+name = "2"
+vertical = 1.2
+transverse = 1.6
+longitudinal = 1.2
+strength = 0.8
+
+[temperatures]
+minimum = -40.0              # °C, no wind, no ice
+
+# Optional: further cases as given (SI units), as [[extra_weather]] and
+# [[extra_load_case]] tables.

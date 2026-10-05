@@ -1,0 +1,45 @@
+// OLS CAD design-code plugin interface (ADR-0003), part of package
+// ols:plugin (declared in plugin.wit).
+//
+// A design-code plugin turns the user's parameter file (TOML, every value
+// taken from the standard and its national annex by the user) into weather
+// cases and load cases. OLS CAD ships no code tables.
+
+/// Types of design-code plugins.
+interface code-types {
+    /// Identity of a design-code plugin.
+    record code-info {
+        /// Unique plugin name, e.g. "en50341".
+        name: string,
+        /// Plugin version (semantic versioning).
+        version: string,
+        /// One line: the code and what is generated.
+        description: string,
+        /// A parameter file to start from (TOML, every value a placeholder
+        /// to be replaced from the standard), its schema in comments.
+        parameters-template: string,
+    }
+
+    /// What a design code generated from a parameter file.
+    record generated {
+        /// Weather cases, as a weather case file (.olswc, TOML).
+        weather-cases: string,
+        /// Load cases, as a load case file (.olslc, TOML); each names one
+        /// of the weather cases.
+        load-cases: string,
+        /// What was generated, assumed or left out (shown to the user).
+        notes: list<string>,
+    }
+}
+
+/// World of design-code plugins (extension point `design-code`).
+world code-plugin {
+    use code-types.{code-info, generated};
+
+    /// Describes the plugin and its parameter file.
+    export describe: func() -> code-info;
+
+    /// Weather cases and load cases from a parameter file's text (TOML);
+    /// the error says what is wrong with the file.
+    export generate: func(parameters: string) -> result<generated, string>;
+}
