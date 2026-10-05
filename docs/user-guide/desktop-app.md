@@ -109,7 +109,7 @@ The level of detail changes what is **drawn** only: calculations, checks, the pr
 
 **Display weather cases** (Criteria, Sections or View menu) chooses how the wires are shown:
 
-- **The same weather cases for every section**: tick one or several; every section is drawn in each case ticked. Display only — the Sections table's display cases are kept (not used while this is chosen).
+- **The same weather cases for every section**: tick one or several (the list scrolls in a box of fixed height); every section is drawn in each case ticked. Display only — the Sections table's display cases are kept (not used while this is chosen).
 - **Each section's display weather case (Sections table)**: every section in its own display cases; sections without one in the cases ticked above. Setting display cases in the Sections table chooses this too.
 - **Wind**: from the right, from the left, or **both sides** (each case with wind solved and drawn twice; the wind from the right is the one reported, clicked and checked). The side the wind comes from is a display choice, not part of the weather case.
 

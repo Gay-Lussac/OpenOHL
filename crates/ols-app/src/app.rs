@@ -3109,11 +3109,15 @@ fn display_window(ctx: &egui::Context, r: &mut Ready) {
         .on_hover_text("Display only: the Sections table is not changed");
         ui.add_enabled_ui(w.mode == CasesShown::AllSections, |ui| {
             ui.indent("cases", |ui| {
-                for (k, c) in r.model.cases.iter().enumerate() {
-                    if let Some(t) = w.ticks.get_mut(k) {
-                        ui.checkbox(t, &c.case.name).on_hover_text(c.case.summary());
+                // A box of fixed height, scrolled: long lists of cases keep
+                // the window small.
+                crate::properties::cases_box(ui, "display-cases-list", |ui| {
+                    for (k, c) in r.model.cases.iter().enumerate() {
+                        if let Some(t) = w.ticks.get_mut(k) {
+                            ui.checkbox(t, &c.case.name).on_hover_text(c.case.summary());
+                        }
                     }
-                }
+                });
                 ui.horizontal(|ui| {
                     if ui.small_button("All").clicked() {
                         w.ticks.iter_mut().for_each(|t| *t = true);

@@ -581,7 +581,7 @@ pub fn ui(
 const CASES_HEIGHT: f32 = 180.0;
 
 /// A weather case list in a box of fixed height, scrolled.
-fn cases_box(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui)) {
+pub fn cases_box(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::group(ui.style()).show(ui, |ui| {
         egui::ScrollArea::vertical()
             .id_salt(id)
