@@ -1,0 +1,28 @@
+# Catenaries fitted to LiDAR wire points (ols_clearance::wirefit): points
+# sampled exactly on a known catenary z = z0 + c (cosh((s − s0)/c) − 1)
+# must give it back, and its sag (largest distance below the chord from
+# s = 0 to the span) must match a brute-force evaluation
+# (benchmarks/clearance/reference_clearance.py).
+
+[[case]]
+id = "wirefit-001"
+title = "300 m span, low point at 180 m, c = 1400 m, points from 10 to 290 m"
+calculation = "wirefit.catenary_fit"
+reference = "Exact points of the catenary; sag by brute force (benchmarks/clearance/reference_clearance.py)"
+inputs = { catenary_constant = "1400 m", low_point_s = "180 m", low_point_z = "512 m", span = "300 m", from = "10 m", to = "290 m", step = "1 m" }
+expected.catenary_m = { value = 1400.0, rel_tol = 1e-7 }
+expected.low_point_s_m = { value = 180.0, abs_tol = 1e-5 }
+expected.low_point_z_m = { value = 512.0, abs_tol = 1e-6 }
+expected.sag_m = { value = 8.045252403, abs_tol = 1e-6 }
+expected.rms_m = { value = 0.0, abs_tol = 1e-6 }
+
+[[case]]
+id = "wirefit-002"
+title = "Inclined span: low point beyond the points (s0 = −40 m), c = 900 m"
+calculation = "wirefit.catenary_fit"
+reference = "Exact points of the catenary"
+inputs = { catenary_constant = "900 m", low_point_s = "-40 m", low_point_z = "300 m", span = "250 m", from = "15 m", to = "235 m", step = "0.5 m" }
+expected.catenary_m = { value = 900.0, rel_tol = 1e-6 }
+expected.low_point_s_m = { value = -40.0, abs_tol = 1e-3 }
+expected.low_point_z_m = { value = 300.0, abs_tol = 1e-4 }
+expected.rms_m = { value = 0.0, abs_tol = 1e-6 }

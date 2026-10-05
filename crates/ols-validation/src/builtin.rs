@@ -37,6 +37,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(WireFeSpan));
     registry.register(Box::new(WireFePointLoad));
     registry.register(Box::new(Nonlinear));
+    registry.register(Box::new(GallopingEllipses));
+    registry.register(Box::new(CatenaryFit));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -684,6 +686,99 @@ impl Calculation for Nonlinear {
                 "final_cause",
                 if cause == FinalCause::Load { 1.0 } else { 0.0 },
             ),
+        ]))
+    }
+}
+
+/// `galloping.ellipses`: the ellipse of one method (`major = major_sag · D
+/// + major_constant`, `minor = minor_of_major · A`) at fraction `at` of a
+/// span, and the distance to the same ellipse of a second wire offset by
+/// (`offset_right`, `offset_up`).
+struct GallopingEllipses;
+
+impl Calculation for GallopingEllipses {
+    fn id(&self) -> &'static str {
+        "galloping.ellipses"
+    }
+
+    fn description(&self) -> &'static str {
+        "Galloping ellipse of a span and the gap to a second wire's (inputs: sag, span, diameter, \
+         loops, major_sag, major_constant, minor_of_major, tilt_deg, centre_above_rest, at, \
+         offset_right, offset_up)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ols_clearance::galloping::{Along, AxisFormula, Method, ellipse_distance};
+        let len = |k: &str| quantity_input::<Length>(inputs, k).map(|l| l.si());
+        let method = Method {
+            name: "validation".into(),
+            loops: float_input(inputs, "loops")? as u32,
+            major: AxisFormula {
+                sag: float_input(inputs, "major_sag")?,
+                constant: len("major_constant")?,
+                ..AxisFormula::default()
+            },
+            minor: AxisFormula {
+                major: float_input(inputs, "minor_of_major")?,
+                ..AxisFormula::default()
+            },
+            tilt_deg: float_input(inputs, "tilt_deg")?,
+            centre_above_rest: float_input(inputs, "centre_above_rest")?,
+            along: Along::Sine,
+        };
+        let e = method.ellipse(
+            len("sag")?,
+            len("span")?,
+            len("diameter")?,
+            float_input(inputs, "at")?,
+        );
+        let other = e.moved([len("offset_right")?, len("offset_up")?]);
+        Ok(outputs([
+            ("major_m", 2.0 * e.semi_major),
+            ("minor_m", 2.0 * e.semi_minor),
+            ("centre_right_m", e.centre[0]),
+            ("centre_up_m", e.centre[1]),
+            ("distance_m", ellipse_distance(&e, &other)),
+        ]))
+    }
+}
+
+/// `wirefit.catenary_fit`: a catenary fitted to points sampled on a known
+/// one (`from` to `to` every `step` along the span).
+struct CatenaryFit;
+
+impl Calculation for CatenaryFit {
+    fn id(&self) -> &'static str {
+        "wirefit.catenary_fit"
+    }
+
+    fn description(&self) -> &'static str {
+        "Catenary fitted to points of a known catenary (inputs: catenary_constant, low_point_s, \
+         low_point_z, span, from, to, step)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ols_clearance::wirefit::{PlaneCatenary, fit_catenary};
+        let len = |k: &str| quantity_input::<Length>(inputs, k).map(|l| l.si());
+        let truth = PlaneCatenary {
+            c: len("catenary_constant")?,
+            s0: len("low_point_s")?,
+            z0: len("low_point_z")?,
+        };
+        let (from, to, step) = (len("from")?, len("to")?, len("step")?);
+        if !(step > 0.0 && to > from) {
+            return Err("step must be positive and to above from".into());
+        }
+        let n = ((to - from) / step).round() as usize;
+        let s: Vec<f64> = (0..=n).map(|k| from + k as f64 * step).collect();
+        let z: Vec<f64> = s.iter().map(|&v| truth.z(v)).collect();
+        let fit = fit_catenary(&s, &z, &ols_core::budget::Budget::new().max_iterations(200))?;
+        Ok(outputs([
+            ("catenary_m", fit.curve.c),
+            ("low_point_s_m", fit.curve.s0),
+            ("low_point_z_m", fit.curve.z0),
+            ("sag_m", fit.curve.sag(0.0, len("span")?)),
+            ("rms_m", fit.rms),
         ]))
     }
 }
