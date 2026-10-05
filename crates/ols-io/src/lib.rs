@@ -14,6 +14,7 @@
 //! and, for each weather case, the solved wires. Plugins receive it as JSON
 //! ([`ExportModel::to_json`], format `ols-export-model` version 1).
 
+pub mod codes;
 pub mod formats;
 pub mod plugin;
 pub mod projects;
