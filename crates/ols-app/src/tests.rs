@@ -3739,6 +3739,7 @@ fn two_applications_share_a_hosted_project() {
             advertise: None,
             code: None,
             newcomers: None,
+            web: None,
         },
     )
     .unwrap();
