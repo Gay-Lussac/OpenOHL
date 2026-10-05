@@ -3474,6 +3474,7 @@ dependencies = [
  "ols-server",
  "ols-session",
  "ols-structures",
+ "ols-structures-fe",
  "ols-terrain",
  "ols-validation",
  "ols-weather",
@@ -3562,6 +3563,7 @@ dependencies = [
  "ols-core",
  "ols-line",
  "ols-structures",
+ "ols-structures-fe",
  "ols-weather",
  "ols-wirefe",
  "serde",
@@ -3658,6 +3660,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-structures-fe"
+version = "0.0.1"
+dependencies = [
+ "nalgebra",
+ "ols-core",
+ "serde",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
 name = "ols-terrain"
 version = "0.0.1"
 dependencies = [
@@ -3673,6 +3685,7 @@ dependencies = [
  "ols-core",
  "ols-crs",
  "ols-sagtension",
+ "ols-structures-fe",
  "ols-weather",
  "ols-wirefe",
  "ols-wireloads",
