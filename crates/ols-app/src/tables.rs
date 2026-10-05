@@ -2372,7 +2372,7 @@ impl TablePage {
                         "{} — Apply writes the file (comments kept) and solves the model again",
                         p.display()
                     ),
-                    None => "The model uses a default case (15 °C): make a case file in Libraries › Weather cases and choose Use for the model".into(),
+                    None => "The model uses a default case (15 °C): make a case file in Criteria › Weather cases and choose Use for the model".into(),
                 })
                 .small()
                 .weak(),
