@@ -1,0 +1,8 @@
+[plugin]
+name = "asce-mop74"
+version = "0.1.0"
+description = "ASCE MOP 74: extreme wind, ice with concurrent wind from your parameter file"
+sdk = "0.1"
+tier = "wasm"
+entry = "target/wasm32-wasip2/release/asce_mop74.wasm"
+extension-points = ["design-code"]

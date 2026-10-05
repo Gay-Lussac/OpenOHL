@@ -1,0 +1,74 @@
+# NESC (ANSI C2) Rule 250 parameter file for the OLS CAD plugin "nesc".
+# US customary units, as the NESC writes them (converted to SI in the
+# generated files).
+#
+# !!! EVERY NUMBER IN THIS FILE IS AN INVENTED PLACEHOLDER. !!!
+# None is taken from the NESC or any other standard; the district names
+# are made up. Replace each value with the one the NESC edition you design
+# to gives for your line.
+
+[project]
+name = "NESC example (invented values)"
+condition = "initial"        # initial, creep, load or max_sag
+grade = "B"                  # construction grade, for the record
+# Rule 250B: the loading district of the line, one of the [[district]]
+# tables below.
+district = "heavy-example"
+
+[[district]]
+name = "heavy-example"
+ice_thickness = 0.4          # in, radial
+wind_pressure = 3.5          # psf
+temperature = 5.0            # °F
+constant_k = 0.25            # lb/ft, added to the resultant (see notes)
+
+[[district]]
+name = "light-example"
+ice_thickness = 0.0
+wind_pressure = 8.0
+temperature = 35.0
+constant_k = 0.05
+
+[ice]
+density = 56.0               # lb/ft³
+
+# Rule 250C extreme wind and Rule 250D extreme ice with concurrent wind:
+# pressure = constant · k_z · G · C_f · V² (psf, V in mph).
+[extreme_wind]
+enabled = true
+speed = 95.0                 # mph
+velocity_pressure_constant = 0.00256
+exposure_factor = 1.1        # k_z
+gust_response_factor = 0.9   # G
+force_coefficient = 1.0      # C_f
+temperature = 60.0           # °F
+
+[extreme_ice]
+enabled = true
+ice_thickness = 0.6          # in
+wind_speed = 35.0            # mph, concurrent
+temperature = 15.0           # °F
+
+# Load factors (vertical, transverse, longitudinal) of the construction
+# grade, and strength factors.
+[load_factors.district]
+vertical = 1.5
+transverse = 2.2
+longitudinal = 1.65
+
+[load_factors.extreme_wind]
+vertical = 1.0
+transverse = 1.0
+longitudinal = 1.0
+
+[load_factors.extreme_ice]
+vertical = 1.0
+transverse = 1.0
+longitudinal = 1.0
+
+[strength_factors]
+district = 0.7
+extreme = 0.8
+
+# Optional: further cases as given (SI units), as [[extra_weather]] and
+# [[extra_load_case]] tables.

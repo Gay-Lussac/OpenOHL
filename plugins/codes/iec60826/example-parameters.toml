@@ -1,0 +1,51 @@
+# IEC 60826 parameter file for the OLS CAD plugin "iec60826".
+#
+# !!! EVERY NUMBER IN THIS FILE IS AN INVENTED PLACEHOLDER. !!!
+# None is taken from IEC 60826 or any other standard. Replace each value
+# with the one the standard (and your climatic data) gives for your line.
+
+[project]
+name = "IEC 60826 example (invented values)"
+condition = "initial"        # initial, creep, load or max_sag
+reliability_level = 1        # for the record; the factors below belong to it
+
+# Wind: q0 = ½·τ·μ·(K_R·V_R)²; on conductors q0 · C_xc · G_c · G_L.
+[wind]
+reference_speed = 30.0       # V_R, m/s
+roughness_factor = 1.0       # K_R, terrain category
+air_density_correction = 1.0 # τ, altitude and temperature
+air_density = 1.225          # μ, kg/m³
+drag_factor = 1.0            # C_xc
+gust_factor = 1.9            # G_c, terrain and height
+span_factor = 0.95           # G_L, span length
+temperature = 15.0           # °C
+
+# Ice: the reference ice weight per metre and its density.
+[ice]
+weight = 20.0                # g_R, N/m
+density = 600.0              # kg/m³
+temperature = -5.0           # °C
+
+# Combined ice and wind: a high ice with a low wind, and a low ice with a
+# high wind (fractions of g_R and of V_R).
+[combined]
+high_ice_factor = 1.0
+low_wind_factor = 0.6
+low_ice_factor = 0.4
+high_wind_factor = 0.85
+drag_factor = 1.1            # C_xc of the iced conductor
+temperature = -5.0           # °C
+
+[temperatures]
+minimum = -20.0              # °C, no wind, no ice
+
+# Use factors γ (to the return period of the reliability level) and the
+# global strength factor φ.
+[factors]
+weight = 1.0
+wind = 1.1                   # γ_W
+ice = 1.15                   # γ_I
+strength = 0.9               # φ_R
+
+# Optional: further cases as given (SI units), as [[extra_weather]] and
+# [[extra_load_case]] tables.

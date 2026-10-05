@@ -1,0 +1,40 @@
+# California Public Utilities Commission General Order 95 parameter file
+# for the OLS CAD plugin "go95". US customary units, as GO 95 writes them
+# (converted to SI in the generated files).
+#
+# !!! EVERY NUMBER IN THIS FILE IS AN INVENTED PLACEHOLDER. !!!
+# None is taken from GO 95 or any other rule or standard; the district
+# names are made up. Replace each value with the one GO 95 gives.
+
+[project]
+name = "GO 95 example (invented values)"
+condition = "initial"        # initial, creep, load or max_sag
+site_elevation = 1000.0      # ft: chooses the loading district (Rule 43)
+# district = "light-example" # or name it
+
+# Loading districts (Rule 43): each applies from its elevation up; the one
+# with the highest from_elevation at or below the site elevation is used.
+[[district]]
+name = "light-example"
+from_elevation = 0.0         # ft
+ice_thickness = 0.0          # in, radial
+ice_density = 57.0           # lb/ft³
+wind_pressure = 7.0          # psf, on the projected area
+temperature = 30.0           # °F
+
+[[district]]
+name = "heavy-example"
+from_elevation = 800.0
+ice_thickness = 0.25
+ice_density = 57.0
+wind_pressure = 5.0
+temperature = 10.0
+
+# Rule 44 safety factors of the structures, at installation and at
+# replacement: the load cases' strength factors are 1 / factor.
+[safety_factors]
+installation = 2.0
+replacement = 1.4
+
+# Optional: further cases as given (SI units), as [[extra_weather]] and
+# [[extra_load_case]] tables.
