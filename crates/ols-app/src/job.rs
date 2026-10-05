@@ -1,0 +1,121 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! A computation on its own thread for a window of the Checks menu: its
+//! answer, how long it took, a spinner while it runs.
+
+use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::time::{Duration, Instant};
+
+use eframe::egui;
+
+/// A background computation and its last answer.
+pub struct Job<T> {
+    running: Option<(Instant, Receiver<Result<T, String>>)>,
+    /// The last answer (or why there is none).
+    pub result: Option<Result<T, String>>,
+    /// How long it took.
+    pub took: Option<Duration>,
+}
+
+impl<T> Default for Job<T> {
+    fn default() -> Self {
+        Self {
+            running: None,
+            result: None,
+            took: None,
+        }
+    }
+}
+
+impl<T: Send + 'static> Job<T> {
+    /// Whether it runs.
+    pub fn running(&self) -> bool {
+        self.running.is_some()
+    }
+
+    /// Runs `work` on its own thread (unless it runs already).
+    pub fn start(
+        &mut self,
+        ctx: &egui::Context,
+        work: impl FnOnce() -> Result<T, String> + Send + 'static,
+    ) {
+        if self.running.is_some() {
+            return;
+        }
+        let (tx, rx) = channel();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(work());
+            ctx.request_repaint();
+        });
+        self.running = Some((Instant::now(), rx));
+    }
+
+    /// Takes a finished answer.
+    pub fn poll(&mut self) {
+        let Some((t, rx)) = &self.running else {
+            return;
+        };
+        let r = match rx.try_recv() {
+            Ok(r) => r,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => Err("the computation stopped".into()),
+        };
+        self.took = Some(t.elapsed());
+        if let Err(e) = &r {
+            log::warn!("{e}");
+        }
+        self.result = Some(r);
+        self.running = None;
+    }
+
+    /// A spinner while it runs, else how long the last run took.
+    pub fn status_ui(&self, ui: &mut egui::Ui) {
+        if let Some((t, _)) = &self.running {
+            ui.spinner();
+            ui.label(format!("{:.1} s", t.elapsed().as_secs_f64()));
+            ui.ctx().request_repaint_after(Duration::from_millis(200));
+        } else if let Some(t) = self.took {
+            ui.label(
+                egui::RichText::new(format!("computed in {t:.1?}"))
+                    .small()
+                    .weak(),
+            );
+        }
+    }
+}
+
+/// Text for a value in a table, `-` without one.
+pub fn or_dash(v: Option<f64>, digits: usize) -> String {
+    v.map_or("-".into(), |v| format!("{v:.digits$}"))
+}
+
+/// A weather case chooser: `case` indexes the model's cases.
+pub fn case_combo(ui: &mut egui::Ui, id: &str, names: &[String], case: &mut usize) {
+    if names.is_empty() {
+        return;
+    }
+    *case = (*case).min(names.len() - 1);
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(names[*case].as_str())
+        .width(180.0)
+        .show_ui(ui, |ui| {
+            for (k, n) in names.iter().enumerate() {
+                ui.selectable_value(case, k, n);
+            }
+        });
+}
+
+/// Saves `text` to a CSV file chosen by the user.
+pub fn save_csv(name: &str, text: &str) {
+    if let Some(path) = rfd::FileDialog::new()
+        .add_filter("CSV", &["csv"])
+        .set_file_name(name)
+        .save_file()
+        && let Err(e) = std::fs::write(&path, text)
+    {
+        log::warn!("{}: {e}", path.display());
+    }
+}

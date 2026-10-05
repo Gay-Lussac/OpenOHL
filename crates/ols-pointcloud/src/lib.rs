@@ -179,6 +179,22 @@ struct Pending {
     returns: Vec<u8>,
 }
 
+/// Adds one point to the pending block of its chunk and class.
+fn add_pending(pending: &mut HashMap<(i64, i64, u8), Pending>, cloud: &CloudInfo, p: &LidarPoint) {
+    let units = (cloud.chunk_size / cloud.scale).round() as i64;
+    let q = |v: f64| (v / cloud.scale).round() as i64;
+    let (x, y, z) = (q(p.x), q(p.y), q(p.z));
+    let b = pending
+        .entry((x.div_euclid(units), y.div_euclid(units), p.class))
+        .or_default();
+    b.x.push(x);
+    b.y.push(y);
+    b.z.push(z);
+    b.intensity.push(p.intensity);
+    b.returns
+        .push((p.return_number.min(15) << 4) | p.number_of_returns.min(15));
+}
+
 impl Store {
     /// Opens (or creates) the project file and its point-cloud tables.
     pub fn open(path: &Path) -> Result<Self, StoreError> {
@@ -553,118 +569,166 @@ impl Store {
         budget: &Budget,
         mut progress: impl FnMut(usize, &Path, u64),
     ) -> Result<(CloudInfo, Stats), StoreError> {
-        if !(chunk_size > 0.0 && scale > 0.0 && chunk_size / scale < u32::MAX as f64 / 2.0) {
-            return Err(err(
-                "chunk size and scale must be positive, chunk/scale < 2³¹",
-            ));
-        }
-        let chunk_size = whole_chunk(chunk_size, scale);
-        let existing = self.clouds()?.into_iter().find(|c| c.name == name);
-        let cloud = match existing {
-            Some(c) => c,
-            None => {
-                self.conn.execute(
-                    "INSERT INTO pointcloud (name, crs, scale, chunk_size, class_scheme) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![name, crs, scale, chunk_size, class_scheme],
-                )?;
-                self.cloud(Some(name))?
-            }
-        };
-        let units = (cloud.chunk_size / cloud.scale).round() as i64;
+        let cloud = self.cloud_for_import(name, crs, class_scheme, chunk_size, scale)?;
         let mut stats = Stats::default();
         for (k, tile) in tiles.iter().enumerate() {
-            let mut pending: HashMap<(i64, i64, u8), Pending> = HashMap::new();
+            let mut pending = HashMap::new();
             let (_, _, n) = ols_lidar::for_each_record(
                 std::slice::from_ref(tile),
                 None,
                 budget,
-                |p: &LidarPoint| {
-                    let q = |v: f64| (v / cloud.scale).round() as i64;
-                    let (x, y, z) = (q(p.x), q(p.y), q(p.z));
-                    let b = pending
-                        .entry((x.div_euclid(units), y.div_euclid(units), p.class))
-                        .or_default();
-                    b.x.push(x);
-                    b.y.push(y);
-                    b.z.push(z);
-                    b.intensity.push(p.intensity);
-                    b.returns
-                        .push((p.return_number.min(15) << 4) | p.number_of_returns.min(15));
-                },
+                |p: &LidarPoint| add_pending(&mut pending, &cloud, p),
             )
             .map_err(|e| err(e.to_string()))?;
-            let tx = self.conn.transaction()?;
-            for ((cx, cy, class), mut b) in pending {
-                // Merge with a block from an earlier tile (chunks across
-                // tile edges).
-                let old: Option<StoredBlock> = tx
-                    .query_row(
-                        "SELECT id, count, z0, xyz, intensity, returns FROM pointcloud_block
-                         WHERE cloud = ?1 AND cx = ?2 AND cy = ?3 AND class = ?4",
-                        params![cloud.id, cx, cy, class],
-                        |r| {
-                            Ok((
-                                r.get(0)?,
-                                r.get(1)?,
-                                r.get(2)?,
-                                r.get(3)?,
-                                r.get(4)?,
-                                r.get(5)?,
-                            ))
-                        },
-                    )
-                    .optional()?;
-                if let Some((id, count, z0, xyz, intensity, returns)) = &old {
-                    let n = *count as usize;
-                    let (x, y, z) = Columns::decode_xyz(xyz, n).map_err(err)?;
-                    let inten = match intensity {
-                        Some(i) => Columns::decode_intensity(i, n).map_err(err)?,
-                        None => vec![0; n],
-                    };
-                    let ret = match returns {
-                        Some(r) => Columns::decode_returns(r, n).map_err(err)?,
-                        None => vec![0; n],
-                    };
-                    for i in 0..n {
-                        b.x.push(cx * units + x[i] as i64);
-                        b.y.push(cy * units + y[i] as i64);
-                        b.z.push(z0 + z[i] as i64);
-                    }
-                    b.intensity.extend(inten);
-                    b.returns.extend(ret);
-                    tx.execute("DELETE FROM pointcloud_block WHERE id = ?1", params![id])?;
-                }
-                let z0 = b.z.iter().copied().min().unwrap_or(0);
-                let zmax = b.z.iter().copied().max().unwrap_or(0);
-                if zmax - z0 > u32::MAX as i64 {
-                    return Err(err("height range of a block exceeds the integer range"));
-                }
-                let mut columns = Columns {
-                    x: b.x.iter().map(|&v| (v - cx * units) as u32).collect(),
-                    y: b.y.iter().map(|&v| (v - cy * units) as u32).collect(),
-                    z: b.z.iter().map(|&v| (v - z0) as u32).collect(),
-                    intensity: b.intensity,
-                    returns: b.returns,
-                };
-                let count = columns.len() as i64;
-                let (xyz, intensity, returns) = columns.encode().map_err(err)?;
-                tx.execute(
-                    "INSERT INTO pointcloud_block (cloud, cx, cy, class, count, z0, xyz, intensity, returns)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                    params![cloud.id, cx, cy, class, count, z0, xyz, intensity, returns],
-                )?;
-            }
-            tx.execute(
-                "INSERT INTO pointcloud_source (cloud, path, points) VALUES (?1, ?2, ?3)",
-                params![cloud.id, tile.display().to_string(), n as i64],
-            )?;
-            tx.commit()?;
+            self.write_blocks(&cloud, pending, &tile.display().to_string(), n)?;
             stats.read += 1;
             stats.points_read += n;
             progress(k, tile, n);
         }
         self.update_summary(&cloud)?;
         Ok((self.cloud(Some(name))?, stats))
+    }
+
+    /// Imports points held in memory (e.g. classified by
+    /// [`ols_lidar::classify`]) into the cloud `name`, as
+    /// [`Store::import_tiles`] does tiles; `source` is recorded as where
+    /// they came from. One transaction. Exit clause: `budget`, checked
+    /// every 2²⁰ points.
+    #[allow(clippy::too_many_arguments)]
+    pub fn import_points(
+        &mut self,
+        name: &str,
+        points: &[LidarPoint],
+        source: &str,
+        crs: &str,
+        class_scheme: Option<&str>,
+        chunk_size: f64,
+        scale: f64,
+        budget: &Budget,
+    ) -> Result<(CloudInfo, Stats), StoreError> {
+        let cloud = self.cloud_for_import(name, crs, class_scheme, chunk_size, scale)?;
+        let run = budget.start();
+        let mut pending = HashMap::new();
+        for chunk in points.chunks(1 << 20) {
+            run.check()
+                .map_err(|stop| err(format!("stopped: {stop}")))?;
+            for p in chunk {
+                add_pending(&mut pending, &cloud, p);
+            }
+        }
+        let n = points.len() as u64;
+        self.write_blocks(&cloud, pending, source, n)?;
+        self.update_summary(&cloud)?;
+        let stats = Stats {
+            read: 1,
+            points_read: n,
+            ..Stats::default()
+        };
+        Ok((self.cloud(Some(name))?, stats))
+    }
+
+    /// The cloud `name`, created with these settings when missing.
+    fn cloud_for_import(
+        &mut self,
+        name: &str,
+        crs: &str,
+        class_scheme: Option<&str>,
+        chunk_size: f64,
+        scale: f64,
+    ) -> Result<CloudInfo, StoreError> {
+        if !(chunk_size > 0.0 && scale > 0.0 && chunk_size / scale < u32::MAX as f64 / 2.0) {
+            return Err(err(
+                "chunk size and scale must be positive, chunk/scale < 2³¹",
+            ));
+        }
+        let chunk_size = whole_chunk(chunk_size, scale);
+        if let Some(c) = self.clouds()?.into_iter().find(|c| c.name == name) {
+            return Ok(c);
+        }
+        self.conn.execute(
+            "INSERT INTO pointcloud (name, crs, scale, chunk_size, class_scheme) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![name, crs, scale, chunk_size, class_scheme],
+        )?;
+        self.cloud(Some(name))
+    }
+
+    /// Writes blocks of pending points (merged with blocks already
+    /// stored), and records their source, in one transaction.
+    fn write_blocks(
+        &mut self,
+        cloud: &CloudInfo,
+        pending: HashMap<(i64, i64, u8), Pending>,
+        source: &str,
+        n: u64,
+    ) -> Result<(), StoreError> {
+        let units = (cloud.chunk_size / cloud.scale).round() as i64;
+        let tx = self.conn.transaction()?;
+        for ((cx, cy, class), mut b) in pending {
+            // Merge with a block from an earlier tile (chunks across
+            // tile edges).
+            let old: Option<StoredBlock> = tx
+                .query_row(
+                    "SELECT id, count, z0, xyz, intensity, returns FROM pointcloud_block
+                     WHERE cloud = ?1 AND cx = ?2 AND cy = ?3 AND class = ?4",
+                    params![cloud.id, cx, cy, class],
+                    |r| {
+                        Ok((
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            if let Some((id, count, z0, xyz, intensity, returns)) = &old {
+                let n = *count as usize;
+                let (x, y, z) = Columns::decode_xyz(xyz, n).map_err(err)?;
+                let inten = match intensity {
+                    Some(i) => Columns::decode_intensity(i, n).map_err(err)?,
+                    None => vec![0; n],
+                };
+                let ret = match returns {
+                    Some(r) => Columns::decode_returns(r, n).map_err(err)?,
+                    None => vec![0; n],
+                };
+                for i in 0..n {
+                    b.x.push(cx * units + x[i] as i64);
+                    b.y.push(cy * units + y[i] as i64);
+                    b.z.push(z0 + z[i] as i64);
+                }
+                b.intensity.extend(inten);
+                b.returns.extend(ret);
+                tx.execute("DELETE FROM pointcloud_block WHERE id = ?1", params![id])?;
+            }
+            let z0 = b.z.iter().copied().min().unwrap_or(0);
+            let zmax = b.z.iter().copied().max().unwrap_or(0);
+            if zmax - z0 > u32::MAX as i64 {
+                return Err(err("height range of a block exceeds the integer range"));
+            }
+            let mut columns = Columns {
+                x: b.x.iter().map(|&v| (v - cx * units) as u32).collect(),
+                y: b.y.iter().map(|&v| (v - cy * units) as u32).collect(),
+                z: b.z.iter().map(|&v| (v - z0) as u32).collect(),
+                intensity: b.intensity,
+                returns: b.returns,
+            };
+            let count = columns.len() as i64;
+            let (xyz, intensity, returns) = columns.encode().map_err(err)?;
+            tx.execute(
+                "INSERT INTO pointcloud_block (cloud, cx, cy, class, count, z0, xyz, intensity, returns)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![cloud.id, cx, cy, class, count, z0, xyz, intensity, returns],
+            )?;
+        }
+        tx.execute(
+            "INSERT INTO pointcloud_source (cloud, path, points) VALUES (?1, ?2, ?3)",
+            params![cloud.id, source, n as i64],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Recomputes a cloud's point count and bounds from its blocks.

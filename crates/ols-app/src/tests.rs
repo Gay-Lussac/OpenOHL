@@ -1068,6 +1068,152 @@ fn the_checks_menu_runs_the_clearance_check() {
     harness.get_by_label_contains("Check now");
 }
 
+#[test]
+fn the_checks_menu_opens_the_galloping_window() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Checks").click();
+    harness.run();
+    harness.get_by_label("Galloping ellipses…").click();
+    harness.run();
+    // The example parameters next to the line are chosen; the glaze ice
+    // case is the one they name.
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.galloping.open);
+    assert!(
+        r.galloping
+            .file
+            .as_ref()
+            .is_some_and(|f| f.ends_with("galloping-example.olsg"))
+    );
+    r.galloping.case = r
+        .model
+        .cases
+        .iter()
+        .position(|c| c.case.name == "glaze ice")
+        .unwrap();
+    harness.run();
+    harness.get_by_label("Check").click();
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let (Some(rep), false) = r.galloping.report() {
+            let rep = rep.as_ref().unwrap();
+            // Two phases on T1–T5: four spans, two methods.
+            assert_eq!(rep.rows.len(), 8);
+            assert!(rep.notes.is_empty(), "{:?}", rep.notes);
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 60, "no report in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    // A pair's span link goes to the span.
+    harness
+        .query_all_by_label("S1 span 1")
+        .next()
+        .unwrap()
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state_mut().ready().unwrap().selection,
+        Selection::Span {
+            section: "S1".into(),
+            span: 1
+        }
+    );
+}
+
+#[test]
+fn vegetation_and_as_built_wires_from_a_point_cloud() {
+    // A scan at 35 °C: points along every span (wire class 14) and a tree
+    // (class 5) 3 m below the middle of S1's first span.
+    let mut model = synthetic();
+    let hot = model::Solved::new(
+        &model.line,
+        &model.library,
+        ols_weather::WeatherCase::still("scan", ols_core::units::Temperature::from_celsius(35.0)),
+    );
+    let point = |p: [f64; 3], class: u8| ols_lidar::LidarPoint {
+        x: p[0],
+        y: p[1],
+        z: p[2],
+        class,
+        intensity: 0,
+        return_number: 1,
+        number_of_returns: 1,
+    };
+    let mut points = Vec::new();
+    for shape in &hot.shapes {
+        for span in &shape.spans {
+            for s in span.points.windows(2) {
+                for k in 0..10 {
+                    let t = k as f64 / 10.0;
+                    let p = [0, 1, 2].map(|i| s[0][i] + (s[1][i] - s[0][i]) * t);
+                    points.push(point(p, 14));
+                }
+            }
+        }
+    }
+    let mid = hot.shapes[0].spans[0].mid_point;
+    points.push(point([mid[0], mid[1], mid[2] - 3.0], 5));
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-scan", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("scan.ols");
+    std::fs::remove_file(&file).ok();
+    ols_pointcloud::Store::open(&file)
+        .unwrap()
+        .import_points(
+            "scan",
+            &points,
+            "test",
+            "",
+            None,
+            64.0,
+            0.001,
+            &ols_core::budget::Budget::new(),
+        )
+        .unwrap();
+    model.cloud = Some(format!("{}#scan", file.display()));
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    r.wirefit.open = true;
+    r.vegetation.show(0);
+    harness.run();
+    harness.get_by_label("Fit").click();
+    harness.get_by_label("Check").click();
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let ((Some(fit), false), (Some(veg), false)) =
+            (r.wirefit.result(), r.vegetation.result())
+        {
+            let rows = fit.as_ref().unwrap();
+            assert_eq!(rows.len(), 10);
+            for row in rows {
+                let t = row.temperature.expect("estimated");
+                assert!((t - 35.0).abs() < 2.0, "{t}");
+            }
+            let veg = veg.as_ref().unwrap();
+            assert_eq!(veg.points, 1);
+            let (w, found) = &veg.wires[0];
+            assert_eq!((w.section.as_str(), w.span), ("S1", 0));
+            assert_eq!(found.encroaching, 1);
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 120, "no answers in 120 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// Right-clicks `target` with `tool` held (as a view reports it).
 fn use_tool(
     h: &mut Harness<'_, App>,

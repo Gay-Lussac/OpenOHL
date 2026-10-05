@@ -10,6 +10,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use ols_core::units::UnitSystem;
 
+mod analysis_run;
 mod clearance_run;
 mod cost_run;
 mod code_run;
@@ -71,6 +72,11 @@ enum Command {
     Structures {
         #[command(subcommand)]
         command: StructuresCommand,
+    },
+    /// Galloping ellipses and blowout against the right of way.
+    Clearance {
+        #[command(subcommand)]
+        command: analysis_run::ClearanceCommand,
     },
     /// LiDAR point clouds (LAS / LAZ).
     Lidar {
@@ -375,6 +381,15 @@ enum LidarCommand {
         #[arg(long)]
         scheme: Option<PathBuf>,
     },
+    /// Classify unclassified points: ground (progressive morphological
+    /// filter), then vegetation classes by height above the ground.
+    Classify(analysis_run::ClassifyArgs),
+    /// Vegetation near the wires of each weather case: encroaching now and
+    /// after growth, and trees that could fall onto them.
+    Vegetation(Box<analysis_run::VegetationArgs>),
+    /// Catenaries fitted to the points of wire classes, span by span,
+    /// compared with the model; the conductor temperature at the survey.
+    FitWires(Box<analysis_run::FitArgs>),
 }
 
 #[derive(Subcommand)]
@@ -553,6 +568,16 @@ fn main() -> ExitCode {
                     scheme,
                 },
         }) => lidar_info(&path, classes, scheme.as_deref()),
+        Some(Command::Lidar {
+            command: LidarCommand::Classify(args),
+        }) => report(analysis_run::classify(args)),
+        Some(Command::Lidar {
+            command: LidarCommand::Vegetation(args),
+        }) => report(analysis_run::vegetation(*args)),
+        Some(Command::Lidar {
+            command: LidarCommand::FitWires(args),
+        }) => report(analysis_run::fit_wires(*args)),
+        Some(Command::Clearance { command }) => report(analysis_run::clearance(command)),
     }
 }
 

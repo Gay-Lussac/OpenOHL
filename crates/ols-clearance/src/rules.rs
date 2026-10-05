@@ -43,6 +43,10 @@
 //! - `same_line`: other wires of the same line, in the same span and other
 //!   spans; wires of the same circuit and phase (its back and ahead spans,
 //!   jumpers) are skipped unless `include_same_phase = true`.
+//!   `circuits = "different"` checks only wires of different circuits
+//!   (circuit-to-circuit, e.g. the two circuits of a double-circuit
+//!   tower, or a phase and an earth wire), `"same"` only wires of the same
+//!   circuit (phase-to-phase); default `"any"`.
 //! - `cases = ["max temperature", "glaze*"]`: the weather cases the rule
 //!   applies to (default: all).
 //! - `case_pairs = [["glaze ice", "everyday"]]` (wire rules): the first
@@ -211,6 +215,55 @@ pub enum PairVoltage {
     Difference,
 }
 
+/// Which wire pairs of the same line a `same_line` rule checks, by their
+/// circuits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CircuitFilter {
+    /// Every pair.
+    #[default]
+    Any,
+    /// Pairs of the same circuit (phase to phase).
+    Same,
+    /// Pairs of different circuits (circuit to circuit).
+    Different,
+}
+
+impl CircuitFilter {
+    /// Whether a pair of wires of circuits `a` and `b` is checked.
+    pub fn admits(self, a: &str, b: &str) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Same => a == b,
+            Self::Different => a != b,
+        }
+    }
+}
+
+impl PairVoltage {
+    /// Reads `higher`, `sum` or `difference`.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        match text {
+            "higher" => Ok(Self::Higher),
+            "sum" => Ok(Self::Sum),
+            "difference" => Ok(Self::Difference),
+            other => Err(format!(
+                "pair_voltage \"{other}\": use higher, sum or difference"
+            )),
+        }
+    }
+
+    /// The voltage of a pair of wires, kV; `None` for two earthed wires.
+    pub fn of(self, a: Option<&Potential>, b: Option<&Potential>) -> Option<f64> {
+        let kv = |p: Option<&Potential>| p.map_or(0.0, |p| p.nominal_kv);
+        match (a, b, self) {
+            (None, None, _) => None,
+            (a, b, Self::Higher) => Some(kv(a).max(kv(b))),
+            (a, b, Self::Sum) => Some(kv(a) + kv(b)),
+            (a, b, Self::Difference) => Some(Potential::between(a, b)),
+        }
+    }
+}
+
 /// One rule.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rule {
@@ -242,6 +295,8 @@ pub struct Rule {
     /// Exclusion zone: spans ending at these structures (names, `*` `?`
     /// wildcards) are not checked — e.g. down-leads to cable terminations.
     pub exclude_spans_at: Vec<String>,
+    /// Wire pairs of the same line checked, by circuit (`same_line`).
+    pub circuits: CircuitFilter,
 }
 
 impl Rule {
@@ -266,13 +321,7 @@ impl Rule {
     /// The voltage of a pair of wires (wire rules), kV; `None` for two
     /// earthed wires.
     pub fn pair_voltage(&self, a: Option<&Potential>, b: Option<&Potential>) -> Option<f64> {
-        let kv = |p: Option<&Potential>| p.map_or(0.0, |p| p.nominal_kv);
-        match (a, b, self.pair_voltage) {
-            (None, None, _) => None,
-            (a, b, PairVoltage::Higher) => Some(kv(a).max(kv(b))),
-            (a, b, PairVoltage::Sum) => Some(kv(a) + kv(b)),
-            (a, b, PairVoltage::Difference) => Some(Potential::between(a, b)),
-        }
+        self.pair_voltage.of(a, b)
     }
 
     /// Whether a requirement depends on the voltage.
@@ -386,11 +435,15 @@ struct RawRule {
     exclude_near_ends: Option<Length>,
     #[serde(default)]
     exclude_spans_at: Vec<String>,
+    #[serde(default)]
+    circuits: Option<String>,
 }
 
+/// A requirement as written in a file: a distance, a table by voltage or a
+/// formula.
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum RawRequirement {
+pub(crate) enum RawRequirement {
     Fixed(Length),
     Table {
         by_voltage: Vec<(f64, Length)>,
@@ -404,7 +457,7 @@ enum RawRequirement {
 }
 
 impl RawRequirement {
-    fn resolve(self) -> Result<Requirement, String> {
+    pub(crate) fn resolve(self) -> Result<Requirement, String> {
         let r = match self {
             Self::Fixed(l) => Requirement::Fixed(l.si()),
             Self::Table { by_voltage } => {
@@ -525,15 +578,10 @@ impl RuleSet {
                 if vertical.is_none() && radial.is_none() {
                     return bad("give a vertical and/or a radial clearance");
                 }
-                let pair_voltage = match r.pair_voltage.as_deref() {
-                    None | Some("higher") => PairVoltage::Higher,
-                    Some("sum") => PairVoltage::Sum,
-                    Some("difference") => PairVoltage::Difference,
-                    Some(other) => {
-                        return bad(&format!(
-                            "pair_voltage \"{other}\": use higher, sum or difference"
-                        ));
-                    }
+                let pair_voltage = match r.pair_voltage.as_deref().map(PairVoltage::parse) {
+                    None => PairVoltage::Higher,
+                    Some(Ok(p)) => p,
+                    Some(Err(e)) => return bad(&e),
                 };
                 if r.pair_voltage.is_some()
                     && !matches!(target, Target::SameLine { .. } | Target::OtherLines)
@@ -544,6 +592,17 @@ impl RuleSet {
                     && !matches!(target, Target::SameLine { .. } | Target::OtherLines)
                 {
                     return bad("case_pairs are for wire rules (same_line, other_lines)");
+                }
+                let circuits = match r.circuits.as_deref() {
+                    None | Some("any") => CircuitFilter::Any,
+                    Some("same") => CircuitFilter::Same,
+                    Some("different") => CircuitFilter::Different,
+                    Some(other) => {
+                        return bad(&format!("circuits \"{other}\": use any, same or different"));
+                    }
+                };
+                if r.circuits.is_some() && !matches!(target, Target::SameLine { .. }) {
+                    return bad("circuits is for same_line rules");
                 }
                 let not_negative = |l: Option<Length>| l.is_none_or(|l| l.si() >= 0.0);
                 if !not_negative(r.vertical_band) || !not_negative(r.search_margin) {
@@ -561,6 +620,7 @@ impl RuleSet {
                     case_pairs: r.case_pairs,
                     exclude_near_ends: r.exclude_near_ends.map_or(0.0, |l| l.si().max(0.0)),
                     exclude_spans_at: r.exclude_spans_at,
+                    circuits,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -592,6 +652,7 @@ impl RuleSet {
                 case_pairs: Vec::new(),
                 exclude_near_ends: 0.0,
                 exclude_spans_at: Vec::new(),
+                circuits: CircuitFilter::Any,
             }],
         }
     }
@@ -660,6 +721,24 @@ mod tests {
             vec![["ice".to_owned(), "cold".to_owned()]]
         );
         assert!(RuleSet::parse("[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 1.0\ncase_pairs = [[\"a\", \"b\"]]").is_err());
+        let cc = RuleSet::parse(
+            "[[rule]]\nname = \"cc\"\ntarget = \"same_line\"\nradial = 3.0\ncircuits = \"different\"",
+        )
+        .unwrap();
+        assert_eq!(cc.rules[0].circuits, CircuitFilter::Different);
+        assert!(cc.rules[0].circuits.admits("A", "B") && !cc.rules[0].circuits.admits("A", "A"));
+        assert!(
+            RuleSet::parse(
+                "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 1.0\ncircuits = \"same\""
+            )
+            .is_err()
+        );
+        assert!(
+            RuleSet::parse(
+                "[[rule]]\nname = \"g\"\ntarget = \"same_line\"\nradial = 1.0\ncircuits = \"other\""
+            )
+            .is_err()
+        );
     }
 
     /// Phase L1 of a three-phase system of `kv`.

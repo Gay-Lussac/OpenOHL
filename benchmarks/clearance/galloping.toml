@@ -1,0 +1,54 @@
+# Galloping ellipses (ols_clearance::galloping). The coefficients are
+# invented, not from any method: the cases check the geometry — axes from
+# the sag, the ellipse placed on the wire, swept along the span, and the gap
+# between the ellipses of two wires.
+#
+# Hand calculation: A = major_sag · D + major_constant, B = minor_of_major · A,
+# scaled by |sin(n π at)|; centre (A/2 above the wire for
+# centre_above_rest = 0.5) along the major axis tilted by tilt_deg.
+# Gaps: benchmarks/clearance/reference_clearance.py (distance from the offset
+# to the difference body 2K, sampled densely). The ellipses are compared as
+# 72-sided polygons: the gap is high by up to A·(1 − cos 2.5°)/2 ≈ 6 mm here.
+
+[[case]]
+id = "galloping-001"
+title = "Single loop at mid-span, untilted, wires 8 m apart side by side"
+calculation = "galloping.ellipses"
+reference = "Hand calculation (this file); gap from benchmarks/clearance/reference_clearance.py"
+inputs = { sag = "10 m", span = "400 m", diameter = "28 mm", loops = 1, major_sag = 1.25, major_constant = "0.3 m", minor_of_major = 0.4, tilt_deg = 0.0, centre_above_rest = 0.5, at = 0.5, offset_right = "8 m", offset_up = "0 m" }
+expected.major_m = { value = 12.8, rel_tol = 1e-12 }
+expected.minor_m = { value = 5.12, rel_tol = 1e-12 }
+expected.centre_right_m = { value = 0.0, abs_tol = 1e-12 }
+expected.centre_up_m = { value = 6.4, rel_tol = 1e-12 }
+expected.distance_m = { value = 2.88, abs_tol = 1e-9 }
+
+[[case]]
+id = "galloping-002"
+title = "Single loop at mid-span tilted 10°, wires 8 m apart side by side"
+calculation = "galloping.ellipses"
+reference = "Hand calculation (this file); gap from benchmarks/clearance/reference_clearance.py"
+inputs = { sag = "10 m", span = "400 m", diameter = "28 mm", loops = 1, major_sag = 1.25, major_constant = "0.3 m", minor_of_major = 0.4, tilt_deg = 10.0, centre_above_rest = 0.5, at = 0.5, offset_right = "8 m", offset_up = "0 m" }
+expected.centre_right_m = { value = 1.111348, rel_tol = 1e-6 }
+expected.centre_up_m = { value = 6.302769, rel_tol = 1e-6 }
+expected.distance_m = { value = 2.786265, abs_tol = 0.01 }
+
+[[case]]
+id = "galloping-003"
+title = "Two loops at a quarter of the span, wires 6 m apart one above the other"
+calculation = "galloping.ellipses"
+reference = "Hand calculation (this file): sin(2π · 0.25) = 1, gap 6 − A"
+inputs = { sag = "10 m", span = "400 m", diameter = "28 mm", loops = 2, major_sag = 0.5, major_constant = "0.2 m", minor_of_major = 0.5, tilt_deg = 0.0, centre_above_rest = 0.25, at = 0.25, offset_right = "0 m", offset_up = "6 m" }
+expected.major_m = { value = 5.2, rel_tol = 1e-12 }
+expected.minor_m = { value = 2.6, rel_tol = 1e-12 }
+expected.centre_up_m = { value = 1.3, rel_tol = 1e-12 }
+expected.distance_m = { value = 0.8, abs_tol = 1e-9 }
+
+[[case]]
+id = "galloping-004"
+title = "Single loop near the tower: an eighth of the span"
+calculation = "galloping.ellipses"
+reference = "Hand calculation (this file): sin(π/8) = 0.382683"
+inputs = { sag = "10 m", span = "400 m", diameter = "28 mm", loops = 1, major_sag = 1.25, major_constant = "0.3 m", minor_of_major = 0.4, tilt_deg = 0.0, centre_above_rest = 0.5, at = 0.125, offset_right = "8 m", offset_up = "0 m" }
+expected.major_m = { value = 4.898347, rel_tol = 1e-6 }
+expected.minor_m = { value = 1.959339, rel_tol = 1e-6 }
+expected.distance_m = { value = 6.040661, abs_tol = 1e-6 }

@@ -3465,6 +3465,7 @@ dependencies = [
  "ols-line",
  "ols-terrain",
  "ols-weather",
+ "ols-wirefe",
  "serde",
  "toml 0.9.12+spec-1.1.0",
 ]
@@ -3730,6 +3731,7 @@ version = "0.0.1"
 dependencies = [
  "nalgebra",
  "ols-cables",
+ "ols-clearance",
  "ols-core",
  "ols-crs",
  "ols-sagtension",
