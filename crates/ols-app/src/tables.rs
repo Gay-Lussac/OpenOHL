@@ -307,12 +307,11 @@ const W_TAGS: usize = 3;
 const W_Q: usize = 4;
 const W_VELOCITY: usize = 5;
 const W_PRESSURE: usize = 6;
-const W_FROM: usize = 7;
-const W_ICE: usize = 8;
-const W_ICE_DENSITY: usize = 9;
-const W_ICE_LOAD: usize = 10;
-const W_TEMP: usize = 11;
-const W_AMBIENT: usize = 12;
+const W_ICE: usize = 7;
+const W_ICE_DENSITY: usize = 8;
+const W_ICE_LOAD: usize = 9;
+const W_TEMP: usize = 10;
+const W_AMBIENT: usize = 11;
 
 const WEATHER: &[Column] = &[
     (
@@ -346,12 +345,6 @@ const WEATHER: &[Column] = &[
         95.0,
         Yes,
         "on the projected (iced) diameter; what the loads use",
-    ),
-    (
-        "Wind from\n ",
-        75.0,
-        Yes,
-        "left or right, looking ahead along the line (each span from its back to its ahead point)",
     ),
     (
         "Ice thickness\nmm",
@@ -936,7 +929,6 @@ impl TableKind {
                             c[W_Q] = w.air_density_factor.map_or(String::new(), |q| f(q, 3));
                             c[W_VELOCITY] = f(w.wind_velocity(), 2);
                             c[W_PRESSURE] = f(w.wind_pressure.si(), 1);
-                            c[W_FROM] = w.wind_from.as_str().into();
                             c[W_ICE] = f(w.ice_thickness.si() * 1000.0, 1);
                             c[W_ICE_DENSITY] =
                                 w.ice_density.map_or(String::new(), |v| f(v.si(), 0));
@@ -1023,7 +1015,6 @@ impl TableKind {
                 cells[W_TEMP] = "15".into();
                 cells[W_ICE] = "0".into();
                 cells[W_PRESSURE] = "0".into();
-                cells[W_FROM] = "right".into();
             }
         }
         cells
@@ -2129,17 +2120,6 @@ fn weather_file(
         }
         if touched(W_ICE_DENSITY) {
             set("ice_density", number(W_ICE_DENSITY, "kg/m³")?);
-        }
-        if touched(W_FROM) {
-            match c.get(W_FROM).trim().to_lowercase().as_str() {
-                "" | "right" => set("wind_from", None),
-                "left" => set("wind_from", Some(toml_edit::value("left"))),
-                other => {
-                    return Err(format!(
-                        "{name} wind from: \"{other}\" — write left or right"
-                    ));
-                }
-            }
         }
         // Wind: pressure P = Q·V². The pressure typed wins; else a velocity
         // (or another Q) typed gives the pressure of the velocity shown.

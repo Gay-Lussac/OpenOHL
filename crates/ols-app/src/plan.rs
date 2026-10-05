@@ -235,7 +235,7 @@ impl PlanView {
                 }
             }
         }
-        if let Some(solved) = model.cases.get(case) {
+        for solved in model.cases.get(case).into_iter().flat_map(|c| c.drawn()) {
             for j in &solved.jumpers {
                 let selected = matches!(selection, Selection::Jumper(id) if *id == j.jumper);
                 let (col, _) = crate::scene::jumper_lines(line, j, &solved.bundles);

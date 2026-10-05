@@ -2068,7 +2068,6 @@ fn the_weather_case_table_writes_its_file() {
         "Tags\n ",
         "clearance, loads, heavy",
     );
-    set_cell(&mut harness, kind, "2", "Wind from\n ", "left");
     set_cell(&mut harness, kind, "2", "Ambient temp\n°C", "-5");
     // A velocity typed: the pressure is Q·V² (Q 0.613, then 0.6).
     set_cell(&mut harness, kind, "1", "Wind velocity\nm/s", "40");
@@ -2106,7 +2105,6 @@ fn the_weather_case_table_writes_its_file() {
         .unwrap();
     assert!((glaze.case.ice_thickness.si() - 0.02).abs() < 1e-12);
     assert_eq!(glaze.case.tags, vec!["clearance", "loads", "heavy"]);
-    assert_eq!(glaze.case.wind_from, ols_weather::WindSide::Left);
     assert_eq!(
         glaze.case.ambient_temperature.map(|t| t.celsius()),
         Some(-5.0)
@@ -2217,11 +2215,15 @@ fn alignment_points_are_added_edited_and_deleted_with_the_tools() {
     assert_eq!(points(&mut harness).len(), before.len() - 1);
 }
 
-/// Display weather cases (quick bar "Weather: …"): two cases ticked, applied to every
-/// section; the strings are drawn to their clamp in each.
+/// Criteria › Display weather cases: two cases ticked for every section
+/// (the Sections table's display cases kept, not used); the strings are
+/// drawn to their clamp in each; the wind from both sides draws each case
+/// with wind twice.
 #[test]
 fn several_weather_cases_are_shown_for_the_whole_line() {
-    let model = synthetic();
+    let mut model = synthetic();
+    // A section's own display case, set in the Sections table before.
+    model.display_cases.insert("S1".into(), vec![0]);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
@@ -2238,12 +2240,20 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
         .0
     };
     let one = strings(&mut harness);
-    harness.get_by_label_contains("Weather: ").click();
+    // No weather button on the quick bar any more: the Criteria menu.
+    assert!(harness.query_by_label_contains("Weather: ").is_none());
+    harness.get_by_label("Criteria").click();
+    harness.run();
+    harness
+        .query_all_by_label("Display weather cases…")
+        .last()
+        .unwrap()
+        .click();
     harness.run();
     harness.get_by_label("Display weather cases");
     harness.get_by_label("high wind").click();
     harness.run();
-    harness.get_by_label("Apply to all sections").click();
+    harness.get_by_label("Apply").click();
     harness.run();
     {
         let r = harness.state_mut().ready().unwrap();
@@ -2255,6 +2265,9 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
             .unwrap();
         assert_eq!(r.model.shown(r.case), vec![0, wind]);
         assert_eq!(r.model.section_cases("S2", 0), vec![0, wind]);
+        // The Sections table is not changed, its case not used.
+        assert_eq!(r.model.display_cases.get("S1"), Some(&vec![0]));
+        assert_eq!(r.model.section_cases("S1", 0), vec![0, wind]);
         assert!(r.display_window.is_none());
         // Every section drawn twice.
         let n = r.model.line.sections.len();
@@ -2269,9 +2282,51 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
         .model
         .line
         .attachment(&r.model.line.sections[0].points[1])
-        .unwrap();
+        .unwrap()
+        .clone();
     let c = s1.clamps[1];
     assert!((c[0] - a.wire_point[0]).hypot(c[1] - a.wire_point[1]) > 0.3);
+    // Each section's own case (Sections table): S1 in its case only.
+    r.model.cases_shown = crate::model::CasesShown::PerSection;
+    assert_eq!(r.model.section_cases("S1", 0), vec![0]);
+    assert_eq!(r.model.section_cases("S2", 0), vec![0, wind]);
+    r.model.cases_shown = crate::model::CasesShown::AllSections;
+    // Wind from both sides: the windy case solved twice, swung both ways.
+    r.model.set_wind(crate::model::WindDisplay::Both);
+    r.model.ensure_solved(wind);
+    let solved = &r.model.cases[wind];
+    let mirror = solved.mirror.as_ref().expect("solved from the left too");
+    assert_eq!(solved.case.wind_from, ols_weather::WindSide::Right);
+    assert_eq!(mirror.case.wind_from, ols_weather::WindSide::Left);
+    let side = |s: &crate::model::Solved| {
+        let c = s.shapes[0].clamps[1];
+        (c[0] - a.wire_point[0], c[1] - a.wire_point[1])
+    };
+    let (r1, l1) = (side(solved), side(mirror));
+    assert!(
+        r1.0 * l1.0 + r1.1 * l1.1 < 0.0,
+        "opposite swings {r1:?} {l1:?}"
+    );
+    let n = r.model.line.sections.len();
+    assert_eq!(r.model.shapes_shown(0).len(), 3 * n);
+    // Back to one side: the mirror goes.
+    r.model.set_wind(crate::model::WindDisplay::Left);
+    r.model.ensure_solved(wind);
+    assert!(r.model.cases[wind].mirror.is_none());
+    assert_eq!(
+        r.model.cases[wind].case.wind_from,
+        ols_weather::WindSide::Left
+    );
+}
+
+/// Weather case files of earlier versions: the wind side is dropped.
+#[test]
+fn old_weather_files_lose_the_wind_side() {
+    let old = "format = \"ols-weather-cases\"\nversion = 1\n\n[[case]]\nname = \"w\"\ntemperature = \"15 °C\"\nwind_pressure = \"400 Pa\"\nwind_from = \"left\"\n";
+    let new = crate::model::without_wind_side(old).unwrap();
+    assert!(!new.contains("wind_from") && new.contains("wind_pressure = \"400 Pa\""));
+    assert!(crate::model::without_wind_side(&new).is_none());
+    ols_weather::WeatherCases::parse(&new).unwrap();
 }
 
 /// The project keeps its libraries: opened the first time, the wire
