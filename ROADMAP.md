@@ -144,11 +144,11 @@ The open Phase 2 items above, grouped into four work packages:
 - [ ] LiDAR: COPC, octree streaming and point budget (billions of points at 60 fps)
 - [ ] LiDAR: classification, vegetation & encroachment analysis, as-built wire extraction/fitting
 - [ ] Thermal rating: IEEE 738, CIGRE TB 601 / TB 207, max operating temperature from clearance
-- [ ] Optimum (automatic) structure spotting — cost-based optimisation
+- [x] Optimum (automatic) structure spotting — cost-based optimisation: dynamic programming over candidate stations × types/extensions (ground clearance of a design catenary, allowable wind/weight spans, angle points, forbidden zones); `ols spot`, Tools › Spot structures (proposal as a new line file) *(clearance under the centreline only, one tension for the route)*
 - [ ] Galloping ellipses, blowout, phase-to-phase / circuit-to-circuit clearances
 - [ ] Drafting: plan & profile sheets, title blocks, DXF/DWG-compatible output, PDF
 - [ ] Profile exports: ground/wire/clearance profiles with configurable scales and station ranges — DXF, PDF, SVG, CSV/XML, images (DESIGN_GOALS §8)
-- [ ] Bill of materials & cost estimation
+- [x] Bill of materials & cost estimation: structures by type/extension, insulator assemblies, cut lengths per cable (bundles, jumpers), spacers/dampers by rule, priced with a `.olscost` file (missing prices listed); `ols bom` (text, CSV, JSON), Checks › Bill of materials
 - [ ] Collaboration: permissions per area/object, review & approval workflow, offline work with sync (stretch)
 - [ ] **Git-like version control** of projects: revisions, history browser, diff (incl. engineering impact), branches for design alternatives, merge, tags for issued revisions, revert (DESIGN_GOALS §7)
 - [ ] Web client (WebGPU) joining server sessions

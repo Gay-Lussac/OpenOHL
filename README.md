@@ -34,6 +34,8 @@ OLS-CAD/
 │   ├── ols-validation/ Validation framework (`ols validate`)
 │   ├── ols-plugins/   Plugin manifests + sandboxed WebAssembly host (WIT interface)
 │   ├── ols-loads/     Load cases and structure loads
+│   ├── ols-bom/       Bill of materials and cost estimate
+│   ├── ols-spotting/  Optimum structure spotting
 │   ├── ols-server/    Server mode: a project hosted for several users (QUIC)
 │   ├── ols-py/        Python bindings (`import ols`)
 │   ├── ols-cables/    Conductor library
