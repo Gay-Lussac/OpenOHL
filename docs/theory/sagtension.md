@@ -6,10 +6,9 @@ Implemented in `crates/ols-sagtension`. Every formula below is checked by valida
 
 Left support at $\( (0,0) \)$, right support at \\( (S,h) \\); uniform load \\( w \\) per unit cable length; horizontal tension \\( H \\); catenary parameter \\( C = H/w \\). With \\( a = S/2C \\):
 
-´´´math
-\[ x_m = \frac{S}{2} - C \operatorname{asinh}\frac{h}{2C\sinh a}, \qquad
-   y(x) = 2C \sinh\frac{x - 2x_m}{2C} \sinh\frac{x}{2C} \]
-´´´
+$\[ x_m = \frac{S}{2} - C \operatorname{asinh}\frac{h}{2C\sinh a}, \qquad
+   y(x) = 2C \sinh\frac{x - 2x_m}{2C} \sinh\frac{x}{2C} \]$
+
 
 \\[ L = \sqrt{h^2 + (2C\sinh a)^2}, \qquad T(x) = H\cosh\frac{x - x_m}{C}, \qquad T_B - T_A = w\,h \\]
 
