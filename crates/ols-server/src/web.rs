@@ -98,10 +98,22 @@ pub fn changes_scene(op: &Op) -> bool {
         Op::PutLibrary { kind, .. } | Op::DeleteLibrary { kind, .. } => {
             SCENE_LIBRARIES.contains(&kind.as_str())
         }
+        // Version control: these replace the working state (line and
+        // libraries).
+        Op::Checkout { .. } | Op::Merge { .. } | Op::Revert { .. } | Op::MergeReview { .. } => true,
         Op::SetUser { .. }
         | Op::SaveSnapshot { .. }
         | Op::DeleteSnapshot { .. }
-        | Op::SetSetting { .. } => false,
+        | Op::SetSetting { .. }
+        | Op::Commit { .. }
+        | Op::CreateBranch { .. }
+        | Op::Tag { .. }
+        | Op::ProtectBranch { .. }
+        | Op::DeleteRef { .. }
+        | Op::SubmitReview { .. }
+        | Op::DecideReview { .. }
+        | Op::Grant { .. }
+        | Op::Revoke { .. } => false,
     }
 }
 
