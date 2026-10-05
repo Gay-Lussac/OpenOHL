@@ -192,6 +192,8 @@ pub struct Ready {
     pub survey_export: Option<crate::survey_io::ExportDialog>,
     /// An import or export running.
     pub survey_job: Option<crate::survey_io::Job>,
+    /// File › Export drawings: the window and the export running.
+    pub drawings: crate::drawings::Drawings,
     /// Open the project again (after an import).
     pub reopen: bool,
     /// The plugin manager or a format window asked for (from the menus).
@@ -271,6 +273,7 @@ impl Ready {
             survey_import: None,
             survey_export: None,
             survey_job: None,
+            drawings: Default::default(),
             reopen: false,
             plugin_request: None,
             console: Default::default(),
@@ -2151,6 +2154,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     display_window(ctx, r);
     survey_window(ctx, r);
     survey_io_windows(ctx, r);
+    r.drawings.show(ctx, &r.model, r.case);
     controls_window(ctx, r);
     creep_stretch_window(ctx, r);
     lines_window(ctx, r);
@@ -3497,6 +3501,17 @@ fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
         .clicked()
     {
         r.plugin_request = Some(PluginRequest::Export);
+        ui.close();
+    }
+    if ui
+        .button("Export drawings…")
+        .on_hover_text(
+            "Plan and profile sheets and profile exports of the routes: SVG, DXF, PDF, PNG, \
+             CSV, XML, at chosen scales and station range",
+        )
+        .clicked()
+    {
+        r.drawings.window.get_or_insert_with(Default::default);
         ui.close();
     }
     if ui

@@ -85,7 +85,8 @@ impl std::fmt::Debug for Job {
 }
 
 impl Job {
-    fn start(
+    /// Runs `work` in the background, reporting its progress.
+    pub(crate) fn start(
         title: String,
         reopen: bool,
         ctx: &egui::Context,
@@ -120,7 +121,7 @@ impl Job {
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     if self.done.is_none() {
-                        self.done = Some(Err("the import stopped".into()));
+                        self.done = Some(Err("the job stopped".into()));
                     }
                     break;
                 }

@@ -43,7 +43,7 @@ ols line project.ols --pointcloud project.ols --temperature 80 --rules rules.ols
 - **Sheets**: `--page A1` (A0–A4 landscape, or `WIDTHxHEIGHT` in mm) splits each route **at structures** — as many whole spans as fit per sheet, the structure ending a sheet starting the next (match line) — into `ROUTE-sheet-NN.svg`, each with its own height range and a title block (line, route, sheet n/N, station range, structures, scales, format, weather case). A span longer than the sheet or a profile taller than it is drawn anyway and reported as a warning: change the scales or the format.
 - **Logos**: `--logo company.svg:30` (SVG, PNG or JPEG, width in mm; repeatable) in the title block.
 
-The sheet layout (title block, margins) is built in for now; company templates will come as a layout plugin.
+The sheet layout (title block, margins) is built in for now; company templates will come as a layout plugin. For DXF, PDF, PNG and XML, station ranges and the profile alone, see [Drawings and profile exports](drawings.md) (`ols drawing`).
 
 ## Clearance rules (`.olsr`)
 
