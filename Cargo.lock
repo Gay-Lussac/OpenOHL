@@ -3641,10 +3641,12 @@ dependencies = [
  "ols-cables",
  "ols-core",
  "ols-line",
+ "ols-structures",
  "ols-weather",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "zstd",
 ]
 
