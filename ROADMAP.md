@@ -71,7 +71,7 @@ Guiding principles:
 - [x] Bundled conductors: `bundle` subconductors on a circle with `bundle_spacing` (e.g. 4 × 400 mm) and optional rotation; insulator weight shared by the subconductors in the solve; clearances to the nearest subconductor
 - [x] Electrical cable data in the wire library (`[cable.electrical]`: AC resistance by temperature, DC resistance, geometric mean radius, emissivity, solar absorptivity; resistance units) — filled from PLS-CADD `.wir`/XML by the local importer until a PLS-CADD importer is decided
 - [ ] Rule editor tool (per LiDAR class)
-- [x] Plan & profile views per route (`ols-drawing`, `ols line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures, title block with logos, separate plan scale across the line *(DXF and layout templates as plugins still to come)*
+- [x] Plan & profile views per route (`ols-drawing`, `ols line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures, title block with logos, separate plan scale across the line *(DXF, PDF, PNG and XML since Phase 5, `ols drawing`; layout templates as plugins still to come)*
 - [x] Exporter/importer plugin interface (first formats: CSV, KML/KMZ; GeoJSON example plugin)
 - [x] Display: phase colours per circuit/phase, configurable per project (by phase label) and per section, legend in the viewer (DESIGN_GOALS §12)
 - [x] Jumpers connecting sections at dead-ends or taps (slack catenary between solved clamps, length or sag input, optional support string, weather loads, ground clearance; DESIGN_GOALS §12) *(clearance to the structure body still to come)*
@@ -146,8 +146,8 @@ The open Phase 2 items above, grouped into four work packages:
 - [ ] Thermal rating: IEEE 738, CIGRE TB 601 / TB 207, max operating temperature from clearance
 - [ ] Optimum (automatic) structure spotting — cost-based optimisation
 - [ ] Galloping ellipses, blowout, phase-to-phase / circuit-to-circuit clearances
-- [ ] Drafting: plan & profile sheets, title blocks, DXF/DWG-compatible output, PDF
-- [ ] Profile exports: ground/wire/clearance profiles with configurable scales and station ranges — DXF, PDF, SVG, CSV/XML, images (DESIGN_GOALS §8)
+- [x] Drafting: plan & profile sheets, title blocks, DXF/DWG-compatible output, PDF (`ols drawing`, File › Export drawings): one format-free drawing model written as SVG, R12 DXF (sheets in mm, plan in project coordinates, profile by station × exaggerated height), vector PDF (a page per sheet) and PNG *(base: no DWG written — the R12 DXF imports into DWG-based programs; DXF has ACI colours, no line weights or logos; PDF uses the standard Helvetica fonts; title block layout still fixed, templates as a plugin to come)*
+- [x] Profile exports: ground/wire/clearance profiles with configurable scales and station ranges — DXF, PDF, SVG, CSV/XML, images (DESIGN_GOALS §8) — `--from`/`--to`, `--hscale 1:2000 --vscale 1:200`, `--profile-only`; profile XML documented in the user guide *(base: one weather case solid and the others dashed, as in the drawings)*
 - [ ] Bill of materials & cost estimation
 - [ ] Collaboration: permissions per area/object, review & approval workflow, offline work with sync (stretch)
 - [ ] **Git-like version control** of projects: revisions, history browser, diff (incl. engineering impact), branches for design alternatives, merge, tags for issued revisions, revert (DESIGN_GOALS §7)
