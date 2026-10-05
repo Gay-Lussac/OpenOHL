@@ -34,6 +34,7 @@ mod loads;
 mod lod;
 mod menu;
 mod model;
+mod octree;
 mod plan;
 mod plugins;
 mod profile;
@@ -79,7 +80,8 @@ struct Args {
     /// Survey points for the ground (CSV / XYZ).
     #[arg(long)]
     terrain: Option<PathBuf>,
-    /// Point cloud in a project file (FILE.ols or FILE.ols#name); default:
+    /// Point cloud in a project file (FILE.ols or FILE.ols#name) or a COPC
+    /// file (FILE.copc.laz); default:
     /// the project's own.
     #[arg(long)]
     pointcloud: Option<String>,

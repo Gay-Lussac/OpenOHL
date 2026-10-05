@@ -4,8 +4,10 @@
 
 //! Level-of-detail settings of the 3D view: per chunked layer, the render
 //! distance, the distances from which levels 1 and 2 are drawn, and what
-//! each level keeps (the Level of detail table; remembered per user).
-//! Display only: calculations always use the full model.
+//! each level keeps (the Level of detail table), and for a point cloud
+//! streamed by node ([`crate::octree`]) the point budget and the error
+//! allowed on the screen — remembered per user. Display only:
+//! calculations always use the full model.
 
 use std::collections::BTreeMap;
 
@@ -133,10 +135,51 @@ impl LodRow {
     }
 }
 
-/// The table: a row per chunked layer.
+/// How a point cloud streamed by node is drawn ([`crate::octree`]).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PointBudget {
+    /// Points drawn at most (all nodes in view together).
+    pub budget: u64,
+    /// A node is refined while its points lie farther apart on the
+    /// screen than this, px.
+    pub max_error: f64,
+}
+
+impl Default for PointBudget {
+    fn default() -> Self {
+        Self {
+            budget: DEFAULT_POINT_BUDGET,
+            max_error: DEFAULT_MAX_ERROR,
+        }
+    }
+}
+
+/// Points drawn at most by default: 5 million (~100 MB on the GPU, 1.5×
+/// that kept; drawn in ~16 ms by an Apple M1 Max, 60 frames a
+/// second).
+pub const DEFAULT_POINT_BUDGET: u64 = 5_000_000;
+/// Error allowed on the screen by default, px.
+pub const DEFAULT_MAX_ERROR: f64 = 1.5;
+
+impl PointBudget {
+    /// Checks the values: 100 000 to 200 million points, 0.1 to 50 px.
+    pub fn check(&self) -> Result<(), String> {
+        if !(100_000..=200_000_000).contains(&self.budget) {
+            return Err("point budget: 0.1 to 200 million points".into());
+        }
+        if !(self.max_error.is_finite() && (0.1..=50.0).contains(&self.max_error)) {
+            return Err("error on the screen: 0.1 to 50 px".into());
+        }
+        Ok(())
+    }
+}
+
+/// The table: a row per chunked layer, and the point budget.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LodSettings {
     rows: BTreeMap<&'static str, LodRow>,
+    /// The point budget of a cloud streamed by node.
+    pub points: PointBudget,
 }
 
 fn key(layer: Layer) -> &'static str {
@@ -159,6 +202,7 @@ impl Default for LodSettings {
                 .iter()
                 .map(|l| (key(*l), LodRow::default_for(*l)))
                 .collect(),
+            points: PointBudget::default(),
         }
     }
 }
@@ -184,6 +228,9 @@ impl LodSettings {
         if let Ok(text) = serde_json::to_string(&self.rows) {
             storage.set_string("lod", text);
         }
+        if let Ok(text) = serde_json::to_string(&self.points) {
+            storage.set_string("lod-points", text);
+        }
     }
 
     /// As saved; rows that do not read keep their defaults.
@@ -198,16 +245,25 @@ impl LodSettings {
                 let _ = s.set(layer, *row);
             }
         }
+        if let Some(p) = storage
+            .get_string("lod-points")
+            .and_then(|t| serde_json::from_str::<PointBudget>(&t).ok())
+            .filter(|p| p.check().is_ok())
+        {
+            s.points = p;
+        }
         s
     }
 
     /// The Level of detail page: a row per layer, every value typed in;
-    /// what was drawn in the last frame next to it. Returns whether
-    /// anything changed.
+    /// what was drawn in the last frame next to it; then the point budget
+    /// of a cloud streamed by node (`streamed`: what it did in the last
+    /// frame). Returns whether anything changed.
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
         stats: &dyn Fn(Layer) -> Option<ols_render::lod::PlanStats>,
+        streamed: Option<crate::octree::StreamStats>,
     ) -> bool {
         let mut changed = false;
         ui.label(
@@ -269,8 +325,14 @@ impl LodSettings {
                         .response
                         .on_hover_text(kind.describe(k + 1, row.detail[k]));
                     }
-                    match stats(layer) {
-                        Some(s) => ui.label(format!(
+                    match (layer, streamed, stats(layer)) {
+                        (Layer::Points, Some(s), _) => ui.label(format!(
+                            "{} of {} nodes, {:.2} M points (budget below)",
+                            s.drawn,
+                            s.nodes,
+                            s.points as f64 / 1e6
+                        )),
+                        (_, _, Some(s)) => ui.label(format!(
                             "{} / {} / {} of {} chunks{}",
                             s.drawn[0],
                             s.drawn[1],
@@ -282,7 +344,7 @@ impl LodSettings {
                                 String::new()
                             }
                         )),
-                        None => ui.label(egui::RichText::new("not shown").weak()),
+                        (_, _, None) => ui.label(egui::RichText::new("not shown").weak()),
                     };
                     ui.end_row();
                     // Level 2 never before level 1.
@@ -292,11 +354,94 @@ impl LodSettings {
                     }
                 }
             });
+        ui.separator();
+        changed |= self.points_ui(ui, streamed);
         if ui.button("Defaults").clicked() {
             *self = Self::default();
             changed = true;
         }
         changed
+    }
+
+    /// The point budget of a cloud streamed by node: points drawn at most
+    /// and the error allowed on the screen; what the last frame did.
+    fn points_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        streamed: Option<crate::octree::StreamStats>,
+    ) -> bool {
+        ui.label(egui::RichText::new("LiDAR point budget").strong());
+        ui.label(
+            egui::RichText::new(
+                "The project's point cloud (or a COPC file) is read by node: the nodes in \
+                 view, the coarsest first, refined where their points lie farther apart on \
+                 the screen than the error allowed, the nearest first, until the budget is \
+                 drawn. The LiDAR row's render distance applies; its levels do not. Points \
+                 shown near the camera (the LiDAR settings) thin every node further.",
+            )
+            .small()
+            .weak(),
+        );
+        let mut p = self.points;
+        let mut millions = p.budget as f64 / 1e6;
+        let mut c = false;
+        egui::Grid::new("lod-points")
+            .spacing([10.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("points drawn at most");
+                c |= ui
+                    .add(
+                        egui::DragValue::new(&mut millions)
+                            .range(0.1..=200.0)
+                            .speed(0.1)
+                            .max_decimals(1)
+                            .suffix(" million"),
+                    )
+                    .on_hover_text("About 20 bytes of GPU memory per point; 1.5 × this is kept")
+                    .changed();
+                ui.end_row();
+                ui.label("error on the screen");
+                c |= ui
+                    .add(
+                        egui::DragValue::new(&mut p.max_error)
+                            .range(0.1..=50.0)
+                            .speed(0.05)
+                            .max_decimals(2)
+                            .suffix(" px"),
+                    )
+                    .on_hover_text("Smaller: finer nodes (more points) for the same view")
+                    .changed();
+                ui.end_row();
+            });
+        match streamed {
+            Some(s) => {
+                ui.label(format!(
+                    "{} of {} nodes drawn, {:.2} M points ({:.2} M wanted{}); {} nodes, \
+                     {:.2} M points on the GPU{}",
+                    s.drawn,
+                    s.nodes,
+                    s.points as f64 / 1e6,
+                    s.wanted as f64 / 1e6,
+                    if s.capped { ", budget reached" } else { "" },
+                    s.cached.0,
+                    s.cached.1 as f64 / 1e6,
+                    if s.pending > 0 {
+                        format!(", {} loading", s.pending)
+                    } else {
+                        String::new()
+                    }
+                ));
+            }
+            None => {
+                ui.label(egui::RichText::new("no point cloud streamed").weak());
+            }
+        }
+        p.budget = (millions * 1e6).round() as u64;
+        if c && p.check().is_ok() && p != self.points {
+            self.points = p;
+            return true;
+        }
+        false
     }
 }
 
@@ -321,5 +466,11 @@ mod tests {
         good.detail = [4.0, 16.0];
         s.set(Layer::Ground, good).unwrap();
         assert_eq!(s.row(Layer::Ground).detail, [4.0, 16.0]);
+        s.points.check().unwrap();
+        let tiny = PointBudget {
+            budget: 10,
+            ..s.points
+        };
+        assert!(tiny.check().is_err());
     }
 }

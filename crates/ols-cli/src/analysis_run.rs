@@ -626,12 +626,11 @@ pub fn classify(a: ClassifyArgs) -> Result<(), String> {
         let (cloud, _) = store
             .import_points(
                 name,
-                &points,
-                &format!("classified from {}", a.input),
                 &crs,
                 scheme_text.as_deref(),
                 ols_pointcloud::DEFAULT_CHUNK,
                 ols_pointcloud::DEFAULT_SCALE,
+                points.iter().cloned(),
                 &budget,
             )
             .map_err(|e| e.to_string())?;

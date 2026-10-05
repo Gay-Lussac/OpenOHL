@@ -272,7 +272,9 @@ struct LineArgs {
     #[arg(long, conflicts_with = "terrain")]
     lidar: Option<PathBuf>,
     /// Point cloud stored in a project file (`FILE.ols`, or `FILE.ols#name`
-    /// when it holds several): much faster than reading tiles.
+    /// when it holds several), or a COPC file (`FILE.copc.laz`): only the
+    /// blocks or octree nodes of the corridor are read, much faster than
+    /// reading tiles.
     #[arg(long, conflicts_with_all = ["terrain", "lidar"])]
     pointcloud: Option<String>,
     /// Class scheme (.olsc) of the LiDAR; default ASPRS LAS 1.4.
@@ -539,9 +541,10 @@ enum CrsCommand {
 
 #[derive(Subcommand)]
 enum PointcloudCommand {
-    /// Import LAS/LAZ tiles into a project file (created if missing).
+    /// Import LAS/LAZ tiles or COPC files into a project file (created if
+    /// missing), with the levels of detail the views stream by.
     Import {
-        /// LAS / LAZ file or directory of tiles.
+        /// LAS / LAZ / COPC file or directory of tiles.
         tiles: PathBuf,
         /// Project file (.ols).
         #[arg(long)]
@@ -559,12 +562,13 @@ enum PointcloudCommand {
         #[arg(long, default_value_t = ols_pointcloud::DEFAULT_CHUNK)]
         chunk: f64,
     },
-    /// Write a point cloud of a project file to LAS / LAZ (by extension):
-    /// LAS 1.4, point format 6, with its class scheme next to it.
+    /// Write a point cloud of a project file to LAS / LAZ / COPC (by
+    /// extension; `.copc.laz`: COPC): LAS 1.4, point format 6, with its
+    /// class scheme next to it.
     Export {
         /// Project file (.ols).
         file: PathBuf,
-        /// LAS / LAZ file to write.
+        /// LAS / LAZ / COPC (`.copc.laz`) file to write.
         #[arg(long)]
         out: PathBuf,
         /// Point cloud (default: the only one).
@@ -577,10 +581,21 @@ enum PointcloudCommand {
         #[arg(long, value_delimiter = ',', num_args = 4)]
         area: Vec<f64>,
     },
-    /// Point clouds of a project file and their points per class.
+    /// Point clouds of a project file and their points per class; or a
+    /// COPC file's octree (nodes and points per level).
     Info {
+        /// Project file (.ols) or COPC file.
+        file: PathBuf,
+    },
+    /// Build the levels of detail of a project's point clouds where they
+    /// are missing (files from before they were stored: the views then
+    /// read less to draw far away).
+    Octree {
         /// Project file (.ols).
         file: PathBuf,
+        /// Point cloud (default: all).
+        #[arg(long)]
+        name: Option<String>,
     },
 }
 
@@ -917,27 +932,65 @@ fn pointcloud(command: PointcloudCommand) -> ExitCode {
                 // Exit clause: ~1 µs per point for LAZ; 2 h is far beyond.
                 let budget = ols_core::budget::Budget::new()
                     .time_limit(std::time::Duration::from_secs(7200));
-                let stats = store
-                    .export_las(
-                        &cloud,
-                        &out,
-                        (!classes.is_empty()).then_some(classes.as_slice()),
-                        area,
-                        &budget,
-                        |_, _| {},
-                    )
-                    .map_err(|e| e.to_string())?;
+                let classes = (!classes.is_empty()).then_some(classes.as_slice());
+                let is_copc = out
+                    .file_name()
+                    .is_some_and(|f| f.to_string_lossy().to_lowercase().ends_with(".copc.laz"));
+                let written = if is_copc {
+                    store
+                        .export_copc(&cloud, &out, classes, area, &budget)
+                        .map_err(|e| e.to_string())?
+                        .points
+                } else {
+                    store
+                        .export_las(&cloud, &out, classes, area, &budget, |_, _| {})
+                        .map_err(|e| e.to_string())?
+                        .points_visited
+                };
                 if let Some(text) = &cloud.class_scheme {
                     let olsc = out.with_extension("olsc");
                     std::fs::write(&olsc, text).map_err(|e| format!("{}: {e}", olsc.display()))?;
                 }
                 println!(
                     "{} points of \"{}\" written to {} in {:.1?}",
-                    stats.points_visited,
+                    written,
                     cloud.name,
                     out.display(),
                     started.elapsed()
                 );
+            }
+            PointcloudCommand::Info { file } if ols_pointcloud::copc::is_copc(&file) => {
+                let f = ols_pointcloud::copc::CopcFile::open(&file)?;
+                let [lo, hi] = f.bounds;
+                println!(
+                    "COPC {}: {} points, point format {}, scale {} m",
+                    file.display(),
+                    f.points,
+                    f.point_format,
+                    f.scale[0]
+                );
+                println!(
+                    "  bounds {:.3}, {:.3}, {:.3} – {:.3}, {:.3}, {:.3}",
+                    lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
+                );
+                println!(
+                    "  octree: cube of {:.1} m around {:.3}, {:.3}, {:.3}; {} nodes, depth {}; \
+                     spacing {:.3} m at the root",
+                    2.0 * f.info.halfsize,
+                    f.info.center[0],
+                    f.info.center[1],
+                    f.info.center[2],
+                    f.nodes.len(),
+                    f.depth(),
+                    f.info.spacing
+                );
+                println!("  level      nodes       points   spacing m");
+                for (depth, nodes, points) in f.levels() {
+                    println!(
+                        "  {depth:>5} {nodes:>10} {points:>12}   {:>9.3}",
+                        f.spacing(depth)
+                    );
+                }
             }
             PointcloudCommand::Info { file } => {
                 let store = ols_pointcloud::Store::open(&file).map_err(|e| e.to_string())?;
@@ -955,6 +1008,15 @@ fn pointcloud(command: PointcloudCommand) -> ExitCode {
                         cloud.crs,
                         scheme.name
                     );
+                    let lod = store.has_lod(&cloud).map_err(|e| e.to_string())?;
+                    println!(
+                        "  levels of detail: {}",
+                        if lod {
+                            "stored"
+                        } else {
+                            "missing (`ols pointcloud octree` builds them)"
+                        }
+                    );
                     for (class, n) in store.class_counts(&cloud).map_err(|e| e.to_string())? {
                         let (cname, roles) = scheme
                             .class(class)
@@ -963,6 +1025,38 @@ fn pointcloud(command: PointcloudCommand) -> ExitCode {
                             });
                         println!("  {class:>3} {n:>12}  {cname:<48} {roles}");
                     }
+                }
+            }
+            PointcloudCommand::Octree { file, name } => {
+                let mut store = ols_pointcloud::Store::open(&file).map_err(|e| e.to_string())?;
+                let clouds: Vec<_> = store
+                    .clouds()
+                    .map_err(|e| e.to_string())?
+                    .into_iter()
+                    .filter(|c| name.as_ref().is_none_or(|n| &c.name == n))
+                    .collect();
+                if clouds.is_empty() {
+                    return Err(format!("{}: no such point cloud", file.display()));
+                }
+                // Exit clause: ~30 ns per point; 2 h is far beyond.
+                let budget = ols_core::budget::Budget::new()
+                    .time_limit(std::time::Duration::from_secs(7200));
+                for cloud in clouds {
+                    let started = std::time::Instant::now();
+                    let n = store
+                        .build_lod(&cloud, &budget, |done, all| {
+                            eprint!("\r  \"{}\": {done}/{all} blocks", cloud.name);
+                        })
+                        .map_err(|e| e.to_string())?;
+                    if n > 0 {
+                        eprintln!();
+                    }
+                    println!(
+                        "\"{}\": levels of detail of {n} blocks built in {:.1?}{}",
+                        cloud.name,
+                        started.elapsed(),
+                        if n == 0 { " (all there already)" } else { "" }
+                    );
                 }
             }
         }

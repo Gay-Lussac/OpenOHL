@@ -70,11 +70,33 @@ The 3D view draws the large layers — terrain, LiDAR points, structures, wires,
 | Layer | Level 0 | Level 1 (default from) | Level 2 (default from) | Render distance |
 |---|---|---|---|---|
 | Terrain | every TIN triangle | the surface on an 8 m grid (1.5 km) | a 32 m grid (5 km) | 30 km |
-| LiDAR points | the share of the survey chosen in Survey data display options (default 25 %; 100 %: every point) | 25 % of that (500 m) | 5 % of that (1.5 km) | 3 km |
+| LiDAR points held in memory | the share of the survey chosen in Survey data display options (default 25 %; 100 %: every point) | 25 % of that (500 m) | 5 % of that (1.5 km) | 3 km |
 | Structures | lattice, arms, strings | mast, arms and strings (2 km) | the mast line (8 km) | 50 km |
 | Wires, other cases, project lines | every point; bundles as subconductors with their yokes | 16 points per span, one line per bundle (1.5 km) | 5 points per span (6 km) | 50 km |
 
-A survey stored in the project is read by tile as tiles come in view, on a background thread straight from the project file (every class; classes of up to 20 000 points whole): on a 25 km line seen from 600 m, 3.2 million points at 100 % appear in 0.2 s without a frame over 11 ms. The last column of the table shows what was drawn in the last frame: the chunks at each level, of how many, and how many are still loading. On a 25 km line seen from 1.5 km, 5 million terrain triangles became 280 000 drawn, 1.5 million LiDAR points 24 000, and 190 000 wire segments 14 000; every chunk builds in under 2 ms.
+The last column of the table shows what was drawn in the last frame: the chunks at each level, of how many, and how many are still loading. On a 25 km line seen from 1.5 km, 5 million terrain triangles became 280 000 drawn, 1.5 million LiDAR points 24 000, and 190 000 wire segments 14 000; every chunk builds in under 2 ms.
+
+### Point budget
+
+A survey stored in the project — or a COPC file opened as the point cloud (`--pointcloud survey.copc.laz`) — is not drawn by the table's levels but **streamed by node under a point budget**. Its nodes are, for a stored survey, each 256 m square at four levels (about 1/64, 1/16, 1/4 of its points, then every point: the [levels of detail](project.md#levels-of-detail) stored in the project), and for a COPC file its octree. Every frame:
+
+1. the nodes in view and within the LiDAR row's render distance are taken, the coarsest first;
+2. a node whose points lie farther apart on the screen than the **error** allowed (default 1.5 px) is refined — its finer level, or its octree children — the one with the largest error (the nearest) first;
+3. until the next node would exceed the **point budget** (default 5 million points; the share of Survey data display options thins every node further and counts in the budget).
+
+The missing nodes are read on background threads (half the cores, at most four), each with its own reader of the project file, in that order; the queue is replaced every frame, so it never lags behind the camera. Until a node is read, a coarser (or finer) level of its square already read is drawn. Nodes read stay on the GPU while they are in view; beyond 1.5 × the budget the least recently used are dropped. Classes of up to 20 000 points are read whole at every level (wires, towers); hidden classes are not read.
+
+**View › Level of detail** sets the budget (0.1–200 million points) and the error (0.1–50 px), remembered per user, and shows what the last frame did: nodes drawn of how many, points drawn and wanted, whether the budget was reached, what is on the GPU and still loading.
+
+Measured on an Apple M1 Max (synthetic survey of 25 million points on 2.5 km × 2.5 km, 1600 × 1000 view, error 0.3 px so that the budget limits the view; `point_budget_frame_times`, release build, GPU time included):
+
+| Budget | Points drawn | Read in | Frame while turning (median / slowest) |
+|---|---|---|---|
+| 2 million | 1.97 million | 0.07 s | 7.7 ms / 9.8 ms |
+| 5 million | 4.97 million | 0.13 s | 16.5 ms / 19 ms |
+| 10 million | 9.9 million | 0.23 s | 32 ms / 35 ms |
+
+The frame time grows with the points drawn (about 3.3 ns a point on this GPU), not with the size of the survey: what a frame touches is bounded by the budget and the nodes in view (choosing them takes microseconds). For 60 frames a second, keep the budget near 5 million on such a machine. A survey of 10⁹ points on disk has more nodes (a few thousand for a 100 km corridor), read the same way: the index of its blocks once when the view opens (about 0.4 s per 10⁵ blocks; 10⁹ points are some 10⁵), then each node as it comes in view. Not measured at that size here (only synthetic data is used for performance, and the largest run is 25 million points). The synthetic grids also compress to almost nothing: real surveys decode several times slower than the 25–45 million points a second measured above, so expect nodes to arrive a few times slower — the frame rate does not depend on it.
 
 The level of detail changes what is **drawn** only: calculations, checks, the profile, the plan and picking always use the full model.
 

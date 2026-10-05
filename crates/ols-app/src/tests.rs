@@ -1168,12 +1168,11 @@ fn vegetation_and_as_built_wires_from_a_point_cloud() {
         .unwrap()
         .import_points(
             "scan",
-            &points,
-            "test",
             "",
             None,
             64.0,
             0.001,
+            points.iter().cloned(),
             &ols_core::budget::Budget::new(),
         )
         .unwrap();
@@ -3046,7 +3045,7 @@ fn the_survey_list_scrolls() {
     assert_eq!(later, slider);
 }
 
-/// A survey stored in the project: its points are read by tile as they
+/// A survey stored in the project: its points are read by node as they
 /// come in view, the share chosen of them (100 %: every point).
 #[test]
 fn stored_points_are_streamed_at_the_share_chosen() {
@@ -3128,11 +3127,12 @@ fn stored_points_are_streamed_at_the_share_chosen() {
     harness.state_mut().show_tab(crate::app::Tab::View3d);
     harness.step();
     {
-        // Every tile at full detail, the survey seen from above.
+        // Every node at full detail (the smallest error allowed), the
+        // survey seen from above.
         let mut row = harness.state().lod.row(Layer::Points);
         row.render_distance = 1e6;
-        row.from = [1e6, 1e6];
         harness.state_mut().lod.set(Layer::Points, row).unwrap();
+        harness.state_mut().lod.points.max_error = 0.1;
         let r = harness.state_mut().ready().unwrap();
         r.model.points_percent = 100.0;
         let cam = r.view3d.camera.as_mut().unwrap();
@@ -3148,9 +3148,9 @@ fn stored_points_are_streamed_at_the_share_chosen() {
                 .ready()
                 .unwrap()
                 .view3d
-                .lod_stats(Layer::Points)
+                .stream_stats()
                 .unwrap();
-            if s.pending == 0 && s.drawn[0] > 0 {
+            if s.pending == 0 && s.drawn > 0 {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
@@ -3169,6 +3169,309 @@ fn stored_points_are_streamed_at_the_share_chosen() {
         (f64::from(tenth) / f64::from(all) - 0.1).abs() < 0.01,
         "{tenth} of {all}"
     );
+}
+
+/// Synthetic points: a `w` × `h` m grid at 0.5 m from (x0, y0), ground
+/// and vegetation alternating.
+fn grid_points(x0: f64, y0: f64, w: u32, h: u32) -> impl Iterator<Item = ols_lidar::LidarPoint> {
+    (0..2 * w).flat_map(move |i| {
+        (0..2 * h).map(move |j| ols_lidar::LidarPoint {
+            x: x0 + f64::from(i) * 0.5,
+            y: y0 + f64::from(j) * 0.5,
+            z: 520.0 + f64::from((i * 7 + j * 3) % 11) * 0.3,
+            class: if (i + j) % 2 == 0 { 5 } else { 2 },
+            intensity: 0,
+            return_number: 1,
+            number_of_returns: 1,
+        })
+    })
+}
+
+/// A cloud far larger than the point budget (4 million points, a budget
+/// of 300 000): the 3D view draws at most the budget, the nearest nodes
+/// finest, and keeps at most 1.5 × the budget on the GPU; frames stay
+/// quick while nodes stream in.
+#[test]
+fn a_large_cloud_is_drawn_within_the_point_budget() {
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    use crate::scene::Layer;
+    let first = synthetic_project("budget");
+    let file = first.sources.file.clone();
+    drop(first);
+    let mut store = ols_pointcloud::Store::open(&file).unwrap();
+    store
+        .import_points(
+            "big",
+            "",
+            None,
+            64.0,
+            0.001,
+            grid_points(-200.0, -500.0, 1000, 1000),
+            &ols_core::budget::Budget::new(),
+        )
+        .unwrap();
+    drop(store);
+    let model = model::load(
+        Sources {
+            file,
+            point_budget: 1000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.state_mut().show_tab(crate::app::Tab::View3d);
+    harness.step();
+    let budget = 300_000;
+    {
+        harness.state_mut().lod.points.budget = budget;
+        let mut row = harness.state().lod.row(Layer::Points);
+        row.render_distance = 1e6;
+        harness.state_mut().lod.set(Layer::Points, row).unwrap();
+        let r = harness.state_mut().ready().unwrap();
+        r.model.points_percent = 100.0;
+        let cam = r.view3d.camera.as_mut().unwrap();
+        cam.target = [300.0, 0.0, 520.0];
+        cam.distance = 400.0;
+        cam.pitch = 0.4;
+    }
+    let mut slowest = std::time::Duration::ZERO;
+    let mut stats = None;
+    for _ in 0..600 {
+        let t = std::time::Instant::now();
+        harness.step();
+        slowest = slowest.max(t.elapsed());
+        let s = harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .view3d
+            .stream_stats()
+            .unwrap();
+        stats = Some(s);
+        if s.pending == 0 && s.drawn > 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let s = stats.unwrap();
+    assert_eq!(s.pending, 0, "every node read: {s:?}");
+    assert!(s.capped, "the budget limits the view: {s:?}");
+    let drawn = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .view3d
+        .drawn_points(Layer::Points);
+    assert!(u64::from(drawn) <= budget, "{drawn} points drawn");
+    assert!(u64::from(drawn) > budget / 2, "{drawn} points drawn");
+    assert!(s.cached.1 <= budget * 3 / 2, "{s:?}");
+    println!("4 M points, budget 300 000: slowest frame {slowest:.1?}, {s:?}");
+}
+
+/// Frame times with a large cloud (release: `cargo test --release -p
+/// ols-app -- --ignored --nocapture point_budget_frame_times`): 25 million
+/// synthetic points in the project, a 10 million point budget; the time
+/// until the view is read, then frames while the camera turns.
+#[test]
+#[ignore = "benchmark: run in release with --ignored --nocapture"]
+fn point_budget_frame_times() {
+    use crate::scene::Layer;
+    use std::time::Instant;
+    let first = synthetic_project("frames");
+    let file = first.sources.file.clone();
+    drop(first);
+    let t = Instant::now();
+    let mut store = ols_pointcloud::Store::open(&file).unwrap();
+    store
+        .import_points(
+            "big",
+            "",
+            None,
+            64.0,
+            0.001,
+            grid_points(-1000.0, -1250.0, 2500, 2500),
+            &ols_core::budget::Budget::new(),
+        )
+        .unwrap();
+    drop(store);
+    println!("import of 25 M points with levels: {:.1?}", t.elapsed());
+    let t = Instant::now();
+    let model = model::load(
+        Sources {
+            file,
+            point_budget: 1_000_000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    println!("model opened in {:.1?}", t.elapsed());
+    let mut rs = None;
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .wgpu()
+        .build_eframe(|cc| {
+            rs = cc.wgpu_render_state.clone();
+            App::with_model(model, cc.wgpu_render_state.clone())
+        });
+    let device = rs.unwrap().device;
+    // A frame's time includes the GPU's work on it.
+    let wait = || {
+        device
+            .poll(eframe::wgpu::PollType::wait_indefinitely())
+            .unwrap();
+    };
+    harness.state_mut().show_tab(crate::app::Tab::View3d);
+    harness.step();
+    {
+        // A fine error: the budget (10 million, or OLS_BENCH_BUDGET), not
+        // the error, limits the view.
+        harness.state_mut().lod.points.budget = std::env::var("OLS_BENCH_BUDGET")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10_000_000);
+        harness.state_mut().lod.points.max_error = 0.3;
+        let r = harness.state_mut().ready().unwrap();
+        r.model.points_percent = 100.0;
+        let cam = r.view3d.camera.as_mut().unwrap();
+        cam.target = [250.0, 0.0, 520.0];
+        cam.distance = 600.0;
+        cam.pitch = 0.5;
+    }
+    let stats = |h: &mut Harness<'_, App>| {
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .view3d
+            .stream_stats()
+            .unwrap()
+    };
+    let t = Instant::now();
+    let mut frames = 0;
+    loop {
+        harness.step();
+        wait();
+        frames += 1;
+        let s = stats(&mut harness);
+        if (s.pending == 0 && s.drawn > 0) || t.elapsed().as_secs() > 120 {
+            break;
+        }
+    }
+    let read = t.elapsed();
+    let s = stats(&mut harness);
+    let drawn = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .view3d
+        .drawn_points(Layer::Points);
+    println!(
+        "view read in {read:.1?} ({frames} frames): {drawn} points drawn, {:.1} M points/s; {s:?}",
+        f64::from(drawn) / read.as_secs_f64() / 1e6
+    );
+    let mut times = Vec::new();
+    for k in 0..120 {
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .view3d
+            .camera
+            .as_mut()
+            .unwrap()
+            .orbit(0.01, 0.0);
+        let t = Instant::now();
+        harness.step();
+        wait();
+        if k >= 20 {
+            times.push(t.elapsed());
+        }
+    }
+    times.sort();
+    println!(
+        "turning: median frame {:.1?}, 95 % {:.1?}, slowest {:.1?}; {:?}",
+        times[times.len() / 2],
+        times[times.len() * 95 / 100],
+        times[times.len() - 1],
+        stats(&mut harness)
+    );
+}
+
+/// A COPC file as the point cloud: opened by its octree (the points shown
+/// from its shallow nodes, the ground from its ground classes in the
+/// corridor) and streamed by node in the 3D view.
+#[test]
+fn a_copc_file_is_the_point_cloud() {
+    let first = synthetic_project("copc");
+    let file = first.sources.file.clone();
+    drop(first);
+    let copc = file.with_file_name("survey.copc.laz");
+    let points: Vec<_> = grid_points(-100.0, -60.0, 600, 120).collect();
+    ols_pointcloud::copc::write_copc(&copc, &points, 0.001, &ols_core::budget::Budget::new())
+        .unwrap();
+    let model = model::load(
+        Sources {
+            file,
+            pointcloud: Some(copc.display().to_string()),
+            point_budget: 5000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    assert_eq!(
+        model.cloud.as_deref(),
+        Some(copc.display().to_string().as_str())
+    );
+    let n = model.points.len();
+    assert!((4000..=12_000).contains(&n), "{n} points shown");
+    assert!(model.class_counts.iter().any(|(c, _)| *c == 2));
+    assert!(model.ground.is_some(), "ground from the COPC ground class");
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.state_mut().show_tab(crate::app::Tab::View3d);
+    for _ in 0..400 {
+        harness.step();
+        let s = harness.state_mut().ready().unwrap().view3d.stream_stats();
+        if s.is_some_and(|s| s.pending == 0 && s.drawn > 0) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let s = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .view3d
+        .stream_stats()
+        .unwrap();
+    assert!(s.drawn > 0 && s.points > 0, "{s:?}");
 }
 
 /// Writes a LAZ survey of 0.5 m grid points over [x0, x0 + w) × [-40, 40):
