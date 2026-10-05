@@ -17,7 +17,7 @@ Transactions on Geoscience and Remote Sensing* 41(4), 2003):
    \\( r_k = 1, 2, 4, 8, \dots \\) while \\( w_k c \\) is within the largest
    window (20 m). Opening removes objects smaller than the window.
 3. A cell whose lowest point stands above the opened surface by more than
-   \\( \Delta h_k = s\,(w_k - w_{k-1})\,c + \Delta h_0 \\) (at most
+   \\( \Delta h_k = s\\,(w_k - w_{k-1})\\,c + \Delta h_0 \\) (at most
    \\( \Delta h_{max} \\); slope \\( s \\) = 0.3, \\( \Delta h_0 \\) = 0.3 m,
    \\( \Delta h_{max} \\) = 3 m) holds no ground; the opened surface is the
    input of the next window.

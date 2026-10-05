@@ -32,13 +32,13 @@ checked: the largest vertical distance below the chord, as solved), conductor
 diameter \\( d \\) and \\( n \\) loops, each axis is a sum of terms with
 user coefficients:
 
-\\[ A = k_D D + k_L L + k_{\sqrt D} \sqrt D + k_d d + k_{\ln}\, n d \ln\frac{s D}{n^2 d} + k_0, \qquad
+\\[ A = k_D D + k_L L + k_{\sqrt D} \sqrt D + k_d d + k_{\ln}\\, n d \ln\frac{s D}{n^2 d} + k_0, \qquad
     B = (\text{the same terms}) + k_A A \\]
 
 \\( A \\) is the major axis, \\( B \\) the minor axis (full lengths). The
 major axis is tilted by \\( \theta \\) from the vertical (positive: its top
 to the right, looking from the span's first structure to its last), and the
-ellipse's centre lies on it a distance \\( c\,A \\) above the wire at rest
+ellipse's centre lies on it a distance \\( c\\,A \\) above the wire at rest
 (`centre_above_rest = c`; 0.5 puts the wire at the lower end of the major
 axis).
 

@@ -32,4 +32,8 @@ Every iterative method documented in this manual states its convergence criterio
 
 ## Coordinate conventions
 
-To be specified with the line data model (Phase 2): project coordinate reference system, stationing, offsets (positive to the right looking ahead), elevations and the local structure axes.
+- **Project coordinates**: a projected coordinate system in metres (the line's `crs`, e.g. `EPSG:2056`); x east, y north, z up. Heights are kept as given — usually orthometric — and no geoid model is applied ([Coordinate systems](../user-guide/coordinates.md)).
+- **Stations and offsets**: stations are measured along a route's alignment (or its structures); offsets are positive to the right looking ahead ([Line files](../user-guide/line-file.md)).
+- **Structure axes**: origin at the structure's ground centre; x to the right of the line (transverse), y ahead (along the line), z up. `orientation_deg` is the direction of the local x axis, degrees counter-clockwise from east.
+- **Wind** comes from the left or the right, looking ahead along the line, and acts horizontally, perpendicular to each span.
+- **Structure loads** are given in the line's axes (x, y, z) and in the structure's axes: transverse, longitudinal (ahead) and vertical (down) — see [Load cases](../user-guide/loads.md).
