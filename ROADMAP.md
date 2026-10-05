@@ -152,7 +152,7 @@ The open Phase 2 items above, grouped into four work packages:
 - [ ] Collaboration: permissions per area/object, review & approval workflow, offline work with sync (stretch)
 - [ ] **Git-like version control** of projects: revisions, history browser, diff (incl. engineering impact), branches for design alternatives, merge, tags for issued revisions, revert (DESIGN_GOALS §7)
 - [ ] Web client (WebGPU) joining server sessions
-- [ ] Interop plugins: XML (LandXML + open OLS XML schema), KML/KMZ, IFC, Shapefile/GeoJSON/GeoPackage, CSV, XLSX; import of common neutral formats from other tools (DESIGN_GOALS §8)
+- [x] Interop plugins: XML (LandXML + open OLS XML schema), KML/KMZ, IFC, Shapefile/GeoJSON/GeoPackage, CSV, XLSX; import of common neutral formats from other tools (DESIGN_GOALS §8) — base, built into `ols-io` (written from the public specifications, no native GIS library): OLS XML (whole line, lossless, `docs/schema/ols-line.xsd`), LandXML alignments + CgPoints (export; import of points/alignments), GeoJSON / zipped Shapefile / GeoPackage layers (structures, routes, wires per case with tensions and sag), IFC4 (structures as proxies with stick geometry, spans as cable segments, property sets), XLSX report tables; structures imported from CSV (mapped columns), GeoJSON, Shapefile and LandXML points along a route, into a line or a project as one command. Left for later: shapefile `.prj` / GeoPackage WKT for projected systems, GeoPackage spatial index, IFC georeferencing (`IfcMapConversion`) and solid geometry, curves of LandXML alignments (read as chords), DXF/PDF
 
 **Deliverable:** beta release usable on real projects (with independent verification).
 

@@ -45,7 +45,7 @@
 | `ols-pointcloud` | Point clouds in the project file (chunk × class blocks), point-source interface |
 | `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors |
 | `ols-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines |
-| `ols-io` | Import/export: format traits and registry, built-in formats (CSV, KML/KMZ), formats from WebAssembly plugins |
+| `ols-io` | Import/export: format traits and registry, built-in formats (CSV, KML/KMZ, OLS XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC4, XLSX), neutral imports of structures along a route, formats from WebAssembly plugins |
 | `ols-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming (`lod`); headless images |
 | `ols-app` | Desktop application `ols-cad` (egui, ADR-0009): 3D, plan, profile, properties |
 | `ols-cables` | Cable/conductor library, stress-strain & creep models |
