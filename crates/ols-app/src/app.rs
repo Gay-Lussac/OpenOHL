@@ -589,6 +589,7 @@ impl App {
             advertise: None,
             code: None,
             newcomers: w.newcomers,
+            web: w.web.then(|| std::net::SocketAddr::new(w.bind, w.web_port)),
         };
         match ols_server::server::Server::start(&file, options) {
             Ok(server) => {
@@ -620,6 +621,9 @@ impl App {
         if let Some(s) = &self.hosting {
             remote.invitation = s.invitation.clone();
             remote.secret = Some(s.secret().to_owned());
+            remote.web = s
+                .web_link(None)
+                .and_then(|l| l.split_once('#').map(|(base, _)| base.to_owned()));
         }
         let user = remote.link.user.clone();
         let sources = Sources {

@@ -30,9 +30,16 @@
 //! Transport: QUIC (`quinn`), TLS with a certificate made when the server
 //! starts; clients trust it by its fingerprint in the invitation. Messages
 //! are JSON, length-prefixed; the project file goes on its own stream.
+//!
+//! Browsers join through the optional web listener ([`web`]): HTTPS with
+//! the same certificate, the web client's files, and a WebSocket speaking
+//! the same messages. A web client keeps no replica: instead of the
+//! project file it receives a [`Scene`] (the line and its wires solved on
+//! the server) whenever the line changes.
 
 pub mod client;
 pub mod server;
+pub mod web;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -362,6 +369,51 @@ pub enum ServerMsg {
         /// The text.
         text: String,
     },
+    /// Web clients only: what to draw, sent after the welcome and again
+    /// when the line changed.
+    Scene(Box<Scene>),
+}
+
+/// The line as a web client draws it: solved on the server.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Scene {
+    /// Log entry the line is at.
+    pub seq: i64,
+    /// Edits of the line or its libraries since the server started: a
+    /// newer scene has a higher one.
+    pub revision: u64,
+    /// The line (typed structures given their attachments when the
+    /// libraries allow).
+    pub line: ols_line::Line,
+    /// Weather case the wires are solved in.
+    pub case: String,
+    /// One per section, in the line's order.
+    pub wires: Vec<SceneWire>,
+    /// What could not be done (libraries, structure types).
+    pub notes: Vec<String>,
+}
+
+/// A section's wire, solved.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneWire {
+    /// Section id.
+    pub section: String,
+    /// One per span, in order (empty when it did not solve).
+    pub spans: Vec<SceneSpan>,
+    /// Why it did not solve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// A span's wire, solved.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneSpan {
+    /// Points along the wire, back to ahead (millimetre precision).
+    pub points: Vec<[f64; 3]>,
+    /// Largest vertical distance below the chord, m.
+    pub sag: f64,
+    /// Largest tension, N.
+    pub max_tension: f64,
 }
 
 /// How to join a server: `ols://HOST:PORT/CODE/FINGERPRINT` (the

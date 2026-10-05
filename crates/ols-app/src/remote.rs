@@ -57,6 +57,8 @@ pub struct Remote {
     pub secret: Option<String>,
     /// The name typed for a personal invitation (People).
     pub invite_name: String,
+    /// Hosting with the web client: its address, `https://HOST:PORT/`.
+    pub web: Option<String>,
 }
 
 impl std::fmt::Debug for Remote {
@@ -84,6 +86,7 @@ impl Remote {
             hosting,
             secret: None,
             invite_name: String::new(),
+            web: None,
         }
     }
 }
@@ -217,7 +220,7 @@ impl Model {
                 others.push(text);
                 None
             }
-            ServerMsg::Welcome { .. } | ServerMsg::Refused { .. } => None,
+            ServerMsg::Welcome { .. } | ServerMsg::Refused { .. } | ServerMsg::Scene(_) => None,
         }
     }
 
@@ -543,6 +546,10 @@ pub struct HostWindow {
     pub port: u16,
     /// Role of users the project does not know (`None`: refused).
     pub newcomers: Option<Role>,
+    /// Also serve the web client (browsers join with a link).
+    pub web: bool,
+    /// TCP port of the web client.
+    pub web_port: u16,
     /// Why the last attempt failed.
     pub error: Option<String>,
 }
@@ -553,6 +560,8 @@ impl Default for HostWindow {
             bind: std::net::IpAddr::from([0, 0, 0, 0]),
             port: 4433,
             newcomers: Some(Role::Viewer),
+            web: false,
+            web_port: 8443,
             error: None,
         }
     }
@@ -603,6 +612,16 @@ impl HostWindow {
                             );
                             ui.selectable_value(&mut self.newcomers, None, "are refused");
                         });
+                    ui.end_row();
+                    ui.checkbox(&mut self.web, "Web client").on_hover_text(
+                        "Browsers join with a link (People): HTTPS with this server's \
+                             self-signed certificate, so browsers warn once",
+                    );
+                    ui.add_enabled(
+                        self.web,
+                        egui::DragValue::new(&mut self.web_port).range(0..=65535),
+                    )
+                    .on_hover_text("TCP port of the web client (0: any free port)");
                     ui.end_row();
                 });
                 if let Some(e) = &self.error {
@@ -659,6 +678,33 @@ pub fn people_ui(ui: &mut egui::Ui, model: &mut Model) -> Option<PeopleAction> {
             ui.ctx().copy_text(invitation.clone());
         }
     });
+    let (web, secret) = (r.web.clone(), r.secret.clone());
+    let web_link = |user: Option<&str>| {
+        let (web, secret) = (web.as_ref()?, secret.as_ref()?);
+        let who = user
+            .map(|u| format!("user={}&", ols_server::web::fragment_escape(u)))
+            .unwrap_or_default();
+        Some(format!(
+            "{web}#{who}code={}",
+            ols_server::access_code(secret, user)
+        ))
+    };
+    if let Some(link) = web_link(None) {
+        ui.horizontal(|ui| {
+            ui.label("Web client").on_hover_text(
+                "The link for browsers (people the project does not know). Their browser \
+                 warns about the certificate once: its fingerprint is the invitation's",
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut link.as_str())
+                    .desired_width(420.0)
+                    .font(egui::TextStyle::Monospace),
+            );
+            if ui.button("Copy").clicked() {
+                ui.ctx().copy_text(link.clone());
+            }
+        });
+    }
     if let Some(secret) = r.secret.clone() {
         ui.horizontal(|ui| {
             ui.label("Personal invitation for").on_hover_text(
@@ -675,6 +721,13 @@ pub fn people_ui(ui: &mut egui::Ui, model: &mut Model) -> Option<PeopleAction> {
                     ..r.invitation.clone()
                 };
                 ui.ctx().copy_text(personal.to_string());
+            }
+            if let Some(link) = web_link(Some(&name))
+                && ui
+                    .add_enabled(!name.is_empty(), egui::Button::new("Copy web link"))
+                    .clicked()
+            {
+                ui.ctx().copy_text(link);
             }
         });
     }

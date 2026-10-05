@@ -144,6 +144,13 @@ enum Command {
         /// (repeatable): users the project knows join only with theirs.
         #[arg(long)]
         invite: Vec<String>,
+        /// Also serve the web client on this TCP port (same address as
+        /// --bind): browsers join with a link. HTTPS with the server's
+        /// self-signed certificate: browsers warn once; compare the
+        /// fingerprint printed here before accepting it. The access code
+        /// is in the link: hand it out like an invitation.
+        #[arg(long, value_name = "PORT")]
+        web: Option<u16>,
     },
 }
 
@@ -475,8 +482,9 @@ fn main() -> ExitCode {
             newcomers,
             seconds,
             invite,
+            web,
         }) => report(serve(
-            &project, bind, advertise, code, &newcomers, seconds, &invite,
+            &project, bind, advertise, code, &newcomers, seconds, &invite, web,
         )),
         Some(Command::Import {
             file,
@@ -515,6 +523,7 @@ fn main() -> ExitCode {
 }
 
 /// `ols serve`: hosts the project, prints who joins and leaves.
+#[allow(clippy::too_many_arguments)]
 fn serve(
     project: &std::path::Path,
     bind: std::net::SocketAddr,
@@ -523,6 +532,7 @@ fn serve(
     newcomers: &str,
     seconds: Option<u64>,
     invite: &[String],
+    web: Option<u16>,
 ) -> Result<(), String> {
     let newcomers = match newcomers {
         "none" => None,
@@ -535,12 +545,33 @@ fn serve(
             advertise,
             code,
             newcomers,
+            web: web.map(|port| std::net::SocketAddr::new(bind.ip(), port)),
         },
     )?;
     println!("hosting {} on {}", project.display(), server.local_addr);
     println!("invitation (newcomers): {}", server.invitation);
     for user in invite {
         println!("invitation for {user}: {}", server.invitation_for(user));
+    }
+    if let Some(addr) = server.web_addr {
+        let fp: Vec<String> = server
+            .invitation
+            .fingerprint
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect();
+        println!(
+            "web client on {addr} (HTTPS, self-signed certificate, SHA-256 {})",
+            fp.join(":")
+        );
+        if let Some(link) = server.web_link(None) {
+            println!("web link (newcomers): {link}");
+        }
+        for user in invite {
+            if let Some(link) = server.web_link(Some(user)) {
+                println!("web link for {user}: {link}");
+            }
+        }
     }
     let started = std::time::Instant::now();
     let mut shown: Vec<String> = Vec::new();

@@ -160,7 +160,8 @@ impl rustls::client::danger::ServerCertVerifier for Pinned {
     }
 }
 
-fn tls_client(fp: [u8; 32]) -> Result<quinn::ClientConfig, String> {
+/// TLS 1.3 trusting only the certificate with fingerprint `fp`.
+pub(crate) fn pinned_tls(fp: [u8; 32], alpn: &[u8]) -> Result<rustls::ClientConfig, String> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let verifier = Pinned {
         fingerprint: fp,
@@ -172,7 +173,12 @@ fn tls_client(fp: [u8; 32]) -> Result<quinn::ClientConfig, String> {
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(verifier))
         .with_no_client_auth();
-    tls.alpn_protocols = vec![ALPN.to_vec()];
+    tls.alpn_protocols = vec![alpn.to_vec()];
+    Ok(tls)
+}
+
+fn tls_client(fp: [u8; 32]) -> Result<quinn::ClientConfig, String> {
+    let tls = pinned_tls(fp, ALPN)?;
     let crypto =
         quinn::crypto::rustls::QuicClientConfig::try_from(tls).map_err(|e| e.to_string())?;
     let mut config = quinn::ClientConfig::new(Arc::new(crypto));
