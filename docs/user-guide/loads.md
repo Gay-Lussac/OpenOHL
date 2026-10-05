@@ -58,3 +58,23 @@ ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-cs
 The CSV columns: `case,structure,set,phase,label,support,x,y,z,transverse,longitudinal,vertical,factored_transverse,factored_longitudinal,factored_vertical`.
 
 Not yet included: wind on the structures themselves, and jumper loads.
+
+## Structure usage (capacity checks)
+
+With the loads, OLS CAD checks how much of its capacity every structure uses, from its type's `[capacity]` (see [Structure libraries](structure-library.md#capacity)). Two methods, each used when the type gives its data:
+
+- **Method 1, allowable spans.** The structure's **wind span** (half the sum of its adjacent spans, the largest over its attachments) and **weight span** (the wires' vertical load at the attachment, without the insulator, over their vertical load per metre in the load case — for a catenary, the distance between the low points of the adjacent spans; the largest and the smallest over its attachments) against the type's allowable spans at the structure's **line angle** (the largest over the routes through it). The allowable spans are interpolated between the angles given; a structure turning more than the last angle fails ("not allowed"). Usage: the larger of wind span / allowable and weight span / allowable; a weight span below the minimum (uplift) is 100 % plus the shortfall over the allowable weight span. The strength factor does not apply: allowable spans are the type's design spans.
+- **Method 2, allowable loads (load trees).** At every attachment the type gives, the **factored** loads in the structure's axes (summed over a V-string's legs) against the allowable loads times the load case's **strength factor**: transverse and longitudinal either way, vertical downwards, uplift upwards (an upward load with no uplift given fails). Usage: the largest ratio of the attachment, or their sum with `interaction = "linear"`; the structure's is its worst attachment's.
+
+A structure's usage is the larger of the two. A structure without a type, or whose type gives no capacity, is listed as not checked. A load case with sections that did not solve misses their loads: it is said so.
+
+**In the application:** on the Structure loads page, **Usage** shows every structure worst first — for the governing load case of each (or one load case): usage (red over 100 %, orange from 90 %), each method's usage, what governs (e.g. "weight span 640 m of 600 m", "1:2 transverse 31.2 kN of 30.0 kN × 0.9"), the load case, line angle, wind and weight spans — and **Export CSV…**.
+
+**From the command line:** the loads run prints the ten structures using most of their capacity; `--usage-csv usage.csv` writes every load case and structure:
+
+```bash
+ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --usage-csv usage.csv
+```
+
+The CSV columns: `case,structure,type,line_angle_deg,wind_span,weight_span_min,weight_span_max,spans_usage,loads_usage,usage,governs,notes` (usages in %).
+

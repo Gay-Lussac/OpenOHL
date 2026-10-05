@@ -21,3 +21,28 @@ label = "dead-end"
 point = ["-6.000 m", "0.000 m", "30.000 m"]
 string = { length = "5.025 m", weight = "0.0 N", top = "A1-2", bottom = "W1-2" }
 side = "back"
+
+# Capacity (invented values for the example): allowable spans by line
+# angle (Method 1) and allowable loads per attachment (Method 2).
+
+[[capacity.spans]]
+angle = "0 deg"
+wind_span = "350 m"
+weight_span = "500 m"
+min_weight_span = "-50 m"
+
+[[capacity.attachment]]
+set = 1
+phase = 1
+vertical = "10 kN"
+uplift = "5 kN"
+transverse = "10 kN"
+longitudinal = "40 kN"
+
+[[capacity.attachment]]
+set = 1
+phase = 2
+vertical = "10 kN"
+uplift = "5 kN"
+transverse = "10 kN"
+longitudinal = "40 kN"

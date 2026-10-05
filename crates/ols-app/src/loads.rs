@@ -6,17 +6,27 @@
 //! structures in each load case (the load case file used: the project's,
 //! Libraries › Load cases), computed on demand in the background — the
 //! model is not changed. One load case shown at a time; factored or not;
-//! a click goes to the structure; CSV export.
+//! a click goes to the structure; CSV export. **Usage**: how much of its
+//! capacity each structure uses (its type's allowable spans and loads,
+//! [`ols_loads::capacity`]), the governing load case or one case, worst
+//! first.
 
 use std::sync::mpsc::{Receiver, channel};
 use std::time::Instant;
 
 use eframe::egui;
 use ols_loads::CaseLoads;
+use ols_loads::capacity::{CaseUsage, StructureUsage};
 
 use crate::model::Model;
 
 type Outcome = Result<Vec<CaseLoads>, String>;
+
+/// A computation's answer: the loads, and the usage computed from them.
+type Finished = (Outcome, Vec<CaseUsage>);
+
+/// Usage at or above this share is shown as a warning (orange).
+const NEAR_FULL: f64 = 0.9;
 
 /// The Structure loads page.
 #[derive(Default)]
@@ -24,7 +34,12 @@ pub struct LoadsPage {
     /// The last results (or why there are none).
     pub results: Option<Outcome>,
     /// A computation running: since, its answer.
-    running: Option<(Instant, Receiver<Outcome>)>,
+    running: Option<(Instant, Receiver<Finished>)>,
+    /// How much of their capacity the structures use, per load case (with
+    /// the last results).
+    pub usage: Vec<CaseUsage>,
+    /// The usage shown instead of the loads.
+    pub show_usage: bool,
     /// How long the last one took.
     pub took: Option<std::time::Duration>,
     /// The load case shown.
@@ -33,6 +48,8 @@ pub struct LoadsPage {
     pub filter: String,
     /// Factored loads shown (else unfactored).
     pub unfactored: bool,
+    /// The usage's load case: 0 the governing one, k + 1 case k.
+    pub usage_case: usize,
 }
 
 impl LoadsPage {
@@ -53,6 +70,11 @@ impl LoadsPage {
         };
         let line = model.line.clone();
         let library = model.library.clone();
+        let types = model
+            .types
+            .as_ref()
+            .map(|(t, _)| t.clone())
+            .unwrap_or_default();
         let weather: Vec<_> = model.cases.iter().map(|c| c.case.clone()).collect();
         let (tx, rx) = channel();
         let c = ctx.clone();
@@ -66,7 +88,11 @@ impl LoadsPage {
                     &ols_loads::default_budget(),
                 )
             });
-            let _ = tx.send(r);
+            let usage = r.as_ref().map_or_else(
+                |_| Vec::new(),
+                |loads| ols_loads::capacity::usage(&line, &types, &library, &weather, loads),
+            );
+            let _ = tx.send((r, usage));
             c.request_repaint();
         });
         self.running = Some((Instant::now(), rx));
@@ -78,9 +104,13 @@ impl LoadsPage {
             return;
         };
         let r = match rx.try_recv() {
-            Ok(r) => Some(r),
+            Ok((r, usage)) => {
+                self.usage = usage;
+                Some(r)
+            }
             Err(std::sync::mpsc::TryRecvError::Empty) => None,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.usage.clear();
                 Some(Err("the computation stopped".into()))
             }
         };
@@ -153,6 +183,33 @@ impl LoadsPage {
         if results.is_empty() {
             ui.label("The load case file has no case.");
             return None;
+        }
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.show_usage, false, "Loads");
+            ui.selectable_value(&mut self.show_usage, true, "Usage")
+                .on_hover_text(
+                    "How much of its capacity each structure uses: its type's allowable spans \
+                     (Method 1) and allowable loads (Method 2)",
+                );
+        });
+        if self.show_usage {
+            let names: Vec<String> = results.iter().map(|r| r.case.name.clone()).collect();
+            // A case with sections not solved misses their loads: said so.
+            let incomplete: Vec<String> = results
+                .iter()
+                .filter(|r| !r.failed.is_empty())
+                .map(|r| format!("{} ({} sections)", r.case.name, r.failed.len()))
+                .collect();
+            if !incomplete.is_empty() {
+                ui.colored_label(
+                    egui::Color32::LIGHT_RED,
+                    format!(
+                        "sections not solved in: {} — their loads are missing (see Loads)",
+                        incomplete.join(", ")
+                    ),
+                );
+            }
+            return self.usage_ui(ui, &names);
         }
         ui.horizontal(|ui| {
             let names: Vec<&str> = results.iter().map(|r| r.case.name.as_str()).collect();
@@ -257,6 +314,173 @@ impl LoadsPage {
                                 );
                             }
                             ui.label(l.sections.join(", "));
+                            ui.end_row();
+                        }
+                    });
+            });
+        go
+    }
+
+    /// The usage view; returns a structure to go to.
+    fn usage_ui(&mut self, ui: &mut egui::Ui, names: &[String]) -> Option<String> {
+        let mut go = None;
+        // Load case: 0 = the governing one of each structure, k + 1 = case k.
+        ui.horizontal(|ui| {
+            let shown = match self.usage_case {
+                0 => "governing (every case)".to_owned(),
+                k => names.get(k - 1).cloned().unwrap_or_default(),
+            };
+            egui::ComboBox::from_label("load case")
+                .selected_text(shown)
+                .width(220.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.usage_case, 0, "governing (every case)");
+                    for (k, n) in names.iter().enumerate() {
+                        ui.selectable_value(&mut self.usage_case, k + 1, n);
+                    }
+                });
+            ui.label("structure");
+            ui.add(egui::TextEdit::singleline(&mut self.filter).desired_width(100.0));
+            if ui
+                .button("Export CSV…")
+                .on_hover_text("Every load case, every structure")
+                .clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter("CSV", &["csv"])
+                    .set_file_name("structure-usage.csv")
+                    .save_file()
+                && let Err(e) = std::fs::write(&path, ols_loads::capacity::usage_csv(&self.usage))
+            {
+                log::warn!("{}: {e}", path.display());
+            }
+        });
+        let rows: Vec<(&str, &StructureUsage)> = match self.usage_case {
+            0 => ols_loads::capacity::governing(&self.usage),
+            k => self.usage.get(k - 1).map_or_else(Vec::new, |c| {
+                let mut v: Vec<(&str, &StructureUsage)> =
+                    c.structures.iter().map(|s| (c.case.as_str(), s)).collect();
+                v.sort_by(|a, b| {
+                    let u = |s: &StructureUsage| s.governing().map_or(-1.0, |g| g.usage);
+                    u(b.1).total_cmp(&u(a.1))
+                });
+                v
+            }),
+        };
+        let checked = rows.iter().filter(|r| r.1.governing().is_some()).count();
+        let over = rows
+            .iter()
+            .filter(|r| r.1.governing().is_some_and(|g| g.usage > 1.0))
+            .count();
+        ui.label(
+            egui::RichText::new(format!(
+                "{checked} structures checked, {over} over 100 %{}",
+                if checked == 0 {
+                    " — give the structure types a [capacity] (allowable spans, \
+                     allowable loads) to check them"
+                } else {
+                    ""
+                }
+            ))
+            .small(),
+        );
+        // Not checked: at the end, with why.
+        let unchecked: Vec<&StructureUsage> = match self.usage_case {
+            0 => self
+                .usage
+                .first()
+                .map(|c| {
+                    c.structures
+                        .iter()
+                        .filter(|s| s.governing().is_none())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        let filter = self.filter.trim().to_lowercase();
+        let pct = |c: Option<&ols_loads::capacity::Check>| match c {
+            None => egui::RichText::new("—").weak(),
+            Some(c) => {
+                let text = if c.usage.is_finite() {
+                    format!("{:.0} %", c.usage * 100.0)
+                } else {
+                    "not allowed".into()
+                };
+                let colour = if c.usage > 1.0 {
+                    egui::Color32::LIGHT_RED
+                } else if c.usage >= NEAR_FULL {
+                    egui::Color32::from_rgb(255, 170, 60)
+                } else {
+                    egui::Color32::LIGHT_GREEN
+                };
+                egui::RichText::new(text).monospace().color(colour)
+            }
+        };
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                egui::Grid::new("structure-usage")
+                    .striped(true)
+                    .spacing([14.0, 3.0])
+                    .show(ui, |ui| {
+                        for h in [
+                            "structure",
+                            "type",
+                            "usage",
+                            "spans",
+                            "loads",
+                            "governs",
+                            "load case",
+                            "angle °",
+                            "wind span m",
+                            "weight span m",
+                        ] {
+                            ui.strong(h);
+                        }
+                        ui.end_row();
+                        let shown = rows
+                            .iter()
+                            .filter(|r| r.1.governing().is_some())
+                            .chain(
+                                unchecked
+                                    .iter()
+                                    .map(|s| ("", *s))
+                                    .collect::<Vec<_>>()
+                                    .iter(),
+                            )
+                            .filter(|r| {
+                                filter.is_empty() || r.1.structure.to_lowercase().contains(&filter)
+                            })
+                            .take(5000)
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        for (case, s) in shown {
+                            if ui
+                                .link(&s.structure)
+                                .on_hover_text("Go to this structure")
+                                .clicked()
+                            {
+                                go = Some(s.structure.clone());
+                            }
+                            ui.label(s.structure_type.as_deref().unwrap_or("—"));
+                            let g = s.governing();
+                            ui.label(pct(g));
+                            ui.label(pct(s.spans.as_ref()));
+                            ui.label(pct(s.loads.as_ref()));
+                            match g {
+                                Some(g) => ui.label(&g.governs),
+                                None => ui.label(egui::RichText::new(s.notes.join("; ")).weak()),
+                            };
+                            ui.label(case);
+                            ui.label(format!("{:.1}", s.line_angle_deg));
+                            ui.label(format!("{:.0}", s.wind_span));
+                            ui.label(s.weight_span.map_or(String::new(), |[lo, hi]| {
+                                if (hi - lo).abs() < 0.5 {
+                                    format!("{hi:.0}")
+                                } else {
+                                    format!("{lo:.0} – {hi:.0}")
+                                }
+                            }));
                             ui.end_row();
                         }
                     });

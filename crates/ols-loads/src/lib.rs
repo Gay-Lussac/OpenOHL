@@ -31,6 +31,8 @@
 //! strength = 1.0
 //! ```
 
+pub mod capacity;
+
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 

@@ -20,7 +20,10 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary};
-pub use structures::{PlacedAttachment, StructureLibrary, StructureType};
+pub use structures::{
+    AllowedSpans, AttachmentCapacity, Capacity, Interaction, PlacedAttachment, SpanLimit,
+    StructureLibrary, StructureType,
+};
 
 /// Error loading a library item.
 #[derive(Debug, Clone, PartialEq)]

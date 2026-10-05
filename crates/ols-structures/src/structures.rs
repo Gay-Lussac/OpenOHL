@@ -50,6 +50,35 @@
 //! **Stick drawing**: the `[[body]]` polylines when given; otherwise a mast
 //! from the centre point (the origin) up to `height` (or the highest
 //! attachment) and a crossarm from the mast to every attachment point.
+//!
+//! **Capacity** ([`Capacity`], optional): what the structure can carry,
+//! for the structure checks. Method 1, allowable spans — the wind span and
+//! weight span the type is designed for, by line angle (interpolated
+//! linearly; a structure turning more than the last angle fails); Method
+//! 2, allowable loads at each attachment (a load tree), compared with the
+//! factored loads times the load case's strength factor:
+//!
+//! ```toml
+//! [[capacity.spans]]
+//! angle = "0 deg"
+//! wind_span = "400 m"
+//! weight_span = "600 m"
+//! min_weight_span = "-50 m"   # optional: uplift limit
+//!
+//! [[capacity.spans]]
+//! angle = "10 deg"
+//! wind_span = "300 m"
+//! weight_span = "550 m"
+//!
+//! [[capacity.attachment]]
+//! set = 1
+//! phase = 1
+//! vertical = "40 kN"          # downwards
+//! uplift = "10 kN"            # optional (default: none allowed)
+//! transverse = "30 kN"
+//! longitudinal = "20 kN"
+//! interaction = "linear"      # optional: the ratios add up (default: each on its own)
+//! ```
 
 use ols_core::units::Length;
 use serde::Deserialize;
@@ -139,6 +168,174 @@ pub struct Extension {
     pub dz: Length,
 }
 
+/// Allowable spans at a line angle (Method 1).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpanLimit {
+    /// Line angle (default 0).
+    #[serde(default)]
+    pub angle: Option<ols_core::units::Angle>,
+    /// Largest wind span (half the sum of the adjacent spans).
+    pub wind_span: Length,
+    /// Largest weight span (between the low points of the adjacent spans).
+    pub weight_span: Length,
+    /// Smallest weight span (uplift limit; may be negative). None: not
+    /// checked.
+    #[serde(default)]
+    pub min_weight_span: Option<Length>,
+}
+
+/// How the load ratios of one attachment combine (Method 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Interaction {
+    /// Each direction on its own: the largest ratio.
+    #[default]
+    None,
+    /// The ratios add up.
+    Linear,
+}
+
+/// Allowable loads at one attachment (Method 2), in the structure's axes.
+/// A direction without a value is not checked.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttachmentCapacity {
+    /// Set number.
+    pub set: u32,
+    /// Phase number.
+    pub phase: u32,
+    /// Downwards.
+    #[serde(default)]
+    pub vertical: Option<ols_core::units::Force>,
+    /// Upwards (none: an upward load fails when `vertical` is given).
+    #[serde(default)]
+    pub uplift: Option<ols_core::units::Force>,
+    /// Across the line, either way.
+    #[serde(default)]
+    pub transverse: Option<ols_core::units::Force>,
+    /// Along the line, either way.
+    #[serde(default)]
+    pub longitudinal: Option<ols_core::units::Force>,
+    /// How the ratios combine.
+    #[serde(default)]
+    pub interaction: Interaction,
+}
+
+/// What a structure type can carry (both methods optional).
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Capacity {
+    /// Method 1: allowable spans by line angle.
+    #[serde(default)]
+    pub spans: Vec<SpanLimit>,
+    /// Method 2: allowable loads per attachment.
+    #[serde(rename = "attachment", default)]
+    pub attachments: Vec<AttachmentCapacity>,
+}
+
+/// Allowable spans at one line angle (Method 1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AllowedSpans {
+    /// Largest wind span, m.
+    pub wind_span: f64,
+    /// Largest weight span, m.
+    pub weight_span: f64,
+    /// Smallest weight span, m (none: not checked).
+    pub min_weight_span: Option<f64>,
+}
+
+impl Capacity {
+    /// The allowable spans at line angle `angle_deg` (either way):
+    /// interpolated between the given angles, the first ones below the
+    /// first angle; `None` beyond the last angle (or without Method 1).
+    pub fn spans_at(&self, angle_deg: f64) -> Option<AllowedSpans> {
+        let a = angle_deg.abs();
+        let at = |l: &SpanLimit| l.angle.map_or(0.0, |x| x.degrees());
+        let first = self.spans.first()?;
+        let of = |l: &SpanLimit| AllowedSpans {
+            wind_span: l.wind_span.si(),
+            weight_span: l.weight_span.si(),
+            min_weight_span: l.min_weight_span.map(|m| m.si()),
+        };
+        if a <= at(first) {
+            return Some(of(first));
+        }
+        for w in self.spans.windows(2) {
+            let (a0, a1) = (at(&w[0]), at(&w[1]));
+            if a <= a1 {
+                let t = (a - a0) / (a1 - a0);
+                let (l0, l1) = (of(&w[0]), of(&w[1]));
+                let lerp = |x: f64, y: f64| x + (y - x) * t;
+                return Some(AllowedSpans {
+                    wind_span: lerp(l0.wind_span, l1.wind_span),
+                    weight_span: lerp(l0.weight_span, l1.weight_span),
+                    min_weight_span: match (l0.min_weight_span, l1.min_weight_span) {
+                        (Some(x), Some(y)) => Some(lerp(x, y)),
+                        (x, y) => x.or(y),
+                    },
+                });
+            }
+        }
+        None
+    }
+
+    /// The largest line angle allowed, degrees (none without Method 1).
+    pub fn max_angle(&self) -> Option<f64> {
+        self.spans
+            .last()
+            .map(|l| l.angle.map_or(0.0, |x| x.degrees()))
+    }
+
+    /// The allowable loads of attachment (`set`, `phase`).
+    pub fn attachment(&self, set: u32, phase: u32) -> Option<&AttachmentCapacity> {
+        self.attachments
+            .iter()
+            .find(|a| a.set == set && a.phase == phase)
+    }
+
+    fn check(&self) -> Result<(), String> {
+        let mut last = -1.0;
+        for l in &self.spans {
+            let a = l.angle.map_or(0.0, |x| x.degrees());
+            if !(a > last && a < 180.0) {
+                return Err("capacity.spans: angles must rise, from 0 to below 180°".into());
+            }
+            last = a;
+            if !(l.wind_span.si() > 0.0 && l.weight_span.si() > 0.0) {
+                return Err(format!("capacity.spans at {a}°: spans must be above 0"));
+            }
+            if l.min_weight_span
+                .is_some_and(|m| m.si().is_nan() || m.si() >= l.weight_span.si())
+            {
+                return Err(format!(
+                    "capacity.spans at {a}°: min_weight_span must be below weight_span"
+                ));
+            }
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for c in &self.attachments {
+            if !seen.insert((c.set, c.phase)) {
+                return Err(format!(
+                    "capacity: attachment set {} phase {} given twice",
+                    c.set, c.phase
+                ));
+            }
+            let positive = [c.vertical, c.uplift, c.transverse, c.longitudinal]
+                .into_iter()
+                .flatten()
+                .all(|f| f.si() > 0.0);
+            if !positive {
+                return Err(format!(
+                    "capacity: attachment set {} phase {}: loads must be above 0",
+                    c.set, c.phase
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// An outline polyline for drawings and the 3D view.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -180,6 +377,9 @@ pub struct StructureType {
     /// drawn from the attachment points.
     #[serde(rename = "body", default)]
     pub body: Vec<Outline>,
+    /// What it can carry (structure checks).
+    #[serde(default)]
+    pub capacity: Option<Capacity>,
 }
 
 /// An attachment of a placed structure, in global coordinates.
@@ -256,6 +456,19 @@ impl LibraryItem for StructureType {
                         a.set, a.phase
                     ));
                 }
+            }
+        }
+        if let Some(c) = &self.capacity {
+            c.check()?;
+            if let Some(a) = c
+                .attachments
+                .iter()
+                .find(|c| !seen.contains(&(c.set, c.phase)))
+            {
+                return Err(format!(
+                    "capacity: attachment set {} phase {} is not an attachment of the type",
+                    a.set, a.phase
+                ));
             }
         }
         Ok(())

@@ -3878,8 +3878,26 @@ fn structure_loads_are_computed_and_shown() {
     harness.get_by_label("transverse kN");
     harness.get_all_by_label("T2").next().unwrap().click();
     harness.step();
-    let r = harness.state_mut().ready().unwrap();
-    assert_eq!(r.selection, Selection::Structure("T2".into()));
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.selection, Selection::Structure("T2".into()));
+        // The usage came with the loads: this line has no structure
+        // types, so every structure is listed, not checked.
+        assert_eq!(r.loads.usage.len(), 3);
+        assert!(r.loads.usage[0].structures.iter().all(|s| {
+            s.governing().is_none() && s.notes.iter().any(|n| n.contains("no structure type"))
+        }));
+    }
+    harness.get_by_label("Usage").click();
+    harness.step();
+    harness.step();
+    harness.get_by_label("weight span m");
+    assert!(
+        harness
+            .query_all_by_label_contains("0 structures checked")
+            .next()
+            .is_some()
+    );
 }
 
 /// Only the weather case shown is solved when the model loads; another is

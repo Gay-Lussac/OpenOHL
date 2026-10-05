@@ -3561,6 +3561,7 @@ dependencies = [
  "ols-cables",
  "ols-core",
  "ols-line",
+ "ols-structures",
  "ols-weather",
  "ols-wirefe",
  "serde",

@@ -104,3 +104,160 @@ fn an_unknown_weather_case_is_said() {
     .unwrap_err();
     assert!(e.contains("no such"), "{e}");
 }
+
+/// The typed example line, every type given `capacity`.
+fn typed(capacity: ols_structures::Capacity) -> (Line, ols_structures::StructureLibrary) {
+    let line = Line::load(&ex().join("synthetic-line-typed.ols.json")).unwrap();
+    let loaded = ols_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut types = ols_structures::StructureLibrary::default();
+    for t in loaded.iter() {
+        let mut t = t.clone();
+        // The load tree of the type's own attachments.
+        let mut c = capacity.clone();
+        c.attachments = capacity
+            .attachments
+            .first()
+            .map(|a| {
+                t.attachments
+                    .iter()
+                    .map(|x| ols_structures::AttachmentCapacity {
+                        set: x.set,
+                        phase: x.phase,
+                        ..a.clone()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        t.capacity = Some(c);
+        types
+            .insert(&PathBuf::from(format!("{}.olss", t.id)), t)
+            .unwrap();
+    }
+    let mut line = line
+        .resolve(&types, &ols_structures::InsulatorLibrary::default())
+        .unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    (line, types)
+}
+
+fn capacity(text: &str) -> ols_structures::Capacity {
+    #[derive(serde::Deserialize)]
+    struct Doc {
+        capacity: ols_structures::Capacity,
+    }
+    toml::from_str::<Doc>(text).unwrap().capacity
+}
+
+/// Method 1: wind spans are half the adjacent spans, weight spans close to
+/// them on this gently sloping line; usage is span over allowable; a line
+/// angle beyond the type's fails.
+#[test]
+fn allowable_spans() {
+    let c = capacity(
+        "[[capacity.spans]]\nangle = \"0 deg\"\nwind_span = \"400 m\"\nweight_span = \"600 m\"\n\
+         [[capacity.spans]]\nangle = \"40 deg\"\nwind_span = \"200 m\"\nweight_span = \"300 m\"\n",
+    );
+    let (line, types) = typed(c.clone());
+    let (_, library, weather, cases) = setup();
+    let budget = ols_wirefe::default_fe_budget();
+    let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+    assert_eq!(usage.len(), loads.len());
+    let everyday = &usage[0];
+    for s in &everyday.structures {
+        let check = s.spans.as_ref().expect("checked");
+        let allowed = c.spans_at(s.line_angle_deg).unwrap();
+        let [lo, hi] = s.weight_span.unwrap();
+        assert!(lo <= hi && hi > 0.0, "{}: {lo} {hi}", s.structure);
+        let expected = (s.wind_span / allowed.wind_span).max(hi / allowed.weight_span);
+        assert!((check.usage - expected).abs() < 1e-12, "{s:?}");
+        assert!(s.wind_span > 0.0);
+    }
+    // T1 ends the main sections: its wind span is half its one span.
+    let t1 = everyday
+        .structures
+        .iter()
+        .find(|s| s.structure == "T1")
+        .unwrap();
+    let a = |id: &str| line.structure(id).unwrap().attachments[0].wire_point;
+    let half = 0.5 * (a("T2")[0] - a("T1")[0]).hypot(a("T2")[1] - a("T1")[1]);
+    assert!(
+        (t1.wind_span - half).abs() < 0.5,
+        "{} vs {half}",
+        t1.wind_span
+    );
+    // Only straight structures allowed: those with an angle fail.
+    let straight = capacity("[[capacity.spans]]\nwind_span = \"400 m\"\nweight_span = \"600 m\"\n");
+    let (line, types) = typed(straight);
+    let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+    let mut turning = 0;
+    for s in &usage[0].structures {
+        let u = s.spans.as_ref().unwrap().usage;
+        if s.line_angle_deg > 1e-6 {
+            turning += 1;
+            assert!(u.is_infinite(), "{s:?}");
+        } else {
+            assert!(u.is_finite());
+        }
+    }
+    assert!(turning > 0);
+}
+
+/// Method 2: the factored loads over the allowable loads times the
+/// strength factor; the worst attachment governs; linear interaction adds
+/// the ratios.
+#[test]
+fn allowable_loads() {
+    let tree = |extra: &str| {
+        capacity(&format!(
+            "[[capacity.attachment]]\nset = 1\nphase = 1\nvertical = \"20 kN\"\n\
+             transverse = \"20 kN\"\nlongitudinal = \"40 kN\"\nuplift = \"5 kN\"\n{extra}"
+        ))
+    };
+    let (line, types) = typed(tree(""));
+    let (_, library, weather, cases) = setup();
+    let budget = ols_wirefe::default_fe_budget();
+    let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+    for (r, u) in loads.iter().zip(&usage) {
+        let phi = r.case.strength;
+        for s in &u.structures {
+            // Expected: the largest ratio over this structure's attachments.
+            let mut sums: BTreeMap<(u32, u32), [f64; 3]> = BTreeMap::new();
+            for l in r.loads.iter().filter(|l| l.structure == s.structure) {
+                let e = sums.entry((l.set, l.phase)).or_default();
+                for (sum, f) in e.iter_mut().zip(l.factored) {
+                    *sum += f;
+                }
+            }
+            let expected = sums
+                .values()
+                .map(|[t, l, v]| {
+                    let vertical = if *v >= 0.0 { v / 20e3 } else { -v / 5e3 };
+                    (t.abs() / 20e3).max(l.abs() / 40e3).max(vertical) / phi
+                })
+                .fold(0.0, f64::max);
+            let got = s.loads.as_ref().unwrap().usage;
+            assert!(
+                (got - expected).abs() < 1e-9,
+                "{}: {got} vs {expected}",
+                s.structure
+            );
+        }
+    }
+    // Linear interaction: never less than each direction on its own.
+    let (line, types) = typed(tree("interaction = \"linear\"\n"));
+    let linear = capacity::usage(&line, &types, &library, &weather, &loads);
+    for (a, b) in usage[0].structures.iter().zip(&linear[0].structures) {
+        assert!(b.loads.as_ref().unwrap().usage >= a.loads.as_ref().unwrap().usage - 1e-12);
+    }
+    // The worst structure first; the CSV has a row per case and structure.
+    let g = capacity::governing(&usage);
+    assert_eq!(g.len(), usage[0].structures.len());
+    for w in g.windows(2) {
+        assert!(w[0].1.governing().unwrap().usage >= w[1].1.governing().unwrap().usage);
+    }
+    let csv = capacity::usage_csv(&usage);
+    let rows: usize = usage.iter().map(|c| c.structures.len()).sum();
+    assert_eq!(csv.lines().count(), rows + 1);
+}

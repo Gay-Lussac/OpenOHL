@@ -12,6 +12,7 @@ authors.workspace = true
 ols-core.workspace = true
 ols-cables.workspace = true
 ols-line.workspace = true
+ols-structures.workspace = true
 ols-weather.workspace = true
 ols-wirefe.workspace = true
 serde.workspace = true

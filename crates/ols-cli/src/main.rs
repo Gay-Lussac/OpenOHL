@@ -212,6 +212,10 @@ struct LineArgs {
     /// Write the structure loads (every attachment, every load case) as CSV.
     #[arg(long, requires = "load_cases")]
     loads_csv: Option<PathBuf>,
+    /// Write how much of its capacity each structure uses (its type's
+    /// allowable spans and loads; every load case) as CSV.
+    #[arg(long, requires = "load_cases")]
+    usage_csv: Option<PathBuf>,
     /// Print stationing, offsets and line angles of every route.
     #[arg(long)]
     stations: bool,
@@ -913,6 +917,7 @@ fn line(args: &LineArgs) -> ExitCode {
         spans_csv,
         load_cases,
         loads_csv,
+        usage_csv,
         stations,
         terrain,
         lidar,
@@ -964,6 +969,7 @@ fn line(args: &LineArgs) -> ExitCode {
 
     let run = || -> Result<(), String> {
         let mut line = project::load_line(file)?;
+        let mut types = ols_structures::StructureLibrary::default();
         if line.structures.iter().any(|s| s.structure_type.is_some()) {
             let structures = ols_structures::StructureLibrary::load_dir(structure_dir)
                 .map_err(|e| e.to_string())?;
@@ -972,6 +978,7 @@ fn line(args: &LineArgs) -> ExitCode {
             line = line
                 .resolve(&structures, &insulators)
                 .map_err(|e| e.to_string())?;
+            types = structures;
         }
         let library = ols_cables::Library::load(library).map_err(|e| e.to_string())?;
         // Formats first: a wrong format or plugin fails before solving.
@@ -1069,6 +1076,38 @@ fn line(args: &LineArgs) -> ExitCode {
             }
             if let Some(out) = loads_csv {
                 std::fs::write(out, ols_loads::to_csv(&results))
+                    .map_err(|e| format!("{}: {e}", out.display()))?;
+                println!("  written to {}", out.display());
+            }
+            // Structure checks: the types' allowable spans and loads.
+            let usage = ols_loads::capacity::usage(&line, &types, &library, &all, &results);
+            let governing = ols_loads::capacity::governing(&usage);
+            if !governing.is_empty() {
+                let over = governing
+                    .iter()
+                    .filter(|(_, s)| s.governing().is_some_and(|g| g.usage > 1.0))
+                    .count();
+                println!(
+                    "structure usage: {} structures checked, {over} over 100 %",
+                    governing.len()
+                );
+                for (case, s) in governing.iter().take(10) {
+                    let g = s.governing().expect("checked");
+                    println!(
+                        "  {:<12} {:>12}  {:<20} {}",
+                        s.structure,
+                        if g.usage.is_finite() {
+                            format!("{:.1} %", g.usage * 100.0)
+                        } else {
+                            "not allowed".into()
+                        },
+                        case,
+                        g.governs
+                    );
+                }
+            }
+            if let Some(out) = usage_csv {
+                std::fs::write(out, ols_loads::capacity::usage_csv(&usage))
                     .map_err(|e| format!("{}: {e}", out.display()))?;
                 println!("  written to {}", out.display());
             }

@@ -48,6 +48,39 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `extension` | no | Named height offsets added to every attachment. |
 | `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest attachment) and a crossarm from the mast to every attachment point. |
 | `height` | no | Mast top for the generated stick drawing. |
+| `capacity` | no | What the type can carry, for the structure checks (below). |
+
+### Capacity
+
+The structure checks ([Structure usage](loads.md#structure-usage-capacity-checks)) read what a type can carry from its `[capacity]` — the values from its design (drawings, calculations, the manufacturer); OLS CAD ships none. Both methods are optional:
+
+```toml
+# Method 1: allowable spans by line angle (interpolated linearly; a
+# structure turning more than the last angle fails).
+[[capacity.spans]]
+angle = "0 deg"
+wind_span = "400 m"
+weight_span = "600 m"
+min_weight_span = "-50 m"     # optional: uplift limit (may be negative)
+
+[[capacity.spans]]
+angle = "10 deg"
+wind_span = "300 m"
+weight_span = "550 m"
+
+# Method 2: allowable loads at an attachment (a load tree), structure axes,
+# compared with the factored loads × the load case's strength factor.
+[[capacity.attachment]]
+set = 1
+phase = 1
+vertical = "40 kN"            # downwards
+uplift = "10 kN"              # optional (none: an upward load fails)
+transverse = "30 kN"          # either way
+longitudinal = "20 kN"        # either way
+interaction = "linear"        # optional: the ratios add up (default: each on its own)
+```
+
+Angles rise from 0; spans are above 0, the minimum weight span below the weight span. A direction without a value is not checked. Every `capacity.attachment` names an attachment of the type; attachments without one are reported as not in the load tree. The synthetic example's types (`examples/synthetic-line/Structures`) carry invented capacities.
 
 ## Simple pylon files
 
