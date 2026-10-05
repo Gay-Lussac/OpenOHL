@@ -79,6 +79,12 @@
 //! longitudinal = "20 kN"
 //! interaction = "linear"      # optional: the ratios add up (default: each on its own)
 //! ```
+//!
+//! **Analysis** (optional): a finite-element model of the structure
+//! (`model = "type.olsfe"`, next to this file; its nodes name the
+//! attachments they carry) and/or a pole (`pole = "id"`, a `.olsp` file
+//! in the same folder) — checked with the attachment loads of each load
+//! case (`ols_structures_fe`, through `ols_loads::capacity`).
 
 use ols_core::units::Length;
 use serde::Deserialize;
@@ -380,6 +386,14 @@ pub struct StructureType {
     /// What it can carry (structure checks).
     #[serde(default)]
     pub capacity: Option<Capacity>,
+    /// Structure model for the finite-element check (`.olsfe` file,
+    /// relative to this file's folder).
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Pole for the pole check (id of a `.olsp` file in this file's
+    /// folder).
+    #[serde(default)]
+    pub pole: Option<String>,
 }
 
 /// An attachment of a placed structure, in global coordinates.

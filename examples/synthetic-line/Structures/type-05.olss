@@ -5,6 +5,8 @@ id = "type-05"
 name = "type-05 (1 structures, e.g. T6)"
 kind = "other"
 source = "derived from: T6"
+# Pole check: the invented steel pole of steel-pole-30m.olsp.
+pole = "steel-pole-30m"
 
 [[attachment]]
 set = 1

@@ -22,9 +22,18 @@
 //!   V-string's legs) against the allowable loads times the load case's
 //!   strength factor; per direction, or added up with a linear
 //!   interaction. Usage: the largest over the attachments.
+//! - **Finite elements** (`fe`): the type's structure model (`model =
+//!   "….olsfe"`) solved with the factored attachment loads (and its
+//!   members' weight times the vertical factor); usage: the member using
+//!   most of its capacity times the strength factor
+//!   ([`ols_structures_fe`]).
+//! - **Pole** (`pole`): the type's pole (`pole = "id"`): the bending
+//!   moment of the factored loads at the type's attachment points and of
+//!   the wind on the pole, P-Delta amplified, against the strength factor
+//!   times the moment capacity along the pole.
 //!
-//! A structure's usage is the larger of the two; a structure without a
-//! type or a type without a capacity is listed, not checked.
+//! A structure's usage is the largest of its checks; a structure without
+//! a type or a type with nothing to check against is listed, not checked.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -42,6 +51,10 @@ pub enum Method {
     Spans,
     /// Allowable loads at the attachments (Method 2).
     Loads,
+    /// The type's finite-element model.
+    Fe,
+    /// The type's pole.
+    Pole,
 }
 
 impl Method {
@@ -50,6 +63,8 @@ impl Method {
         match self {
             Method::Spans => "spans",
             Method::Loads => "loads",
+            Method::Fe => "fe",
+            Method::Pole => "pole",
         }
     }
 }
@@ -84,17 +99,26 @@ pub struct StructureUsage {
     pub spans: Option<Check>,
     /// Method 2, when the type gives allowable loads.
     pub loads: Option<Check>,
+    /// The finite-element check, when the type names a model.
+    pub fe: Option<Check>,
+    /// The pole check, when the type names a pole.
+    pub pole: Option<Check>,
     /// Why something is not checked.
     pub notes: Vec<String>,
 }
 
 impl StructureUsage {
-    /// The governing check (the larger usage).
+    /// The governing check (the largest usage).
     pub fn governing(&self) -> Option<&Check> {
-        [self.spans.as_ref(), self.loads.as_ref()]
-            .into_iter()
-            .flatten()
-            .max_by(|a, b| a.usage.total_cmp(&b.usage))
+        [
+            self.spans.as_ref(),
+            self.loads.as_ref(),
+            self.fe.as_ref(),
+            self.pole.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .max_by(|a, b| a.usage.total_cmp(&b.usage))
     }
 }
 
@@ -173,7 +197,11 @@ fn bundle_weight(
 
 /// How much of its capacity every structure uses in every load case of
 /// `results` ([`crate::structure_loads`] of the same `line`, `library`
-/// and `weather`). `types`: the structure types (their `[capacity]`).
+/// and `weather`). `types`: the structure types (their `[capacity]`,
+/// models and poles; files they name are read once per call).
+///
+/// Expected cost: Methods 1 and 2 are instant; a model or pole check is a
+/// finite-element solve per structure and load case (milliseconds).
 pub fn usage(
     line: &Line,
     types: &StructureLibrary,
@@ -183,6 +211,7 @@ pub fn usage(
 ) -> Vec<CaseUsage> {
     let wind = wind_spans(line);
     let angles = line_angles(line);
+    let analyses = crate::analysis::Analyses::load(types);
     results
         .iter()
         .map(|r| {
@@ -211,10 +240,9 @@ pub fn usage(
                 .map(|(id, points)| {
                     let structure = line.structure(id);
                     let type_id = structure.and_then(|s| s.structure_type.clone());
-                    let capacity = type_id
-                        .as_deref()
-                        .and_then(|t| types.get(t))
-                        .and_then(|t| t.capacity.as_ref());
+                    let type_def = type_id.as_deref().and_then(|t| types.get(t));
+                    let capacity = type_def.and_then(|t| t.capacity.as_ref());
+                    let analysed = type_def.is_some_and(|t| t.model.is_some() || t.pole.is_some());
                     let line_angle_deg = angles.get(id).copied().unwrap_or(0.0);
                     let wind_span = points
                         .iter()
@@ -249,7 +277,9 @@ pub fn usage(
                     let mut notes = Vec::new();
                     match (&type_id, capacity) {
                         (None, _) => notes.push("no structure type: not checked".into()),
-                        (Some(t), None) => notes.push(format!("type {t} gives no capacity")),
+                        (Some(t), None) if !analysed => {
+                            notes.push(format!("type {t} gives no capacity"));
+                        }
                         _ => {}
                     }
                     let spans_check = capacity.filter(|c| !c.spans.is_empty()).map(|c| {
@@ -374,6 +404,13 @@ pub fn usage(
                             governs: worst.1,
                         }
                     });
+                    let factored: Vec<crate::analysis::Factored> = points
+                        .iter()
+                        .map(|((_, set, phase), p)| (*set, *phase, p.factored))
+                        .collect();
+                    let fe = type_def.and_then(|t| analyses.fe(t, &factored, &r.case, &mut notes));
+                    let pole = type_def
+                        .and_then(|t| analyses.pole(t, &factored, &r.case, case, &mut notes));
                     StructureUsage {
                         structure: id.to_owned(),
                         structure_type: type_id,
@@ -382,6 +419,8 @@ pub fn usage(
                         weight_span,
                         spans: spans_check,
                         loads: loads_check,
+                        fe,
+                        pole,
                         notes,
                     }
                 })
@@ -416,13 +455,14 @@ pub fn governing(cases: &[CaseUsage]) -> Vec<(&str, &StructureUsage)> {
 
 /// The usage as CSV, one row per load case and structure:
 /// `case,structure,type,line_angle_deg,wind_span,weight_span_min,
-/// weight_span_max,spans_usage,loads_usage,usage,governs,notes`
+/// weight_span_max,spans_usage,loads_usage,fe_usage,pole_usage,usage,
+/// governs,notes`
 /// (usages in %, empty when not checked).
 pub fn usage_csv(cases: &[CaseUsage]) -> String {
     use ols_core::text::csv_field;
     let mut out = String::from(
         "case,structure,type,line_angle_deg,wind_span,weight_span_min,weight_span_max,\
-         spans_usage,loads_usage,usage,governs,notes\n",
+         spans_usage,loads_usage,fe_usage,pole_usage,usage,governs,notes\n",
     );
     let pct = |c: &Option<Check>| {
         c.as_ref()
@@ -438,7 +478,7 @@ pub fn usage_csv(cases: &[CaseUsage]) -> String {
                 });
             let _ = writeln!(
                 out,
-                "{},{},{},{:.2},{:.1},{lo},{hi},{},{},{},{},{}",
+                "{},{},{},{:.2},{:.1},{lo},{hi},{},{},{},{},{},{},{}",
                 csv_field(&c.case),
                 csv_field(&s.structure),
                 csv_field(s.structure_type.as_deref().unwrap_or("")),
@@ -446,6 +486,8 @@ pub fn usage_csv(cases: &[CaseUsage]) -> String {
                 s.wind_span,
                 pct(&s.spans),
                 pct(&s.loads),
+                pct(&s.fe),
+                pct(&s.pole),
                 g.map_or(String::new(), |g| format!("{:.1}", g.usage * 100.0)),
                 csv_field(g.map_or("", |g| g.governs.as_str())),
                 csv_field(&s.notes.join("; ")),
