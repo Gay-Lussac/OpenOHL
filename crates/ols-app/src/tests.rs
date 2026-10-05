@@ -4257,3 +4257,69 @@ fn display_options_stay_open_while_ticking() {
     assert!(r.model.section_display.sag[crate::annotations::View::Plan as usize]);
     assert!(r.model.section_display.label[crate::annotations::View::ThreeD as usize]);
 }
+
+/// Criteria › Design code: a design-code plugin's cases written into the
+/// project's libraries, kept in the project and used for the model.
+#[test]
+fn design_code_cases_go_into_the_project() {
+    let dir = root().join("plugins/codes/en50341");
+    let built = dir
+        .join("target/wasm32-wasip2/release/en50341.wasm")
+        .exists();
+    assert!(
+        built || std::env::var_os("OLS_REQUIRE_PLUGIN_TESTS").is_none(),
+        "en50341 plugin not built"
+    );
+    if !built {
+        return;
+    }
+    let mut r = crate::app::Ready::new(synthetic_project("design-code"));
+    let mut plugins = crate::plugins::Plugins::load(None, None);
+    plugins.folders = vec![root().join("plugins/codes")];
+    plugins.refresh();
+    let choices = crate::codes::choices(&plugins);
+    assert!(
+        choices
+            .iter()
+            .any(|c| c.name == "en50341" && c.problem.is_none()),
+        "{choices:?}"
+    );
+    let host = ols_plugins::WasmHost::new().unwrap();
+    let params = std::fs::read_to_string(dir.join("example-parameters.toml")).unwrap();
+    let g = ols_io::codes::generate(&host, &dir, &params).unwrap();
+    let report = crate::codes::apply(&mut r, &g, "en50341").unwrap();
+    assert!(
+        report.contains("6 weather cases and 7 load cases"),
+        "{report}"
+    );
+    let names: Vec<&str> = r.model.cases.iter().map(|c| c.case.name.as_str()).collect();
+    assert_eq!(names[0], "EN extreme wind");
+    assert_eq!(names.len(), 6);
+    let lc = r.model.sources.load_cases.clone().unwrap();
+    assert!(lc.ends_with("loadcases/en50341.olslc"), "{}", lc.display());
+    let session = &r.model.editing.as_ref().unwrap().session;
+    for (kind, name) in [("weather", "en50341.olswc"), ("loadcases", "en50341.olslc")] {
+        let files = session.library_files(kind).unwrap();
+        assert!(files.iter().any(|(n, _)| n == name), "{kind}: {name}");
+    }
+}
+
+/// Criteria › Design code… opens the window; without plugins it says how
+/// to get one.
+#[test]
+fn the_design_code_window_opens_from_the_criteria_menu() {
+    let model = synthetic_project("design-code-window");
+    let mut app = App::with_model(model, None);
+    app.plugins = crate::plugins::Plugins::load(None, None);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| app);
+    harness.run();
+    harness.get_by_label("Criteria").click();
+    harness.run();
+    harness.get_by_label("Design code…").click();
+    harness.run();
+    assert!(harness.state_mut().ready().unwrap().design_code.open);
+    harness.get_by_label_contains("No design-code plugin");
+    harness.get_by_label("Generate");
+}
