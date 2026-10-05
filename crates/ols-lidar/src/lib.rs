@@ -16,12 +16,15 @@
 //!
 //! - [`classes`]: what class numbers mean ([`ClassScheme`], `*.olsc`
 //!   files): ground is chosen by role, so any classification works.
+//! - [`classify`]: ground and height-above-ground classes for points not
+//!   classified yet, and LAS/LAZ writing of the result.
 //!
 //! Cost: LAZ decompression dominates, roughly 5–10 million points per
 //! second; triangulation about 1 s per million points kept. Exit clauses: a
 //! [`Budget`] checked after every batch of points.
 
 pub mod classes;
+pub mod classify;
 
 pub use classes::ClassScheme;
 
@@ -48,6 +51,8 @@ pub enum LidarError {
     Stopped(String),
     /// Building the surface failed.
     Terrain(TerrainError),
+    /// Parameters that cannot be used.
+    Invalid(String),
 }
 
 impl fmt::Display for LidarError {
@@ -56,6 +61,7 @@ impl fmt::Display for LidarError {
             Self::File(path, m) => write!(f, "{}: {m}", path.display()),
             Self::Stopped(m) => write!(f, "LiDAR reading stopped: {m}"),
             Self::Terrain(e) => write!(f, "{e}"),
+            Self::Invalid(m) => write!(f, "{m}"),
         }
     }
 }
