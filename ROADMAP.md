@@ -151,7 +151,7 @@ The open Phase 2 items above, grouped into four work packages:
 - [ ] Bill of materials & cost estimation
 - [ ] Collaboration: permissions per area/object, review & approval workflow, offline work with sync (stretch)
 - [ ] **Git-like version control** of projects: revisions, history browser, diff (incl. engineering impact), branches for design alternatives, merge, tags for issued revisions, revert (DESIGN_GOALS §7)
-- [ ] Web client (WebGPU) joining server sessions
+- [x] Web client (WebGPU) joining server sessions — base: `ols serve --web PORT` / Host › Web client, HTTPS + WebSocket with the same codes and roles; 3D (WebGPU, Canvas2D fallback), plan and profile of the line with wires solved on the server (one weather case), selection, presence, live operation log; designers move structures. Not yet: terrain/point clouds, weather choice, other edits
 - [ ] Interop plugins: XML (LandXML + open OLS XML schema), KML/KMZ, IFC, Shapefile/GeoJSON/GeoPackage, CSV, XLSX; import of common neutral formats from other tools (DESIGN_GOALS §8)
 
 **Deliverable:** beta release usable on real projects (with independent verification).

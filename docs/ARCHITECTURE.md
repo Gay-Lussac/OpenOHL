@@ -79,7 +79,7 @@
 ```
 
 - Desktop single-user = the same session running in-process; joined, the application keeps a replica of the project and applies the server's broadcasts with the same code (`ols-server`).
-- Server mode alpha (`ols-server`, [Server mode](user-guide/server.md)): edits are requests answered after the broadcast; no optimistic prediction, whole-project copy on join, QUIC only.
+- Server mode alpha (`ols-server`, [Server mode](user-guide/server.md)): edits are requests answered after the broadcast; no optimistic prediction, whole-project copy on join, QUIC only for the application; browsers join through the web client (HTTPS + WebSocket, the line and server-solved wires as JSON).
 - Commands are validated, applied atomically, appended to the log, and broadcast as change sets.
 - Recalculation is incremental: a change marks dependent objects dirty (structure → its sections → their clearances) and only those are recomputed.
 - See ADR-0005.
