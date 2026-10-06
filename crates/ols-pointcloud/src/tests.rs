@@ -1009,3 +1009,88 @@ fn a_stored_cloud_exports_to_copc() {
     assert_eq!(written.points, want as u64);
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn a_cloud_moves_into_another_coordinate_system() {
+    let dir = scratch("reproject");
+    let db = dir.join("p.ols");
+    std::fs::remove_file(&db).ok();
+    let mut store = Store::open(&db).unwrap();
+    let pts = synthetic(2_600_000.0, 100, 60);
+    let budget = Budget::new();
+    store
+        .import_points(
+            "lidar",
+            "EPSG:2056",
+            Some("scheme"),
+            DEFAULT_CHUNK,
+            0.001,
+            pts,
+            &budget,
+        )
+        .unwrap();
+    let before = store.cloud(Some("lidar")).unwrap();
+    let mut old = Vec::new();
+    store
+        .visit(&before, None, None, &budget, &mut |x, y, z, c| {
+            old.push([
+                (x * 1000.0).round() as i64,
+                (y * 1000.0).round() as i64,
+                (z * 1000.0).round() as i64,
+                i64::from(c),
+            ])
+        })
+        .unwrap();
+    // A shift that crosses chunk borders.
+    let shift = |p: &mut [[f64; 3]]| -> Result<(), String> {
+        for q in p {
+            q[0] -= 2_000_000.0 - 20.25;
+            q[1] += 3.5;
+        }
+        Ok(())
+    };
+    let mut calls = 0;
+    let after = store
+        .reproject_cloud(&before, "EPSG:32632", &shift, &budget, |_, _| calls += 1)
+        .unwrap();
+    assert!(calls > 0);
+    assert_eq!(after.name, "lidar");
+    assert_eq!(after.crs, "EPSG:32632");
+    assert_eq!(after.class_scheme.as_deref(), Some("scheme"));
+    assert_eq!(after.points, before.points);
+    assert_eq!(store.clouds().unwrap().len(), 1);
+    assert!(store.has_lod(&after).unwrap());
+    assert_eq!(store.class_counts(&after).unwrap(), store_counts(&old));
+    let mut new = Vec::new();
+    store
+        .visit(&after, None, None, &budget, &mut |x, y, z, c| {
+            new.push([
+                (x * 1000.0).round() as i64,
+                (y * 1000.0).round() as i64,
+                (z * 1000.0).round() as i64,
+                i64::from(c),
+            ])
+        })
+        .unwrap();
+    let moved: Vec<[i64; 4]> = old
+        .iter()
+        .map(|p| [p[0] - 1_999_979_750, p[1] + 3500, p[2], p[3]])
+        .collect();
+    assert_eq!(sorted(new), sorted(moved));
+    // A failing transformation keeps the old cloud.
+    let fail = |_: &mut [[f64; 3]]| -> Result<(), String> { Err("no image".into()) };
+    assert!(
+        store
+            .reproject_cloud(&after, "EPSG:4326", &fail, &budget, |_, _| {})
+            .is_err()
+    );
+    assert_eq!(store.clouds().unwrap(), vec![after]);
+}
+
+fn store_counts(points: &[[i64; 4]]) -> Vec<(u8, u64)> {
+    let mut m = std::collections::BTreeMap::new();
+    for p in points {
+        *m.entry(p[3] as u8).or_insert(0u64) += 1;
+    }
+    m.into_iter().collect()
+}

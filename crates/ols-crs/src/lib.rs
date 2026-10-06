@@ -102,6 +102,130 @@ impl Crs {
     }
 }
 
+/// A coordinate system of the EPSG registry: its code and name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Known {
+    /// EPSG code.
+    pub code: u16,
+    /// Name, e.g. `CH1903+ / LV95`.
+    pub name: &'static str,
+    /// Whether coordinates are longitude and latitude.
+    pub geographic: bool,
+}
+
+impl Known {
+    /// `EPSG:<code>`: what [`Crs::parse`] takes.
+    pub fn spec(&self) -> String {
+        format!("EPSG:{}", self.code)
+    }
+}
+
+impl fmt::Display for Known {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.code, self.name)
+    }
+}
+
+/// The first quoted string of a WKT text: the system's name.
+fn wkt_name(wkt: &str) -> Option<&str> {
+    let start = wkt.find('"')? + 1;
+    let len = wkt[start..].find('"')?;
+    Some(&wkt[start..start + len])
+}
+
+/// Every coordinate system of the EPSG registry this program knows, by
+/// code (about 6000; listed once, in a few milliseconds).
+pub fn known() -> &'static [Known] {
+    static LIST: std::sync::OnceLock<Vec<Known>> = std::sync::OnceLock::new();
+    LIST.get_or_init(|| {
+        (0..=u16::MAX)
+            .filter_map(crs_definitions::from_code)
+            .map(|d| Known {
+                code: d.code,
+                name: wkt_name(d.wkt).unwrap_or(""),
+                geographic: d.wkt.trim_start().starts_with("GEOGCS"),
+            })
+            .collect()
+    })
+}
+
+/// The EPSG system with this code.
+pub fn known_code(code: u16) -> Option<Known> {
+    known()
+        .binary_search_by_key(&code, |k| k.code)
+        .ok()
+        .map(|i| known()[i])
+}
+
+/// A name for a coordinate system given as [`Crs::parse`] takes it:
+/// `EPSG:2056 — CH1903+ / LV95`, or the text as it is.
+pub fn describe(spec: &str) -> String {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return "not defined".into();
+    }
+    spec.to_ascii_lowercase()
+        .strip_prefix("epsg:")
+        .and_then(|c| c.trim().parse().ok())
+        .and_then(known_code)
+        .map_or_else(
+            || spec.to_owned(),
+            |k| format!("EPSG:{} — {}", k.code, k.name),
+        )
+}
+
+/// The coordinate system of a `.prj` file: WKT naming its EPSG code
+/// (`AUTHORITY["EPSG","2056"]` or `ID["EPSG",2056]` of the whole system),
+/// WKT whose name is that of an EPSG system, or a proj4 string. Returns
+/// what [`Crs::parse`] takes. Other WKT is not read (no parser here): give
+/// its EPSG code instead.
+pub fn from_prj(text: &str) -> Result<String, String> {
+    let text = text.trim().trim_start_matches('\u{feff}');
+    if text.starts_with('+') {
+        Crs::parse(text)?;
+        return Ok(text.to_owned());
+    }
+    // The system's own code is its last authority (the inner ones are its
+    // datum, units…).
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let upper = compact.to_ascii_uppercase();
+    let code = ["AUTHORITY[\"EPSG\",\"", "ID[\"EPSG\","]
+        .iter()
+        .filter_map(|key| upper.rfind(key).map(|at| at + key.len()))
+        .max()
+        .and_then(|at| {
+            let digits: String = upper[at..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            digits.parse::<u16>().ok()
+        });
+    if let Some(code) = code {
+        let spec = format!("EPSG:{code}");
+        Crs::parse(&spec)?;
+        return Ok(spec);
+    }
+    let name = wkt_name(text).ok_or("the file is neither WKT nor a proj4 string")?;
+    // Esri writes `CH1903+_LV95` for `CH1903+ / LV95`: compare letters,
+    // digits and `+` only.
+    let wanted = |n: &str| -> String {
+        n.chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '+')
+            .collect::<String>()
+            .to_ascii_lowercase()
+    };
+    known()
+        .iter()
+        .find(|k| wanted(k.name) == wanted(name))
+        .map(Known::spec)
+        .ok_or_else(|| {
+            format!(
+                "\"{name}\": no EPSG system of that name, and the file gives no EPSG code — \
+                 choose the system from the EPSG list"
+            )
+        })
+}
+
 /// What happens to heights.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Heights {
@@ -346,5 +470,37 @@ mod tests {
             (p[2] - 500.0).abs() > 10.0 && (p[2] - 500.0).abs() < 100.0,
             "{p:?}"
         );
+    }
+
+    #[test]
+    fn the_registry_is_listed_and_prj_files_read() {
+        let list = known();
+        assert!(list.len() > 1000, "{}", list.len());
+        assert!(list.windows(2).all(|w| w[0].code < w[1].code));
+        let lv95 = known_code(2056).unwrap();
+        assert_eq!(lv95.to_string(), "2056: CH1903+ / LV95");
+        assert!(!lv95.geographic);
+        assert!(known_code(4326).unwrap().geographic);
+        assert_eq!(describe("epsg:2056"), "EPSG:2056 — CH1903+ / LV95");
+        assert_eq!(describe(""), "not defined");
+        assert_eq!(describe("+proj=utm +zone=32"), "+proj=utm +zone=32");
+        // WKT 1 with the code at the end (inner codes are the datum's…).
+        let wkt = crs_definitions::from_code(2056).unwrap().wkt;
+        assert_eq!(from_prj(wkt).unwrap(), "EPSG:2056");
+        // Esri style: no code, the name with underscores.
+        let esri = r#"PROJCS["CH1903+_LV95",GEOGCS["GCS_CH1903+",DATUM["D_CH1903+",SPHEROID["Bessel_1841",6377397.155,299.1528128]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Hotine_Oblique_Mercator_Azimuth_Center"],UNIT["Meter",1.0]]"#;
+        assert_eq!(from_prj(esri).unwrap(), "EPSG:2056");
+        // WKT 2.
+        assert_eq!(
+            from_prj(r#"PROJCRS["x", BASEGEOGCRS["y", ID["EPSG", 4150]], ID["EPSG", 2056]]"#)
+                .unwrap(),
+            "EPSG:2056"
+        );
+        assert_eq!(
+            from_prj("+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs\n").unwrap(),
+            "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs"
+        );
+        assert!(from_prj(r#"PROJCS["Invented grid",UNIT["Meter",1]]"#).is_err());
+        assert!(from_prj("hello").is_err());
     }
 }

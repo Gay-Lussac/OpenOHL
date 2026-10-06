@@ -3497,6 +3497,7 @@ dependencies = [
  "ols-cables",
  "ols-clearance",
  "ols-core",
+ "ols-crs",
  "ols-drawing",
  "ols-io",
  "ols-lidar",

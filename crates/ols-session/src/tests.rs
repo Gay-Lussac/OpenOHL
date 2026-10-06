@@ -879,3 +879,53 @@ fn library_file_names_are_plain() {
         assert!(!crate::safe_file_name(bad), "{bad}");
     }
 }
+
+#[test]
+fn reprojecting_moves_line_saved_lines_and_surfaces() {
+    let (_path, mut s) = project("reproject");
+    s.save_snapshot("ana", "as built", "").unwrap();
+    s.put_surface(
+        "ana",
+        "ground",
+        "test",
+        &[[0.0, 0.0, 1.0], [10.0, 0.0, 2.0], [0.0, 10.0, 3.0]],
+        &[[0, 1, 2]],
+    )
+    .unwrap();
+    let before = s.line().clone();
+    let shift = |pts: &mut [[f64; 3]]| -> Result<(), String> {
+        for p in pts {
+            p[0] += 1000.0;
+            p[1] -= 500.0;
+        }
+        Ok(())
+    };
+    assert!(
+        s.reproject("ben", "EPSG:32632", &shift).is_err(),
+        "admins only"
+    );
+    s.reproject("ana", "EPSG:32632", &shift).unwrap();
+    let moved = s.line().clone();
+    assert_eq!(moved.crs, "EPSG:32632");
+    for (a, b) in before.structures.iter().zip(&moved.structures) {
+        assert_eq!(
+            b.position,
+            [a.position[0] + 1000.0, a.position[1] - 500.0, a.position[2]]
+        );
+        assert!((a.orientation_deg - b.orientation_deg).abs() < 1e-9);
+    }
+    let saved = s.snapshot("as built").unwrap();
+    assert_eq!(saved.crs, "EPSG:32632");
+    assert_eq!(saved.structures[0].position, moved.structures[0].position);
+    let (points, tris) = s.surface("ground").unwrap();
+    assert_eq!(points[1], [1010.0, -500.0, 2.0]);
+    assert_eq!(tris, vec![[0, 1, 2]]);
+    // Not undone: the terrain would not follow.
+    assert!(s.undo("ana").is_err());
+    let last = s.log().unwrap().last().unwrap().seq;
+    assert!(s.rollback("ana", last).is_err());
+    // A transform that fails leaves the project as it was.
+    let fail = |_: &mut [[f64; 3]]| -> Result<(), String> { Err("no image".into()) };
+    assert!(s.reproject("ana", "EPSG:4326", &fail).is_err());
+    assert_eq!(s.line(), &moved);
+}
