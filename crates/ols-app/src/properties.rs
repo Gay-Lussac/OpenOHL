@@ -71,6 +71,15 @@ pub fn ui(
                         s.structure_type.clone().unwrap_or_else(|| "—".into()),
                     ),
                     (
+                        "detail",
+                        s.structure_type
+                            .as_deref()
+                            .and_then(|t| model.types.as_ref()?.0.get(t))
+                            .map_or("—".into(), |t| {
+                                format!("{} — {}", t.detail.level(), t.detail.name())
+                            }),
+                    ),
+                    (
                         "extension",
                         s.extension.clone().unwrap_or_else(|| "—".into()),
                     ),

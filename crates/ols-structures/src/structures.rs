@@ -126,6 +126,56 @@ pub enum StructureKind {
     Other,
 }
 
+/// How much of a structure its file describes. Checks that depend on the
+/// structure's shape (distances to the structure body, structure analysis)
+/// behave differently at each level: when designing such a check, decide
+/// (with the project owner) what it does for each of the three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Deserialize)]
+#[serde(try_from = "u8")]
+pub enum Detail {
+    /// 1 — a stick figure: a mast and crossarms to the attachment points
+    /// (or a few `[[body]]` lines). Enough to place the wires and draw.
+    #[default]
+    Stick = 1,
+    /// 2 — the outline of the full pylon: `[[body]]` sticks drawing its
+    /// outside, diagonals allowed; for distance checks to the structure.
+    Outline = 2,
+    /// 3 — a full design: a finite-element model (`model`) with every
+    /// design element needed to build it; for structure analysis.
+    Design = 3,
+}
+
+impl TryFrom<u8> for Detail {
+    type Error = String;
+
+    fn try_from(v: u8) -> Result<Self, String> {
+        match v {
+            1 => Ok(Detail::Stick),
+            2 => Ok(Detail::Outline),
+            3 => Ok(Detail::Design),
+            _ => Err(format!(
+                "detail {v}: 1 (stick figure), 2 (outline) or 3 (full design)"
+            )),
+        }
+    }
+}
+
+impl Detail {
+    /// Its number in files.
+    pub fn level(self) -> u8 {
+        self as u8
+    }
+
+    /// Name in reports.
+    pub fn name(self) -> &'static str {
+        match self {
+            Detail::Stick => "stick figure",
+            Detail::Outline => "outline",
+            Detail::Design => "full design",
+        }
+    }
+}
+
 /// Side of a strain attachment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -416,6 +466,10 @@ pub struct StructureType {
     pub name: String,
     /// Family.
     pub kind: StructureKind,
+    /// How much of the structure the file describes ([`Detail`]: 1 a stick
+    /// figure, 2 its outline, 3 a full design); default 1.
+    #[serde(default)]
+    pub detail: Detail,
     /// Height of the mast top for the stick drawing (default: the highest
     /// attachment point).
     #[serde(default)]
@@ -496,6 +550,22 @@ impl LibraryItem for StructureType {
             STRUCTURE_FILE_VERSION,
             "structure",
         )?;
+        match self.detail {
+            Detail::Stick => {}
+            Detail::Outline if self.body.is_empty() => {
+                return Err(
+                    "detail 2 (outline): give the pylon's outline as [[body]] polylines".into(),
+                );
+            }
+            Detail::Outline => {}
+            Detail::Design if self.model.is_none() => {
+                return Err(
+                    "detail 3 (full design): name its finite-element model (model = \"….olsfe\")"
+                        .into(),
+                );
+            }
+            Detail::Design => {}
+        }
         let mut seen = std::collections::BTreeSet::new();
         for a in &self.attachments {
             if !seen.insert((a.set, a.phase)) {
@@ -778,6 +848,30 @@ mod tests {
             "#,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn detail_levels() {
+        let base = "id = \"t\"\nname = \"t\"\nkind = \"lattice\"\n";
+        let parse = |extra: &str| -> Result<Detail, String> {
+            let t: StructureType =
+                toml::from_str(&format!("{base}{extra}")).map_err(|e| e.to_string())?;
+            crate::LibraryItem::check(&t).map(|_| t.detail)
+        };
+        // Default: a stick figure, as every file written before.
+        assert_eq!(parse("").unwrap(), Detail::Stick);
+        assert_eq!(parse("detail = 1\n").unwrap(), Detail::Stick);
+        // 2 needs the outline, 3 the finite-element model.
+        assert!(parse("detail = 2\n").unwrap_err().contains("[[body]]"));
+        let outline = "detail = 2\n[[body]]\npoints = [[\"0 m\", \"0 m\", \"0 m\"], [\"0 m\", \"0 m\", \"30 m\"]]\n";
+        assert_eq!(parse(outline).unwrap(), Detail::Outline);
+        assert!(parse("detail = 3\n").unwrap_err().contains("model"));
+        assert_eq!(
+            parse("detail = 3\nmodel = \"t.olsfe\"\n").unwrap(),
+            Detail::Design
+        );
+        assert!(parse("detail = 4\n").is_err());
+        assert_eq!(Detail::Outline.level(), 2);
     }
 
     #[test]

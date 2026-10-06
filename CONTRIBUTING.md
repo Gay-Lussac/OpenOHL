@@ -63,3 +63,4 @@ Every source file starts with the MPL-2.0 header (copy it from an existing file)
 - Labels: `module:*` for the area, `phase:*` for the roadmap phase, `type:*` for the kind of work.
 - Architecture changes go through an ADR in `docs/adr/`.
 - Desktop app changes follow [the app conventions](docs/development/ui.md) (e.g. menus of options stay open while boxes are ticked).
+- Checks that depend on a structure's shape follow [the structure detail levels](docs/development/structure-detail.md): their behaviour for detail 1, 2 and 3 is decided with the project owner first.
