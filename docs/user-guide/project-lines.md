@@ -46,6 +46,7 @@ The menu stays open while you tick lines to show.
 | **Working on: *name*** | The line your edits go to. |
 | **Project lines ›** **Project lines…** | The window listing every line: choose the one you work on and those shown; rename, delete (below). |
 | **Project lines ›** **Working tree…** | The lines through time (below). |
+| **Description of *name*…** | What the line you work on is for (below). |
 | **New line from *name*…** | A copy of the line you work on, under a new name (e.g. *phase 1*). You keep working on your line until you choose the new one. |
 | **Bring in changes from another line…** | Brings what changed on another line (by default the main line) into yours. |
 | **Submit this line for review into the main line…** | When a phase is ready to go into the main line (greyed out on the main line itself). |
@@ -62,6 +63,7 @@ One row per line:
 | **line** | Its name, in its colour when shown. Hover for who made it, when, from which line, and how many objects it holds. |
 | **made by** | Who made it (*main line* for the main line). |
 | **objects** | Structures, sections, jumpers, routes and settings it holds. |
+| **Description…** | Its description: read it (hover shows its start), edit it if you may. |
 | **Rename…**, **Delete…** | Greyed out when you may not (hover says why). |
 
 Below the list: **New line from *name*…**, **Bring in changes…** and
@@ -92,6 +94,10 @@ the first of each day.
 - **An open dot** after a line's last revision means it has work not
   committed yet.
 - **Grey, *lines deleted*:** revisions of lines that no longer exist.
+- **The description** of a line is shown below the tree in a box of fixed
+  height that scrolls. It is the line you work on at first; click a line's
+  name, a revision, or an open dot to show that line's. **Edit…** opens it
+  (editable by its creator or an admin).
 - **Click a revision** for its message, author, time and line.
   - **New line from it…** starts a line from that revision: *copy of*
     names it in words (its line, when, its message, e.g. *main at
@@ -112,6 +118,17 @@ A line whose changes were merged into another by a *fast-forward* (the other
 line had not changed meanwhile) shares its revisions with it: they are drawn
 on the upper lane.
 
+### Descriptions
+
+Every line has a **description**: free text such as its scope, the
+assumptions behind it, or its status. It may be long (up to 20 000
+characters). It is edited in a box of fixed height that scrolls, from the
+Project lines window (**Description…** on its row) or from the Lines menu
+(**Description of *name*…** for the line you work on). The working tree
+shows it below the tree (see there). Who may edit it is who may rename the
+line: its creator or an admin; the main line, an admin. The others read it.
+It is kept in the project and follows a rename.
+
 ### Who may do what
 
 | | Viewer | Designer | Admin |
@@ -119,8 +136,8 @@ on the upper lane.
 | Choose the line to work on, show lines | yes | yes | yes |
 | Edit the line worked on | — | yes | yes |
 | Make a new line | — | yes (it is theirs) | yes |
-| Rename or delete a line | — | their own lines | every line |
-| Rename or delete the **main line** | — | — | yes |
+| Rename, delete or describe a line | — | their own lines | every line |
+| Rename, delete or describe the **main line** | — | — | yes |
 | Bring in changes | — | yes | yes |
 | Submit a line for review | — | yes | yes |
 | Approve and merge a review | — | if named reviewer | yes |

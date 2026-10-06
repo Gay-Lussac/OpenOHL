@@ -765,6 +765,7 @@ impl Session {
         conn.execute_batch(surfaces::SCHEMA)?;
         conn.execute_batch(versions::SCHEMA)?;
         conn.execute_batch(collab::SCHEMA)?;
+        lines::migrate_descriptions(&conn)?;
         // The chunk grid is fixed when the project is created.
         let grid_size: Option<String> = conn
             .query_row(

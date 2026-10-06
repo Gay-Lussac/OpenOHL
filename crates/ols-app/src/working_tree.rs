@@ -154,6 +154,8 @@ pub struct TreeWindow {
     /// The uncommitted work of a line clicked (its lane), and the commit
     /// message typed.
     pub work: Option<(usize, String)>,
+    /// The lane whose description is shown (default: the line worked on).
+    pub lane: Option<usize>,
     /// The line to roll back to the revision clicked, and whether it is
     /// confirmed.
     rollback: Option<(String, bool)>,
@@ -186,7 +188,7 @@ impl TreeWindow {
         let lines = s.lines().ok()?;
         let names: Vec<String> = lines
             .iter()
-            .map(|l| format!("{}@{:?}", l.name, l.revision))
+            .map(|l| format!("{}@{:?}#{}", l.name, l.revision, l.description))
             .collect();
         let fresh = self
             .cache
@@ -224,6 +226,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
     let mut open = true;
     let mut action: Option<(String, Op)> = None;
     let mut new_line_from: Option<(String, String)> = None;
+    let mut describe: Option<(String, String)> = None;
     let w = &mut r.working_tree;
     egui::Window::new("Working tree")
         .open(&mut open)
@@ -250,7 +253,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             let width = LABELS + COL * (tree.columns() as f32 + 1.0);
             let height = ROW * tree.lanes.len() as f32 + 40.0;
             egui::ScrollArea::both()
-                .max_height(ui.available_height() - 120.0)
+                .max_height((ui.available_height() - 280.0).max(140.0))
                 .auto_shrink([false, true])
                 .stick_to_right(true)
                 .show(ui, |ui| {
@@ -287,7 +290,10 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                         );
                         if let Some(l) = &lane.line {
                             let hover =
-                                ui.interact(label, ui.id().with(("lane", k)), egui::Sense::hover());
+                                ui.interact(label, ui.id().with(("lane", k)), egui::Sense::click());
+                            if hover.clicked() {
+                                w.lane = Some(k);
+                            }
                             hover.on_hover_text(format!(
                                 "{}{}{}",
                                 if l.is_main() {
@@ -305,9 +311,9 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                                     format!(" — {}", l.note)
                                 },
                                 if l.revision.is_none() {
-                                    "\nnothing committed yet"
+                                    "\nnothing committed yet\nclick: its description"
                                 } else {
-                                    ""
+                                    "\nclick: its description"
                                 }
                             ));
                         }
@@ -379,6 +385,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                         if hit.clicked() {
                             w.selected = None;
                             w.rollback = None;
+                            w.lane = Some(k);
                             w.work = Some((k, String::new()));
                         }
                         hit.on_hover_text(format!(
@@ -411,6 +418,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                         );
                         if hit.clicked() {
                             w.work = None;
+                            w.lane = Some(k);
                             w.selected = Some(head.revision.id.clone());
                             w.rollback = Some((lane.name.clone(), false));
                         }
@@ -470,6 +478,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                         );
                         if hit.clicked() {
                             w.work = None;
+                            w.lane = Some(n.lane);
                             w.selected = Some(n.revision.id.clone());
                             w.rollback = tree.lanes[n.lane]
                                 .line
@@ -485,6 +494,34 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                         ));
                     }
                 });
+            // The description of the line clicked (else the one worked on).
+            let shown = w
+                .lane
+                .filter(|k| tree.lanes.get(*k).is_some_and(|l| l.line.is_some()))
+                .or_else(|| tree.lanes.iter().position(|l| l.name == current));
+            if let Some(lane) = shown.and_then(|k| tree.lanes.get(k))
+                && let Some(info) = &lane.line
+            {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("Description of {}", lane.name))
+                            .color(lane_color(&tree, shown.unwrap_or(0))),
+                    );
+                    if ui
+                        .small_button("Edit…")
+                        .on_hover_text("Its creator or an admin edit it; others read it")
+                        .clicked()
+                    {
+                        describe = Some((lane.name.clone(), info.description.clone()));
+                    }
+                });
+                crate::project_lines::description_box(
+                    ui,
+                    "tree-description",
+                    &info.description,
+                    90.0,
+                );
+            }
             // The revision clicked, or a line's uncommitted work.
             ui.separator();
             if let Some((k, message)) = &mut w.work {
@@ -632,6 +669,9 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             });
         });
     w.open = open;
+    if let Some((line, text)) = describe {
+        r.lines_window = Some(crate::project_lines::LinesWindow::Description { line, text });
+    }
     if let Some((from, words)) = new_line_from {
         let names: Vec<String> = tree
             .lanes

@@ -65,6 +65,8 @@ pub struct LineInfo {
     pub note: String,
     /// Protected: commits and merges by admins or approved reviews only.
     pub protected: bool,
+    /// What the line is (free text, may be long).
+    pub description: String,
     /// Its last revision (`None`: nothing committed yet).
     pub revision: Option<String>,
     /// Number of objects (structures, sections…) of its working state.
@@ -133,6 +135,20 @@ pub(crate) fn migrate(conn: &Connection) -> Result<(), SessionError> {
         .exists([])?;
     if has_index && !has_column(conn, "spatial_index", "line")? {
         conn.execute_batch("DROP INDEX IF EXISTS spatial_tile; DROP TABLE spatial_index;")?;
+    }
+    Ok(())
+}
+
+/// Longest description of a line, characters.
+pub const MAX_DESCRIPTION: usize = 20_000;
+
+/// Lines get a description (added within schema 3).
+pub(crate) fn migrate_descriptions(conn: &Connection) -> Result<(), SessionError> {
+    if !has_column(conn, "vc_ref", "description")? {
+        conn.execute(
+            "ALTER TABLE vc_ref ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
     }
     Ok(())
 }
@@ -335,8 +351,20 @@ impl Session {
                 note: r.note,
                 protected: r.protected,
                 revision: r.revision,
+                description: String::new(),
             })
             .collect();
+        for l in &mut out {
+            l.description = self
+                .conn
+                .query_row(
+                    "SELECT description FROM vc_ref WHERE name = ?1 AND kind = 'branch'",
+                    params![l.name],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .unwrap_or_default();
+        }
         out.sort_by_key(|l| (!l.is_main(), l.name.clone()));
         Ok(out)
     }
@@ -407,11 +435,13 @@ impl Session {
         }
         self.require(user, Role::Designer)?;
         if name == MAIN {
-            return Err(refused("only an admin deletes or renames the main line"));
+            return Err(refused(
+                "only an admin deletes, renames or describes the main line",
+            ));
         }
         if r.user != user {
             return Err(refused(format!(
-                "project line \"{name}\" is {}'s: only they or an admin delete or rename it",
+                "project line \"{name}\" is {}'s: only they or an admin delete, rename or describe it",
                 if r.user.is_empty() {
                     "the project"
                 } else {
@@ -470,6 +500,28 @@ impl Session {
         tx.commit()?;
         let state = self.line_state(&name, objects)?;
         self.others.insert(name, state);
+        Ok(())
+    }
+
+    /// Sets the description of project line `name` (its creator or an
+    /// admin; the main line an admin): free text, at most
+    /// [`MAX_DESCRIPTION`] characters.
+    pub fn set_line_description(
+        &mut self,
+        user: &str,
+        name: &str,
+        description: &str,
+    ) -> Result<(), SessionError> {
+        self.may_manage_line(user, name)?;
+        if description.chars().count() > MAX_DESCRIPTION {
+            return Err(refused(format!(
+                "a description of at most {MAX_DESCRIPTION} characters"
+            )));
+        }
+        self.conn.execute(
+            "UPDATE vc_ref SET description = ?2 WHERE name = ?1 AND kind = 'branch'",
+            params![name, description.trim_end()],
+        )?;
         Ok(())
     }
 
