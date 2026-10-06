@@ -525,6 +525,11 @@ struct Meta {
         skip_serializing_if = "ols_line::condition::CreepStretch::is_empty"
     )]
     creep_stretch: ols_line::condition::CreepStretch,
+    #[serde(
+        default,
+        skip_serializing_if = "ols_cables::BimetallicModel::is_default"
+    )]
+    bimetallic: ols_cables::BimetallicModel,
 }
 
 /// The put of the line's settings (name, CRS, alignment, display, systems,
@@ -542,6 +547,7 @@ pub fn line_settings_put(
         display: line.display.clone(),
         systems: systems.unwrap_or_else(|| line.systems.clone()),
         creep_stretch: line.creep_stretch.clone(),
+        bimetallic: line.bimetallic,
     };
     Command::Put {
         kind: Kind::Meta,
@@ -608,6 +614,7 @@ fn objects_of(line: &Line) -> Vec<(Kind, String, Value)> {
             display: line.display.clone(),
             systems: line.systems.clone(),
             creep_stretch: line.creep_stretch.clone(),
+            bimetallic: line.bimetallic,
         }),
     )];
     out.extend(
@@ -656,6 +663,7 @@ fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionEr
         display: meta.display,
         systems: meta.systems,
         creep_stretch: meta.creep_stretch,
+        bimetallic: meta.bimetallic,
         condition_cases: Default::default(),
     };
     for ((kind, id), o) in ordered {
@@ -848,6 +856,7 @@ impl Session {
                 display: ols_line::Display::default(),
                 systems: vec![],
                 creep_stretch: Default::default(),
+                bimetallic: Default::default(),
                 condition_cases: Default::default(),
             }
         } else {
@@ -1210,6 +1219,7 @@ impl Session {
             display: self.line.display.clone(),
             systems: self.line.systems.clone(),
             creep_stretch,
+            bimetallic: self.line.bimetallic,
         };
         Command::Put {
             kind: Kind::Meta,
@@ -1217,6 +1227,15 @@ impl Session {
             value: json(&meta),
             ord: None,
         }
+    }
+
+    /// The command setting the line's bimetallic conductor model
+    /// (Criteria › Bimetallic conductor model): one logged, undoable put of
+    /// the line's settings.
+    pub fn bimetallic_command(&self, bimetallic: ols_cables::BimetallicModel) -> Command {
+        let mut line = self.line.clone();
+        line.bimetallic = bimetallic;
+        line_settings_put(&line, None, None)
     }
 
     /// A put replacing the alignment of `route`.
@@ -1233,6 +1252,7 @@ impl Session {
                 display: self.line.display.clone(),
                 systems: self.line.systems.clone(),
                 creep_stretch: self.line.creep_stretch.clone(),
+                bimetallic: self.line.bimetallic,
             };
             return Ok(Command::Put {
                 kind: Kind::Meta,
@@ -1615,6 +1635,7 @@ impl Session {
                     display: self.line.display.clone(),
                     systems,
                     creep_stretch: self.line.creep_stretch.clone(),
+                    bimetallic: self.line.bimetallic,
                 };
                 out.push(Command::Put {
                     kind: Kind::Meta,

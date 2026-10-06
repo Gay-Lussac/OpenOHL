@@ -1004,8 +1004,13 @@ pub const CABLE_MODELS: [(&str, &str); 3] = [
 /// data.
 const CORE_CURVES: &str = "{ stress_unit = \"MPa\", strain = \"percent\", basis = \"total\", initial = [0.0, 250.0, 0.0, 0.0, 0.0], creep = [0.0, 250.0, 0.0, 0.0, 0.0], final_modulus = 250.0, reference_temperature = \"20 °C\" }";
 
-/// The bimetallic options (`bimetallic_behavior` of a cable): key, name.
-pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 2] = [
+/// The bimetallic options (`bimetallic_behavior` of a cable): key (empty:
+/// not given, the line's choice), name.
+pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 3] = [
+    (
+        "",
+        "The line's choice (Criteria › Bimetallic conductor model)",
+    ),
     (
         "bird_cage",
         "Outer strands do not take compression at high temperature (bird cage)",
@@ -1016,12 +1021,12 @@ pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 2] = [
     ),
 ];
 
-/// A cable's bimetallic option (default `compression`).
+/// A cable's bimetallic option (empty: not given, the line's choice).
 fn bimetallic_behavior(table: &Table) -> String {
     table
         .get("bimetallic_behavior")
         .and_then(Item::as_str)
-        .unwrap_or("compression")
+        .unwrap_or("")
         .to_owned()
 }
 
@@ -1319,7 +1324,11 @@ fn cable_model_ui(ui: &mut egui::Ui, table: &mut Table, path: &str) -> bool {
             );
         });
         if chosen_behavior != behavior {
-            table.insert("bimetallic_behavior", toml_edit::value(chosen_behavior));
+            if chosen_behavior.is_empty() {
+                table.remove("bimetallic_behavior");
+            } else {
+                table.insert("bimetallic_behavior", toml_edit::value(chosen_behavior));
+            }
             add_for_model(table, &chosen);
             changed = true;
         }
@@ -1850,7 +1859,7 @@ mod tests {
         assert_eq!(core_curves.creep.as_ref(), Some(&core_curves.initial));
         assert_eq!(
             c.bimetallic_behavior,
-            ols_cables::BimetallicBehavior::Compression
+            Some(ols_cables::BimetallicBehavior::Compression)
         );
         assert!(c.max_virtual_compression.is_some());
     }

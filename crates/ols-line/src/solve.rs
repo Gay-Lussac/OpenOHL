@@ -883,6 +883,8 @@ pub fn solve_section(
     budget: &Budget,
 ) -> Result<SectionShape, LineError> {
     use crate::condition::{Condition, Method};
+    // The line's bimetallic model for cables that do not give their own.
+    let cable = &*line.bimetallic.apply(cable);
     let calc = section.calculation;
     let solve = |final_state: Option<&FinalState>| match calc.method() {
         Method::Fe => solve_fe(line, section, cable, case, final_state, budget),
@@ -1031,6 +1033,7 @@ pub fn final_state(
 ) -> Result<FinalState, LineError> {
     use crate::condition::Condition;
     use ols_cables::CableModel;
+    let cable = &*line.bimetallic.apply(cable);
     use ols_cables::mechanics::{MaterialState, Mechanics};
     use ols_core::units::{Force, ForcePerLength};
     use ols_sagtension::nonlinear::NonlinearSection;
@@ -2109,8 +2112,19 @@ mod tests {
             line.sections[0].loads.clear();
             line.sections[0].calculation = calculation;
             let free = sag(&line, &cable);
-            cable.bimetallic_behavior = ols_cables::BimetallicBehavior::BirdCage;
+            // The line's choice for a cable without its own …
+            line.bimetallic.behavior = ols_cables::BimetallicBehavior::BirdCage;
+            let by_line = sag(&line, &cable);
+            // … and the cable's own, which wins over the line's.
+            cable.bimetallic_behavior = Some(ols_cables::BimetallicBehavior::Compression);
+            assert!(
+                (sag(&line, &cable) - free).abs() < 1e-9,
+                "the cable's own wins"
+            );
+            line.bimetallic = Default::default();
+            cable.bimetallic_behavior = Some(ols_cables::BimetallicBehavior::BirdCage);
             let caged = sag(&line, &cable);
+            assert!((by_line - caged).abs() < 1e-9, "{by_line} vs {caged}");
             assert!(
                 caged < free - 0.1,
                 "{calculation:?}: bird cage {caged} vs {free}"

@@ -87,6 +87,10 @@ fn rich_line() -> Line {
         .insert("L1".into(), "#ff0000".into());
     line.creep_stretch.creep_case = Some("EDS".into());
     line.creep_stretch.load_cases = vec!["ice".into(), "wind ä".into()];
+    line.bimetallic = ols_cables::BimetallicModel {
+        behavior: ols_cables::BimetallicBehavior::Compression,
+        max_virtual_compression: Some(ols_core::units::Stress::from_megapascals(50.0)),
+    };
     line.alignment = vec![ols_line::AlignmentPoint::free([0.0, 0.0, 1.0])];
     line.routes[1].alignment = vec![
         ols_line::AlignmentPoint {

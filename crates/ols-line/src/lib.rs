@@ -98,6 +98,14 @@ pub struct Line {
     /// (Criteria › Creep-Stretch), by name.
     #[serde(default, skip_serializing_if = "condition::CreepStretch::is_empty")]
     pub creep_stretch: condition::CreepStretch,
+    /// What the outer strands of its bimetallic cables do above the
+    /// transition temperature, for the cables whose wire library entry
+    /// does not say (Criteria › Bimetallic conductor model).
+    #[serde(
+        default,
+        skip_serializing_if = "ols_cables::BimetallicModel::is_default"
+    )]
+    pub bimetallic: ols_cables::BimetallicModel,
     /// Those weather cases themselves, given by the program solving the
     /// line ([`crate::Line::set_weather_cases`]); not stored.
     #[serde(skip)]
@@ -807,6 +815,7 @@ impl Line {
     /// Checks references and basic consistency.
     pub fn validate(&self) -> Result<(), LineError> {
         let invalid = |m: String| Err(LineError::Invalid(m));
+        self.bimetallic.validate().map_err(LineError::Invalid)?;
         if self.format != LINE_FILE_FORMAT {
             return invalid(format!(
                 "format \"{}\" is not \"{LINE_FILE_FORMAT}\"",

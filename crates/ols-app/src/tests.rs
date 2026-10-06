@@ -3845,7 +3845,7 @@ fn the_cable_model_is_a_list_and_adds_its_fields() {
     // Bimetallic options, the conductor's own: bird cage hides the
     // largest compressive stress, compression asks for it.
     harness
-        .get_by_label(crate::library::BIMETALLIC_BEHAVIORS[0].1)
+        .get_by_label(crate::library::BIMETALLIC_BEHAVIORS[1].1)
         .click();
     harness.run();
     assert!(harness.query_by_label("max_virtual_compression").is_none());
@@ -3858,7 +3858,7 @@ fn the_cable_model_is_a_list_and_adds_its_fields() {
         );
     }
     harness
-        .get_by_label(crate::library::BIMETALLIC_BEHAVIORS[1].1)
+        .get_by_label(crate::library::BIMETALLIC_BEHAVIORS[2].1)
         .click();
     harness.run();
     harness.get_by_label("max_virtual_compression");
@@ -3870,6 +3870,16 @@ fn the_cable_model_is_a_list_and_adds_its_fields() {
             "{text}"
         );
         assert!(text.contains("max_virtual_compression = \"68947.4 MPa\""));
+    }
+    // The line's choice: nothing written.
+    harness
+        .get_by_label(crate::library::BIMETALLIC_BEHAVIORS[0].1)
+        .click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let text = r.libraries[&LibraryKind::Cables].text().unwrap();
+        assert!(!text.contains("bimetallic_behavior"), "{text}");
     }
     // Unticking Bimetallic removes the core (and its options).
     harness.get_by_label(bimetallic).click();
@@ -5062,4 +5072,40 @@ fn versions_commit_branch_checkout_and_merge() {
     harness.get_by_label("Compare").click();
     harness.run();
     assert!(harness.query_by_label_contains("no differences").is_some());
+}
+
+/// Criteria › Bimetallic conductor model: bird cage for the line, one
+/// command (undoable), every section solved again.
+#[test]
+fn the_bimetallic_model_is_chosen_for_the_line() {
+    let model = synthetic_project("bimetallic");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Criteria").click();
+    harness.run();
+    harness.get_by_label("Bimetallic conductor model…").click();
+    harness.run();
+    harness
+        .get_by_label("The outer strands take no compression (bird cage)")
+        .click();
+    harness.run();
+    harness.get_by_label("OK").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.bimetallic_window.is_none());
+    assert_eq!(
+        r.model.line.bimetallic.behavior,
+        ols_cables::BimetallicBehavior::BirdCage
+    );
+    // Kept in the project: the session's line has it.
+    let e = r.model.editing.as_ref().unwrap();
+    assert_eq!(
+        e.session.line().bimetallic.behavior,
+        ols_cables::BimetallicBehavior::BirdCage
+    );
+    // Undone like any edit.
+    r.model.undo().unwrap();
+    assert!(r.model.line.bimetallic.is_default());
 }
