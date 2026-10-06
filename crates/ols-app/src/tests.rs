@@ -25,6 +25,15 @@ fn solved_all(mut m: model::Model) -> model::Model {
     m
 }
 
+/// Works on project line `name`, every weather case solved at once (the
+/// application solves them in the background).
+fn switch(m: &mut model::Model, name: &str) {
+    m.switch_line(name).unwrap();
+    for k in 0..m.cases.len() {
+        m.ensure_solved(k);
+    }
+}
+
 fn synthetic() -> model::Model {
     let ex = root().join("examples/synthetic-line");
     solved_all(
@@ -2486,7 +2495,13 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
         assert_eq!(count(crate::scene::Layer::OtherLines), working);
     }
     // Work on phase 1: T7 deleted there only; undone there.
-    harness.state_mut().ready().unwrap().switch_line("phase 1");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.switch_line("phase 1");
+        for k in 0..r.model.cases.len() {
+            r.model.ensure_solved(k);
+        }
+    }
     harness.run();
     {
         let r = harness.state_mut().ready().unwrap();
@@ -2513,6 +2528,9 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
         });
         // Main corrected meanwhile (T2 moved).
         r.switch_line("main");
+        for k in 0..r.model.cases.len() {
+            r.model.ensure_solved(k);
+        }
         let p = r.model.line.structure("T2").unwrap().position;
         r.perform(crate::edit::Action::Command {
             what: "T2 east".into(),
@@ -2522,6 +2540,9 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
             },
         });
         r.switch_line("phase 1");
+        for k in 0..r.model.cases.len() {
+            r.model.ensure_solved(k);
+        }
         assert_eq!(r.model.line.structure("T2").unwrap().position, p, "a copy");
         r.lines_window = Some(LinesWindow::BringIn {
             from: "main".into(),
@@ -5146,7 +5167,7 @@ fn versions_commit_branch_checkout_and_merge() {
     ] {
         m.project_op(what, op).unwrap();
     }
-    m.switch_line("alt").unwrap();
+    switch(&mut m, "alt");
     m.apply(
         "moved T6",
         ols_session::Command::MoveStructure {
@@ -5162,7 +5183,7 @@ fn versions_commit_branch_checkout_and_merge() {
         },
     )
     .unwrap();
-    m.switch_line("main").unwrap();
+    switch(&mut m, "main");
     assert_eq!(m.line.structure("T6").unwrap().position, p);
     assert_solved_fully(&m);
     m.project_op(
@@ -5761,6 +5782,9 @@ fn lines_images() {
             },
         });
         r.switch_line("phase 1");
+        for k in 0..r.model.cases.len() {
+            r.model.ensure_solved(k);
+        }
         r.perform(crate::edit::Action::Command {
             what: "T3".into(),
             command: ols_session::Command::MoveStructure {
@@ -5814,7 +5838,7 @@ fn the_line_worked_on_and_those_shown_are_remembered() {
         },
     )
     .unwrap();
-    m.switch_line("phase 1").unwrap();
+    switch(&mut m, "phase 1");
     m.show_line("main").unwrap();
     let prefs = m.view_prefs();
     assert_eq!(prefs.line.as_deref(), Some("phase 1"));
@@ -5865,7 +5889,7 @@ fn the_working_tree_shows_the_lines_through_time() {
             },
         );
     }
-    m.switch_line("phase 2").unwrap();
+    switch(&mut m, "phase 2");
     shift(&mut m, "T5", 1.0);
     op(
         &mut m,
@@ -5873,7 +5897,7 @@ fn the_working_tree_shows_the_lines_through_time() {
             message: "phase 2 work".into(),
         },
     );
-    m.switch_line("phase 1").unwrap();
+    switch(&mut m, "phase 1");
     shift(&mut m, "T6", 2.0);
     op(
         &mut m,
@@ -5881,7 +5905,7 @@ fn the_working_tree_shows_the_lines_through_time() {
             message: "phase 1 work".into(),
         },
     );
-    m.switch_line("main").unwrap();
+    switch(&mut m, "main");
     shift(&mut m, "T2", 1.0);
     op(
         &mut m,
@@ -5895,7 +5919,7 @@ fn the_working_tree_shows_the_lines_through_time() {
             name: "phase 2".into(),
         },
     );
-    m.switch_line("phase 1").unwrap();
+    switch(&mut m, "phase 1");
     op(
         &mut m,
         Op::BringIn {
@@ -6047,7 +6071,7 @@ fn working_tree_image() {
         ("route B", "T4", "route B start"),
         ("main", "T3", "T3 corrected"),
     ] {
-        m.switch_line(line).unwrap();
+        switch(&mut m, line);
         shift(&mut m, id, 1.0);
         op(
             &mut m,
@@ -6056,7 +6080,7 @@ fn working_tree_image() {
             },
         );
     }
-    m.switch_line("phase 1").unwrap();
+    switch(&mut m, "phase 1");
     op(
         &mut m,
         Op::BringIn {
@@ -6064,7 +6088,7 @@ fn working_tree_image() {
             choices: Default::default(),
         },
     );
-    m.switch_line("main").unwrap();
+    switch(&mut m, "main");
     op(
         &mut m,
         Op::DeleteLine {
@@ -6109,7 +6133,7 @@ fn a_new_lines_work_is_committed_from_the_tree() {
         },
     )
     .unwrap();
-    m.switch_line("phase 1").unwrap();
+    switch(&mut m, "phase 1");
     let p = m.line.structure("T2").unwrap().position;
     m.apply(
         "T2",
@@ -6174,4 +6198,63 @@ fn a_new_lines_work_is_committed_from_the_tree() {
             .save(format!("{dir}/new-line-from-revision.png"))
             .unwrap();
     }
+}
+
+#[test]
+#[ignore = "times switching project lines on the project OLS_PROJECT (a copy: it is changed)"]
+fn line_switch_timing() {
+    let Ok(file) = std::env::var("OLS_PROJECT") else {
+        return;
+    };
+    let mut m = model::load(
+        Sources {
+            file: file.into(),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    let names: Vec<String> = m
+        .session()
+        .unwrap()
+        .lines()
+        .unwrap()
+        .into_iter()
+        .map(|l| l.name)
+        .collect();
+    let other = names
+        .iter()
+        .find(|n| **n != m.project_line())
+        .cloned()
+        .unwrap_or_else(|| {
+            m.project_op(
+                "line",
+                ols_server::Op::CreateLine {
+                    name: "timing".into(),
+                    from: m.project_line(),
+                },
+            )
+            .unwrap();
+            "timing".into()
+        });
+    let back = m.project_line();
+    for k in 0..m.cases.len() {
+        m.ensure_solved(k);
+    }
+    // As before: the libraries read again, every case solved at once.
+    let t = std::time::Instant::now();
+    m.reload_libraries().unwrap();
+    let old = t.elapsed();
+    let t = std::time::Instant::now();
+    m.switch_line(&other).unwrap();
+    let new = t.elapsed();
+    let t = std::time::Instant::now();
+    m.ensure_solved(0);
+    let first = t.elapsed();
+    m.switch_line(&back).unwrap();
+    println!(
+        "{} cases, {} structures: before {old:.2?}; now {new:.2?} to switch, the case shown solved in the background in {first:.2?}",
+        m.cases.len(),
+        m.line.structures.len()
+    );
 }

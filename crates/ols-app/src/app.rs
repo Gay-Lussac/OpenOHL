@@ -1739,7 +1739,7 @@ impl Ready {
         let changed = std::mem::take(&mut self.model.lines_changed);
         if !changed.is_empty() {
             if changed.iter().any(String::is_empty)
-                && let Err(e) = self.model.reload_libraries()
+                && let Err(e) = self.model.reread_line()
             {
                 self.status = Some((e, true));
             }
