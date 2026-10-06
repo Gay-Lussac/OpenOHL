@@ -281,6 +281,20 @@
             <xs:attribute name="creep_case" type="xs:string"/>
           </xs:complexType>
         </xs:element>
+
+        <xs:element name="bimetallic" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="behavior" default="compression">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="compression"/>
+                  <xs:enumeration value="bird_cage"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <xs:attribute name="max_virtual_compression_pa" type="xs:double"/>
+          </xs:complexType>
+        </xs:element>
       </xs:sequence>
       <xs:attribute name="format" type="xs:string" fixed="ols-line"/>
       <xs:attribute name="version" type="xs:unsignedInt" default="1"/>

@@ -645,10 +645,10 @@ mod tests {
         let core = c.core.as_ref().unwrap().axial_stiffness().newtons();
         let all = c.axial_stiffness().newtons();
         assert!((slope(&c) - all).abs() / all < 1e-6);
-        c.bimetallic_behavior = crate::BimetallicBehavior::BirdCage;
+        c.bimetallic_behavior = Some(crate::BimetallicBehavior::BirdCage);
         assert!((slope(&c) - core).abs() / core < 1e-6);
         // A small limit: past it, the core alone again.
-        c.bimetallic_behavior = crate::BimetallicBehavior::Compression;
+        c.bimetallic_behavior = Some(crate::BimetallicBehavior::Compression);
         c.max_virtual_compression = Some(Stress::from_megapascals(0.1));
         assert!((slope(&c) - core).abs() / core < 1e-6);
         // No core: never limited.

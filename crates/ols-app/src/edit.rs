@@ -87,7 +87,10 @@ impl Model {
         // Other creep-stretch weather cases (Criteria › Creep-Stretch, or
         // its undo): every section after creep or load changes.
         let all: Vec<String>;
-        let dirty = if line.creep_stretch != self.line.creep_stretch {
+        // The bimetallic conductor model too.
+        let dirty = if line.creep_stretch != self.line.creep_stretch
+            || line.bimetallic != self.line.bimetallic
+        {
             all = line.sections.iter().map(|s| s.id.clone()).collect();
             &all
         } else {

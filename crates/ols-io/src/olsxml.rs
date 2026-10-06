@@ -376,6 +376,7 @@ pub fn to_xml(line: &Line) -> String {
         systems,
         display,
         creep_stretch,
+        bimetallic,
         condition_cases: _,
     } = line;
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<line");
@@ -436,6 +437,18 @@ pub fn to_xml(line: &Line) -> String {
             out.push_str("/>\n");
         }
         out.push_str("  </creep_stretch>\n");
+    }
+    let ols_cables::BimetallicModel {
+        behavior,
+        max_virtual_compression,
+    } = bimetallic;
+    if !bimetallic.is_default() {
+        out.push_str("  <bimetallic");
+        attr(&mut out, "behavior", behavior.as_str());
+        if let Some(s) = max_virtual_compression {
+            let _ = write!(out, " max_virtual_compression_pa=\"{}\"", s.si());
+        }
+        out.push_str("/>\n");
     }
     out.push_str("</line>\n");
     out
@@ -802,6 +815,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             "jumper",
             "phase_color",
             "creep_stretch",
+            "bimetallic",
         ],
     )?;
     let routes = root
@@ -845,9 +859,30 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             }
         }
     };
+    let bimetallic = match root.child("bimetallic") {
+        None => ols_cables::BimetallicModel::default(),
+        Some(b) => {
+            check(b, &["behavior", "max_virtual_compression_pa"], &[])?;
+            let behavior = match owned(b, "behavior").as_deref() {
+                None | Some("compression") => ols_cables::BimetallicBehavior::Compression,
+                Some("bird_cage") => ols_cables::BimetallicBehavior::BirdCage,
+                Some(other) => {
+                    return Err(format!(
+                        "bimetallic behavior \"{other}\": compression or bird_cage"
+                    ));
+                }
+            };
+            ols_cables::BimetallicModel {
+                behavior,
+                max_virtual_compression: optional::<f64>(b, "max_virtual_compression_pa")?
+                    .map(ols_core::units::Stress::from_pascals),
+            }
+        }
+    };
     Ok(Line {
         format: owned(root, "format").unwrap_or_else(|| ols_line::LINE_FILE_FORMAT.into()),
         version: optional(root, "version")?.unwrap_or(ols_line::LINE_FILE_VERSION),
+        bimetallic,
         name: text(root, "name")?.to_owned(),
         crs: owned(root, "crs").unwrap_or_default(),
         alignment: read_alignment(root.child("alignment"))?,

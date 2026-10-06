@@ -49,6 +49,7 @@ pub fn empty_line(name: &str) -> Line {
         display: Default::default(),
         systems: Vec::new(),
         creep_stretch: Default::default(),
+        bimetallic: Default::default(),
         condition_cases: Default::default(),
     }
 }

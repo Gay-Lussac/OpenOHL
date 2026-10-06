@@ -226,6 +226,8 @@ pub struct Ready {
     pub controls_window: Option<ControlsPage>,
     /// Criteria › Creep-Stretch, when open: the weather cases chosen.
     pub creep_stretch_window: Option<ols_line::condition::CreepStretch>,
+    /// Criteria › Bimetallic conductor model, when open: the choice.
+    pub bimetallic_window: Option<ols_cables::BimetallicModel>,
     /// Criteria › Design code.
     pub design_code: crate::codes::DesignCodeWindow,
     /// Add jumper: the first string right-clicked.
@@ -292,6 +294,7 @@ impl Ready {
             class_window: None,
             controls_window: None,
             creep_stretch_window: None,
+            bimetallic_window: None,
             design_code: Default::default(),
             jumper_from: None,
             open_page: None,
@@ -2166,6 +2169,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     r.drawings.show(ctx, &r.model, r.case);
     controls_window(ctx, r);
     creep_stretch_window(ctx, r);
+    bimetallic_window(ctx, r);
     lines_window(ctx, r);
     crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
     r.bom.show(ctx, &r.model);
@@ -2422,6 +2426,132 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
     if !open {
         r.controls_window = None;
     }
+}
+
+/// Criteria › Bimetallic conductor model: what the outer strands of the
+/// line's bimetallic cables do above the transition temperature, for the
+/// cables whose wire library entry does not say; OK makes it one command
+/// (every section is solved again).
+fn bimetallic_window(ctx: &egui::Context, r: &mut Ready) {
+    use ols_cables::{BimetallicBehavior, DEFAULT_MAX_VIRTUAL_COMPRESSION};
+    let Some(mut draft) = r.bimetallic_window else {
+        return;
+    };
+    // The line's bimetallic cables: those following this choice, those
+    // with their own.
+    let (mut follow, mut own) = (Vec::new(), Vec::new());
+    for s in &r.model.line.sections {
+        if let Some(c) = r.model.library.get(&s.cable).filter(|c| c.core.is_some()) {
+            let list = if c.bimetallic_behavior.is_some() {
+                &mut own
+            } else {
+                &mut follow
+            };
+            if !list.contains(&c.id) {
+                list.push(c.id.clone());
+            }
+        }
+    }
+    let (mut ok, mut cancel) = (false, false);
+    let mut open = true;
+    egui::Window::new("Bimetallic conductor model")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(520.0)
+        .show(ctx, |ui| {
+            ui.label(
+                "The outer strands of a bimetallic conductor (e.g. aluminium over steel) expand \
+                 more with heat than the core: above a transition temperature they carry no more \
+                 tension. Above it:",
+            );
+            ui.radio_value(
+                &mut draft.behavior,
+                BimetallicBehavior::BirdCage,
+                "The outer strands take no compression (bird cage)",
+            );
+            ui.radio_value(
+                &mut draft.behavior,
+                BimetallicBehavior::Compression,
+                "The outer strands can go into compression (slightly larger sags when hot)",
+            );
+            ui.add_enabled_ui(draft.behavior == BimetallicBehavior::Compression, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Largest virtual compressive stress");
+                    let mut mpa = draft
+                        .max_virtual_compression
+                        .map_or(DEFAULT_MAX_VIRTUAL_COMPRESSION, |s| s.si())
+                        / 1e6;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut mpa)
+                                .range(0.0..=1e6)
+                                .speed(10.0)
+                                .suffix(" MPa"),
+                        )
+                        .changed()
+                    {
+                        draft.max_virtual_compression =
+                            Some(ols_core::units::Stress::from_megapascals(mpa));
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(
+                        "Virtual stress = actual stress × Ao / At (Ao: the outer strands' area, \
+                         At: the whole conductor's)",
+                    )
+                    .small()
+                    .weak(),
+                );
+            });
+            ui.separator();
+            let list = |v: &Vec<String>| {
+                if v.is_empty() {
+                    "none".to_owned()
+                } else {
+                    v.join(", ")
+                }
+            };
+            ui.label(
+                egui::RichText::new(format!(
+                    "Following this choice: {}. With their own (wire library): {}.",
+                    list(&follow),
+                    list(&own)
+                ))
+                .small(),
+            );
+            if let Err(why) = r.model.can_edit() {
+                ui.colored_label(egui::Color32::LIGHT_RED, format!("read-only: {why}"));
+            }
+            ui.horizontal(|ui| {
+                ok = ui
+                    .add_enabled(r.model.can_edit().is_ok(), egui::Button::new("OK"))
+                    .clicked();
+                cancel = ui.button("Cancel").clicked();
+            });
+        });
+    if ok {
+        // The default stress needs no value.
+        if draft.behavior == BimetallicBehavior::BirdCage
+            || draft
+                .max_virtual_compression
+                .is_some_and(|s| (s.si() - DEFAULT_MAX_VIRTUAL_COMPRESSION).abs() < 1.0)
+        {
+            draft.max_virtual_compression = None;
+        }
+        let command = r
+            .model
+            .editing
+            .as_ref()
+            .map(|e| e.session.bimetallic_command(draft));
+        if let Ok(command) = command {
+            r.perform(crate::edit::Action::Command {
+                what: "bimetallic conductor model".into(),
+                command,
+            });
+        }
+    }
+    r.bimetallic_window = (open && !ok && !cancel).then_some(draft);
 }
 
 /// Criteria › Creep-Stretch: the weather case for the final after creep
@@ -3867,6 +3997,17 @@ fn menus(
             .clicked()
         {
             r.creep_stretch_window = Some(r.model.line.creep_stretch.clone());
+            ui.close();
+        }
+        if ui
+            .button("Bimetallic conductor model…")
+            .on_hover_text(
+                "What the outer strands of bimetallic cables do above the transition \
+                 temperature: bird cage or compression (cables that give their own keep it)",
+            )
+            .clicked()
+        {
+            r.bimetallic_window = Some(r.model.line.bimetallic);
             ui.close();
         }
         if ui

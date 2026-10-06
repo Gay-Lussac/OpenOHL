@@ -127,9 +127,10 @@ pub struct Cable {
     #[serde(default)]
     pub creep_shift_tension: Option<Force>,
     /// Bimetallic cables: what the outer strands do above the transition
-    /// temperature.
+    /// temperature. None: the line's choice (Criteria › Bimetallic
+    /// conductor model, [`BimetallicModel`]), compression by default.
     #[serde(default)]
-    pub bimetallic_behavior: BimetallicBehavior,
+    pub bimetallic_behavior: Option<BimetallicBehavior>,
     /// `bimetallic_behavior = "compression"`: the largest virtual
     /// compressive stress of the outer strands (their actual stress × outer
     /// area / total area); default [`DEFAULT_MAX_VIRTUAL_COMPRESSION`].
@@ -137,11 +138,61 @@ pub struct Cable {
     pub max_virtual_compression: Option<Stress>,
 }
 
+/// The bimetallic conductor model of a line: what the outer strands of its
+/// bimetallic cables do above the transition temperature, for the cables
+/// whose wire library entry does not say (as older cable files): bird cage
+/// (no compression) or compression up to a largest virtual stress (actual
+/// stress × outer area / total area).
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BimetallicModel {
+    /// Bird cage or compression (default).
+    #[serde(default)]
+    pub behavior: BimetallicBehavior,
+    /// Compression: the largest virtual compressive stress (default
+    /// [`DEFAULT_MAX_VIRTUAL_COMPRESSION`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_virtual_compression: Option<Stress>,
+}
+
+impl BimetallicModel {
+    /// Whether it is the default (compression, default stress).
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// `cable` as the line models it: its own behaviour when its wire
+    /// library entry gives one, else this model's (borrowed when nothing
+    /// changes).
+    pub fn apply<'a>(&self, cable: &'a Cable) -> std::borrow::Cow<'a, Cable> {
+        if cable.core.is_none() || cable.bimetallic_behavior.is_some() || self.is_default() {
+            return std::borrow::Cow::Borrowed(cable);
+        }
+        let mut c = cable.clone();
+        c.bimetallic_behavior = Some(self.behavior);
+        if c.max_virtual_compression.is_none() {
+            c.max_virtual_compression = self.max_virtual_compression;
+        }
+        std::borrow::Cow::Owned(c)
+    }
+
+    /// Checks the stress.
+    pub fn validate(&self) -> Result<(), String> {
+        if self
+            .max_virtual_compression
+            .is_some_and(|s| !(s.si().is_finite() && s.si() >= 0.0))
+        {
+            return Err("bimetallic model: the virtual compressive stress must be ≥ 0".into());
+        }
+        Ok(())
+    }
+}
+
 /// What the outer strands of a bimetallic cable (e.g. aluminium over a
 /// steel core) do above the transition temperature, where their larger
 /// thermal expansion leaves them without tension: a property of the
 /// conductor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BimetallicBehavior {
     /// The outer strands go into compression, up to the cable's
@@ -329,7 +380,7 @@ impl Cable {
         if self.core.is_none() {
             return f64::INFINITY;
         }
-        let virtual_stress = match self.bimetallic_behavior {
+        let virtual_stress = match self.bimetallic_behavior.unwrap_or_default() {
             BimetallicBehavior::BirdCage => return 0.0,
             BimetallicBehavior::Compression => self
                 .max_virtual_compression
