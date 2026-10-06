@@ -173,16 +173,39 @@ impl Model {
         others: &mut Vec<String>,
     ) -> Option<Result<String, String>> {
         match msg {
-            ServerMsg::Applied { user, op, seq } => {
+            ServerMsg::Applied {
+                user,
+                op,
+                line,
+                seq,
+            } => {
                 let me = self.remote.as_ref().map(|r| r.link.user.clone());
                 let session = self.replica()?;
-                match ols_server::client::replay(session, &user, &op, seq) {
-                    Ok(a) => applied.extend(a),
+                let result = ols_server::client::replay(session, &user, &line, &op, seq);
+                let on_mine = line == session.current_line();
+                match result {
+                    // The line worked on changed; another line shown is
+                    // read again.
+                    Ok(a) if on_mine => applied.extend(a),
+                    Ok(_) => self.lines_changed.push(line.clone()),
                     Err(e) => {
                         if let Some(r) = &mut self.remote {
                             r.closed = Some(e);
                         }
                     }
+                }
+                // The line worked on renamed or deleted by someone else:
+                // follow it (renamed) or work on the one the replica is on.
+                let now = self.session().map(|s| s.current_line().to_owned());
+                if let (Some(r), Some(now)) = (&mut self.remote, now)
+                    && r.link.line != now
+                {
+                    others.push(format!(
+                        "{user}: {} — you work on project line {now} now",
+                        op.describe()
+                    ));
+                    r.link.line = now;
+                    self.lines_changed.push(String::new());
                 }
                 if let Op::SetUser { name, role } = &op
                     && me.as_deref() == Some(name.as_str())
@@ -237,7 +260,8 @@ impl Model {
             .as_mut()
             .map_err(|why| EditError::ReadOnly(why.clone()))?;
         let user = e.user.clone();
-        match ols_server::execute(&mut e.session, &user, &op)? {
+        let line = e.session.current_line().to_owned();
+        match ols_server::execute(&mut e.session, &user, &line, &op)? {
             Some(applied) => self.sync(what, applied, started),
             None => Ok(what.to_owned()),
         }

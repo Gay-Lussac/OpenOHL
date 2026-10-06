@@ -70,8 +70,9 @@ pub enum VersionCommand {
         #[arg(long)]
         confirm: bool,
     },
-    /// Make a branch (or a tag or revision: detached) the working state.
-    /// Refused while there are uncommitted changes; undoable.
+    /// Work on project line (branch) TARGET: the commands act on it from
+    /// now on. Nothing changes; uncommitted work stays on its line. A tag
+    /// or revision is worked on as a new line: branch NAME --at TAG.
     Checkout {
         /// Project file.
         project: PathBuf,
@@ -470,7 +471,7 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
             delete,
             confirm,
         } => {
-            let s = open(&project)?;
+            let mut s = open(&project)?;
             if let Some(name) = name {
                 let user = need(&user, "branch")?;
                 if delete {
@@ -494,8 +495,8 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
                 } else {
                     let r = s.create_branch(user, &name, at.as_deref()).map_err(err)?;
                     println!(
-                        "branch {name} made at {} (ols project checkout to work on it)",
-                        short(&r)
+                        "project line {name} made at {} (ols project checkout to work on it)",
+                        r.as_deref().map_or("its source's working state", short)
                     );
                 }
                 return Ok(());
@@ -527,18 +528,8 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
             user,
         } => {
             let mut s = open(&project)?;
-            let (applied, libraries) = s.checkout(&user, &target).map_err(err)?;
-            match applied {
-                Some(a) => println!(
-                    "{target} checked out: log entry {} ({} objects changed; undoable)",
-                    a.seq,
-                    a.objects.len()
-                ),
-                None => println!("{target} checked out: the line is the same"),
-            }
-            if libraries {
-                println!("  library files changed");
-            }
+            s.checkout(&user, &target).map_err(err)?;
+            println!("working on project line {target} (the commands act on it; nothing changed)");
         }
         VersionCommand::Tag {
             project,
@@ -549,7 +540,7 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
             delete,
             confirm,
         } => {
-            let s = open(&project)?;
+            let mut s = open(&project)?;
             if delete {
                 match s.delete_ref(&user, &name, confirm) {
                     Ok(d) => println!("{d}: done"),
@@ -784,7 +775,7 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
             as_branch,
             user,
         } => {
-            let s = open(&project)?;
+            let mut s = open(&project)?;
             match (export, out, import) {
                 (Some(branch), Some(out), None) => {
                     let b = s.export_bundle(&branch).map_err(err)?;

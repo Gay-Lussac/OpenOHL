@@ -21,15 +21,18 @@ command; revisions are the named states between them.
 
 ## The working state
 
-What you edit — the line and its libraries — is the **working state** of the
-current branch. Commands change it as before (each logged, undoable per
-user). A **commit** records it as a revision of the branch. **Check out**
-makes another branch (or a tag or revision, read-only: no commits there) the
-working state; it is refused while there are uncommitted changes, and it is
-one logged command, so Undo takes it back.
+Every branch is a **project line** with a **working state** of its own
+(see [Project lines and phases](project-lines.md)): what you edit is the
+working state of the line you work on. Commands change it as before (each
+logged, undoable per user and per line). A **commit** records it as a
+revision of that branch. **Check out** chooses the line you work on: nothing
+changes, uncommitted work stays on its line. A tag or revision is not worked
+on directly: make a line from it (`branch NAME --at TAG`). In the desktop
+app, the line you work on is chosen per user (Lines › Project lines); on
+the command line, `checkout` also sets the line the file opens on.
 
-In server mode every user shares the working state: a checkout or merge
-changes it for everyone.
+In server mode every user works on their own line; a merge changes the line
+it merges into, for everyone who works on or shows that line.
 
 Not under version control: point clouds, terrain surfaces, project settings,
 users and the operation log.
@@ -39,7 +42,7 @@ users and the operation log.
 ```bash
 ols project status project.ols                          # branch, uncommitted changes
 ols project commit project.ols --user ana -m "as imported"
-ols project branch project.ols "route B" --user ben     # at the current revision
+ols project branch project.ols "route B" --user ben     # a new line: a copy of the current one
 ols project checkout project.ols "route B" --user ben
 ols project apply project.ols --user ben '{"op": "move_structure", "id": "T6", "position": [1500, 400, 505]}'
 ols project diff project.ols                            # HEAD → working state, field by field
@@ -132,8 +135,7 @@ ols project review project.ols                                  # list
 ols project review project.ols --user rita --reject 1 --note "too close to the road"
 ols project review project.ols --user ben --submit "route B" --reviewer rita   # changed, submitted again
 ols project review project.ols --user rita --approve 2 --note "fine"
-ols project checkout project.ols main --user rita
-ols project review project.ols --user rita --merge 2
+ols project review project.ols --user rita --merge 2      # into main, whatever line rita works on
 ```
 
 Reviewers named in the review (not its author) and admins approve or
@@ -159,8 +161,8 @@ with grants may change only what one of them covers — every object a command
 changes, also what a deletion takes along, before and after the change (an
 object's plan bounds must lie inside the area). Users without grants edit
 what their role allows; admins are never limited. The session checks every
-command, so a server refuses the same. Users with grants cannot check out,
-merge or revert, which replace the working state at large.
+command, so a server refuses the same. Users with grants cannot merge,
+bring in changes or revert, which replace the working state at large.
 
 ## Offline work
 
@@ -183,9 +185,9 @@ copy reconnects.
 **Edit › Versions…** opens the version window:
 
 - **History**: the revisions newest first (◆ a merge), with their branches
-  and tags; **Commit** with a message; branches and tags with *Check out*,
-  *protect* (admins) and *Delete…* (lists what goes first); per revision
-  *Diff*, *Tag…*, *Check out* and *Revert*.
+  and tags; **Commit** with a message; branches with *Work on it* (the
+  project line you edit), *protect* (admins) and *Delete…* (lists what goes
+  first); per revision *Diff*, *Tag…*, *New line from it* and *Revert*.
 - **Changes**: two revisions (or a revision and the working state) compared
   field by field; **Engineering impact** solves the touched sections in the
   weather case shown, on the surface of the checks.
@@ -195,5 +197,5 @@ copy reconnects.
   approved one.
 - **Rights** (admins): grants listed, revoked, made.
 
-When a checkout or merge changes library files, the project is opened again
-to read them.
+When a merge changes library files (shared by every line), the project is
+opened again to read them.

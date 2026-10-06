@@ -108,3 +108,36 @@ same.
 - Not yet: cherry-pick, history export for audit, visual diff in the views,
   per-branch working states (one working state per project), live
   synchronisation of offline copies (bundles are carried by hand).
+
+## Amendment (2026-10-06): project lines
+
+Every **branch is a project line with a working state of its own**
+(`ols_session::lines`, schema 3): `model_object`, `oplog` and
+`spatial_index` carry the line's name, so several designs of the line (the
+main line and its phases) are edited side by side. This replaces the shared
+working state above:
+
+- **Checkout no longer replaces anything.** It only chooses the line a
+  session works on (per user on a server; the request names it). Uncommitted
+  work stays on its line, so checkout is not refused for it. Detached
+  checkouts are gone: a line is made from a tag or revision instead.
+- **Undo and rollback are per line**: a log entry is reversed from its own
+  line.
+- A line made from another starts as a copy of its working state. That
+  state is first recorded as a revision of the source, which becomes their
+  common ancestor.
+- **Bring in** merges another line into the current one. Both lines'
+  uncommitted work is recorded first. It is refused, changing nothing, while
+  a conflict is unsettled: conflicts are worked out on the working states
+  before anything is recorded, so a server and its replicas never diverge.
+- A **review merges into its target line** whichever line the reviewer
+  works on.
+- Lines are made by designers (theirs); renamed or deleted by their creator
+  or an admin; the main line by an admin only.
+- The frozen "project lines" of schema 2 (`line_snapshot`) become lines when
+  a file is opened.
+- Libraries, surfaces, point clouds, backgrounds and settings stay
+  project-wide.
+
+The server protocol is version 2: requests and broadcasts carry the line,
+and soft locks are per line.

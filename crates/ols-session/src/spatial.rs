@@ -9,8 +9,8 @@
 //! the table
 //!
 //! ```sql
-//! spatial_index(kind, id, level, tx, ty, xmin, ymin, xmax, ymax,
-//!               PRIMARY KEY(kind, id))         -- index on (level, tx, ty)
+//! spatial_index(line, kind, id, level, tx, ty, xmin, ymin, xmax, ymax,
+//!               PRIMARY KEY(line, kind, id))   -- index on (line, level, tx, ty)
 //! ```
 //!
 //! kept up to date in the same transaction as every command. The grid's
@@ -48,10 +48,11 @@ pub struct Entry {
 }
 
 pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS spatial_index (
+        line TEXT NOT NULL DEFAULT 'main',
         kind TEXT NOT NULL, id TEXT NOT NULL, level INTEGER NOT NULL, tx INTEGER NOT NULL,
         ty INTEGER NOT NULL, xmin REAL NOT NULL, ymin REAL NOT NULL, xmax REAL NOT NULL,
-        ymax REAL NOT NULL, PRIMARY KEY (kind, id));
-     CREATE INDEX IF NOT EXISTS spatial_tile ON spatial_index (level, tx, ty);";
+        ymax REAL NOT NULL, PRIMARY KEY (line, kind, id));
+     CREATE INDEX IF NOT EXISTS spatial_tile ON spatial_index (line, level, tx, ty);";
 
 fn clamp_point(line: &Line, p: &SectionPoint) -> Option<Point> {
     match line.attachment(p) {
@@ -129,25 +130,26 @@ pub fn entries(line: &Line, grid: &Grid) -> BTreeMap<(Kind, String), Entry> {
         .collect()
 }
 
-/// Writes the differences between `old` and `new` entries; returns how
-/// many rows changed.
+/// Writes the differences between `old` and `new` entries of project
+/// line `line`; returns how many rows changed.
 pub(crate) fn write_diff(
     conn: &Connection,
+    line: &str,
     old: &BTreeMap<(Kind, String), Entry>,
     new: &BTreeMap<(Kind, String), Entry>,
 ) -> Result<usize, SessionError> {
     let mut changed = 0;
     for ((kind, id), _) in old.iter().filter(|(k, _)| !new.contains_key(*k)) {
         conn.execute(
-            "DELETE FROM spatial_index WHERE kind = ?1 AND id = ?2",
-            params![kind.as_str(), id],
+            "DELETE FROM spatial_index WHERE line = ?1 AND kind = ?2 AND id = ?3",
+            params![line, kind.as_str(), id],
         )?;
         changed += 1;
     }
     let mut stmt = conn.prepare_cached(
-        "INSERT INTO spatial_index (kind, id, level, tx, ty, xmin, ymin, xmax, ymax)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-         ON CONFLICT(kind, id) DO UPDATE SET level = excluded.level, tx = excluded.tx,
+        "INSERT INTO spatial_index (kind, id, level, tx, ty, xmin, ymin, xmax, ymax, line)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(line, kind, id) DO UPDATE SET level = excluded.level, tx = excluded.tx,
              ty = excluded.ty, xmin = excluded.xmin, ymin = excluded.ymin,
              xmax = excluded.xmax, ymax = excluded.ymax",
     )?;
@@ -165,18 +167,23 @@ pub(crate) fn write_diff(
             b.min[0],
             b.min[1],
             b.max[0],
-            b.max[1]
+            b.max[1],
+            line
         ])?;
         changed += 1;
     }
     Ok(changed)
 }
 
-/// Reads the stored index.
-pub(crate) fn load(conn: &Connection) -> Result<BTreeMap<(Kind, String), Entry>, SessionError> {
-    let mut stmt =
-        conn.prepare("SELECT kind, id, level, tx, ty, xmin, ymin, xmax, ymax FROM spatial_index")?;
-    let rows = stmt.query_map([], row)?;
+/// Reads the stored index of project line `line`.
+pub(crate) fn load(
+    conn: &Connection,
+    line: &str,
+) -> Result<BTreeMap<(Kind, String), Entry>, SessionError> {
+    let mut stmt = conn.prepare(
+        "SELECT kind, id, level, tx, ty, xmin, ymin, xmax, ymax FROM spatial_index WHERE line = ?1",
+    )?;
+    let rows = stmt.query_map(params![line], row)?;
     let mut out = BTreeMap::new();
     for r in rows {
         let (kind, id, e) = r?;
@@ -205,21 +212,22 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
     ))
 }
 
-/// Objects whose bounds touch `area`, read from the index in the file
-/// (one range query per level in use).
+/// Objects of project line `line` whose bounds touch `area`, read from
+/// the index in the file (one range query per level in use).
 pub(crate) fn query(
     conn: &Connection,
+    line: &str,
     grid: &Grid,
     area: &Bounds,
 ) -> Result<Vec<(Kind, String, Entry)>, SessionError> {
     let levels: Vec<i8> = conn
-        .prepare("SELECT DISTINCT level FROM spatial_index ORDER BY level")?
-        .query_map([], |r| r.get(0))?
+        .prepare("SELECT DISTINCT level FROM spatial_index WHERE line = ?1 ORDER BY level")?
+        .query_map(params![line], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
     let mut stmt = conn.prepare_cached(
         "SELECT kind, id, level, tx, ty, xmin, ymin, xmax, ymax FROM spatial_index
          WHERE level = ?1 AND tx BETWEEN ?2 AND ?3 AND ty BETWEEN ?4 AND ?5
-           AND xmax >= ?6 AND xmin <= ?7 AND ymax >= ?8 AND ymin <= ?9",
+           AND xmax >= ?6 AND xmin <= ?7 AND ymax >= ?8 AND ymin <= ?9 AND line = ?10",
     )?;
     let mut out = Vec::new();
     for level in levels {
@@ -234,7 +242,8 @@ pub(crate) fn query(
                 area.min[0],
                 area.max[0],
                 area.min[1],
-                area.max[1]
+                area.max[1],
+                line
             ],
             row,
         )?;

@@ -207,6 +207,7 @@ fn web_clients_join_and_follow() {
         let request = ClientMsg::Request {
             id: 7,
             op: moved(&id, p0),
+            line: "main".into(),
         };
         send(&mut carol, &request).await;
         let m = until(&mut carol, |m| {
@@ -244,19 +245,30 @@ fn web_clients_join_and_follow() {
 #[test]
 fn scene_edits_and_escapes() {
     use crate::Op;
-    assert!(super::changes_scene(&Op::Undo));
-    assert!(!super::changes_scene(&Op::SaveSnapshot {
-        name: "a".into(),
-        note: String::new()
-    }));
-    assert!(super::changes_scene(&Op::DeleteLibrary {
-        kind: "cables".into(),
-        name: "a.olsw".into()
-    }));
-    assert!(!super::changes_scene(&Op::DeleteLibrary {
-        kind: "weather".into(),
-        name: "a.olswc".into()
-    }));
+    // The scene shows the main line: edits of other lines do not touch it.
+    assert!(super::changes_scene(&Op::Undo, "main"));
+    assert!(!super::changes_scene(&Op::Undo, "phase 1"));
+    assert!(!super::changes_scene(
+        &Op::CreateLine {
+            name: "a".into(),
+            from: "main".into()
+        },
+        "main"
+    ));
+    assert!(super::changes_scene(
+        &Op::DeleteLibrary {
+            kind: "cables".into(),
+            name: "a.olsw".into()
+        },
+        "phase 1"
+    ));
+    assert!(!super::changes_scene(
+        &Op::DeleteLibrary {
+            kind: "weather".into(),
+            name: "a.olswc".into()
+        },
+        "main"
+    ));
     assert_eq!(super::fragment_escape("ann-é b&c"), "ann-%C3%A9%20b%26c");
 }
 

@@ -86,6 +86,12 @@ pub struct ViewPrefs {
     /// Backgrounds hidden (`image:<layer>`, `drawing:<name>`).
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub hidden_backgrounds: std::collections::BTreeSet<String>,
+    /// The project line this user works on (Lines › Project lines).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+    /// The project lines shown next to it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shown_lines: Vec<String>,
 }
 
 /// The [`ViewPrefs`] of every project opened, by file (remembered).
@@ -419,8 +425,12 @@ pub struct Model {
     /// The weather cases shown for the whole line (Display weather cases;
     /// empty: the case passed to the views).
     pub shown_cases: Vec<usize>,
-    /// Saved project lines shown next to the working line (Lines menu).
+    /// Project lines shown next to the line worked on (Lines menu).
     pub other_lines: Vec<OtherLine>,
+    /// Project lines another user changed since the last frame (server
+    /// mode): those shown are read again; `""`: the line worked on was
+    /// renamed or deleted (read again whole).
+    pub lines_changed: Vec<String>,
     /// LiDAR classes not drawn (Terrain menu).
     pub hidden_classes: std::collections::BTreeSet<u8>,
     /// Points per class of the whole point cloud (loaded or not).
@@ -459,10 +469,17 @@ pub fn library_path(s: &Sources) -> PathBuf {
     }
 }
 
-/// The line, and the project's session when it is a project file.
-fn load_line(path: &Path) -> Result<(Line, Option<ols_session::Session>), String> {
+/// The line, and the project's session when it is a project file: the
+/// project line `line` when it is one, else the one the file opens on.
+fn load_line(
+    path: &Path,
+    line: Option<&str>,
+) -> Result<(Line, Option<ols_session::Session>), String> {
     if path.extension().is_some_and(|e| e == "ols") {
-        let s = ols_session::Session::open(path).map_err(|e| e.to_string())?;
+        let mut s = ols_session::Session::open(path).map_err(|e| e.to_string())?;
+        if let Some(l) = line.filter(|l| s.is_line(l)) {
+            s.select_line(l).map_err(|e| e.to_string())?;
+        }
         if !s.has_line() {
             return Err(format!("{}: the project holds no line", path.display()));
         }
@@ -959,6 +976,8 @@ impl Model {
             wind: self.wind,
             cases_shown: self.cases_shown,
             hidden_backgrounds: self.hidden_backgrounds.clone(),
+            line: self.session().map(|s| s.current_line().to_owned()),
+            shown_lines: self.other_lines.iter().map(|o| o.name.clone()).collect(),
         }
     }
 
@@ -1103,15 +1122,84 @@ impl Model {
             .collect()
     }
 
-    /// Shows saved project line `name` next to the working line (solved
-    /// in every weather case).
+    /// The project's session (edited, or read only for a viewer).
+    pub fn session(&self) -> Option<&ols_session::Session> {
+        match &self.editing {
+            Ok(e) => Some(&e.session),
+            Err(_) => self.viewer_session.as_ref(),
+        }
+    }
+
+    /// The user's name: in the project edited, on the server joined, else
+    /// the login name.
+    pub fn user_name(&self) -> String {
+        if let Some(r) = &self.remote {
+            return r.link.user.clone();
+        }
+        match &self.editing {
+            Ok(e) => e.user.clone(),
+            Err(_) => self.sources.user.clone().unwrap_or_else(crate::files::user),
+        }
+    }
+
+    /// The project line worked on (empty: a line file, no project).
+    pub fn project_line(&self) -> String {
+        self.session()
+            .map(|s| s.current_line().to_owned())
+            .unwrap_or_default()
+    }
+
+    /// Works on project line `name` from now on (this user only; nothing
+    /// changes for the others): the line is read, resolved and solved
+    /// again; shown next to it, the line left.
+    pub fn switch_line(&mut self, name: &str) -> Result<String, String> {
+        let from = self.project_line();
+        if from == name {
+            return Ok(String::new());
+        }
+        let session = match &mut self.editing {
+            Ok(e) => &mut e.session,
+            Err(why) => self.viewer_session.as_mut().ok_or_else(|| why.clone())?,
+        };
+        session.select_line(name).map_err(|e| e.to_string())?;
+        if let Some(r) = &mut self.remote {
+            r.link.line = name.to_owned();
+        }
+        self.other_lines.retain(|o| o.name != name);
+        self.reload_libraries()?;
+        Ok(format!("working on project line {name} now"))
+    }
+
+    /// Reads project lines `names` again where they are shown (another
+    /// user changed them).
+    pub fn refresh_lines(&mut self, names: &[String]) {
+        for name in names {
+            let Some(k) = self.other_lines.iter().position(|o| &o.name == name) else {
+                continue;
+            };
+            let color = self.other_lines.remove(k).color;
+            match self.show_line(name) {
+                Ok(_) => {
+                    if let Some(o) = self.other_lines.last_mut() {
+                        o.color = color;
+                    }
+                    let last = self.other_lines.pop().expect("just shown");
+                    self.other_lines.insert(k.min(self.other_lines.len()), last);
+                }
+                Err(e) => log::warn!("project line {name}: {e}"),
+            }
+        }
+    }
+
+    /// Shows project line `name` next to the line worked on (solved in
+    /// every weather case).
     pub fn show_line(&mut self, name: &str) -> Result<String, String> {
         if self.other_lines.iter().any(|o| o.name == name) {
             return Ok(String::new());
         }
         let started = Instant::now();
-        let e = self.editing.as_ref().map_err(Clone::clone)?;
-        let stored = e.session.snapshot(name).map_err(|e| e.to_string())?;
+        let session = self.session().ok_or("open a project to show its lines")?;
+        let stored = session.line_named(name).map_err(|e| e.to_string())?.clone();
         let mut line = match &self.types {
             Some((s, i)) => stored.resolve(s, i).map_err(|e| e.to_string())?,
             None => stored,
@@ -1123,7 +1211,12 @@ impl Model {
             .iter()
             .map(|c| Solved::new(&line, &self.library, c.case.clone()))
             .collect();
-        let color = OTHER_COLORS[self.other_lines.len() % OTHER_COLORS.len()];
+        // A colour no line shown has yet.
+        let color = OTHER_COLORS
+            .iter()
+            .copied()
+            .find(|c| self.other_lines.iter().all(|o| o.color != *c))
+            .unwrap_or(OTHER_COLORS[self.other_lines.len() % OTHER_COLORS.len()]);
         let failed: usize = cases.iter().map(|c| c.failed.len()).sum();
         self.other_lines.push(OtherLine {
             name: name.to_owned(),
@@ -1148,9 +1241,9 @@ impl Model {
     /// solves every case. Nothing changes when one does not load.
     pub fn reload_libraries(&mut self) -> Result<String, String> {
         let started = Instant::now();
-        let stored = match &self.editing {
-            Ok(e) => e.session.export(),
-            Err(_) => load_line(&self.sources.file)?.0,
+        let stored = match self.session() {
+            Some(s) => s.export(),
+            None => load_line(&self.sources.file, None)?.0,
         };
         let types = load_types(&self.sources, &stored)?;
         let mut line = match &types {
@@ -1215,7 +1308,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         log.push(m);
     };
     let started = Instant::now();
-    let (mut line, session) = load_line(&sources.file)?;
+    let wanted = sources.view.as_ref().and_then(|v| v.line.clone());
+    let (mut line, session) = load_line(&sources.file, wanted.as_deref())?;
     step(
         format!(
             "{}: {} structures, {} sections, {} jumpers",
@@ -1575,7 +1669,12 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .map(|v| v.hidden_backgrounds.clone())
         .unwrap_or_default();
-    Ok(Model {
+    let shown_lines = sources
+        .view
+        .as_ref()
+        .map(|v| v.shown_lines.clone())
+        .unwrap_or_default();
+    let mut model = Model {
         sources,
         line,
         cases: solved,
@@ -1598,6 +1697,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         display_cases: Default::default(),
         shown_cases: vec![0],
         other_lines: Vec::new(),
+        lines_changed: Vec::new(),
         hidden_classes,
         class_counts,
         points_percent,
@@ -1609,5 +1709,16 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         remote: None,
         solving: Vec::new(),
         line_version: 0,
-    })
+    };
+    // The project lines this user showed (those that still exist).
+    for name in shown_lines {
+        if model
+            .session()
+            .is_some_and(|s| s.is_line(&name) && s.current_line() != name)
+            && let Err(e) = model.show_line(&name)
+        {
+            log::warn!("project line {name}: {e}");
+        }
+    }
+    Ok(model)
 }

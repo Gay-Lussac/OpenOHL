@@ -50,10 +50,10 @@ use ols_session::{Applied, Command, Kind, Role, Session, SessionError};
 use serde::{Deserialize, Serialize};
 
 /// Version of the protocol; client and server must agree.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 /// ALPN of the protocol.
-pub const ALPN: &[u8] = b"ols/1";
+pub const ALPN: &[u8] = b"ols/2";
 
 /// Largest message, bytes (an exit clause against garbage).
 pub const MAX_MESSAGE: usize = 64 << 20;
@@ -67,8 +67,9 @@ pub const MAX_NAME: usize = 64;
 /// Longest presence selection or lock target, bytes.
 pub const MAX_LABEL: usize = 1024;
 
-/// An edit of the project, as requested and as broadcast. Executed by the
-/// server and then by every replica, in the server's order ([`execute`]).
+/// An edit of the project, as requested and as broadcast, on the project
+/// line its user works on ([`ols_session::lines`]). Executed by the server
+/// and then by every replica, in the server's order ([`execute`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
@@ -114,17 +115,33 @@ pub enum Op {
         /// File name.
         name: String,
     },
-    /// Save the working line as a project line.
-    SaveSnapshot {
+    /// Start a project line from another (or from a revision or tag).
+    CreateLine {
         /// Name.
         name: String,
-        /// Note.
-        note: String,
+        /// Line, revision or tag it starts from.
+        from: String,
     },
-    /// Delete a project line.
-    DeleteSnapshot {
+    /// Delete a project line (its creator or an admin; the main line an
+    /// admin).
+    DeleteLine {
         /// Name.
         name: String,
+    },
+    /// Rename a project line (as deleting).
+    RenameLine {
+        /// Name.
+        from: String,
+        /// New name.
+        to: String,
+    },
+    /// Bring the changes of another project line into this one.
+    BringIn {
+        /// The line whose changes come in.
+        from: String,
+        /// Conflicts settled.
+        #[serde(default)]
+        choices: Choices,
     },
     /// Set (or remove) a project setting.
     SetSetting {
@@ -172,12 +189,6 @@ pub enum Op {
         /// Confirms.
         #[serde(default)]
         confirm: bool,
-    },
-    /// Make a branch (or a revision, detached) the working state — for
-    /// every user of the server.
-    Checkout {
-        /// Branch, tag or revision.
-        target: String,
     },
     /// Merge a branch (tag, revision) into the current branch.
     Merge {
@@ -297,7 +308,7 @@ impl Op {
                 of(command, &mut out).then_some(out)
             }
             // The working state replaced at large.
-            Op::Checkout { .. } | Op::Merge { .. } | Op::Revert { .. } | Op::MergeReview { .. } => {
+            Op::BringIn { .. } | Op::Merge { .. } | Op::Revert { .. } | Op::MergeReview { .. } => {
                 None
             }
             _ => Some(Vec::new()),
@@ -319,8 +330,10 @@ impl Op {
             Op::SetUser { name, role } => format!("{name} made {}", role.as_str()),
             Op::PutLibrary { kind, name, .. } => format!("library {kind}/{name} saved"),
             Op::DeleteLibrary { kind, name } => format!("library {kind}/{name} removed"),
-            Op::SaveSnapshot { name, .. } => format!("project line {name} saved"),
-            Op::DeleteSnapshot { name } => format!("project line {name} deleted"),
+            Op::CreateLine { name, from } => format!("project line {name} started from {from}"),
+            Op::DeleteLine { name } => format!("project line {name} deleted"),
+            Op::RenameLine { from, to } => format!("project line {from} renamed {to}"),
+            Op::BringIn { from, .. } => format!("changes of {from} brought in"),
             Op::SetSetting { key, .. } => format!("setting {key}"),
             Op::Commit { message } => format!("commit \"{message}\""),
             Op::CreateBranch { name, .. } => format!("branch {name} made"),
@@ -334,7 +347,6 @@ impl Op {
                 }
             ),
             Op::DeleteRef { name, .. } => format!("{name} deleted"),
-            Op::Checkout { target } => format!("{target} checked out"),
             Op::Merge { other, .. } => format!("{other} merged"),
             Op::Revert { revision, .. } => format!("{revision} reverted"),
             Op::SubmitReview { branch, target, .. } => {
@@ -351,14 +363,20 @@ impl Op {
     }
 }
 
-/// Executes `op` of `user` on a session: the server's and every
-/// replica's code. Returns what changed in the line (`None`: nothing in
-/// the line, e.g. a library or a user).
+/// Executes `op` of `user` on project line `line` of a session: the
+/// server's and every replica's code. The session's own line is chosen
+/// again after. Returns what changed in that line (`None`: nothing in the
+/// line, e.g. a library or a user).
 pub fn execute(
     session: &mut Session,
     user: &str,
+    line: &str,
     op: &Op,
 ) -> Result<Option<Applied>, SessionError> {
+    session.with_line(line, |s| run(s, user, op))
+}
+
+fn run(session: &mut Session, user: &str, op: &Op) -> Result<Option<Applied>, SessionError> {
     Ok(match op {
         Op::Do { command } => Some(session.apply(user, command.clone())?),
         Op::Undo => Some(session.undo(user)?),
@@ -377,14 +395,19 @@ pub fn execute(
             session.delete_library_file(user, kind, name)?;
             None
         }
-        Op::SaveSnapshot { name, note } => {
-            session.save_snapshot(user, name, note)?;
+        Op::CreateLine { name, from } => {
+            session.create_line(user, name, from)?;
             None
         }
-        Op::DeleteSnapshot { name } => {
-            session.delete_snapshot(user, name)?;
+        Op::DeleteLine { name } => {
+            session.delete_line(user, name)?;
             None
         }
+        Op::RenameLine { from, to } => {
+            session.rename_line(user, from, to)?;
+            None
+        }
+        Op::BringIn { from, choices } => session.bring_in(user, from, choices)?.applied,
         Op::SetSetting { key, value } => {
             session.require(user, Role::Designer)?;
             session.set_setting(key, value.as_deref())?;
@@ -410,7 +433,6 @@ pub fn execute(
             session.delete_ref(user, name, *confirm)?;
             None
         }
-        Op::Checkout { target } => session.checkout(user, target)?.0,
         Op::Merge {
             other,
             message,
@@ -488,9 +510,15 @@ pub struct Peer {
     pub presence: Presence,
 }
 
-/// A soft lock's target: `structure:T2`, `section:S1`…
-pub fn lock_target(kind: Kind, id: &str) -> String {
-    format!("{}:{id}", kind.as_str())
+/// A soft lock's target: `main:structure:T2`, `phase 1:section:S1`… (the
+/// same object of two project lines is two objects).
+pub fn lock_target(line: &str, kind: Kind, id: &str) -> String {
+    format!("{line}:{}:{id}", kind.as_str())
+}
+
+/// The main line's name, the default of a request's line.
+fn main_line() -> String {
+    ols_session::versions::MAIN.to_owned()
 }
 
 /// Client → server.
@@ -512,6 +540,9 @@ pub enum ClientMsg {
         id: u64,
         /// The edit.
         op: Op,
+        /// The project line it acts on (the user's).
+        #[serde(default = "main_line")]
+        line: String,
     },
     /// What the user shows the others (sent when it changes).
     Presence(Presence),
@@ -560,6 +591,9 @@ pub enum ServerMsg {
         user: String,
         /// The edit.
         op: Op,
+        /// The project line it acted on.
+        #[serde(default = "main_line")]
+        line: String,
         /// Log entry made.
         seq: Option<i64>,
     },

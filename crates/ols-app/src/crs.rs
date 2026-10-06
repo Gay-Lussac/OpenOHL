@@ -665,7 +665,7 @@ fn start_job(
 }
 
 /// Writes project `source` moved from `from` into `to` as project `path`
-/// (a new file): the line, project lines and surfaces
+/// (a new file): every project line and the surfaces
 /// ([`ols_session::Session::reproject`]), then each point cloud
 /// ([`ols_pointcloud::Store::reproject_cloud`]). Heights kept.
 ///
@@ -686,13 +686,12 @@ pub fn reproject_file(
     ols_session::Session::open(source)
         .and_then(|s| s.copy_to(path))
         .map_err(|e| e.to_string())?;
-    report("moving the line and the surfaces…".into(), 0.05);
+    report("moving the project lines and the surfaces…".into(), 0.05);
     let mut session = ols_session::Session::open(path).map_err(|e| e.to_string())?;
-    session
+    let lines = session
         .reproject(user, to.name(), &moved)
         .map_err(|e| e.to_string())?;
     let surfaces = session.surfaces().map_err(|e| e.to_string())?.len();
-    let lines = session.snapshots().map_err(|e| e.to_string())?.len();
     session.checkpoint().map_err(|e| e.to_string())?;
     drop(session);
     let mut store = ols_pointcloud::Store::open(path).map_err(|e| e.to_string())?;
@@ -721,7 +720,7 @@ pub fn reproject_file(
         .and_then(|s| s.checkpoint())
         .map_err(|e| e.to_string())?;
     Ok(format!(
-        "{} → {}: the line, {lines} project line(s), {surfaces} surface(s) and {} point \
+        "{} → {}: {lines} project line(s), {surfaces} surface(s) and {} point \
          cloud(s) ({points} points) moved into {}. It opens when you close this window. Check \
          spans and stringing: grid distances change with the projection's scale.",
         ols_crs::describe(from.name()),

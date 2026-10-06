@@ -21,9 +21,12 @@
 //! - **Roles**: `viewer` (read only), `designer` (edit), `admin` (edit,
 //!   rollback, manage users). Admins can limit a user's or a role's edits
 //!   to some kinds, objects or a plan area ([`collab`]).
-//! - **Version control** ([`versions`]): revisions, branches, tags, diff,
-//!   merge and revert of the line and its libraries; reviews of branches
-//!   before they are merged ([`collab`]).
+//! - **Project lines** ([`lines`]): several designs of the line (the main
+//!   line and its phases), each with its own objects, log and index; a
+//!   session works on one at a time.
+//! - **Version control** ([`versions`]): revisions, branches (the project
+//!   lines), tags, diff, merge and revert of the line and its libraries;
+//!   reviews of branches before they are merged ([`collab`]).
 //! - **Import / export**: [`Session::import`] loads a line (`.ols.json`)
 //!   into a project file, [`Session::export`] gives it back.
 //!
@@ -31,17 +34,17 @@
 //! attachments), sections (with stringing and loads) and jumpers, each a
 //! JSON row with a version number, in their order in the line.
 //!
-//! Schema (version 2, tables next to the point clouds of ADR-0007; version
-//! 1 files are migrated when opened — version 2 added the tables of
-//! [`versions`] and [`collab`]):
+//! Schema (version 3, tables next to the point clouds of ADR-0007; older
+//! files are migrated when opened — version 2 added the tables of
+//! [`versions`] and [`collab`], version 3 the project lines of [`lines`]):
 //!
 //! ```sql
-//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '2'
+//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '3'
 //! session_user(name PRIMARY KEY, role)
-//! model_object(kind, id, ord, version, json, PRIMARY KEY(kind, id))
+//! model_object(line, kind, id, ord, version, json, PRIMARY KEY(line, kind, id))
 //! oplog(seq PRIMARY KEY, time, user, kind, command, inverse, objects,
-//!       sections, undoes, undone_by)
-//! spatial_index(kind, id, level, tx, ty, xmin, ymin, xmax, ymax)  -- [`spatial`]
+//!       sections, undoes, undone_by, note, line)
+//! spatial_index(line, kind, id, level, tx, ty, xmin, ymin, xmax, ymax)  -- [`spatial`]
 //! ```
 //!
 //! The **spatial index** ([`spatial`], ADR-0008) gives every object its
@@ -60,7 +63,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Schema version of the session tables.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// Errors of a session.
 #[derive(Debug, Clone, PartialEq)]
@@ -457,19 +460,6 @@ pub enum Command {
     },
 }
 
-/// A project line saved: a frozen state of the line.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Snapshot {
-    /// Name, e.g. `as built 2026`.
-    pub name: String,
-    /// When it was saved (UTC).
-    pub time: String,
-    /// Who saved it.
-    pub user: String,
-    /// Note.
-    pub note: String,
-}
-
 /// One entry of the operation log.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogEntry {
@@ -494,6 +484,8 @@ pub struct LogEntry {
     /// What the command was, in words (e.g. a structure deletion and what
     /// went with it).
     pub note: Option<String>,
+    /// The project line it changed.
+    pub line: String,
 }
 
 /// Result of an applied command.
@@ -558,7 +550,7 @@ pub fn line_settings_put(
 }
 
 /// A raw log row: seq, time, user, kind, command, inverse, objects,
-/// sections, undoes, undone_by, note.
+/// sections, undoes, undone_by, note, line.
 type EntryRow = (
     i64,
     String,
@@ -571,6 +563,7 @@ type EntryRow = (
     Option<i64>,
     Option<i64>,
     Option<String>,
+    String,
 );
 
 /// One object of the model.
@@ -588,6 +581,12 @@ pub struct Session {
     line: Line,
     grid: Grid,
     spatial: BTreeMap<(Kind, String), spatial::Entry>,
+    /// The project line the commands act on ([`lines`]).
+    current: String,
+    /// The other project lines' states.
+    others: BTreeMap<String, lines::LineState>,
+    /// The last line renamed (from, to): a session working on it follows.
+    renamed: Option<(String, String)>,
 }
 
 impl fmt::Debug for Session {
@@ -735,13 +734,15 @@ impl Session {
              CREATE TABLE IF NOT EXISTS ols_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS session_user (name TEXT PRIMARY KEY, role TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS model_object (
+                 line TEXT NOT NULL DEFAULT 'main',
                  kind TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL,
-                 version INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (kind, id));
+                 version INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (line, kind, id));
              CREATE TABLE IF NOT EXISTS oplog (
                  seq INTEGER PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                  user TEXT NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL, inverse TEXT NOT NULL,
                  objects TEXT NOT NULL, sections TEXT NOT NULL,
-                 undoes INTEGER, undone_by INTEGER, note TEXT);
+                 undoes INTEGER, undone_by INTEGER, note TEXT,
+                 line TEXT NOT NULL DEFAULT 'main');
              CREATE TABLE IF NOT EXISTS line_snapshot (
                  name TEXT PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                  user TEXT NOT NULL, note TEXT NOT NULL, json TEXT NOT NULL);
@@ -758,6 +759,8 @@ impl Session {
         if !has_note {
             conn.execute("ALTER TABLE oplog ADD COLUMN note TEXT", [])?;
         }
+        // Schema 3: every project line has its own objects, log and index.
+        lines::migrate(&conn)?;
         conn.execute_batch(spatial::SCHEMA)?;
         conn.execute_batch(surfaces::SCHEMA)?;
         conn.execute_batch(versions::SCHEMA)?;
@@ -816,23 +819,25 @@ impl Session {
             }
         }
         versions::init(&conn)?;
-        let mut objects = BTreeMap::new();
+        let mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>> = BTreeMap::new();
         {
-            let mut stmt = conn.prepare("SELECT kind, id, ord, version, json FROM model_object")?;
+            let mut stmt =
+                conn.prepare("SELECT line, kind, id, ord, version, json FROM model_object")?;
             let rows = stmt.query_map([], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
-                    r.get::<_, i64>(2)?,
+                    r.get::<_, String>(2)?,
                     r.get::<_, i64>(3)?,
-                    r.get::<_, String>(4)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, String>(5)?,
                 ))
             })?;
             for row in rows {
-                let (kind, id, ord, version, text) = row?;
+                let (line, kind, id, ord, version, text) = row?;
                 let value =
                     serde_json::from_str(&text).map_err(|e| SessionError::Store(e.to_string()))?;
-                objects.insert(
+                by_line.entry(line).or_default().insert(
                     (Kind::parse(&kind)?, id),
                     Object {
                         ord,
@@ -842,42 +847,18 @@ impl Session {
                 );
             }
         }
-        let line = if objects.is_empty() {
-            Line {
-                format: ols_line::LINE_FILE_FORMAT.to_owned(),
-                version: ols_line::LINE_FILE_VERSION,
-                name: String::new(),
-                crs: String::new(),
-                alignment: vec![],
-                routes: vec![],
-                structures: vec![],
-                sections: vec![],
-                jumpers: vec![],
-                display: ols_line::Display::default(),
-                systems: vec![],
-                creep_stretch: Default::default(),
-                bimetallic: Default::default(),
-                condition_cases: Default::default(),
-            }
-        } else {
-            line_of(&objects)?
-        };
-        // Bring the index up to date (project files from builds before it,
-        // or edited outside a session); unchanged rows are not written.
-        let stored = spatial::load(&conn)?;
-        let current = spatial::entries(&line, &grid);
-        if stored != current {
-            let tx = conn.unchecked_transaction()?;
-            spatial::write_diff(&tx, &stored, &current)?;
-            tx.commit()?;
-        }
-        Ok(Self {
+        let mut session = Self {
             conn,
-            objects,
-            line,
+            objects: BTreeMap::new(),
+            line: lines::empty_line(),
             grid,
-            spatial: current,
-        })
+            spatial: BTreeMap::new(),
+            current: versions::MAIN.to_owned(),
+            others: BTreeMap::new(),
+            renamed: None,
+        };
+        session.load_lines(by_line)?;
+        Ok(session)
     }
 
     /// The current line.
@@ -901,7 +882,7 @@ impl Session {
         &self,
         area: &Bounds,
     ) -> Result<Vec<(Kind, String, spatial::Entry)>, SessionError> {
-        spatial::query(&self.conn, &self.grid, area)
+        spatial::query(&self.conn, &self.current, &self.grid, area)
     }
 
     /// Number of objects of each kind by home tile.
@@ -941,71 +922,6 @@ impl Session {
              ON CONFLICT(name) DO UPDATE SET role = excluded.role",
             params![name, role.as_str()],
         )?;
-        Ok(())
-    }
-
-    /// The project lines saved (frozen states of the line, e.g. as built
-    /// and as planned), oldest first.
-    pub fn snapshots(&self) -> Result<Vec<Snapshot>, SessionError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT name, time, user, note FROM line_snapshot ORDER BY time, name")?;
-        let rows = stmt.query_map([], |r| {
-            Ok(Snapshot {
-                name: r.get(0)?,
-                time: r.get(1)?,
-                user: r.get(2)?,
-                note: r.get(3)?,
-            })
-        })?;
-        Ok(rows.collect::<Result<_, _>>()?)
-    }
-
-    /// Saves the working line as project line `name` (a new name).
-    pub fn save_snapshot(&self, user: &str, name: &str, note: &str) -> Result<(), SessionError> {
-        self.require(user, Role::Designer)?;
-        let name = name.trim();
-        if name.is_empty() {
-            return Err(refused("a project line needs a name"));
-        }
-        let exists: bool = self
-            .conn
-            .prepare("SELECT 1 FROM line_snapshot WHERE name = ?1")?
-            .exists(params![name])?;
-        if exists {
-            return Err(refused(format!("a project line \"{name}\" exists already")));
-        }
-        let text = serde_json::to_string(&self.line).map_err(|e| refused(e.to_string()))?;
-        self.conn.execute(
-            "INSERT INTO line_snapshot (name, user, note, json) VALUES (?1, ?2, ?3, ?4)",
-            params![name, user, note, text],
-        )?;
-        Ok(())
-    }
-
-    /// Project line `name`.
-    pub fn snapshot(&self, name: &str) -> Result<Line, SessionError> {
-        let text: Option<String> = self
-            .conn
-            .query_row(
-                "SELECT json FROM line_snapshot WHERE name = ?1",
-                params![name],
-                |r| r.get(0),
-            )
-            .optional()?;
-        let text = text.ok_or_else(|| refused(format!("no project line \"{name}\"")))?;
-        serde_json::from_str(&text).map_err(|e| refused(format!("project line {name}: {e}")))
-    }
-
-    /// Deletes project line `name` (the working line is not touched).
-    pub fn delete_snapshot(&self, user: &str, name: &str) -> Result<(), SessionError> {
-        self.require(user, Role::Designer)?;
-        let n = self
-            .conn
-            .execute("DELETE FROM line_snapshot WHERE name = ?1", params![name])?;
-        if n == 0 {
-            return Err(refused(format!("no project line \"{name}\"")));
-        }
         Ok(())
     }
 
@@ -2096,15 +2012,15 @@ impl Session {
             match objects.get(&(*kind, id.clone())) {
                 Some(o) => {
                     tx.execute(
-                        "INSERT INTO model_object (kind, id, ord, version, json) VALUES (?1, ?2, ?3, ?4, ?5)
-                         ON CONFLICT(kind, id) DO UPDATE SET ord = excluded.ord, version = excluded.version, json = excluded.json",
-                        params![kind.as_str(), id, o.ord, o.version, o.value.to_string()],
+                        "INSERT INTO model_object (kind, id, ord, version, json, line) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                         ON CONFLICT(line, kind, id) DO UPDATE SET ord = excluded.ord, version = excluded.version, json = excluded.json",
+                        params![kind.as_str(), id, o.ord, o.version, o.value.to_string(), self.current],
                     )?;
                 }
                 None => {
                     tx.execute(
-                        "DELETE FROM model_object WHERE kind = ?1 AND id = ?2",
-                        params![kind.as_str(), id],
+                        "DELETE FROM model_object WHERE kind = ?1 AND id = ?2 AND line = ?3",
+                        params![kind.as_str(), id, self.current],
                     )?;
                 }
             }
@@ -2123,7 +2039,7 @@ impl Session {
             })
             .collect();
         tx.execute(
-            "INSERT INTO oplog (user, kind, command, inverse, objects, sections, undoes, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO oplog (user, kind, command, inverse, objects, sections, undoes, note, line) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 user,
                 entry_kind,
@@ -2132,7 +2048,8 @@ impl Session {
                 serde_json::to_string(&after).expect("serialises"),
                 serde_json::to_string(&sections).expect("serialises"),
                 undoes,
-                note
+                note,
+                self.current
             ],
         )?;
         let seq = tx.last_insert_rowid();
@@ -2142,7 +2059,7 @@ impl Session {
                 params![seq, u],
             )?;
         }
-        spatial::write_diff(&tx, &self.spatial, &spatial)?;
+        spatial::write_diff(&tx, &self.current, &self.spatial, &spatial)?;
         tx.commit()?;
         self.objects = objects;
         self.line = line;
@@ -2167,19 +2084,32 @@ impl Session {
             r.get(8)?,
             r.get(9)?,
             r.get(10)?,
+            r.get(11)?,
         ))
     }
 
     /// The operation log, oldest first.
     pub fn log(&self) -> Result<Vec<LogEntry>, SessionError> {
         let mut stmt = self.conn.prepare(
-            "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note FROM oplog ORDER BY seq",
+            "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line FROM oplog ORDER BY seq",
         )?;
         let rows = stmt.query_map([], Self::entry_row)?;
         let store = |e: serde_json::Error| SessionError::Store(e.to_string());
         rows.map(|r| {
-            let (seq, time, user, kind, command, _, objects, sections, undoes, undone_by, note) =
-                r?;
+            let (
+                seq,
+                time,
+                user,
+                kind,
+                command,
+                _,
+                objects,
+                sections,
+                undoes,
+                undone_by,
+                note,
+                line,
+            ) = r?;
             let objects: Vec<(Kind, String, i64)> =
                 serde_json::from_str(&objects).map_err(store)?;
             Ok(LogEntry {
@@ -2193,6 +2123,7 @@ impl Session {
                 undoes,
                 undone_by,
                 note,
+                line,
             })
         })
         .collect()
@@ -2205,13 +2136,18 @@ impl Session {
         let row = self
             .conn
             .query_row(
-                "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note FROM oplog WHERE seq = ?1",
+                "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line FROM oplog WHERE seq = ?1",
                 params![seq],
                 Self::entry_row,
             )
             .optional()?
             .ok_or_else(|| refused(format!("no log entry {seq}")))?;
-        let (_, _, _, entry_kind, command, inverse, _, _, _, undone_by, _) = row;
+        let (_, _, _, entry_kind, command, inverse, _, _, _, undone_by, _, line) = row;
+        if line != self.current {
+            return Err(refused(format!(
+                "entry {seq} is of project line {line}: work on that line to reverse it"
+            )));
+        }
         if entry_kind == "import" {
             return Err(refused("the import cannot be undone"));
         }
@@ -2270,8 +2206,8 @@ impl Session {
         let seq: Option<i64> = self
             .conn
             .query_row(
-                "SELECT seq FROM oplog WHERE user = ?1 AND kind IN ('do', 'redo') AND undone_by IS NULL ORDER BY seq DESC LIMIT 1",
-                params![user],
+                "SELECT seq FROM oplog WHERE user = ?1 AND line = ?2 AND kind IN ('do', 'redo') AND undone_by IS NULL ORDER BY seq DESC LIMIT 1",
+                params![user, self.current],
                 |r| r.get(0),
             )
             .optional()?;
@@ -2285,8 +2221,8 @@ impl Session {
         let last: Option<(i64, String, Option<i64>)> = self
             .conn
             .query_row(
-                "SELECT seq, kind, undone_by FROM oplog WHERE user = ?1 AND kind IN ('do', 'undo', 'redo') ORDER BY seq DESC LIMIT 1",
-                params![user],
+                "SELECT seq, kind, undone_by FROM oplog WHERE user = ?1 AND line = ?2 AND kind IN ('do', 'undo', 'redo') ORDER BY seq DESC LIMIT 1",
+                params![user, self.current],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
@@ -2318,9 +2254,9 @@ impl Session {
         self.require(admin, Role::Admin)?;
         let mut stmt = self
             .conn
-            .prepare("SELECT inverse FROM oplog WHERE seq > ?1 ORDER BY seq DESC")?;
+            .prepare("SELECT inverse FROM oplog WHERE seq > ?1 AND line = ?2 ORDER BY seq DESC")?;
         let inverses: Vec<String> = stmt
-            .query_map(params![seq], |r| r.get(0))?
+            .query_map(params![seq, self.current], |r| r.get(0))?
             .collect::<Result<_, _>>()?;
         drop(stmt);
         let store = |e: serde_json::Error| SessionError::Store(e.to_string());
@@ -2390,8 +2326,8 @@ impl Session {
             false,
         )?;
         self.conn.execute(
-            "UPDATE oplog SET undone_by = ?1 WHERE seq > ?2 AND seq < ?1 AND undone_by IS NULL",
-            params![applied.seq, seq],
+            "UPDATE oplog SET undone_by = ?1 WHERE seq > ?2 AND seq < ?1 AND undone_by IS NULL AND line = ?3",
+            params![applied.seq, seq, self.current],
         )?;
         Ok(Some(applied))
     }
@@ -2399,6 +2335,7 @@ impl Session {
 
 pub mod collab;
 pub mod impact;
+pub mod lines;
 pub mod live;
 pub mod reproject;
 pub mod spatial;
@@ -2407,6 +2344,8 @@ pub mod versions;
 
 pub use live::Live;
 
+#[cfg(test)]
+mod lines_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

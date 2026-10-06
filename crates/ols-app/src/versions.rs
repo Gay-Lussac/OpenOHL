@@ -7,7 +7,8 @@
 //!
 //! - **History**: the revisions, newest first, with their branches and
 //!   tags; commit the working state with a message; make, switch, protect
-//!   and delete branches; tag, check out or revert a revision.
+//!   and delete branches (project lines; work on one); tag, start a line
+//!   from or revert a revision.
 //! - **Changes**: what differs between two revisions (or a revision and
 //!   the working state), field by field, and its engineering impact in the
 //!   weather case shown.
@@ -61,6 +62,8 @@ pub struct VersionsWindow {
     pub open: bool,
     page: Page,
     serial: u64,
+    /// A project line to work on (asked from the branch list).
+    switch_to: Option<String>,
     snapshot: Option<Snapshot>,
     message: String,
     new_branch: String,
@@ -148,6 +151,9 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
         .default_width(820.0)
         .show(ctx, |ui| w.ui(ui, r, &mut ops));
     w.open = open;
+    if let Some(name) = w.switch_to.take() {
+        r.switch_line(&name);
+    }
     if !ops.is_empty() {
         // Library files changed by a checkout or merge: the project is
         // opened again to read them (local projects).
@@ -291,18 +297,16 @@ impl VersionsWindow {
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(can_edit, |ui| {
                             if !current
-                                && x.revision.is_some()
+                                && x.kind == RefKind::Branch
                                 && ui
-                                    .small_button("Check out")
-                                    .on_hover_text("Make it the working line (undoable)")
+                                    .small_button("Work on it")
+                                    .on_hover_text(
+                                        "Each branch is a project line: work on this one from \
+                                         now on (nothing changes; also Lines › Project lines)",
+                                    )
                                     .clicked()
                             {
-                                ops.push((
-                                    format!("{} checked out", x.name),
-                                    Op::Checkout {
-                                        target: x.name.clone(),
-                                    },
-                                ));
+                                self.switch_to = Some(x.name.clone());
                             }
                             if x.kind == RefKind::Branch && admin {
                                 let mut p = x.protected;
@@ -452,14 +456,20 @@ impl VersionsWindow {
                             } else {
                                 egui::RichText::new(mark).weak()
                             })
-                            .on_hover_text(if rev.parents.is_empty() {
-                                "first revision".to_owned()
-                            } else {
-                                format!(
-                                    "parents: {}",
-                                    rev.parents.iter().map(|p| short(p)).collect::<Vec<_>>().join(", ")
-                                )
-                            });
+                            .on_hover_text(
+                                if rev.parents.is_empty() {
+                                    "first revision".to_owned()
+                                } else {
+                                    format!(
+                                        "parents: {}",
+                                        rev.parents
+                                            .iter()
+                                            .map(|p| short(p))
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    )
+                                },
+                            );
                             ui.monospace(rev.short());
                             ui.label(labels.join(", "));
                             ui.label(rev.time.get(..16).unwrap_or(&rev.time).replace('T', " "));
@@ -483,14 +493,19 @@ impl VersionsWindow {
                                     }
                                     if !here
                                         && ui
-                                            .small_button("Check out")
-                                            .on_hover_text("This revision as the working line (no commits there)")
+                                            .small_button("New line from it")
+                                            .on_hover_text(
+                                                "A project line starting from this revision, to \
+                                                 work on (Lines › Project lines)",
+                                            )
                                             .clicked()
                                     {
+                                        let name = format!("from {}", rev.short());
                                         ops.push((
-                                            format!("revision {} checked out", rev.short()),
-                                            Op::Checkout {
-                                                target: rev.id.clone(),
+                                            format!("project line {name} started"),
+                                            Op::CreateLine {
+                                                name,
+                                                from: rev.id.clone(),
                                             },
                                         ));
                                     }

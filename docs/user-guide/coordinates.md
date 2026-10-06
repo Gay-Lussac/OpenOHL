@@ -46,8 +46,8 @@ ols crs line line.ols.json --to EPSG:32632 --out line-utm.ols.json
   the results on the clipboard.
 - **Reproject project…** moves the whole project into another (projected)
   system and writes it as a **new project file** (`<name> <system>.ols`
-  next to it by default; an existing file is never replaced): the working
-  line, the project lines saved, every terrain surface (the triangles are
+  next to it by default; an existing file is never replaced): every
+  project line, every terrain surface (the triangles are
   kept), every point cloud (each point moved and binned again, its
   class, intensity and returns kept; the levels of detail rebuilt) and
   every DXF drawing. Orthophotos are left out (they would need
