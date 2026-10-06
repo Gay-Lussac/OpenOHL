@@ -301,6 +301,12 @@ type Selected = (
 /// A stored block: id, count, z0, coordinates, intensities, returns.
 type StoredBlock = (i64, i64, i64, Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
 
+/// Moves points in place (e.g. an `ols_crs::Transformation`).
+pub type Move<'a> = &'a dyn Fn(&mut [[f64; 3]]) -> Result<(), String>;
+
+/// A block's columns as stored: xyz, intensities, returns.
+type BlockColumns = (Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
+
 /// Points of one block being imported (absolute integer coordinates).
 #[derive(Default)]
 struct Pending {
@@ -842,6 +848,130 @@ impl Store {
         self.update_summary(&cloud)?;
         self.build_lod(&cloud, budget, |_, _| {})?;
         Ok((self.cloud(Some(name))?, stats))
+    }
+
+    /// Moves `cloud` into coordinate system `crs` with `transform` (points
+    /// in place, e.g. an `ols_crs::Transformation`): every point is decoded,
+    /// moved and binned again (same chunk size, scale, classes,
+    /// intensities and returns), into a new cloud that then takes the old
+    /// one's name; the levels of detail are built again. `progress(points
+    /// moved, points)` after every block.
+    ///
+    /// Cost: ~1 µs per point (decoding, the transformation, binning,
+    /// compressing, levels); 10⁸ points take a few minutes. Memory: up to
+    /// 10 million points held between writes (~300 MB). Exit clause:
+    /// `budget`, checked per block; the partial new cloud is then removed
+    /// and the old one kept.
+    pub fn reproject_cloud(
+        &mut self,
+        cloud: &CloudInfo,
+        crs: &str,
+        transform: Move<'_>,
+        budget: &Budget,
+        mut progress: impl FnMut(u64, u64),
+    ) -> Result<CloudInfo, StoreError> {
+        let run = budget.start();
+        let temp = format!("{} (moving to {crs})", cloud.name);
+        self.delete_cloud(&temp)?;
+        let target = self.cloud_for_import(
+            &temp,
+            crs,
+            cloud.class_scheme.as_deref(),
+            cloud.chunk_size,
+            cloud.scale,
+        )?;
+        let blocks: Vec<(i64, i64, i64, u8, usize, i64)> = self
+            .conn
+            .prepare(
+                "SELECT id, cx, cy, class, count, z0 FROM pointcloud_block WHERE cloud = ?1
+                 ORDER BY cx, cy, class",
+            )?
+            .query_map(params![cloud.id], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get::<_, i64>(3)? as u8,
+                    r.get::<_, i64>(4)? as usize,
+                    r.get(5)?,
+                ))
+            })?
+            .collect::<Result<_, _>>()?;
+        let total: u64 = blocks.iter().map(|b| b.4 as u64).sum();
+        let (s, units) = (cloud.scale, (cloud.chunk_size / cloud.scale).round() as i64);
+        let tunits = (target.chunk_size / target.scale).round() as i64;
+        let result = (|| -> Result<(), StoreError> {
+            let mut pending: HashMap<(i64, i64, u8), Pending> = HashMap::new();
+            let (mut held, mut moved) = (0usize, 0u64);
+            for (id, cx, cy, class, n, z0) in &blocks {
+                run.check()
+                    .map_err(|stop| err(format!("stopped: {stop}")))?;
+                let (xyz, intensity, returns): BlockColumns = self.conn.query_row(
+                    "SELECT xyz, intensity, returns FROM pointcloud_block WHERE id = ?1",
+                    params![id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )?;
+                let (x, y, z) = Columns::decode_xyz(&xyz, *n).map_err(err)?;
+                let intensity = match &intensity {
+                    Some(b) => Columns::decode_intensity(b, *n).map_err(err)?,
+                    None => vec![0; *n],
+                };
+                let returns = match &returns {
+                    Some(b) => Columns::decode_returns(b, *n).map_err(err)?,
+                    None => vec![0; *n],
+                };
+                let mut points: Vec<[f64; 3]> = (0..*n)
+                    .map(|i| {
+                        [
+                            (cx * units + x[i] as i64) as f64 * s,
+                            (cy * units + y[i] as i64) as f64 * s,
+                            (z0 + z[i] as i64) as f64 * s,
+                        ]
+                    })
+                    .collect();
+                transform(&mut points).map_err(err)?;
+                let q = |v: f64| (v / target.scale).round() as i64;
+                for (i, p) in points.iter().enumerate() {
+                    let (x, y, z) = (q(p[0]), q(p[1]), q(p[2]));
+                    let b = pending
+                        .entry((x.div_euclid(tunits), y.div_euclid(tunits), *class))
+                        .or_default();
+                    b.x.push(x);
+                    b.y.push(y);
+                    b.z.push(z);
+                    b.intensity.push(intensity[i]);
+                    b.returns.push(returns[i]);
+                }
+                held += n;
+                moved += *n as u64;
+                if held >= 10_000_000 {
+                    self.write_pending(&target, std::mem::take(&mut pending), None)?;
+                    held = 0;
+                }
+                progress(moved, total);
+            }
+            self.write_pending(&target, pending, None)?;
+            self.conn.execute(
+                "INSERT INTO pointcloud_source (cloud, path, points, imported)
+                 SELECT ?1, path, points, imported FROM pointcloud_source WHERE cloud = ?2",
+                params![target.id, cloud.id],
+            )?;
+            self.update_summary(&target)?;
+            self.build_lod(&target, budget, |_, _| {})?;
+            Ok(())
+        })();
+        if let Err(e) = result {
+            let _ = self.delete_cloud(&temp);
+            return Err(e);
+        }
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM pointcloud WHERE id = ?1", params![cloud.id])?;
+        tx.execute(
+            "UPDATE pointcloud SET name = ?2 WHERE id = ?1",
+            params![target.id, cloud.name],
+        )?;
+        tx.commit()?;
+        self.cloud(Some(&cloud.name))
     }
 
     /// The cloud `name` to import into: created with these settings if

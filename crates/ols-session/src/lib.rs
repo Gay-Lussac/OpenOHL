@@ -2215,6 +2215,12 @@ impl Session {
         if entry_kind == "import" {
             return Err(refused("the import cannot be undone"));
         }
+        if entry_kind == "reproject" {
+            return Err(refused(
+                "the move into another coordinate system cannot be undone (the terrain would not \
+                 follow): reproject the project back instead",
+            ));
+        }
         if let Some(by) = undone_by {
             return Err(refused(format!("entry {seq} was already reversed by {by}")));
         }
@@ -2394,6 +2400,7 @@ impl Session {
 pub mod collab;
 pub mod impact;
 pub mod live;
+pub mod reproject;
 pub mod spatial;
 pub mod surfaces;
 pub mod versions;

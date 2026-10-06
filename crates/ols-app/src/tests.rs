@@ -5109,3 +5109,176 @@ fn the_bimetallic_model_is_chosen_for_the_line() {
     r.model.undo().unwrap();
     assert!(r.model.line.bimetallic.is_default());
 }
+
+/// A transverse Mercator projection centred on the synthetic line's origin
+/// (invented, for the tests).
+const LOCAL_TM: &str =
+    "+proj=tmerc +lat_0=46 +lon_0=8 +k=1 +x_0=0 +y_0=0 +ellps=GRS80 +units=m +no_defs";
+
+#[test]
+fn the_coordinate_system_is_defined_converted_and_the_project_reprojected() {
+    let model = synthetic_project("crs");
+    let file = model.sources.file.clone();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // Define: from the menu; the system typed as a proj4 string.
+    harness.get_by_label("Terrain").click();
+    harness.run();
+    harness.get_by_label_contains("Coordinate system").click();
+    harness.run();
+    harness.get_by_label("Define…").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let d = r.crs.define.as_mut().unwrap();
+        d.picker.category = crate::crs::Category::Proj4;
+        d.picker.proj4 = LOCAL_TM.into();
+        d.picker.spec = LOCAL_TM.into();
+    }
+    harness.run();
+    harness.get_by_label("OK").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.crs.define.is_none());
+    assert_eq!(r.model.line.crs, LOCAL_TM);
+    let e = r.model.editing.as_ref().unwrap();
+    assert_eq!(e.session.line().crs, LOCAL_TM, "kept in the project");
+    // The calculator opens with the project's system.
+    harness.get_by_label("Terrain").click();
+    harness.run();
+    harness.get_by_label_contains("Coordinate system").click();
+    harness.run();
+    harness
+        .get_by_label("Coordinate system calculator…")
+        .click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let c = r.crs.calculator.as_mut().unwrap();
+    assert_eq!(c.from.spec, LOCAL_TM);
+    c.input = "0 0 500\n\n# a note\n1000, 2000".into();
+    c.compute();
+    let out: Vec<&str> = c.output.lines().collect();
+    assert_eq!(out[0], "8.000000000 46.000000000 500.0000", "{}", c.output);
+    assert_eq!(&out[1..3], ["", "# a note"]);
+    assert!(out[3].starts_with("8.01"), "{}", c.output);
+    c.input = "1 2 3 4".into();
+    c.compute();
+    assert!(c.output.starts_with('—'), "{}", c.output);
+    r.crs.calculator = None;
+    harness.run();
+    // Reproject into UTM 32N: a new project, this one unchanged.
+    harness.get_by_label("Terrain").click();
+    harness.run();
+    harness.get_by_label_contains("Coordinate system").click();
+    harness.run();
+    harness.get_by_label("Reproject project…").click();
+    harness.run();
+    assert!(harness.state_mut().ready().unwrap().crs.reproject.is_some());
+    let target = file.with_file_name("moved.ols");
+    std::fs::remove_file(&target).ok();
+    {
+        let s = ols_session::Session::open(&file).unwrap();
+        s.put_surface(
+            "tester",
+            "ground",
+            "test",
+            &[[0.0, 0.0, 400.0], [500.0, 0.0, 410.0], [0.0, 500.0, 420.0]],
+            &[[0, 1, 2]],
+        )
+        .unwrap();
+    }
+    let mut store = ols_pointcloud::Store::open(&file).unwrap();
+    let pts = (0..50).map(|k| ols_lidar::LidarPoint {
+        x: k as f64 * 3.0,
+        y: 10.0,
+        z: 400.0,
+        class: 2,
+        intensity: 7,
+        return_number: 1,
+        number_of_returns: 1,
+    });
+    store
+        .import_points(
+            "lidar",
+            LOCAL_TM,
+            None,
+            64.0,
+            0.001,
+            pts,
+            &ols_core::budget::Budget::new(),
+        )
+        .unwrap();
+    drop(store);
+    let (from, to) = (
+        ols_crs::Crs::parse(LOCAL_TM).unwrap(),
+        ols_crs::Crs::parse("EPSG:32632").unwrap(),
+    );
+    let report =
+        crate::crs::reproject_file(&file, &target, &from, &to, "tester", &|_, _| {}).unwrap();
+    assert!(report.contains("1 surface"), "{report}");
+    let t = ols_crs::Transformation::new(&from, &to, ols_crs::Heights::Keep);
+    let old = ols_session::Session::open(&file).unwrap();
+    let new = ols_session::Session::open(&target).unwrap();
+    assert_eq!(old.line().crs, LOCAL_TM, "the old project is not changed");
+    assert_eq!(new.line().crs, "EPSG:32632");
+    for (a, b) in old.line().structures.iter().zip(&new.line().structures) {
+        let p = t.point(a.position).unwrap();
+        assert!((p[0] - b.position[0]).hypot(p[1] - b.position[1]) < 1e-6);
+        assert_eq!(p[2], b.position[2]);
+    }
+    let (points, _) = new.surface("ground").unwrap();
+    assert!((points[0][0] - t.point([0.0, 0.0, 400.0]).unwrap()[0]).abs() < 1e-6);
+    let store = ols_pointcloud::Store::open(&target).unwrap();
+    let cloud = store.cloud(Some("lidar")).unwrap();
+    assert_eq!((cloud.points, cloud.crs.as_str()), (50, "EPSG:32632"));
+    assert!(cloud.bounds[0][0] > 400_000.0, "{:?}", cloud.bounds);
+    // Not again into an existing file.
+    let r = harness.state_mut().ready().unwrap();
+    let err = crate::crs::reproject_check_for_tests(&r.model, "EPSG:32632", &target);
+    assert!(err.unwrap_err().contains("exists already"));
+}
+
+#[test]
+#[ignore = "writes images of the coordinate system windows to OLS_SHOTS (a look by eye)"]
+fn coordinate_system_window_images() {
+    let Ok(dir) = std::env::var("OLS_SHOTS") else {
+        return;
+    };
+    let model = synthetic_project("crs-shots");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let shot = |h: &mut Harness<'_, App>, name: &str| {
+        h.run();
+        h.render()
+            .unwrap()
+            .save(format!("{dir}/{name}.png"))
+            .unwrap();
+    };
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut p = crate::crs::Picker::new("EPSG:2056");
+        p.filter = "LV95".into();
+        r.crs.define = Some(crate::crs::Define { picker: p });
+    }
+    shot(&mut harness, "define");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.crs.define = None;
+        let mut c = crate::crs::Calculator::new(&r.model);
+        c.from = crate::crs::Picker::new(LOCAL_TM);
+        c.input = "0 0 500\n1000 2000".into();
+        c.compute();
+        r.crs.calculator = Some(c);
+    }
+    shot(&mut harness, "calculator");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.crs.calculator = None;
+        r.crs.reproject = Some(crate::crs::Reproject::new());
+    }
+    shot(&mut harness, "reproject");
+}

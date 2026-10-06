@@ -23,6 +23,7 @@ mod class_colors;
 mod clearance;
 mod codes;
 mod controls;
+mod crs;
 mod drawings;
 mod edit;
 mod editors;

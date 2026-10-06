@@ -228,6 +228,10 @@ pub struct Ready {
     pub creep_stretch_window: Option<ols_line::condition::CreepStretch>,
     /// Criteria › Bimetallic conductor model, when open: the choice.
     pub bimetallic_window: Option<ols_cables::BimetallicModel>,
+    /// Terrain › Coordinate system: its windows and the reprojection.
+    pub crs: crate::crs::Windows,
+    /// A project to open next (a reprojected copy).
+    pub open_project: Option<std::path::PathBuf>,
     /// Criteria › Design code.
     pub design_code: crate::codes::DesignCodeWindow,
     /// Add jumper: the first string right-clicked.
@@ -295,6 +299,8 @@ impl Ready {
             controls_window: None,
             creep_stretch_window: None,
             bimetallic_window: None,
+            crs: Default::default(),
+            open_project: None,
             design_code: Default::default(),
             jumper_from: None,
             open_page: None,
@@ -2170,6 +2176,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     controls_window(ctx, r);
     creep_stretch_window(ctx, r);
     bimetallic_window(ctx, r);
+    crs_windows(ctx, r);
     lines_window(ctx, r);
     crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
     r.bom.show(ctx, &r.model);
@@ -2251,6 +2258,45 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
     if !r.model.other_surfaces.is_empty() {
         layer(ui, Layer::Surfaces, "Other surfaces shown", r);
     }
+    ui.separator();
+    ui.menu_button("Coordinate system", |ui| {
+        ui.label(
+            egui::RichText::new(format!("Now: {}", ols_crs::describe(&r.model.line.crs)))
+                .small()
+                .weak(),
+        );
+        if ui
+            .button("Define…")
+            .on_hover_text(
+                "Which coordinate system the project's coordinates are in (nothing moves)",
+            )
+            .clicked()
+        {
+            r.crs.define = Some(crate::crs::Define {
+                picker: crate::crs::Picker::new(&r.model.line.crs),
+            });
+            ui.close();
+        }
+        if ui
+            .button("Coordinate system calculator…")
+            .on_hover_text("Converts points from one coordinate system to another")
+            .clicked()
+        {
+            r.crs.calculator = Some(crate::crs::Calculator::new(&r.model));
+            ui.close();
+        }
+        if ui
+            .add_enabled(r.crs.job.is_none(), egui::Button::new("Reproject project…"))
+            .on_hover_text(
+                "Moves the whole project (lines, surfaces, point clouds) into another \
+                 coordinate system, as a new project file",
+            )
+            .clicked()
+        {
+            r.crs.reproject = Some(crate::crs::Reproject::new());
+            ui.close();
+        }
+    });
     ui.separator();
     ui.menu_button("Survey data", |ui| {
         let busy = r.survey_job.is_some();
@@ -2432,6 +2478,26 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
 /// line's bimetallic cables do above the transition temperature, for the
 /// cables whose wire library entry does not say; OK makes it one command
 /// (every section is solved again).
+/// Terrain › Coordinate system: Define (an edit of the line's settings),
+/// Calculator, Reproject (a new project, opened when done).
+fn crs_windows(ctx: &egui::Context, r: &mut Ready) {
+    match r.crs.show(ctx, &r.model) {
+        Some(crate::crs::Request::Define(spec)) => {
+            if let Ok(e) = &r.model.editing {
+                let mut line = e.session.line().clone();
+                line.crs = spec;
+                let command = ols_session::line_settings_put(&line, None, None);
+                r.perform(crate::edit::Action::Command {
+                    what: "coordinate system".into(),
+                    command,
+                });
+            }
+        }
+        Some(crate::crs::Request::Open(path)) => r.open_project = Some(path),
+        None => {}
+    }
+}
+
 fn bimetallic_window(ctx: &egui::Context, r: &mut Ready) {
     use ols_cables::{BimetallicBehavior, DEFAULT_MAX_VIRTUAL_COMPRESSION};
     let Some(mut draft) = r.bimetallic_window else {
@@ -4527,7 +4593,9 @@ impl eframe::App for App {
                 }
                 let editable = ready.model.can_edit().map_err(|e| e.to_string());
                 self.plugins.format_ui(&ctx, &ready.model, editable);
-                if std::mem::take(&mut ready.reopen) {
+                if let Some(path) = ready.open_project.take() {
+                    self.file_action = Some(crate::files::FileAction::Open(Some(path)));
+                } else if std::mem::take(&mut ready.reopen) {
                     self.file_action = Some(crate::files::FileAction::Open(Some(
                         ready.model.sources.file.clone(),
                     )));

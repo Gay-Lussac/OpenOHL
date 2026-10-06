@@ -24,6 +24,41 @@ ols crs line line.ols.json --to EPSG:32632 --out line-utm.ols.json
   (a span of 82.206 m in LV95 is 82.183 m in UTM 32N): check spans and
   stringing after moving a line.
 
+## In the desktop application: Terrain › Coordinate system
+
+- **Define…** says which system the project's coordinates are in — nothing
+  moves. Choose it from the **EPSG** list (about 6000 systems; *Show only
+  systems containing* filters by name or code, e.g. `LV95`, `UTM zone 32N`,
+  `2056`), type a **proj4 string**, or read a **PRJ file**: WKT that names
+  its EPSG code (`AUTHORITY["EPSG","2056"]`, WKT 2 `ID["EPSG",2056]`), WKT
+  whose name is that of an EPSG system (Esri's `CH1903+_LV95` too), or a
+  proj4 string. Other WKT is not read: choose its EPSG system instead.
+  Lines are designed in projected systems, so geographic ones (longitude,
+  latitude) are refused. It is an edit of the line's settings: undone like
+  any other.
+- **Coordinate system calculator…** converts points: a system on each side
+  (the project's and WGS84 at first), one point per line, `X Y` or
+  `X Y Z` (separated by spaces, commas, semicolons or tabs; empty lines and
+  lines starting with `#` kept). The results follow as you type: degrees
+  with 9 decimals, metres with 4. **Heights are ellipsoidal** sends heights
+  through the datum shift (GNSS heights); unticked they are kept.
+  **Swap** turns it around (the results become the points). **Copy** puts
+  the results on the clipboard.
+- **Reproject project…** moves the whole project into another (projected)
+  system and writes it as a **new project file** (`<name> <system>.ols`
+  next to it by default; an existing file is never replaced): the working
+  line, the project lines saved, every terrain surface (the triangles are
+  kept) and every point cloud (each point moved and binned again, its
+  class, intensity and returns kept; the levels of detail rebuilt). The
+  project you are in is not changed. It runs in the background with a
+  progress bar (LiDAR: about 1 µs per point, so 100 million points take a few
+  minutes) and the new project opens when you close the progress window. The
+  project's own system must be defined first, and only an admin of the
+  project can reproject it. Heights are kept. In the new project the move
+  is a log entry of its own that cannot be undone (the terrain would not
+  follow): reproject back instead. The history of versions stays in the
+  old system.
+
 ## Accuracy
 
 Datum changes use the Helmert parameters of the definitions, not grid
