@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary};
 pub use structures::{
-    AllowedSpans, AttachmentCapacity, Capacity, Interaction, PlacedAttachment, SpanLimit,
+    AllowedSpans, AttachmentCapacity, Capacity, Detail, Interaction, PlacedAttachment, SpanLimit,
     StructureLibrary, StructureType, StructureWind, WindBand,
 };
 

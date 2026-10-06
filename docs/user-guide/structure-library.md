@@ -17,6 +17,7 @@ version = 1
 id = "DL380-tangent"              # letters, digits, - _ .
 name = "380 kV double circuit, tangent"
 kind = "lattice"                  # lattice | pole | portal | other
+detail = 1                        # 1 stick figure (default) | 2 outline | 3 full design
 source = "Drawing 12-345 rev B"
 
 [[attachment]]
@@ -44,6 +45,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | Field | Required | Meaning |
 |---|---|---|
 | `id`, `name`, `kind` | yes | Identity and family. |
+| `detail` | no | How much of the structure the file describes (below): 1 a stick figure (default), 2 the outline of the pylon, 3 a full design. |
 | `attachment` | no | Attachment points: `set`, `phase`, `point` (local), optional `label`, `insulator`, `side` (strain sets). Set/phase pairs are unique; points must not be below ground. |
 | `extension` | no | Named height offsets added to every attachment. |
 | `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest attachment) and a crossarm from the mast to every attachment point. |
@@ -51,6 +53,18 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `capacity` | no | What the type can carry, for the structure checks (below). |
 | `model` | no | Structure model (`.olsfe`, path relative to this file) for the finite-element check — see [Structure analysis](structure-analysis.md). |
 | `pole` | no | Pole id (a `.olsp` file in the same folder) for the pole check — see [Structure analysis](structure-analysis.md). |
+
+### Detail levels
+
+A structure file describes its structure at one of three levels (`detail`):
+
+| Level | What the file holds | Used for |
+|---|---|---|
+| **1 — stick figure** (default) | A mast and crossarms to the attachment points, generated or a few `[[body]]` lines. | Placing the wires, drawings, the 3D view. Every file written before the level existed is level 1. |
+| **2 — outline** | The outside of the full pylon as `[[body]]` sticks, diagonals allowed. Required: at least one `[[body]]` polyline. | Distance checks to the structure (more realistic than a stick figure). |
+| **3 — full design** | A finite-element model (`model = "….olsfe"`) holding every design element needed to build the structure. Required: `model`. | Structure analysis (finite elements) and fabrication. |
+
+Checks that depend on the structure's shape — distances from the wires to the structure body, structure analysis, insulator swing to the structure — behave differently at each level; each such check says in its documentation what it does for levels 1, 2 and 3. The structure's level is shown in its properties.
 
 ### Capacity
 
