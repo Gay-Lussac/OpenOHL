@@ -466,7 +466,7 @@ pub fn ui(
                 .get(case)
                 .and_then(|c| c.failed.iter().find(|f| f.starts_with(&format!("{id}:"))))
             {
-                ui.colored_label(egui::Color32::LIGHT_RED, why);
+                crate::menu::error_label(ui, why);
             }
         }
         Selection::Span { section, span } => {
@@ -575,7 +575,7 @@ pub fn ui(
                     .iter()
                     .find(|f| f.starts_with(&format!("{section}:")))
             }) {
-                ui.colored_label(egui::Color32::LIGHT_RED, why);
+                crate::menu::error_label(ui, why);
             }
         }
     });

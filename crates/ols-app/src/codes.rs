@@ -336,7 +336,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plug
             });
             if let Some((m, error)) = &w.status {
                 if *error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, m);
+                    crate::menu::error_label(ui, m);
                 } else {
                     ui.label(m);
                 }

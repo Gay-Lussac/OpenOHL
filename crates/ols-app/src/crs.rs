@@ -177,7 +177,7 @@ impl Picker {
                     self.read_prj(&path);
                 }
                 if let Some(e) = &self.prj_error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    crate::menu::error_label(ui, e);
                 }
             }
         }
@@ -401,7 +401,7 @@ impl Windows {
                         );
                     }
                     if let Err(why) = model.can_edit() {
-                        ui.colored_label(egui::Color32::LIGHT_RED, format!("read-only: {why}"));
+                        crate::menu::error_label(ui, format!("read-only: {why}"));
                     }
                     ui.horizontal(|ui| {
                         ok = ui
@@ -560,7 +560,7 @@ impl Windows {
                         .weak(),
                     );
                     if let Some(e) = &rp.error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, e);
+                        crate::menu::error_label(ui, e);
                     }
                     ui.horizontal(|ui| {
                         if ui

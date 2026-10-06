@@ -179,7 +179,7 @@ impl LoadsPage {
                 return None;
             }
             Some(Err(e)) => {
-                ui.colored_label(egui::Color32::LIGHT_RED, e);
+                crate::menu::error_label(ui, e);
                 return None;
             }
             Some(Ok(r)) => r,
@@ -266,7 +266,7 @@ impl LoadsPage {
             .small(),
         );
         for f in &r.failed {
-            ui.colored_label(egui::Color32::LIGHT_RED, format!("not solved: {f}"));
+            crate::menu::error_label(ui, format!("not solved: {f}"));
         }
         let filter = self.filter.trim().to_lowercase();
         egui::ScrollArea::vertical()

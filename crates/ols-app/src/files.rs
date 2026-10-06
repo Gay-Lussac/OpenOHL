@@ -344,7 +344,7 @@ impl ImportProjectWindow {
                          the blocks)",
                 );
                 if let Some(e) = &self.error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    crate::menu::error_label(ui, e);
                 }
                 if busy {
                     ui.horizontal(|ui| {
@@ -436,7 +436,7 @@ impl NewProject {
                     .weak(),
                 );
                 if let Some(e) = &self.error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    crate::menu::error_label(ui, e);
                 }
                 if ui.button("Choose where to save it and create…").clicked()
                     && let Some(path) = rfd::FileDialog::new()

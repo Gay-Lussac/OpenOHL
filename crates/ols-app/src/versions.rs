@@ -99,7 +99,7 @@ fn weak(ui: &mut egui::Ui, text: impl Into<String>) {
 }
 
 fn error(ui: &mut egui::Ui, text: &str) {
-    ui.colored_label(egui::Color32::LIGHT_RED, text);
+    crate::menu::error_label(ui, text);
 }
 
 fn value(v: &Option<serde_json::Value>) -> String {

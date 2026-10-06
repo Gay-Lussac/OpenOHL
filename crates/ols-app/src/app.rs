@@ -2596,7 +2596,7 @@ fn bimetallic_window(ctx: &egui::Context, r: &mut Ready) {
                 .small(),
             );
             if let Err(why) = r.model.can_edit() {
-                ui.colored_label(egui::Color32::LIGHT_RED, format!("read-only: {why}"));
+                crate::menu::error_label(ui, format!("read-only: {why}"));
             }
             ui.horizontal(|ui| {
                 ok = ui
@@ -2702,7 +2702,7 @@ fn creep_stretch_window(ctx: &egui::Context, r: &mut Ready) {
             }
             ui.separator();
             if let Err(why) = r.model.can_edit() {
-                ui.colored_label(egui::Color32::LIGHT_RED, format!("read-only: {why}"));
+                crate::menu::error_label(ui, format!("read-only: {why}"));
             }
             ui.horizontal(|ui| {
                 ok = ui
@@ -3401,7 +3401,7 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready) {
     tool_window(r, "editor", form.title()).show(ctx, |ui| {
         outcome = form.ui(ui, &r.model, r.case);
         if let Some((text, true)) = &r.status {
-            ui.colored_label(egui::Color32::LIGHT_RED, egui::RichText::new(text).small());
+            crate::menu::error_label(ui, egui::RichText::new(text).small());
         }
     });
     if outcome.is_none() {
@@ -3611,7 +3611,7 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     });
     match &c.rules {
         Some(Err(e)) => {
-            ui.colored_label(egui::Color32::LIGHT_RED, e);
+            crate::menu::error_label(ui, e);
         }
         Some(Ok(rules)) => {
             ui.label(egui::RichText::new(format!("{} rules", rules.len())).small());
@@ -3624,7 +3624,7 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     let mut go: Option<crate::clearance::Finding> = None;
     match &c.report {
         Some(Err(e)) => {
-            ui.colored_label(egui::Color32::LIGHT_RED, e);
+            crate::menu::error_label(ui, e);
         }
         Some(Ok(rep)) => {
             let n = rep.findings.len();
@@ -4419,7 +4419,7 @@ impl eframe::App for App {
             State::Failed(e) => {
                 egui::CentralPanel::default().show(ui, |ui| {
                     ui.heading(format!("Could not load {file}"));
-                    ui.colored_label(egui::Color32::LIGHT_RED, e.as_str());
+                    crate::menu::error_label(ui, e.as_str());
                 });
             }
             State::Ready(ready) => {
@@ -4465,7 +4465,7 @@ impl eframe::App for App {
                             ui.separator();
                             let t = egui::RichText::new(text).small();
                             if *error {
-                                ui.colored_label(egui::Color32::LIGHT_RED, t);
+                                crate::menu::error_label(ui, t);
                             } else {
                                 ui.label(t);
                             }

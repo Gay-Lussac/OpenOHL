@@ -2375,7 +2375,7 @@ impl TablePage {
         if let Some((m, error)) = &self.message {
             let t = egui::RichText::new(m).small();
             if *error {
-                ui.colored_label(egui::Color32::LIGHT_RED, t);
+                crate::menu::error_label(ui, t);
             } else {
                 ui.colored_label(egui::Color32::LIGHT_GREEN, t);
             }

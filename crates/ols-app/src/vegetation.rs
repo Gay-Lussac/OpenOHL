@@ -190,7 +190,7 @@ impl VegetationWindow {
                         return;
                     }
                     Some(Err(e)) => {
-                        ui.colored_label(egui::Color32::LIGHT_RED, e);
+                        crate::menu::error_label(ui, e);
                         return;
                     }
                     Some(Ok(r)) => r,

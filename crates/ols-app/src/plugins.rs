@@ -681,7 +681,7 @@ impl Plugins {
                                         }
                                     }
                                     match &problem {
-                                        Some(p) => ui.colored_label(egui::Color32::LIGHT_RED, p),
+                                        Some(p) => crate::menu::error_label(ui, p),
                                         None if !on => ui.label("off"),
                                         None if l.installed => ui.label("installed"),
                                         None => ui.label("in its folder"),
@@ -703,12 +703,12 @@ impl Plugins {
                     });
                 if let Some(f) = &self.formats {
                     for e in &f.errors {
-                        ui.colored_label(egui::Color32::LIGHT_RED, e);
+                        crate::menu::error_label(ui, e);
                     }
                 }
                 if let Some((t, error)) = &self.status {
                     if *error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, t);
+                        crate::menu::error_label(ui, t);
                     } else {
                         ui.label(t);
                     }
@@ -897,11 +897,11 @@ impl Plugins {
                         .weak(),
                     );
                     if let Err(why) = &editable {
-                        ui.colored_label(egui::Color32::LIGHT_RED, format!("read-only: {why}"));
+                        crate::menu::error_label(ui, format!("read-only: {why}"));
                     }
                 }
                 if let Some(e) = &w.error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    crate::menu::error_label(ui, e);
                 }
                 if w.busy {
                     ui.spinner();

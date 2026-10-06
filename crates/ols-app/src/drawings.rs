@@ -406,7 +406,7 @@ impl DrawingsWindow {
                     .weak(),
                 );
                 if let Some(e) = &self.error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    crate::menu::error_label(ui, e);
                 }
                 if ui.button("Export").clicked() {
                     match Input::new(model, case, self) {
