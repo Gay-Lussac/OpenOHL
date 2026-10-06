@@ -68,7 +68,7 @@ Under it, the **quick bar**: the line's name, the selection, then the commands c
 
 ## Level of detail
 
-The 3D view draws the large layers — terrain, LiDAR points, structures, wires, other weather cases, other project lines — in **chunks**: the 256 m tiles of the project grid (the grid of the project file's spatial index). Every frame, each chunk in view is drawn at a **level of detail** from its distance to the eye; chunks outside the view or beyond the layer's render distance are not drawn, and those far beyond (1.5 × the render distance) leave the GPU. Missing chunks are built nearest first, a few milliseconds per frame, so the view never freezes: until a chunk's level is built, a level already built is drawn. An edit rebuilds the layers of the line, not the terrain and the LiDAR points.
+The 3D view draws the large layers — terrain, LiDAR points, structures, wires, other weather cases, other project lines, DXF drawings — in **chunks**: the 256 m tiles of the project grid (the grid of the project file's spatial index). Every frame, each chunk in view is drawn at a **level of detail** from its distance to the eye; chunks outside the view or beyond the layer's render distance are not drawn, and those far beyond (1.5 × the render distance) leave the GPU. Missing chunks are built nearest first, a few milliseconds per frame, so the view never freezes: until a chunk's level is built, a level already built is drawn. An edit rebuilds the layers of the line, not the terrain and the LiDAR points.
 
 **View › Level of detail** (a page) is the table of these settings, a row per layer, every value typed in, remembered with the window layout:
 
@@ -78,6 +78,7 @@ The 3D view draws the large layers — terrain, LiDAR points, structures, wires,
 | LiDAR points held in memory | the share of the survey chosen in Survey data display options (default 25 %; 100 %: every point) | 25 % of that (500 m) | 5 % of that (1.5 km) | 3 km |
 | Structures | lattice, arms, strings | mast, arms and strings (2 km) | the mast line (8 km) | 50 km |
 | Wires, other cases, project lines | every point; bundles as subconductors with their yokes | 16 points per span, one line per bundle (1.5 km) | 5 points per span (6 km) | 50 km |
+| Drawings (DXF) | every vertex and point | lines simplified to 0.5 m, lines and points smaller left out (1 km) | simplified to 2 m (4 km) | 10 km |
 
 The last column of the table shows what was drawn in the last frame: the chunks at each level, of how many, and how many are still loading. On a 25 km line seen from 1.5 km, 5 million terrain triangles became 280 000 drawn, 1.5 million LiDAR points 24 000, and 190 000 wire segments 14 000; every chunk builds in under 2 ms.
 

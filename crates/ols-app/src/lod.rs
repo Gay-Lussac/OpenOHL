@@ -17,7 +17,7 @@ use ols_render::lod::LodRule;
 use crate::scene::Layer;
 
 /// The layers drawn in chunks with levels of detail.
-pub const CHUNKED: [Layer; 7] = [
+pub const CHUNKED: [Layer; 8] = [
     Layer::Ground,
     Layer::Surfaces,
     Layer::Points,
@@ -25,6 +25,7 @@ pub const CHUNKED: [Layer; 7] = [
     Layer::Wires,
     Layer::OtherCases,
     Layer::OtherLines,
+    Layer::Drawings,
 ];
 
 /// What levels 1 and 2 keep of a layer, by kind.
@@ -38,6 +39,9 @@ pub enum DetailKind {
     PerSpan,
     /// Fixed: level 1 mast, arms and strings, level 2 the mast line.
     Structure,
+    /// Lines simplified to this tolerance, m; lines and points smaller
+    /// left out (drawings).
+    Tolerance,
 }
 
 impl DetailKind {
@@ -47,6 +51,7 @@ impl DetailKind {
             Layer::Ground | Layer::Surfaces => DetailKind::Spacing,
             Layer::Points => DetailKind::Percent,
             Layer::Structures => DetailKind::Structure,
+            Layer::Drawings => DetailKind::Tolerance,
             _ => DetailKind::PerSpan,
         }
     }
@@ -58,6 +63,7 @@ impl DetailKind {
             DetailKind::Percent => "% of points",
             DetailKind::PerSpan => "points per span",
             DetailKind::Structure => "",
+            DetailKind::Tolerance => "m tolerance",
         }
     }
 
@@ -68,6 +74,10 @@ impl DetailKind {
             (DetailKind::Percent, 0) => "every point".into(),
             (DetailKind::PerSpan, 0) => "every point, bundles as subconductors".into(),
             (DetailKind::Structure, 0) => "lattice, arms and strings".into(),
+            (DetailKind::Tolerance, 0) => "every vertex and point".into(),
+            (DetailKind::Tolerance, _) => format!(
+                "lines simplified to {value} m; lines and points smaller than that left out"
+            ),
             (DetailKind::Structure, 1) => "mast, arms and strings".into(),
             (DetailKind::Structure, _) => "mast line".into(),
             (DetailKind::PerSpan, _) => format!("{value:.0} points per span, one line per bundle"),
@@ -103,6 +113,7 @@ impl LodRow {
             Layer::Ground | Layer::Surfaces => (30_000.0, [1_500.0, 5_000.0], [8.0, 32.0]),
             Layer::Points => (3_000.0, [500.0, 1_500.0], [25.0, 5.0]),
             Layer::Structures => (50_000.0, [2_000.0, 8_000.0], [0.0, 0.0]),
+            Layer::Drawings => (10_000.0, [1_000.0, 4_000.0], [0.5, 2.0]),
             _ => (50_000.0, [1_500.0, 6_000.0], [16.0, 5.0]),
         };
         Self {
@@ -123,6 +134,7 @@ impl LodRow {
             DetailKind::Percent => self.detail.iter().all(|v| *v > 0.0 && *v <= 100.0),
             DetailKind::PerSpan => self.detail.iter().all(|v| (2.0..=1000.0).contains(v)),
             DetailKind::Structure => true,
+            DetailKind::Tolerance => self.detail.iter().all(|v| (0.01..=1000.0).contains(v)),
         };
         if ok {
             Ok(())
@@ -191,6 +203,7 @@ fn key(layer: Layer) -> &'static str {
         Layer::Wires => "wires",
         Layer::OtherCases => "other-cases",
         Layer::OtherLines => "other-lines",
+        Layer::Drawings => "drawings",
         _ => "other",
     }
 }
@@ -316,6 +329,7 @@ impl LodSettings {
                         let range = match kind {
                             DetailKind::Spacing => (0.5, 1000.0),
                             DetailKind::Percent => (0.1, 100.0),
+                            DetailKind::Tolerance => (0.01, 1000.0),
                             _ => (2.0, 1000.0),
                         };
                         ui.horizontal(|ui| {
