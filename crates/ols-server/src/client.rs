@@ -54,13 +54,19 @@ pub struct Link {
     pub user: String,
     /// The server's address.
     pub address: String,
+    /// The project line the user works on: requests act on it.
+    pub line: String,
 }
 
 impl Link {
     /// Sends a request; returns its id (the [`ServerMsg::Response`] has it).
     pub fn request(&mut self, op: Op) -> Result<u64, String> {
         self.next += 1;
-        self.send(ClientMsg::Request { id: self.next, op })?;
+        self.send(ClientMsg::Request {
+            id: self.next,
+            op,
+            line: self.line.clone(),
+        })?;
         Ok(self.next)
     }
 
@@ -99,10 +105,11 @@ impl Link {
 pub fn replay(
     session: &mut Session,
     user: &str,
+    line: &str,
     op: &Op,
     seq: Option<i64>,
 ) -> Result<Option<Applied>, String> {
-    let applied = execute(session, user, op).map_err(|e| format!("replica: {e}"))?;
+    let applied = execute(session, user, line, op).map_err(|e| format!("replica: {e}"))?;
     let mine = applied.as_ref().map(|a| a.seq);
     if mine != seq {
         return Err(format!(
@@ -242,6 +249,7 @@ pub fn join(
                     next: 0,
                     user: user.to_owned(),
                     address,
+                    line: ols_session::versions::MAIN.to_owned(),
                 };
                 return Ok(*j);
             }
@@ -383,6 +391,7 @@ async fn connect(
                 next: 0,
                 user: String::new(),
                 address: String::new(),
+                line: String::new(),
             },
         },
     ))

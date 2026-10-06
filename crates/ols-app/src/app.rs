@@ -102,17 +102,6 @@ pub struct MoveDialog {
     pub shown: [f64; 3],
 }
 
-/// A window of the Lines menu.
-#[derive(Debug, Clone, PartialEq)]
-pub enum LinesWindow {
-    /// Save the working line as a project line: name, note.
-    Create(String, String),
-    /// Delete a project line.
-    Delete(String),
-    /// Make a project line the working line.
-    Restore(String),
-}
-
 /// A plugin window asked for from the menus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PluginRequest {
@@ -180,7 +169,7 @@ pub struct Ready {
     /// The "Display weather cases" window, when open: a tick per case.
     pub display_window: Option<DisplayWindow>,
     /// A window of the Lines menu, when open.
-    pub lines_window: Option<LinesWindow>,
+    pub lines_window: Option<crate::project_lines::LinesWindow>,
     /// The "Survey data display options" window, when open: its changes
     /// (applied with its Apply button).
     pub survey_window: Option<SurveyDraft>,
@@ -1646,7 +1635,11 @@ impl Ready {
         }
         match tool {
             Tool::Move => {
-                let target = ols_server::lock_target(ols_session::Kind::Structure, id);
+                let target = ols_server::lock_target(
+                    &self.model.project_line(),
+                    ols_session::Kind::Structure,
+                    id,
+                );
                 if let Some(user) = self.model.locked_by_other(&target) {
                     self.status = Some((format!("{id} is being moved by {user}"), true));
                     return;
@@ -1686,6 +1679,20 @@ impl Ready {
 
     /// A project edit (library, user, project line, rollback…), reported
     /// in the status bar; the views follow.
+    /// Works on project line `name` from now on (this user only): the
+    /// line is read and solved again, the views redrawn.
+    pub fn switch_line(&mut self, name: &str) {
+        match self.model.switch_line(name) {
+            Ok(m) if !m.is_empty() => self.status = Some((m, false)),
+            Ok(_) => {}
+            Err(e) => self.status = Some((e, true)),
+        }
+        self.selection = Selection::None;
+        self.clearances.stale = true;
+        self.view3d.dirty.extend(Layer::ALL);
+        self.refresh_views();
+    }
+
     pub fn project_op(&mut self, what: &str, op: ols_server::Op) {
         self.status = Some(match self.model.project_op(what, op) {
             Ok(report) => {
@@ -1726,6 +1733,17 @@ impl Ready {
             self.clearances.stale = true;
             self.refresh_views();
         }
+        let changed = std::mem::take(&mut self.model.lines_changed);
+        if !changed.is_empty() {
+            if changed.iter().any(String::is_empty)
+                && let Err(e) = self.model.reload_libraries()
+            {
+                self.status = Some((e, true));
+            }
+            self.model.refresh_lines(&changed);
+            self.view3d.dirty.insert(Layer::OtherLines);
+            self.refresh_views();
+        }
         let presence = ols_server::Presence {
             selection: self.selection.describe(),
             camera: self.view3d.camera.as_ref().map(|c| c.target),
@@ -1742,10 +1760,11 @@ impl Ready {
                 self.plan.peers = peers;
             }
         }
+        let line = self.model.project_line();
         let wanted = self
             .move_dialog
             .iter()
-            .map(|d| ols_server::lock_target(ols_session::Kind::Structure, &d.id))
+            .map(|d| ols_server::lock_target(&line, ols_session::Kind::Structure, &d.id))
             .collect();
         self.model.hold(wanted);
     }
@@ -1826,7 +1845,7 @@ impl Ready {
     /// After the line changed: the 3D layers of the line (not the ground
     /// and the LiDAR points: an edit does not change them, and indexing
     /// 5 million triangles took 0.3 s) and the profile again.
-    fn refresh_views(&mut self) {
+    pub(crate) fn refresh_views(&mut self) {
         self.view3d.dirty.extend(
             Layer::ALL
                 .into_iter()
@@ -2185,7 +2204,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     if r.backgrounds.show(ctx, &r.model) {
         r.reopen = true;
     }
-    lines_window(ctx, r);
+    crate::project_lines::window(ctx, r);
     crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
     r.bom.show(ctx, &r.model);
     r.spot.show(ctx, &r.model);
@@ -2230,9 +2249,6 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
-/// The Lines menu: the project lines (frozen states of the line, e.g. as
-/// built and as planned) to show next to the working line, to make the
-/// working line; create and delete them.
 /// The Terrain menu: the ground surface (TIN) and the LiDAR points, with
 /// the classes drawn.
 fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
@@ -3084,206 +3100,6 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
     r.survey_window = open.then_some(draft);
 }
 
-fn lines_menu(ui: &mut egui::Ui, r: &mut Ready) {
-    let snapshots = match &r.model.editing {
-        Ok(e) => e.session.snapshots().map_err(|e| e.to_string()),
-        Err(why) => Err(format!("read-only: {why}")),
-    };
-    let snapshots = match snapshots {
-        Ok(s) => s,
-        Err(e) => {
-            ui.label(egui::RichText::new(e).small());
-            return;
-        }
-    };
-    ui.menu_button("Project lines", |ui| {
-        ui.label(
-            egui::RichText::new(format!("{} — the working line (edited)", r.model.line.name))
-                .strong(),
-        );
-        if snapshots.is_empty() {
-            ui.label(egui::RichText::new("No saved line yet: Lines › Create line…").small());
-        }
-        let mut toggle: Option<(String, bool)> = None;
-        for s in &snapshots {
-            ui.horizontal(|ui| {
-                let mut on = r.model.other_lines.iter().any(|o| o.name == s.name);
-                let colour = r
-                    .model
-                    .other_lines
-                    .iter()
-                    .find(|o| o.name == s.name)
-                    .map(|o| egui::Color32::from_rgb(o.color[0], o.color[1], o.color[2]));
-                let mut text = egui::RichText::new(&s.name);
-                if let Some(c) = colour {
-                    text = text.color(c);
-                }
-                if ui
-                    .checkbox(&mut on, text)
-                    .on_hover_text(format!(
-                        "saved {} by {}{}\ntick: show it next to the working line",
-                        s.time.get(..16).unwrap_or(&s.time).replace('T', " "),
-                        s.user,
-                        if s.note.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" — {}", s.note)
-                        }
-                    ))
-                    .changed()
-                {
-                    toggle = Some((s.name.clone(), on));
-                }
-                if ui.small_button("make it the working line…").clicked() {
-                    r.lines_window = Some(LinesWindow::Restore(s.name.clone()));
-                    ui.close();
-                }
-            });
-        }
-        if let Some((name, on)) = toggle {
-            if on {
-                match r.model.show_line(&name) {
-                    Ok(m) => r.status = Some((m, false)),
-                    Err(e) => r.status = Some((e, true)),
-                }
-            } else {
-                r.model.other_lines.retain(|o| o.name != name);
-            }
-            r.view3d.dirty.insert(Layer::OtherLines);
-        }
-    });
-    ui.separator();
-    if ui
-        .button("Create line…")
-        .on_hover_text(
-            "Freeze the working line as it is now (e.g. as built), to compare or draw later",
-        )
-        .clicked()
-    {
-        let name = crate::editors::next_id(snapshots.iter().map(|s| s.name.as_str()), "line 0");
-        r.lines_window = Some(LinesWindow::Create(name, String::new()));
-        ui.close();
-    }
-    ui.add_enabled_ui(!snapshots.is_empty(), |ui| {
-        ui.menu_button("Delete line", |ui| {
-            for s in &snapshots {
-                if ui.button(&s.name).clicked() {
-                    r.lines_window = Some(LinesWindow::Delete(s.name.clone()));
-                    ui.close();
-                }
-            }
-        });
-    });
-}
-
-/// The windows of the Lines menu.
-fn lines_window(ctx: &egui::Context, r: &mut Ready) {
-    let Some(mut w) = r.lines_window.clone() else {
-        return;
-    };
-    let (mut ok, mut cancel) = (false, false);
-    let title = match &w {
-        LinesWindow::Create(..) => "Create project line".to_owned(),
-        LinesWindow::Delete(n) => format!("Delete project line {n}?"),
-        LinesWindow::Restore(n) => format!("Make {n} the working line?"),
-    };
-    tool_window(r, "lines", title).show(ctx, |ui| {
-        match &mut w {
-            LinesWindow::Create(name, note) => {
-                ui.label("Saves the working line as it is now, to show next to it later (e.g. as built, as planned) or to draw.");
-                egui::Grid::new("create-line").num_columns(2).show(ui, |ui| {
-                    ui.label("name");
-                    ui.text_edit_singleline(name);
-                    ui.end_row();
-                    ui.label("note");
-                    ui.text_edit_singleline(note);
-                    ui.end_row();
-                });
-            }
-            LinesWindow::Delete(_) => {
-                ui.label("The project line is deleted; the working line is not touched. This is not undone with ⌘Z.");
-            }
-            LinesWindow::Restore(_) => {
-                ui.label("The working line is replaced by this project line — one log entry: ⌘Z (Undo) brings the working line back. To keep the working line as it is now, Create line first.");
-            }
-        }
-        ui.horizontal(|ui| {
-            ok |= ui
-                .button(match &w {
-                    LinesWindow::Create(..) => "Create",
-                    LinesWindow::Delete(_) => "Delete",
-                    LinesWindow::Restore(_) => "Make it the working line",
-                })
-                .clicked();
-            cancel |= ui.button("Cancel").on_hover_text("Escape").clicked();
-        });
-    });
-    cancel |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
-    if cancel {
-        r.lines_window = None;
-        return;
-    }
-    if !ok {
-        r.lines_window = Some(w);
-        return;
-    }
-    let Ok(e) = &r.model.editing else {
-        r.status = Some(("read-only: open a project to edit".into(), true));
-        r.lines_window = None;
-        return;
-    };
-    let result = match &w {
-        LinesWindow::Create(name, note) => {
-            let what = format!("project line \"{}\" saved", name.trim());
-            r.model
-                .project_op(
-                    &what,
-                    ols_server::Op::SaveSnapshot {
-                        name: name.clone(),
-                        note: note.clone(),
-                    },
-                )
-                .map(|_| what)
-                .map_err(|e| e.to_string())
-        }
-        LinesWindow::Delete(name) => {
-            let what = format!("project line \"{name}\" deleted");
-            r.model
-                .project_op(&what, ols_server::Op::DeleteSnapshot { name: name.clone() })
-                .map(|_| what)
-                .map_err(|e| e.to_string())
-        }
-        LinesWindow::Restore(name) => match e.session.snapshot(name) {
-            Ok(line) => {
-                // One command: undone with the others.
-                r.perform(crate::edit::Action::Command {
-                    what: format!("made project line {name} the working line"),
-                    command: ols_session::Command::ReplaceLine {
-                        line: Box::new(line),
-                    },
-                });
-                r.lines_window = None;
-                return;
-            }
-            Err(e) => Err(e.to_string()),
-        },
-    };
-    match result {
-        Ok(m) => {
-            if let LinesWindow::Delete(name) = &w {
-                r.model.other_lines.retain(|o| &o.name != name);
-                r.view3d.dirty.insert(Layer::OtherLines);
-            }
-            r.status = Some((m, false));
-            r.lines_window = None;
-        }
-        Err(e) => {
-            r.status = Some((e, true));
-            r.lines_window = Some(w);
-        }
-    }
-}
-
 /// The state of the "Display weather cases" window.
 #[derive(Debug, Clone)]
 pub struct DisplayWindow {
@@ -3754,7 +3570,7 @@ fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
     if ui
         .button("Import into the line…")
         .on_hover_text(
-            "Read a file into the working line (built-in formats and those of the plugins); \
+            "Read a file into the line you work on (built-in formats and those of the plugins); \
              one command, undoable",
         )
         .clicked()
@@ -3888,7 +3704,7 @@ fn menus(
             ui.close();
         }
     });
-    crate::menu::options_menu(ui, "Lines", |ui| lines_menu(ui, r));
+    crate::menu::options_menu(ui, "Lines", |ui| crate::project_lines::menu(ui, r));
     ui.menu_button("Tools", |ui| {
         item(ui, Command::Inventory, out);
         if ui

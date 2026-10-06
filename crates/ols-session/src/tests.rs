@@ -773,55 +773,6 @@ fn settings_are_kept_with_the_project() {
 }
 
 #[test]
-fn project_lines_are_saved_compared_and_made_the_working_line() {
-    let (path, mut s) = project("snapshots");
-    s.save_snapshot("ben", "as built", "before the works")
-        .unwrap();
-    assert!(
-        s.save_snapshot("ben", "as built", "").is_err(),
-        "names are unique"
-    );
-    assert!(
-        s.save_snapshot("vic", "viewer", "").is_err(),
-        "viewers may not"
-    );
-    // The working line changes; the saved one does not.
-    s.apply(
-        "ben",
-        Command::DeleteStructure {
-            id: "T7".into(),
-            confirm: true,
-        },
-    )
-    .unwrap();
-    assert_eq!(s.snapshot("as built").unwrap(), example());
-    let list = s.snapshots().unwrap();
-    assert_eq!(list.len(), 1);
-    assert_eq!(
-        (list[0].name.as_str(), list[0].user.as_str()),
-        ("as built", "ben")
-    );
-    // Made the working line again: one entry, undone at once.
-    let back = s.snapshot("as built").unwrap();
-    s.apply(
-        "ben",
-        Command::ReplaceLine {
-            line: Box::new(back),
-        },
-    )
-    .unwrap();
-    assert_eq!(s.export(), example());
-    s.undo("ben").unwrap();
-    assert!(s.line().structure("T7").is_none());
-    s.checkpoint().unwrap();
-    drop(s);
-    let again = Session::open(&path).unwrap();
-    assert_eq!(again.snapshots().unwrap().len(), 1);
-    again.delete_snapshot("ben", "as built").unwrap();
-    assert!(again.snapshots().unwrap().is_empty());
-}
-
-#[test]
 fn library_files_are_kept_in_the_project() {
     let (path, s) = project("libraries");
     assert!(s.library_files("cables").unwrap().is_empty());
@@ -883,7 +834,7 @@ fn library_file_names_are_plain() {
 #[test]
 fn reprojecting_moves_line_saved_lines_and_surfaces() {
     let (_path, mut s) = project("reproject");
-    s.save_snapshot("ana", "as built", "").unwrap();
+    s.create_line("ana", "as built", "main").unwrap();
     s.put_surface(
         "ana",
         "ground",
@@ -914,7 +865,7 @@ fn reprojecting_moves_line_saved_lines_and_surfaces() {
         );
         assert!((a.orientation_deg - b.orientation_deg).abs() < 1e-9);
     }
-    let saved = s.snapshot("as built").unwrap();
+    let saved = s.line_named("as built").unwrap().clone();
     assert_eq!(saved.crs, "EPSG:32632");
     assert_eq!(saved.structures[0].position, moved.structures[0].position);
     let (points, tris) = s.surface("ground").unwrap();

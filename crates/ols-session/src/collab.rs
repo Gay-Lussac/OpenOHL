@@ -615,9 +615,9 @@ impl Session {
                 review.branch
             )));
         }
-        if self.head()? != crate::versions::Head::Branch(review.target.clone()) {
+        if !self.is_line(&review.target) {
             return Err(refused(format!(
-                "check out {} first (the review merges into it)",
+                "project line {} (the review's target) does not exist any more",
                 review.target
             )));
         }
@@ -627,7 +627,12 @@ impl Session {
                 review.branch, review.target
             )
         });
-        let outcome = self.merge_as(user, &review.revision, Some(&message), choices, true)?;
+        // Merged into its target, whichever line the user works on.
+        let target = review.target.clone();
+        let revision = review.revision.clone();
+        let outcome = self.with_line(&target, |s| {
+            s.merge_as(user, &revision, Some(&message), choices, true)
+        })?;
         let tx = self.conn.unchecked_transaction()?;
         tx.execute(
             "UPDATE vc_review SET state = 'merged' WHERE id = ?1",

@@ -40,6 +40,7 @@ mod octree;
 mod plan;
 mod plugins;
 mod profile;
+mod project_lines;
 mod properties;
 mod python;
 mod remote;

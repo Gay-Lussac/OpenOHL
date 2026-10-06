@@ -65,25 +65,18 @@ fn commit_checkout_round_trip() {
     let st = s.status().unwrap();
     assert_eq!(st.changes.objects.len(), 1);
     assert_eq!(st.changes.objects[0].id, "T6");
-    // Uncommitted changes: no checkout.
-    let refused = s.checkout("ben", "main").unwrap_err();
-    assert!(refused.to_string().contains("uncommitted"), "{refused}");
-    let moved = s.commit("ben", "T6 moved 5 m").unwrap();
-    assert_eq!(moved.parents, vec![first.clone()]);
-    assert_eq!(moved.author, "ben");
-
-    // Back to main: T6 where it was; to alt: moved again.
+    // Each branch is a project line with its own working state: a
+    // checkout only chooses the line worked on, uncommitted changes and
+    // all, and changes nothing.
     let (applied, libs) = s.checkout("ben", "main").unwrap();
-    assert!(applied.is_some() && !libs);
+    assert!(applied.is_none() && !libs);
     assert_eq!(position(&s, "T6"), t6);
     s.checkout("ben", "alt").unwrap();
     assert_eq!(position(&s, "T6")[0], t6[0] + 5.0);
-
-    // A checkout is one logged command, undone like any other.
+    let moved = s.commit("ben", "T6 moved 5 m").unwrap();
+    assert_eq!(moved.parents, vec![first.clone()]);
+    assert_eq!(moved.author, "ben");
     s.checkout("ben", "main").unwrap();
-    s.undo("ben").unwrap();
-    assert_eq!(position(&s, "T6")[0], t6[0] + 5.0);
-    s.redo("ben").unwrap();
     assert_eq!(position(&s, "T6"), t6);
 
     // Revisions survive reopening; ids are content hashes.
@@ -244,16 +237,18 @@ fn tags_and_detached_revisions() {
     shift(&mut s, "ana", "T2", 1.0).unwrap();
     s.commit("ana", "T2 moved").unwrap();
     assert_eq!(s.resolve_revision("IFC rev A").unwrap(), first);
-    s.checkout("ana", "IFC rev A").unwrap();
-    assert_eq!(s.head().unwrap(), Head::Detached(first.clone()));
-    shift(&mut s, "ana", "T2", 1.0).unwrap();
+    // A tag is not worked on: a line is made from it.
     assert!(
-        s.commit("ana", "here")
+        s.checkout("ana", "IFC rev A")
             .unwrap_err()
             .to_string()
-            .contains("make a branch")
+            .contains("make a line")
     );
-    s.undo("ana").unwrap();
+    let t2 = position(&s, "T2");
+    s.create_line("ana", "as issued", "IFC rev A").unwrap();
+    s.checkout("ana", "as issued").unwrap();
+    assert_eq!(position(&s, "T2")[0], t2[0] - 1.0);
+    assert_eq!(s.head_revision().unwrap(), Some(first.clone()));
     s.checkout("ana", "main").unwrap();
     // Deleting asks first and lists what goes; tags: admins only.
     assert!(s.delete_ref("ben", "IFC rev A", true).is_err());
@@ -318,9 +313,10 @@ fn grants_limit_edits() {
     // Admins are not limited; libraries need a grant naming them.
     shift(&mut s, "ana", "T6", 1.0).unwrap();
     assert!(s.put_library_file("ben", "cables", "a.olsw", "").is_err());
-    // Limited users do not replace the working state.
+    // Limited users do not merge (they may still look at other lines).
     s.commit("ana", "one").unwrap();
-    assert!(s.checkout("ben", "main").is_err());
+    assert!(s.merge("ben", "main", None, &Choices::new()).is_err());
+    s.checkout("ben", "main").unwrap();
 
     // An area around T6 for every designer.
     let p = position(&s, "T6");

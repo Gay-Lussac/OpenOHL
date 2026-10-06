@@ -45,7 +45,7 @@
 //! vc_blob(hash PRIMARY KEY, data)                    -- zstd of the text
 //! vc_revision(id PRIMARY KEY, parents, author, time, message, tree, seq)
 //! vc_ref(name PRIMARY KEY, kind, revision, protected, user, time, note)
-//! ols_meta('vc_head')                                -- branch:NAME or revision:ID
+//! ols_meta('vc_head')                                -- branch:NAME, the line the file opens on
 //! ```
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -1043,7 +1043,7 @@ impl Session {
         .collect()
     }
 
-    fn find_ref(&self, name: &str) -> Result<Option<Ref>, SessionError> {
+    pub(crate) fn find_ref(&self, name: &str) -> Result<Option<Ref>, SessionError> {
         Ok(self.refs()?.into_iter().find(|r| r.name == name))
     }
 
@@ -1056,35 +1056,10 @@ impl Session {
         }
     }
 
-    /// What the working state belongs to.
+    /// What the working state belongs to: the project line worked on
+    /// ([`crate::lines`]).
     pub fn head(&self) -> Result<Head, SessionError> {
-        let v: String = self
-            .conn
-            .query_row(
-                "SELECT value FROM ols_meta WHERE key = 'vc_head'",
-                [],
-                |r| r.get(0),
-            )
-            .optional()?
-            .unwrap_or_else(|| format!("branch:{MAIN}"));
-        Ok(match v.split_once(':') {
-            Some(("revision", id)) => Head::Detached(id.to_owned()),
-            Some((_, b)) => Head::Branch(b.to_owned()),
-            None => Head::Branch(v),
-        })
-    }
-
-    fn set_head(&self, head: &Head) -> Result<(), SessionError> {
-        let v = match head {
-            Head::Branch(b) => format!("branch:{b}"),
-            Head::Detached(id) => format!("revision:{id}"),
-        };
-        self.conn.execute(
-            "INSERT INTO ols_meta (key, value) VALUES ('vc_head', ?1)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![v],
-        )?;
-        Ok(())
+        Ok(Head::Branch(self.current.clone()))
     }
 
     /// The head's revision (`None`: no commit yet).
@@ -1205,13 +1180,7 @@ impl Session {
     }
 
     fn current_branch(&self) -> Result<String, SessionError> {
-        match self.head()? {
-            Head::Branch(b) => Ok(b),
-            Head::Detached(id) => Err(refused(format!(
-                "revision {} is checked out, not a branch: make a branch there first",
-                short(&id)
-            ))),
-        }
+        Ok(self.current.clone())
     }
 
     /// Refuses changes of a protected branch by anyone but an admin
@@ -1232,7 +1201,7 @@ impl Session {
     }
 
     /// Writes a revision of `state` and moves `branch` to it.
-    fn write_revision(
+    pub(crate) fn write_revision(
         &self,
         user: &str,
         state: &State,
@@ -1309,7 +1278,7 @@ impl Session {
         )
     }
 
-    fn check_ref_name(&self, name: &str) -> Result<String, SessionError> {
+    pub(crate) fn check_ref_name(&self, name: &str) -> Result<String, SessionError> {
         let name = name.trim();
         let ok = !name.is_empty()
             && name.len() <= 100
@@ -1329,27 +1298,18 @@ impl Session {
         Ok(name.to_owned())
     }
 
-    /// Makes branch `name` at revision `at` (default: the head's). The
-    /// working state stays where it is: check the branch out to work on it.
+    /// Makes branch `name` at `at` (a line, revision or tag; default: the
+    /// line worked on): a new project line ([`Session::create_line`]).
+    /// Returns its revision (`None`: from a line with nothing committed).
     pub fn create_branch(
-        &self,
+        &mut self,
         user: &str,
         name: &str,
         at: Option<&str>,
-    ) -> Result<String, SessionError> {
-        self.require(user, Role::Designer)?;
-        let name = self.check_ref_name(name)?;
-        let rev = match at {
-            Some(a) => self.resolve_revision(a)?,
-            None => self
-                .head_revision()?
-                .ok_or_else(|| refused("no revision yet: commit first"))?,
-        };
-        self.conn.execute(
-            "INSERT INTO vc_ref (name, kind, revision, user) VALUES (?1, 'branch', ?2, ?3)",
-            params![name, rev, user],
-        )?;
-        Ok(rev)
+    ) -> Result<Option<String>, SessionError> {
+        let from = at.map_or_else(|| self.current.clone(), str::to_owned);
+        self.create_line(user, name, &from)?;
+        self.branch_revision(name.trim())
     }
 
     /// Names revision `at` (default: the head's) for good, e.g. an issued
@@ -1469,13 +1429,20 @@ impl Session {
     /// Revisions stay in the file: a branch or tag made at the listed
     /// revision brings it back. Tags and protected branches: admins only.
     pub fn delete_ref(
-        &self,
+        &mut self,
         user: &str,
         name: &str,
         confirm: bool,
     ) -> Result<RefDeletion, SessionError> {
         self.require(user, Role::Designer)?;
         let d = self.ref_deletion(name)?;
+        if d.kind == RefKind::Branch && self.is_line(name) {
+            if !confirm {
+                return Err(refused(format!("{d} — repeat with confirmation to apply")));
+            }
+            self.delete_line(user, name)?;
+            return Ok(d);
+        }
         let protected = self.find_ref(name)?.is_some_and(|r| r.protected);
         if d.kind == RefKind::Tag || protected {
             self.require(user, Role::Admin)?;
@@ -1576,39 +1543,32 @@ impl Session {
         Ok((applied, changed))
     }
 
-    /// Makes branch `target` (or a tag or revision: detached, no commits
-    /// there) the working state, as one logged, undoable command. Refused
-    /// while the working state has uncommitted changes, and for users whose
-    /// edits are limited ([`crate::collab`]). Returns the line's change
-    /// (`None`: the line is the same) and whether library files changed.
-    ///
-    /// In server mode every user shares the working state: a checkout
-    /// switches it for all.
+    /// Works on project line `target` from now on ([`Session::select_line`])
+    /// and keeps it as the line the file opens on (command-line tools work
+    /// on it; the application remembers each user's own). Nothing of the
+    /// lines changes. Revisions and tags are not worked on directly: make a
+    /// line from them ([`Session::create_line`]). Returns no change of the
+    /// line stored (`None`) and no library change.
     pub fn checkout(
         &mut self,
         user: &str,
         target: &str,
     ) -> Result<(Option<Applied>, bool), SessionError> {
-        self.require(user, Role::Designer)?;
-        self.require_unrestricted(user)?;
-        self.require_clean()?;
+        self.require(user, Role::Viewer)?;
         let target = target.trim();
-        let (head, rev) = match self.find_ref(target)? {
-            Some(r) if r.kind == RefKind::Branch => (Head::Branch(r.name), r.revision),
-            _ => {
-                let id = self.resolve_revision(target)?;
-                (Head::Detached(id.clone()), Some(id))
-            }
-        };
-        let out = match &rev {
-            Some(id) => {
-                let state = self.revision_state(id)?;
-                self.set_working(user, &state, &format!("check out {target} ({})", short(id)))?
-            }
-            None => (None, false),
-        };
-        self.set_head(&head)?;
-        Ok(out)
+        if !self.is_line(target) {
+            self.resolve_revision(target)?;
+            return Err(refused(format!(
+                "\"{target}\" is a revision, not a project line: make a line from it to work on it"
+            )));
+        }
+        self.select_line(target)?;
+        self.conn.execute(
+            "INSERT INTO ols_meta (key, value) VALUES ('vc_head', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![format!("branch:{target}")],
+        )?;
+        Ok((None, false))
     }
 
     /// Works out merging `other` (branch, tag or revision) into the current
@@ -1856,7 +1816,7 @@ impl Session {
     /// existing one moved forward. Then merge it as any branch. Returns the
     /// number of new revisions.
     pub fn import_bundle(
-        &self,
+        &mut self,
         user: &str,
         bundle: &Bundle,
         as_branch: Option<&str>,
@@ -1920,6 +1880,13 @@ impl Session {
                         "\"{name}\" is the current branch: import under another name and merge it"
                     )));
                 }
+                if self.is_line(&name)
+                    && self.with_line(&name, |s| Ok(!s.status()?.changes.is_empty()))?
+                {
+                    return Err(refused(format!(
+                        "project line \"{name}\" has uncommitted changes: import under another name and bring it in"
+                    )));
+                }
                 self.check_branch_write(user, &name, false)?;
                 if let Some(at) = &r.revision {
                     // Moved forward only: the branch's revision must be in
@@ -1958,13 +1925,17 @@ impl Session {
                 "UPDATE vc_ref SET revision = ?1 WHERE name = ?2",
                 params![bundle.head, name],
             )?;
-        } else {
-            tx.execute(
-                "INSERT INTO vc_ref (name, kind, revision, user) VALUES (?1, 'branch', ?2, ?3)",
-                params![name, bundle.head, user],
-            )?;
         }
         tx.commit()?;
+        // The line's working state: the bundle's head.
+        if existing.is_some() && self.is_line(&name) {
+            let state = self.revision_state(&bundle.head)?;
+            self.with_line(&name, |s| {
+                s.set_working(user, &state, &format!("bundle {} imported", bundle.branch))
+            })?;
+        } else if existing.is_none() {
+            self.create_line(user, &name, &bundle.head)?;
+        }
         Ok(new.len())
     }
 }

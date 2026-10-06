@@ -69,8 +69,14 @@ impl Client {
             assert!(started.elapsed() < Duration::from_secs(10), "{got:?}");
             match self.joined.link.recv_timeout(Duration::from_millis(50)) {
                 Some(Incoming::Msg(m)) => {
-                    if let ServerMsg::Applied { user, op, seq } = &m {
-                        replay(&mut self.replica, user, op, *seq).unwrap();
+                    if let ServerMsg::Applied {
+                        user,
+                        op,
+                        line,
+                        seq,
+                    } = &m
+                    {
+                        replay(&mut self.replica, user, line, op, *seq).unwrap();
                     }
                     let stop = until(&m);
                     got.push(m);
@@ -159,7 +165,7 @@ fn users_share_a_project() {
     assert_eq!(position(&bob.replica, &id), p0);
 
     // Alice holds the structure: bob's move is refused.
-    let target = crate::lock_target(ols_session::Kind::Structure, &id);
+    let target = crate::lock_target("main", ols_session::Kind::Structure, &id);
     alice
         .joined
         .link
@@ -352,6 +358,7 @@ fn viewers_may_not_change_settings_and_names_are_checked() {
     crate::execute(
         &mut s,
         "alice",
+        "main",
         &Op::SetUser {
             name: "carol".into(),
             role: Role::Viewer,
@@ -362,8 +369,8 @@ fn viewers_may_not_change_settings_and_names_are_checked() {
         key: "app.check_surface".into(),
         value: Some("x".into()),
     };
-    assert!(crate::execute(&mut s, "carol", &set).is_err());
-    assert!(crate::execute(&mut s, "bob", &set).is_ok());
+    assert!(crate::execute(&mut s, "carol", "main", &set).is_err());
+    assert!(crate::execute(&mut s, "bob", "main", &set).is_ok());
     assert!(crate::check_name("bob").is_ok());
     for bad in ["", " bob", "bob\n", &"x".repeat(crate::MAX_NAME + 1)] {
         assert!(crate::check_name(bad).is_err(), "{bad:?}");
@@ -386,41 +393,34 @@ fn replicas_follow_version_control() {
     let mut replica = Session::open(&copy).unwrap();
     let id = server.line().structures[5].id.clone();
     let p = position(&server, &id);
+    // Bob works on a phase line while alice stays on main.
     let ops = [
         (
             "alice",
+            "main",
             Op::Commit {
                 message: "first".into(),
             },
         ),
         (
             "bob",
-            Op::CreateBranch {
+            "main",
+            Op::CreateLine {
                 name: "alt".into(),
-                at: None,
+                from: "main".into(),
             },
         ),
+        ("bob", "alt", moved(&id, [p[0] + 3.0, p[1], p[2]])),
         (
             "bob",
-            Op::Checkout {
-                target: "alt".into(),
-            },
-        ),
-        ("bob", moved(&id, [p[0] + 3.0, p[1], p[2]])),
-        (
-            "bob",
+            "alt",
             Op::Commit {
                 message: "moved".into(),
             },
         ),
         (
             "bob",
-            Op::Checkout {
-                target: "main".into(),
-            },
-        ),
-        (
-            "bob",
+            "alt",
             Op::SubmitReview {
                 branch: "alt".into(),
                 target: "main".into(),
@@ -430,6 +430,7 @@ fn replicas_follow_version_control() {
         ),
         (
             "alice",
+            "main",
             Op::DecideReview {
                 id: 1,
                 approve: true,
@@ -438,6 +439,7 @@ fn replicas_follow_version_control() {
         ),
         (
             "alice",
+            "alt",
             Op::MergeReview {
                 id: 1,
                 message: None,
@@ -446,18 +448,30 @@ fn replicas_follow_version_control() {
         ),
         (
             "alice",
+            "main",
             Op::Tag {
                 name: "rev A".into(),
                 at: None,
                 note: String::new(),
             },
         ),
+        (
+            "bob",
+            "main",
+            Op::RenameLine {
+                from: "alt".into(),
+                to: "phase 1".into(),
+            },
+        ),
     ];
-    for (user, op) in &ops {
-        let seq = crate::execute(&mut server, user, op)
+    for (user, line, op) in &ops {
+        let seq = crate::execute(&mut server, user, line, op)
             .unwrap_or_else(|e| panic!("{}: {e}", op.describe()))
             .map(|a| a.seq);
-        replay(&mut replica, user, op, seq).unwrap();
+        replay(&mut replica, user, line, op, seq).unwrap();
+        // Both keep the line they have open.
+        assert_eq!(server.current_line(), "main");
+        assert_eq!(replica.current_line(), "main");
     }
     // The same revisions (ids are content hashes), branches and line.
     let ids = |s: &Session| {
@@ -475,9 +489,19 @@ fn replicas_follow_version_control() {
     );
     assert_eq!(server.line(), replica.line());
     assert_eq!(position(&replica, &id)[0], p[0] + 3.0);
+    let lines = |s: &Session| {
+        s.lines()
+            .unwrap()
+            .into_iter()
+            .map(|l| (l.name, l.user, l.revision, l.objects))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(lines(&server), lines(&replica));
+    assert!(replica.is_line("phase 1"));
     assert!(
-        Op::Checkout {
-            target: "main".into()
+        Op::BringIn {
+            from: "main".into(),
+            choices: Default::default()
         }
         .targets()
         .is_none()

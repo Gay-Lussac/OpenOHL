@@ -2400,19 +2400,20 @@ fn the_project_keeps_its_libraries() {
     assert_solved_fully(&again);
 }
 
-/// Lines: the working line saved as a project line, shown next to the
-/// working line after a change, then made the working line again (one
-/// command: ⌘Z brings the change back).
+/// Lines: new lines started from the one worked on, shown next to it (two
+/// ticked in a row: the menu stays open), worked on one at a time (each
+/// its own undo), brought up to date from the main line, submitted for
+/// review.
 #[test]
-fn project_lines_are_created_shown_and_made_the_working_line() {
-    use crate::app::LinesWindow;
+fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
+    use crate::project_lines::LinesWindow;
     let model = synthetic_project("lines");
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     {
-        // A twin bundle, to see it drawn in the project line too.
+        // A twin bundle, to see it drawn in the other lines too.
         let r = harness.state_mut().ready().unwrap();
         let mut s = r.model.line.sections[0].clone();
         (s.bundle, s.bundle_spacing) = (2, Some(0.4));
@@ -2428,27 +2429,54 @@ fn project_lines_are_created_shown_and_made_the_working_line() {
         });
         assert_eq!(r.model.line.sections[0].bundle, 2, "{:?}", r.status);
     }
-    harness.get_by_label("Lines").click();
-    harness.run();
-    harness.get_by_label("Create line…").click();
-    harness.run();
-    {
-        let r = harness.state_mut().ready().unwrap();
-        let Some(LinesWindow::Create(name, note)) = &mut r.lines_window else {
-            panic!("{:?}", r.lines_window);
-        };
-        *name = "as built".into();
-        *note = "before the works".into();
-    }
-    harness.run();
-    harness.get_by_label("Create").click();
-    harness.run();
-    {
+    // Two phases from the main line, through the menu.
+    for phase in ["phase 1", "phase 2"] {
+        harness.get_by_label("Lines").click();
+        harness.run();
+        harness.get_by_label("New line from main…").click();
+        harness.run();
+        {
+            let r = harness.state_mut().ready().unwrap();
+            let Some(LinesWindow::New { name, from }) = &mut r.lines_window else {
+                panic!("{:?}", r.lines_window);
+            };
+            assert_eq!(from, "main");
+            *name = phase.into();
+        }
+        harness.run();
+        harness.get_by_label("Create").click();
+        harness.run();
         let r = harness.state_mut().ready().unwrap();
         assert!(r.lines_window.is_none(), "{:?}", r.status);
-        // Shown as it is, it is drawn exactly as the working line: every
-        // structure, string, subconductor, yoke and jumper.
-        r.model.show_line("as built").unwrap();
+    }
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.project_line(), "main", "still on main");
+        let names: Vec<String> = r
+            .model
+            .session()
+            .unwrap()
+            .lines()
+            .unwrap()
+            .into_iter()
+            .map(|l| l.name)
+            .collect();
+        assert_eq!(names, ["main", "phase 1", "phase 2"]);
+    }
+    // Both shown, ticked in a row: the menu stays open.
+    harness.get_by_label("Lines").click();
+    harness.run();
+    harness.get_by_label("phase 1").click();
+    harness.run();
+    harness.get_by_label("phase 2").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.other_lines.len(), 2);
+        assert_ne!(r.model.other_lines[0].color, r.model.other_lines[1].color);
+        // Drawn exactly as the line worked on: every structure, string,
+        // subconductor, yoke and jumper.
+        r.model.other_lines.truncate(1);
         let count = |l: crate::scene::Layer| {
             crate::scene::layer(&r.model, l, 0, &Selection::None)
                 .counts()
@@ -2456,38 +2484,139 @@ fn project_lines_are_created_shown_and_made_the_working_line() {
         };
         let working = count(crate::scene::Layer::Structures) + count(crate::scene::Layer::Wires);
         assert_eq!(count(crate::scene::Layer::OtherLines), working);
-        r.model.other_lines.clear();
+    }
+    // Work on phase 1: T7 deleted there only; undone there.
+    harness.state_mut().ready().unwrap().switch_line("phase 1");
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.project_line(), "phase 1");
+        assert!(r.model.other_lines.iter().all(|o| o.name != "phase 1"));
+        assert_solved_fully(&r.model);
         r.perform(crate::edit::Action::Delete {
             kind: ols_session::Kind::Structure,
             id: "T7".into(),
             confirm: true,
         });
-        assert!(r.model.line.structure("T7").is_none());
-        // Shown next to the working line: it still has T7.
-        r.model.show_line("as built").unwrap();
-        let other = &r.model.other_lines[0];
-        assert!(other.line.structure("T7").is_some());
-        assert_eq!(other.cases.len(), r.model.cases.len());
-        let drawn = crate::scene::layer(
-            &r.model,
-            crate::scene::Layer::OtherLines,
-            0,
-            &Selection::None,
-        );
-        assert!(drawn.counts().0 > 0);
-        r.lines_window = Some(LinesWindow::Restore("as built".into()));
+        assert!(r.model.line.structure("T7").is_none(), "{:?}", r.status);
+        let s = r.model.session().unwrap();
+        assert!(s.line_named("main").unwrap().structure("T7").is_some());
+    }
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.model.line.structure("T7").is_some(), "undone on phase 1");
+        r.perform(crate::edit::Action::Delete {
+            kind: ols_session::Kind::Structure,
+            id: "T7".into(),
+            confirm: true,
+        });
+        // Main corrected meanwhile (T2 moved).
+        r.switch_line("main");
+        let p = r.model.line.structure("T2").unwrap().position;
+        r.perform(crate::edit::Action::Command {
+            what: "T2 east".into(),
+            command: ols_session::Command::MoveStructure {
+                id: "T2".into(),
+                position: [p[0] + 2.0, p[1], p[2]],
+            },
+        });
+        r.switch_line("phase 1");
+        assert_eq!(r.model.line.structure("T2").unwrap().position, p, "a copy");
+        r.lines_window = Some(LinesWindow::BringIn {
+            from: "main".into(),
+            choices: Default::default(),
+            plan: None,
+        });
     }
     harness.run();
-    harness.get_by_label("Make it the working line").click();
+    assert!(harness.query_by_label_contains("No conflict").is_some());
+    harness.get_by_label("Bring in").click();
     harness.run();
     {
         let r = harness.state_mut().ready().unwrap();
-        assert!(r.model.line.structure("T7").is_some(), "{:?}", r.status);
+        let t2 = r.model.line.structure("T2").unwrap().position[0];
+        let main_t2 = r
+            .model
+            .session()
+            .unwrap()
+            .line_named("main")
+            .unwrap()
+            .structure("T2")
+            .unwrap()
+            .position[0];
+        assert_eq!(t2, main_t2, "main's correction brought in: {:?}", r.status);
+        assert!(
+            r.model.line.structure("T7").is_none(),
+            "the phase's own change kept"
+        );
         assert_solved_fully(&r.model);
+        r.lines_window = Some(LinesWindow::Review {
+            note: "phase 1 ready".into(),
+        });
     }
-    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    harness.run();
+    harness.get_by_label("Submit").click();
+    harness.run();
     let r = harness.state_mut().ready().unwrap();
-    assert!(r.model.line.structure("T7").is_none(), "one undo");
+    let reviews = r.model.session().unwrap().reviews().unwrap();
+    assert_eq!(reviews.len(), 1, "{:?}", r.status);
+    assert_eq!(
+        (reviews[0].branch.as_str(), reviews[0].target.as_str()),
+        ("phase 1", "main")
+    );
+    // Remembered for this user: the project opens on phase 1 again.
+    assert_eq!(r.model.view_prefs().line.as_deref(), Some("phase 1"));
+}
+
+/// Lines › Project lines: the window lists every line; rights shown.
+#[test]
+fn the_project_lines_window_lists_the_lines() {
+    use crate::project_lines::LinesWindow;
+    let model = synthetic_project("lines-window");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.project_op(
+            "phase",
+            ols_server::Op::CreateLine {
+                name: "phase 1".into(),
+                from: "main".into(),
+            },
+        );
+    }
+    harness.get_by_label("Lines").click();
+    harness.run();
+    harness.get_by_label("Project lines…").click();
+    harness.run();
+    assert!(harness.query_by_label("main line").is_some());
+    assert!(harness.query_by_label("phase 1").is_some());
+    // Rename phase 1, then delete it (back to the list in between).
+    harness.state_mut().ready().unwrap().lines_window = Some(LinesWindow::Rename {
+        from: "phase 1".into(),
+        to: "phase A".into(),
+    });
+    harness.run();
+    harness.get_by_label("Rename").click();
+    harness.run();
+    assert_eq!(
+        harness.state_mut().ready().unwrap().lines_window,
+        Some(LinesWindow::Manage)
+    );
+    harness.state_mut().ready().unwrap().lines_window = Some(LinesWindow::Delete("phase A".into()));
+    harness.run();
+    harness.get_by_label("Delete").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(
+        r.model.session().unwrap().lines().unwrap().len(),
+        1,
+        "{:?}",
+        r.status
+    );
 }
 
 /// Add jumper: on a structure, the jumper missing between two section
@@ -4238,7 +4367,7 @@ fn two_applications_share_a_hosted_project() {
         shown: p1,
     });
     alice.step();
-    let target = ols_server::lock_target(ols_session::Kind::Structure, &id);
+    let target = ols_server::lock_target("main", ols_session::Kind::Structure, &id);
     run_until(&mut bob, |a| {
         a.ready().unwrap().model.locked_by_other(&target).is_some()
     });
@@ -4991,8 +5120,8 @@ fn drawings_export_in_the_background_job() {
     assert!(crate::drawings::Input::new(&m, 0, &none).is_err());
 }
 
-/// Edit › Versions: commit, branch, check out and merge as project
-/// operations; the model follows (re-solved) and the window lists them.
+/// Edit › Versions: commit, branch (a project line), work on it and merge
+/// as project operations; the model follows (re-solved) and the window lists them.
 #[test]
 fn versions_commit_branch_checkout_and_merge() {
     use ols_server::Op;
@@ -5012,15 +5141,10 @@ fn versions_commit_branch_checkout_and_merge() {
                 at: None,
             },
         ),
-        (
-            "checkout",
-            Op::Checkout {
-                target: "alt".into(),
-            },
-        ),
     ] {
         m.project_op(what, op).unwrap();
     }
+    m.switch_line("alt").unwrap();
     m.apply(
         "moved T6",
         ols_session::Command::MoveStructure {
@@ -5036,13 +5160,7 @@ fn versions_commit_branch_checkout_and_merge() {
         },
     )
     .unwrap();
-    m.project_op(
-        "checkout",
-        Op::Checkout {
-            target: "main".into(),
-        },
-    )
-    .unwrap();
+    m.switch_line("main").unwrap();
     assert_eq!(m.line.structure("T6").unwrap().position, p);
     assert_solved_fully(&m);
     m.project_op(
@@ -5605,4 +5723,103 @@ fn drawings_have_levels_of_detail() {
         crate::chunks::ChunkIndex::new(&model, Layer::Drawings, 0).len(),
         0
     );
+}
+
+#[test]
+#[ignore = "writes images of the Lines menu and windows to OLS_SHOTS (a look by eye)"]
+fn lines_images() {
+    use crate::project_lines::LinesWindow;
+    let Ok(dir) = std::env::var("OLS_SHOTS") else {
+        return;
+    };
+    let model = synthetic_project("lines-shots");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        for n in ["phase 1", "phase 2"] {
+            r.project_op(
+                n,
+                ols_server::Op::CreateLine {
+                    name: n.into(),
+                    from: "main".into(),
+                },
+            );
+        }
+        r.model.show_line("phase 2").unwrap();
+        // A conflict to settle: T3 moved on both lines.
+        let p = r.model.line.structure("T3").unwrap().position;
+        r.perform(crate::edit::Action::Command {
+            what: "T3".into(),
+            command: ols_session::Command::MoveStructure {
+                id: "T3".into(),
+                position: [p[0] + 3.0, p[1], p[2]],
+            },
+        });
+        r.switch_line("phase 1");
+        r.perform(crate::edit::Action::Command {
+            what: "T3".into(),
+            command: ols_session::Command::MoveStructure {
+                id: "T3".into(),
+                position: [p[0] - 3.0, p[1], p[2]],
+            },
+        });
+    }
+    harness.run();
+    harness.get_by_label("Lines").click();
+    harness.run();
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/lines-menu.png"))
+        .unwrap();
+    harness.get_by_label("Project lines…").click();
+    harness.run();
+    harness.run();
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/lines-window.png"))
+        .unwrap();
+    harness.state_mut().ready().unwrap().lines_window = Some(LinesWindow::BringIn {
+        from: "main".into(),
+        choices: Default::default(),
+        plan: None,
+    });
+    harness.run();
+    harness.run();
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/lines-bring-in.png"))
+        .unwrap();
+}
+
+/// A project opens on the line this user worked on, with the lines they
+/// showed (remembered on their computer).
+#[test]
+fn the_line_worked_on_and_those_shown_are_remembered() {
+    let mut m = synthetic_project("lines-remembered");
+    m.project_op(
+        "phase",
+        ols_server::Op::CreateLine {
+            name: "phase 1".into(),
+            from: "main".into(),
+        },
+    )
+    .unwrap();
+    m.switch_line("phase 1").unwrap();
+    m.show_line("main").unwrap();
+    let prefs = m.view_prefs();
+    assert_eq!(prefs.line.as_deref(), Some("phase 1"));
+    assert_eq!(prefs.shown_lines, ["main"]);
+    let mut sources = m.sources.clone();
+    drop(m);
+    sources.view = Some(prefs);
+    let again = model::load(sources, &|_| {}).unwrap();
+    assert_eq!(again.project_line(), "phase 1");
+    assert_eq!(again.other_lines.len(), 1);
+    assert_eq!(again.other_lines[0].name, "main");
 }

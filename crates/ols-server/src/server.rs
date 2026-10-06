@@ -113,6 +113,7 @@ pub(crate) enum Job {
         user: String,
         id: u64,
         op: Op,
+        line: String,
         reply: oneshot::Sender<Result<(), String>>,
     },
     Presence {
@@ -201,10 +202,12 @@ impl Authority {
                     name: user.to_owned(),
                     role,
                 };
-                execute(&mut self.session, &admin, &op).map_err(|e| e.to_string())?;
+                let line = self.session.current_line().to_owned();
+                execute(&mut self.session, &admin, &line, &op).map_err(|e| e.to_string())?;
                 self.broadcast(ServerMsg::Applied {
                     user: admin,
                     op,
+                    line,
                     seq: None,
                 });
                 role
@@ -248,7 +251,14 @@ impl Authority {
         })
     }
 
-    fn request(&mut self, client: u64, user: &str, id: u64, op: Op) -> Result<(), String> {
+    fn request(
+        &mut self,
+        client: u64,
+        user: &str,
+        id: u64,
+        op: Op,
+        line: String,
+    ) -> Result<(), String> {
         // Soft locks: others' objects are refused.
         let held: Vec<(&String, &String)> = self
             .locks
@@ -263,7 +273,7 @@ impl Authority {
                 }
                 Some(targets) => {
                     for (kind, oid) in targets {
-                        let t = lock_target(kind, &oid);
+                        let t = lock_target(&line, kind, &oid);
                         if let Some(u) = self.locks.get(&t).filter(|u| u.as_str() != user) {
                             return Err(format!("{t} is being edited by {u}"));
                         }
@@ -271,8 +281,8 @@ impl Authority {
                 }
             }
         }
-        let applied = execute(&mut self.session, user, &op).map_err(|e| e.to_string())?;
-        if crate::web::changes_scene(&op) {
+        let applied = execute(&mut self.session, user, &line, &op).map_err(|e| e.to_string())?;
+        if crate::web::changes_scene(&op, &line) {
             self.revision += 1;
         }
         let role_changed = matches!(&op, Op::SetUser { .. });
@@ -281,6 +291,7 @@ impl Authority {
             msg: ServerMsg::Applied {
                 user: user.to_owned(),
                 op: op.clone(),
+                line,
                 seq: applied.map(|a| a.seq),
             },
         });
@@ -353,7 +364,12 @@ impl Authority {
         Ok(Some(SceneSource {
             revision: self.revision,
             seq: self.session.last_seq().map_err(|e| e.to_string())?,
-            line: self.session.line().clone(),
+            // The main line (else the line the server has open).
+            line: self
+                .session
+                .line_named(ols_session::versions::MAIN)
+                .unwrap_or_else(|_| self.session.line())
+                .clone(),
             libraries,
         }))
     }
@@ -374,9 +390,10 @@ impl Authority {
                     user,
                     id,
                     op,
+                    line,
                     reply,
                 } => {
-                    let _ = reply.send(self.request(client, &user, id, op));
+                    let _ = reply.send(self.request(client, &user, id, op, line));
                 }
                 Job::Presence { user, mut presence } => {
                     if presence.selection.len() > crate::MAX_LABEL {
@@ -825,13 +842,14 @@ pub(crate) async fn dispatch(
 ) -> Result<Option<ServerMsg>, String> {
     Ok(match msg {
         ClientMsg::Hello { .. } => return Err("hello twice".into()),
-        ClientMsg::Request { id, op } => {
+        ClientMsg::Request { id, op, line } => {
             let (tx, rx) = oneshot::channel();
             jobs.send(Job::Request {
                 client,
                 user: user.to_owned(),
                 id,
                 op,
+                line,
                 reply: tx,
             })
             .map_err(|_| "server stopped")?;

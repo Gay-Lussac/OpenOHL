@@ -88,22 +88,25 @@ const SILENT: Duration = Duration::from_secs(30);
 /// Web client ids start here (QUIC ones count from 1).
 const WEB_CLIENTS: u64 = 1 << 62;
 
-/// Whether an edit can change what a scene shows (the line, the
-/// libraries it is solved with).
-pub fn changes_scene(op: &Op) -> bool {
+/// Whether an edit on project line `line` can change what a scene shows
+/// (the main line, the libraries it is solved with).
+pub fn changes_scene(op: &Op, line: &str) -> bool {
+    let main = line == ols_session::versions::MAIN;
     match op {
         Op::Do { .. } | Op::Undo | Op::Redo | Op::Rollback { .. } | Op::RollbackAfter { .. } => {
-            true
+            main
         }
         Op::PutLibrary { kind, .. } | Op::DeleteLibrary { kind, .. } => {
             SCENE_LIBRARIES.contains(&kind.as_str())
         }
         // Version control: these replace the working state (line and
         // libraries).
-        Op::Checkout { .. } | Op::Merge { .. } | Op::Revert { .. } | Op::MergeReview { .. } => true,
+        Op::BringIn { .. } | Op::Merge { .. } | Op::Revert { .. } => main,
+        // Into its target, whichever line it was asked from; lines
+        // deleted or renamed (the main one among them).
+        Op::MergeReview { .. } | Op::DeleteLine { .. } | Op::RenameLine { .. } => true,
         Op::SetUser { .. }
-        | Op::SaveSnapshot { .. }
-        | Op::DeleteSnapshot { .. }
+        | Op::CreateLine { .. }
         | Op::SetSetting { .. }
         | Op::Commit { .. }
         | Op::CreateBranch { .. }
@@ -494,8 +497,8 @@ async fn joined_session<S: AsyncRead + AsyncWrite + Unpin>(
                         }
                         _ => None,
                     };
-                    if let ServerMsg::Applied { op, .. } = &msg
-                        && changes_scene(op)
+                    if let ServerMsg::Applied { op, line, .. } = &msg
+                        && changes_scene(op, line)
                         && refresh.is_none()
                     {
                         refresh = Some(Instant::now() + SCENE_DELAY);

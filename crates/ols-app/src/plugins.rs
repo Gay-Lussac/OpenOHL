@@ -891,7 +891,7 @@ impl Plugins {
                 } else {
                     ui.label(
                         egui::RichText::new(
-                            "The file is read into the working line: one command, undoable.",
+                            "The file is read into the line you work on: one command, undoable.",
                         )
                         .small()
                         .weak(),
