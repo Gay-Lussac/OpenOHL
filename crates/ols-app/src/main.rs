@@ -56,6 +56,7 @@ mod vegetation;
 mod versions;
 mod view3d;
 mod wirefit;
+mod working_tree;
 
 #[cfg(test)]
 mod tests;

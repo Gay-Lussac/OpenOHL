@@ -37,8 +37,12 @@ use std::collections::BTreeMap;
 use ols_line::Line;
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::versions::{Choices, Conflict, MAIN, MergeOutcome, RefKind, State, merge_states};
-use crate::{Kind, Object, Role, Session, SessionError, line_of, objects_of, refused, spatial};
+use crate::versions::{
+    Choices, Conflict, MAIN, MergeOutcome, RefKind, State, merge_states, short, state_hash,
+};
+use crate::{
+    Applied, Kind, Object, Role, Session, SessionError, line_of, objects_of, refused, spatial,
+};
 
 /// A project line's state while another is the session's current one.
 #[derive(Debug, Clone)]
@@ -645,5 +649,62 @@ impl Session {
             Some(&format!("Bring {from} into {into}")),
             choices,
         )
+    }
+
+    /// Whether project line `name` has changes not committed (its working
+    /// state differs from its last revision; a line with objects and no
+    /// revision has). Hashes its state: about 2 µs per object.
+    pub fn has_uncommitted(&self, name: &str) -> Result<bool, SessionError> {
+        let objects = if name == self.current {
+            &self.objects
+        } else {
+            &self
+                .others
+                .get(name)
+                .ok_or_else(|| refused(format!("no project line \"{name}\"")))?
+                .objects
+        };
+        let Some(rev) = self.branch_revision(name)? else {
+            return Ok(!objects.is_empty());
+        };
+        let mut state = self.working_state()?;
+        state.objects = objects
+            .iter()
+            .map(|(k, o)| (k.clone(), (o.ord, o.value.clone())))
+            .collect();
+        Ok(state_hash(&state) != self.revision(&rev)?.tree)
+    }
+
+    /// Admin: rolls project line `line` back to revision `revision` (any
+    /// revision, a branch or a tag): the line's state becomes that one, as
+    /// one logged command, recorded as a new revision of the line — nothing
+    /// of the history is lost (its uncommitted work is recorded first), and
+    /// the rollback can itself be rolled back. Returns the change of the
+    /// line.
+    pub fn roll_back_line(
+        &mut self,
+        admin: &str,
+        line: &str,
+        revision: &str,
+    ) -> Result<Option<Applied>, SessionError> {
+        self.require(admin, Role::Admin)?;
+        let rev = self.resolve_revision(revision)?;
+        if !self.is_line(line) {
+            return Err(refused(format!("no project line \"{line}\"")));
+        }
+        self.with_line(line, |s| {
+            s.record(admin, &format!("Before rolling back to {}", short(&rev)))?;
+            let state = s.revision_state(&rev)?;
+            let (applied, _) = s.set_working(
+                admin,
+                &state,
+                &format!("roll back {line} to {}", short(&rev)),
+            )?;
+            let parent = s.branch_revision(line)?;
+            if parent.as_deref() != Some(rev.as_str()) {
+                s.record(admin, &format!("Rolled back to {}", short(&rev)))?;
+            }
+            Ok(applied)
+        })
     }
 }

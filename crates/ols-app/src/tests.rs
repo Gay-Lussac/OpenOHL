@@ -2590,6 +2590,8 @@ fn the_project_lines_window_lists_the_lines() {
     }
     harness.get_by_label("Lines").click();
     harness.run();
+    harness.get_by_label_contains("Project lines").hover();
+    harness.run();
     harness.get_by_label("Project lines…").click();
     harness.run();
     assert!(harness.query_by_label("main line").is_some());
@@ -5770,6 +5772,8 @@ fn lines_images() {
     harness.run();
     harness.get_by_label("Lines").click();
     harness.run();
+    harness.get_by_label_contains("Project lines").hover();
+    harness.run();
     harness
         .render()
         .unwrap()
@@ -5822,4 +5826,262 @@ fn the_line_worked_on_and_those_shown_are_remembered() {
     assert_eq!(again.project_line(), "phase 1");
     assert_eq!(again.other_lines.len(), 1);
     assert_eq!(again.other_lines[0].name, "main");
+}
+
+/// The working tree: a lane per line, where each started, merges, the
+/// lines deleted; opened from Lines › Project lines › Working tree; admins
+/// roll a line back from it.
+#[test]
+fn the_working_tree_shows_the_lines_through_time() {
+    use ols_server::Op;
+    let mut m = synthetic_project("tree");
+    let shift = |m: &mut model::Model, id: &str, dx: f64| {
+        let p = m.line.structure(id).unwrap().position;
+        m.apply(
+            "shift",
+            ols_session::Command::MoveStructure {
+                id: id.into(),
+                position: [p[0] + dx, p[1], p[2]],
+            },
+        )
+        .unwrap();
+    };
+    let op = |m: &mut model::Model, op: Op| {
+        m.project_op("op", op).unwrap();
+    };
+    op(
+        &mut m,
+        Op::Commit {
+            message: "start".into(),
+        },
+    );
+    let start = m.session().unwrap().head_revision().unwrap().unwrap();
+    for n in ["phase 1", "phase 2"] {
+        op(
+            &mut m,
+            Op::CreateLine {
+                name: n.into(),
+                from: "main".into(),
+            },
+        );
+    }
+    m.switch_line("phase 2").unwrap();
+    shift(&mut m, "T5", 1.0);
+    op(
+        &mut m,
+        Op::Commit {
+            message: "phase 2 work".into(),
+        },
+    );
+    m.switch_line("phase 1").unwrap();
+    shift(&mut m, "T6", 2.0);
+    op(
+        &mut m,
+        Op::Commit {
+            message: "phase 1 work".into(),
+        },
+    );
+    m.switch_line("main").unwrap();
+    shift(&mut m, "T2", 1.0);
+    op(
+        &mut m,
+        Op::Commit {
+            message: "main fix".into(),
+        },
+    );
+    op(
+        &mut m,
+        Op::DeleteLine {
+            name: "phase 2".into(),
+        },
+    );
+    m.switch_line("phase 1").unwrap();
+    op(
+        &mut m,
+        Op::BringIn {
+            from: "main".into(),
+            choices: Default::default(),
+        },
+    );
+    shift(&mut m, "T6", 1.0);
+    let s = m.session().unwrap();
+    let tree = crate::working_tree::Tree::layout(
+        &s.revisions().unwrap(),
+        &s.lines().unwrap(),
+        &[],
+        &|l| s.has_uncommitted(l).unwrap(),
+    );
+    let lanes = crate::working_tree::lanes_by_name(&tree);
+    assert_eq!(lanes["main"], ["start", "main fix"]);
+    assert_eq!(
+        lanes["phase 1"],
+        ["phase 1 work", "Bring main into phase 1"]
+    );
+    assert_eq!(lanes["lines deleted"], ["phase 2 work"]);
+    // Time goes right: every parent before its child.
+    for n in &tree.nodes {
+        for p in &n.revision.parents {
+            assert!(tree.nodes[tree.index[p]].col < n.col);
+        }
+    }
+    let merge = tree
+        .nodes
+        .iter()
+        .find(|n| n.revision.parents.len() == 2)
+        .unwrap();
+    assert_eq!(tree.lanes[merge.lane].name, "phase 1");
+    assert!(
+        tree.lanes
+            .iter()
+            .find(|l| l.name == "phase 1")
+            .unwrap()
+            .uncommitted
+    );
+    assert!(!tree.lanes[0].uncommitted);
+
+    // From the menu; the admin rolls main back to the start.
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(m, None));
+    harness.run();
+    harness.get_by_label("Lines").click();
+    harness.run();
+    harness.get_by_label_contains("Project lines").hover();
+    harness.run();
+    harness.get_by_label("Working tree…").click();
+    harness.run();
+    assert!(harness.state_mut().ready().unwrap().working_tree.open);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.working_tree.selected = Some(start.clone());
+    }
+    harness.run();
+    harness.get_by_label("Roll back…").click();
+    harness.run();
+    harness.get_by_label("Roll back").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r.model.session().unwrap();
+        let t2 = |line: &str| {
+            s.line_named(line)
+                .unwrap()
+                .structure("T2")
+                .unwrap()
+                .position[0]
+        };
+        let first = s.revision_state(&start).unwrap().line().unwrap();
+        assert_eq!(
+            t2("main"),
+            first.structure("T2").unwrap().position[0],
+            "{:?}",
+            r.status
+        );
+        assert_eq!(r.model.project_line(), "phase 1", "still on phase 1");
+        // A designer sees why not.
+        if let Ok(e) = &mut r.model.editing {
+            e.session
+                .set_user("tester", "ben", ols_session::Role::Designer)
+                .unwrap();
+            e.user = "ben".into();
+        }
+    }
+    harness.run();
+    assert!(
+        harness
+            .query_by_label("Rolling a line back: admins only.")
+            .is_some()
+    );
+}
+
+#[test]
+#[ignore = "writes an image of the working tree to OLS_SHOTS (a look by eye)"]
+fn working_tree_image() {
+    use ols_server::Op;
+    let Ok(dir) = std::env::var("OLS_SHOTS") else {
+        return;
+    };
+    let mut m = synthetic_project("tree-shot");
+    let shift = |m: &mut model::Model, id: &str, dx: f64| {
+        let p = m.line.structure(id).unwrap().position;
+        m.apply(
+            "shift",
+            ols_session::Command::MoveStructure {
+                id: id.into(),
+                position: [p[0] + dx, p[1], p[2]],
+            },
+        )
+        .unwrap();
+    };
+    let op = |m: &mut model::Model, op: Op| {
+        m.project_op("op", op).unwrap();
+    };
+    op(
+        &mut m,
+        Op::Commit {
+            message: "as imported".into(),
+        },
+    );
+    op(
+        &mut m,
+        Op::Tag {
+            name: "IFC rev A".into(),
+            at: None,
+            note: String::new(),
+        },
+    );
+    for n in ["phase 1", "phase 2", "route B"] {
+        op(
+            &mut m,
+            Op::CreateLine {
+                name: n.into(),
+                from: "main".into(),
+            },
+        );
+    }
+    for (line, id, msg) in [
+        ("phase 1", "T6", "T6 for the road"),
+        ("main", "T2", "T2 corrected"),
+        ("phase 2", "T5", "T5 raised"),
+        ("phase 1", "T7", "T7 replaced"),
+        ("route B", "T4", "route B start"),
+        ("main", "T3", "T3 corrected"),
+    ] {
+        m.switch_line(line).unwrap();
+        shift(&mut m, id, 1.0);
+        op(
+            &mut m,
+            Op::Commit {
+                message: msg.into(),
+            },
+        );
+    }
+    m.switch_line("phase 1").unwrap();
+    op(
+        &mut m,
+        Op::BringIn {
+            from: "main".into(),
+            choices: Default::default(),
+        },
+    );
+    m.switch_line("main").unwrap();
+    op(
+        &mut m,
+        Op::DeleteLine {
+            name: "route B".into(),
+        },
+    );
+    shift(&mut m, "T2", 0.5);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(m, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().working_tree.open = true;
+    harness.run();
+    harness.run();
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/working-tree.png"))
+        .unwrap();
 }

@@ -561,6 +561,11 @@ fn tree_text(tree: &Tree) -> String {
     canonical(&json(tree))
 }
 
+/// The hash of `state`'s tree: a revision's `tree` when equal.
+pub(crate) fn state_hash(state: &State) -> String {
+    hash(&tree_text(&tree_of(state).0))
+}
+
 fn revision_id(tree: &str, parents: &[String], author: &str, message: &str) -> String {
     hash(&canonical(&serde_json::json!({
         "tree": tree,

@@ -281,3 +281,44 @@ fn lines_started_without_any_commit_share_their_start() {
         "the phase's deletion kept"
     );
 }
+
+#[test]
+fn an_admin_rolls_a_line_back() {
+    let (_path, mut s) = project("rollback");
+    s.commit("ana", "start").unwrap();
+    let start = s.head_revision().unwrap().unwrap();
+    let t2 = x(&s, "main", "T2");
+    shift(&mut s, "ben", "T2", 3.0).unwrap();
+    s.commit("ben", "T2 east").unwrap();
+    shift(&mut s, "ben", "T2", 1.0).unwrap();
+    assert!(s.has_uncommitted("main").unwrap());
+    // Admins only.
+    assert!(s.roll_back_line("ben", "main", &start).is_err());
+    s.create_line("ben", "phase 1", "main").unwrap();
+    s.select_line("phase 1").unwrap();
+    // Rolled back from another line: main's state is the start's again;
+    // the work since is kept as revisions.
+    let applied = s.roll_back_line("ana", "main", &start).unwrap();
+    assert!(applied.is_some());
+    assert_eq!(s.current_line(), "phase 1");
+    assert_eq!(x(&s, "main", "T2"), t2);
+    assert!(!s.has_uncommitted("main").unwrap());
+    let messages: Vec<String> = s
+        .revisions()
+        .unwrap()
+        .into_iter()
+        .map(|r| r.message)
+        .collect();
+    assert!(
+        messages.iter().any(|m| m.starts_with("Rolled back to")),
+        "{messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.starts_with("Start of project line")),
+        "{messages:?}"
+    );
+    // The phase keeps what it had.
+    assert_eq!(x(&s, "phase 1", "T2"), t2 + 4.0);
+}

@@ -170,6 +170,8 @@ pub struct Ready {
     pub display_window: Option<DisplayWindow>,
     /// A window of the Lines menu, when open.
     pub lines_window: Option<crate::project_lines::LinesWindow>,
+    /// Lines › Project lines › Working tree.
+    pub working_tree: crate::working_tree::TreeWindow,
     /// The "Survey data display options" window, when open: its changes
     /// (applied with its Apply button).
     pub survey_window: Option<SurveyDraft>,
@@ -267,6 +269,7 @@ impl Ready {
             tables: Default::default(),
             display_window: None,
             lines_window: None,
+            working_tree: Default::default(),
             survey_window: None,
             survey_paint: None,
             survey_import: None,
@@ -2205,6 +2208,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
         r.reopen = true;
     }
     crate::project_lines::window(ctx, r);
+    crate::working_tree::window(ctx, r);
     crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
     r.bom.show(ctx, &r.model);
     r.spot.show(ctx, &r.model);
