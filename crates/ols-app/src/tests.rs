@@ -6258,3 +6258,84 @@ fn line_switch_timing() {
         m.line.structures.len()
     );
 }
+
+/// Lines › Description of …: a long description edited in a box that
+/// scrolls; shown under the working tree; read only for others.
+#[test]
+fn lines_are_described() {
+    use crate::project_lines::LinesWindow;
+    let mut m = synthetic_project("described");
+    m.project_op(
+        "l",
+        ols_server::Op::CreateLine {
+            name: "phase 1".into(),
+            from: "main".into(),
+        },
+    )
+    .unwrap();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(m, None));
+    harness.run();
+    harness.get_by_label("Lines").click();
+    harness.run();
+    harness.get_by_label("Description of main…").click();
+    harness.run();
+    let long: String = (1..=80)
+        .map(|k| format!("Point {k} of the scope.\n"))
+        .collect();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(LinesWindow::Description { line, text }) = &mut r.lines_window else {
+            panic!("{:?}", r.lines_window);
+        };
+        assert_eq!(line, "main");
+        *text = long.clone();
+    }
+    harness.run();
+    // The box scrolls: Save stays on the screen.
+    let save = harness.get_by_label("Save").rect();
+    assert!(save.max.y < 900.0, "{save:?}");
+    harness.get_by_label("Save").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.lines_window.is_none(), "{:?}", r.status);
+        let lines = r.model.session().unwrap().lines().unwrap();
+        assert_eq!(lines[0].description, long.trim_end());
+        r.working_tree.open = true;
+    }
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label("Description of main").is_some());
+    assert!(
+        harness
+            .query_by_label_contains("Point 1 of the scope.")
+            .is_some()
+    );
+    if let Ok(dir) = std::env::var("OLS_SHOTS") {
+        harness
+            .render()
+            .unwrap()
+            .save(format!("{dir}/tree-description.png"))
+            .unwrap();
+    }
+    // A designer reads the main line's description, does not edit it.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        if let Ok(e) = &mut r.model.editing {
+            e.session
+                .set_user("tester", "ben", ols_session::Role::Designer)
+                .unwrap();
+            e.user = "ben".into();
+        }
+        r.working_tree.open = false;
+        r.lines_window = Some(LinesWindow::Description {
+            line: "main".into(),
+            text: long.clone(),
+        });
+    }
+    harness.run();
+    assert!(harness.query_by_label_contains("Read only").is_some());
+    assert!(harness.query_by_label("Save").is_none());
+}

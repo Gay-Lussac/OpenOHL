@@ -54,6 +54,34 @@ pub enum LinesWindow {
     },
     /// Delete a line (asked again).
     Delete(String),
+    /// A line's description: the line, the text as edited.
+    Description {
+        /// The line.
+        line: String,
+        /// Its description, as edited.
+        text: String,
+    },
+}
+
+/// Height of the box a description is edited or shown in, points: long
+/// ones scroll.
+pub const DESCRIPTION_HEIGHT: f32 = 160.0;
+
+/// Shows a description in a box of fixed height that scrolls.
+pub fn description_box(ui: &mut egui::Ui, id: &str, text: &str, height: f32) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        egui::ScrollArea::vertical()
+            .id_salt(id)
+            .max_height(height)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                if text.trim().is_empty() {
+                    ui.label(egui::RichText::new("No description yet.").weak());
+                } else {
+                    ui.add(egui::Label::new(text).wrap());
+                }
+            });
+    });
 }
 
 /// A bring-in worked out: for which line, choices and log entry; the
@@ -179,6 +207,22 @@ pub fn menu(ui: &mut egui::Ui, r: &mut Ready) {
     });
     ui.separator();
     let rights = Rights::of(r);
+    if ui
+        .button(format!("Description of {current}…"))
+        .on_hover_text("What this line is for: read it, edit it (its creator or an admin)")
+        .clicked()
+    {
+        let text = all
+            .iter()
+            .find(|l| l.name == current)
+            .map(|l| l.description.clone())
+            .unwrap_or_default();
+        r.lines_window = Some(LinesWindow::Description {
+            line: current.clone(),
+            text,
+        });
+        ui.close();
+    }
     if ui
         .add_enabled(
             rights.edit,
@@ -372,6 +416,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
         LinesWindow::Review { .. } => format!("Submit {current} for review"),
         LinesWindow::Rename { from, .. } => format!("Rename project line {from}"),
         LinesWindow::Delete(n) => format!("Delete project line {n}?"),
+        LinesWindow::Description { line, .. } => format!("Description of {line}"),
     };
     let mut open = true;
     egui::Window::new(title)
@@ -445,6 +490,20 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                             ui.label(l.objects.to_string());
                             ui.horizontal(|ui| {
                                 let may = rights.manage(l);
+                                if ui
+                                    .add(egui::Button::new("Description…").small())
+                                    .on_hover_text(if l.description.trim().is_empty() {
+                                        "No description yet".to_owned()
+                                    } else {
+                                        l.description.chars().take(300).collect::<String>()
+                                    })
+                                    .clicked()
+                                {
+                                    next = Some(LinesWindow::Description {
+                                        line: l.name.clone(),
+                                        text: l.description.clone(),
+                                    });
+                                }
                                 if ui
                                     .add_enabled(may.is_ok(), egui::Button::new("Rename…").small())
                                     .on_disabled_hover_text(may.clone().err().unwrap_or_default())
@@ -767,6 +826,57 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                     }
                     close |= ui.button("Cancel").clicked();
                 });
+            }
+            LinesWindow::Description { line, text } => {
+                let info = all.iter().find(|l| &l.name == line);
+                let may = info.map_or(Err("no such line".into()), |l| rights.manage(l));
+                ui.label(
+                    egui::RichText::new(
+                        "What this line is for: its scope, assumptions, status… (kept in the \
+                         project, shown under the working tree).",
+                    )
+                    .small()
+                    .weak(),
+                );
+                if may.is_ok() {
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("description-edit")
+                            .max_height(DESCRIPTION_HEIGHT)
+                            .auto_shrink([false, true])
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(text)
+                                        .desired_rows(6)
+                                        .desired_width(f32::INFINITY)
+                                        .char_limit(ols_session::lines::MAX_DESCRIPTION),
+                                );
+                            });
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Save").clicked() {
+                            op = Some((
+                                format!("description of {line} saved"),
+                                Op::SetLineDescription {
+                                    line: line.clone(),
+                                    description: text.clone(),
+                                },
+                            ));
+                        }
+                        close |= ui.button("Cancel").clicked();
+                    });
+                } else {
+                    description_box(ui, "description-read", text, DESCRIPTION_HEIGHT);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Read only: {}",
+                            may.err().unwrap_or_default()
+                        ))
+                        .small()
+                        .weak(),
+                    );
+                    close |= ui.button("Close").clicked();
+                }
             }
             LinesWindow::Delete(name) => {
                 ui.label(format!(

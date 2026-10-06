@@ -135,6 +135,14 @@ pub enum Op {
         /// New name.
         to: String,
     },
+    /// Describe a project line (its creator or an admin; the main line an
+    /// admin).
+    SetLineDescription {
+        /// The line.
+        line: String,
+        /// Its description.
+        description: String,
+    },
     /// Admin: roll a project line back to a revision (recorded as a new
     /// revision; nothing is lost).
     RollBackLine {
@@ -344,6 +352,7 @@ impl Op {
             Op::DeleteLine { name } => format!("project line {name} deleted"),
             Op::RenameLine { from, to } => format!("project line {from} renamed {to}"),
             Op::BringIn { from, .. } => format!("changes of {from} brought in"),
+            Op::SetLineDescription { line, .. } => format!("project line {line} described"),
             Op::RollBackLine { line, revision } => {
                 format!(
                     "project line {line} rolled back to {}",
@@ -424,6 +433,10 @@ fn run(session: &mut Session, user: &str, op: &Op) -> Result<Option<Applied>, Se
             None
         }
         Op::BringIn { from, choices } => session.bring_in(user, from, choices)?.applied,
+        Op::SetLineDescription { line, description } => {
+            session.set_line_description(user, line, description)?;
+            None
+        }
         // What changed in the line worked on (another line: nothing here).
         Op::RollBackLine { line, revision } => {
             let applied = session.roll_back_line(user, line, revision)?;

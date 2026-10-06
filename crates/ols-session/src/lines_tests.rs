@@ -6,6 +6,7 @@
 //! session, brought up to date from another line, merged back by review.
 
 use super::*;
+use crate::lines::MAX_DESCRIPTION;
 use crate::versions::{Choices, Side};
 use std::path::PathBuf;
 
@@ -321,4 +322,37 @@ fn an_admin_rolls_a_line_back() {
     );
     // The phase keeps what it had.
     assert_eq!(x(&s, "phase 1", "T2"), t2 + 4.0);
+}
+
+#[test]
+fn lines_have_descriptions() {
+    let (path, mut s) = project("describe");
+    s.create_line("ben", "phase 1", "main").unwrap();
+    let long = "Towers 12 to 20 replaced.\n".repeat(200);
+    s.set_line_description("ben", "phase 1", &long).unwrap();
+    assert!(
+        s.set_line_description("cara", "phase 1", "x").is_err(),
+        "not hers"
+    );
+    assert!(
+        s.set_line_description("ben", "main", "x").is_err(),
+        "admins only"
+    );
+    s.set_line_description("ana", "main", "The line as built.")
+        .unwrap();
+    assert!(
+        s.set_line_description("ben", "phase 1", &"x".repeat(MAX_DESCRIPTION + 1))
+            .is_err()
+    );
+    s.rename_line("ben", "phase 1", "phase A").unwrap();
+    s.checkpoint().unwrap();
+    drop(s);
+    let s = Session::open(&path).unwrap();
+    let lines = s.lines().unwrap();
+    assert_eq!(lines[0].description, "The line as built.");
+    assert_eq!(
+        lines[1].description,
+        long.trim_end(),
+        "kept through a rename"
+    );
 }
