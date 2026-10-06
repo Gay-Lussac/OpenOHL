@@ -5548,3 +5548,61 @@ fn image_import_failures_are_grouped_by_reason() {
     );
     assert!(e.contains("and 3 more"), "{e}");
 }
+
+/// Drawings in the level of detail: chunked like the other 3D layers,
+/// simplified at levels 1 and 2 to the row's tolerance; a row of their
+/// own in the Level of detail table.
+#[test]
+fn drawings_have_levels_of_detail() {
+    use crate::lod::{CHUNKED, DetailKind, LodSettings};
+    use crate::scene::Layer;
+    assert!(CHUNKED.contains(&Layer::Drawings));
+    assert_eq!(DetailKind::of(Layer::Drawings), DetailKind::Tolerance);
+    let row = LodSettings::default().row(Layer::Drawings);
+    assert_eq!((row.render_distance, row.detail), (10_000.0, [0.5, 2.0]));
+    row.check(Layer::Drawings).unwrap();
+    // Douglas–Peucker: a fine arc of radius 100 m (1° steps) within 0.5 m.
+    let arc: Vec<[f64; 3]> = (0..=90)
+        .map(|k| {
+            let a = f64::from(k).to_radians();
+            [100.0 * a.cos(), 100.0 * a.sin(), 0.0]
+        })
+        .collect();
+    let s = crate::chunks::simplify(&arc, 0.5);
+    assert!(s.len() < 20 && s.len() >= 3, "{}", s.len());
+    assert_eq!((s[0], *s.last().unwrap()), (arc[0], arc[90]));
+    // The test drawing: a 500 m parcel crossing tiles, cut into pieces.
+    let mut model = project_with_backgrounds("lod-drawings");
+    let index = crate::chunks::ChunkIndex::new(&model, Layer::Drawings, 0);
+    assert!(index.len() >= 2, "{}", index.len());
+    let lines = |level: usize, model: &crate::model::Model| -> usize {
+        let index = crate::chunks::ChunkIndex::new(model, Layer::Drawings, 0);
+        index
+            .keys()
+            .map(|(t, _)| {
+                index
+                    .build(model, Layer::Drawings, &t, level, &row)
+                    .counts()
+                    .0
+            })
+            .sum()
+    };
+    let full = lines(0, &model);
+    assert!(full >= 4, "{full}");
+    // A 1 m line: drawn at level 0, left out at level 2 (2 m tolerance).
+    let d = std::sync::Arc::make_mut(&mut model.backgrounds.drawings[0].drawing);
+    d.lines.push(ols_background::dxf::Polyline {
+        layer: 0,
+        color: [255, 0, 0],
+        points: vec![[300.0, 300.0, 500.0], [301.0, 300.0, 500.0]],
+        closed: false,
+    });
+    assert_eq!(lines(0, &model), full + 1);
+    assert_eq!(lines(2, &model), full);
+    // Hidden: no chunks.
+    model.hidden_backgrounds.insert("drawing:cadastre".into());
+    assert_eq!(
+        crate::chunks::ChunkIndex::new(&model, Layer::Drawings, 0).len(),
+        0
+    );
+}

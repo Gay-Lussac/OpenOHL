@@ -12,6 +12,9 @@
 //!   a share of them (every n-th, the same points every time). A point
 //!   cloud of the project or a COPC file is streamed by node instead
 //!   ([`crate::octree`]).
+//! - **Drawings** (DXF): level 0 every vertex and point; levels 1 and 2
+//!   the lines simplified to the row's tolerance (Douglas–Peucker), lines
+//!   and points smaller left out. Lines are cut where they cross tiles.
 //! - **Structures, wires, other cases, project lines**: the layers'
 //!   primitives ([`crate::scene::Prim`]) by anchor, each drawn at the
 //!   levels it belongs to; wires thinned at levels 1 and 2.
@@ -40,7 +43,14 @@ enum Content {
     Others(Vec<(usize, Vec<u32>)>),
     /// LiDAR points (indices into the model's points).
     Points(Vec<u32>),
+    /// Drawing lines (pieces within the tile) and points, with colours.
+    Lines(Vec<Line>, Vec<Dot>),
 }
+
+/// A polyline of a drawing and its colour.
+type Line = (Vec<[f64; 3]>, [u8; 4]);
+/// A point of a drawing and its colour.
+type Dot = ([f64; 3], [u8; 4]);
 
 /// A TIN: points and triangles (indices into the points).
 type Mesh = (Vec<[f64; 3]>, Vec<[usize; 3]>);
@@ -64,6 +74,62 @@ fn grow(b: &mut Option<Bounds>, p: [f64; 3]) {
         }
         None => *b = Some(Bounds { min: p, max: p }),
     }
+}
+
+/// Lowest and highest (x, y, z) of points.
+fn extent(pts: &[[f64; 3]]) -> ([f64; 3], [f64; 3]) {
+    pts.iter().fold(
+        ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]),
+        |(lo, hi), p| {
+            (
+                [0, 1, 2].map(|k| lo[k].min(p[k])),
+                [0, 1, 2].map(|k| hi[k].max(p[k])),
+            )
+        },
+    )
+}
+
+/// A polyline simplified (Douglas–Peucker): no point of it farther than
+/// `tol` from the result; the ends kept.
+pub fn simplify(pts: &[[f64; 3]], tol: f64) -> Vec<[f64; 3]> {
+    if pts.len() <= 2 {
+        return pts.to_vec();
+    }
+    let dist = |p: [f64; 3], a: [f64; 3], b: [f64; 3]| {
+        let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
+        let len2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+        let t = if len2 > 0.0 {
+            ((ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) / len2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let d = [ap[0] - t * ab[0], ap[1] - t * ab[1], ap[2] - t * ab[2]];
+        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+    };
+    let mut keep = vec![false; pts.len()];
+    keep[0] = true;
+    keep[pts.len() - 1] = true;
+    // Ranges to look at (no recursion: long lines).
+    let mut stack = vec![(0, pts.len() - 1)];
+    while let Some((i, j)) = stack.pop() {
+        let (mut far, mut at) = (0.0, 0);
+        for k in i + 1..j {
+            let d = dist(pts[k], pts[i], pts[j]);
+            if d > far {
+                (far, at) = (d, k);
+            }
+        }
+        if far > tol {
+            keep[at] = true;
+            stack.push((i, at));
+            stack.push((at, j));
+        }
+    }
+    pts.iter()
+        .zip(keep)
+        .filter_map(|(p, k)| k.then_some(*p))
+        .collect()
 }
 
 impl ChunkIndex {
@@ -139,6 +205,65 @@ impl ChunkIndex {
                     .map(|(k, v)| (k, Content::Points(v)))
                     .collect()
             }
+            Layer::Drawings => {
+                let mut by: HashMap<Tile, (Vec<Line>, Vec<Dot>)> = HashMap::new();
+                for d in &model.backgrounds.drawings {
+                    if model
+                        .hidden_backgrounds
+                        .contains(&crate::backgrounds::drawing_key(&d.info.name))
+                    {
+                        continue;
+                    }
+                    let off: Vec<bool> = d.drawing.layers.iter().map(|l| l.off).collect();
+                    let hidden = |layer: u32| off.get(layer as usize).copied().unwrap_or(false);
+                    for l in &d.drawing.lines {
+                        if hidden(l.layer) || l.points.len() < 2 {
+                            continue;
+                        }
+                        let c = [l.color[0], l.color[1], l.color[2], 255];
+                        let mut pts = l.points.clone();
+                        if l.closed {
+                            pts.push(pts[0]);
+                        }
+                        // Cut where it crosses into another tile (the
+                        // crossing segment in both pieces' tiles: the
+                        // first).
+                        let mut piece = vec![pts[0]];
+                        let mut at = tile(pts[0]);
+                        for &p in &pts[1..] {
+                            piece.push(p);
+                            let t = tile(p);
+                            if t != at {
+                                let done = std::mem::replace(&mut piece, vec![p]);
+                                for q in &done {
+                                    grow(bounds.entry(at).or_default(), *q);
+                                }
+                                by.entry(at).or_default().0.push((done, c));
+                                at = t;
+                            }
+                        }
+                        if piece.len() >= 2 {
+                            for q in &piece {
+                                grow(bounds.entry(at).or_default(), *q);
+                            }
+                            by.entry(at).or_default().0.push((piece, c));
+                        }
+                    }
+                    for m in &d.drawing.points {
+                        if !hidden(m.layer) {
+                            let t = tile(m.at);
+                            grow(bounds.entry(t).or_default(), m.at);
+                            by.entry(t)
+                                .or_default()
+                                .1
+                                .push((m.at, [m.color[0], m.color[1], m.color[2], 255]));
+                        }
+                    }
+                }
+                by.into_iter()
+                    .map(|(k, (l, p))| (k, Content::Lines(l, p)))
+                    .collect()
+            }
             _ => {
                 let mut by: HashMap<Tile, Vec<Prim>> = HashMap::new();
                 for p in scene::prims(model, layer, case) {
@@ -205,6 +330,25 @@ impl ChunkIndex {
                     detail(level).round() as usize
                 };
                 scene::draw_prims(&mut s, prims, level, per_span);
+            }
+            Content::Lines(lines, points) => {
+                for (pts, c) in lines {
+                    if level == 0 {
+                        s.polyline(pts, *c, 1.0);
+                        continue;
+                    }
+                    let tol = detail(level);
+                    let (lo, hi) = extent(pts);
+                    if (hi[0] - lo[0]).max(hi[1] - lo[1]).max(hi[2] - lo[2]) < tol {
+                        continue;
+                    }
+                    s.polyline(&simplify(pts, tol), *c, 1.0);
+                }
+                if level == 0 {
+                    for (p, c) in points {
+                        s.point(*p, *c, 3.0);
+                    }
+                }
             }
             Content::Points(points) => {
                 let stride = if level == 0 {
