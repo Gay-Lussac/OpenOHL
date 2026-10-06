@@ -1166,8 +1166,35 @@ impl Model {
             r.link.line = name.to_owned();
         }
         self.other_lines.retain(|o| o.name != name);
-        self.reload_libraries()?;
-        Ok(format!("working on project line {name} now"))
+        let started = Instant::now();
+        self.reread_line()?;
+        Ok(format!(
+            "working on project line {name} now (read in {:.0?}; weather cases solving)",
+            started.elapsed()
+        ))
+    }
+
+    /// Reads the session's line again (another project line chosen, or
+    /// renamed or deleted by someone else): its structure types resolved
+    /// with the libraries in use — project-wide, so not read again — and
+    /// its weather cases solved in the background, those shown first (as
+    /// when the project opens). The project lines shown next to it are
+    /// kept as solved. Cost: resolving the line (milliseconds); the views
+    /// show it at once, the wires as each case is solved.
+    pub fn reread_line(&mut self) -> Result<(), String> {
+        let stored = self.session().map(|s| s.export()).ok_or("no project")?;
+        let mut line = match &self.types {
+            Some((s, i)) => stored.resolve(s, i).map_err(|e| e.to_string())?,
+            None => stored,
+        };
+        let cases: Vec<WeatherCase> = self.cases.iter().map(|c| c.case.clone()).collect();
+        line.set_weather_cases(&cases);
+        // Solutions of the line left are dropped, those under way too.
+        self.solving.clear();
+        self.line_version += 1;
+        self.cases = cases.into_iter().map(Solved::pending).collect();
+        self.line = line;
+        Ok(())
     }
 
     /// Reads project lines `names` again where they are shown (another
