@@ -20,6 +20,7 @@ ols-structures.workspace = true
 ols-weather.workspace = true
 ols-terrain.workspace = true
 ols-lidar.workspace = true
+ols-background.workspace = true
 ols-crs.workspace = true
 ols-pointcloud.workspace = true
 ols-session.workspace = true
@@ -57,6 +58,7 @@ pyo3-build-config = { version = "0.29", optional = true }
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["wgpu", "eframe"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 # Writing a small LAZ survey for the point-cloud tests.
 las = { version = "0.11", features = ["laz"] }
 

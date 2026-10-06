@@ -83,6 +83,9 @@ pub struct ViewPrefs {
     /// How the display weather cases apply to the sections.
     #[serde(default)]
     pub cases_shown: CasesShown,
+    /// Backgrounds hidden (`image:<layer>`, `drawing:<name>`).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub hidden_backgrounds: std::collections::BTreeSet<String>,
 }
 
 /// The [`ViewPrefs`] of every project opened, by file (remembered).
@@ -378,6 +381,10 @@ pub struct Model {
     pub check_ground: Option<std::sync::Arc<Terrain>>,
     /// The point cloud read (`FILE.ols` or `FILE.ols#name`).
     pub cloud: Option<String>,
+    /// Orthophotos and drawings of the project (Terrain › Backgrounds).
+    pub backgrounds: crate::backgrounds::Loaded,
+    /// Backgrounds this user hides (`image:<layer>`, `drawing:<name>`).
+    pub hidden_backgrounds: std::collections::BTreeSet<String>,
     /// LiDAR points shown (thinned to the budget).
     pub points: Vec<LidarPoint>,
     /// Origin of the points (and of the views), project coordinates.
@@ -951,6 +958,7 @@ impl Model {
             section_display: self.section_display.clone(),
             wind: self.wind,
             cases_shown: self.cases_shown,
+            hidden_backgrounds: self.hidden_backgrounds.clone(),
         }
     }
 
@@ -1561,6 +1569,12 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .map(|v| v.section_display.clone())
         .unwrap_or_default();
+    let backgrounds = crate::backgrounds::load(&sources.file, &mut log);
+    let hidden_backgrounds = sources
+        .view
+        .as_ref()
+        .map(|v| v.hidden_backgrounds.clone())
+        .unwrap_or_default();
     Ok(Model {
         sources,
         line,
@@ -1572,6 +1586,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         surface_settings,
         other_surfaces,
         cloud,
+        backgrounds,
+        hidden_backgrounds,
         points,
         origin,
         scheme,

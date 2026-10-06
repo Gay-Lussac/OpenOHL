@@ -224,6 +224,64 @@ height anywhere inside the surveyed area (the convex hull of the points) is
 the linear interpolation on the triangle below. Outside it there is no
 ground: spans that are not fully over the survey are reported.
 
+## Backgrounds: orthophotos and drawings
+
+**Terrain › Backgrounds** keeps orthophotos and DXF drawings (e.g. the
+cadastre) in the project file, drawn under the line. Like point clouds and
+surfaces they belong to the project, not to the line: they are not logged
+and not undone.
+
+- **Import orthophotos…** — north-up images in the project's coordinate
+  system: **GeoTIFF** (its tags give where it lies; a GeoTIFF naming
+  another EPSG system than the project's is refused), or **TIFF, JPEG,
+  PNG with a world file** next to them (`.tfw`, `.jgw`, `.pgw`, `.wld`, or
+  the extension with `w`). Add files or a whole folder; they go into a
+  **layer** (e.g. `Orthophoto 2024`) shown or hidden as one. Each image is
+  cut into JPEG tiles of 256 pixels with a zoom pyramid (each level half
+  the last, down to one tile; about a third more): the plan view reads only
+  the tiles in sight at the level of the zoom (a coarse level first). Plain
+  black or white tiles (no data) are not kept. Importing an image of the
+  same name in the same layer replaces it. It runs in the background;
+  the project opens again to show them. An image is decoded whole (3 bytes
+  per pixel: 10 000 × 10 000 pixels need 300 MB).
+- **ECW** files are converted to GeoTIFF first by an external converter you
+  install yourself: GDAL's `gdal_translate` **with the ECW driver** (ECW is
+  a proprietary format whose decoder needs a licensed SDK; it is not part
+  of OLS CAD, and GDAL's usual builds leave it out). Give it in the window
+  (**Find** looks in the usual places: PATH, Homebrew, QGIS, OSGeo4W); it
+  is remembered on this computer. Each `.ecw` is converted into a temporary
+  GeoTIFF (its own georeferencing, else the `.eww` world file next to the
+  ECW), imported, and the temporary file removed. Without such a GDAL,
+  convert them once yourself (QGIS with ECW support, or ERDAS's free ECW
+  tools) to GeoTIFF — swisstopo, for one, publishes SWISSIMAGE as GeoTIFF
+  directly.
+- **Import DXF drawing…** — an ASCII DXF file (any version; binary DXF is
+  refused): lines, polylines (with their arcs), circles, arcs, ellipses,
+  points and texts, by layer, in their colours (the AutoCAD colour index or
+  true colour; BYLAYER, BYBLOCK), at their own heights; blocks are
+  inserted (scaled, turned, nested up to 8 deep) with their attributes.
+  Hatches, dimensions, splines, faces and meshes are counted and not
+  drawn (the import says which). Layers switched off in the file are not
+  drawn. Coordinates are taken as they are (the project's system and
+  units).
+- **Remove backgrounds…** — an orthophoto layer or a drawing, after a
+  second click.
+
+What is shown is yours (remembered on this computer, like the other view
+choices): **Orthophotos** and **Drawings** on or off, and each orthophoto
+layer and each drawing on its own — the menu stays open while you tick.
+Both are shown when a project opens.
+
+- **Orthophotos** are drawn in the **plan view** only.
+- **Drawings** are drawn in the **plan view** (texts from 6 pixels high,
+  turned as in the file) and in the **3D view** at their own heights —
+  nothing is draped on the ground: a 2D drawing (heights 0) lies at height
+  0. Texts are not drawn in 3D.
+
+**Reproject project** (Terrain › Coordinate system) moves the drawings
+with the project; orthophotos would need resampling, so they are left out
+of the new project: import them again in the new system.
+
 ## Terrain surfaces in the project
 
 A project keeps any number of terrain surfaces (TINs, *triangulated irregular networks*), by name, compressed in the project file. You choose one as **active**: it is the ground — drawn, and used for clearances, profiles and placing structures. When a project with an active surface opens, the ground is read from it (a 12.7-million-triangle surface: about 1 s) instead of being built from the LiDAR every time. Other surfaces can be **shown** too, each in its colour (the *Other surfaces* layer, drawn in chunks with levels of detail like the ground).

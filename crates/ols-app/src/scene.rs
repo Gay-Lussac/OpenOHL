@@ -36,11 +36,15 @@ pub enum Layer {
     Draft,
     /// The selection, highlighted.
     Selection,
+    /// Orthophotos (Terrain › Backgrounds), under the plan view.
+    Orthophotos,
+    /// DXF drawings (Terrain › Backgrounds), in the plan and 3D views.
+    Drawings,
 }
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 11] = [
+    pub const ALL: [Layer; 13] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
@@ -52,6 +56,8 @@ impl Layer {
         Layer::Clearances,
         Layer::Draft,
         Layer::Selection,
+        Layer::Orthophotos,
+        Layer::Drawings,
     ];
 
     /// Name in the layer panel.
@@ -68,6 +74,8 @@ impl Layer {
             Layer::Clearances => "Clearance violations",
             Layer::Draft => "Wire being strung",
             Layer::Selection => "Selection",
+            Layer::Orthophotos => "Orthophotos (plan)",
+            Layer::Drawings => "Drawings (DXF)",
         }
     }
 }
@@ -590,8 +598,10 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         Layer::Structures | Layer::Wires | Layer::OtherCases | Layer::OtherLines => {
             draw_prims(&mut s, &prims(model, layer, case), 0, usize::MAX);
         }
-        // Drawn from the clearance report ([`marks`]).
-        Layer::Clearances | Layer::Draft => {}
+        // Drawn from the clearance report ([`marks`]); orthophotos in plan
+        // only.
+        Layer::Clearances | Layer::Draft | Layer::Orthophotos => {}
+        Layer::Drawings => crate::backgrounds::scene(model, &mut s),
         Layer::Selection => {
             let hi = [255, 255, 255, 255];
             match selection {

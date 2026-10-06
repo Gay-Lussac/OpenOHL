@@ -506,9 +506,10 @@ impl Windows {
                     let from = Crs::parse(&model.line.crs);
                     ui.label(
                         "Moves the whole project into another coordinate system — the working \
-                         line, the project lines saved, the terrain surfaces and the point \
-                         clouds — and writes it as a new project file; this one is not \
-                         changed.",
+                         line, the project lines saved, the terrain surfaces, the point clouds \
+                         and the DXF drawings — and writes it as a new project file; this one \
+                         is not changed. Orthophotos are left out: import them again in the new \
+                         system.",
                     );
                     ui.label(format!("From: {}", ols_crs::describe(&model.line.crs)));
                     if from.is_err() {
@@ -712,6 +713,10 @@ pub fn reproject_file(
         points += cloud.points;
     }
     drop(store);
+    report("moving the drawings…".into(), 0.98);
+    let images = ols_background::Store::open(path)
+        .and_then(|s| s.reproject(to.name(), &moved))
+        .map_err(|e| e.to_string())?;
     ols_session::Session::open(path)
         .and_then(|s| s.checkpoint())
         .map_err(|e| e.to_string())?;
@@ -723,7 +728,14 @@ pub fn reproject_file(
         ols_crs::describe(to.name()),
         clouds.len(),
         path.display()
-    ))
+    ) + &if images > 0 {
+        format!(
+            " The {images} orthophoto(s) are not in the new project: import them again in the \
+             new system."
+        )
+    } else {
+        String::new()
+    })
 }
 
 /// [`check`] for the tests.

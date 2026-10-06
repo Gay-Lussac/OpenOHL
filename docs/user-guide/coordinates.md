@@ -48,8 +48,10 @@ ols crs line line.ols.json --to EPSG:32632 --out line-utm.ols.json
   system and writes it as a **new project file** (`<name> <system>.ols`
   next to it by default; an existing file is never replaced): the working
   line, the project lines saved, every terrain surface (the triangles are
-  kept) and every point cloud (each point moved and binned again, its
-  class, intensity and returns kept; the levels of detail rebuilt). The
+  kept), every point cloud (each point moved and binned again, its
+  class, intensity and returns kept; the levels of detail rebuilt) and
+  every DXF drawing. Orthophotos are left out (they would need
+  resampling): import them again in the new system. The
   project you are in is not changed. It runs in the background with a
   progress bar (LiDAR: about 1 µs per point, so 100 million points take a few
   minutes) and the new project opens when you close the progress window. The
