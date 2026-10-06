@@ -5389,3 +5389,104 @@ fn background_images() {
         .save(format!("{dir}/3d.png"))
         .unwrap();
 }
+
+/// Terrain surfaces › Build from LiDAR: the model's classes in a list to
+/// tick (the ground classes at first); nothing to tick without LiDAR.
+#[test]
+fn the_ground_is_built_from_the_classes_ticked() {
+    use egui_kittest::kittest::NodeT;
+    let mut model = synthetic_project("build-classes");
+    model.points = vec![
+        ([0, 0, 0], 2),
+        ([1000, 0, 0], 3),
+        ([2000, 0, 0], 5),
+        ([3000, 0, 0], 6),
+    ];
+    model.class_counts = vec![(2, 40), (3, 10), (5, 7), (6, 2)];
+    model.cloud = Some("survey.ols".into());
+    let classes = crate::surfaces::lidar_classes(&model);
+    assert_eq!(
+        classes.iter().map(|c| (c.0, c.2)).collect::<Vec<_>>(),
+        [(2, 40), (3, 10), (5, 7), (6, 2)]
+    );
+    let label = |code: u8| {
+        let c = classes.iter().find(|c| c.0 == code).unwrap();
+        format!("{} {} ({} points)", c.0, c.1, c.2)
+    };
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(
+            r.surfaces.lidar.chosen(&classes),
+            [2].into(),
+            "the ground classes"
+        );
+        r.surfaces.show(&r.model);
+    }
+    harness.run();
+    harness.get_by_label(&label(3)).click();
+    harness.run();
+    harness.get_by_label(&label(2)).click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.surfaces.lidar.classes, Some([3].into()));
+    // Without LiDAR: the list is empty and Build cannot be pressed.
+    let model = synthetic_project("build-no-lidar");
+    assert!(crate::surfaces::lidar_classes(&model).is_empty());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.surfaces.show(&r.model);
+    }
+    harness.run();
+    harness.get_by_label("The model has no LiDAR points.");
+    assert!(harness.get_by_label("Build").accesskit_node().is_disabled());
+}
+
+#[test]
+#[ignore = "writes an image of the surfaces window to OLS_SHOTS (a look by eye)"]
+fn surfaces_window_image() {
+    let Ok(dir) = std::env::var("OLS_SHOTS") else {
+        return;
+    };
+    let mut model = synthetic_project("surfaces-shot");
+    model.points = vec![
+        ([0, 0, 0], 2),
+        ([1000, 0, 0], 3),
+        ([2000, 0, 0], 5),
+        ([3000, 0, 0], 6),
+    ];
+    model.class_counts = vec![
+        (1, 900),
+        (2, 40),
+        (3, 10),
+        (4, 12),
+        (5, 7),
+        (6, 2),
+        (7, 1),
+        (9, 3),
+        (17, 4),
+    ];
+    model.cloud = Some("survey.ols".into());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.surfaces.show(&r.model);
+    }
+    harness.run();
+    harness.run();
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/surfaces.png"))
+        .unwrap();
+}
