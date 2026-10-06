@@ -150,17 +150,30 @@ pub fn menu(ui: &mut egui::Ui, r: &mut Ready) {
     let all = lines(r);
     ui.label(egui::RichText::new(format!("Working on: {current}")).strong())
         .on_hover_text("Your edits go to this project line; the others are not changed");
-    if ui
-        .button("Project lines…")
-        .on_hover_text(
-            "Every line of the project: choose the one you work on and those shown next to \
-             it; rename, delete",
-        )
-        .clicked()
-    {
-        r.lines_window = Some(LinesWindow::Manage);
-        ui.close();
-    }
+    ui.menu_button("Project lines", |ui| {
+        if ui
+            .button("Project lines…")
+            .on_hover_text(
+                "Every line of the project: choose the one you work on and those shown next \
+                 to it; rename, delete",
+            )
+            .clicked()
+        {
+            r.lines_window = Some(LinesWindow::Manage);
+            ui.close();
+        }
+        if ui
+            .button("Working tree…")
+            .on_hover_text(
+                "The lines through time, left to right: when each started, which exist, where \
+                 they were merged; admins roll a line back",
+            )
+            .clicked()
+        {
+            r.working_tree.open = true;
+            ui.close();
+        }
+    });
     ui.separator();
     let rights = Rights::of(r);
     if ui
@@ -347,6 +360,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
     let mut switch: Option<String> = None;
     let mut toggle: Option<(String, bool)> = None;
     let mut next: Option<LinesWindow> = None;
+    let mut open_tree = false;
     let title = match &w {
         LinesWindow::Manage => "Project lines".to_owned(),
         LinesWindow::New { .. } => "New project line".to_owned(),
@@ -500,6 +514,9 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                         next = Some(LinesWindow::Review {
                             note: String::new(),
                         });
+                    }
+                    if ui.button("Working tree…").clicked() {
+                        open_tree = true;
                     }
                 });
             }
@@ -752,6 +769,9 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
     }
     if let Some(name) = switch {
         r.switch_line(&name);
+    }
+    if open_tree {
+        r.working_tree.open = true;
     }
     if let Some((what, o)) = op {
         let renamed = match &o {

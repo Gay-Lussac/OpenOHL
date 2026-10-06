@@ -138,6 +138,10 @@ working state above:
   a file is opened.
 - Libraries, surfaces, point clouds, backgrounds and settings stay
   project-wide.
+- Admins **roll a line back** to any revision (`Session::roll_back_line`,
+  the working tree): the line's state becomes that revision's. It is
+  recorded as a new revision after the line's uncommitted work, so the
+  history only grows.
 
 The server protocol is version 2: requests and broadcasts carry the line,
 and soft locks are per line.

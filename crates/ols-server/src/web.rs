@@ -102,6 +102,7 @@ pub fn changes_scene(op: &Op, line: &str) -> bool {
         // Version control: these replace the working state (line and
         // libraries).
         Op::BringIn { .. } | Op::Merge { .. } | Op::Revert { .. } => main,
+        Op::RollBackLine { line, .. } => line == ols_session::versions::MAIN,
         // Into its target, whichever line it was asked from; lines
         // deleted or renamed (the main one among them).
         Op::MergeReview { .. } | Op::DeleteLine { .. } | Op::RenameLine { .. } => true,

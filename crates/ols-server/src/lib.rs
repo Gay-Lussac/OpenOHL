@@ -135,6 +135,14 @@ pub enum Op {
         /// New name.
         to: String,
     },
+    /// Admin: roll a project line back to a revision (recorded as a new
+    /// revision; nothing is lost).
+    RollBackLine {
+        /// The line.
+        line: String,
+        /// Revision, branch or tag.
+        revision: String,
+    },
     /// Bring the changes of another project line into this one.
     BringIn {
         /// The line whose changes come in.
@@ -308,9 +316,11 @@ impl Op {
                 of(command, &mut out).then_some(out)
             }
             // The working state replaced at large.
-            Op::BringIn { .. } | Op::Merge { .. } | Op::Revert { .. } | Op::MergeReview { .. } => {
-                None
-            }
+            Op::BringIn { .. }
+            | Op::RollBackLine { .. }
+            | Op::Merge { .. }
+            | Op::Revert { .. }
+            | Op::MergeReview { .. } => None,
             _ => Some(Vec::new()),
         }
     }
@@ -334,6 +344,12 @@ impl Op {
             Op::DeleteLine { name } => format!("project line {name} deleted"),
             Op::RenameLine { from, to } => format!("project line {from} renamed {to}"),
             Op::BringIn { from, .. } => format!("changes of {from} brought in"),
+            Op::RollBackLine { line, revision } => {
+                format!(
+                    "project line {line} rolled back to {}",
+                    ols_session::versions::short(revision)
+                )
+            }
             Op::SetSetting { key, .. } => format!("setting {key}"),
             Op::Commit { message } => format!("commit \"{message}\""),
             Op::CreateBranch { name, .. } => format!("branch {name} made"),
@@ -408,6 +424,15 @@ fn run(session: &mut Session, user: &str, op: &Op) -> Result<Option<Applied>, Se
             None
         }
         Op::BringIn { from, choices } => session.bring_in(user, from, choices)?.applied,
+        // What changed in the line worked on (another line: nothing here).
+        Op::RollBackLine { line, revision } => {
+            let applied = session.roll_back_line(user, line, revision)?;
+            if line == session.current_line() {
+                applied
+            } else {
+                None
+            }
+        }
         Op::SetSetting { key, value } => {
             session.require(user, Role::Designer)?;
             session.set_setting(key, value.as_deref())?;

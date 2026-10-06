@@ -44,7 +44,8 @@ The menu stays open while you tick lines to show.
 | Item | What it does |
 |---|---|
 | **Working on: *name*** | The line your edits go to. |
-| **Project lines…** | The window listing every line: choose the one you work on and those shown; rename, delete (below). |
+| **Project lines ›** **Project lines…** | The window listing every line: choose the one you work on and those shown; rename, delete (below). |
+| **Project lines ›** **Working tree…** | The lines through time (below). |
 | **New line from *name*…** | A copy of the line you work on, under a new name (e.g. *phase 1*). You keep working on your line until you choose the new one. |
 | **Bring in changes from another line…** | Brings what changed on another line (by default the main line) into yours. |
 | **Submit this line for review into the main line…** | When a phase is ready to go into the main line (greyed out on the main line itself). |
@@ -74,6 +75,36 @@ Below the list: **New line from *name*…**, **Bring in changes…** and
   to another line. The line you work on and the project's only line cannot
   be deleted. Deleting is not undone with ⌘Z.
 
+## The working tree
+
+**Lines › Project lines › Working tree…** (also in the Project lines
+window) draws the history of the project lines. The oldest is on the left
+and time runs to the right: one column per revision, with the date under
+the first of each day.
+
+- **One lane per line**, the main line on top, each in its colour; *(you)*
+  marks the line you work on. A line's lane starts where it was made from
+  another, joined to it by a curve. Hover a line's name for who made it,
+  when, and from what.
+- **A dot per revision.** The larger dot is the line's latest revision; a
+  ringed dot is a **merge** (changes brought in, or a review merged), joined
+  to the line the changes came from. Tags are written above their revision.
+- **An open dot** after a line's last revision means it has work not
+  committed yet.
+- **Grey, *lines deleted*:** revisions of lines that no longer exist.
+- **Click a revision** for its message, author, time and line.
+  - **New line from it…** starts a line from that revision.
+  - **Roll back** (admins only): choose the line (by default the
+    revision's own) and confirm. The line's state becomes the revision's.
+    The line's uncommitted work is recorded first, and the rollback is
+    recorded as a new revision, so nothing is lost and a rollback can itself
+    be rolled back. Others who work on or show that line see it change.
+    Designers see *Rolling a line back: admins only*.
+
+A line whose changes were merged into another by a *fast-forward* (the other
+line had not changed meanwhile) shares its revisions with it: they are drawn
+on the upper lane.
+
 ### Who may do what
 
 | | Viewer | Designer | Admin |
@@ -86,6 +117,7 @@ Below the list: **New line from *name*…**, **Bring in changes…** and
 | Bring in changes | — | yes | yes |
 | Submit a line for review | — | yes | yes |
 | Approve and merge a review | — | if named reviewer | yes |
+| Roll a line back (working tree) | — | — | yes |
 
 Admins can also **protect** a line (Edit › Versions): it then changes only
 through admins or approved reviews.
@@ -153,6 +185,7 @@ ols project apply project.ols --user ben '{"op": "move_structure", "id": "T6", "
 ols project checkout project.ols main --user ana             # back to the main line
 ols project branch project.ols                               # list the lines (branches) and tags
 ols project branch project.ols "phase 1" --delete --confirm --user ben
+ols project history project.ols                              # the revisions with their lines and tags
 ```
 
 `checkout` also sets the line the file opens on; nothing else changes.
