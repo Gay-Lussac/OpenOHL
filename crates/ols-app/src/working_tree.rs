@@ -151,6 +151,9 @@ pub struct TreeWindow {
     pub open: bool,
     /// The revision clicked.
     pub selected: Option<String>,
+    /// The uncommitted work of a line clicked (its lane), and the commit
+    /// message typed.
+    pub work: Option<(usize, String)>,
     /// The line to roll back to the revision clicked, and whether it is
     /// confirmed.
     rollback: Option<(String, bool)>,
@@ -163,8 +166,15 @@ const COL: f32 = 34.0;
 const ROW: f32 = 34.0;
 const LABELS: f32 = 150.0;
 
+/// A time as day.month.year hours:minutes (UTC).
 fn when(time: &str) -> String {
-    time.get(..16).unwrap_or(time).replace('T', " ")
+    match (time.get(..10), time.get(11..16)) {
+        (Some(day), Some(clock)) => {
+            let d: Vec<&str> = day.split('-').rev().collect();
+            format!("{} {clock}", d.join("."))
+        }
+        _ => time.to_owned(),
+    }
 }
 
 impl TreeWindow {
@@ -209,10 +219,11 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
         return;
     };
     let admin = r.model.my_role() == Some(ols_session::Role::Admin);
+    let can_edit = r.model.can_edit().is_ok();
     let current = r.model.project_line();
     let mut open = true;
     let mut action: Option<(String, Op)> = None;
-    let mut new_line_from: Option<String> = None;
+    let mut new_line_from: Option<(String, String)> = None;
     let w = &mut r.working_tree;
     egui::Window::new("Working tree")
         .open(&mut open)
@@ -353,12 +364,61 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                             ));
                         }
                         painter.circle_stroke(at, 6.0, egui::Stroke::new(2.0, color));
-                        let hover = ui.interact(
-                            egui::Rect::from_center_size(at, egui::vec2(16.0, 16.0)),
+                        if w.work.as_ref().is_some_and(|x| x.0 == k) {
+                            painter.circle_stroke(
+                                at,
+                                10.0,
+                                egui::Stroke::new(2.0, egui::Color32::WHITE),
+                            );
+                        }
+                        let hit = ui.interact(
+                            egui::Rect::from_center_size(at, egui::vec2(18.0, 18.0)),
                             ui.id().with(("uncommitted", k)),
-                            egui::Sense::hover(),
+                            egui::Sense::click(),
                         );
-                        hover.on_hover_text(format!("{}: work not committed yet", lane.name));
+                        if hit.clicked() {
+                            w.selected = None;
+                            w.rollback = None;
+                            w.work = Some((k, String::new()));
+                        }
+                        hit.on_hover_text(format!(
+                            "{}: work not committed yet — click to see it",
+                            lane.name
+                        ));
+                    }
+                    // A line with no revision of its own yet: a ring where it
+                    // started (on the lane of the line it came from).
+                    for (k, lane) in tree.lanes.iter().enumerate() {
+                        if lane.line.is_none() || tree.nodes.iter().any(|n| n.lane == k) {
+                            continue;
+                        }
+                        let Some(&h) = lane.head.as_ref().and_then(|h| tree.index.get(h)) else {
+                            continue;
+                        };
+                        let head = &tree.nodes[h];
+                        let at = pos(k, head.col);
+                        let color = lane_color(&tree, k);
+                        painter.line_segment(
+                            [pos(head.lane, head.col), at],
+                            egui::Stroke::new(1.5, color),
+                        );
+                        painter.circle_filled(at, 4.0, egui::Color32::from_gray(30));
+                        painter.circle_stroke(at, 4.5, egui::Stroke::new(2.0, color));
+                        let hit = ui.interact(
+                            egui::Rect::from_center_size(at, egui::vec2(18.0, 18.0)),
+                            ui.id().with(("start", k)),
+                            egui::Sense::click(),
+                        );
+                        if hit.clicked() {
+                            w.work = None;
+                            w.selected = Some(head.revision.id.clone());
+                            w.rollback = Some((lane.name.clone(), false));
+                        }
+                        hit.on_hover_text(format!(
+                            "{} started here ({}), nothing of its own committed yet",
+                            lane.name,
+                            head.revision.short()
+                        ));
                     }
                     // Revisions.
                     let mut last_day = String::new();
@@ -409,6 +469,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                             egui::Sense::click(),
                         );
                         if hit.clicked() {
+                            w.work = None;
                             w.selected = Some(n.revision.id.clone());
                             w.rollback = tree.lanes[n.lane]
                                 .line
@@ -424,10 +485,54 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                         ));
                     }
                 });
-            // The revision clicked.
+            // The revision clicked, or a line's uncommitted work.
             ui.separator();
+            if let Some((k, message)) = &mut w.work {
+                let Some(lane) = tree.lanes.get(*k).filter(|l| l.uncommitted) else {
+                    w.work = None;
+                    return;
+                };
+                ui.strong(format!("{}: work not committed yet", lane.name));
+                if lane.name == current && can_edit {
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(message)
+                                .hint_text("Why: raised T12 by 3 m for the road crossing")
+                                .desired_width(360.0),
+                        );
+                        if ui
+                            .add_enabled(!message.trim().is_empty(), egui::Button::new("Commit"))
+                            .on_hover_text("Records it as a revision of this line")
+                            .clicked()
+                        {
+                            action = Some((
+                                format!("{} committed", lane.name),
+                                Op::Commit {
+                                    message: message.trim().to_owned(),
+                                },
+                            ));
+                        }
+                    });
+                } else {
+                    ui.label(
+                        egui::RichText::new(
+                            "Committed by whoever works on the line (Lines › Project lines: \
+                             work on it, then commit here); bringing in changes and \
+                             submitting a review record it too.",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                }
+                return;
+            }
             let Some(id) = w.selected.clone() else {
-                ui.label(egui::RichText::new("Click a revision for its details.").weak());
+                ui.label(
+                    egui::RichText::new(
+                        "Click a revision, or an open dot (work not committed), for its details.",
+                    )
+                    .weak(),
+                );
                 return;
             };
             let Some(n) = tree.index.get(&id).map(|&k| &tree.nodes[k]) else {
@@ -457,7 +562,13 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                         .on_hover_text("A project line starting from this revision")
                         .clicked()
                 {
-                    new_line_from = Some(id.clone());
+                    let words = format!(
+                        "{} at {} — {}",
+                        tree.lanes[n.lane].name,
+                        when(&n.revision.time),
+                        n.revision.message
+                    );
+                    new_line_from = Some((id.clone(), words));
                 }
                 let lines: Vec<String> = tree
                     .lanes
@@ -521,7 +632,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             });
         });
     w.open = open;
-    if let Some(from) = new_line_from {
+    if let Some((from, words)) = new_line_from {
         let names: Vec<String> = tree
             .lanes
             .iter()
@@ -529,7 +640,8 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             .collect();
         r.lines_window = Some(crate::project_lines::LinesWindow::New {
             name: crate::editors::next_id(names.iter().map(String::as_str), "phase 0"),
-            from,
+            from: from.clone(),
+            at: Some((from, words)),
         });
     }
     if let Some((what, op)) = action {

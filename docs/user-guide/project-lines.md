@@ -93,7 +93,14 @@ the first of each day.
   committed yet.
 - **Grey, *lines deleted*:** revisions of lines that no longer exist.
 - **Click a revision** for its message, author, time and line.
-  - **New line from it…** starts a line from that revision.
+  - **New line from it…** starts a line from that revision: *copy of*
+    names it in words (its line, when, its message, e.g. *main at
+    06.10.2026 14:32 — T2 corrected*); the list also offers each line as it
+    is now.
+- **A line with nothing committed of its own yet** has a small ring where it
+  started (click: the revision it started from).
+- **Click an open dot** to see a line's uncommitted work. On the line you
+  work on, type a message and **Commit** it there.
   - **Roll back** (admins only): choose the line (by default the
     revision's own) and confirm. The line's state becomes the revision's.
     The line's uncommitted work is recorded first, and the rollback is
