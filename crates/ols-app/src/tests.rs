@@ -2437,7 +2437,7 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
         harness.run();
         {
             let r = harness.state_mut().ready().unwrap();
-            let Some(LinesWindow::New { name, from }) = &mut r.lines_window else {
+            let Some(LinesWindow::New { name, from, .. }) = &mut r.lines_window else {
                 panic!("{:?}", r.lines_window);
             };
             assert_eq!(from, "main");
@@ -6084,4 +6084,94 @@ fn working_tree_image() {
         .unwrap()
         .save(format!("{dir}/working-tree.png"))
         .unwrap();
+}
+
+/// Working tree: a new line with only uncommitted work can be clicked (its
+/// open dot) and committed there; "New line from it" names the revision in
+/// words (its line, when, its message), not by its id.
+#[test]
+fn a_new_lines_work_is_committed_from_the_tree() {
+    use crate::project_lines::LinesWindow;
+    use ols_server::Op;
+    let mut m = synthetic_project("tree-work");
+    m.project_op(
+        "c",
+        Op::Commit {
+            message: "as imported".into(),
+        },
+    )
+    .unwrap();
+    m.project_op(
+        "l",
+        Op::CreateLine {
+            name: "phase 1".into(),
+            from: "main".into(),
+        },
+    )
+    .unwrap();
+    m.switch_line("phase 1").unwrap();
+    let p = m.line.structure("T2").unwrap().position;
+    m.apply(
+        "T2",
+        ols_session::Command::MoveStructure {
+            id: "T2".into(),
+            position: [p[0] + 1.0, p[1], p[2]],
+        },
+    )
+    .unwrap();
+    let start = m.session().unwrap().head_revision().unwrap().unwrap();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(m, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().working_tree.open = true;
+    harness.run();
+    // Its uncommitted work (the open dot of lane 1), committed here.
+    harness.state_mut().ready().unwrap().working_tree.work = Some((1, "T2 east".into()));
+    harness.run();
+    assert!(
+        harness
+            .query_by_label("phase 1: work not committed yet")
+            .is_some()
+    );
+    harness.get_by_label("Commit").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r.model.session().unwrap();
+        assert!(!s.has_uncommitted("phase 1").unwrap(), "{:?}", r.status);
+        assert_eq!(
+            s.revision(&s.head_revision().unwrap().unwrap())
+                .unwrap()
+                .message,
+            "T2 east"
+        );
+        // New line from the first revision: shown in words.
+        r.working_tree.selected = Some(start.clone());
+    }
+    harness.run();
+    harness.get_by_label("New line from it…").click();
+    harness.run();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let Some(LinesWindow::New {
+        from,
+        at: Some((id, words)),
+        ..
+    }) = &r.lines_window
+    else {
+        panic!("{:?}", r.lines_window);
+    };
+    assert_eq!((from, id), (&start, &start));
+    assert!(
+        words.starts_with("main at ") && words.ends_with("as imported"),
+        "{words}"
+    );
+    if let Ok(dir) = std::env::var("OLS_SHOTS") {
+        harness
+            .render()
+            .unwrap()
+            .save(format!("{dir}/new-line-from-revision.png"))
+            .unwrap();
+    }
 }

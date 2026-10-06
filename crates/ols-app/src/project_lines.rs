@@ -21,12 +21,15 @@ use crate::scene::Layer;
 pub enum LinesWindow {
     /// Project lines: every line, which one is worked on, which are shown.
     Manage,
-    /// Start a line: its name, the line it starts from.
+    /// Start a line: its name, the line (or revision) it starts from.
     New {
         /// Name.
         name: String,
-        /// The line it starts from.
+        /// The line it starts from, or the revision `at`.
         from: String,
+        /// A revision it may start from (from the working tree): its id
+        /// and what it is in words (its line, when, its message).
+        at: Option<(String, String)>,
     },
     /// Bring in the changes of another line.
     BringIn {
@@ -288,6 +291,7 @@ fn new_window(all: &[LineInfo], from: &str) -> LinesWindow {
     LinesWindow::New {
         name,
         from: from.to_owned(),
+        at: None,
     }
 }
 
@@ -520,7 +524,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                     }
                 });
             }
-            LinesWindow::New { name, from } => {
+            LinesWindow::New { name, from, at } => {
                 ui.label(
                     "A new project line starts as a copy of another — as it is now, changes \
                      not yet committed included. From then on each is edited on its own: \
@@ -532,11 +536,25 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                     ui.text_edit_singleline(name);
                     ui.end_row();
                     ui.label("copy of");
+                    // A revision in words; a line by its name.
+                    let shown = match at {
+                        Some((id, words)) if id == from => words.clone(),
+                        _ => from.clone(),
+                    };
                     egui::ComboBox::from_id_salt("new-line-from")
-                        .selected_text(from.as_str())
+                        .selected_text(shown)
+                        .width(360.0)
                         .show_ui(ui, |ui| {
+                            if let Some((id, words)) = at {
+                                ui.selectable_value(from, id.clone(), words.as_str());
+                                ui.separator();
+                            }
                             for l in &all {
-                                ui.selectable_value(from, l.name.clone(), &l.name);
+                                ui.selectable_value(
+                                    from,
+                                    l.name.clone(),
+                                    format!("{} as it is now", l.name),
+                                );
                             }
                         });
                     ui.end_row();
@@ -553,8 +571,12 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                 ui.horizontal(|ui| {
                     if ui.button("Create").clicked() {
                         let n = name.trim().to_owned();
+                        let source = match at {
+                            Some((id, words)) if id == from => words.clone(),
+                            _ => from.clone(),
+                        };
                         op = Some((
-                            format!("project line {n} started from {from}"),
+                            format!("project line {n} started from {source}"),
                             Op::CreateLine {
                                 name: n,
                                 from: from.clone(),
