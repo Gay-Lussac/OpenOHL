@@ -298,7 +298,7 @@ Terrain › **Terrain surfaces (TIN)…** manages them:
   | Terrain plugins | as they say | e.g. `plugins/examples/esri-grid` (ESRI ASCII grids, `.asc`) |
 
   The first surface kept becomes the ground when there is none.
-- **Build from the LiDAR ground classes:** the lowest point of each cell (default 1 m), near the line or the whole cloud, triangulated with a longest side (default 50 m).
+- **Build from LiDAR:** tick the classes the ground is built from in the list of every LiDAR class of the model (code, name, points; it scrolls). At first the classes with the `ground` role are ticked; **Ground classes**, **All** and **None** set the ticks at once. Without LiDAR points the section is greyed out. Then the lowest point of each cell (default 1 m) of those classes, near the line or the whole cloud, is triangulated with a longest side (default 50 m) and kept under the **surface name** given.
 - **Keep the ground shown as a surface:** the ground built at opening (from the LiDAR or a survey file), kept so the next opening reads it.
 - **Active** (radio) and **shown** (tick, colour) are your own choice: remembered on this computer for this project, never written to the project nor sent to a server — everyone working on a hosted project decides what they show.
 - **Checks** (radio): the surface the checks (clearances) use, chosen for the project — one for everyone (a project setting; needs edit rights). None chosen: each user's ground. (The clearance checks will be reworked around the LiDAR points.)

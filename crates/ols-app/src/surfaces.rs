@@ -128,6 +128,9 @@ pub struct LidarBuild {
     /// Only near the line (the corridor of the model), else the whole
     /// cloud.
     pub corridor: bool,
+    /// The LiDAR classes the ground is built from (`None` until chosen:
+    /// the classes with the ground role).
+    pub classes: Option<std::collections::BTreeSet<u8>>,
 }
 
 impl Default for LidarBuild {
@@ -137,7 +140,44 @@ impl Default for LidarBuild {
             cell: 1.0,
             max_edge: 50.0,
             corridor: true,
+            classes: None,
         }
+    }
+}
+
+/// A LiDAR class of the model: code, name, points (whole cloud when
+/// known, else those loaded), whether it has the ground role.
+pub type LidarClass = (u8, String, u64, bool);
+
+/// Every LiDAR class of the model's point cloud, by code.
+pub fn lidar_classes(model: &Model) -> Vec<LidarClass> {
+    let mut counts: std::collections::BTreeMap<u8, u64> = Default::default();
+    for (_, c) in &model.points {
+        *counts.entry(*c).or_default() += 1;
+    }
+    for (c, n) in &model.class_counts {
+        counts.insert(*c, *n);
+    }
+    counts
+        .into_iter()
+        .map(|(code, n)| {
+            let def = model.scheme.class(code);
+            (
+                code,
+                def.map_or_else(|| "unknown".to_owned(), |c| c.name.clone()),
+                n,
+                def.is_some_and(|c| c.roles.iter().any(|r| r == "ground")),
+            )
+        })
+        .collect()
+}
+
+impl LidarBuild {
+    /// The classes ticked: those chosen, else the ground classes there are.
+    pub fn chosen(&self, classes: &[LidarClass]) -> std::collections::BTreeSet<u8> {
+        self.classes
+            .clone()
+            .unwrap_or_else(|| classes.iter().filter(|c| c.3).map(|c| c.0).collect())
     }
 }
 
@@ -569,35 +609,90 @@ impl SurfacesWindow {
                             action = Some(Action::Import(path));
                         }
                     });
-                    ui.strong("Build from the LiDAR ground classes");
-                    ui.horizontal(|ui| {
-                        ui.label("name");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.lidar.name).desired_width(140.0),
-                        );
-                        ui.label("cell");
-                        ui.add(
-                            egui::DragValue::new(&mut self.lidar.cell)
-                                .range(0.1..=50.0)
-                                .speed(0.1)
-                                .suffix(" m"),
-                        )
-                        .on_hover_text("The lowest ground point of each square cell is kept");
-                        ui.label("longest side");
-                        ui.add(
-                            egui::DragValue::new(&mut self.lidar.max_edge)
-                                .range(1.0..=10_000.0)
-                                .suffix(" m"),
-                        )
-                        .on_hover_text("No ground across larger gaps in the data");
-                        ui.checkbox(&mut self.lidar.corridor, "near the line only");
-                        if ui
-                            .add_enabled(model.cloud.is_some(), egui::Button::new("Build"))
-                            .on_disabled_hover_text("The project has no point cloud")
-                            .clicked()
-                        {
-                            action = Some(Action::Lidar);
+                    ui.strong("Build from LiDAR");
+                    let classes = lidar_classes(model);
+                    let has_points = model.cloud.is_some() && !classes.is_empty();
+                    ui.add_enabled_ui(has_points, |ui| {
+                        if !has_points {
+                            ui.label(
+                                egui::RichText::new("The model has no LiDAR points.").weak(),
+                            );
                         }
+                        let mut chosen = self.lidar.chosen(&classes);
+                        let before = chosen.clone();
+                        ui.horizontal(|ui| {
+                            ui.label("Classes the ground is built from:");
+                            if ui
+                                .small_button("Ground classes")
+                                .on_hover_text("The classes with the ground role")
+                                .clicked()
+                            {
+                                chosen = classes.iter().filter(|c| c.3).map(|c| c.0).collect();
+                            }
+                            if ui.small_button("All").clicked() {
+                                chosen = classes.iter().map(|c| c.0).collect();
+                            }
+                            if ui.small_button("None").clicked() {
+                                chosen.clear();
+                            }
+                        });
+                        egui::Frame::group(ui.style()).show(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .id_salt("lidar-build-classes")
+                                .min_scrolled_height(130.0)
+                                .max_height(130.0)
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    for (code, name, n, _) in &classes {
+                                        let mut on = chosen.contains(code);
+                                        if ui
+                                            .checkbox(&mut on, format!("{code} {name} ({n} points)"))
+                                            .changed()
+                                        {
+                                            if on {
+                                                chosen.insert(*code);
+                                            } else {
+                                                chosen.remove(code);
+                                            }
+                                        }
+                                    }
+                                });
+                        });
+                        if chosen != before {
+                            self.lidar.classes = Some(chosen.clone());
+                        }
+                        ui.horizontal(|ui| {
+                            ui.label("surface name");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.lidar.name)
+                                    .desired_width(140.0),
+                            )
+                            .on_hover_text("The name the new surface is kept under");
+                            ui.label("cell");
+                            ui.add(
+                                egui::DragValue::new(&mut self.lidar.cell)
+                                    .range(0.1..=50.0)
+                                    .speed(0.1)
+                                    .suffix(" m"),
+                            )
+                            .on_hover_text("The lowest point of each square cell is kept");
+                            ui.label("longest side");
+                            ui.add(
+                                egui::DragValue::new(&mut self.lidar.max_edge)
+                                    .range(1.0..=10_000.0)
+                                    .suffix(" m"),
+                            )
+                            .on_hover_text("No ground across larger gaps in the data");
+                            ui.checkbox(&mut self.lidar.corridor, "near the line only");
+                            if ui
+                                .add_enabled(!chosen.is_empty(), egui::Button::new("Build"))
+                                .on_disabled_hover_text("Tick the classes to build from")
+                                .clicked()
+                            {
+                                self.lidar.classes = Some(chosen.clone());
+                                action = Some(Action::Lidar);
+                            }
+                        });
                     });
                     if model.ground.is_some()
                         && model.surface_settings.active.is_none()
@@ -913,10 +1008,16 @@ fn build_from_lidar(
     project: &Path,
     user: &str,
 ) -> Result<Vec<String>, String> {
-    // A project's cloud or a COPC file: only the ground classes' blocks
-    // (nodes) in the corridor are read.
+    // A project's cloud or a COPC file: only the blocks (nodes) of the
+    // classes chosen in the corridor are read.
     let source = ols_pointcloud::open_source(cloud)?;
-    let ground = scheme.codes_with_role("ground");
+    let ground: Vec<u8> = match &build.classes {
+        Some(c) => c.iter().copied().collect(),
+        None => scheme.codes_with_role("ground"),
+    };
+    if ground.is_empty() {
+        return Err("no LiDAR class chosen to build the ground from".into());
+    }
     let cell = build.cell.max(0.1);
     let mut points = ols_lidar::LowestPerCell::new(Some(cell));
     let budget = ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
@@ -929,13 +1030,18 @@ fn build_from_lidar(
         )
         .map_err(|e| e.to_string())?;
     if points.points().len() < 3 {
-        return Err("fewer than three ground points (classes with the ground role)".into());
+        return Err(format!("fewer than three points of classes {ground:?}"));
     }
     let t = points
         .terrain(Some(build.max_edge))
         .map_err(|e| e.to_string())?;
     let source = format!(
-        "LiDAR ground classes, {} m cells, sides ≤ {} m{}",
+        "LiDAR classes {}, {} m cells, sides ≤ {} m{}",
+        ground
+            .iter()
+            .map(u8::to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
         cell,
         build.max_edge,
         if corridor.is_some() {
