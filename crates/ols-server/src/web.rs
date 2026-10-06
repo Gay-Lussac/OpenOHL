@@ -525,7 +525,18 @@ async fn joined_session<S: AsyncRead + AsyncWrite + Unpin>(
                     Some(Ok(Message::Text(t))) => {
                         let msg: ClientMsg = serde_json::from_str(t.as_str())
                             .map_err(|e| format!("bad message: {e}"))?;
-                        if let Some(answer) = dispatch(msg, client, user, jobs).await? {
+                        // The web client only views: no edits, no locks.
+                        let answer = match msg {
+                            ClientMsg::Request { id, .. } => Some(ServerMsg::Response {
+                                id,
+                                result: Err(VIEW_ONLY.into()),
+                            }),
+                            ClientMsg::Lock { .. } => Some(ServerMsg::Notice {
+                                text: VIEW_ONLY.into(),
+                            }),
+                            msg => dispatch(msg, client, user, jobs).await?,
+                        };
+                        if let Some(answer) = answer {
                             send(&mut ws, &answer).await?;
                         }
                     }
@@ -595,6 +606,24 @@ impl Drop for Scenes {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.work);
     }
+}
+
+/// Why a web client's edit is refused.
+pub const VIEW_ONLY: &str = "the web client only views the project (a viewer): edit in OLS CAD";
+
+/// Points of a span sent to web clients at most (its ends kept): a sag
+/// curve drawn smooth, a light message for long lines.
+pub const SCENE_SPAN_POINTS: usize = 24;
+
+/// About `n` points of `points`, evenly, its ends kept.
+fn thin(points: &[[f64; 3]], n: usize) -> Vec<[f64; 3]> {
+    if points.len() <= n || n < 2 {
+        return points.to_vec();
+    }
+    let step = (points.len() - 1) as f64 / (n - 1) as f64;
+    (0..n)
+        .map(|k| points[((k as f64 * step).round() as usize).min(points.len() - 1)])
+        .collect()
 }
 
 fn mm(p: &[f64; 3]) -> [f64; 3] {
@@ -679,7 +708,7 @@ pub(crate) fn scene(source: SceneSource, work: &Path) -> Scene {
                     .spans
                     .iter()
                     .map(|s| SceneSpan {
-                        points: s.points.iter().map(mm).collect(),
+                        points: thin(&s.points, SCENE_SPAN_POINTS).iter().map(mm).collect(),
                         sag: s.sag,
                         max_tension: s.max_tension,
                     })

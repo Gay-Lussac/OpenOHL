@@ -180,7 +180,59 @@ fn web_clients_join_and_follow() {
     for w in &first.wires {
         assert!(w.error.is_none(), "{:?}", w.error);
         assert!(!w.spans.is_empty() && w.spans.iter().all(|s| s.sag > 0.0));
+        // Thinned for the browser, ends kept.
+        assert!(
+            w.spans
+                .iter()
+                .all(|s| (2..=super::SCENE_SPAN_POINTS).contains(&s.points.len()))
+        );
     }
+
+    // Bob, a designer, in a browser: the web client only views — his edit
+    // and lock are refused.
+    rt.block_on(async {
+        let code = crate::access_code(server.secret(), Some("bob"));
+        let (mut w, m) = join(addr, fp, "bob", &code).await;
+        assert!(
+            matches!(
+                m,
+                ServerMsg::Welcome {
+                    role: Role::Designer,
+                    ..
+                }
+            ),
+            "{m:?}"
+        );
+        let id = first.line.structures[0].id.clone();
+        let p = first.line.structures[0].position;
+        send(
+            &mut w,
+            &ClientMsg::Request {
+                id: 3,
+                op: moved(&id, [p[0] + 1.0, p[1], p[2]]),
+                line: "main".into(),
+            },
+        )
+        .await;
+        let m = until(&mut w, |m| matches!(m, ServerMsg::Response { id: 3, .. })).await;
+        assert!(
+            matches!(&m, ServerMsg::Response { result: Err(e), .. } if e == super::VIEW_ONLY),
+            "{m:?}"
+        );
+        send(
+            &mut w,
+            &ClientMsg::Lock {
+                target: format!("main:structure:{id}"),
+            },
+        )
+        .await;
+        let m = until(&mut w, |m| matches!(m, ServerMsg::Notice { .. })).await;
+        assert!(
+            matches!(&m, ServerMsg::Notice { text } if text == super::VIEW_ONLY),
+            "{m:?}"
+        );
+        let _ = w.close(None).await;
+    });
 
     // Alice (QUIC) moves a structure: carol sees the edit, then the line
     // solved again.
