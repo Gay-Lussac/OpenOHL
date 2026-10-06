@@ -180,7 +180,7 @@ impl ClassWindow {
                 }
                 if let Some((t, e)) = &self.status {
                     if *e {
-                        ui.colored_label(egui::Color32::LIGHT_RED, t);
+                        crate::menu::error_label(ui, t);
                     } else {
                         ui.label(t);
                     }

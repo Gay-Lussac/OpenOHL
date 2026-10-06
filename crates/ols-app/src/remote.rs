@@ -499,7 +499,7 @@ impl JoinWindow {
                     .weak(),
                 );
                 if let Some(e) = &self.error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    crate::menu::error_label(ui, e);
                 }
                 if self.running.is_some() {
                     ui.horizontal(|ui| {
@@ -625,7 +625,7 @@ impl HostWindow {
                     ui.end_row();
                 });
                 if let Some(e) = &self.error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    crate::menu::error_label(ui, e);
                 }
                 start = ui.button("Start hosting").clicked();
             });
@@ -810,7 +810,7 @@ pub fn history_ui(ui: &mut egui::Ui, model: &Model) -> Option<(String, Op)> {
     let log = match session.log() {
         Ok(l) => l,
         Err(e) => {
-            ui.colored_label(egui::Color32::LIGHT_RED, e.to_string());
+            crate::menu::error_label(ui, e.to_string());
             return None;
         }
     };

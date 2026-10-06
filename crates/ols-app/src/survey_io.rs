@@ -178,7 +178,7 @@ impl ImportDialog {
                 let (file, clouds) = match &project {
                     Ok(p) => p.clone(),
                     Err(e) => {
-                        ui.colored_label(egui::Color32::LIGHT_RED, e);
+                        crate::menu::error_label(ui, e);
                         return;
                     }
                 };
@@ -252,7 +252,7 @@ impl ImportDialog {
                     .weak(),
                 );
                 if let Some(e) = &self.error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    crate::menu::error_label(ui, e);
                 }
                 if ui
                     .add_enabled(!self.files.is_empty() && !self.cloud.trim().is_empty(), egui::Button::new("Import"))
@@ -355,7 +355,7 @@ impl ExportDialog {
             .resizable(false)
             .show(ctx, |ui| {
                 let Some((file, name)) = crate::chunks::cloud_of(model) else {
-                    ui.colored_label(egui::Color32::LIGHT_RED, "no point cloud in this project");
+                    crate::menu::error_label(ui, "no point cloud in this project");
                     return;
                 };
                 ui.radio_value(&mut self.only_shown, false, "every class");
@@ -390,7 +390,7 @@ impl ExportDialog {
                     .weak(),
                 );
                 if let Some(e) = &self.error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                    crate::menu::error_label(ui, e);
                 }
                 if ui.button("Choose where and export…").clicked()
                     && let Some(path) = rfd::FileDialog::new()
@@ -499,6 +499,7 @@ pub fn job_window(ctx: &egui::Context, job: &mut Job) -> bool {
     egui::Window::new(&job.title)
         .collapsible(false)
         .resizable(false)
+        .max_width(640.0)
         .show(ctx, |ui| match &job.done {
             None => {
                 ui.add(
@@ -514,14 +515,14 @@ pub fn job_window(ctx: &egui::Context, job: &mut Job) -> bool {
                 );
             }
             Some(Ok(report)) => {
-                ui.label(report);
+                crate::menu::message(ui, report.as_str(), None);
                 if job.reopen {
-                    ui.label("The project is opened again to show the points.");
+                    ui.label("The project is opened again to show what was imported.");
                 }
                 close = ui.button("Close").clicked();
             }
             Some(Err(e)) => {
-                ui.colored_label(egui::Color32::LIGHT_RED, e);
+                crate::menu::error_label(ui, e);
                 close = ui.button("Close").clicked();
             }
         });

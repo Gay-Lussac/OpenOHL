@@ -5490,3 +5490,61 @@ fn surfaces_window_image() {
         .save(format!("{dir}/surfaces.png"))
         .unwrap();
 }
+
+/// A long list of errors scrolls in a box: the window stays on the screen
+/// and can be closed (the rule for every message in a window).
+#[test]
+fn long_errors_scroll_and_the_window_closes() {
+    let model = synthetic_project("long-errors");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let long: String = (0..200)
+        .map(|k| format!("tile_{k:03}.ecw: an ECW file needs a converter\n"))
+        .collect();
+    {
+        let ctx = harness.ctx.clone();
+        let r = harness.state_mut().ready().unwrap();
+        r.backgrounds.job = Some(crate::survey_io::Job::start(
+            "Import".into(),
+            true,
+            &ctx,
+            move |_| Err(long),
+        ));
+    }
+    run_until(&mut harness, |a| {
+        a.ready()
+            .unwrap()
+            .backgrounds
+            .job
+            .as_mut()
+            .is_some_and(|j| {
+                j.poll();
+                j.done.is_some()
+            })
+    });
+    harness.run();
+    let close = harness.get_by_label("Close").rect();
+    assert!(close.max.y < 900.0, "Close at {close:?}, off the screen");
+    harness.get_by_label("Close").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.backgrounds.job.is_none());
+    assert!(!r.reopen, "a failed import opens nothing again");
+}
+
+#[test]
+fn image_import_failures_are_grouped_by_reason() {
+    let model = synthetic_project("grouped");
+    let dir = model.sources.file.parent().unwrap().to_path_buf();
+    let files: Vec<PathBuf> = (0..8).map(|k| dir.join(format!("t{k}.ecw"))).collect();
+    let e = crate::backgrounds::import_images(&model.sources.file, "O", &files, "", "", &|_, _| {})
+        .unwrap_err();
+    assert_eq!(e.lines().count(), 2, "{e}");
+    assert!(
+        e.contains("8 file(s): an ECW file needs a converter"),
+        "{e}"
+    );
+    assert!(e.contains("and 3 more"), "{e}");
+}

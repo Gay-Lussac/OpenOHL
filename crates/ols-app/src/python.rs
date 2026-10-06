@@ -658,7 +658,7 @@ impl Console {
                     .small()
                     .weak(),
                 ),
-                Err(e) => ui.colored_label(egui::Color32::LIGHT_RED, e),
+                Err(e) => crate::menu::error_label(ui, e),
             };
         });
         ui.horizontal(|ui| {

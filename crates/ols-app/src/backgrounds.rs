@@ -541,7 +541,9 @@ pub fn import_images(
     let mut store = ols_background::Store::open(file).map_err(|e| e.to_string())?;
     let scratch = std::env::temp_dir().join(format!("ols-ecw-{}", std::process::id()));
     let budget = ols_core::budget::Budget::new();
-    let (mut done, mut failed) = (0, Vec::new());
+    let mut done = 0;
+    // Files that failed, by reason (one line per reason).
+    let mut failed: Vec<(String, Vec<String>)> = Vec::new();
     for (k, f) in files.iter().enumerate() {
         let share = 1.0 / files.len() as f32;
         let name = f
@@ -606,16 +608,42 @@ pub fn import_images(
         })();
         match result {
             Ok(()) => done += 1,
-            Err(e) => failed.push(format!("{}: {e}", f.display())),
+            Err(e) => {
+                let file = f.file_name().map_or_else(
+                    || f.display().to_string(),
+                    |n| n.to_string_lossy().into_owned(),
+                );
+                match failed.iter_mut().find(|(why, _)| *why == e) {
+                    Some((_, files)) => files.push(file),
+                    None => failed.push((e, vec![file])),
+                }
+            }
         }
     }
     let _ = std::fs::remove_dir_all(&scratch);
+    let lines: Vec<String> = failed
+        .iter()
+        .map(|(why, files)| {
+            let shown: Vec<&str> = files.iter().take(5).map(String::as_str).collect();
+            let more = files.len().saturating_sub(shown.len());
+            format!(
+                "{} file(s): {why} ({}{})",
+                files.len(),
+                shown.join(", "),
+                if more > 0 {
+                    format!(" and {more} more")
+                } else {
+                    String::new()
+                }
+            )
+        })
+        .collect();
     if done == 0 && !failed.is_empty() {
-        return Err(failed.join("\n"));
+        return Err(format!("No image imported.\n{}", lines.join("\n")));
     }
     let mut text = format!("{done} image(s) imported into layer {layer}.");
     if !failed.is_empty() {
-        text.push_str(&format!("\nNot imported:\n{}", failed.join("\n")));
+        text.push_str(&format!("\nNot imported:\n{}", lines.join("\n")));
     }
     Ok(text)
 }
@@ -720,10 +748,10 @@ impl Windows {
                         .weak(),
                     );
                     if let Some(e) = &w.error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, e);
+                        crate::menu::error_label(ui, e);
                     }
                     if let Err(why) = project(model) {
-                        ui.colored_label(egui::Color32::LIGHT_RED, why);
+                        crate::menu::error_label(ui, why);
                     }
                     start = ui
                         .add_enabled(
@@ -733,8 +761,14 @@ impl Windows {
                         .clicked();
                 });
             if start {
+                let ecw = w.files.iter().filter(|f| is_ecw(f)).count();
                 if w.layer.trim().is_empty() {
                     w.error = Some("give the layer a name".into());
+                } else if ecw > 0 && !Path::new(w.converter.trim()).is_file() {
+                    w.error = Some(format!(
+                        "{ecw} ECW file(s) need a converter: give GDAL's gdal_translate (with the \
+                         ECW driver) above, or convert them to GeoTIFF first and add those"
+                    ));
                 } else if let Ok(file) = project(model) {
                     set_converter(&w.converter);
                     let (layer, files, crs, conv) = (
@@ -806,10 +840,10 @@ impl Windows {
                         );
                     }
                     if let Some(e) = &w.error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, e);
+                        crate::menu::error_label(ui, e);
                     }
                     if let Err(why) = project(model) {
-                        ui.colored_label(egui::Color32::LIGHT_RED, why);
+                        crate::menu::error_label(ui, why);
                     }
                     start = ui
                         .add_enabled(

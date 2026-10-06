@@ -860,7 +860,7 @@ impl LibraryPage {
             .weak(),
         );
         if let Some(e) = &self.error {
-            ui.colored_label(egui::Color32::LIGHT_RED, egui::RichText::new(e).small());
+            crate::menu::error_label(ui, egui::RichText::new(e).small());
         }
         if let Some(w) = &self.warning {
             ui.colored_label(egui::Color32::YELLOW, egui::RichText::new(w).small());
@@ -868,7 +868,7 @@ impl LibraryPage {
         if let Some((m, error)) = &self.message {
             let t = egui::RichText::new(m).small();
             if *error {
-                ui.colored_label(egui::Color32::LIGHT_RED, t);
+                crate::menu::error_label(ui, t);
             } else {
                 ui.colored_label(egui::Color32::LIGHT_GREEN, t);
             }

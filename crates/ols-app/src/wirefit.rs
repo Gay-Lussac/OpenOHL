@@ -184,7 +184,7 @@ impl WireFitWindow {
                         return;
                     }
                     Some(Err(e)) => {
-                        ui.colored_label(egui::Color32::LIGHT_RED, e);
+                        crate::menu::error_label(ui, e);
                         return;
                     }
                     Some(Ok(r)) => r,
@@ -244,7 +244,7 @@ impl WireFitWindow {
                                             ui.label("too few points");
                                         }
                                         Some(Err(e)) => {
-                                            ui.colored_label(egui::Color32::LIGHT_RED, e);
+                                            crate::menu::error_label(ui, e);
                                         }
                                         Some(Ok(f)) => {
                                             ui.label(f.fit.points.to_string());

@@ -437,7 +437,7 @@ impl SurfacesWindow {
                     return;
                 }
                 if let Err(why) = &editable {
-                    ui.colored_label(egui::Color32::LIGHT_RED, format!("read-only: {why}"));
+                    crate::menu::error_label(ui, format!("read-only: {why}"));
                 }
                 ui.separator();
                 egui::Grid::new("surfaces")
@@ -721,7 +721,7 @@ impl SurfacesWindow {
                 }
                 if let Some((t, error)) = &self.status {
                     if *error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, t);
+                        crate::menu::error_label(ui, t);
                     } else {
                         ui.label(t);
                     }

@@ -28,3 +28,15 @@ follows. A change that breaks one needs a reason written next to it.
 - Text written in a view next to an object uses the object's colour, with
   no box around it; notes that would overlap one already written are left
   out (the nearest first in the 3D view).
+
+## Errors and reports in windows
+
+- Every error, list of errors or report shown in a window goes through
+  `crate::menu::error_label` (red) or `crate::menu::message`: short text
+  is shown as it is, long text (over 300 characters or 4 lines) scrolls in
+  a box of fixed height. A window must never grow beyond the screen: its
+  Close / OK / Cancel buttons always stay in reach.
+- Many files failing for the same reason are reported once, with the
+  number of files and a few of their names, not one line per file.
+- What cannot work is refused before a job starts (e.g. ECW files without
+  a converter), not reported once per file after.
