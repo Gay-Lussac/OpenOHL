@@ -2465,6 +2465,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -3491,8 +3493,10 @@ dependencies = [
  "egui_dock",
  "egui_kittest",
  "env_logger",
+ "image",
  "las",
  "log",
+ "ols-background",
  "ols-bom",
  "ols-cables",
  "ols-clearance",
@@ -3520,6 +3524,19 @@ dependencies = [
  "serde",
  "serde_json",
  "toml_edit",
+]
+
+[[package]]
+name = "ols-background"
+version = "0.0.1"
+dependencies = [
+ "image",
+ "ols-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tiff",
+ "zstd",
 ]
 
 [[package]]

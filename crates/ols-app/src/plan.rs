@@ -25,6 +25,8 @@ pub struct PlanView {
     pub peers: Vec<(String, [f64; 3])>,
     /// Where it was drawn in the last frame (its page in front), if it was.
     pub drawn: Option<egui::Rect>,
+    /// Orthophoto tiles read.
+    backgrounds: crate::backgrounds::PlanCache,
 }
 
 fn color(c: [u8; 3]) -> egui::Color32 {
@@ -75,6 +77,7 @@ impl PlanView {
         case: usize,
         selection: &mut Selection,
         snaps: &selection::Snaps,
+        visible: &std::collections::HashSet<crate::scene::Layer>,
     ) -> Option<selection::Use> {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -189,6 +192,16 @@ impl PlanView {
         }
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(24, 28, 34));
+        self.backgrounds.paint(
+            ui.ctx(),
+            &painter,
+            model,
+            visible,
+            rect,
+            &to_screen,
+            c,
+            scale,
+        );
         let line = &model.line;
         for r in line.effective_routes() {
             let pts: Vec<egui::Pos2> = r.centreline(line).into_iter().map(to_screen).collect();

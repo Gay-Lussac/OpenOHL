@@ -230,6 +230,8 @@ pub struct Ready {
     pub bimetallic_window: Option<ols_cables::BimetallicModel>,
     /// Terrain › Coordinate system: its windows and the reprojection.
     pub crs: crate::crs::Windows,
+    /// Terrain › Backgrounds: its windows and the import running.
+    pub backgrounds: crate::backgrounds::Windows,
     /// A project to open next (a reprojected copy).
     pub open_project: Option<std::path::PathBuf>,
     /// Criteria › Design code.
@@ -300,6 +302,7 @@ impl Ready {
             creep_stretch_window: None,
             bimetallic_window: None,
             crs: Default::default(),
+            backgrounds: Default::default(),
             open_project: None,
             design_code: Default::default(),
             jumper_from: None,
@@ -938,7 +941,9 @@ impl TabViewer for Viewer<'_> {
                 &snaps,
                 self.lod,
             ),
-            Tab::Plan => r.plan.ui(ui, &r.model, r.case, &mut r.selection, &snaps),
+            Tab::Plan => r
+                .plan
+                .ui(ui, &r.model, r.case, &mut r.selection, &snaps, &r.visible),
             Tab::Profile => r
                 .profile
                 .ui(ui, &r.model, r.case, &mut r.selection, &snaps)
@@ -2177,6 +2182,9 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     creep_stretch_window(ctx, r);
     bimetallic_window(ctx, r);
     crs_windows(ctx, r);
+    if r.backgrounds.show(ctx, &r.model) {
+        r.reopen = true;
+    }
     lines_window(ctx, r);
     crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
     r.bom.show(ctx, &r.model);
@@ -2259,6 +2267,7 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
         layer(ui, Layer::Surfaces, "Other surfaces shown", r);
     }
     ui.separator();
+    crate::menu::options_menu(ui, "Backgrounds", |ui| crate::backgrounds::menu(ui, r));
     ui.menu_button("Coordinate system", |ui| {
         ui.label(
             egui::RichText::new(format!("Now: {}", ols_crs::describe(&r.model.line.crs)))
@@ -4334,6 +4343,7 @@ impl eframe::App for App {
                 .set(&r.model.sources.file, r.model.view_prefs());
         }
         self.view_prefs.save(storage);
+        storage.set_string("ecw-converter", crate::backgrounds::converter());
         storage.set_string(
             "class-scheme",
             self.default_class_scheme

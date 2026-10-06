@@ -58,6 +58,7 @@ Every module is a Rust crate under `crates/` (the workspace's members):
 | `ols-spotting` | Optimum structure spotting: least-cost structure positions, types and extensions along a route profile (dynamic programming) |
 | `ols-bom` | Bill of materials (structures, insulators, cut lengths, hardware) and cost estimate (`.olscost`) |
 | `ols-drawing` | Plan and profile drawings per route and profile exports: SVG, DXF, PDF, PNG, CSV, XML |
+| `ols-background` | Backgrounds in the project file: orthophotos (GeoTIFF / world files, JPEG tiles with a zoom pyramid) and DXF drawings |
 | `ols-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines; pure Rust |
 | `ols-io` | Import/export: format traits and registry, built-in formats (CSV, KML/KMZ, OLS XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC4, XLSX), structures along a route, formats and projects from WebAssembly plugins |
 | `ols-session` | Project file (`.ols`, SQLite), validated commands, operation log, per-user undo/redo, admin rollback, roles, live incremental solving; version control (revisions, branches, merge — ADR-0010), edit grants and reviews; spatial index |

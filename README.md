@@ -66,6 +66,7 @@ OLS-CAD/
 │   ├── ols-spotting/      Optimum structure spotting
 │   ├── ols-bom/           Bill of materials and cost estimate (.olscost)
 │   ├── ols-drawing/       Plan and profile drawings (SVG, DXF, PDF, PNG) and profile exports
+│   ├── ols-background/    Orthophotos and DXF drawings in the project file
 │   ├── ols-crs/           Coordinate systems (EPSG, proj4)
 │   ├── ols-io/            Import/export formats and their registry
 │   ├── ols-session/       Project file (.ols), commands, operation log, undo, versions, grants

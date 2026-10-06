@@ -5282,3 +5282,110 @@ fn coordinate_system_window_images() {
     }
     shot(&mut harness, "reproject");
 }
+
+/// A synthetic project with an orthophoto (layer "Ortho") and a DXF
+/// drawing ("cadastre") over the line, read into its model.
+fn project_with_backgrounds(name: &str) -> model::Model {
+    let mut model = synthetic_project(name);
+    let file = model.sources.file.clone();
+    let dir = file.parent().unwrap().to_path_buf();
+    // 1400 m × 700 m at 2 m per pixel over the line (x 0…1250, y 0…560).
+    let png = dir.join("ortho.png");
+    image::RgbImage::from_fn(700, 350, |x, y| {
+        image::Rgb([(x % 200) as u8 + 30, (y % 200) as u8 + 30, 90])
+    })
+    .save(&png)
+    .unwrap();
+    std::fs::write(dir.join("ortho.pgw"), "2\n0\n0\n-2\n-49\n609\n").unwrap();
+    let report =
+        crate::backgrounds::import_images(&file, "Ortho", &[png], "", "", &|_, _| {}).unwrap();
+    assert!(report.starts_with("1 image(s)"), "{report}");
+    let dxf = dir.join("cadastre.dxf");
+    std::fs::write(
+        &dxf,
+        "0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n8\nParcels\n62\n3\n70\n1\n38\n500\n\
+         10\n100\n20\n-40\n10\n600\n20\n-40\n10\n600\n20\n40\n10\n100\n20\n40\n\
+         0\nTEXT\n8\nParcels\n10\n300\n20\n0\n40\n8\n1\nParcel 7\n0\nENDSEC\n0\nEOF\n",
+    )
+    .unwrap();
+    ols_background::Store::open(&file)
+        .unwrap()
+        .import_dxf("cadastre", &dxf, "")
+        .unwrap();
+    let mut log = Vec::new();
+    model.backgrounds = crate::backgrounds::load(&file, &mut log);
+    model
+}
+
+#[test]
+fn backgrounds_are_kept_shown_and_hidden() {
+    use crate::scene::Layer;
+    let model = project_with_backgrounds("backgrounds");
+    assert_eq!(
+        model.backgrounds.image_layers(),
+        vec![("Ortho".to_owned(), 1)]
+    );
+    assert_eq!(model.backgrounds.drawings.len(), 1);
+    // The drawing in 3D at its heights; orthophotos in plan only.
+    let s = crate::scene::layer(&model, Layer::Drawings, 0, &Selection::None);
+    assert!(s.counts().0 >= 4, "{:?}", s.counts());
+    let s = crate::scene::layer(&model, Layer::Orthophotos, 0, &Selection::None);
+    assert_eq!(s.counts(), (0, 0, 0));
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // Shown by default.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.visible.contains(&Layer::Orthophotos) && r.visible.contains(&Layer::Drawings));
+    }
+    // Terrain › Backgrounds: two boxes ticked in a row (the menu stays
+    // open).
+    harness.get_by_label("Terrain").click();
+    harness.run();
+    harness.get_by_label_contains("Backgrounds").hover();
+    harness.run();
+    harness.get_by_label_contains("Ortho (1)").click();
+    harness.run();
+    harness.get_by_label_contains("cadastre").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.hidden_backgrounds.contains("image:Ortho"));
+    assert!(r.model.hidden_backgrounds.contains("drawing:cadastre"));
+    // Remembered with this user's view.
+    assert_eq!(r.model.view_prefs().hidden_backgrounds.len(), 2);
+    let s = crate::scene::layer(&r.model, Layer::Drawings, 0, &Selection::None);
+    assert_eq!(s.counts().0, 0, "hidden in 3D too");
+}
+
+#[test]
+#[ignore = "writes images of the backgrounds to OLS_SHOTS (a look by eye)"]
+fn background_images() {
+    let Ok(dir) = std::env::var("OLS_SHOTS") else {
+        return;
+    };
+    let model = project_with_backgrounds("bg-shots");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().show_tab(crate::app::Tab::Plan);
+    for _ in 0..10 {
+        harness.run();
+    }
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/plan.png"))
+        .unwrap();
+    harness.state_mut().show_tab(crate::app::Tab::View3d);
+    for _ in 0..5 {
+        harness.run();
+    }
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/3d.png"))
+        .unwrap();
+}

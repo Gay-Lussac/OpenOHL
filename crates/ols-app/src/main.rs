@@ -17,6 +17,7 @@ use eframe::egui;
 
 mod annotations;
 mod app;
+mod backgrounds;
 mod bom;
 mod chunks;
 mod class_colors;
@@ -187,6 +188,7 @@ fn main() -> std::process::ExitCode {
             if let Some(st) = cc.storage {
                 app.recent = files::Recent::load(st);
                 app.view_prefs = model::ViewPrefsStore::load(st);
+                backgrounds::set_converter(&st.get_string("ecw-converter").unwrap_or_default());
                 app.default_class_scheme = st
                     .get_string("class-scheme")
                     .filter(|s| !s.is_empty())
