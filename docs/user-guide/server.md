@@ -42,13 +42,39 @@ People without OLS CAD join in a browser. Host with **Web client** ticked in Fil
 
 Opening it joins at once; without the part after `#`, the page asks for the name and the access code. The same codes and rules apply as for the application: a user of the project needs their personal code, others get the newcomers' role.
 
-What the page shows:
+The web client is a **viewer**: it shows the project's **main line** and does not edit,
+whatever the user's role (the server refuses edits and locks from browsers). What the page
+shows:
 
-- **3D** (WebGPU when the browser has it, else a simpler Canvas2D drawing), **Plan** and **Profile** (along the main route; no terrain yet): structures, alignments, and the wires solved on the server at **15 °C, no wind** (one weather case for now). Drag, Shift+drag and the wheel move the view.
-- **Selection:** click a structure (position, type, attachments) or a wire (section, span, cable, sag, largest tension).
-- **People:** who is connected, what they selected, **Look** to look where they look; others are diamonds in the views. Your selection and view are shown to them in turn.
-- **Operations:** every edit as it arrives, with its log entry. The line is drawn again after each change (solved once on the server for every browser).
-- **Designers** can move a selected structure (x, y, z). Everything else is read-only in the browser for now.
+- **3D** (WebGPU when the browser has it, else Canvas2D), **Plan** and **Profile** (along the
+  main route; no terrain yet): structures, alignments, and the wires solved on the server at
+  **15 °C, no wind** (one weather case for now). The line is drawn again after each change.
+- **Moving around:** drag (3D: orbit; Shift or right drag: pan; plan and profile: pan), the
+  wheel or **+ / −** to zoom, **W A S D** or the arrow keys to move, **F** to fit the line.
+- **G: go to a structure.** Type its name (completed from the list; case does not matter, the
+  start of a name is enough when only one fits) and press Enter. The view centres on it and
+  selects it.
+- **Click** a structure or a wire for its **properties**:
+  - a structure: type, extension, position, orientation, height, the sections through it, and
+    its attachments (wire point height, string length);
+  - a wire span: section, span and its structures, length and chord, height difference, sag,
+    largest tension, cable, bundle, circuit, phase, weather case.
+
+  **Escape** clears the selection.
+- **Display** (remembered in the browser): structures, wires, alignments, structure names,
+  sags, where the others look; and the **detail**:
+  - **Low:** large lines or slow computers;
+  - **Medium:** the default;
+  - **High:** every point.
+
+  A wire span small on the screen is drawn with a few points or as its chord, a structure far
+  away as one stroke, and what is off the screen not at all. Names and sags are written
+  nearest the middle of the view first, never over each other, up to a number per detail
+  level. The panel says what was drawn and how long it took. Without WebGPU, a line of
+  2000 structures draws in about 10 ms at Medium; spans are sent with at most 24 points each.
+- **People:** who is connected, what they selected, **Look** to look where they look; others
+  are diamonds in the views.
+- **Operations:** every edit as it arrives (on which project line), with its log entry.
 
 **Security.** The page and the WebSocket are served over **HTTPS with the server's self-signed certificate**, so the browser warns the first time ("not private", "not trusted"). Before accepting it, compare the certificate's SHA-256 fingerprint (the browser shows it in the certificate details) with the one `ols serve` prints, or with the last part of the `ols://` invitation: if they differ, do not continue. The access code travels in the link's `#` part, which browsers do not send to the server or other sites, but it is in the browser history: hand links out like invitations. The listener serves only the client's own four files and the WebSocket; messages have the same size limits as the application's, and a browser silent for 30 s is disconnected. On a network you do not trust, prefer the application (its certificate is checked against the invitation automatically).
 
@@ -57,6 +83,6 @@ What the page shows:
 - Edits wait for the server's answer (milliseconds on a network; at most 15 s) before they show. Edits are not shown before the server confirms them.
 - Joining copies the whole project. Only the chunks a user views will be sent, later.
 - The application speaks QUIC only (UDP). Browsers use the web client's WebSocket (TCP); the application cannot use it yet, for networks that block UDP.
-- The web client: one weather case, no terrain or point clouds, no undo, moving structures only.
+- The web client: a viewer of the main line; one weather case, no terrain, point clouds or backgrounds.
 - A user's name and the access code are the only identity. Sign-in through an organisation (OIDC / SSO) is to come.
 - If the connection drops, the project turns read-only. Join again to continue.

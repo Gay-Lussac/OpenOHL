@@ -8,20 +8,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OLS CAD — web client</title>
+<title>OLS CAD — web viewer</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
   <strong>OLS CAD</strong>
   <span id="project"></span>
+  <span class="weak">— viewer, main line</span>
   <span id="status" class="weak">not connected</span>
 </header>
 <main>
   <section id="join" class="panel">
     <h1>Join the session</h1>
     <p class="weak">The host gives you a link or an access code. A user of the project joins with
-      their personal code; others join with the general one.</p>
+      their personal code; others join with the general one. The web client shows the project's
+      main line; it does not edit.</p>
     <form id="join-form" autocomplete="off">
       <label>User name <input id="user" maxlength="64" required></label>
       <label>Access code <input id="code" required spellcheck="false"></label>
@@ -39,20 +41,37 @@
     </nav>
     <div id="stage">
       <canvas id="gpu"></canvas>
-      <canvas id="overlay"></canvas>
+      <canvas id="overlay" tabindex="0"></canvas>
+      <form id="goto" class="floating" hidden autocomplete="off">
+        <label>Go to structure
+          <input id="goto-id" list="goto-list" spellcheck="false" placeholder="e.g. T12">
+        </label>
+        <datalist id="goto-list"></datalist>
+        <span id="goto-error" class="error"></span>
+        <span class="weak">Enter: go · Escape: close</span>
+      </form>
     </div>
   </section>
   <aside id="side" hidden>
     <h2>Selection</h2>
     <div id="props" class="weak">Click a structure or a wire.</div>
-    <form id="move" hidden>
-      <div class="row">
-        <label>x <input id="mx" type="number" step="0.01"></label>
-        <label>y <input id="my" type="number" step="0.01"></label>
-        <label>z <input id="mz" type="number" step="0.01"></label>
-      </div>
-      <button type="submit">Move structure</button>
-    </form>
+    <h2>Display</h2>
+    <div id="display">
+      <label class="tick"><input type="checkbox" data-show="structures"> Structures</label>
+      <label class="tick"><input type="checkbox" data-show="wires"> Wires</label>
+      <label class="tick"><input type="checkbox" data-show="alignment"> Alignments</label>
+      <label class="tick"><input type="checkbox" data-show="names"> Structure names</label>
+      <label class="tick"><input type="checkbox" data-show="sags"> Sags</label>
+      <label class="tick"><input type="checkbox" data-show="people"> Where others look</label>
+      <label>Detail
+        <select id="detail">
+          <option value="low">Low — large lines, slow computers</option>
+          <option value="medium">Medium</option>
+          <option value="high">High — every point</option>
+        </select>
+      </label>
+      <p id="drawn" class="weak small"></p>
+    </div>
     <h2>People</h2>
     <ul id="people"></ul>
     <h2>Operations</h2>
