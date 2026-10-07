@@ -943,10 +943,16 @@ impl Importer for OlsXml {
         base: Option<&Line>,
         options: &Options,
     ) -> Result<Line, String> {
-        let text = std::str::from_utf8(data).map_err(|e| format!("not UTF-8 text: {e}"))?;
-        let root = crate::xml::parse(text)?;
+        let text = crate::xml::decode(data)?;
+        let root = crate::xml::parse(&text)?;
         if root.name == "LandXML" {
             return crate::landxml::import(&root, base, options);
+        }
+        if let Some(app) = root.child("creator").and_then(|c| c.attr("application")) {
+            return Err(format!(
+                "an XML report of {app}, not an OLS XML line: open it with File › New project \
+                 from another program (a project plugin reading {app} reports)"
+            ));
         }
         from_element(&root)
     }

@@ -3,7 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! A small XML reader (a tree of elements) and writing helpers, for the
-//! XML formats (OLS XML, LandXML).
+//! XML formats (OLS XML, LandXML); [`decode`] gives a file's text in the
+//! encoding it declares.
 //!
 //! It reads well-formed XML 1.0: elements, attributes, text, CDATA, the
 //! predefined and numeric character references; comments, processing
@@ -121,6 +122,60 @@ fn unescape(text: &str, at: usize) -> Result<String, String> {
 
 fn local(name: &str) -> &str {
     name.rsplit_once(':').map_or(name, |(_, l)| l)
+}
+
+/// Windows-1252 bytes 0x80–0x9F (the rest is Latin-1); unassigned bytes
+/// read as the replacement character.
+const CP1252: [char; 32] = [
+    '€', '\u{fffd}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{fffd}', 'Ž',
+    '\u{fffd}', '\u{fffd}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{fffd}',
+    'ž', 'Ÿ',
+];
+
+/// The text of an XML file: UTF-8 (a byte-order mark dropped), or the
+/// encoding its declaration names when it is Windows-1252 or ISO-8859-1
+/// / -15 (as programs on Windows write them).
+pub fn decode(data: &[u8]) -> Result<std::borrow::Cow<'_, str>, String> {
+    let data = data.strip_prefix(b"\xef\xbb\xbf").unwrap_or(data);
+    if let Ok(text) = std::str::from_utf8(data) {
+        return Ok(std::borrow::Cow::Borrowed(text));
+    }
+    // The declaration is ASCII: `<?xml … encoding='NAME' … ?>`.
+    let head: String = data
+        .iter()
+        .take(200)
+        .take_while(|b| **b != b'>')
+        .map(|&b| char::from(b))
+        .collect();
+    let encoding = head
+        .find("encoding")
+        .and_then(|at| {
+            let rest = &head[at + 8..];
+            let q = rest.find(['"', '\''])?;
+            let quote = rest[q..].chars().next()?;
+            let value = &rest[q + 1..];
+            value
+                .find(quote)
+                .map(|end| value[..end].to_ascii_lowercase())
+        })
+        .unwrap_or_default();
+    match encoding.as_str() {
+        "windows-1252" | "cp1252" => Ok(std::borrow::Cow::Owned(
+            data.iter()
+                .map(|&b| match b {
+                    0x80..=0x9f => CP1252[usize::from(b - 0x80)],
+                    _ => char::from(b),
+                })
+                .collect(),
+        )),
+        "iso-8859-1" | "latin1" | "latin-1" | "iso-8859-15" => Ok(std::borrow::Cow::Owned(
+            data.iter().map(|&b| char::from(b)).collect(),
+        )),
+        "" => Err("not UTF-8 text, and no encoding declared".into()),
+        other => Err(format!(
+            "text in encoding {other}: not read (UTF-8, Windows-1252 and ISO-8859-1 are)"
+        )),
+    }
 }
 
 /// Parses a document into its root element.
@@ -276,5 +331,23 @@ mod tests {
             parse(&format!("<e{s}/>")).unwrap().attr("n"),
             Some("a\"<&>\n")
         );
+    }
+
+    #[test]
+    fn files_are_read_in_their_declared_encoding() {
+        let utf8 = "<?xml version='1.0'?><a n='Zürich'/>";
+        assert_eq!(decode(utf8.as_bytes()).unwrap(), utf8);
+        let bom = [b"\xef\xbb\xbf".as_slice(), utf8.as_bytes()].concat();
+        assert_eq!(decode(&bom).unwrap(), utf8);
+        // Windows-1252: ü is 0xfc, € is 0x80, ' is 0x92.
+        let cp = b"<?xml version='1.0' encoding='windows-1252'?><a n='Z\xfcrich \x80 l\x92eau'/>";
+        let text = decode(cp).unwrap();
+        assert!(text.ends_with("<a n='Zürich € l’eau'/>"), "{text}");
+        assert_eq!(parse(&text).unwrap().attr("n"), Some("Zürich € l’eau"));
+        let latin = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a n='Z\xfcrich'/>";
+        assert!(decode(latin).unwrap().contains("Zürich"));
+        assert!(decode(b"<a n='Z\xfcrich'/>").is_err(), "no declaration");
+        let other = b"<?xml version='1.0' encoding='shift_jis'?><a n='\x82\xa0'/>";
+        assert!(decode(other).unwrap_err().contains("shift_jis"));
     }
 }
