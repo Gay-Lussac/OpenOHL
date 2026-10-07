@@ -857,6 +857,15 @@ impl App {
         matches!(self.state, State::Empty)
     }
 
+    /// Why the file did not open, if it did not.
+    #[cfg(test)]
+    pub fn failed(&self) -> Option<&str> {
+        match &self.state {
+            State::Failed(why) => Some(why),
+            _ => None,
+        }
+    }
+
     /// The shown model, once loaded.
     #[cfg(test)]
     pub fn ready(&mut self) -> Option<&mut Ready> {

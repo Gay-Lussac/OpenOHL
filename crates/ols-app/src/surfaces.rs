@@ -116,6 +116,20 @@ enum Done {
     Written(Result<String, String>),
 }
 
+/// A section of the window: a frame with a title and what it is for.
+fn section(ui: &mut egui::Ui, title: &str, about: &str, add: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(6.0);
+    egui::Frame::group(ui.style())
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(egui::RichText::new(title).size(16.0).strong());
+            ui.label(egui::RichText::new(about).small().weak());
+            ui.separator();
+            add(ui);
+        });
+}
+
 /// Building a surface from the LiDAR ground classes.
 #[derive(Debug, Clone)]
 pub struct LidarBuild {
@@ -412,23 +426,6 @@ impl SurfacesWindow {
                     .small()
                     .weak(),
                 );
-                ui.label(format!(
-                    "Checks use: {}",
-                    model
-                        .check_surface
-                        .as_deref()
-                        .map_or("each user's ground".to_owned(), |n| format!("surface {n}"))
-                ));
-                ui.label(format!(
-                    "Ground now: {}",
-                    if model.ground.is_none() {
-                        "none".to_owned()
-                    } else if model.ground_source.is_empty() {
-                        "shown".to_owned()
-                    } else {
-                        model.ground_source.clone()
-                    }
-                ));
                 if !is_project {
                     ui.colored_label(
                         egui::Color32::LIGHT_RED,
@@ -439,7 +436,31 @@ impl SurfacesWindow {
                 if let Err(why) = &editable {
                     crate::menu::error_label(ui, format!("read-only: {why}"));
                 }
-                ui.separator();
+                let can_store = editable.is_ok() && !joined;
+                let busy = self.busy();
+                section(
+                    ui,
+                    "Available ground data",
+                    "The surfaces kept in the project: the ground (drawn, used for clearances), \
+                     those shown, the one the checks use",
+                    |ui| {
+                                    ui.label(format!(
+                        "Checks use: {}",
+                        model
+                            .check_surface
+                            .as_deref()
+                            .map_or("each user's ground".to_owned(), |n| format!("surface {n}"))
+                    ));
+                    ui.label(format!(
+                        "Ground now: {}",
+                        if model.ground.is_none() {
+                            "none".to_owned()
+                        } else if model.ground_source.is_empty() {
+                            "shown".to_owned()
+                        } else {
+                            model.ground_source.clone()
+                        }
+                    ));
                 egui::Grid::new("surfaces")
                     .striped(true)
                     .spacing([10.0, 4.0])
@@ -544,8 +565,22 @@ impl SurfacesWindow {
                 if self.list.is_empty() {
                     ui.label("No surface in the project yet.");
                 }
-                ui.separator();
-                let can_store = editable.is_ok() && !joined;
+                if model.ground.is_some() && model.surface_settings.active.is_none() {
+                    ui.add_enabled_ui(can_store && !busy, |ui| {
+                        if ui
+                            .button("Keep the ground shown as a surface")
+                            .on_hover_text(
+                                "The ground built when the model opened (LiDAR or survey file), \
+                                 kept in the project: the next opening reads it instead",
+                            )
+                            .clicked()
+                        {
+                            action = Some(Action::KeepGround);
+                        }
+                    });
+                }
+                    },
+                );
                 if joined {
                     ui.label(
                         egui::RichText::new(
@@ -556,8 +591,13 @@ impl SurfacesWindow {
                         .weak(),
                     );
                 }
-                ui.add_enabled_ui(can_store && !self.busy(), |ui| {
-                    ui.strong("Import a file");
+                ui.add_enabled_ui(can_store && !busy, |ui| {
+                    section(
+                        ui,
+                        "Import ground data",
+                        "A surface from a file: LandXML, OBJ, survey points (CSV/XYZ, \
+                         triangulated), and the formats of terrain plugins",
+                        |ui| {
                     ui.horizontal(|ui| {
                         ui.label("name");
                         ui.add(
@@ -609,7 +649,14 @@ impl SurfacesWindow {
                             action = Some(Action::Import(path));
                         }
                     });
-                    ui.strong("Build from LiDAR");
+                        },
+                    );
+                    section(
+                        ui,
+                        "Build from LiDAR",
+                        "A surface from the point cloud: the lowest point of each cell of the \
+                         classes ticked, triangulated",
+                        |ui| {
                     let classes = lidar_classes(model);
                     let has_points = model.cloud.is_some() && !classes.is_empty();
                     ui.add_enabled_ui(has_points, |ui| {
@@ -694,18 +741,8 @@ impl SurfacesWindow {
                             }
                         });
                     });
-                    if model.ground.is_some()
-                        && model.surface_settings.active.is_none()
-                        && ui
-                            .button("Keep the ground shown as a surface")
-                            .on_hover_text(
-                                "The ground built when the model opened (LiDAR or survey file), \
-                                 kept in the project: the next opening reads it instead",
-                            )
-                            .clicked()
-                    {
-                        action = Some(Action::KeepGround);
-                    }
+                        },
+                    );
                 });
                 for (what, t, _) in &self.jobs {
                     ui.horizontal(|ui| {
