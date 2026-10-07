@@ -62,7 +62,7 @@ impl SurfaceImporter for LandXml {
         "xml"
     }
     fn import(&mut self, data: &[u8], _: &str, _: &Options) -> Result<Vec<Mesh>, String> {
-        ols_terrain::formats::read_landxml(text(data)?).map_err(|e| e.to_string())
+        ols_terrain::formats::read_landxml(&crate::xml::decode(data)?).map_err(|e| e.to_string())
     }
 }
 
