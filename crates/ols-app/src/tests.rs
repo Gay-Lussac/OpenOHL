@@ -6339,3 +6339,89 @@ fn lines_are_described() {
     assert!(harness.query_by_label_contains("Read only").is_some());
     assert!(harness.query_by_label("Save").is_none());
 }
+
+#[test]
+#[ignore = "imports OLS_XML with the project plugins of OLS_PLUGINS through the app (local check)"]
+fn local_project_import_through_the_app() {
+    let (Ok(xml), Ok(plugins), Ok(out)) = (
+        std::env::var("OLS_XML"),
+        std::env::var("OLS_PLUGINS"),
+        std::env::var("OLS_OUT"),
+    ) else {
+        return;
+    };
+    let into = PathBuf::from(out);
+    std::fs::remove_file(&into).ok();
+    let mut app = App::empty(Sources::default(), None);
+    app.plugins = crate::plugins::Plugins::load(None, None);
+    app.plugins.folders = vec![PathBuf::from(plugins)];
+    app.plugins.refresh();
+    app.file_action = Some(crate::files::FileAction::ImportProject);
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| app);
+    h.step();
+    h.step();
+    h.state_mut()
+        .plugins
+        .create_project(crate::plugins::ProjectImport {
+            path: xml.into(),
+            format: None,
+            options: Default::default(),
+            into: into.clone(),
+            user: crate::files::user(),
+            clip_in: false,
+        });
+    let started = std::time::Instant::now();
+    loop {
+        h.step();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let app = h.state_mut();
+        if let Some(w) = &app.import_project
+            && let Some(e) = &w.error
+        {
+            panic!("import refused: {e}");
+        }
+        if let Some(r) = app.ready() {
+            println!(
+                "opened: {} structures, {} sections, {} cases, {} solved",
+                r.model.line.structures.len(),
+                r.model.line.sections.len(),
+                r.model.cases.len(),
+                r.model.cases.iter().filter(|c| c.ready).count()
+            );
+            break;
+        }
+        if let Some(why) = app.failed() {
+            panic!("opening failed: {why}");
+        }
+        assert!(started.elapsed().as_secs() < 240, "not opened in 240 s");
+    }
+}
+
+#[test]
+#[ignore = "writes an image of the Terrain surfaces window to OLS_SHOTS (a look by eye)"]
+fn surfaces_sections_image() {
+    let Ok(dir) = std::env::var("OLS_SHOTS") else {
+        return;
+    };
+    let mut model = synthetic_project("surfaces-sections");
+    model.points = vec![([0, 0, 0], 2), ([1000, 0, 0], 5)];
+    model.class_counts = vec![(2, 40), (5, 7)];
+    model.cloud = Some("survey.ols".into());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.surfaces.show(&r.model);
+    }
+    harness.run();
+    harness.run();
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/surfaces-sections.png"))
+        .unwrap();
+}
