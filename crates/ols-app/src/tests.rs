@@ -6461,3 +6461,54 @@ fn closing_the_window_leaves_the_project_file_whole() {
     let s = ols_session::Session::open(&file).unwrap();
     assert_eq!(s.line().structure("T2").unwrap().position[0], 311.0);
 }
+
+/// Several routes, a short spur listed first: the profile opens on the
+/// route with most structures; a route chosen in the list stays.
+#[test]
+fn the_profile_opens_on_the_main_run() {
+    let mut model = synthetic_project("profile-main-run");
+    let ids: Vec<String> = model.line.structures.iter().map(|s| s.id.clone()).collect();
+    assert!(ids.len() >= 3);
+    let route = |id: &str, s: &[String]| ols_line::Route {
+        id: id.into(),
+        name: id.into(),
+        alignment: Vec::new(),
+        structures: s.to_vec(),
+    };
+    model.line.routes = vec![route("spur", &ids[..2]), route("run", &ids)];
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    assert_eq!(harness.state_mut().ready().unwrap().profile.route, 1);
+}
+
+/// The plan view of a local project, drawn to a file (local checks only:
+/// `OLS_PROJECT`, `OLS_SHOTS`).
+#[test]
+#[ignore = "local data"]
+fn local_plan_image() {
+    let (Ok(file), Ok(dir)) = (std::env::var("OLS_PROJECT"), std::env::var("OLS_SHOTS")) else {
+        return;
+    };
+    let model = model::load(
+        Sources {
+            file: file.into(),
+            point_budget: 20_000,
+            corridor: 60.0,
+            ..Sources::default()
+        },
+        &|m| eprintln!("{m}"),
+    )
+    .unwrap();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    h.run();
+    h.state_mut().show_tab(crate::app::Tab::Plan);
+    for _ in 0..30 {
+        h.step();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    h.render().unwrap().save(format!("{dir}/plan.png")).unwrap();
+}
