@@ -91,6 +91,9 @@ pub struct PointOctree {
     failed: HashSet<usize>,
     /// What the last frame did.
     pub stats: StreamStats,
+    /// The reader threads; each gives its reader (its connection to the
+    /// file) back when it stops.
+    readers: Vec<std::thread::JoinHandle<Box<dyn LodReader>>>,
 }
 
 impl std::fmt::Debug for PointOctree {
@@ -110,6 +113,19 @@ impl Drop for PointOctree {
             q.wanted.clear();
         }
         cv.notify_all();
+        // Waited for: each finishes the node it reads (milliseconds) and
+        // gives its connection back, closed here one after the other — the
+        // last one closed alone writes the log into the file and removes
+        // it (closed at the same moment, none does: -wal and -shm files
+        // stayed beside the project).
+        let readers: Vec<_> = self
+            .readers
+            .drain(..)
+            .filter_map(|r| r.join().ok())
+            .collect();
+        for r in readers {
+            drop(r);
+        }
     }
 }
 
@@ -137,11 +153,16 @@ impl PointOctree {
         for _ in 1..reader_threads() {
             readers.push(readers[0].another()?);
         }
+        let mut threads = Vec::new();
         for reader in readers {
             let queue = queue.clone();
             let tx = tx.clone();
             let ctx = ctx.clone();
-            std::thread::spawn(move || read_nodes(reader, &queue, &tx, origin, ctx.as_ref()));
+            threads.push(std::thread::spawn(move || {
+                let mut reader = reader;
+                read_nodes(&mut reader, &queue, &tx, origin, ctx.as_ref());
+                reader
+            }));
         }
         log::info!("LiDAR streamed by node: {describe}");
         Ok(Self {
@@ -153,6 +174,7 @@ impl PointOctree {
             settings: None,
             failed: HashSet::new(),
             stats: StreamStats::default(),
+            readers: threads,
         })
     }
 
@@ -290,7 +312,7 @@ impl PointOctree {
 
 /// A reader thread: takes the first node wanted, reads it, sends it back.
 fn read_nodes(
-    mut reader: Box<dyn LodReader>,
+    reader: &mut Box<dyn LodReader>,
     queue: &(Mutex<Queue>, Condvar),
     tx: &Sender<Done>,
     origin: [f64; 3],
@@ -460,5 +482,51 @@ mod tests {
         assert!(first.difference(&now).count() > 0, "old nodes dropped");
         drop(stream);
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// Let go of, the readers close their connections: the project file is
+    /// left whole (no -wal or -shm beside it).
+    #[test]
+    fn the_readers_let_go_of_the_file() {
+        let dir = std::env::temp_dir().join(format!("ols-app-{}-octree-close", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("p.ols");
+        for f in ["p.ols", "p.ols-wal", "p.ols-shm"] {
+            std::fs::remove_file(dir.join(f)).ok();
+        }
+        let points = (0..200).flat_map(|i| {
+            (0..200).map(move |j| ols_lidar::LidarPoint {
+                x: f64::from(i),
+                y: f64::from(j),
+                z: 500.0,
+                class: 2,
+                intensity: 0,
+                return_number: 1,
+                number_of_returns: 1,
+            })
+        });
+        let mut store = ols_pointcloud::Store::open(&db).unwrap();
+        store
+            .import_points(
+                "c",
+                "",
+                None,
+                64.0,
+                0.001,
+                points,
+                &ols_core::budget::Budget::new(),
+            )
+            .unwrap();
+        drop(store);
+        let mut stream = PointOctree::open(&db.display().to_string(), [0.0; 3], None).unwrap();
+        stream.set(LoadSettings {
+            classes: None,
+            whole: Vec::new(),
+            every: 1,
+            colors: Arc::new(vec![Some([200, 200, 200]); 256]),
+        });
+        assert!(dir.join("p.ols-wal").exists(), "open: the log is there");
+        drop(stream);
+        assert!(!dir.join("p.ols-wal").exists() && !dir.join("p.ols-shm").exists());
     }
 }
