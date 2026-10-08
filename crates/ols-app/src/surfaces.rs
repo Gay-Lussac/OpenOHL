@@ -221,6 +221,8 @@ pub struct SurfacesWindow {
     importing: bool,
     /// A surface to read as the ground (made active by an import).
     pending_ground: Option<String>,
+    /// Surfaces to read as shown ones (stored again by an import).
+    pending_shown: Vec<String>,
 }
 
 impl SurfacesWindow {
@@ -353,20 +355,33 @@ impl SurfacesWindow {
     }
 
     /// Surfaces kept: the list again; the first becomes the ground when
-    /// there is none.
+    /// there is none. One stored under the name of the ground or of one
+    /// shown (this user's choice, remembered for the file: a project made
+    /// again at the same place) is read in at once.
     fn stored(&mut self, model: &mut Model, r: Result<Vec<String>, String>) {
         match r {
             Ok(names) => {
                 self.status = Some((format!("kept in the project: {}", names.join(", ")), false));
                 // The model's session sees what another connection wrote.
                 self.refresh(model);
-                if model.surface_settings.active.is_none()
-                    && let Some(first) = names.first()
-                {
-                    let mut s = model.surface_settings.clone();
-                    s.active = Some(first.clone());
-                    self.set(model, s);
-                    self.pending_ground = Some(first.clone());
+                match model.surface_settings.active.clone() {
+                    None => {
+                        if let Some(first) = names.first() {
+                            let mut s = model.surface_settings.clone();
+                            s.active = Some(first.clone());
+                            self.set(model, s);
+                            self.pending_ground = Some(first.clone());
+                        }
+                    }
+                    Some(active) if names.contains(&active) => {
+                        self.pending_ground = Some(active);
+                    }
+                    Some(_) => {}
+                }
+                for n in &names {
+                    if model.surface_settings.shown.contains_key(n) {
+                        self.pending_shown.push(n.clone());
+                    }
                 }
             }
             Err(e) => self.status = Some((e, true)),
@@ -395,6 +410,9 @@ impl SurfacesWindow {
         let mut changed = self.poll(model, plugins);
         if let Some(name) = self.pending_ground.take() {
             self.load(model, &name, true, ctx);
+        }
+        for name in std::mem::take(&mut self.pending_shown) {
+            self.load(model, &name, false, ctx);
         }
         if !self.open {
             return changed;

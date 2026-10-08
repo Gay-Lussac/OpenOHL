@@ -6397,6 +6397,62 @@ fn local_project_import_through_the_app() {
         }
         assert!(started.elapsed().as_secs() < 240, "not opened in 240 s");
     }
+    // Then a TIN into the new project (OLS_TIN): drawn without reopening.
+    let Ok(tin) = std::env::var("OLS_TIN") else {
+        return;
+    };
+    {
+        let app = h.state_mut();
+        let mut plugins = std::mem::take(&mut app.plugins);
+        let r = app.ready().unwrap();
+        r.surfaces.show(&r.model);
+        let project = r.model.sources.file.clone();
+        let user = crate::files::user();
+        r.surfaces.act(
+            crate::surfaces::Action::Import(tin.into()),
+            &mut r.model,
+            &mut plugins,
+            &user,
+            &project,
+            &egui::Context::default(),
+        );
+        app.plugins = plugins;
+    }
+    let started = std::time::Instant::now();
+    loop {
+        h.step();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let r = h.state_mut().ready().unwrap();
+        if r.model.ground_source.starts_with("surface") {
+            println!(
+                "ground: {} in {:.0?}; shown: {}",
+                r.model.ground_source,
+                started.elapsed(),
+                r.visible.contains(&crate::scene::Layer::Ground)
+            );
+            break;
+        }
+        if let Some((text, true)) = &r.surfaces.status {
+            panic!("TIN import: {text}");
+        }
+        assert!(
+            started.elapsed().as_secs() < 900,
+            "no ground in 900 s: {:?} {:?}",
+            r.surfaces.list,
+            r.surfaces.status
+        );
+    }
+    if let Ok(dir) = std::env::var("OLS_SHOTS") {
+        h.state_mut().show_tab(crate::app::Tab::View3d);
+        for _ in 0..60 {
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        h.render()
+            .unwrap()
+            .save(format!("{dir}/tin-3d.png"))
+            .unwrap();
+    }
 }
 
 #[test]
@@ -6460,6 +6516,94 @@ fn closing_the_window_leaves_the_project_file_whole() {
     // And the edit is in the file.
     let s = ols_session::Session::open(&file).unwrap();
     assert_eq!(s.line().structure("T2").unwrap().position[0], 311.0);
+}
+
+/// A project made again at the same place: this user's remembered ground
+/// already names the surface imported. Imported, it is drawn at once (it
+/// was only after reopening).
+#[test]
+fn a_surface_imported_under_the_remembered_name_is_drawn_at_once() {
+    use crate::surfaces::Action;
+    let mut model = synthetic_project("surfaces-remembered");
+    assert!(model.ground.is_none());
+    model.surface_settings.active = Some("synthetic-survey".into());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.step();
+    harness.state_mut().ready().unwrap().view3d.dirty.clear();
+    {
+        let app = harness.state_mut();
+        let mut plugins = std::mem::take(&mut app.plugins);
+        let r = app.ready().unwrap();
+        r.surfaces.show(&r.model);
+        let project = r.model.sources.file.clone();
+        r.surfaces.act(
+            Action::Import(root().join("examples/synthetic-line/synthetic-survey.csv")),
+            &mut r.model,
+            &mut plugins,
+            "tester",
+            &project,
+            &egui::Context::default(),
+        );
+        app.plugins = plugins;
+    }
+    run_until(&mut harness, |a| {
+        a.ready().unwrap().model.ground_source == "surface synthetic-survey"
+    });
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.ground.is_some());
+    assert!(r.view3d.dirty.contains(&crate::scene::Layer::Ground));
+    assert!(r.visible.contains(&crate::scene::Layer::Ground));
+}
+
+/// Escape quits String wire at any point: with points picked and the mouse
+/// captured, with nothing picked yet, and in the section window (a field
+/// being typed in): the points go, the mouse is freed, Select is held.
+#[test]
+fn escape_quits_string_wire_at_any_point() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project("escape-string-wire");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let escape = |h: &mut Harness<'_, App>| press(h, egui::Key::Escape, egui::Modifiers::NONE);
+    let quit = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        assert!(r.chain.is_empty() && r.view3d.draft.is_empty());
+        assert!(r.editor.is_none());
+        assert!(!r.view3d.captured);
+        assert_eq!(r.hotbar.tool(), Tool::Select);
+    };
+    // Points picked, the mouse captured: one Escape.
+    use_tool(&mut harness, Tool::StringWire, string_at("T2", 1, 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T3", 1, 1), None);
+    harness.state_mut().ready().unwrap().view3d.captured = true;
+    escape(&mut harness);
+    quit(&mut harness);
+    // Held, nothing picked.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .hotbar
+        .hold(Tool::StringWire);
+    escape(&mut harness);
+    quit(&mut harness);
+    // The section window, a field focused.
+    use_tool(&mut harness, Tool::StringWire, string_at("T2", 1, 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T3", 1, 1), None);
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(matches!(r.editor, Some(Form::Section(_))), "{:?}", r.editor);
+    }
+    let field = egui::Id::new("escape-test-field");
+    harness.ctx.memory_mut(|m| m.request_focus(field));
+    escape(&mut harness);
+    quit(&mut harness);
 }
 
 /// Several routes, a short spur listed first: the profile opens on the

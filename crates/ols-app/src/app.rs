@@ -1627,11 +1627,16 @@ impl Ready {
         self.update_draft();
     }
 
-    /// Gives up the wire being strung.
-    pub fn cancel_chain(&mut self) {
+    /// Quits String wire (Escape): the wire being strung goes, the mouse is
+    /// freed, Select is held.
+    pub fn quit_string_wire(&mut self, ctx: &egui::Context) {
         self.chain.clear();
         self.restring = None;
         self.update_draft();
+        if self.view3d.captured {
+            crate::view3d::View3d::set_captured(&mut self.view3d.captured, ctx, false);
+        }
+        self.hotbar.hold(crate::tools::Tool::Select);
         self.status = Some(("String wire: cancelled".into(), false));
     }
 
@@ -2072,22 +2077,24 @@ fn goto_window(ctx: &egui::Context, r: &mut Ready) {
 fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
     use crate::tools::Tool;
     // The wire being strung: Enter ends it, Backspace takes the last point
-    // back, Escape (with a free mouse) gives it up.
+    // back. Escape, at any point (mouse captured or not, a field focused),
+    // quits String wire: the points go, the mouse is freed, Select is held.
+    // (The section window opened by Enter is quit in [`editor_window`].)
     let windows = r.editor.is_some() || r.goto.is_some() || r.move_dialog.is_some();
+    let stringing = !r.chain.is_empty() || r.hotbar.tool() == Tool::StringWire;
+    if stringing && !windows && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        r.quit_string_wire(ctx);
+    }
     if !r.chain.is_empty() && !ctx.text_edit_focused() && !windows {
-        let captured = r.view3d.captured;
-        let (enter, back, escape) = ctx.input_mut(|i| {
+        let (enter, back) = ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
             (
                 i.consume_key(Modifiers::NONE, Key::Enter),
                 i.consume_key(Modifiers::NONE, Key::Backspace),
-                !captured && i.consume_key(Modifiers::NONE, Key::Escape),
             )
         });
         if enter {
             r.finish_chain();
-        } else if escape {
-            r.cancel_chain();
         } else if back {
             r.chain.pop();
             r.update_draft();
@@ -3291,6 +3298,11 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready) {
         Some(Outcome::Cancel) => {
             r.editor = None;
             r.status = None;
+            // The section window of a wire being strung: String wire quit.
+            if matches!(form, Form::Section(_)) && r.hotbar.tool() == crate::tools::Tool::StringWire
+            {
+                r.quit_string_wire(ctx);
+            }
         }
         None => r.editor = Some(form),
     }
