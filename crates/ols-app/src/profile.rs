@@ -19,6 +19,8 @@ use crate::selection::Selection;
 pub struct ProfileView {
     /// Route shown (index in the line's routes).
     pub route: usize,
+    /// The route was chosen in the list (else: the one with most structures).
+    chosen: bool,
     drawing: Option<((usize, usize), RouteDrawing)>,
     /// Visible stations.
     range: Option<[f64; 2]>,
@@ -44,6 +46,13 @@ impl ProfileView {
             ui.label("No route.");
             return None;
         }
+        if !self.chosen {
+            // The main run first, not a short spur listed before it.
+            self.route = (0..routes.len())
+                .rev()
+                .max_by_key(|&k| routes[k].structures.len())
+                .unwrap_or(0);
+        }
         self.route = self.route.min(routes.len() - 1);
         ui.horizontal(|ui| {
             ui.label("Route");
@@ -59,6 +68,7 @@ impl ProfileView {
                             .changed()
                         {
                             self.range = None;
+                            self.chosen = true;
                         }
                     }
                 });
