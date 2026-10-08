@@ -6425,3 +6425,39 @@ fn surfaces_sections_image() {
         .save(format!("{dir}/surfaces-sections.png"))
         .unwrap();
 }
+
+/// The window closing closes the project: every connection to the file
+/// closed, nothing left beside it (no -wal, no -shm).
+#[test]
+fn closing_the_window_leaves_the_project_file_whole() {
+    let model = synthetic_project("exit-clean");
+    let file = model.sources.file.clone();
+    let side = |end: &str| {
+        let mut p = file.clone().into_os_string();
+        p.push(end);
+        std::path::PathBuf::from(p)
+    };
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // An edit: the log has something to write back.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let p = r.model.line.structure("T2").unwrap().position;
+        r.perform(crate::edit::Action::Command {
+            what: "T2".into(),
+            command: ols_session::Command::MoveStructure {
+                id: "T2".into(),
+                position: [p[0] + 1.0, p[1], p[2]],
+            },
+        });
+    }
+    assert!(side("-wal").exists());
+    eframe::App::on_exit(harness.state_mut());
+    assert!(!side("-wal").exists(), "the log written into the file");
+    assert!(!side("-shm").exists());
+    // And the edit is in the file.
+    let s = ols_session::Session::open(&file).unwrap();
+    assert_eq!(s.line().structure("T2").unwrap().position[0], 311.0);
+}

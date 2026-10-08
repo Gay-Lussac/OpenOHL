@@ -4150,6 +4150,14 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
 }
 
 impl eframe::App for App {
+    /// The window closes: the project too (everything written into the
+    /// project file, every connection to it closed: no -wal and -shm files
+    /// left beside it), and the server it hosts stops.
+    fn on_exit(&mut self) {
+        self.stop_hosting();
+        self.close();
+    }
+
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         match &self.state {
             State::Ready(r) => {
