@@ -142,15 +142,30 @@ fn conductor_axis(
     None
 }
 
-/// Bending stiffness EI of a cable, N·m², when the jumper gives none: the
-/// stiffness of its wires bending each on its own (they slip on each
-/// other), \( \sum E A d^2 / 16 \), with a wire diameter d of a sixth of
-/// the cable's (the wires' sizes are not in the wire library). Drake
-/// 26/7: ~48 N·m² (from its real wires: ~37 N·m²); a cable bent with its
-/// wires stuck together is up to tens of times stiffer.
-pub fn estimated_bending_stiffness(cable: &Cable) -> f64 {
-    let d = cable.diameter.si() / 6.0;
-    cable.axial_stiffness().si() * d * d / 16.0
+/// The default reduction factor of a jumper's estimated bending stiffness
+/// (its uniform effective EI as a share of the solid bar's).
+pub const DEFAULT_STIFFNESS_FACTOR: f64 = 0.2;
+
+/// Bending stiffness EI of a jumper's cable, N·m², when the jumper gives
+/// none: `factor` × the cable's solid-bar stiffness
+/// ([`Cable::bending_stiffness_max`]), but not below its strands slipping
+/// on each other ([`Cable::bending_stiffness_min`], when the wire library
+/// gives the strand counts). Drake 26/7 at 0.2: ~460 N·m² (solid ~2 300,
+/// slipped ~44).
+pub fn estimated_bending_stiffness(cable: &Cable, factor: f64) -> f64 {
+    let ei = factor * cable.bending_stiffness_max();
+    cable.bending_stiffness_min().map_or(ei, |min| ei.max(min))
+}
+
+/// The bending stiffness a jumper is solved with, N·m²: its own, else the
+/// estimate from its cable with its factor.
+pub fn jumper_bending_stiffness(jumper: &Jumper, cable: &Cable) -> f64 {
+    jumper.bending_stiffness.unwrap_or_else(|| {
+        estimated_bending_stiffness(
+            cable,
+            jumper.stiffness_factor.unwrap_or(DEFAULT_STIFFNESS_FACTOR),
+        )
+    })
 }
 
 /// Points at equal distances along a polyline (`n + 1` of them).
@@ -403,9 +418,7 @@ fn stiffness(
     shapes: &[SectionShape],
     cable: &Cable,
 ) -> Option<Stiff> {
-    let ei = jumper
-        .bending_stiffness
-        .unwrap_or_else(|| estimated_bending_stiffness(cable));
+    let ei = jumper_bending_stiffness(jumper, cable);
     let stiff = Stiff {
         start: clamp_direction(
             line,
@@ -786,6 +799,33 @@ mod tests {
             .map(Result::unwrap)
             .collect();
         (shapes, jumpers)
+    }
+
+    /// The estimate: the factor × the solid bar, never below the slipped
+    /// strands; a jumper's own EI or factor wins.
+    #[test]
+    fn bending_stiffness_estimate_and_its_floor() {
+        let lib = library();
+        let mut cable = lib.get("acsr-drake-26-7").unwrap().clone();
+        let max = cable.bending_stiffness_max();
+        let min = cable
+            .bending_stiffness_min()
+            .expect("the shipped Drake has its strands");
+        assert!((estimated_bending_stiffness(&cable, 0.2) - 0.2 * max).abs() < 1e-9);
+        // A tiny factor: the slipped strands.
+        assert_eq!(estimated_bending_stiffness(&cable, 1e-4), min);
+        // Without strand counts, no floor.
+        cable.outer.strands = None;
+        assert!((estimated_bending_stiffness(&cable, 1e-4) - 1e-4 * max).abs() < 1e-12);
+        let cable = lib.get("acsr-drake-26-7").unwrap();
+        let mut j = crate::tests::example().jumpers[0].clone();
+        assert!(
+            (jumper_bending_stiffness(&j, cable) - DEFAULT_STIFFNESS_FACTOR * max).abs() < 1e-9
+        );
+        j.stiffness_factor = Some(0.35);
+        assert!((jumper_bending_stiffness(&j, cable) - 0.35 * max).abs() < 1e-9);
+        j.bending_stiffness = Some(100.0);
+        assert_eq!(jumper_bending_stiffness(&j, cable), 100.0);
     }
 
     /// The cut a solve keeps (or makes) for jumper 0, and one made afresh.

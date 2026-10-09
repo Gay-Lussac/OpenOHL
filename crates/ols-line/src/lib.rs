@@ -149,10 +149,17 @@ pub struct Jumper {
     pub support: Option<JumperSupport>,
     /// Bending stiffness EI of the cable, N·m²: the jumper leaves a
     /// section's end clamp along the conductor's axis and bends away from
-    /// it, instead of hanging from a hinge. Default: an estimate from the
-    /// cable ([`jumper::estimated_bending_stiffness`]); 0: hinged ends.
+    /// it, instead of hanging from a hinge. Default: estimated from the
+    /// cable with `stiffness_factor`
+    /// ([`jumper::estimated_bending_stiffness`]); 0: hinged ends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bending_stiffness: Option<f64>,
+    /// Reduction factor of the estimated EI: the jumper's uniform effective
+    /// stiffness as a share of the cable's solid-bar stiffness, 0–1;
+    /// default [`jumper::DEFAULT_STIFFNESS_FACTOR`]. Unused when
+    /// `bending_stiffness` is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stiffness_factor: Option<f64>,
     /// Angle at which the jumper leaves the clamp at `from`, below the
     /// conductor's axis, degrees (0: straight on along the conductor;
     /// negative: up); default [`jumper::DEFAULT_TERMINAL_ANGLE_DEG`]. Used
@@ -1014,6 +1021,9 @@ impl Line {
                 .is_some_and(|e| !(e >= 0.0 && e.is_finite()))
             {
                 return bad("bending stiffness must be ≥ 0");
+            }
+            if j.stiffness_factor.is_some_and(|f| !(f > 0.0 && f <= 1.0)) {
+                return bad("the stiffness factor must be above 0 and at most 1");
             }
             if [j.angle_from_deg, j.angle_to_deg]
                 .into_iter()

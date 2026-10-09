@@ -407,8 +407,14 @@ pub fn ui(
                             (Some(0.0), _) => "0 (hinged ends)".into(),
                             (Some(e), _) => format!("{e:.1} N·m² (set on the jumper)"),
                             (None, Some(c)) => format!(
-                                "{:.1} N·m² (estimated from the cable)",
-                                ols_line::jumper::estimated_bending_stiffness(c)
+                                "{:.1} N·m² (estimated: {:.2} × the cable's solid-bar {:.0} N·m²{})",
+                                ols_line::jumper::jumper_bending_stiffness(j, c),
+                                j.stiffness_factor
+                                    .unwrap_or(ols_line::jumper::DEFAULT_STIFFNESS_FACTOR),
+                                c.bending_stiffness_max(),
+                                c.bending_stiffness_min().map_or(String::new(), |m| format!(
+                                    ", not below its strands slipping, {m:.0} N·m²"
+                                ))
                             ),
                             (None, None) => "—".into(),
                         },

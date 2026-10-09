@@ -253,6 +253,7 @@
             <xs:attribute name="sag" type="xs:double"/>
             <xs:attribute name="temperature" type="xs:double" default="15"/>
             <xs:attribute name="bending_stiffness" type="xs:double"/>
+            <xs:attribute name="stiffness_factor" type="xs:double"/>
             <xs:attribute name="angle_from_deg" type="xs:double"/>
             <xs:attribute name="angle_to_deg" type="xs:double"/>
             <xs:attribute name="color" type="ols:color"/>

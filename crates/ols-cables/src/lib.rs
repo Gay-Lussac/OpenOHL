@@ -79,6 +79,11 @@ pub struct Component {
     /// Non-linear stress-strain and creep curves (none = linear with `modulus`).
     #[serde(default)]
     pub stress_strain: Option<mechanics::StressStrainData>,
+    /// Number of strands (wires) of this component, e.g. 26 for the
+    /// aluminium of a 26/7 ACSR: their diameter follows from the area. Used
+    /// for the fully slipped bending stiffness ([`Cable::bending_stiffness_min`]).
+    #[serde(default)]
+    pub strands: Option<u32>,
 }
 
 impl Component {
@@ -365,6 +370,29 @@ impl Cable {
         Stress::from_si(self.axial_stiffness().si() / self.area().si())
     }
 
+    /// Bending stiffness of the cable as a solid bar (strands locked
+    /// together), N·m²: \\( EI_{max} = E \, \pi d^4 / 64 \\) with the
+    /// composite modulus E and the overall diameter d.
+    pub fn bending_stiffness_max(&self) -> f64 {
+        let d = self.diameter.si();
+        self.modulus().si() * std::f64::consts::PI * d.powi(4) / 64.0
+    }
+
+    /// Bending stiffness with the strands slipping on each other, each
+    /// bending on its own, N·m²: \\( EI_{min} = \sum_i n_i E_i \, \pi d_i^4 / 64 \\)
+    /// over the components, with \\( n_i \\) strands of diameter
+    /// \\( d_i = \sqrt{4 A_i / (\pi n_i)} \\). None when a component's
+    /// number of strands is not given.
+    pub fn bending_stiffness_min(&self) -> Option<f64> {
+        self.components()
+            .map(|c| {
+                let n = f64::from(c.strands?);
+                let d2 = 4.0 * c.area.si() / (std::f64::consts::PI * n);
+                Some(n * c.modulus.si() * std::f64::consts::PI * d2 * d2 / 64.0)
+            })
+            .sum()
+    }
+
     /// Composite thermal expansion coefficient, 1/K, weighted by stiffness.
     pub fn thermal_expansion(&self) -> f64 {
         let weighted: f64 = self
@@ -453,6 +481,9 @@ impl Cable {
                 return Err(error(format!(
                     "{label}.modulus = {gpa} GPa is outside 1–500 GPa (unit mistake?)"
                 )));
+            }
+            if c.strands == Some(0) {
+                return Err(error(format!("{label}.strands must be at least 1")));
             }
             if !(0.0..=50e-6).contains(&c.thermal_expansion) {
                 return Err(error(format!(
@@ -650,6 +681,27 @@ mod tests {
         let mut library = Library::default();
         library.add_toml(Path::new("t.toml"), text).unwrap();
         library.get("drake").unwrap().clone()
+    }
+
+    /// Drake 26/7: as a solid bar E·πd⁴/64 with the composite modulus
+    /// (~73.9 GPa); its strands slipping, Σ n·E·πdᵢ⁴/64 with 26 aluminium
+    /// wires of 4.44 mm and 7 steel wires of 3.46 mm (from area and count).
+    #[test]
+    fn bending_stiffness_solid_and_slipped() {
+        let mut c = drake();
+        assert_close(c.modulus().si(), 73.93e9, 1e-3);
+        assert_close(c.bending_stiffness_max(), 2275.5, 1e-3);
+        assert_eq!(c.bending_stiffness_min(), None);
+        c.outer.strands = Some(26);
+        assert_eq!(
+            c.bending_stiffness_min(),
+            None,
+            "the core's count is missing"
+        );
+        c.core.as_mut().unwrap().strands = Some(7);
+        assert_close(c.bending_stiffness_min().unwrap(), 36.65, 1e-3);
+        c.outer.strands = Some(0);
+        assert!(c.validate().is_err());
     }
 
     #[test]
