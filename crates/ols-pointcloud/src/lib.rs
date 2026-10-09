@@ -298,6 +298,13 @@ type Selected = (
     Option<std::sync::Arc<Corridor>>,
 );
 
+/// A block's point count from column `idx` of a row: 0 to
+/// [`codec::MAX_BLOCK_POINTS`], else an error (a damaged database).
+fn count_at(r: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<usize> {
+    let v: i64 = r.get(idx)?;
+    codec::block_count(v).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(idx, v))
+}
+
 /// A stored block: id, count, z0, coordinates, intensities, returns.
 type StoredBlock = (i64, i64, i64, Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
 
@@ -569,12 +576,8 @@ impl Store {
             if !wanted[class as usize] {
                 continue;
             }
-            let (bx, by, n, z0): (i64, i64, usize, i64) = (
-                r.get(0)?,
-                r.get(1)?,
-                r.get::<_, i64>(3)? as usize,
-                r.get(4)?,
-            );
+            let (bx, by, n, z0): (i64, i64, usize, i64) =
+                (r.get(0)?, r.get(1)?, count_at(r, 3)?, r.get(4)?);
             let (x, y, z) = Columns::decode_xyz(&r.get::<_, Vec<u8>>(5)?, n).map_err(err)?;
             let intensity = match r.get::<_, Option<Vec<u8>>>(6)? {
                 Some(b) => Columns::decode_intensity(&b, n).map_err(err)?,
@@ -656,7 +659,7 @@ impl Store {
                     r.get(1)?,
                     r.get(2)?,
                     r.get::<_, i64>(3)? as u8,
-                    r.get::<_, i64>(4)? as usize,
+                    count_at(r, 4)?,
                     r.get(5)?,
                 ))
             })?
@@ -892,7 +895,7 @@ impl Store {
                     r.get(1)?,
                     r.get(2)?,
                     r.get::<_, i64>(3)? as u8,
-                    r.get::<_, i64>(4)? as usize,
+                    count_at(r, 4)?,
                     r.get(5)?,
                 ))
             })?
@@ -1035,7 +1038,7 @@ impl Store {
                     )
                     .optional()?;
                 if let Some((id, count, z0, xyz, intensity, returns)) = &old {
-                    let n = *count as usize;
+                    let n = codec::block_count(*count).map_err(err)?;
                     let (x, y, z) = Columns::decode_xyz(xyz, n).map_err(err)?;
                     let inten = match intensity {
                         Some(i) => Columns::decode_intensity(i, n).map_err(err)?,
@@ -1066,6 +1069,12 @@ impl Store {
                     intensity: b.intensity,
                     returns: b.returns,
                 };
+                if columns.len() > codec::MAX_BLOCK_POINTS {
+                    return Err(err(format!(
+                        "more than {} points of one class in one chunk: use a smaller chunk size",
+                        codec::MAX_BLOCK_POINTS
+                    )));
+                }
                 let count = columns.len() as i64;
                 let (xyz, intensity, returns) = columns.encode().map_err(err)?;
                 tx.execute(
@@ -1120,10 +1129,8 @@ impl Store {
                  AND NOT EXISTS (SELECT 1 FROM pointcloud_lod l WHERE l.block = b.id)
                  ORDER BY b.id",
             )?;
-            stmt.query_map(params![cloud.id], |r| {
-                Ok((r.get(0)?, r.get::<_, i64>(1)? as usize))
-            })?
-            .collect::<Result<_, _>>()?
+            stmt.query_map(params![cloud.id], |r| Ok((r.get(0)?, count_at(r, 1)?)))?
+                .collect::<Result<_, _>>()?
         };
         if todo.is_empty() {
             return Ok(0);
@@ -1321,7 +1328,7 @@ impl Store {
                     r.get::<_, i64>(1)?,
                     r.get::<_, i64>(2)?,
                     r.get::<_, i64>(3)? as u8,
-                    r.get::<_, i64>(4)? as usize,
+                    count_at(r, 4)?,
                     r.get::<_, i64>(5)?,
                     r.get::<_, Option<i64>>(6)?,
                 ))
@@ -1338,7 +1345,7 @@ impl Store {
             let read = match (level, stored) {
                 _ if is_whole[class as usize] => Read::Whole,
                 (0, _) => Read::Whole,
-                (k, Some(n)) => Read::Stored(k, n as usize),
+                (k, Some(n)) => Read::Stored(k, codec::block_count(n).map_err(err)?),
                 (k, None) => Read::Pick(k),
             };
             selected.push(((id, cx, cy, class, count, z0, None), read));
@@ -1416,7 +1423,7 @@ impl Store {
                 r.get::<_, i64>(1)?,
                 r.get::<_, i64>(2)?,
                 r.get::<_, i64>(3)? as u8,
-                r.get::<_, i64>(4)? as usize,
+                count_at(r, 4)?,
                 r.get::<_, i64>(5)?,
             ))
         })?;
@@ -1515,7 +1522,7 @@ impl Store {
                     r.get::<_, i64>(1)?,
                     r.get::<_, i64>(2)?,
                     r.get::<_, i64>(3)? as u8,
-                    r.get::<_, i64>(4)? as usize,
+                    count_at(r, 4)?,
                     r.get::<_, i64>(5)?,
                 ))
             },

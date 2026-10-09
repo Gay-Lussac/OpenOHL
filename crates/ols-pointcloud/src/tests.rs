@@ -280,6 +280,49 @@ fn a_rectangle_gives_exactly_its_points() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+#[test]
+fn damaged_block_counts_error_cleanly() {
+    let dir = scratch("damaged");
+    write_tile(&dir.join("a.laz"), 0.0, 10.0);
+    let tiles = ols_lidar::tiles_in(&dir).unwrap();
+    let db = dir.join("project.ols");
+    let mut store = Store::open(&db).unwrap();
+    let (cloud, _) = store
+        .import_tiles(
+            "survey",
+            &tiles,
+            "",
+            None,
+            50.0,
+            0.001,
+            &Budget::new(),
+            |_, _, _| {},
+        )
+        .unwrap();
+    // Negative, beyond the cap, and within it but not what the blobs hold
+    // (no intensities nor returns stored).
+    for count in [-1i64, i64::MAX, 4_000_000_000, 90_000_000] {
+        store
+            .conn
+            .execute(
+                "UPDATE pointcloud_block SET count = ?1, intensity = NULL, returns = NULL",
+                [count],
+            )
+            .unwrap();
+        let read = store.visit_rect(
+            &cloud,
+            [0.0, 0.0],
+            [10.0, 40.0],
+            None,
+            &Budget::new(),
+            &mut |_, _, _, _| {},
+        );
+        assert!(read.is_err(), "count {count}");
+    }
+    drop(store);
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// Chunks that do not nest in the grid's tiles (50 m chunks, 64 m tiles):
 /// every point's tile is listed, its points at or above the tile's lowest
 /// block base and the highest base below the top point.
@@ -533,6 +576,37 @@ fn point(x: f64, y: f64, z: f64, class: u8) -> LidarPoint {
         return_number: 1,
         number_of_returns: 1,
     }
+}
+
+#[test]
+fn crafted_copc_point_counts_error_cleanly() {
+    let dir = scratch("copc-crafted");
+    let path = dir.join("small.copc.laz");
+    copc::write_copc(
+        &path,
+        &synthetic(2_600_000.0, 10, 10),
+        0.001,
+        &Budget::new(),
+    )
+    .unwrap();
+    let info = copc::CopcFile::open(&path).unwrap().info;
+    let good = std::fs::read(&path).unwrap();
+    let page = info.root_hier_offset as usize;
+    // The first entry with points: its byte size at 24, its count at 28.
+    let entry = (0..info.root_hier_size as usize / 32)
+        .map(|k| page + 32 * k)
+        .find(|&at| i32::from_le_bytes(good[at + 28..at + 32].try_into().unwrap()) > 0)
+        .unwrap();
+    for (byte_size, count) in [(1, i32::MAX), (-5, 10), (0, 1)] {
+        let mut bad = good.clone();
+        bad[entry + 24..entry + 28].copy_from_slice(&i32::to_le_bytes(byte_size));
+        bad[entry + 28..entry + 32].copy_from_slice(&i32::to_le_bytes(count));
+        let crafted = dir.join("crafted.copc.laz");
+        std::fs::write(&crafted, &bad).unwrap();
+        let err = copc::CopcFile::open(&crafted).unwrap_err();
+        assert!(err.contains("points in"), "{err}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

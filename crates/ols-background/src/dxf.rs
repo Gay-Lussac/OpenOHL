@@ -395,8 +395,39 @@ fn bulge_points(a: [f64; 3], b: [f64; 3], bulge: f64, out: &mut Vec<[f64; 3]>) {
     }
 }
 
+/// Exit clause: at most this many steps along one arc, circle or ellipse
+/// (5° each over a full turn).
+const MAX_ARC_STEPS: usize = 72;
+
+/// Steps of at most 5° along `sweep` (radians), 4 to [`MAX_ARC_STEPS`].
+fn arc_steps(sweep: f64) -> usize {
+    ((sweep.abs() / 5f64.to_radians()).ceil() as usize).clamp(4, MAX_ARC_STEPS)
+}
+
+/// A sweep in (0, `full`]: one turn at most (a crafted file's huge
+/// angles, or ones whose difference is outside a turn, wrapped round).
+fn one_turn(sweep: f64, full: f64) -> f64 {
+    if sweep > 0.0 && sweep <= full * (1.0 + 1e-12) {
+        return sweep;
+    }
+    let s = sweep.rem_euclid(full);
+    if s < full * 1e-12 { full } else { s }
+}
+
+/// The angles of `r` (`codes`): finite numbers, else an error naming the
+/// entity.
+fn finite_angles(r: &Record, codes: &[i32]) -> Result<(), String> {
+    match codes
+        .iter()
+        .find(|&&c| r.f(c).is_some_and(|v| !v.is_finite()))
+    {
+        Some(c) => Err(format!("{}: group code {c} is not a finite number", r.kind)),
+        None => Ok(()),
+    }
+}
+
 fn arc_points(c: [f64; 3], r: f64, from: f64, sweep: f64) -> Vec<[f64; 3]> {
-    let n = ((sweep.abs() / 5f64.to_radians()).ceil() as usize).max(4);
+    let n = arc_steps(sweep);
     (0..=n)
         .map(|k| {
             let a = from + sweep * k as f64 / n as f64;
@@ -600,12 +631,16 @@ impl Reader<'_> {
                     let (Some(c), Some(radius)) = (r.point(10), r.f(40)) else {
                         continue;
                     };
+                    finite_angles(r, &[40, 50, 51])?;
                     let (from, sweep) = if r.kind == "ARC" {
                         let (a, mut b) = (r.f(50).unwrap_or(0.0), r.f(51).unwrap_or(360.0));
                         if b <= a {
                             b += 360.0;
                         }
-                        (a.to_radians(), (b - a).to_radians())
+                        (
+                            a.rem_euclid(360.0).to_radians(),
+                            one_turn(b - a, 360.0).to_radians(),
+                        )
                     } else {
                         (0.0, std::f64::consts::TAU)
                     };
@@ -620,6 +655,7 @@ impl Reader<'_> {
                     else {
                         continue;
                     };
+                    finite_angles(r, &[40, 41, 42])?;
                     let (t0, mut t1) = (
                         r.f(41).unwrap_or(0.0),
                         r.f(42).unwrap_or(std::f64::consts::TAU),
@@ -627,13 +663,15 @@ impl Reader<'_> {
                     if t1 <= t0 {
                         t1 += std::f64::consts::TAU;
                     }
+                    let t0 = t0.rem_euclid(std::f64::consts::TAU);
+                    let t1 = t0 + one_turn(t1 - t0, std::f64::consts::TAU);
                     // Minor axis: the extrusion × the major axis, scaled.
                     let minor = [
                         (n[1] * m[2] - n[2] * m[1]) * ratio,
                         (n[2] * m[0] - n[0] * m[2]) * ratio,
                         (n[0] * m[1] - n[1] * m[0]) * ratio,
                     ];
-                    let steps = (((t1 - t0) / 5f64.to_radians()).ceil() as usize).max(4);
+                    let steps = arc_steps(t1 - t0);
                     let pts = (0..=steps)
                         .map(|s| {
                             let t = t0 + (t1 - t0) * s as f64 / steps as f64;
@@ -1088,6 +1126,62 @@ mod tests {
         // The block drawn at nesting depths 1 to 8.
         assert_eq!(d.lines.len(), 8);
         assert_eq!(d.skipped.get("INSERT nested deeper than 8"), Some(&1));
+    }
+
+    #[test]
+    fn crafted_arc_angles_error_or_stay_one_turn() {
+        let entities = |e: &[(i32, &str)]| {
+            let mut p = vec![(0, "SECTION"), (2, "ENTITIES")];
+            p.extend_from_slice(e);
+            p.extend([(0, "ENDSEC"), (0, "EOF")]);
+            read_dxf(&dxf(&p))
+        };
+        let centre = [(10, "0"), (20, "0"), (40, "1")];
+        // Infinite or NaN angles: a clean error.
+        for (code, v) in [(50, "inf"), (51, "-inf"), (51, "NaN")] {
+            let mut e = vec![(0, "ARC")];
+            e.extend(centre);
+            e.push((code, v));
+            assert!(entities(&e).is_err(), "ARC {code} {v}");
+        }
+        let circle = [(0, "CIRCLE"), (10, "0"), (20, "0"), (40, "inf")];
+        assert!(entities(&circle).is_err());
+        for (code, v) in [(41, "NaN"), (42, "inf")] {
+            let e = [
+                (0, "ELLIPSE"),
+                (10, "0"),
+                (20, "0"),
+                (11, "2"),
+                (21, "0"),
+                (40, "0.5"),
+                (code, v),
+            ];
+            assert!(entities(&e).is_err(), "ELLIPSE {code} {v}");
+        }
+        // Huge finite angles: one turn at most.
+        let mut e = vec![(0, "ARC")];
+        e.extend(centre);
+        e.extend([(50, "-1e300"), (51, "1e300")]);
+        let d = entities(&e).unwrap();
+        assert!(d.lines[0].points.len() <= MAX_ARC_STEPS + 1);
+        let e = [
+            (0, "ELLIPSE"),
+            (10, "0"),
+            (20, "0"),
+            (11, "2"),
+            (21, "0"),
+            (40, "0.5"),
+            (41, "-1e300"),
+            (42, "1e300"),
+        ];
+        let d = entities(&e).unwrap();
+        assert!(d.lines[0].points.len() <= MAX_ARC_STEPS + 1);
+        // An ordinary arc keeps its sweep: 90° in 5° steps.
+        let mut e = vec![(0, "ARC")];
+        e.extend(centre);
+        e.extend([(50, "0"), (51, "90")]);
+        let d = entities(&e).unwrap();
+        assert_eq!(d.lines[0].points.len(), 19);
     }
 
     #[test]
