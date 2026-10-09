@@ -6698,7 +6698,7 @@ fn alignments_are_laid_out_joined_and_edited() {
     }
     harness.state_mut().show_tab(crate::app::Tab::Profile);
     harness.run_steps(3);
-    // Escape gives a new alignment up.
+    // Escape gives a new alignment up; the tool stays held.
     use_tool(
         &mut harness,
         Tool::NewAlignment,
@@ -6708,7 +6708,7 @@ fn alignments_are_laid_out_joined_and_edited() {
     press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
     let r = harness.state_mut().ready().unwrap();
     assert!(r.new_alignment.is_empty() && r.view3d.draft.is_empty());
-    assert_eq!(r.hotbar.tool(), Tool::Select);
+    assert_eq!(r.hotbar.tool(), Tool::NewAlignment);
 }
 
 /// A line with its own alignment only: a point given another alignment
@@ -6767,11 +6767,62 @@ fn a_new_alignment_name_in_the_table_makes_the_alignment() {
     assert!(line.routes[1].structures.is_empty());
 }
 
-/// Escape quits String wire at any point: with points picked and the mouse
-/// captured, with nothing picked yet, and in the section window (a field
-/// being typed in): the points go, the mouse is freed, Select is held.
+/// In the 3D view in first person: Escape while stringing cancels the
+/// wire and keeps the mouse; a second Escape frees it.
 #[test]
-fn escape_quits_string_wire_at_any_point() {
+fn escape_twice_in_first_person() {
+    use crate::tools::Tool;
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| {
+            App::with_model(synthetic_project("escape-fp"), cc.wgpu_render_state.clone())
+        });
+    harness.run();
+    harness.state_mut().ready().unwrap().view3d.controls = crate::controls::Controls::presets()
+        .into_iter()
+        .find(|c| c.name == "Minecraft creative")
+        .unwrap();
+    harness.state_mut().show_tab(crate::app::Tab::View3d);
+    harness.run();
+    use_tool(&mut harness, Tool::StringWire, string_at("T2", 1, 1), None);
+    harness.state_mut().ready().unwrap().view3d.captured = true;
+    harness.run();
+    assert!(
+        harness.state_mut().ready().unwrap().view3d.captured,
+        "captured before Escape"
+    );
+    assert!(
+        !harness.state_mut().ready().unwrap().chain.is_empty(),
+        "a point picked"
+    );
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.chain.is_empty());
+        assert_eq!(r.hotbar.tool(), Tool::StringWire);
+        assert!(r.view3d.captured, "the first Escape keeps the mouse");
+    }
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    assert!(
+        !harness.state_mut().ready().unwrap().view3d.captured,
+        "the second frees it"
+    );
+}
+
+/// Escape cancels the wire being strung, at any point (points picked with
+/// the mouse captured, or the section window with a field being typed in):
+/// the points go, String wire stays held and the view keeps the mouse; a
+/// second Escape frees it. The same for a new alignment.
+#[test]
+fn escape_cancels_the_operation_not_the_tool() {
     use crate::editors::Form;
     use crate::tools::Tool;
     let model = synthetic_project("escape-string-wire");
@@ -6780,40 +6831,40 @@ fn escape_quits_string_wire_at_any_point() {
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     let escape = |h: &mut Harness<'_, App>| press(h, egui::Key::Escape, egui::Modifiers::NONE);
-    let quit = |h: &mut Harness<'_, App>| {
+    let cancelled = |h: &mut Harness<'_, App>, tool: Tool| {
         let r = h.state_mut().ready().unwrap();
-        assert!(r.chain.is_empty() && r.view3d.draft.is_empty());
+        assert!(r.chain.is_empty() && r.new_alignment.is_empty() && r.view3d.draft.is_empty());
         assert!(r.editor.is_none());
-        assert!(!r.view3d.captured);
-        assert_eq!(r.hotbar.tool(), Tool::Select);
+        assert_eq!(r.hotbar.tool(), tool);
     };
-    // Points picked, the mouse captured: one Escape.
+    // Points picked, the mouse captured: one Escape cancels, the mouse stays.
     use_tool(&mut harness, Tool::StringWire, string_at("T2", 1, 1), None);
     use_tool(&mut harness, Tool::StringWire, string_at("T3", 1, 1), None);
     harness.state_mut().ready().unwrap().view3d.captured = true;
     escape(&mut harness);
-    quit(&mut harness);
-    // Held, nothing picked.
-    harness
-        .state_mut()
-        .ready()
-        .unwrap()
-        .hotbar
-        .hold(Tool::StringWire);
-    escape(&mut harness);
-    quit(&mut harness);
-    // The section window, a field focused.
+    cancelled(&mut harness, Tool::StringWire);
+    assert!(harness.state_mut().ready().unwrap().view3d.captured);
+    // The section window, a field focused: closed, String wire held.
     use_tool(&mut harness, Tool::StringWire, string_at("T2", 1, 1), None);
     use_tool(&mut harness, Tool::StringWire, string_at("T3", 1, 1), None);
+    harness.state_mut().ready().unwrap().view3d.captured = false;
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(matches!(r.editor, Some(Form::Section(_))), "{:?}", r.editor);
     }
-    let field = egui::Id::new("escape-test-field");
-    harness.ctx.memory_mut(|m| m.request_focus(field));
+    harness
+        .ctx
+        .memory_mut(|m| m.request_focus(egui::Id::new("escape-test-field")));
     escape(&mut harness);
-    quit(&mut harness);
+    cancelled(&mut harness, Tool::StringWire);
+    // A new alignment: the same.
+    let at = harness.state_mut().ready().unwrap().model.line.structures[0].position;
+    use_tool(&mut harness, Tool::NewAlignment, Selection::None, Some(at));
+    harness.state_mut().ready().unwrap().view3d.captured = true;
+    escape(&mut harness);
+    cancelled(&mut harness, Tool::NewAlignment);
+    assert!(harness.state_mut().ready().unwrap().view3d.captured);
 }
 
 /// Several routes, a short spur listed first: the profile opens on the

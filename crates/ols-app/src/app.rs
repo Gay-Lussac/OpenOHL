@@ -1679,15 +1679,11 @@ impl Ready {
         }
     }
 
-    /// New alignment: Escape — the points go, the mouse is freed, Select
-    /// is held.
-    pub fn quit_new_alignment(&mut self, ctx: &egui::Context) {
+    /// New alignment: Escape — the points go; the tool stays held, the
+    /// view keeps the mouse.
+    pub fn cancel_new_alignment(&mut self) {
         self.new_alignment.clear();
         self.update_draft();
-        if self.view3d.captured {
-            crate::view3d::View3d::set_captured(&mut self.view3d.captured, ctx, false);
-        }
-        self.hotbar.hold(crate::tools::Tool::Select);
         self.status = Some(("New alignment: cancelled".into(), false));
     }
 
@@ -1722,16 +1718,12 @@ impl Ready {
         self.update_draft();
     }
 
-    /// Quits String wire (Escape): the wire being strung goes, the mouse is
-    /// freed, Select is held.
-    pub fn quit_string_wire(&mut self, ctx: &egui::Context) {
+    /// Cancels the wire being strung (Escape): its points go; the tool
+    /// stays held, the view keeps the mouse.
+    pub fn cancel_string_wire(&mut self) {
         self.chain.clear();
         self.restring = None;
         self.update_draft();
-        if self.view3d.captured {
-            crate::view3d::View3d::set_captured(&mut self.view3d.captured, ctx, false);
-        }
-        self.hotbar.hold(crate::tools::Tool::Select);
         self.status = Some(("String wire: cancelled".into(), false));
     }
 
@@ -2172,20 +2164,22 @@ fn goto_window(ctx: &egui::Context, r: &mut Ready) {
 fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
     use crate::tools::Tool;
     // The wire being strung: Enter ends it, Backspace takes the last point
-    // back. Escape, at any point (mouse captured or not, a field focused),
-    // quits String wire: the points go, the mouse is freed, Select is held.
-    // (The section window opened by Enter is quit in [`editor_window`].)
+    // back. Escape (mouse captured or not, a field focused) cancels it: the
+    // points go; the tool stays held and the view keeps the mouse (the key
+    // is taken: a second Escape frees the mouse). (The section window
+    // opened by Enter: [`editor_window`].)
     let windows = r.editor.is_some() || r.goto.is_some() || r.move_dialog.is_some();
-    let stringing = !r.chain.is_empty() || r.hotbar.tool() == Tool::StringWire;
-    if stringing && !windows && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        r.quit_string_wire(ctx);
+    if !r.chain.is_empty()
+        && !windows
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        r.cancel_string_wire();
     }
     // A new alignment being laid out: the same keys.
-    let laying = !r.new_alignment.is_empty() || r.hotbar.tool() == Tool::NewAlignment;
-    if laying && !windows {
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            r.quit_new_alignment(ctx);
-        } else if !r.new_alignment.is_empty() && !ctx.text_edit_focused() {
+    if !r.new_alignment.is_empty() && !windows {
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            r.cancel_new_alignment();
+        } else if !ctx.text_edit_focused() {
             let (enter, back) = ctx.input_mut(|i| {
                 use egui::{Key, Modifiers};
                 (
@@ -3420,10 +3414,11 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready) {
         Some(Outcome::Cancel) => {
             r.editor = None;
             r.status = None;
-            // The section window of a wire being strung: String wire quit.
+            // The section window of a wire being strung: that wire is
+            // given up (String wire stays held).
             if matches!(form, Form::Section(_)) && r.hotbar.tool() == crate::tools::Tool::StringWire
             {
-                r.quit_string_wire(ctx);
+                r.cancel_string_wire();
             }
         }
         None => r.editor = Some(form),
