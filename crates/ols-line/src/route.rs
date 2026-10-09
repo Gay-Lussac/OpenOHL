@@ -233,6 +233,10 @@ impl Route {
     }
 }
 
+/// A place on a route: its index, the distance along it, its unit
+/// direction there.
+type OnRoute = (usize, f64, [f64; 2]);
+
 impl Line {
     /// The line's routes; without explicit routes, one implicit route
     /// `"main"` through all structures in file order, along `alignment`.
@@ -253,20 +257,35 @@ impl Line {
     /// `None` for a line without two distinct points. What the wind's
     /// side ("from the right of the line") is taken against.
     pub fn direction_at(&self, at: [f64; 2]) -> Option<[f64; 2]> {
-        let mut best: Option<(f64, [f64; 2])> = None;
-        for r in self.effective_routes() {
+        self.nearest_on_routes(at).map(|n| n.2)
+    }
+
+    /// Where `at` (plan) is along the line: the route nearest to it (its
+    /// index in [`Line::effective_routes`]) and the distance along that
+    /// route's centreline (from its start) of the point nearest to it.
+    pub fn place_along(&self, at: [f64; 2]) -> Option<(usize, f64)> {
+        self.nearest_on_routes(at).map(|n| (n.0, n.1))
+    }
+
+    /// The nearest segment of the routes' centrelines: route index,
+    /// distance along it, unit direction.
+    fn nearest_on_routes(&self, at: [f64; 2]) -> Option<OnRoute> {
+        let mut best: Option<(f64, OnRoute)> = None;
+        for (k, r) in self.effective_routes().iter().enumerate() {
+            let mut run = 0.0;
             for w in r.centreline(self).windows(2) {
                 let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
                 let len2 = dx * dx + dy * dy;
                 if len2 <= 0.0 {
                     continue;
                 }
+                let len = len2.sqrt();
                 let t = (((at[0] - w[0][0]) * dx + (at[1] - w[0][1]) * dy) / len2).clamp(0.0, 1.0);
                 let dist = (at[0] - w[0][0] - t * dx).hypot(at[1] - w[0][1] - t * dy);
                 if best.is_none_or(|b| dist < b.0) {
-                    let len = len2.sqrt();
-                    best = Some((dist, [dx / len, dy / len]));
+                    best = Some((dist, (k, run + t * len, [dx / len, dy / len])));
                 }
+                run += len;
             }
         }
         best.map(|b| b.1)

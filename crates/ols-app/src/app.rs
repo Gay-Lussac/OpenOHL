@@ -3995,6 +3995,7 @@ fn menus(
         item(ui, Command::Table(TableKind::Sections), out);
         item(ui, Command::Table(TableKind::Jumpers), out);
         item(ui, Command::Table(TableKind::Systems), out);
+        item(ui, Command::Table(TableKind::Circuits), out);
         ui.separator();
         crate::menu::options_menu(ui, "Display options", |ui| {
             ui.label(

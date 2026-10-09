@@ -264,6 +264,10 @@
           </xs:complexType>
         </xs:element>
 
+        <!-- The chosen start of an electrical circuit (a conductor path): one
+             of its end attachments; circuits not listed run along the line. -->
+        <xs:element name="circuit_start" type="ols:sectionPoint" minOccurs="0" maxOccurs="unbounded"/>
+
         <xs:element name="phase_color" minOccurs="0" maxOccurs="unbounded">
           <xs:complexType>
             <xs:attribute name="label" type="xs:string" use="required"/>

@@ -34,7 +34,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Line, LineError};
+use crate::{Line, LineError, SectionPoint};
 
 /// AC or DC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -267,6 +267,138 @@ pub fn conductor_paths(line: &Line) -> Vec<Vec<String>> {
     groups.into_values().collect()
 }
 
+/// An electrical circuit: one conductor path (its sections joined by
+/// jumpers or a shared attachment), with a direction — from its start, one
+/// of its ends. As the line has them; the number of circuits follows from
+/// the connections.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Circuit {
+    /// Its sections, from its start.
+    pub sections: Vec<String>,
+    /// Its jumpers, from its start.
+    pub jumpers: Vec<String>,
+    /// Where it starts and ends (attachments at its two ends; the same for
+    /// a closed loop).
+    pub start: SectionPoint,
+    /// Where it ends.
+    pub end: SectionPoint,
+    /// Its start was chosen ([`Line::circuit_starts`]); else it runs along
+    /// the line, from its end that comes first.
+    pub chosen: bool,
+    /// Every attachment of it, from its start (the jumpers turned to point
+    /// along it follow this order).
+    pub order: Vec<SectionPoint>,
+}
+
+/// The line's electrical circuits ([`Circuit`]), in the order of their
+/// first sections in the line.
+///
+/// Expected cost: linear in the sections' points and the jumpers, plus a
+/// place along the line for each circuit end.
+pub fn circuits(line: &Line) -> Vec<Circuit> {
+    use std::collections::{BTreeSet, VecDeque};
+    #[derive(Clone)]
+    enum Edge {
+        Section(String),
+        Jumper(String),
+    }
+    let mut out = Vec::new();
+    for path in conductor_paths(line) {
+        let sections: Vec<&crate::Section> = path
+            .iter()
+            .filter_map(|id| line.sections.iter().find(|s| &s.id == id))
+            .collect();
+        // Attachments and what joins them.
+        let mut next: BTreeMap<SectionPoint, Vec<(SectionPoint, Edge)>> = BTreeMap::new();
+        for s in &sections {
+            for p in &s.points {
+                next.entry(p.clone()).or_default();
+            }
+            for w in s.points.windows(2) {
+                let e = Edge::Section(s.id.clone());
+                next.entry(w[0].clone())
+                    .or_default()
+                    .push((w[1].clone(), e.clone()));
+                next.entry(w[1].clone())
+                    .or_default()
+                    .push((w[0].clone(), e));
+            }
+        }
+        for j in &line.jumpers {
+            if next.contains_key(&j.from) && next.contains_key(&j.to) {
+                let e = Edge::Jumper(j.id.clone());
+                next.get_mut(&j.from)
+                    .expect("known")
+                    .push((j.to.clone(), e.clone()));
+                next.get_mut(&j.to)
+                    .expect("known")
+                    .push((j.from.clone(), e));
+            }
+        }
+        let ends: Vec<SectionPoint> = next
+            .iter()
+            .filter(|(_, n)| n.len() <= 1)
+            .map(|(p, _)| p.clone())
+            .collect();
+        let Some(first) = sections.first().and_then(|s| s.points.first()).cloned() else {
+            continue;
+        };
+        // The chosen start, else the end first along the line.
+        let chosen = line
+            .circuit_starts
+            .iter()
+            .find(|p| ends.contains(p))
+            .cloned();
+        let along = |p: &SectionPoint| {
+            line.attachment(p)
+                .and_then(|a| line.place_along([a.wire_point[0], a.wire_point[1]]))
+                .unwrap_or((usize::MAX, f64::INFINITY))
+        };
+        let start = chosen.clone().unwrap_or_else(|| {
+            ends.iter()
+                .min_by(|a, b| {
+                    let (x, y) = (along(a), along(b));
+                    x.0.cmp(&y.0).then(x.1.total_cmp(&y.1))
+                })
+                .cloned()
+                .unwrap_or(first)
+        });
+        // Breadth first from the start: the order of everything along it.
+        let (mut order, mut secs, mut jumps) = (Vec::new(), Vec::new(), Vec::new());
+        let mut seen: BTreeSet<SectionPoint> = BTreeSet::new();
+        let mut queue = VecDeque::from([start.clone()]);
+        seen.insert(start.clone());
+        while let Some(p) = queue.pop_front() {
+            order.push(p.clone());
+            for (q, e) in &next[&p] {
+                match e {
+                    Edge::Section(id) if !secs.contains(id) => secs.push(id.clone()),
+                    Edge::Jumper(id) if !jumps.contains(id) => jumps.push(id.clone()),
+                    _ => {}
+                }
+                if seen.insert(q.clone()) {
+                    queue.push_back(q.clone());
+                }
+            }
+        }
+        let end = ends
+            .iter()
+            .filter(|p| **p != start)
+            .max_by_key(|p| order.iter().position(|q| q == *p))
+            .cloned()
+            .unwrap_or_else(|| start.clone());
+        out.push(Circuit {
+            sections: secs,
+            jumpers: jumps,
+            start,
+            end,
+            chosen: chosen.is_some(),
+            order,
+        });
+    }
+    out
+}
+
 impl Line {
     /// The system and phase of every section (by id): given on the section
     /// or on another section of its conductor path; `None` for earthed
@@ -356,6 +488,47 @@ impl Line {
 
 #[cfg(test)]
 mod tests {
+
+    /// One circuit per conductor path; it runs along the line unless its
+    /// start is chosen, and its sections and jumpers come in that order.
+    #[test]
+    fn circuits_follow_the_connections_and_their_start() {
+        let mut line = example();
+        let paths = conductor_paths(&line);
+        let all = circuits(&line);
+        assert_eq!(all.len(), paths.len());
+        // S1 and the branch S3 joined by the jumper at T3.
+        let c = all
+            .iter()
+            .find(|c| c.sections.contains(&"S3".to_owned()))
+            .unwrap();
+        assert_eq!(c.sections, ["S1", "S3"]);
+        assert_eq!(c.jumpers.len(), 1);
+        assert_eq!(c.start.structure, "T1", "the end first along the line");
+        assert!(!c.chosen);
+        // Its start chosen at the branch's far end: the order turns.
+        let far = line
+            .sections
+            .iter()
+            .find(|s| s.id == "S3")
+            .unwrap()
+            .points
+            .last()
+            .unwrap()
+            .clone();
+        line.circuit_starts = vec![far.clone()];
+        let c = circuits(&line)
+            .into_iter()
+            .find(|c| c.sections.contains(&"S3".to_owned()))
+            .unwrap();
+        assert!(c.chosen);
+        assert_eq!(c.start, far);
+        assert_eq!(c.sections, ["S3", "S1"]);
+        assert_eq!(c.order.first(), Some(&far));
+        // A start that is not one of its ends is not taken.
+        line.circuit_starts = vec![line.sections[0].points[1].clone()];
+        assert!(circuits(&line).iter().all(|c| !c.chosen));
+    }
     use super::*;
 
     fn system(kind: SystemKind, kv: f64, labels: &[&str]) -> System {

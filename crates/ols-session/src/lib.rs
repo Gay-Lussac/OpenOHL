@@ -522,6 +522,24 @@ struct Meta {
         skip_serializing_if = "ols_cables::BimetallicModel::is_default"
     )]
     bimetallic: ols_cables::BimetallicModel,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    circuit_starts: Vec<ols_line::SectionPoint>,
+}
+
+impl Meta {
+    /// The settings of `line`.
+    fn of(line: &Line) -> Self {
+        Self {
+            name: line.name.clone(),
+            crs: line.crs.clone(),
+            alignment: line.alignment.clone(),
+            display: line.display.clone(),
+            systems: line.systems.clone(),
+            creep_stretch: line.creep_stretch.clone(),
+            bimetallic: line.bimetallic,
+            circuit_starts: line.circuit_starts.clone(),
+        }
+    }
 }
 
 /// The put of the line's settings (name, CRS, alignment, display, systems,
@@ -532,15 +550,13 @@ pub fn line_settings_put(
     alignment: Option<Vec<ols_line::AlignmentPoint>>,
     systems: Option<Vec<ols_line::electrical::System>>,
 ) -> Command {
-    let meta = Meta {
-        name: line.name.clone(),
-        crs: line.crs.clone(),
-        alignment: alignment.unwrap_or_else(|| line.alignment.clone()),
-        display: line.display.clone(),
-        systems: systems.unwrap_or_else(|| line.systems.clone()),
-        creep_stretch: line.creep_stretch.clone(),
-        bimetallic: line.bimetallic,
-    };
+    let mut meta = Meta::of(line);
+    if let Some(a) = alignment {
+        meta.alignment = a;
+    }
+    if let Some(s) = systems {
+        meta.systems = s;
+    }
     Command::Put {
         kind: Kind::Meta,
         id: "line".into(),
@@ -603,19 +619,7 @@ fn json<T: Serialize>(v: &T) -> Value {
 
 /// Objects of a line, in line order.
 fn objects_of(line: &Line) -> Vec<(Kind, String, Value)> {
-    let mut out = vec![(
-        Kind::Meta,
-        "line".to_owned(),
-        json(&Meta {
-            name: line.name.clone(),
-            crs: line.crs.clone(),
-            alignment: line.alignment.clone(),
-            display: line.display.clone(),
-            systems: line.systems.clone(),
-            creep_stretch: line.creep_stretch.clone(),
-            bimetallic: line.bimetallic,
-        }),
-    )];
+    let mut out = vec![(Kind::Meta, "line".to_owned(), json(&Meta::of(line)))];
     out.extend(
         line.routes
             .iter()
@@ -663,6 +667,7 @@ fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionEr
         systems: meta.systems,
         creep_stretch: meta.creep_stretch,
         bimetallic: meta.bimetallic,
+        circuit_starts: meta.circuit_starts,
         condition_cases: Default::default(),
     };
     for ((kind, id), o) in ordered {
@@ -1131,13 +1136,8 @@ impl Session {
         creep_stretch: ols_line::condition::CreepStretch,
     ) -> Command {
         let meta = Meta {
-            name: self.line.name.clone(),
-            crs: self.line.crs.clone(),
-            alignment: self.line.alignment.clone(),
-            display: self.line.display.clone(),
-            systems: self.line.systems.clone(),
             creep_stretch,
-            bimetallic: self.line.bimetallic,
+            ..Meta::of(&self.line)
         };
         Command::Put {
             kind: Kind::Meta,
@@ -1164,13 +1164,8 @@ impl Session {
     ) -> Result<Command, SessionError> {
         if route == "line" {
             let meta = Meta {
-                name: self.line.name.clone(),
-                crs: self.line.crs.clone(),
                 alignment,
-                display: self.line.display.clone(),
-                systems: self.line.systems.clone(),
-                creep_stretch: self.line.creep_stretch.clone(),
-                bimetallic: self.line.bimetallic,
+                ..Meta::of(&self.line)
             };
             return Ok(Command::Put {
                 kind: Kind::Meta,
@@ -1547,13 +1542,8 @@ impl Session {
                     .ok_or_else(|| refused(format!("no system {id}")))?
                     .id = new_id.clone();
                 let meta = Meta {
-                    name: self.line.name.clone(),
-                    crs: self.line.crs.clone(),
-                    alignment: self.line.alignment.clone(),
-                    display: self.line.display.clone(),
                     systems,
-                    creep_stretch: self.line.creep_stretch.clone(),
-                    bimetallic: self.line.bimetallic,
+                    ..Meta::of(&self.line)
                 };
                 out.push(Command::Put {
                     kind: Kind::Meta,
