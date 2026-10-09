@@ -454,14 +454,6 @@ fn cut_length(
     }
 }
 
-/// Whether `case` is a jumper's design case: still air at its temperature.
-fn is_design_case(jumper: &Jumper, case: &WeatherCase) -> bool {
-    case.wind_pressure.si() == 0.0
-        && case.ice_thickness.si() == 0.0
-        && case.ice_load.is_none_or(|w| w.si() == 0.0)
-        && (case.temperature.celsius() - jumper.temperature).abs() < 1e-9
-}
-
 /// Solves one jumper in a weather case, between the solved section ends.
 pub fn solve_jumper(
     line: &Line,
@@ -628,8 +620,10 @@ fn s_point(jumper: &Jumper) -> Point {
 /// Solves every jumper of the line between the solved sections `shapes`.
 ///
 /// A jumper given by its sag is cut once, in its design case (still air at
-/// its temperature: the sections at its ends are solved there when `case`
-/// is another), and keeps that length in every case.
+/// its temperature, the sections at its ends solved there), and keeps that
+/// length in every case: its sag then varies with the weather like a
+/// cable's. The cut is kept between solves until the jumper, the sections
+/// at its ends, their structures or cables change.
 pub fn solve_jumpers(
     line: &Line,
     library: &ols_cables::Library,
@@ -657,13 +651,88 @@ pub fn solve_one_jumper(
             jumper.id, jumper.cable
         ))
     })?;
-    if jumper.length.is_none() && jumper.sag.is_some() && !is_design_case(jumper, case) {
-        let design = design_shapes(line, library, jumper)?;
+    if jumper.length.is_none() && jumper.sag.is_some() {
         let mut cut = jumper.clone();
-        cut.length = Some(cut_length(line, jumper, &design, cable)?);
+        cut.length = Some(cut_once(line, library, jumper, cable)?);
         return solve_jumper(line, &cut, shapes, cable, case);
     }
     solve_jumper(line, jumper, shapes, cable, case)
+}
+
+/// Cut lengths of the jumpers given by their sag, kept between solves (and
+/// weather cases) by what they depend on ([`design_key`]).
+static CUTS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, f64>>> =
+    std::sync::OnceLock::new();
+
+/// Lengths kept at most (then forgotten all at once).
+const MAX_CUTS: usize = 20_000;
+
+/// Everything a jumper's cut depends on: the jumper; the sections at its
+/// ends, the structures they and the jumper hang on and the cables (they
+/// are solved in its design case); the line's creep-stretch and bimetallic
+/// settings and creep cases. Equal keys, equal cuts.
+fn design_key(line: &Line, library: &ols_cables::Library, jumper: &Jumper) -> String {
+    let ends = |p: &SectionPoint| *p == jumper.from || *p == jumper.to;
+    let sections: Vec<&crate::Section> = line
+        .sections
+        .iter()
+        .filter(|s| s.points.iter().any(ends))
+        .collect();
+    let mut ids: std::collections::BTreeSet<&str> = sections
+        .iter()
+        .flat_map(|s| s.points.iter().map(|p| p.structure.as_str()))
+        .collect();
+    ids.insert(&jumper.from.structure);
+    ids.insert(&jumper.to.structure);
+    let structures: Vec<&crate::Structure> = line
+        .structures
+        .iter()
+        .filter(|s| ids.contains(s.id.as_str()))
+        .collect();
+    let cables: Vec<Option<&Cable>> = std::iter::once(&jumper.cable)
+        .chain(sections.iter().map(|s| &s.cable))
+        .map(|c| library.get(c))
+        .collect();
+    format!(
+        "{:?}",
+        (
+            jumper,
+            sections,
+            structures,
+            cables,
+            &line.creep_stretch,
+            &line.bimetallic,
+            &line.condition_cases
+        )
+    )
+}
+
+/// The cut length of a jumper given by its sag: sagged once in its design
+/// case (still air at its temperature, the sections at its ends solved
+/// there), then kept until something it depends on changes.
+///
+/// Expected cost: a lookup when kept; else the end sections' solves and
+/// ~5–15 rod solves (a few ms).
+fn cut_once(
+    line: &Line,
+    library: &ols_cables::Library,
+    jumper: &Jumper,
+    cable: &Cable,
+) -> Result<f64, LineError> {
+    let key = design_key(line, library, jumper);
+    let cuts = CUTS.get_or_init(Default::default);
+    if let Some(l) = cuts.lock().ok().and_then(|m| m.get(&key).copied()) {
+        return Ok(l);
+    }
+    let design = design_shapes(line, library, jumper)?;
+    let l = cut_length(line, jumper, &design, cable)?;
+    if let Ok(mut m) = cuts.lock() {
+        if m.len() >= MAX_CUTS {
+            m.clear();
+        }
+        m.insert(key, l);
+    }
+    Ok(l)
 }
 
 /// The sections at a jumper's ends solved in its design case.
@@ -717,6 +786,58 @@ mod tests {
             .map(Result::unwrap)
             .collect();
         (shapes, jumpers)
+    }
+
+    /// The cut a solve keeps (or makes) for jumper 0, and one made afresh.
+    fn kept_and_fresh(line: &Line) -> (f64, f64) {
+        let lib = library();
+        let jumper = &line.jumpers[0];
+        let cable = lib.get(&jumper.cable).unwrap();
+        let kept = cut_once(line, &lib, jumper, cable).unwrap();
+        let design = design_shapes(line, &lib, jumper).unwrap();
+        (kept, cut_length(line, jumper, &design, cable).unwrap())
+    }
+
+    /// A jumper given by its sag is cut once, kept for every weather case,
+    /// and cut again when what it depends on changes — here a structure at
+    /// the far end of a section it joins.
+    #[test]
+    fn a_jumper_cut_is_kept_until_what_it_depends_on_changes() {
+        let mut line = crate::tests::example();
+        assert!(line.jumpers[0].length.is_none() && line.jumpers[0].sag.is_some());
+        solve_all(&line, &still(15.0));
+        let (kept, fresh) = kept_and_fresh(&line);
+        assert_eq!(kept, fresh);
+        // In another case: the same cut, stretched by the temperature.
+        let (_, hot) = solve_all(&line, &still(60.0));
+        let alpha = library()
+            .get(&line.jumpers[0].cable)
+            .unwrap()
+            .thermal_expansion();
+        let t0 = line.jumpers[0].temperature;
+        assert!((hot[0].unstressed_length - kept * (alpha * (60.0 - t0)).exp()).abs() < 1e-12);
+        // The last structure of a section at the jumper raised 2 m: its
+        // clamps move, the cut follows.
+        let s = line
+            .sections
+            .iter()
+            .find(|s| {
+                s.points
+                    .iter()
+                    .any(|p| *p == line.jumpers[0].to || *p == line.jumpers[0].from)
+            })
+            .unwrap();
+        let far = s.points.last().unwrap().structure.clone();
+        assert!(far != line.jumpers[0].from.structure);
+        let st = line.structures.iter_mut().find(|t| t.id == far).unwrap();
+        st.position[2] += 2.0;
+        for a in &mut st.attachments {
+            a.insulator_point[2] += 2.0;
+            a.wire_point[2] += 2.0;
+        }
+        let (kept2, fresh2) = kept_and_fresh(&line);
+        assert_eq!(kept2, fresh2);
+        assert!(kept2 != kept);
     }
 
     #[test]

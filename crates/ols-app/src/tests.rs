@@ -6679,6 +6679,22 @@ fn local_resolve_timing() {
     let k = model.cases.iter().position(|c| c.ready).unwrap_or(0);
     model.ensure_solved(k);
     let library = model.library.clone();
+    // A weather case solved whole: the jumpers' cuts made in the first,
+    // kept for the others.
+    for c in model.cases.iter().take(3) {
+        let shapes: Vec<_> = ols_line::solve::solve_line(&model.line, &library, &c.case)
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect();
+        let t = std::time::Instant::now();
+        let r = ols_line::jumper::solve_jumpers(&model.line, &library, &c.case, &shapes);
+        println!(
+            "case {}: jumpers {:.1?} ({} failed)",
+            c.case.name,
+            t.elapsed(),
+            r.iter().filter(|r| r.is_err()).count()
+        );
+    }
     for spaced in [true, false] {
         let mut line = model.line.clone();
         if !spaced {
