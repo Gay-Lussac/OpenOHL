@@ -39,6 +39,8 @@ pub enum TableKind {
     Jumpers,
     /// Electrical systems.
     Systems,
+    /// Electrical circuits: the conductor paths, from the connections.
+    Circuits,
     /// Alignment points of the routes (the profiles follow them).
     Alignments,
     /// Weather cases (of the model's weather case file).
@@ -307,6 +309,36 @@ const ALIGNMENTS: &[Column] = &[
         120.0,
         Yes,
         "tied under this structure (it follows it); empty: free",
+    ),
+];
+
+const CIRCUITS: &[Column] = &[
+    (
+        "circuit",
+        70.0,
+        Derived,
+        "one per conductor path: sections joined by jumpers or a shared attachment (counted from the connections)",
+    ),
+    (
+        "system:phase",
+        130.0,
+        Derived,
+        "its electrical system and phase (Sections table); none: earthed",
+    ),
+    (
+        "from",
+        140.0,
+        Derived,
+        "where it starts: structure set:phase",
+    ),
+    ("to", 140.0, Derived, "where it ends"),
+    ("sections", 240.0, Derived, "its sections, from its start"),
+    ("jumpers", 200.0, Derived, "its jumpers, from its start"),
+    (
+        "reversed",
+        70.0,
+        Yes,
+        "yes: it runs from its other end (against the line); its jumpers turn to point along it. Nothing physical changes: the wind's side is the line's",
     ),
 ];
 
@@ -627,12 +659,13 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
 
 impl TableKind {
     /// Every table (the Tables menu).
-    pub const ALL: [TableKind; 7] = [
+    pub const ALL: [TableKind; 8] = [
         TableKind::Structures,
         TableKind::Sections,
         TableKind::Strings,
         TableKind::Jumpers,
         TableKind::Systems,
+        TableKind::Circuits,
         TableKind::Alignments,
         TableKind::WeatherCases,
     ];
@@ -645,6 +678,7 @@ impl TableKind {
             TableKind::Strings => "Strings",
             TableKind::Jumpers => "Jumpers",
             TableKind::Systems => "Electrical systems",
+            TableKind::Circuits => "Electrical circuits",
             TableKind::Alignments => "Alignment points",
             TableKind::WeatherCases => "Weather cases",
         }
@@ -658,6 +692,7 @@ impl TableKind {
             TableKind::Strings => "strings",
             TableKind::Jumpers => "jumpers",
             TableKind::Systems => "systems",
+            TableKind::Circuits => "circuits",
             TableKind::Alignments => "alignments",
             TableKind::WeatherCases => "weather",
         }
@@ -671,6 +706,7 @@ impl TableKind {
             TableKind::Strings => STRINGS,
             TableKind::Jumpers => JUMPERS,
             TableKind::Systems => SYSTEMS,
+            TableKind::Circuits => CIRCUITS,
             TableKind::Alignments => ALIGNMENTS,
             TableKind::WeatherCases => WEATHER,
         }
@@ -685,6 +721,12 @@ impl TableKind {
     }
 
     /// The rows of the model (weather case `case` shown).
+    /// Its rows follow the model (the circuits, from the connections):
+    /// none added or deleted here.
+    pub fn fixed_rows(self) -> bool {
+        self == TableKind::Circuits
+    }
+
     pub fn rows(self, model: &Model, case: usize) -> Vec<Row> {
         let line = &model.line;
         let mut through: std::collections::HashMap<(&str, u32, u32), usize> =
@@ -900,6 +942,7 @@ impl TableKind {
                     ],
                 })
                 .collect(),
+            TableKind::Circuits => circuit_rows(line),
             TableKind::Alignments => alignments(line)
                 .into_iter()
                 .flat_map(|(route, points)| {
@@ -1006,6 +1049,8 @@ impl TableKind {
                 cells[6] = "15".into();
                 cells[13] = "no".into();
             }
+            // Circuits follow the connections: no rows of their own.
+            TableKind::Circuits => {}
             TableKind::Systems => {
                 cells[0] = taken_after(
                     line.systems.iter().map(|s| s.id.as_str()).collect(),
@@ -1434,6 +1479,7 @@ impl TableKind {
             TableKind::Alignments => {
                 alignment_commands(model, stored, rows, page, &mut out)?;
             }
+            TableKind::Circuits => circuit_commands(stored, rows, page, &mut out)?,
             TableKind::WeatherCases => unreachable!("written to its file"),
         }
         Ok(out)
@@ -1511,6 +1557,9 @@ fn choices(
             false,
         ),
         (TableKind::Strings, "strain") => (vec!["no".into(), "yes".into()], false),
+        (TableKind::Jumpers, "rigid") | (TableKind::Circuits, "reversed") => {
+            (vec!["no".into(), "yes".into()], false)
+        }
         (TableKind::Systems, "kind") => (vec!["AC".into(), "DC".into()], false),
         (TableKind::WeatherCases, "Wind from\n ") => (vec!["right".into(), "left".into()], false),
         (TableKind::Alignments, "structure") => (
@@ -1602,6 +1651,139 @@ fn alignments(line: &ols_line::Line) -> Vec<(String, Vec<ols_line::AlignmentPoin
         .into_iter()
         .map(|r| (r.id, r.alignment))
         .collect()
+}
+
+/// The circuits (conductor paths), one row each: C1, C2… in the order of
+/// their first sections; keyed by their first section (stable when turned).
+fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
+    let phases = line.section_phases().unwrap_or_default();
+    let along = {
+        let mut l = line.clone();
+        l.circuit_starts.clear();
+        ols_line::electrical::circuits(&l)
+    };
+    ols_line::electrical::circuits(line)
+        .into_iter()
+        .enumerate()
+        .map(|(k, c)| {
+            let key = circuit_key(&c);
+            let default = along.iter().find(|d| circuit_key(d) == key);
+            let phase = c
+                .sections
+                .first()
+                .and_then(|s| phases.get(s).copied().flatten())
+                .and_then(|(sys, ph)| {
+                    let s = line.systems.get(sys)?;
+                    Some(format!("{}:{}", s.id, s.phases.get(ph)?.label))
+                })
+                .unwrap_or_default();
+            Row {
+                defaulted: Vec::new(),
+                key,
+                select: c
+                    .sections
+                    .first()
+                    .map_or(Selection::None, |s| Selection::Span {
+                        section: s.clone(),
+                        span: 0,
+                    }),
+                cells: vec![
+                    format!("C{}", k + 1),
+                    phase,
+                    point(&c.start),
+                    point(&c.end),
+                    c.sections.join(" "),
+                    c.jumpers.join(" "),
+                    if default.is_some_and(|d| d.start != c.start) {
+                        "yes"
+                    } else {
+                        "no"
+                    }
+                    .into(),
+                ],
+            }
+        })
+        .collect()
+}
+
+/// A circuit's key: its first section in the line's order.
+fn circuit_key(c: &ols_line::electrical::Circuit) -> String {
+    c.sections.iter().min().cloned().unwrap_or_default()
+}
+
+/// Circuits turned ("reversed" changed): their starts in the line's
+/// settings, and their jumpers turned to point along them.
+fn circuit_commands(
+    stored: &ols_line::Line,
+    rows: &[Row],
+    page: &TablePage,
+    out: &mut Changes,
+) -> Result<(), String> {
+    let mut line = stored.clone();
+    let along = {
+        let mut l = stored.clone();
+        l.circuit_starts.clear();
+        ols_line::electrical::circuits(&l)
+    };
+    let mut turned = Vec::new();
+    for row in rows {
+        let Some(edit) = page.edits.get(&row.key) else {
+            continue;
+        };
+        let Some(v) = edit.get(&6) else { continue };
+        let reversed = match v.trim() {
+            "yes" => true,
+            "no" | "" => false,
+            v => return Err(format!("{} reversed: yes or no, not \"{v}\"", row.cells[0])),
+        };
+        let Some(c) = along.iter().find(|c| circuit_key(c) == row.key) else {
+            continue;
+        };
+        // Its ends no longer chosen; the other end chosen when reversed.
+        line.circuit_starts
+            .retain(|p| *p != c.start && *p != c.end && !c.order.contains(p));
+        if reversed {
+            line.circuit_starts.push(c.end.clone());
+        }
+        turned.push(row.key.clone());
+    }
+    if turned.is_empty() {
+        return Ok(());
+    }
+    out.commands.push((
+        "turned electrical circuits".into(),
+        ols_session::line_settings_put(&line, None, None),
+    ));
+    // Their jumpers along them: `from` the end nearer the start.
+    for c in ols_line::electrical::circuits(&line)
+        .iter()
+        .filter(|c| turned.contains(&circuit_key(c)))
+    {
+        let at = |p: &SectionPoint| c.order.iter().position(|q| q == p);
+        for id in &c.jumpers {
+            let Some(j) = line.jumpers.iter().find(|j| &j.id == id) else {
+                continue;
+            };
+            if at(&j.to) < at(&j.from) {
+                let mut j = j.clone();
+                std::mem::swap(&mut j.from, &mut j.to);
+                std::mem::swap(&mut j.angle_from_deg, &mut j.angle_to_deg);
+                if let Some(s) = &mut j.support {
+                    s.fraction = 1.0 - s.fraction;
+                }
+                out.commands.push((
+                    format!("jumper {} along its circuit", j.id),
+                    Command::Put {
+                        kind: Kind::Jumper,
+                        id: j.id.clone(),
+                        value: serde_json::to_value(&j).map_err(|e| e.to_string())?,
+                        ord: None,
+                    },
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// "max temperature; glaze ice" → the cases' indices.
@@ -2313,7 +2495,10 @@ impl TablePage {
             );
             ui.separator();
             if ui
-                .add_enabled(editable, egui::Button::new("+ Add row"))
+                .add_enabled(
+                    editable && !kind.fixed_rows(),
+                    egui::Button::new("+ Add row"),
+                )
                 .on_hover_text("A new object, typed in the row (pending until Apply)")
                 .clicked()
             {
@@ -2564,7 +2749,7 @@ impl TablePage {
                             }
                             if ui
                                 .add_enabled(
-                                    editable,
+                                    editable && !kind.fixed_rows(),
                                     egui::Button::selectable(deleted, "🗑")
                                         .min_size(egui::vec2(24.0, row_height)),
                                 )

@@ -106,6 +106,12 @@ pub struct Line {
         skip_serializing_if = "ols_cables::BimetallicModel::is_default"
     )]
     pub bimetallic: ols_cables::BimetallicModel,
+    /// The chosen start of electrical circuits (conductor paths): one end
+    /// attachment each. A circuit not listed runs along the line, from its
+    /// end that comes first ([`electrical::circuits`]). Its direction
+    /// orders its sections and jumpers; nothing physical depends on it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub circuit_starts: Vec<SectionPoint>,
     /// Those weather cases themselves, given by the program solving the
     /// line ([`crate::Line::set_weather_cases`]); not stored.
     #[serde(skip)]
@@ -315,7 +321,7 @@ pub struct Attachment {
 }
 
 /// One point of a section: structure id + attachment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SectionPoint {
     /// Structure id.

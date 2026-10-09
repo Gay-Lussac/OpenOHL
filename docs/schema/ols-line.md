@@ -58,6 +58,7 @@ The names are those of the line file:
     <to structure="T3" set="1" phase="1"/>
     <support length="…" weight="…" fraction="0.5" x="…" y="…" z="…"/>
   </jumper>
+  <circuit_start structure="T7" set="1" phase="1"/>  <!-- a circuit's chosen start -->
   <phase_color label="L1" color="#8b4513"/>     <!-- display colours -->
   <creep_stretch creep_case="…">
     <load_case name="…"/>

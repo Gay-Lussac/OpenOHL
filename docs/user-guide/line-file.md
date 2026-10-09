@@ -30,6 +30,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `sections` | yes | List of wire sections. |
 | `jumpers` | no | Jumpers between attachment points (below). |
 | `systems` | no | Electrical systems: phases or poles with their voltage ([below](#electrical-systems)). |
+| `circuit_starts` | no | The chosen start of electrical circuits: `[{ "structure", "set", "phase" }, …]`, one end attachment of a circuit each ([below](#electrical-systems)). A circuit not listed runs along the line. |
 | `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … } }` — wire colours (`#rrggbb`) by section `phase_label`. |
 
 ## Structures
@@ -207,6 +208,8 @@ The electrical model is kept apart from the physical wires: a **system** is a gr
 | `phases` | yes | `label` (matched with the sections' `phase_label`); AC `angle_deg` (default evenly spread: 0°, −120°, +120°; two phases 0°, 180°); DC `polarity` +1, −1 or 0 (default in that order). |
 
 **Conductor paths.** Sections joined by jumpers, or sharing an attachment point, form one conductor path. Setting `system` on one section of the path assigns the whole path to that system's phase `phase_label`; two sections of a path naming different phases is an error that names them. A path without a system is earthed.
+
+**Electrical circuits.** Each conductor path is an electrical circuit, so the line has as many circuits as it has paths, counted from its connections. A circuit has a direction, from one of its ends: by default the end that comes first along the line (its routes), otherwise the one in `circuit_starts`. The direction orders its sections and jumpers, and the desktop app turns its jumpers to point along it (`from` nearer its start). Nothing physical depends on it: the wind's side is the line's (see [Conventions](../theory/conventions.md)).
 
 **Voltages.** With `n` phases evenly spread, a phase is at `U / (2·sin(π/n))` to earth (`U/√3` for three phases, `U/2` for two). Between two conductors: the phasor difference for AC of the same frequency (`U` between two phases of a system, 0 between the same phase of two parallel systems), the difference of pole voltages for DC, and the sum of the voltages to earth otherwise (different frequencies, AC with DC). Clearance rules can use the nominal voltage or this voltage between conductors ([clearances by voltage](terrain.md#clearances-by-voltage)).
 

@@ -99,6 +99,16 @@ fn rich_line() -> Line {
         },
         ols_line::AlignmentPoint::free([9.0, 9.0, 9.0]),
     ];
+    // A circuit's chosen start, a rigid jumper and a jumper's EI factor.
+    line.circuit_starts = vec![line.sections[0].points[0].clone()];
+    if let Some(j) = line.jumpers.first_mut() {
+        j.stiffness_factor = Some(0.3);
+    }
+    if let Some(j) = line.jumpers.get_mut(1) {
+        j.rigid = true;
+        j.length = None;
+        j.sag = None;
+    }
     line
 }
 

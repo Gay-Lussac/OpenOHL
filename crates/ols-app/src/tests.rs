@@ -6767,6 +6767,62 @@ fn a_new_alignment_name_in_the_table_makes_the_alignment() {
     assert!(line.routes[1].structures.is_empty());
 }
 
+/// Sections › Electrical circuits: one row per conductor path, counted
+/// from the connections; "reversed" turns a circuit — its start is kept in
+/// the line, its jumpers point along it — and back.
+#[test]
+fn circuits_are_listed_and_turned() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("circuits");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (key, jumper_from) = {
+        let r = harness.state_mut().ready().unwrap();
+        let rows = TableKind::Circuits.rows(&r.model, 0);
+        assert_eq!(
+            rows.len(),
+            ols_line::electrical::conductor_paths(&r.model.line).len()
+        );
+        assert!(TableKind::Circuits.fixed_rows());
+        let row = rows.iter().find(|x| x.cells[4].contains("S3")).unwrap();
+        assert_eq!(row.cells[6], "no");
+        (row.key.clone(), r.model.line.jumpers[0].from.clone())
+    };
+    set_cell(&mut harness, TableKind::Circuits, &key, "reversed", "yes");
+    apply_table(&mut harness, TableKind::Circuits, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let line = &r.model.line;
+        assert_eq!(line.circuit_starts.len(), 1);
+        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let row = rows.iter().find(|x| x.key == key).unwrap();
+        assert_eq!(row.cells[6], "yes");
+        // The jumper points along the circuit: its `from` comes first.
+        let c = ols_line::electrical::circuits(line)
+            .into_iter()
+            .find(|c| c.sections.contains(&"S3".to_owned()))
+            .unwrap();
+        let j = &line.jumpers[0];
+        let at = |p| c.order.iter().position(|q| q == p);
+        assert!(at(&j.from) < at(&j.to));
+    }
+    set_cell(&mut harness, TableKind::Circuits, &key, "reversed", "no");
+    apply_table(&mut harness, TableKind::Circuits, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let line = &r.model.line;
+    assert!(line.circuit_starts.is_empty());
+    // Along the line again (the example's jumper was entered against it).
+    let c = ols_line::electrical::circuits(line)
+        .into_iter()
+        .find(|c| c.sections.contains(&"S3".to_owned()))
+        .unwrap();
+    let at = |p| c.order.iter().position(|q| q == p);
+    assert!(at(&line.jumpers[0].from) < at(&line.jumpers[0].to));
+    assert_ne!(line.jumpers[0].from, jumper_from);
+}
+
 /// A project whose library has a crafted name ("../…": written by another
 /// program, or a crafted copy): exporting the libraries refuses it, and
 /// nothing is written outside the folder chosen.

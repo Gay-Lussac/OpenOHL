@@ -383,6 +383,7 @@ pub fn to_xml(line: &Line) -> String {
         display,
         creep_stretch,
         bimetallic,
+        circuit_starts,
         condition_cases: _,
     } = line;
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<line");
@@ -421,6 +422,9 @@ pub fn to_xml(line: &Line) -> String {
     }
     for j in jumpers {
         write_jumper(&mut out, j);
+    }
+    for p in circuit_starts {
+        section_point(&mut out, "circuit_start", p, "  ");
     }
     let Display { phase_colors } = display;
     for (label, color) in phase_colors {
@@ -830,6 +834,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             "phase_color",
             "creep_stretch",
             "bimetallic",
+            "circuit_start",
         ],
     )?;
     let routes = root
@@ -912,6 +917,10 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         jumpers: root
             .children_named("jumper")
             .map(read_jumper)
+            .collect::<Result<_, _>>()?,
+        circuit_starts: root
+            .children_named("circuit_start")
+            .map(read_section_point)
             .collect::<Result<_, _>>()?,
         systems: root
             .children_named("system")
