@@ -1523,6 +1523,17 @@ impl Session {
         };
         let current = self.working_state()?.libraries;
         let changed = current != target.libraries;
+        // Names from a revision (a bundle, another copy of the project) are
+        // file names when exported: plain ones only, as put_library_file.
+        if let Some((kind, name)) = target
+            .libraries
+            .keys()
+            .find(|(kind, name)| kind.is_empty() || !crate::safe_file_name(name))
+        {
+            return Err(refused(format!(
+                "library file \"{name}\" of \"{kind}\": bad name"
+            )));
+        }
         if changed {
             let tx = self.conn.unchecked_transaction()?;
             for (kind, name) in current.keys() {

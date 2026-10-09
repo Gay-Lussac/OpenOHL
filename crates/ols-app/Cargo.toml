@@ -61,6 +61,8 @@ egui_kittest = { version = "0.36", features = ["wgpu", "eframe"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 # Writing a small LAZ survey for the point-cloud tests.
 las = { version = "0.11", features = ["laz"] }
+# Crafting a project file the session would refuse to write (tests).
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 [lints]
 workspace = true

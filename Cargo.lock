@@ -3521,6 +3521,7 @@ dependencies = [
  "pyo3",
  "pyo3-build-config",
  "rfd",
+ "rusqlite",
  "serde",
  "serde_json",
  "toml_edit",

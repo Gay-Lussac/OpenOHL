@@ -6767,6 +6767,29 @@ fn a_new_alignment_name_in_the_table_makes_the_alignment() {
     assert!(line.routes[1].structures.is_empty());
 }
 
+/// A project whose library has a crafted name ("../…": written by another
+/// program, or a crafted copy): exporting the libraries refuses it, and
+/// nothing is written outside the folder chosen.
+#[test]
+fn exported_libraries_stay_in_their_folder() {
+    let model = synthetic_project("export-names");
+    let file = model.sources.file.clone();
+    {
+        let db = rusqlite::Connection::open(&file).unwrap();
+        db.execute(
+            "INSERT INTO library_file (kind, name, user, text) VALUES ('cables', '../escaped.olsw', 'tester', 'x')",
+            [],
+        )
+        .unwrap();
+    }
+    let dir = file.parent().unwrap().join("export");
+    let err = model.export_libraries(&dir).unwrap_err();
+    assert!(err.contains("not a plain file name"), "{err}");
+    assert!(
+        !dir.join("escaped.olsw").exists() && !dir.parent().unwrap().join("escaped.olsw").exists()
+    );
+}
+
 /// In the 3D view in first person: Escape while stringing cancels the
 /// wire and keeps the mouse; a second Escape frees it.
 #[test]

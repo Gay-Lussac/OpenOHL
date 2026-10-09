@@ -394,3 +394,22 @@ fn a_protected_line_is_changed_by_admins_only() {
     );
     s.delete_line("ana", "phase 1").unwrap();
 }
+
+/// A library with a crafted name ("../…") that reached a revision (a
+/// crafted copy of the project, a bundle) is refused when that revision is
+/// restored: such names never come back as file names.
+#[test]
+fn crafted_library_names_are_not_restored() {
+    let (path, mut s) = project("crafted-library");
+    {
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.execute(
+            "INSERT INTO library_file (kind, name, user, text) VALUES ('cables', '../escaped.olsw', 'ana', 'x')",
+            [],
+        )
+        .unwrap();
+    }
+    let rev = s.commit("ana", "with a crafted library").unwrap();
+    let err = s.roll_back_line("ana", "main", &rev.id).unwrap_err();
+    assert!(err.to_string().contains("bad name"), "{err}");
+}
