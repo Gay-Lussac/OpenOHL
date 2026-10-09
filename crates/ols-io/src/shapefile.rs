@@ -230,14 +230,20 @@ impl Exporter for Shapefile {
 
 // Reading.
 
+/// Largest member of a zip read (2 GiB): a crafted zip claiming more is
+/// refused rather than read into memory.
+const MAX_ZIP_MEMBER: u64 = 2 << 30;
+
 fn le_f64(b: &[u8], at: usize) -> Result<f64, String> {
-    b.get(at..at + 8)
+    at.checked_add(8)
+        .and_then(|end| b.get(at..end))
         .map(|s| f64::from_le_bytes(s.try_into().expect("8 bytes")))
         .ok_or_else(|| "shapefile: record cut short".to_owned())
 }
 
 fn le_i32(b: &[u8], at: usize) -> Result<i32, String> {
-    b.get(at..at + 4)
+    at.checked_add(4)
+        .and_then(|end| b.get(at..end))
         .map(|s| i32::from_le_bytes(s.try_into().expect("4 bytes")))
         .ok_or_else(|| "shapefile: record cut short".to_owned())
 }
@@ -250,9 +256,14 @@ pub fn read_shp(shp: &[u8]) -> Result<Vec<Geometry>, String> {
     let mut out = Vec::new();
     let mut at = 100;
     while at + 8 <= shp.len() {
-        let len = i32::from_be_bytes(shp[at + 4..at + 8].try_into().expect("4")) as usize * 2;
-        let c = shp
-            .get(at + 8..at + 8 + len)
+        let words = i32::from_be_bytes(shp[at + 4..at + 8].try_into().expect("4"));
+        let len = usize::try_from(words)
+            .ok()
+            .and_then(|w| w.checked_mul(2))
+            .ok_or_else(|| format!("shapefile: record length {words} not valid"))?;
+        let c = (at + 8)
+            .checked_add(len)
+            .and_then(|end| shp.get(at + 8..end))
             .ok_or("shapefile: record cut short")?;
         at += 8 + len;
         let t = le_i32(c, 0)?;
@@ -264,8 +275,16 @@ pub fn read_shp(shp: &[u8]) -> Result<Vec<Geometry>, String> {
                 if t == 11 { le_f64(c, 20)? } else { f64::NAN },
             ])),
             3 | 13 | 23 => {
-                let parts = le_i32(c, 36)?.max(0) as usize;
-                let n = le_i32(c, 40)?.max(0) as usize;
+                let count = |v: i32| {
+                    usize::try_from(v).map_err(|_| format!("shapefile: count {v} not valid"))
+                };
+                let parts = count(le_i32(c, 36)?)?;
+                let n = count(le_i32(c, 40)?)?;
+                // Each point takes at least 16 bytes of the record and each
+                // part 4: more than that cannot be there.
+                if n > c.len() / 16 || parts > c.len() / 4 {
+                    return Err("shapefile: record cut short".into());
+                }
                 let xy = 44 + 4 * parts;
                 let z = xy + 16 * n + 16;
                 let mut ps = Vec::with_capacity(n);
@@ -299,7 +318,7 @@ pub fn read_dbf(dbf: &[u8]) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
     let mut columns = Vec::new();
     let mut at = 32;
     while at + 32 <= header && dbf.get(at) != Some(&0x0d) {
-        let d = &dbf[at..at + 32];
+        let d = dbf.get(at..at + 32).ok_or("dBASE header cut short")?;
         let name = d[..11].split(|&b| b == 0).next().unwrap_or(&[]);
         columns.push((
             String::from_utf8_lossy(name).into_owned(),
@@ -307,11 +326,17 @@ pub fn read_dbf(dbf: &[u8]) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
         ));
         at += 32;
     }
+    // No more rows than the bytes after the header can hold.
+    let room = dbf.len().saturating_sub(header) / record.max(1);
+    if n > room {
+        return Err("dBASE file cut short".into());
+    }
     let mut rows = Vec::with_capacity(n);
     for k in 0..n {
-        let start = header + k * record;
-        let r = dbf
-            .get(start..start + record)
+        let r = k
+            .checked_mul(record)
+            .and_then(|o| o.checked_add(header))
+            .and_then(|start| dbf.get(start..start.checked_add(record)?))
             .ok_or("dBASE file cut short")?;
         let mut pos = 1;
         let mut row = Vec::with_capacity(columns.len());
@@ -343,7 +368,13 @@ pub fn read(data: &[u8], options: &Options) -> Result<Neutral, String> {
         let name = f.name().to_ascii_lowercase();
         if [".shp", ".dbf", ".prj"].iter().any(|e| name.ends_with(e)) {
             let mut v = Vec::new();
-            f.read_to_end(&mut v).map_err(|e| e.to_string())?;
+            (&mut f)
+                .take(MAX_ZIP_MEMBER + 1)
+                .read_to_end(&mut v)
+                .map_err(|e| e.to_string())?;
+            if v.len() as u64 > MAX_ZIP_MEMBER {
+                return Err(format!("{name} in the zip is larger than 2 GiB"));
+            }
             files.insert(name, v);
         }
     }
@@ -443,5 +474,78 @@ impl Importer for Shapefile {
         options: &Options,
     ) -> Result<ols_line::Line, String> {
         crate::neutral::to_line(read(data, options)?, base, options)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `.shp` of one record with the given length word and content.
+    fn shp_with(words: i32, content: &[u8]) -> Vec<u8> {
+        let mut shp = Vec::new();
+        header(&mut shp, POLYLINE_Z, 108 + content.len(), [0.0; 6]);
+        shp.extend_from_slice(&1i32.to_be_bytes());
+        shp.extend_from_slice(&words.to_be_bytes());
+        shp.extend_from_slice(content);
+        shp
+    }
+
+    /// A polyline record's content claiming `parts` parts and `n` points.
+    fn polyline(parts: i32, n: i32) -> Vec<u8> {
+        let mut c = POLYLINE_Z.to_le_bytes().to_vec();
+        c.extend_from_slice(&[0; 32]);
+        c.extend_from_slice(&parts.to_le_bytes());
+        c.extend_from_slice(&n.to_le_bytes());
+        c
+    }
+
+    #[test]
+    fn crafted_shp_records_error_cleanly() {
+        // Negative and too long record lengths.
+        assert!(read_shp(&shp_with(-1, &[])).is_err());
+        assert!(read_shp(&shp_with(i32::MAX, &[])).is_err());
+        // Billions of points, or a negative count, in a 44-byte record.
+        for (parts, n) in [(1, i32::MAX), (1, -5), (i32::MAX, 1), (-1, 1)] {
+            let c = polyline(parts, n);
+            assert!(read_shp(&shp_with(c.len() as i32 / 2, &c)).is_err());
+        }
+    }
+
+    /// A `.dbf` header: record count, header and record lengths.
+    fn dbf_with(n: u32, header: u16, record: u16) -> Vec<u8> {
+        let mut dbf = vec![0x03, 126, 10, 5];
+        dbf.extend_from_slice(&n.to_le_bytes());
+        dbf.extend_from_slice(&header.to_le_bytes());
+        dbf.extend_from_slice(&record.to_le_bytes());
+        dbf.extend_from_slice(&[0; 20]);
+        dbf
+    }
+
+    #[test]
+    fn crafted_dbf_errors_cleanly() {
+        // Header length beyond the file, field descriptors cut short.
+        let mut dbf = dbf_with(1, 4000, 10);
+        dbf.extend_from_slice(&[b'A'; 40]);
+        assert!(read_dbf(&dbf).is_err());
+        // Billions of records claimed, none there (also of length 0).
+        for record in [u16::MAX, 0] {
+            let mut dbf = dbf_with(u32::MAX, 33, record);
+            dbf.push(0x0d);
+            assert!(read_dbf(&dbf).is_err());
+        }
+    }
+
+    #[test]
+    fn crafted_zip_errors_cleanly() {
+        // A zip whose .shp holds a polyline claiming billions of points.
+        let c = polyline(1, i32::MAX);
+        let shp = shp_with(c.len() as i32 / 2, &c);
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zip.start_file("a.shp", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(&shp).unwrap();
+        let data = zip.finish().unwrap().into_inner();
+        assert!(read(&data, &Options::default()).is_err());
     }
 }

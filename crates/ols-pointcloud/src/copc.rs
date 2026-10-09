@@ -51,6 +51,16 @@ const GRID: u32 = 128;
 const MAX_DEPTH: i32 = 20;
 /// Hierarchy pages read at most (a damaged file cannot loop).
 const MAX_PAGES: usize = 1_000_000;
+/// Points a node may claim per byte of its LAZ chunk: far above what LAZ
+/// reaches (a few bytes per point), so only a damaged or crafted
+/// hierarchy is refused.
+const MAX_POINTS_PER_BYTE: u64 = 1024;
+/// Points reserved at most up front when a node is decoded (the vector
+/// grows past it as points actually come).
+const MAX_RESERVE: u64 = 1 << 20;
+/// Bytes of a point record decoded at most (LAS 1.4 formats 6 to 8 with
+/// extra bytes stay well below).
+const MAX_ITEMS_SIZE: u64 = 1024;
 
 /// The COPC info VLR.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -198,6 +208,7 @@ impl CopcFile {
     pub fn open(path: &Path) -> Result<Self, String> {
         let e = |m: String| format!("{}: {m}", path.display());
         let mut f = BufReader::new(File::open(path).map_err(|x| e(x.to_string()))?);
+        let file_len = f.get_ref().metadata().map_err(|x| e(x.to_string()))?.len();
         let mut h = vec![0u8; HEADER_SIZE];
         f.read_exact(&mut h).map_err(|x| e(x.to_string()))?;
         if &h[0..4] != b"LASF" || h[24] != 1 || h[25] != 4 {
@@ -258,7 +269,7 @@ impl CopcFile {
         let mut read = 0;
         while let Some((page_at, size)) = pages.pop() {
             read += 1;
-            if read > MAX_PAGES || size > 1 << 31 {
+            if read > MAX_PAGES || size > 1 << 31 || size > file_len {
                 return Err(e("hierarchy too large or damaged".into()));
             }
             f.seek(SeekFrom::Start(page_at))
@@ -278,12 +289,20 @@ impl CopcFile {
                 match count {
                     -1 => pages.push((offset, byte_size.max(0) as u64)),
                     0 => {}
-                    n if n > 0 => nodes.push(CopcNode {
-                        key,
-                        offset,
-                        byte_size: byte_size.max(0) as u64,
-                        points: n as u64,
-                    }),
+                    n if n > 0 => {
+                        let byte_size = u64::try_from(byte_size).unwrap_or(0);
+                        if n as u64 > byte_size.saturating_mul(MAX_POINTS_PER_BYTE) {
+                            return Err(e(format!(
+                                "hierarchy entry {key:?}: {n} points in {byte_size} bytes"
+                            )));
+                        }
+                        nodes.push(CopcNode {
+                            key,
+                            offset,
+                            byte_size,
+                            points: n as u64,
+                        });
+                    }
                     _ => return Err(e(format!("hierarchy entry {key:?}: {count} points"))),
                 }
             }
@@ -360,10 +379,14 @@ impl CopcFile {
         let mut dec = LayeredPointRecordDecompressor::new(&mut *file);
         dec.set_fields_from(self.laz.items())
             .map_err(|x| e(x.to_string()))?;
-        let mut buf = vec![0u8; self.laz.items_size() as usize];
-        if buf.len() < 30 {
+        let size = self.laz.items_size();
+        if size < 30 {
             return Err(e("point records too short".into()));
         }
+        if size > MAX_ITEMS_SIZE {
+            return Err(e(format!("point records of {size} bytes: damaged?")));
+        }
+        let mut buf = vec![0u8; size as usize];
         for _ in 0..node.points {
             dec.decompress_next(&mut buf)
                 .map_err(|x| e(x.to_string()))?;
@@ -419,7 +442,8 @@ impl CopcFile {
                             part.iter()
                                 .map(|&i| {
                                     let node = &self.nodes[i];
-                                    let mut out = Vec::with_capacity(node.points as usize);
+                                    let reserve = node.points.min(MAX_RESERVE) as usize;
+                                    let mut out = Vec::with_capacity(reserve);
                                     self.read_node(&mut file, node, &mut |p| out.push(*p))?;
                                     Ok(out)
                                 })

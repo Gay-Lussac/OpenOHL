@@ -15,6 +15,45 @@ pub type Xyz = (Vec<u32>, Vec<u32>, Vec<u32>);
 /// zstd level: 3 compresses ~3× faster than 9 for a few % more size.
 const LEVEL: i32 = 3;
 
+/// Points of one block at most (one class of one chunk: a 64 m chunk
+/// holds this at ~24 000 points per m²). Blocks beyond are neither written
+/// nor read: a damaged project database cannot claim more.
+pub const MAX_BLOCK_POINTS: usize = 100_000_000;
+
+/// A block's point count as stored: 0 to [`MAX_BLOCK_POINTS`].
+pub fn block_count(n: i64) -> Result<usize, String> {
+    usize::try_from(n)
+        .ok()
+        .filter(|&n| n <= MAX_BLOCK_POINTS)
+        .ok_or_else(|| format!("point block of {n} points: damaged?"))
+}
+
+/// Bytes of `n` values of `size` bytes: `n` at most [`MAX_BLOCK_POINTS`].
+fn checked_len(n: usize, size: usize) -> Result<usize, String> {
+    if n > MAX_BLOCK_POINTS {
+        return Err(format!("point block of {n} points: damaged?"));
+    }
+    Ok(n * size)
+}
+
+/// `blob` decompressed: exactly `len` bytes, else an error. Memory grows
+/// with what actually comes out, never past `len`.
+fn decompress(blob: &[u8], len: usize, what: &str) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+    let dec = zstd::stream::read::Decoder::with_buffer(blob).map_err(|e| e.to_string())?;
+    let mut out = Vec::with_capacity(len.min(1 << 24));
+    dec.take(len as u64 + 1)
+        .read_to_end(&mut out)
+        .map_err(|e| format!("{what} block: {e}"))?;
+    if out.len() != len {
+        return Err(format!(
+            "{what} block holds {} bytes, {len} expected",
+            out.len()
+        ));
+    }
+    Ok(out)
+}
+
 fn shuffle(words: &[u32]) -> Vec<u8> {
     let n = words.len();
     let mut out = vec![0u8; 4 * n];
@@ -100,7 +139,7 @@ impl Columns {
     /// Decodes the coordinates of `n` points (x sorted ascending).
     pub fn decode_xyz(blob: &[u8], n: usize) -> Result<Xyz, String> {
         // At most the size expected: a damaged block cannot blow up.
-        let bytes = zstd::bulk::decompress(blob, 12 * n).map_err(|e| e.to_string())?;
+        let bytes = decompress(blob, checked_len(n, 12)?, "coordinate")?;
         let words = unshuffle(&bytes, 3 * n)?;
         let mut x = Vec::with_capacity(n);
         let mut acc = 0u32;
@@ -115,10 +154,7 @@ impl Columns {
 
     /// Decodes intensities of `n` points.
     pub fn decode_intensity(blob: &[u8], n: usize) -> Result<Vec<u16>, String> {
-        let bytes = zstd::bulk::decompress(blob, 2 * n).map_err(|e| e.to_string())?;
-        if bytes.len() != 2 * n {
-            return Err("intensity block size".into());
-        }
+        let bytes = decompress(blob, checked_len(n, 2)?, "intensity")?;
         Ok((0..n)
             .map(|i| u16::from_le_bytes([bytes[i], bytes[n + i]]))
             .collect())
@@ -126,11 +162,7 @@ impl Columns {
 
     /// Decodes return numbers of `n` points.
     pub fn decode_returns(blob: &[u8], n: usize) -> Result<Vec<u8>, String> {
-        let bytes = zstd::decode_all(blob).map_err(|e| e.to_string())?;
-        if bytes.len() != n {
-            return Err("returns block size".into());
-        }
-        Ok(bytes)
+        decompress(blob, checked_len(n, 1)?, "returns")
     }
 }
 
@@ -176,5 +208,27 @@ mod tests {
             vec![0x11, 0x12, 0x22, 0x11]
         );
         assert!(Columns::decode_xyz(&xyz, 5).is_err());
+    }
+
+    #[test]
+    fn crafted_blocks_error_cleanly() {
+        // Counts from a damaged database: negative, too many.
+        assert!(block_count(-1).is_err());
+        assert!(block_count(i64::MAX).is_err());
+        assert_eq!(block_count(4), Ok(4));
+        let tiny = zstd::encode_all(&[0u8; 12][..], LEVEL).unwrap();
+        for n in [usize::MAX, usize::MAX / 2, MAX_BLOCK_POINTS + 1] {
+            assert!(Columns::decode_xyz(&tiny, n).is_err());
+            assert!(Columns::decode_intensity(&tiny, n).is_err());
+            assert!(Columns::decode_returns(&tiny, n).is_err());
+        }
+        // A blob inflating far past its count: stopped at the count.
+        let bomb = zstd::encode_all(&vec![0u8; 20_000_000][..], LEVEL).unwrap();
+        assert!(bomb.len() < 100_000);
+        assert!(Columns::decode_returns(&bomb, 4).is_err());
+        assert!(Columns::decode_intensity(&bomb, 4).is_err());
+        assert!(Columns::decode_xyz(&bomb, 4).is_err());
+        // Not zstd at all.
+        assert!(Columns::decode_returns(b"not zstd", 4).is_err());
     }
 }

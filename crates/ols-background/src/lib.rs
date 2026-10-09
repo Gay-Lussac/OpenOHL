@@ -38,6 +38,14 @@ pub const TILE: u32 = 256;
 /// JPEG quality of the tiles (0–100).
 pub const QUALITY: u8 = 85;
 
+/// Width and height of an imported image at most, pixels (a 5 km
+/// orthophoto mosaic at 0.1 m).
+pub const MAX_IMAGE_SIDE: u32 = 50_000;
+
+/// Memory for decoding an imported image at most, bytes (8 GiB: a
+/// 50 000 × 50 000 RGB image): past it, a clean error, not an abort.
+pub const MAX_IMAGE_BYTES: u64 = 8 << 30;
+
 /// An error of the store.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BackgroundError(pub String);
@@ -372,7 +380,9 @@ impl Store {
     /// Cost: decoding the image whole (3 bytes per pixel: a 10 000 ×
     /// 10 000 photo needs 300 MB), ~20 ms per tile written (JPEG); the
     /// pyramid adds a third. Exit clause: `budget`, checked per row of
-    /// tiles; the image is then not kept.
+    /// tiles; the image is then not kept. Images wider or taller than
+    /// [`MAX_IMAGE_SIDE`], or needing more than [`MAX_IMAGE_BYTES`] to
+    /// decode, are refused.
     #[allow(clippy::too_many_arguments)]
     pub fn import_image(
         &mut self,
@@ -397,7 +407,11 @@ impl Store {
             .map_err(|e| err(format!("{}: {e}", path.display())))?
             .with_guessed_format()
             .map_err(|e| err(format!("{}: {e}", path.display())))?;
-        reader.no_limits();
+        let mut limits = image::Limits::default();
+        limits.max_image_width = Some(MAX_IMAGE_SIDE);
+        limits.max_image_height = Some(MAX_IMAGE_SIDE);
+        limits.max_alloc = Some(MAX_IMAGE_BYTES);
+        reader.limits(limits);
         let mut img = reader
             .decode()
             .map_err(|e| err(format!("{}: {e}", path.display())))?
@@ -665,6 +679,21 @@ mod tests {
             .unwrap_err();
         assert!(e.0.contains("not georeferenced"), "{e}");
         assert_eq!(store.delete_image_layer("Ortho").unwrap(), 1);
+        assert!(store.images().unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_image_past_the_limits_is_refused() {
+        let dir = scratch("limits");
+        // Tiny on disk, wider than the limit once decoded.
+        let png = dir.join("wide.png");
+        RgbImage::new(MAX_IMAGE_SIDE + 1, 1).save(&png).unwrap();
+        std::fs::write(dir.join("wide.pgw"), "0.5\n0\n0\n-0.5\n0\n0\n").unwrap();
+        let mut store = Store::open(&dir.join("p.ols")).unwrap();
+        let e = store
+            .import_image("Ortho", "wide", &png, "", "", None, &Budget::new(), |_| {})
+            .unwrap_err();
+        assert!(e.0.contains("wide.png"), "{e}");
         assert!(store.images().unwrap().is_empty());
     }
 
