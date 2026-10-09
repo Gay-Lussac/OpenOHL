@@ -599,12 +599,18 @@ fn g_goes_to_a_structure() {
 
 /// The example as a project edited by "tester".
 fn synthetic_project(name: &str) -> model::Model {
+    synthetic_project_with(name, |_| {})
+}
+
+/// [`synthetic_project`] with its line changed first.
+fn synthetic_project_with(name: &str, edit: impl FnOnce(&mut ols_line::Line)) -> model::Model {
     let ex = root().join("examples/synthetic-line");
     let dir = std::env::temp_dir().join(format!("ols-app-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("p.ols");
     std::fs::remove_file(&path).ok();
-    let line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    let mut line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    edit(&mut line);
     ols_session::Session::open(&path)
         .unwrap()
         .import(&line, "tester")
@@ -6569,6 +6575,196 @@ fn a_surface_imported_under_the_remembered_name_is_drawn_at_once() {
     assert!(r.model.ground.is_some());
     assert!(r.view3d.dirty.contains(&crate::scene::Layer::Ground));
     assert!(r.visible.contains(&crate::scene::Layer::Ground));
+}
+
+/// The New alignment tool: from a point of an alignment, through a free
+/// point on the ground, back to another point of it — a new alignment
+/// whose ends are junctions. Moving a junction point (Edit) moves both;
+/// the Edit tool moves a point to another alignment and place. Escape
+/// gives a new alignment up.
+#[test]
+fn alignments_are_laid_out_joined_and_edited() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project("new-alignment");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let main = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        r.model
+            .line
+            .routes
+            .iter()
+            .find(|x| x.id == "main")
+            .unwrap()
+            .alignment
+            .clone()
+    };
+    let before = main(&mut harness);
+    assert!(before.len() >= 3);
+    let p0 = before[0].position;
+    let p2 = before[2].position;
+    let free = [p0[0] + 40.0, p0[1] + 60.0, p0[2]];
+    let at = |route: &str, index| Selection::AlignmentPoint {
+        route: route.into(),
+        index,
+    };
+    use_tool(&mut harness, Tool::NewAlignment, at("main", 0), None);
+    use_tool(
+        &mut harness,
+        Tool::NewAlignment,
+        Selection::None,
+        Some(free),
+    );
+    use_tool(&mut harness, Tool::NewAlignment, at("main", 2), None);
+    assert_eq!(harness.state_mut().ready().unwrap().view3d.draft.len(), 3);
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let new = {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.new_alignment.is_empty(), "{:?}", r.status);
+        let n = r
+            .model
+            .line
+            .routes
+            .iter()
+            .find(|x| x.id == "alignment 2")
+            .unwrap_or_else(|| panic!("{:?}", r.status))
+            .clone();
+        assert!(n.structures.is_empty());
+        n.alignment
+    };
+    assert_eq!(new.len(), 3);
+    assert_eq!(new[0].position, p0);
+    assert_eq!(new[1].position, free);
+    assert_eq!(new[2].position, p2);
+    // The junction moved with the Edit tool: both alignments.
+    use_tool(&mut harness, Tool::Edit, at("main", 0), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Alignment(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        f.structure = None;
+        f.position[0] += 2.0;
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let line = &r.model.line;
+        let get = |id: &str| line.routes.iter().find(|x| x.id == id).unwrap().alignment[0].position;
+        assert!((get("main")[0] - (p0[0] + 2.0)).abs() < 1e-9);
+        assert_eq!(get("main"), get("alignment 2"));
+    }
+    // Point 2 of main to alignment 2, as its second point.
+    let moved = main(&mut harness)[1].position;
+    use_tool(&mut harness, Tool::Edit, at("main", 1), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Alignment(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        f.target = "alignment 2".into();
+        f.order = 2;
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let line = &r.model.line;
+        let a2 = &line
+            .routes
+            .iter()
+            .find(|x| x.id == "alignment 2")
+            .unwrap()
+            .alignment;
+        assert_eq!(a2.len(), 4);
+        assert_eq!(a2[1].position, moved);
+        assert_eq!(main(&mut harness).len(), before.len() - 1);
+    }
+    // An alignment without structures: its profile is drawn.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.profile.route = r
+            .model
+            .line
+            .routes
+            .iter()
+            .position(|x| x.id == "alignment 2")
+            .unwrap();
+        r.profile.chosen = true;
+    }
+    harness.state_mut().show_tab(crate::app::Tab::Profile);
+    harness.run_steps(3);
+    // Escape gives a new alignment up.
+    use_tool(
+        &mut harness,
+        Tool::NewAlignment,
+        Selection::None,
+        Some(free),
+    );
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.new_alignment.is_empty() && r.view3d.draft.is_empty());
+    assert_eq!(r.hotbar.tool(), Tool::Select);
+}
+
+/// A line with its own alignment only: a point given another alignment
+/// name in the table makes that alignment — and the line's own becomes
+/// the route "main" with all its structures.
+#[test]
+fn a_new_alignment_name_in_the_table_makes_the_alignment() {
+    use crate::tables::TableKind;
+    let model = synthetic_project_with("table-new-alignment", |line| {
+        let main = line.routes.iter().find(|r| r.id == "main").unwrap().clone();
+        line.alignment = main.alignment;
+        line.routes.clear();
+    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let n = {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.model.line.routes.is_empty());
+        let rows = TableKind::Alignments.rows(&r.model, 0);
+        assert!(rows.iter().all(|x| x.cells[0] == "main"));
+        rows.len()
+    };
+    assert!(n >= 3);
+    set_cell(
+        &mut harness,
+        TableKind::Alignments,
+        "main\t2",
+        "alignment",
+        "spur",
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut row = TableKind::Alignments.new_row(&r.model, 0, &[]);
+        let rows = TableKind::Alignments.rows(&r.model, 0);
+        row[0] = "spur".into();
+        row[1] = "2".into();
+        row[2] = format!("{}", rows[2].cells[2].parse::<f64>().unwrap() + 50.0);
+        row[3] = rows[2].cells[3].clone();
+        r.tables
+            .entry(TableKind::Alignments)
+            .or_default()
+            .added
+            .push(row);
+    }
+    apply_table(&mut harness, TableKind::Alignments, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let line = &r.model.line;
+    assert!(line.alignment.is_empty());
+    let ids: Vec<&str> = line.routes.iter().map(|x| x.id.as_str()).collect();
+    assert_eq!(ids, ["main", "spur"]);
+    assert_eq!(line.routes[0].structures.len(), line.structures.len());
+    assert_eq!(line.routes[0].alignment.len(), n - 1);
+    assert_eq!(line.routes[1].alignment.len(), 2);
+    assert!(line.routes[1].structures.is_empty());
 }
 
 /// Escape quits String wire at any point: with points picked and the mouse

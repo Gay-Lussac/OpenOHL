@@ -68,6 +68,10 @@ For Drake 26/7 (composite \\( E \\approx 73.9 \\) GPa, \\( d = 28.14 \\) mm, 26 
 | \\( 0.2\\, EI_{max} \\) (default) | 455 |
 | \\( EI_{min} \\) | 37 |
 
+## Rigid jumpers
+
+A jumper given `rigid` is a tube or bar: the straight member between its two solved clamps, in every weather case. It has no length or sag of its own and no thermal change. Its tension is not computed, because the members holding it carry it. It is drawn, and checked for clearances, along that straight line, and it can never be taut. The PLS-CADD jumpers marked rigid are read this way.
+
 ## Cutting a jumper given by its sag
 
 A `sag` is the jumper's largest vertical distance below its end-to-end chord, in still air at its temperature (its **design case**). The cut length is found in that design case:
@@ -96,7 +100,7 @@ An edit re-solves its own sections. A jumper is solved again only if one of thes
   - **Wind.** Free strain strings swing their clamps apart.
   - **Cold, on a nearly straight jumper.** A jumper with little slack loses it from both sides when it is cold. Its length shrinks with the temperature, and the dead-end clamps move apart as the colder, tighter sections pull their strain strings straighter. For example, a 4.2 m jumper given a 10 cm sag at 15 °C is only \\( \approx 8s^2/3c = 6 \\) mm longer than its chord. At −20 °C it is 3 mm shorter, and its clamps are a few millimetres further apart, so it is taut.
 
-  A jumper that is really a stiff bar (a rigid or tubular jumper) has no slack to lose and should not be modelled as a cable with a token sag. Programs that treat such jumpers as rigid members never report them as too short. OLS CAD has no rigid jumper kind yet: until it does, give such a jumper enough sag to stay slack in the coldest case, and know that its drawn shape is then approximate.
+  A jumper that is really a stiff bar (a rigid or tubular jumper) has no slack to lose, so it should not be modelled as a cable with a token sag. Give it `rigid` (below): it is then the straight member between its clamps and is never taut.
 - **Ends less than 0.1 m apart horizontally.** A vertical jumper is not supported yet.
 - **No convergence.** The message names the residual. This is rare since the solve runs in coordinates relative to the first end.
 - **Sag cannot be reached.** The sag asked for is less than the taut jumper's, or would need more than 20× the chord length.
@@ -115,7 +119,7 @@ Physical values for typical high-voltage jumpers (indications to check a model a
 | Clamp exit angle | 0–45° below the conductor's axis | default 30°; 0: straight on |
 | Change of sag between −20 °C and 80 °C | a few cm to a few dm | the length changes by \\( \varepsilon \approx 2 \cdot 10^{-3} \\); the clamps move too, so the sag below the chord can even shrink when hot |
 
-Computation (release build, one core):
+Computation (release build; times for one core — jumpers are independent, so a weather case solves them on all the cores):
 
 | Step | Expected cost | Exit clause |
 |---|---|---|
@@ -125,7 +129,7 @@ Computation (release build, one core):
 | Rod solve with a support string | a few times the above | string steps no smaller than 1/64 of the way |
 | Cut from a sag, hinged | ~50 µs | 200 iterations; 20× chord |
 | Cut from a sag, clamped | 5–15 ms (end sections plus 5–15 rod solves) | 40 iterations; 20× chord |
-| A weather case, 433 clamped jumpers | ~0.3 s | — |
+| A weather case, 433 clamped jumpers | ~0.3 s on one core, divided by the number of cores | — |
 | An edit of one section (its jumpers only) | ~10 ms | — |
 
 A weather case is solved in full the first time it is shown, which costs the line's jumpers once; after that only edits re-solve them.

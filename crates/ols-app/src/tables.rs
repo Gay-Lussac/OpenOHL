@@ -258,6 +258,12 @@ const JUMPERS: &[Column] = &[
         Yes,
         "leaves the clamp at to this far below the conductor (empty: 30)",
     ),
+    (
+        "rigid",
+        50.0,
+        Yes,
+        "yes: a rigid jumper (tube or bar), straight between its clamps — no length or sag",
+    ),
 ];
 
 const SYSTEMS: &[Column] = &[
@@ -282,16 +288,16 @@ const SYSTEMS: &[Column] = &[
 
 const ALIGNMENTS: &[Column] = &[
     (
-        "route",
+        "alignment",
         110.0,
-        New,
-        "route (\"line\": the line's own alignment)",
+        Yes,
+        "the alignment the point belongs to (\"main\": the line's own); another name moves it there, a new name makes a new alignment",
     ),
     (
         "#",
         45.0,
         Yes,
-        "order along the route; 3.5 goes between 3 and 4",
+        "order along the alignment; 3.5 goes between 3 and 4",
     ),
     ("E", 110.0, Yes, "easting, m"),
     ("N", 110.0, Yes, "northing, m"),
@@ -861,6 +867,7 @@ impl TableKind {
                         j.stiffness_factor.map_or(String::new(), |v| f(v, 2)),
                         j.angle_from_deg.map_or(String::new(), |v| f(v, 1)),
                         j.angle_to_deg.map_or(String::new(), |v| f(v, 1)),
+                        if j.rigid { "yes" } else { "no" }.into(),
                     ],
                 })
                 .collect(),
@@ -900,11 +907,7 @@ impl TableKind {
                         defaulted: Vec::new(),
                         key: format!("{route}\t{k}"),
                         select: Selection::AlignmentPoint {
-                            route: if route == "line" {
-                                "main".into()
-                            } else {
-                                route.clone()
-                            },
+                            route: route.clone(),
                             index: k,
                         },
                         cells: vec![
@@ -1001,6 +1004,7 @@ impl TableKind {
                     line.jumpers.last().map_or("J0", |j| j.id.as_str()),
                 );
                 cells[6] = "15".into();
+                cells[13] = "no".into();
             }
             TableKind::Systems => {
                 cells[0] = taken_after(
@@ -1013,7 +1017,7 @@ impl TableKind {
             }
             TableKind::Alignments => {
                 let routes = alignments(line);
-                let (route, points) = routes.first().cloned().unwrap_or(("line".into(), vec![]));
+                let (route, points) = routes.first().cloned().unwrap_or(("main".into(), vec![]));
                 cells[0] = route;
                 cells[1] = (points.len() + 1).to_string();
             }
@@ -1594,14 +1598,10 @@ fn choice_cell(
 /// The alignments: per route, its points (`"line"`: the line's own, when
 /// it has no routes).
 fn alignments(line: &ols_line::Line) -> Vec<(String, Vec<ols_line::AlignmentPoint>)> {
-    if line.routes.is_empty() {
-        vec![("line".into(), line.alignment.clone())]
-    } else {
-        line.routes
-            .iter()
-            .map(|r| (r.id.clone(), r.alignment.clone()))
-            .collect()
-    }
+    crate::editors::explicit_routes(line)
+        .into_iter()
+        .map(|r| (r.id, r.alignment))
+        .collect()
 }
 
 /// "max temperature; glaze ice" → the cases' indices.
@@ -1907,6 +1907,11 @@ fn jumper_cells(
     j.stiffness_factor = opt_num(&c.get(10), &format!("{name} EI factor"))?;
     j.angle_from_deg = opt_num(&c.get(11), &format!("{name} angle from"))?;
     j.angle_to_deg = opt_num(&c.get(12), &format!("{name} angle to"))?;
+    j.rigid = match c.get(13).trim() {
+        "" | "no" => false,
+        "yes" => true,
+        v => return Err(format!("{name} rigid: yes or no, not \"{v}\"")),
+    };
     Ok(())
 }
 
@@ -1948,15 +1953,8 @@ fn alignment_commands(
     page: &TablePage,
     out: &mut Changes,
 ) -> Result<(), String> {
-    // (route, order, point) of every point kept or added.
+    // Every alignment rebuilt from the rows: (order, point) by alignment.
     let mut points: BTreeMap<String, Vec<(f64, ols_line::AlignmentPoint)>> = BTreeMap::new();
-    let touched: BTreeSet<String> = page
-        .edits
-        .keys()
-        .chain(page.deleted.iter())
-        .map(|k| k.split_once('\t').map_or(k.clone(), |x| x.0.to_owned()))
-        .chain(page.added.iter().map(|r| r[0].trim().to_owned()))
-        .collect();
     let point_of = |c: &Cells, name: &str| -> Result<ols_line::AlignmentPoint, String> {
         let structure = opt(&c.get(5));
         let position = match &structure {
@@ -1985,9 +1983,15 @@ fn alignment_commands(
             structure,
         })
     };
+    let route_of = |c: &Cells, name: &str| -> Result<String, String> {
+        let r = c.get(0).trim().to_owned();
+        if r.is_empty() || r.contains('\t') {
+            return Err(format!("{name}: give its alignment"));
+        }
+        Ok(r)
+    };
     for row in rows {
-        let (route, _) = row.key.split_once('\t').unwrap_or((&row.key, ""));
-        if !touched.contains(route) || page.deleted.contains(&row.key) {
+        if page.deleted.contains(&row.key) {
             continue;
         }
         let c = Cells {
@@ -1995,10 +1999,16 @@ fn alignment_commands(
             typed: page.edits.get(&row.key),
             defaulted: &row.defaulted,
         };
-        let name = format!("{route} #{}", row.cells[1]);
-        let order = num(&c.get(1), &format!("{name} #"))?;
+        let name = format!("{} #{}", row.cells[0], row.cells[1]);
+        let route = route_of(&c, &name)?;
+        let mut order = num(&c.get(1), &format!("{name} #"))?;
+        // Moved to another alignment: at the place given, before the point
+        // that has that number there.
+        if route != row.cells[0] {
+            order -= 1e-9;
+        }
         points
-            .entry(route.to_owned())
+            .entry(route)
             .or_default()
             .push((order, point_of(&c, &name)?));
     }
@@ -2008,41 +2018,37 @@ fn alignment_commands(
             typed: None,
             defaulted: &[],
         };
-        let route = c.get(0).trim().to_owned();
-        if !alignments(stored).iter().any(|(r, _)| *r == route) {
-            return Err(format!("new point {}: no route \"{route}\"", k + 1));
-        }
         let name = format!("new point {}", k + 1);
+        let route = route_of(&c, &name)?;
         let order = opt_num(&c.get(1), &format!("{name} #"))?.unwrap_or(f64::MAX);
         points
-            .entry(route.clone())
+            .entry(route)
             .or_default()
             .push((order + 1e-9, point_of(&c, &name)?));
     }
-    for route in touched {
-        let mut list = points.remove(&route).unwrap_or_default();
+    let sorted = |list: Vec<(f64, ols_line::AlignmentPoint)>| -> Vec<ols_line::AlignmentPoint> {
+        let mut list = list;
         list.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let alignment: Vec<ols_line::AlignmentPoint> = list.into_iter().map(|x| x.1).collect();
-        let command = if route == "line" {
-            ols_session::line_settings_put(stored, Some(alignment), None)
-        } else {
-            let mut r = stored
-                .routes
-                .iter()
-                .find(|r| r.id == route)
-                .ok_or_else(|| format!("no route {route}"))?
-                .clone();
-            r.alignment = alignment;
-            Command::Put {
-                kind: Kind::Route,
-                id: route.clone(),
-                value: serde_json::to_value(&r).map_err(|e| e.to_string())?,
-                ord: None,
-            }
-        };
-        out.commands
-            .push((format!("changed the alignment of {route}"), command));
+        list.into_iter().map(|x| x.1).collect()
+    };
+    let mut routes = crate::editors::explicit_routes(stored);
+    for r in &mut routes {
+        r.alignment = sorted(points.remove(&r.id).unwrap_or_default());
     }
+    // Names not known yet: new alignments (no structures yet).
+    for (id, list) in points {
+        let alignment = sorted(list);
+        routes.push(ols_line::Route {
+            id: id.clone(),
+            name: id,
+            alignment,
+            structures: Vec::new(),
+        });
+    }
+    out.commands.push((
+        "changed the alignments".into(),
+        crate::editors::routes_command(stored, &routes)?,
+    ));
     Ok(())
 }
 
@@ -2369,7 +2375,7 @@ impl TablePage {
         }
         if kind == TableKind::Alignments {
             ui.label(
-                egui::RichText::new("The profile view follows these points; a route without points follows its structures. # orders the points (3.5 goes between 3 and 4).")
+                egui::RichText::new("The profile view follows these points; an alignment without points follows its structures. # orders the points (3.5 goes between 3 and 4); another alignment name moves a point there, a new name makes a new alignment.")
                     .small()
                     .weak(),
             );

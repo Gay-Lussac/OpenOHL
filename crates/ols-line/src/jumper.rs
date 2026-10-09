@@ -479,6 +479,20 @@ pub fn solve_jumper(
     let a = end_position(line, shapes, &jumper.from).map_err(|e| invalid(e.to_string()))?;
     let b = end_position(line, shapes, &jumper.to).map_err(|e| invalid(e.to_string()))?;
     let d = b - a;
+    if jumper.rigid {
+        // A straight member between the clamps.
+        let points: Vec<Vector3<f64>> = (0..=16).map(|k| a + d * (k as f64 / 16.0)).collect();
+        let low = if a.z <= b.z { a } else { b };
+        return Ok(JumperShape {
+            jumper: jumper.id.clone(),
+            sag: 0.0,
+            points: points.iter().map(|q| p(*q)).collect(),
+            unstressed_length: d.norm(),
+            low_point: p(low),
+            max_tension: 0.0,
+            support: None,
+        });
+    }
     if d.xy().norm() < 0.1 {
         return Err(invalid(
             "ends less than 0.1 m apart horizontally (a vertical jumper is not supported yet)"
@@ -647,10 +661,33 @@ pub fn solve_jumpers(
     case: &WeatherCase,
     shapes: &[SectionShape],
 ) -> Vec<Result<JumperShape, LineError>> {
-    line.jumpers
-        .iter()
-        .map(|jumper| solve_one_jumper(line, library, case, shapes, jumper))
-        .collect()
+    let all: Vec<&Jumper> = line.jumpers.iter().collect();
+    in_parallel(&all, |jumper| {
+        solve_one_jumper(line, library, case, shapes, jumper)
+    })
+}
+
+/// `f` of every item, in order, spread over the cores (jumpers are
+/// independent of each other). Fewer than 16 items: on this thread.
+pub(crate) fn in_parallel<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(items.len() / 8)
+        .max(1);
+    if threads == 1 {
+        return items.iter().map(&f).collect();
+    }
+    let chunk = items.len().div_ceil(threads);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = items
+            .chunks(chunk)
+            .map(|part| scope.spawn(|| part.iter().map(&f).collect::<Vec<R>>()))
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("a jumper solve panicked"))
+            .collect()
+    })
 }
 
 /// Solves one jumper of the line between the solved sections `shapes`
@@ -865,6 +902,35 @@ mod tests {
                 a[0].unstressed_length, a[0].sag, b[0].unstressed_length, b[0].sag
             );
         }
+    }
+
+    /// A rigid jumper: straight between its solved clamps in every case,
+    /// whatever the temperature — never taut; it takes no length or sag.
+    #[test]
+    fn a_rigid_jumper_is_straight_between_its_clamps() {
+        let mut line = crate::tests::example();
+        line.jumpers[0].sag = None;
+        line.jumpers[0].length = None;
+        line.jumpers[0].rigid = true;
+        line.validate().unwrap();
+        for t in [-40.0, 15.0, 80.0] {
+            let (_, j) = solve_all(&line, &still(t));
+            let (a, b) = (v(j[0].points[0]), v(*j[0].points.last().unwrap()));
+            assert_eq!(j[0].sag, 0.0);
+            assert!(((b - a).norm() - j[0].unstressed_length).abs() < 1e-9);
+            for q in &j[0].points {
+                let q = v(*q);
+                let along = (q - a).dot(&(b - a)) / (b - a).norm_squared();
+                assert!((q - (a + (b - a) * along)).norm() < 1e-9);
+            }
+        }
+        line.jumpers[0].sag = Some(0.1);
+        assert!(
+            line.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("no length or sag")
+        );
     }
 
     /// The cut a solve keeps (or makes) for jumper 0, and one made afresh.

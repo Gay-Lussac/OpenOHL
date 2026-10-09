@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, HashSet};
 use ols_weather::WeatherCase;
 use ols_wirefe::default_fe_budget;
 
-use crate::jumper::{JumperShape, solve_one_jumper};
+use crate::jumper::{JumperShape, in_parallel, solve_one_jumper};
 use crate::solve::{SectionShape, solve_section};
 use crate::{Jumper, Line, LineError, Section, Structure};
 
@@ -161,6 +161,7 @@ impl SolvedLine {
         let shapes = self.shapes(line);
         let mut jumpers = BTreeMap::new();
         let mut inputs = BTreeMap::new();
+        let mut stale: Vec<&Jumper> = Vec::new();
         for j in &line.jumpers {
             let now = JumperInputs::of(line, j);
             let kept = self.jumper_inputs.get(&j.id) == Some(&now)
@@ -168,15 +169,22 @@ impl SolvedLine {
                     .sections
                     .iter()
                     .any(|s| resolved.contains(s.id.as_str()));
-            let result = match self.jumpers.remove(&j.id) {
-                Some(r) if kept => r,
-                _ => {
-                    update.jumpers += 1;
-                    solve_one_jumper(line, library, &self.case, &shapes, j)
+            match self.jumpers.remove(&j.id) {
+                Some(r) if kept => {
+                    jumpers.insert(j.id.clone(), r);
                 }
-            };
-            jumpers.insert(j.id.clone(), result);
+                _ => stale.push(j),
+            }
             inputs.insert(j.id.clone(), now);
+        }
+        // Those to solve again, over the cores.
+        let case = &self.case;
+        let solved = in_parallel(&stale, |j| {
+            solve_one_jumper(line, library, case, &shapes, j)
+        });
+        update.jumpers = stale.len();
+        for (j, r) in stale.iter().zip(solved) {
+            jumpers.insert(j.id.clone(), r);
         }
         self.jumpers = jumpers;
         self.jumper_inputs = inputs;

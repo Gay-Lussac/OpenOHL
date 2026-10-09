@@ -1876,7 +1876,7 @@ impl Session {
             .collect();
         for r in &self.line.routes {
             if r.structures.iter().any(|x| x == id) {
-                if r.structures.iter().filter(|x| *x != id).count() < 2 {
+                if r.structures.iter().filter(|x| *x != id).count() < 2 && r.alignment.len() < 2 {
                     impact.routes_deleted.push(r.id.clone());
                     continue;
                 }

@@ -144,6 +144,8 @@ pub struct Ready {
     pub chain: Vec<ols_line::SectionPoint>,
     /// String wire: the section whose points are picked again.
     pub restring: Option<String>,
+    /// New alignment: the points right-clicked so far.
+    pub new_alignment: Vec<ols_line::AlignmentPoint>,
     /// Tools: the hotbar (the active tool says what a click does).
     pub hotbar: crate::tools::Hotbar,
     /// The inventory window is open.
@@ -256,6 +258,7 @@ impl Ready {
             editor: None,
             chain: Vec::new(),
             restring: None,
+            new_alignment: Vec::new(),
             hotbar: crate::tools::Hotbar::default(),
             inventory: false,
             move_dialog: None,
@@ -1240,6 +1243,38 @@ impl Ready {
                     },
                 }
             }
+            (Tool::NewAlignment, Selection::AlignmentPoint { route, index }) => {
+                let stored = model.stored_line().unwrap_or(&model.line);
+                match crate::editors::explicit_routes(stored)
+                    .iter()
+                    .find(|r| &r.id == route)
+                    .and_then(|r| r.alignment.get(*index))
+                {
+                    Some(p) => {
+                        let p = p.clone();
+                        self.new_alignment.push(p);
+                        self.alignment_drafted();
+                    }
+                    None => {
+                        self.status = Some((
+                            "New alignment: this route follows its structures — right-click the ground, or give it points first".into(),
+                            true,
+                        ));
+                    }
+                }
+            }
+            (Tool::NewAlignment, _) => match u.at {
+                Some(at) => {
+                    self.new_alignment.push(ols_line::AlignmentPoint::free(at));
+                    self.alignment_drafted();
+                }
+                None => {
+                    self.status = Some((
+                        "New alignment: right-click an alignment point or the ground".into(),
+                        true,
+                    ));
+                }
+            },
             (Tool::AddAlignment, _) => match u.at {
                 Some(at) => match crate::editors::insert_alignment_point(model, at) {
                     Ok((what, command, route, index)) => {
@@ -1598,12 +1633,62 @@ impl Ready {
 
     /// The wire being strung, drawn.
     pub fn update_draft(&mut self) {
-        self.view3d.draft = self
-            .chain
-            .iter()
-            .filter_map(|p| self.model.line.attachment(p).map(|a| a.wire_point))
-            .collect();
+        self.view3d.draft = if self.new_alignment.is_empty() {
+            self.chain
+                .iter()
+                .filter_map(|p| self.model.line.attachment(p).map(|a| a.wire_point))
+                .collect()
+        } else {
+            self.new_alignment.iter().map(|p| p.position).collect()
+        };
         self.view3d.dirty.insert(Layer::Draft);
+    }
+
+    /// New alignment: a point added (or taken back); the draft and the
+    /// status follow.
+    fn alignment_drafted(&mut self) {
+        self.update_draft();
+        self.status = Some((
+            format!(
+                "New alignment: {} points — right-click the next (an alignment point: a junction), Enter: create, Backspace: undo a point, Escape: cancel",
+                self.new_alignment.len()
+            ),
+            false,
+        ));
+    }
+
+    /// New alignment: Enter — the alignment through the points.
+    pub fn finish_new_alignment(&mut self) {
+        let points = std::mem::take(&mut self.new_alignment);
+        match crate::editors::new_alignment(&self.model, points.clone()) {
+            Ok((what, command, id)) => {
+                if self.perform(crate::edit::Action::Command { what, command }) {
+                    self.update_draft();
+                    self.select(Selection::AlignmentPoint {
+                        route: id,
+                        index: 0,
+                    });
+                } else {
+                    self.new_alignment = points;
+                }
+            }
+            Err(e) => {
+                self.new_alignment = points;
+                self.status = Some((format!("New alignment: {e}"), true));
+            }
+        }
+    }
+
+    /// New alignment: Escape — the points go, the mouse is freed, Select
+    /// is held.
+    pub fn quit_new_alignment(&mut self, ctx: &egui::Context) {
+        self.new_alignment.clear();
+        self.update_draft();
+        if self.view3d.captured {
+            crate::view3d::View3d::set_captured(&mut self.view3d.captured, ctx, false);
+        }
+        self.hotbar.hold(crate::tools::Tool::Select);
+        self.status = Some(("New alignment: cancelled".into(), false));
     }
 
     /// Ends the wire being strung: its section's window (a new section, or
@@ -2095,6 +2180,27 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
     if stringing && !windows && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         r.quit_string_wire(ctx);
     }
+    // A new alignment being laid out: the same keys.
+    let laying = !r.new_alignment.is_empty() || r.hotbar.tool() == Tool::NewAlignment;
+    if laying && !windows {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            r.quit_new_alignment(ctx);
+        } else if !r.new_alignment.is_empty() && !ctx.text_edit_focused() {
+            let (enter, back) = ctx.input_mut(|i| {
+                use egui::{Key, Modifiers};
+                (
+                    i.consume_key(Modifiers::NONE, Key::Enter),
+                    i.consume_key(Modifiers::NONE, Key::Backspace),
+                )
+            });
+            if enter {
+                r.finish_new_alignment();
+            } else if back {
+                r.new_alignment.pop();
+                r.alignment_drafted();
+            }
+        }
+    }
     if !r.chain.is_empty() && !ctx.text_edit_focused() && !windows {
         let (enter, back) = ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
@@ -2281,7 +2387,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
 
 /// The Terrain menu: the ground surface (TIN) and the LiDAR points, with
 /// the classes drawn.
-fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
+fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Command>) {
     let layer = |ui: &mut egui::Ui, layer: Layer, name: &str, r: &mut Ready| {
         let mut on = r.visible.contains(&layer);
         if ui.checkbox(&mut on, name).changed() {
@@ -2292,6 +2398,12 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready) {
             }
         }
     };
+    ui.label(egui::RichText::new("Alignments").small().weak());
+    let alignments = crate::menu::Command::Table(crate::tables::TableKind::Alignments);
+    if alignments.menu_item(ui) {
+        out.push(alignments);
+    }
+    ui.separator();
     ui.label(egui::RichText::new("Ground surface").small().weak());
     if ui
         .button("Terrain surfaces (TIN)…")
@@ -3866,7 +3978,7 @@ fn menus(
         ui.add_enabled(false, egui::Button::new("Tension limits (to come)"));
         ui.add_enabled(false, egui::Button::new("Insulator swing (to come)"));
     });
-    crate::menu::options_menu(ui, "Terrain", |ui| terrain_menu(ui, r));
+    crate::menu::options_menu(ui, "Terrain", |ui| terrain_menu(ui, r, out));
     ui.menu_button("Structures", |ui| {
         use crate::library::LibraryKind;
         use crate::tables::TableKind;
@@ -3877,7 +3989,6 @@ fn menus(
         ui.label(egui::RichText::new("Tables").small().weak());
         item(ui, Command::Table(TableKind::Structures), out);
         item(ui, Command::Table(TableKind::Strings), out);
-        item(ui, Command::Table(TableKind::Alignments), out);
     });
     ui.menu_button("Sections", |ui| {
         use crate::library::LibraryKind;

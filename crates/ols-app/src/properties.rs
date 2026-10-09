@@ -396,6 +396,7 @@ pub fn ui(
                     (
                         "defined by",
                         match (j.length, j.sag) {
+                            _ if j.rigid => "rigid: straight between its clamps".into(),
                             (Some(l), _) => format!("length {l:.3} m at {} °C", j.temperature),
                             (_, Some(s)) => format!("sag {s:.2} m at {} °C", j.temperature),
                             _ => "—".into(),
