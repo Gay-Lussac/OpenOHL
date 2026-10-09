@@ -66,6 +66,28 @@ pub enum CableKind {
     Other,
 }
 
+impl CableKind {
+    /// Temperature coefficient of resistance at 20 °C, 1/K, of the
+    /// material that carries the current: 0.00403 for aluminium and its
+    /// alloys (the aluminium-conductor kinds, and OPGW, whose outer wires
+    /// are aluminium alloy or aluminium-clad), 0.0045 for steel wire;
+    /// `None` where the material is unknown (`other`) or there is no
+    /// conductor (`adss`).
+    pub fn resistance_temperature_coefficient(self) -> Option<f64> {
+        match self {
+            CableKind::Acsr
+            | CableKind::Acss
+            | CableKind::Aac
+            | CableKind::Aaac
+            | CableKind::Acar
+            | CableKind::Accc
+            | CableKind::Opgw => Some(0.00403),
+            CableKind::Steel => Some(0.0045),
+            CableKind::Adss | CableKind::Other => None,
+        }
+    }
+}
+
 /// One material component of a cable.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -269,7 +291,9 @@ pub struct ResistanceAt {
 #[derive(Debug, Clone, PartialEq, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Electrical {
-    /// AC resistance at one or more temperatures (linear between them).
+    /// AC resistance at one or more temperatures (linear between them; one
+    /// value is scaled with the material's temperature coefficient, see
+    /// [`Electrical::ac_resistance_at`]).
     #[serde(default)]
     pub ac_resistance: Vec<ResistanceAt>,
     /// DC resistance at a temperature.
@@ -287,10 +311,18 @@ pub struct Electrical {
 }
 
 impl Electrical {
-    /// AC resistance at `t`: linear through the two nearest given
-    /// temperatures (extrapolated beyond them); constant with one value;
-    /// `None` without data.
-    pub fn ac_resistance_at(&self, t: Temperature) -> Option<ResistancePerLength> {
+    /// AC resistance at `t` of a cable of kind `kind`.
+    ///
+    /// - Two or more given temperatures: linear through the two nearest
+    ///   (extrapolated beyond them along the same line).
+    /// - One given temperature \\( T_1 \\): scaled with the temperature
+    ///   coefficient \\( \alpha_{20} \\) of the kind's material
+    ///   ([`CableKind::resistance_temperature_coefficient`]),
+    ///   \\( R(T) = R(T_1) \frac{1 + \alpha_{20}(T - 20)}{1 + \alpha_{20}(T_1 - 20)} \\);
+    ///   for a kind without a known coefficient only `t` = \\( T_1 \\)
+    ///   has a value (`None` elsewhere).
+    /// - No data: `None`.
+    pub fn ac_resistance_at(&self, t: Temperature, kind: CableKind) -> Option<ResistancePerLength> {
         let mut pts: Vec<(f64, f64)> = self
             .ac_resistance
             .iter()
@@ -300,7 +332,16 @@ impl Electrical {
         let x = t.celsius();
         match pts.len() {
             0 => None,
-            1 => Some(ResistancePerLength::from_si(pts[0].1)),
+            1 => {
+                let (x1, y1) = pts[0];
+                if x == x1 {
+                    return Some(ResistancePerLength::from_si(y1));
+                }
+                let alpha = kind.resistance_temperature_coefficient()?;
+                Some(ResistancePerLength::from_si(
+                    y1 * (1.0 + alpha * (x - 20.0)) / (1.0 + alpha * (x1 - 20.0)),
+                ))
+            }
             n => {
                 let k = pts.partition_point(|p| p.0 < x).clamp(1, n - 1);
                 let ((x0, y0), (x1, y1)) = (pts[k - 1], pts[k]);
@@ -807,6 +848,45 @@ mod tests {
     }
 
     #[test]
+    fn single_ac_resistance_scales_with_the_material() {
+        let r = |t: f64, ohm_per_km: f64| ResistanceAt {
+            temperature: Temperature::from_celsius(t),
+            resistance: ResistancePerLength::from_ohms_per_kilometer(ohm_per_km),
+        };
+        let one = Electrical {
+            ac_resistance: vec![r(25.0, 0.07283)],
+            ..Electrical::default()
+        };
+        let at = |e: &Electrical, c: f64, kind: CableKind| {
+            e.ac_resistance_at(Temperature::from_celsius(c), kind)
+                .map(|r| r.ohms_per_kilometer())
+        };
+        // ACSR: aluminium's coefficient.
+        let expected = 0.07283 * (1.0 + 0.00403 * 55.0) / (1.0 + 0.00403 * 5.0);
+        assert!((at(&one, 75.0, CableKind::Acsr).unwrap() - expected).abs() < 1e-12);
+        assert!((at(&one, 25.0, CableKind::Acsr).unwrap() - 0.07283).abs() < 1e-12);
+        // Steel wire: steel's coefficient.
+        let steel = 0.07283 * (1.0 + 0.0045 * 55.0) / (1.0 + 0.0045 * 5.0);
+        assert!((at(&one, 75.0, CableKind::Steel).unwrap() - steel).abs() < 1e-12);
+        // OPGW: aluminium's coefficient.
+        assert!((at(&one, 75.0, CableKind::Opgw).unwrap() - expected).abs() < 1e-12);
+        // Unknown material: only the given temperature.
+        for kind in [CableKind::Other, CableKind::Adss] {
+            assert!(at(&one, 75.0, kind).is_none());
+            assert!((at(&one, 25.0, kind).unwrap() - 0.07283).abs() < 1e-12);
+        }
+        // Two values: the straight line through them, whatever the kind.
+        let two = Electrical {
+            ac_resistance: vec![r(25.0, 0.07283), r(75.0, 0.08688)],
+            ..Electrical::default()
+        };
+        for kind in [CableKind::Acsr, CableKind::Other] {
+            assert!((at(&two, 50.0, kind).unwrap() - 0.079855).abs() < 1e-12);
+            assert!((at(&two, 100.0, kind).unwrap() - 0.093905).abs() < 1e-12);
+        }
+    }
+
+    #[test]
     fn electrical_data() {
         let text = |extra: &str| {
             format!(
@@ -836,7 +916,7 @@ mod tests {
             .unwrap();
         let e = lib.get("aaac-551").unwrap().electrical.clone().unwrap();
         let at = |c: f64| {
-            e.ac_resistance_at(Temperature::from_celsius(c))
+            e.ac_resistance_at(Temperature::from_celsius(c), CableKind::Aaac)
                 .unwrap()
                 .ohms_per_kilometer()
         };

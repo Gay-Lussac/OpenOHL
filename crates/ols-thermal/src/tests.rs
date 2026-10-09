@@ -18,6 +18,7 @@ fn drake() -> Conductor {
     };
     Conductor {
         diameter: 0.02814,
+        kind: CableKind::Acsr,
         electrical: Electrical {
             ac_resistance: vec![r(25.0, 7.283e-5), r(75.0, 8.688e-5)],
             emissivity: Some(0.8),
@@ -137,6 +138,52 @@ fn wind_along_the_line_and_night_change_the_rating() {
 }
 
 #[test]
+fn wind_angles_fold_to_the_acute_angle() {
+    let (c, a) = (drake(), example_ambient());
+    let at = |m: Method, angle: f64| {
+        let w = Ambient {
+            wind_angle: angle,
+            ..a.clone()
+        };
+        ampacity(m, &c, &w, 100.0).unwrap().current
+    };
+    for m in Method::ALL {
+        // Along the line either way, across it either way.
+        for (angle, folded) in [(180.0, 0.0), (190.0, 10.0), (-10.0, 10.0), (270.0, 90.0)] {
+            close(at(m, angle), at(m, folded), 1e-9);
+        }
+        assert!(at(m, 180.0) < at(m, 90.0));
+    }
+    for (angle, folded) in [(135.0, 45.0), (-45.0, 45.0), (450.0, 90.0), (-720.0, 0.0)] {
+        assert!((acute_wind_angle(angle) - folded).abs() < 1e-9, "{angle}");
+    }
+}
+
+#[test]
+fn single_ac_resistance_scales_with_aluminium() {
+    // Drake given only at 25 °C: the resistance rises with aluminium's
+    // coefficient, close to the straight line through 25 and 75 °C.
+    let mut one = drake();
+    one.electrical.ac_resistance.truncate(1);
+    let r100 = 7.283e-5 * (1.0 + 0.00403 * 80.0) / (1.0 + 0.00403 * 5.0);
+    close(one.resistance(100.0), r100, 1e-12);
+    close(one.resistance(100.0), drake().resistance(100.0), 0.01);
+    let a = example_ambient();
+    let i_one = ampacity(Method::Ieee738, &one, &a, 100.0).unwrap().current;
+    let i_two = ampacity(Method::Ieee738, &drake(), &a, 100.0)
+        .unwrap()
+        .current;
+    close(i_one, i_two, 0.005);
+    // A cable of unknown material needs two values.
+    one.kind = CableKind::Other;
+    assert!(ampacity(Method::Ieee738, &one, &a, 100.0).is_err());
+    assert!(temperature(Method::Ieee738, &one, &a, 800.0, &default_steady_budget()).is_err());
+    let mut two = drake();
+    two.kind = CableKind::Other;
+    assert!(ampacity(Method::Ieee738, &two, &a, 100.0).is_ok());
+}
+
+#[test]
 fn transient_approaches_the_steady_state() {
     let (c, a) = (drake(), example_ambient());
     let m = Method::Ieee738;
@@ -177,6 +224,12 @@ fn library_cable_heat_capacity_and_resistance() {
     let mut bare = cable.clone();
     bare.electrical = None;
     assert!(Conductor::from_cable(&bare).is_err());
+    // One AC resistance: enough for an aluminium cable, not for `other`.
+    let mut one = cable.clone();
+    one.electrical.as_mut().unwrap().ac_resistance.truncate(1);
+    assert!(Conductor::from_cable(&one).is_ok());
+    one.kind = CableKind::Other;
+    assert!(Conductor::from_cable(&one).is_err());
 }
 
 #[test]

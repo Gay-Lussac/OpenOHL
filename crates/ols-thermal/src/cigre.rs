@@ -68,10 +68,11 @@ pub fn nusselt_90(re: f64, rs: f64) -> f64 {
     b * re.powf(n)
 }
 
-/// Factor on \\( Nu_{90} \\) for wind at `delta` degrees to the conductor.
+/// Factor on \\( Nu_{90} \\) for wind at `delta` degrees to the conductor;
+/// any angle is first folded to the acute angle to the axis
+/// ([`crate::acute_wind_angle`]): 180° is wind along the line, 270° across.
 pub fn angle_factor(delta: f64) -> f64 {
-    let delta = delta.abs().min(180.0);
-    let delta = if delta > 90.0 { 180.0 - delta } else { delta };
+    let delta = crate::acute_wind_angle(delta);
     let s = delta.to_radians().sin();
     if delta <= 24.0 {
         0.42 + 0.68 * s.powf(1.08)
@@ -166,6 +167,27 @@ mod tests {
         assert!((angle_factor(90.0) - 1.0).abs() < 1e-12);
         assert!((angle_factor(24.0) - angle_factor(24.0001)).abs() < 0.01);
         assert!((angle_factor(120.0) - angle_factor(60.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn angle_factor_folds_the_angle() {
+        // Each angle and the acute angle it folds to.
+        for (delta, folded) in [
+            (0.0, 0.0),
+            (90.0, 90.0),
+            (180.0, 0.0),
+            (270.0, 90.0),
+            (-45.0, 45.0),
+            (135.0, 45.0),
+            (450.0, 90.0),
+        ] {
+            assert!(
+                (angle_factor(delta) - angle_factor(folded)).abs() < 1e-9,
+                "{delta}°"
+            );
+        }
+        assert!((angle_factor(270.0) - 1.0).abs() < 1e-9);
+        assert!((angle_factor(180.0) - 0.42).abs() < 1e-9);
     }
 
     #[test]

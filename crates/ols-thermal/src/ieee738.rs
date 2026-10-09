@@ -27,9 +27,11 @@ pub fn air(t_film: f64, elevation: f64) -> (f64, f64, f64) {
 
 /// Wind direction factor \\( K_{angle} \\) for the angle `phi` (degrees)
 /// between the wind and the conductor axis (eq. 4a): 1 across the
-/// conductor, 0.388 along it.
+/// conductor, 0.388 along it. The formula holds for 0–90°, so any angle
+/// is first folded to the acute angle to the axis
+/// ([`crate::acute_wind_angle`]): 180° is wind along the line, 270° across.
 pub fn wind_direction_factor(phi: f64) -> f64 {
-    let p = phi.to_radians();
+    let p = crate::acute_wind_angle(phi).to_radians();
     1.194 - p.cos() + 0.194 * (2.0 * p).cos() + 0.368 * (2.0 * p).sin()
 }
 
@@ -77,6 +79,29 @@ mod tests {
     fn wind_factor_across_and_along() {
         assert!((wind_direction_factor(90.0) - 1.0).abs() < 1e-12);
         assert!((wind_direction_factor(0.0) - 0.388).abs() < 1e-12);
+    }
+
+    #[test]
+    fn wind_factor_folds_the_angle() {
+        // Each angle and the acute angle it folds to.
+        for (phi, folded) in [
+            (0.0, 0.0),
+            (90.0, 90.0),
+            (180.0, 0.0),
+            (270.0, 90.0),
+            (-45.0, 45.0),
+            (135.0, 45.0),
+            (450.0, 90.0),
+        ] {
+            let k = wind_direction_factor(phi);
+            assert!(
+                (k - wind_direction_factor(folded)).abs() < 1e-9,
+                "{phi}°: {k}"
+            );
+            assert!((0.388 - 1e-3..=1.0 + 1e-3).contains(&k), "{phi}°: {k}");
+        }
+        assert!((wind_direction_factor(180.0) - 0.388).abs() < 1e-3);
+        assert!((wind_direction_factor(270.0) - 1.0).abs() < 1e-3);
     }
 
     #[test]

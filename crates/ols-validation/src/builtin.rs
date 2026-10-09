@@ -704,7 +704,8 @@ impl Calculation for ThermalSteady {
 
     fn description(&self) -> &'static str {
         "Steady-state thermal rating (inputs: method, diameter, ac_resistance [{temperature, \
-         resistance}], emissivity, absorptivity, optional roughness, ambient = one .olsta case, \
+         resistance}], optional kind (cable kind, default acsr: scales a single resistance), \
+         emissivity, absorptivity, optional roughness, ambient = one .olsta case, \
          and max_temperature or current A; outputs: current_a, temperature_c, heat terms W/m, \
          solar_altitude_deg, solar_azimuth_deg)"
     }
@@ -718,8 +719,16 @@ impl Calculation for ThermalSteady {
             .clone()
             .try_into()
             .map_err(|e| format!("input \"ac_resistance\": {e}"))?;
+        let kind: ols_cables::CableKind = match inputs.get("kind") {
+            Some(v) => v
+                .clone()
+                .try_into()
+                .map_err(|e| format!("input \"kind\": {e}"))?,
+            None => ols_cables::CableKind::Acsr,
+        };
         let conductor = Conductor {
             diameter: quantity_input::<Length>(inputs, "diameter")?.si(),
+            kind,
             electrical: ols_cables::Electrical {
                 ac_resistance,
                 emissivity: Some(float_input(inputs, "emissivity")?),
