@@ -45,7 +45,8 @@ name = "summer noon"
 description = "hot, sunny, light wind across the line"
 air_temperature = "35 °C"
 wind_speed = "0.6 m/s"
-wind_angle = "90 °"       # between wind and conductor: 90 ° across (default)
+wind_angle = "90 °"       # between wind and conductor: 90 ° across (default);
+                          # any angle, folded to 0–90° (180 ° = along the line)
 elevation = "500 m"       # of the conductor above sea level (default 0)
 latitude = "47 °"         # north positive
 date = "2023-07-15"       # or day_of_year = 196

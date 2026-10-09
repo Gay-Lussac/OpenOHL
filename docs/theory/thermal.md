@@ -16,6 +16,15 @@ Per unit length of conductor, with a uniform conductor temperature
   the wire library's `[cable.electrical] ac_resistance`: linear between the
   two nearest temperatures given, extrapolated on the same line beyond them
   (IEEE 738 clause 4.4.4; skin and magnetic effects are in the AC values).
+  A single value \\( R(T_1) \\) is scaled with the temperature coefficient
+  \\( \alpha_{20} \\) of the cable's current-carrying material,
+  \\( R(T) = R(T_1)\,(1 + \alpha_{20}(T - 20))/(1 + \alpha_{20}(T_1 - 20)) \\):
+  0.00403 /K for aluminium and its alloys (AAC, AAAC, ACSR, ACSS, ACAR,
+  ACCC, and OPGW, whose outer wires are aluminium alloy or aluminium-clad),
+  0.0045 /K for steel wire. A cable of kind `other` or `adss` has no known
+  coefficient and needs two temperatures. Holding a single value constant
+  instead would understate the hot resistance by about a fifth for an
+  aluminium conductor rated at 100 °C, and overstate the ampacity.
 - **Solar heating** \\( P_S \\) (below).
 - **Convective cooling** \\( P_C \\): forced by the wind, or natural in still
   air — the larger governs.
@@ -58,7 +67,10 @@ forms (eqs. 3a, 3b),
 with \\( N_{Re} = D\rho_f V_w/\mu_f \\) and the wind direction factor
 \\( K_{angle} = 1.194 - \cos\varphi + 0.194\cos 2\varphi + 0.368\sin 2\varphi \\)
 for the angle φ between wind and conductor axis (eq. 4a; 1 across, 0.388
-along). **Natural convection** \\( q_{cn} = 3.645\\,\rho_f^{0.5} D^{0.75}
+along). The formula is meant for 0–90°, so any angle given (negative, or
+beyond 90° or 360°) is first folded to the acute angle between the wind and
+the axis, \\( \varphi' = \arccos|\cos\varphi| \\): 180° is wind along the line,
+270° across it. The CIGRE angle factor below uses the same folded angle. **Natural convection** \\( q_{cn} = 3.645\\,\rho_f^{0.5} D^{0.75}
 (T - T_a)^{1.25} \\) (eq. 5a). The largest of the three is used.
 
 **Solar heating** \\( q_s = \alpha\\,Q_{se}\\,\sin\theta\\,D \\) (eq. 8): the

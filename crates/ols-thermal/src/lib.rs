@@ -9,7 +9,8 @@
 //! \\[ m c_p \frac{dT}{dt} = P_J + P_S - P_C - P_R, \qquad P_J = I^2 R_{ac}(T), \\]
 //!
 //! with Joule heating \\( P_J \\) (AC resistance of the wire library,
-//! linear in temperature), solar heating \\( P_S \\), convective cooling
+//! linear in temperature: through two given values, or one value scaled
+//! with the material's temperature coefficient), solar heating \\( P_S \\), convective cooling
 //! \\( P_C \\) (forced, low-wind or natural) and radiative cooling
 //! \\( P_R \\), by one of three [`Method`]s:
 //!
@@ -161,6 +162,13 @@ impl From<Stop> for ThermalError {
     }
 }
 
+/// The acute angle, 0–90°, between the conductor axis and wind blowing at
+/// `angle` degrees to it: wind along the axis either way (0°, 180°, 360°)
+/// gives 0°, across it either way (90°, 270°, −90°) gives 90°.
+pub fn acute_wind_angle(angle: f64) -> f64 {
+    angle.to_radians().cos().abs().min(1.0).acos().to_degrees()
+}
+
 /// Thermal data of a conductor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conductor {
@@ -168,6 +176,9 @@ pub struct Conductor {
     pub diameter: f64,
     /// AC resistance by temperature (and the rest of the electrical data).
     pub electrical: Electrical,
+    /// Kind of cable: its material gives the temperature coefficient that
+    /// scales a single AC resistance value to other temperatures.
+    pub kind: CableKind,
     /// Heat capacity of each material, J/(m·K) at 20 °C, and its
     /// temperature coefficient, 1/K.
     pub heat_capacity: Vec<(f64, f64)>,
@@ -187,7 +198,8 @@ const COMPOSITE: (f64, f64, f64) = (1000.0, 0.0, 1900.0);
 
 impl Conductor {
     /// The thermal data of a library cable: it needs `[cable.electrical]`
-    /// with at least one AC resistance. The heat capacity is estimated from
+    /// with at least one AC resistance (two or more for a kind whose
+    /// material is unknown, see [`Conductor::check_resistance`]). The heat capacity is estimated from
     /// the components: aluminium outer wires (steel for steel wire), a
     /// steel core (composite for ACCC), the cable's mass shared between
     /// them by area × density.
@@ -202,6 +214,8 @@ impl Conductor {
                     cable.id
                 ))
             })?;
+        Self::check_resistance_of(&electrical, cable.kind)
+            .map_err(|m| ThermalError::Invalid(format!("cable {}: {m}", cable.id)))?;
         let outer = match cable.kind {
             CableKind::Steel => STEEL,
             _ => ALUMINIUM,
@@ -219,6 +233,7 @@ impl Conductor {
         Ok(Self {
             diameter: cable.diameter.si(),
             electrical,
+            kind: cable.kind,
             heat_capacity: parts
                 .into_iter()
                 .map(|(m, (c, beta, _))| (m * scale * c, beta))
@@ -227,10 +242,29 @@ impl Conductor {
         })
     }
 
-    /// AC resistance at `t` °C, Ω/m.
+    /// Whether the AC resistance is known at every temperature: at least
+    /// one value, and two or more unless the kind's material has a known
+    /// temperature coefficient (one value is then scaled with it).
+    pub fn check_resistance(&self) -> Result<(), ThermalError> {
+        Self::check_resistance_of(&self.electrical, self.kind).map_err(ThermalError::Invalid)
+    }
+
+    fn check_resistance_of(e: &Electrical, kind: CableKind) -> Result<(), String> {
+        match e.ac_resistance.len() {
+            0 => Err("no AC resistance".into()),
+            1 if kind.resistance_temperature_coefficient().is_none() => Err(format!(
+                "one AC resistance value cannot be scaled to other temperatures for a \
+                 cable of kind \"{}\" (unknown material): give it at two temperatures",
+                format!("{kind:?}").to_lowercase()
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// AC resistance at `t` °C, Ω/m (see [`Electrical::ac_resistance_at`]).
     pub fn resistance(&self, t: f64) -> f64 {
         self.electrical
-            .ac_resistance_at(Temperature::from_celsius(t))
+            .ac_resistance_at(Temperature::from_celsius(t), self.kind)
             .map_or(0.0, |r| r.si())
     }
 
@@ -401,6 +435,7 @@ pub fn ampacity(
     a: &Ambient,
     max_temperature: f64,
 ) -> Result<HeatBalance, ThermalError> {
+    c.check_resistance()?;
     if max_temperature <= a.air_temperature {
         return Err(ThermalError::Invalid(format!(
             "maximum temperature {max_temperature} °C is not above the air ({} °C)",
@@ -445,6 +480,7 @@ pub fn temperature(
     current: f64,
     budget: &Budget,
 ) -> Result<HeatBalance, ThermalError> {
+    c.check_resistance()?;
     if !(current.is_finite() && current >= 0.0) {
         return Err(ThermalError::Invalid(format!(
             "current {current} A must be ≥ 0"
@@ -497,6 +533,7 @@ pub fn transient(
     duration: f64,
     step: f64,
 ) -> Result<Vec<(f64, f64)>, ThermalError> {
+    c.check_resistance()?;
     if !(step > 0.0 && duration >= 0.0 && duration.is_finite()) {
         return Err(ThermalError::Invalid(
             "time step must be > 0 and duration ≥ 0".into(),

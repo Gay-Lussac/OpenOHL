@@ -162,7 +162,7 @@ solar_absorptivity = 0.5
 
 | Field | Type / units | Notes |
 |---|---|---|
-| `ac_resistance` | list of `{ temperature, resistance }` | Resistance per length: `Ω/m`, `Ω/km`, `Ω/mi`, `Ω/kft` (or `ohm/…`). Linear between the temperatures given, and beyond them along the same line. |
+| `ac_resistance` | list of `{ temperature, resistance }` | Resistance per length: `Ω/m`, `Ω/km`, `Ω/mi`, `Ω/kft` (or `ohm/…`). Linear between the temperatures given, and beyond them along the same line. Give two temperatures (e.g. 25 °C and 75 °C) for exact data; a single value is scaled to other temperatures with the temperature coefficient of the cable's material (aluminium 0.00403 /K for the aluminium kinds and OPGW, steel 0.0045 /K); kinds `other` and `adss` need two. |
 | `dc_resistance` | `{ temperature, resistance }` | |
 | `geometric_mean_radius` | length | For inductance; at most the cable's radius. |
 | `emissivity`, `solar_absorptivity` | number 0–1 | Surface coefficients for [thermal rating](thermal.md) (0.8 when not given). |

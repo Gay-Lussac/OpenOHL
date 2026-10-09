@@ -14,7 +14,8 @@
 //! name = "summer noon"
 //! air_temperature = "40 °C"
 //! wind_speed = "0.61 m/s"
-//! wind_angle = "90 °"        # between wind and conductor (default 90 °)
+//! wind_angle = "90 °"        # between wind and conductor (default 90 °;
+//!                            # any angle, folded to 0–90°: 180° = along)
 //! elevation = "0 m"          # default 0 m
 //! # The sun from a date and time …
 //! latitude = "30 °"          # north positive
@@ -243,6 +244,9 @@ impl CaseFile {
         if self.wind_speed.si() < 0.0 || !self.wind_speed.si().is_finite() {
             return Err("wind_speed must be ≥ 0".into());
         }
+        if self.wind_angle.is_some_and(|a| !a.degrees().is_finite()) {
+            return Err("wind_angle must be a finite angle".into());
+        }
         if self
             .clearness_ratio
             .is_some_and(|c| !(0.0..=1.5).contains(&c))
@@ -431,6 +435,19 @@ mod tests {
         assert_eq!(night.emissivity, Some(0.5));
         assert_eq!(set.select(&["N*".into()]).unwrap().len(), 2);
         assert!(set.select(&["dusk".into()]).is_err());
+    }
+
+    #[test]
+    fn wind_angle_any_finite_value() {
+        let with = |angle: &str| {
+            AmbientCases::parse(&EXAMPLE.replace("2 ft/s", "0.61 m/s").replace("45 °", angle))
+        };
+        let night = |angle: &str| with(angle).unwrap().cases[1].wind_angle;
+        assert!((night("270 °") - 270.0).abs() < 1e-9);
+        assert!((night("-45 °") + 45.0).abs() < 1e-9);
+        for bad in ["inf °", "NaN °", "-inf °"] {
+            assert!(with(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]
