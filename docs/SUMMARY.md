@@ -32,6 +32,7 @@
 - [Conventions and units](theory/conventions.md)
 - [Sag-tension](theory/sagtension.md)
 - [Finite-element wire systems](theory/wirefe.md)
+- [Jumpers](theory/jumpers.md)
 - [Thermal rating](theory/thermal.md)
 - [Optimum structure spotting](theory/spotting.md)
 - [Structure analysis: frames, trusses, guys and poles](theory/structures-fe.md)
