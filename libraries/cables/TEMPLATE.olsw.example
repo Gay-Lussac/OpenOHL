@@ -26,6 +26,7 @@ rated_tensile_strength = "138.8 kN"         # REQUIRED RTS / RBS / UTS
 area = "402.8 mm²"                          # REQUIRED area of this component only
 modulus = "55 GPa"                          # REQUIRED final (elastic) modulus
 thermal_expansion = 23.0e-6                 # REQUIRED, plain number in 1/K
+strands = 26                                # optional: number of wires (jumpers' slipped bending stiffness)
 
 # Optional non-linear behaviour of the outer component.
 # Stress = a0 + a1·ε + a2·ε² + … (any number of coefficients, ≥ 2).
@@ -45,6 +46,7 @@ reference_temperature = "20 °C"             # optional: temperature of the curv
 area = "65.6 mm²"
 modulus = "190 GPa"
 thermal_expansion = 11.5e-6
+strands = 7
 
 [cable.core.stress_strain]                  # optional, same fields as above
 stress_unit = "MPa"

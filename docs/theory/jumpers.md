@@ -5,7 +5,7 @@ Implemented in `crates/ols-line` (`jumper.rs`, `rod.rs`). A jumper is a short sl
 A jumper's pull, tens to a few hundred newtons, is negligible next to a section's tension, so **sections are solved first** and each jumper is then solved on its own between the sections' solved clamps. The steps, in every weather case:
 
 1. **Ends.** Each end is the solved clamp of the section through that attachment, so the jumper follows strain assemblies as they settle and suspension clamps as they swing. If no section uses the attachment, the end is the attachment's wire point.
-2. **Length.** The jumper's unstressed length at its temperature \\( t_0 \\) is the given `length`, or is **cut** from the given `sag` (below). In a case at temperature \\( t \\) it is \\( L_0 = L_{cut}\, e^{\alpha (t - t_0)} \\), with the cable's thermal expansion \\( \alpha \\). The jumper therefore lengthens when hot and shortens when cold, and its sag follows the weather like a wire's.
+2. **Length.** The jumper's unstressed length at its temperature \\( t_0 \\) is the given `length`, or is **cut** from the given `sag` (below). In a case at temperature \\( t \\) it is \\( L_0 = L_{cut}\\, e^{\alpha (t - t_0)} \\), with the cable's thermal expansion \\( \alpha \\). The jumper therefore lengthens when hot and shortens when cold, and its sag follows the weather like a wire's.
 3. **Load.** The case's weight, ice and wind per metre. The wind is horizontal and perpendicular to the jumper's chord, on the iced diameter. In a bundle, each subconductor carries its own load and a share of the support string's weight.
 4. **Shape.** Solved with one of the two models below.
 
@@ -20,7 +20,7 @@ Where an end is the first or last point of a section, the clamp holds the jumper
 The model is an **inextensible elastic rod**:
 
 - **Pieces.** \\( n \\) straight pieces of equal length \\( \ell \approx 0.12 \\) m, with \\( 16 \le n \le 40 \\). The unknowns are the pieces' unit directions \\( d_0 \dots d_{n-1} \\). Node \\( m \\) is at \\( A + \ell \sum_{i<m} d_i \\).
-- **Energy.** The load's potential, plus a bending term \\( c\,(1 - d_i \cdot d_{i+1}) \\) at every inner node and \\( 2c\,(1 - d \cdot e) \\) at a clamped end (\\( e \\): the direction the clamp holds), with \\( c = EI/\ell \\).
+- **Energy.** The load's potential, plus a bending term \\( c\\,(1 - d_i \cdot d_{i+1}) \\) at every inner node and \\( 2c\\,(1 - d \cdot e) \\) at a clamped end (\\( e \\): the direction the clamp holds), with \\( c = EI/\ell \\).
 - **Constraints.** The far end is at \\( B \\): \\( \ell \sum d_i = B - A \\). A taut support string keeps its node at the string's length from its top.
 - **Solution.** Newton's method on the stationarity of the Lagrangian. Each direction is rotated within its normal plane, so the pieces keep their exact length and short stiff pieces never stretch artificially. Levenberg–Marquardt damping and a backtracking line search keep the steps safe.
   - **Start:** the hinged catenary under the same load.
@@ -30,7 +30,25 @@ The model is an **inextensible elastic rod**:
 - **Exit clauses.** 150 iterations and 60 s per solve. The error states the residual as a multiple of the tolerance.
 - **Stretch.** The cable's stretch is left out, because it is ~10⁻⁶ at a jumper's tension.
 
-**Default \\( EI \\).** Without a `bending_stiffness`, \\( EI \\) is estimated from the cable as \\( EA\,(D/6)^2/16 \\). This assumes the strands bend each on its own, with a strand diameter of \\( D/6 \\). For Drake 26/7 it gives ~48 N·m².
+**Default \\( EI \\).** Without a `bending_stiffness`, \\( EI \\) is estimated from the cable between two limits:
+
+- **Strands locked together** (a solid bar): \\( EI_{max} = E\\,\pi d^4/64 \\), with the composite modulus \\( E = \sum E_i A_i / \sum A_i \\) and the overall diameter \\( d \\).
+- **Strands slipping**, each bending on its own: \\( EI_{min} = \sum_i n_i E_i\\,\pi d_i^4/64 \\) over the components, with \\( n_i \\) strands of diameter \\( d_i = \sqrt{4A_i/(\pi n_i)} \\). This needs the strand counts (`strands` in the [wire library](../user-guide/wire-library.md)).
+
+A clamped jumper is nearly locked close to its clamps, where the hardware squeezes it, and nearly slipped in the middle of its loop. One uniform stiffness stands for both:
+
+\\[ EI = \max\left(k \cdot EI_{max},\\; EI_{min}\right) \\]
+
+The **reduction factor** \\( k \\) is the jumper's `stiffness_factor`, default 0.2; the usual range is 0.2–0.35. It is the only input the jumper's design needs. The lower it is, the further the jumper swings, so 0.2 is the conservative side for clearances to the structure. The floor \\( EI_{min} \\) applies only when the strand counts are given.
+
+For Drake 26/7 (composite \\( E \\approx 73.9 \\) GPa, \\( d = 28.14 \\) mm, 26 × 4.44 mm aluminium and 7 × 3.46 mm steel):
+
+| | \\( EI \\), N·m² |
+|---|---|
+| \\( EI_{max} \\) | 2 275 |
+| \\( 0.35\\, EI_{max} \\) | 796 |
+| \\( 0.2\\, EI_{max} \\) (default) | 455 |
+| \\( EI_{min} \\) | 37 |
 
 ## Cutting a jumper given by its sag
 
@@ -70,7 +88,8 @@ Physical values for typical high-voltage jumpers (indications to check a model a
 | Length | 3–15 m | longer on wide dead-end crossarms and taps |
 | Sag in still air | 0.5–3 m | clearance to the structure usually decides it |
 | Tension | 50–1 000 N | tens of newtons for a short light jumper, hundreds with ice or wind |
-| \\( EI \\) (estimated) | 2–200 N·m² | grows with \\( EA\,D^2 \\): ~2 for a 100 mm² wire, ~48 for Drake 26/7, ~150 for a 40 mm conductor |
+| \\( EI \\) (estimated, \\( k = 0.2 \\)) | 15–1 500 N·m² | grows with \\( E d^4 \\): ~17 for a 13 mm wire, ~455 for Drake 26/7 (28 mm), ~1 500 for a 40 mm conductor |
+| Reduction factor \\( k \\) | 0.2–0.35 | default 0.2 |
 | Clamp exit angle | 0–45° below the conductor's axis | default 30°; 0: straight on |
 | Change of sag between −20 °C and 80 °C | a few cm to a few dm | the length changes by \\( \alpha \Delta t \approx 2 \cdot 10^{-3} \\); the clamps move too, so the sag below the chord can even shrink when hot |
 

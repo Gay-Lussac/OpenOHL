@@ -2830,8 +2830,13 @@ fn tables_show_defaults_and_leave_them_unset() {
         let row = rows.iter().find(|x| x.key == j.id).unwrap();
         let c = |name| TableKind::Jumpers.column(name);
         let cable = r.model.library.get(&j.cable).unwrap();
-        let ei = ols_line::jumper::estimated_bending_stiffness(cable);
+        let ei = ols_line::jumper::estimated_bending_stiffness(
+            cable,
+            ols_line::jumper::DEFAULT_STIFFNESS_FACTOR,
+        );
         assert_eq!(row.cells[c("EI N·m²")], format!("{ei:.1}"));
+        assert_eq!(row.cells[c("EI factor")], "0.20");
+        assert!(row.defaulted[c("EI factor")]);
         assert_eq!(row.cells[c("angle from °")], "30.0");
         assert_eq!(row.cells[c("bundle")], "1");
         assert!(row.defaulted[c("EI N·m²")] && row.defaulted[c("angle to °")]);

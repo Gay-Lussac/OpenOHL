@@ -238,7 +238,13 @@ const JUMPERS: &[Column] = &[
         "EI N·m²",
         70.0,
         Yes,
-        "bending stiffness (empty: estimated from the cable; 0: hinged ends)",
+        "bending stiffness (empty: estimated from the cable with the factor; 0: hinged ends)",
+    ),
+    (
+        "EI factor",
+        65.0,
+        Yes,
+        "estimated EI: this share of the cable's solid-bar stiffness, 0–1 (empty: 0.2)",
     ),
     (
         "angle from °",
@@ -594,12 +600,13 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
                     set(
                         row,
                         9,
-                        f(ols_line::jumper::estimated_bending_stiffness(c), 1),
+                        f(ols_line::jumper::jumper_bending_stiffness(j, c), 1),
                     );
                 }
+                set(row, 10, f(ols_line::jumper::DEFAULT_STIFFNESS_FACTOR, 2));
                 let angle = f(ols_line::jumper::DEFAULT_TERMINAL_ANGLE_DEG, 1);
-                set(row, 10, angle.clone());
-                set(row, 11, angle);
+                set(row, 11, angle.clone());
+                set(row, 12, angle);
             }
         }
         TableKind::WeatherCases => {
@@ -851,6 +858,7 @@ impl TableKind {
                         j.bundle.map_or(String::new(), |v| v.to_string()),
                         j.bundle_spacing.map_or(String::new(), |v| f(v, 3)),
                         j.bending_stiffness.map_or(String::new(), |v| f(v, 1)),
+                        j.stiffness_factor.map_or(String::new(), |v| f(v, 2)),
                         j.angle_from_deg.map_or(String::new(), |v| f(v, 1)),
                         j.angle_to_deg.map_or(String::new(), |v| f(v, 1)),
                     ],
@@ -1896,8 +1904,9 @@ fn jumper_cells(
     j.bundle = opt_num(&c.get(7), &format!("{name} bundle"))?.map(|v| v as u32);
     j.bundle_spacing = opt_num(&c.get(8), &format!("{name} spacing"))?;
     j.bending_stiffness = opt_num(&c.get(9), &format!("{name} EI"))?;
-    j.angle_from_deg = opt_num(&c.get(10), &format!("{name} angle from"))?;
-    j.angle_to_deg = opt_num(&c.get(11), &format!("{name} angle to"))?;
+    j.stiffness_factor = opt_num(&c.get(10), &format!("{name} EI factor"))?;
+    j.angle_from_deg = opt_num(&c.get(11), &format!("{name} angle from"))?;
+    j.angle_to_deg = opt_num(&c.get(12), &format!("{name} angle to"))?;
     Ok(())
 }
 

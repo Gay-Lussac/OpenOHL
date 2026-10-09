@@ -165,7 +165,8 @@ A jumper is a slack cable joining two attachment points: the ends of two section
 | `sag` | one of | Or the largest vertical distance below the end-to-end chord, m, in still air at `temperature`; the cut length is found from it (jumpers without support). |
 | `temperature` | no (15) | Temperature of `length` / `sag`, °C. |
 | `support` | no | Jumper support string: `{ "point": [x,y,z], "length": m, "weight": N, "fraction": 0–1 }` — a tension-only string from `point` holding the jumper at `fraction` of its length from `from` (default 0.5). Needs `length`. |
-| `bending_stiffness` | no | Bending stiffness EI of the cable, N·m²: where an end is a section's end clamp, the jumper leaves it in a set direction and bends away from it (below). Default: estimated from the cable, \\( EA\\,(D/6)^2/16 \\) (its wires bending each on its own, wire diameter D/6; Drake 26/7: ~48 N·m²). `0`: hinged ends. |
+| `bending_stiffness` | no | Bending stiffness EI of the cable, N·m²: where an end is a section's end clamp, the jumper leaves it in a set direction and bends away from it (below). Default: estimated from the cable, `stiffness_factor` × its stiffness as a solid bar \\( E\\,\\pi d^4/64 \\) (composite modulus E, diameter d), not below its strands slipping (when the wire library gives the strand counts); Drake 26/7: ~455 N·m². `0`: hinged ends. |
+| `stiffness_factor` | no (0.2) | The estimated EI as a share of the solid bar's, above 0 and at most 1: the jumper's uniform effective stiffness (0.2–0.35 is the usual range; the lower, the further it swings). Unused when `bending_stiffness` is given. |
 | `angle_from_deg`, `angle_to_deg` | no (30) | Angle at which the jumper leaves the clamp at `from` / `to`, below the conductor's axis, degrees (0: straight on along the conductor; negative: upwards). Only where that end is a section's end clamp. |
 | `color` | no | Display colour; default: the colour of the section through `from`. |
 

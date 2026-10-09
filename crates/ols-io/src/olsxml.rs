@@ -283,6 +283,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         temperature,
         support,
         bending_stiffness,
+        stiffness_factor,
         angle_from_deg,
         angle_to_deg,
         color,
@@ -297,6 +298,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
     opt_num(out, "sag", *sag);
     attr(out, "temperature", &num(*temperature));
     opt_num(out, "bending_stiffness", *bending_stiffness);
+    opt_num(out, "stiffness_factor", *stiffness_factor);
     opt_num(out, "angle_from_deg", *angle_from_deg);
     opt_num(out, "angle_to_deg", *angle_to_deg);
     opt_text(out, "color", color.as_deref());
@@ -718,6 +720,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             "sag",
             "temperature",
             "bending_stiffness",
+            "stiffness_factor",
             "angle_from_deg",
             "angle_to_deg",
             "color",
@@ -749,6 +752,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         temperature: optional(e, "temperature")?.unwrap_or(15.0),
         support,
         bending_stiffness: optional(e, "bending_stiffness")?,
+        stiffness_factor: optional(e, "stiffness_factor")?,
         angle_from_deg: optional(e, "angle_from_deg")?,
         angle_to_deg: optional(e, "angle_to_deg")?,
         color: owned(e, "color"),

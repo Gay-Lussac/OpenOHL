@@ -18,8 +18,8 @@ source = "Typical published values for ASTM B232 795 kcmil 26/7 ACSR; moduli and
 diameter = "1.108 in"
 mass_per_length = "1.094 lbm/ft"
 rated_tensile_strength = "31200 lbf"
-outer = { area = "0.6245 in²", modulus = "55 GPa", thermal_expansion = 23.0e-6 }
-core = { area = "0.1017 in²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }
+outer = { area = "0.6245 in²", modulus = "55 GPa", thermal_expansion = 23.0e-6, strands = 26 }
+core = { area = "0.1017 in²", modulus = "190 GPa", thermal_expansion = 11.5e-6, strands = 7 }
 
 # Electrical and thermal data for ratings: the AC resistances, emissivity and
 # absorptivity of the IEEE Std 738 worked example for Drake, and typical DC

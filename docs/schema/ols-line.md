@@ -51,7 +51,7 @@ The names are those of the line file:
            <lengths>300.1 299.9 …</lengths><stringing kind="sag" …/></stringing> -->
     <load span="1" fraction="0.5" vertical="55" label="marker ball"/>
   </section>
-  <jumper id="…" cable="…" length="…" sag="…" temperature="15" bending_stiffness="…"
+  <jumper id="…" cable="…" length="…" sag="…" temperature="15" bending_stiffness="…" stiffness_factor="…"
           angle_from_deg="…" angle_to_deg="…" color="…" bundle="…" bundle_spacing="…"
           bundle_rotation_deg="…">
     <from structure="T3" set="2" phase="1"/>

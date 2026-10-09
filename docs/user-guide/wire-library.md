@@ -71,6 +71,7 @@ Virtual stress = actual stress × Ao / At (Ao the outer strands' area, At the to
 | `modulus` | yes | stress: `Pa`, `kPa`, `MPa`, `N/mm²`, `GPa`, `psi`, `ksi`, `psf` | Final (elastic) modulus; used by the linear model and when there are no curves. |
 | `thermal_expansion` | yes | plain number, 1/K | e.g. `23.0e-6` (aluminium), `11.5e-6` (steel). |
 | `stress_strain` | no | table, see below | Non-linear curves. Without it the component is linear. |
+| `strands` | no | whole number ≥ 1 | Number of wires of this component, e.g. 26 and 7 for a 26/7 ACSR; their diameter follows from the area. Gives the cable's bending stiffness with its strands slipping, the least a jumper's estimated stiffness can be (see [Jumpers](../theory/jumpers.md)). Give it for every component or none. |
 
 The cable's composite stiffness and expansion are computed from the components (\\( EA = \sum E_k A_k \\), \\( \alpha = \sum E_k A_k \alpha_k / EA \\)); do not enter composite values.
 
