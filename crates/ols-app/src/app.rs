@@ -908,6 +908,16 @@ impl TabViewer for Viewer<'_> {
         true
     }
 
+    /// Library pages scroll inside their own panels (the list, the
+    /// editor): the dock's scroll area around them moved those panels out
+    /// of the tab when scrolled sideways.
+    fn scroll_bars(&self, tab: &Tab) -> [bool; 2] {
+        match tab {
+            Tab::Library(_) => [false, false],
+            _ => [true, true],
+        }
+    }
+
     fn on_close(&mut self, tab: &mut Tab) -> egui_dock::tab_viewer::OnCloseResponse {
         // A library page with unsaved changes stays open.
         if let Tab::Library(k) = tab
@@ -3722,7 +3732,6 @@ fn menus(
                 }
             }
         });
-        item(ui, Command::DisplayCases, out);
         ui.separator();
         if ui.button("Customize the quick bar…").clicked() {
             *customize = true;
@@ -3881,7 +3890,6 @@ fn menus(
         item(ui, Command::Table(TableKind::Jumpers), out);
         item(ui, Command::Table(TableKind::Systems), out);
         ui.separator();
-        item(ui, Command::DisplayCases, out);
         crate::menu::options_menu(ui, "Display options", |ui| {
             ui.label(
                 egui::RichText::new("Written next to the wires, in each view (yours only)")
