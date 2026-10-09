@@ -362,15 +362,14 @@ fn review_and_protected_branch() {
     let (_, mut s) = with_branch("review");
     s.protect_branch("ana", "main", true).unwrap();
     assert!(s.protect_branch("ben", "main", false).is_err());
-    // Designers do not commit to a protected branch.
-    shift(&mut s, "ben", "T2", 1.0).unwrap();
+    // Designers neither change nor commit a protected branch.
     assert!(
-        s.commit("ben", "direct")
+        shift(&mut s, "ben", "T2", 1.0)
             .unwrap_err()
             .to_string()
             .contains("protected")
     );
-    s.undo("ben").unwrap();
+    assert!(s.commit("ben", "direct").is_err());
     s.checkout("ben", "alt").unwrap();
     shift(&mut s, "ben", "T6", 1.0).unwrap();
     s.commit("ben", "T6 for the road").unwrap();

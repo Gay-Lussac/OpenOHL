@@ -328,6 +328,13 @@ impl Session {
         &self.current
     }
 
+    /// Refuses `user` changing the line worked on when it is protected
+    /// (an admin only; its changes otherwise come through approved reviews).
+    pub(crate) fn check_line_write(&self, user: &str) -> Result<(), SessionError> {
+        let line = self.current.clone();
+        self.check_branch_write(user, &line, false)
+    }
+
     /// Whether `name` is a project line.
     pub fn is_line(&self, name: &str) -> bool {
         self.current == name || self.others.contains_key(name)
@@ -434,6 +441,11 @@ impl Session {
             return Ok(());
         }
         self.require(user, Role::Designer)?;
+        if r.protected {
+            return Err(refused(format!(
+                "project line \"{name}\" is protected: only an admin deletes, renames or describes it"
+            )));
+        }
         if name == MAIN {
             return Err(refused(
                 "only an admin deletes, renames or describes the main line",
@@ -596,6 +608,14 @@ impl Session {
         if !self.has_line() || self.status()?.changes.is_empty() {
             return Ok(());
         }
+        // A protected line's changes become a revision by an admin (or
+        // through an approved review), not as a side effect for anyone.
+        self.check_line_write(user).map_err(|_| {
+            refused(format!(
+                "project line \"{}\" is protected and has changes not committed: an admin commits them first",
+                self.current
+            ))
+        })?;
         let parent = self.branch_revision(&self.current.clone())?;
         let state = self.working_state()?;
         let branch = self.current.clone();
