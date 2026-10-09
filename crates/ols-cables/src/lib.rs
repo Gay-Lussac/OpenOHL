@@ -704,6 +704,27 @@ mod tests {
         assert!(c.validate().is_err());
     }
 
+    /// A local wire library (`OLS_WIRE_DIR`) read, each cable's bending
+    /// stiffness limits printed (local checks only).
+    #[test]
+    #[ignore = "local data"]
+    fn local_library_bending_stiffness() {
+        let Ok(dir) = std::env::var("OLS_WIRE_DIR") else {
+            return;
+        };
+        let library = Library::load(Path::new(&dir)).unwrap();
+        for c in library.cables.values() {
+            println!(
+                "{}: EI_max {:.0} N·m², 0.2× {:.0}, EI_min {}",
+                c.id,
+                c.bending_stiffness_max(),
+                0.2 * c.bending_stiffness_max(),
+                c.bending_stiffness_min()
+                    .map_or("—".into(), |m| format!("{m:.1} N·m²"))
+            );
+        }
+    }
+
     #[test]
     fn electrical_data() {
         let text = |extra: &str| {
