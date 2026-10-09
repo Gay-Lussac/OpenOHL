@@ -2251,6 +2251,15 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
     let one = strings(&mut harness);
     // No weather button on the quick bar any more: the Criteria menu.
     assert!(harness.query_by_label_contains("Weather: ").is_none());
+    // Only in the Criteria menu.
+    for menu in ["Sections", "View"] {
+        harness.get_by_label(menu).click();
+        harness.run();
+        assert!(
+            harness.query_by_label("Display weather cases…").is_none(),
+            "{menu}"
+        );
+    }
     harness.get_by_label("Criteria").click();
     harness.run();
     harness
@@ -6732,5 +6741,127 @@ fn local_resolve_timing() {
             "spacing {spaced}: update {t_update:.1?} = shapes {t_shapes:.1?}, jumpers {t_jumpers:.1?}, bundles {t_bundles:.1?}, rest; mirror {}",
             solved.mirror.is_some()
         );
+    }
+}
+
+#[test]
+#[ignore = "writes images of the wire library page scrolled right to OLS_SHOTS (a look by eye)"]
+fn wire_library_scrolled_right_image() {
+    let Ok(dir) = std::env::var("OLS_SHOTS") else {
+        return;
+    };
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1000.0, 700.0))
+        .build_eframe(|_| App::with_model(synthetic(), None));
+    harness.run();
+    harness.state_mut().ready().unwrap().open_page = Some((
+        crate::app::Tab::Library(crate::library::LibraryKind::Cables),
+        None,
+    ));
+    harness.run();
+    harness.run();
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/wires-0.png"))
+        .unwrap();
+    let at = harness
+        .get_by_label("Bimetallic conductor (outer strands and a core)")
+        .rect()
+        .center();
+    for _ in 0..6 {
+        harness
+            .input_mut()
+            .events
+            .push(egui::Event::PointerMoved(at));
+        harness.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(-300.0, 0.0),
+            modifiers: egui::Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+        });
+        harness.run_steps(3);
+    }
+    harness
+        .render()
+        .unwrap()
+        .save(format!("{dir}/wires-1.png"))
+        .unwrap();
+}
+
+/// The jumpers failing in a local project's first cases (`OLS_PROJECT`):
+/// how each is defined, its bundle, its clamps' distance in each case.
+#[test]
+#[ignore = "local data"]
+fn local_jumper_failures() {
+    let Ok(file) = std::env::var("OLS_PROJECT") else {
+        return;
+    };
+    let model = model::load(
+        Sources {
+            file: file.into(),
+            point_budget: 1000,
+            corridor: 60.0,
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    let line = &model.line;
+    let lib = &model.library;
+    let mut failed = std::collections::BTreeSet::new();
+    let mut chords: std::collections::BTreeMap<String, Vec<(String, f64, String)>> =
+        Default::default();
+    for c in model.cases.iter().take(3) {
+        let shapes: Vec<_> = ols_line::solve::solve_line(line, lib, &c.case)
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect();
+        for (j, r) in line
+            .jumpers
+            .iter()
+            .zip(ols_line::jumper::solve_jumpers(line, lib, &c.case, &shapes))
+        {
+            let msg = match &r {
+                Ok(s) => format!("ok, sag {:.3} m, L0 {:.3}", s.sag, s.unstressed_length),
+                Err(e) => {
+                    failed.insert(j.id.clone());
+                    e.to_string()
+                }
+            };
+            chords
+                .entry(j.id.clone())
+                .or_default()
+                .push((c.case.name.clone(), 0.0, msg));
+        }
+    }
+    println!("{} jumpers fail in some of the first 3 cases", failed.len());
+    for id in &failed {
+        let j = line.jumpers.iter().find(|j| &j.id == id).unwrap();
+        let b = line.jumper_bundle(j).count;
+        let ends = |p: &ols_line::SectionPoint| {
+            line.sections
+                .iter()
+                .filter(|s| s.points.contains(p))
+                .map(|s| {
+                    let k = s.points.iter().position(|q| q == p).unwrap();
+                    let end = k == 0 || k + 1 == s.points.len();
+                    format!("{}{}", s.id, if end { "(end)" } else { "(through)" })
+                })
+                .collect::<Vec<_>>()
+                .join("+")
+        };
+        println!(
+            "{id} at {}: length {:?} sag {:?} t {} bundle {b}; from {} to {}",
+            j.from.structure,
+            j.length,
+            j.sag,
+            j.temperature,
+            ends(&j.from),
+            ends(&j.to)
+        );
+        for (case, _, m) in &chords[id] {
+            println!("    {case}: {m}");
+        }
     }
 }

@@ -494,8 +494,12 @@ pub fn solve_jumper(
         (None, Some(_)) => cut_length(line, jumper, shapes, cable)?,
         (None, None) => return Err(invalid("needs a length or a sag".into())),
     };
-    let l0 = reference
-        * (cable.thermal_expansion() * (case.temperature.celsius() - jumper.temperature)).exp();
+    // Lengthened or shortened like the line's cables: a bimetallic cable
+    // by the line's model (its outer strands in compression up to their
+    // limit when warmer, then the core alone); unstressed at its
+    // temperature.
+    let dt = case.temperature.celsius() - jumper.temperature;
+    let l0 = reference * line.bimetallic.apply(cable).free_thermal_strain(dt).exp();
     let load = span_load(case, cable, d);
     let props = CableProperties {
         unstressed_length: l0,
@@ -826,6 +830,41 @@ mod tests {
         assert!((jumper_bending_stiffness(&j, cable) - 0.35 * max).abs() < 1e-9);
         j.bending_stiffness = Some(100.0);
         assert_eq!(jumper_bending_stiffness(&j, cable), 100.0);
+    }
+
+    /// A bimetallic jumper lengthens like the line's cables: with the
+    /// default model (outer strands in compression) at the composite
+    /// expansion; as a bird cage, above its temperature, at the core's.
+    /// Cooler, both the same. (`--nocapture` prints the comparison.)
+    #[test]
+    fn a_bimetallic_jumper_follows_the_lines_bimetallic_model() {
+        let lib = library();
+        let cable = lib.get("acsr-drake-26-7").unwrap().clone();
+        let line = crate::tests::example();
+        let t0 = line.jumpers[0].temperature;
+        let mut bird = line.clone();
+        bird.bimetallic.behavior = ols_cables::BimetallicBehavior::BirdCage;
+        let core = cable.core.as_ref().unwrap().thermal_expansion;
+        let composite = cable.thermal_expansion();
+        for t in [-20.0, 50.0, 80.0] {
+            let started = std::time::Instant::now();
+            let (_, a) = solve_all(&line, &still(t));
+            let ta = started.elapsed();
+            let started = std::time::Instant::now();
+            let (_, b) = solve_all(&bird, &still(t));
+            let tb = started.elapsed();
+            let cut = a[0].unstressed_length / (composite * (t - t0)).exp();
+            assert!(
+                (b[0].unstressed_length
+                    - cut * (if t > t0 { core } else { composite } * (t - t0)).exp())
+                .abs()
+                    < 1e-9
+            );
+            println!(
+                "{t} °C: composite L {:.4} m sag {:.4} m ({ta:.1?}); bird cage L {:.4} m sag {:.4} m ({tb:.1?})",
+                a[0].unstressed_length, a[0].sag, b[0].unstressed_length, b[0].sag
+            );
+        }
     }
 
     /// The cut a solve keeps (or makes) for jumper 0, and one made afresh.

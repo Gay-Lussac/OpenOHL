@@ -45,6 +45,11 @@ const COMPONENT: &[Field] = &[
         "linear thermal expansion, 1/K",
     ),
     (
+        "strands",
+        "26",
+        "number of wires of this component (with a core: give both) — the least bending stiffness of a jumper",
+    ),
+    (
         "stress_strain",
         "{ stress_unit = \"MPa\", strain = \"percent\", basis = \"total\", initial = [0.0, 550.0, 0.0, 0.0, 0.0], creep = [0.0, 550.0, 0.0, 0.0, 0.0], final_modulus = 550.0, reference_temperature = \"20 °C\" }",
         "non-linear model: polynomials of this material, stress (stress_unit) of strain (% or unit), \
@@ -922,7 +927,7 @@ impl LibraryPage {
                         }
                     });
                 egui::CentralPanel::default().show(ui, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
                         let doc = self.doc.as_mut().expect("checked");
                         if let Some(t) = doc
                             .get_mut(key)
@@ -944,7 +949,7 @@ impl LibraryPage {
                 });
             }
             None => {
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
                     let doc = self.doc.as_mut().expect("checked");
                     changed |= table_ui(
                         ui,

@@ -5,9 +5,27 @@ Implemented in `crates/ols-line` (`jumper.rs`, `rod.rs`). A jumper is a short sl
 A jumper's pull, tens to a few hundred newtons, is negligible next to a section's tension, so **sections are solved first** and each jumper is then solved on its own between the sections' solved clamps. The steps, in every weather case:
 
 1. **Ends.** Each end is the solved clamp of the section through that attachment, so the jumper follows strain assemblies as they settle and suspension clamps as they swing. If no section uses the attachment, the end is the attachment's wire point.
-2. **Length.** The jumper's unstressed length at its temperature \\( t_0 \\) is the given `length`, or is **cut** from the given `sag` (below). In a case at temperature \\( t \\) it is \\( L_0 = L_{cut}\\, e^{\alpha (t - t_0)} \\), with the cable's thermal expansion \\( \alpha \\). The jumper therefore lengthens when hot and shortens when cold, and its sag follows the weather like a wire's.
+2. **Length.** The jumper's unstressed length at its temperature \\( t_0 \\) is the given `length`, or is **cut** from the given `sag` (below). In a case at temperature \\( t \\) it is \\( L_0 = L_{cut}\\, e^{\varepsilon(t - t_0)} \\), with the cable's thermal strain without tension \\( \varepsilon \\), the same as the line's cables have (below). The jumper therefore lengthens when hot and shortens when cold, and its sag follows the weather like a wire's.
 3. **Load.** The case's weight, ice and wind per metre. The wind is horizontal and perpendicular to the jumper's chord, on the iced diameter. In a bundle, each subconductor carries its own load and a share of the support string's weight.
 4. **Shape.** Solved with one of the two models below.
+
+## The same cable model as the spans
+
+A jumper uses the cable as the line's spans do, as far as it matters at a jumper's tension:
+
+- **Thermal behaviour, bimetallic cables included.** At \\( t_0 \\) the jumper's components are taken as unstressed. Without tension, both components share one strain and their forces balance, which gives the composite expansion \\( \varepsilon = \bar\alpha\,\Delta t \\) with \\( \bar\alpha = \sum E_iA_i\alpha_i / \sum E_iA_i \\). In a bimetallic cable warmer than \\( t_0 \\), the outer strands, which expand more, are pushed into compression. The line's **bimetallic conductor model** (Criteria › Bimetallic conductor model, or the cable's own) limits that compression, as it does for the spans. Past the limit the outer strands carry only the limit force \\( F_{lim} \\) and the core sets the length: \\( \varepsilon = \alpha_c\,\Delta t + F_{lim}/E_cA_c \\). As a **bird cage** (no compression) the warmer jumper lengthens like its core alone. With the default compression limit it keeps the composite expansion. Colder than \\( t_0 \\), the outer strands are in tension and the composite expansion holds.
+- **Stretch, stress-strain curves and creep are left out.** A jumper's tension, tens to a few hundred newtons, strains it by ~10⁻⁶, against ~10⁻³ in a span. The non-linear curves and creep would change its length by micrometres while making each rod solve far costlier, so the rod is inextensible.
+
+**Compared** on the example's Drake 26/7 tap jumper (sag 1.5 m at 15 °C; release build; the sections at its ends follow the same model):
+
+| Case | Composite (default model) | Bird cage | Difference |
+|---|---|---|---|
+| −20 °C | L₀ 10.7929 m, sag 1.759 m | the same | none: colder, the composite expansion holds |
+| 50 °C | L₀ 10.8072 m, sag 1.221 m | L₀ 10.8044 m, sag 1.215 m | −2.8 mm, −5 mm |
+| 80 °C | L₀ 10.8133 m, sag 0.961 m | L₀ 10.8081 m, sag 0.949 m | −5.2 mm, −12 mm |
+| Time per solve | ~5 ms | ~5 ms | none: the strain is a closed form |
+
+The bimetallic model is used: it costs nothing and keeps jumpers consistent with their spans. It only makes a difference for two-component cables as a bird cage or with a low compression limit, and there by up to about a centimetre of sag.
 
 ## Hinged jumper: one catenary element
 
@@ -91,7 +109,7 @@ Physical values for typical high-voltage jumpers (indications to check a model a
 | \\( EI \\) (estimated, \\( k = 0.2 \\)) | 15–1 500 N·m² | grows with \\( E d^4 \\): ~17 for a 13 mm wire, ~455 for Drake 26/7 (28 mm), ~1 500 for a 40 mm conductor |
 | Reduction factor \\( k \\) | 0.2–0.35 | default 0.2 |
 | Clamp exit angle | 0–45° below the conductor's axis | default 30°; 0: straight on |
-| Change of sag between −20 °C and 80 °C | a few cm to a few dm | the length changes by \\( \alpha \Delta t \approx 2 \cdot 10^{-3} \\); the clamps move too, so the sag below the chord can even shrink when hot |
+| Change of sag between −20 °C and 80 °C | a few cm to a few dm | the length changes by \\( \varepsilon \approx 2 \cdot 10^{-3} \\); the clamps move too, so the sag below the chord can even shrink when hot |
 
 Computation (release build, one core):
 

@@ -402,6 +402,30 @@ impl Cable {
         weighted / self.axial_stiffness().si()
     }
 
+    /// Thermal strain of the cable without tension (a slack jumper), `dt`
+    /// kelvin from the temperature where its components are unstressed. Both
+    /// components share the strain and their forces balance:
+    /// \\( \varepsilon = \bar\alpha\, \Delta t \\) with the composite
+    /// expansion \\( \bar\alpha = \sum E_iA_i\alpha_i / \sum E_iA_i \\). Warmer,
+    /// the outer strands of a bimetallic cable are pushed into compression;
+    /// past their limit ([`Cable::outer_compression_limit`]: none for a bird
+    /// cage) they carry only that and the core sets the length:
+    /// \\( \varepsilon = \alpha_c \Delta t + F_{lim} / E_cA_c \\).
+    pub fn free_thermal_strain(&self, dt: f64) -> f64 {
+        let composite = self.thermal_expansion() * dt;
+        let Some(core) = &self.core else {
+            return composite;
+        };
+        let outer_force =
+            self.outer.axial_stiffness().si() * (composite - self.outer.thermal_expansion * dt);
+        let limit = self.outer_compression_limit();
+        if outer_force >= -limit {
+            composite
+        } else {
+            core.thermal_expansion * dt + limit / core.axial_stiffness().si()
+        }
+    }
+
     /// The largest compressive load of the outer strands, N, as the
     /// cable's bimetallic behaviour says: unlimited without a core.
     pub fn outer_compression_limit(&self) -> f64 {
@@ -484,6 +508,11 @@ impl Cable {
             }
             if c.strands == Some(0) {
                 return Err(error(format!("{label}.strands must be at least 1")));
+            }
+            if label == "core" && c.strands.is_some() != self.outer.strands.is_some() {
+                return Err(error(
+                    "strands: give them for the outer strands and the core, or for neither".into(),
+                ));
             }
             if !(0.0..=50e-6).contains(&c.thermal_expansion) {
                 return Err(error(format!(
@@ -697,6 +726,12 @@ mod tests {
             c.bending_stiffness_min(),
             None,
             "the core's count is missing"
+        );
+        assert!(
+            c.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("or for neither")
         );
         c.core.as_mut().unwrap().strands = Some(7);
         assert_close(c.bending_stiffness_min().unwrap(), 36.65, 1e-3);
