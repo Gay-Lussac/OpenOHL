@@ -1107,6 +1107,7 @@ impl Session {
     /// Applies a command of `user`.
     pub fn apply(&mut self, user: &str, command: Command) -> Result<Applied, SessionError> {
         self.require(user, Role::Designer)?;
+        self.check_line_write(user)?;
         self.apply_as(user, command, "do", None, false, true)
     }
 
@@ -2204,6 +2205,7 @@ impl Session {
     /// Undoes `user`'s last command that is not undone yet.
     pub fn undo(&mut self, user: &str) -> Result<Applied, SessionError> {
         self.require(user, Role::Designer)?;
+        self.check_line_write(user)?;
         let seq: Option<i64> = self
             .conn
             .query_row(
@@ -2219,6 +2221,7 @@ impl Session {
     /// Redoes `user`'s last undo (if nothing of theirs happened since).
     pub fn redo(&mut self, user: &str) -> Result<Applied, SessionError> {
         self.require(user, Role::Designer)?;
+        self.check_line_write(user)?;
         let last: Option<(i64, String, Option<i64>)> = self
             .conn
             .query_row(

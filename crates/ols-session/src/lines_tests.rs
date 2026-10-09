@@ -356,3 +356,41 @@ fn lines_have_descriptions() {
         "kept through a rename"
     );
 }
+
+/// A protected line changes only through an admin (or an approved review):
+/// a designer's edit is refused; making a line from it does not record an
+/// admin's uncommitted change under the designer's name; its creator does
+/// not delete it.
+#[test]
+fn a_protected_line_is_changed_by_admins_only() {
+    let (_, mut s) = project("protected");
+    s.commit("ana", "start").unwrap();
+    s.protect_branch("ana", "main", true).unwrap();
+    assert!(
+        shift(&mut s, "ben", "T2", 1.0)
+            .unwrap_err()
+            .to_string()
+            .contains("protected")
+    );
+    assert!(s.undo("ben").is_err());
+    // The admin edits; a designer's new line would record that as a
+    // revision of main: refused until the admin commits.
+    shift(&mut s, "ana", "T2", 1.0).unwrap();
+    assert!(
+        s.create_line("ben", "phase 1", "main")
+            .unwrap_err()
+            .to_string()
+            .contains("an admin commits them first")
+    );
+    s.commit("ana", "T2 moved").unwrap();
+    s.create_line("ben", "phase 1", "main").unwrap();
+    // Ben's own line, protected: not deleted by him; by an admin.
+    s.protect_branch("ana", "phase 1", true).unwrap();
+    assert!(
+        s.delete_line("ben", "phase 1")
+            .unwrap_err()
+            .to_string()
+            .contains("protected")
+    );
+    s.delete_line("ana", "phase 1").unwrap();
+}
