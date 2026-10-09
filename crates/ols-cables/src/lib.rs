@@ -408,7 +408,7 @@ impl Cable {
     /// \\( \varepsilon = \bar\alpha\, \Delta t \\) with the composite
     /// expansion \\( \bar\alpha = \sum E_iA_i\alpha_i / \sum E_iA_i \\). Warmer,
     /// the outer strands of a bimetallic cable are pushed into compression;
-    /// past their limit ([`Cable::outer_compression_limit`]: none for a bird
+    /// past their limit ([`Cable::outer_compression_limit_with_curves`], as the spans: none for a bird
     /// cage) they carry only that and the core sets the length:
     /// \\( \varepsilon = \alpha_c \Delta t + F_{lim} / E_cA_c \\).
     pub fn free_thermal_strain(&self, dt: f64) -> f64 {
@@ -418,12 +418,22 @@ impl Cable {
         };
         let outer_force =
             self.outer.axial_stiffness().si() * (composite - self.outer.thermal_expansion * dt);
-        let limit = self.outer_compression_limit();
+        let limit = self.outer_compression_limit_with_curves();
         if outer_force >= -limit {
             composite
         } else {
             core.thermal_expansion * dt + limit / core.axial_stiffness().si()
         }
+    }
+
+    /// The largest compressive load of the outer strands, N, as the line
+    /// sections use it: the bimetallic behaviour's limit, and the outer
+    /// curves' own `max_compression` when lower (non-linear model).
+    pub fn outer_compression_limit_with_curves(&self) -> f64 {
+        mechanics::Mechanics::from_cable(self).map_or_else(
+            |_| self.outer_compression_limit(),
+            |m| m.outer_compression_limit(),
+        )
     }
 
     /// The largest compressive load of the outer strands, N, as the
@@ -710,6 +720,42 @@ mod tests {
         let mut library = Library::default();
         library.add_toml(Path::new("t.toml"), text).unwrap();
         library.get("drake").unwrap().clone()
+    }
+
+    /// A slack cable's thermal strain uses the same outer compression limit
+    /// as the spans: the curves' `max_compression = 0` makes it a bird cage
+    /// when warmer (the core alone), whatever the bimetallic behaviour says.
+    #[test]
+    fn free_thermal_strain_takes_the_curves_compression_limit() {
+        let text = r#"
+            [[cable]]
+            id = "nl"
+            name = "non-linear, no outer compression (invented values)"
+            kind = "acsr"
+            diameter = "28.14 mm"
+            mass_per_length = "1.628 kg/m"
+            rated_tensile_strength = "138.8 kN"
+            [cable.outer]
+            area = "402.9 mm²"
+            modulus = "55 GPa"
+            thermal_expansion = 23.0e-6
+            stress_strain = { stress_unit = "MPa", initial = [0.0, 300.0], final_modulus = 550.0, max_compression = 0.0 }
+            [cable.core]
+            area = "65.7 mm²"
+            modulus = "190 GPa"
+            thermal_expansion = 11.5e-6
+            stress_strain = { stress_unit = "MPa", initial = [0.0, 1900.0], final_modulus = 1900.0 }
+        "#;
+        let mut library = Library::default();
+        library.add_toml(Path::new("t.toml"), text).unwrap();
+        let c = library.get("nl").unwrap();
+        assert_eq!(c.outer_compression_limit_with_curves(), 0.0);
+        assert!((c.free_thermal_strain(60.0) - 11.5e-6 * 60.0).abs() < 1e-15);
+        // Colder: the composite expansion.
+        assert!((c.free_thermal_strain(-30.0) - c.thermal_expansion() * -30.0).abs() < 1e-15);
+        // The linear Drake (no curves): unlimited by default, composite.
+        let d = drake();
+        assert!((d.free_thermal_strain(60.0) - d.thermal_expansion() * 60.0).abs() < 1e-15);
     }
 
     /// Drake 26/7: as a solid bar E·πd⁴/64 with the composite modulus

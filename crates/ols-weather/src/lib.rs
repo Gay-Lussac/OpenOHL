@@ -106,6 +106,14 @@ impl WindSide {
         }
     }
 
+    /// The other side.
+    pub fn opposite(self) -> Self {
+        match self {
+            WindSide::Right => WindSide::Left,
+            WindSide::Left => WindSide::Right,
+        }
+    }
+
     /// Sign of the push to the left of the line: +1 from the right.
     pub fn to_left(self) -> f64 {
         match self {

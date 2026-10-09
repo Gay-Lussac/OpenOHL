@@ -248,6 +248,30 @@ impl Line {
         }]
     }
 
+    /// The line's direction near `at` (plan): the unit direction, ahead
+    /// along its route, of the nearest segment of its routes' centrelines;
+    /// `None` for a line without two distinct points. What the wind's
+    /// side ("from the right of the line") is taken against.
+    pub fn direction_at(&self, at: [f64; 2]) -> Option<[f64; 2]> {
+        let mut best: Option<(f64, [f64; 2])> = None;
+        for r in self.effective_routes() {
+            for w in r.centreline(self).windows(2) {
+                let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+                let len2 = dx * dx + dy * dy;
+                if len2 <= 0.0 {
+                    continue;
+                }
+                let t = (((at[0] - w[0][0]) * dx + (at[1] - w[0][1]) * dy) / len2).clamp(0.0, 1.0);
+                let dist = (at[0] - w[0][0] - t * dx).hypot(at[1] - w[0][1] - t * dy);
+                if best.is_none_or(|b| dist < b.0) {
+                    let len = len2.sqrt();
+                    best = Some((dist, [dx / len, dy / len]));
+                }
+            }
+        }
+        best.map(|b| b.1)
+    }
+
     /// Alignment points tied to each structure, under it: one per
     /// structure of the route (the usual starting alignment).
     pub fn alignment_under_structures(&self, route: &Route) -> Vec<AlignmentPoint> {
