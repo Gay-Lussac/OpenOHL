@@ -390,3 +390,100 @@ fn structure_analysis_on_the_example_line() {
     let csv = capacity::usage_csv(&usage);
     assert!(csv.lines().next().unwrap().contains("fe_usage,pole_usage"));
 }
+
+/// A level synthetic line T1–T4, 300 m apart: T1 and T4 end the wire, T2
+/// is a suspension structure (one attachment carries both spans), T3 a
+/// dead-end whose back and ahead strain strings are separate attachments
+/// (1:1 and 2:1, clamps 0.5 m either side) joined by a jumper.
+fn dead_end_line() -> Line {
+    let structure = |id: &str, x: f64, points: &[(u32, f64)]| {
+        let attachments: Vec<String> = points
+            .iter()
+            .map(|(set, dx)| {
+                format!(
+                    r#"{{"set": {set}, "phase": 1, "insulator_point": [{x}, 0, 30],
+                        "wire_point": [{}, 0, 30]}}"#,
+                    x + dx
+                )
+            })
+            .collect();
+        format!(
+            r#"{{"id": "{id}", "position": [{x}, 0, 0], "orientation_deg": -90,
+                "attachments": [{}]}}"#,
+            attachments.join(",")
+        )
+    };
+    let point = |s: &str, set: u32| format!(r#"{{"structure": "{s}", "set": {set}, "phase": 1}}"#);
+    let section = |id: &str, points: &[String]| {
+        format!(
+            r#"{{"id": "{id}", "cable": "acsr-drake-26-7", "points": [{}],
+                "stringing": {{"kind": "tension", "horizontal_tension": 25000.0,
+                "temperature": 15.0}}}}"#,
+            points.join(",")
+        )
+    };
+    let json = format!(
+        r#"{{"format": "ols-line", "version": 1, "name": "dead-end test", "crs": "local",
+            "structures": [{}, {}, {}, {}],
+            "sections": [{}, {}],
+            "jumpers": [{{"id": "J3", "cable": "acsr-drake-26-7", "from": {}, "to": {},
+                "sag": 1.0, "temperature": 15.0}}]}}"#,
+        structure("T1", 0.0, &[(1, 0.0)]),
+        structure("T2", 300.0, &[(1, 0.0)]),
+        structure("T3", 600.0, &[(1, -0.5), (2, 0.5)]),
+        structure("T4", 900.0, &[(1, 0.0)]),
+        section("back", &[point("T1", 1), point("T2", 1), point("T3", 1)]),
+        section("ahead", &[point("T3", 2), point("T4", 1)]),
+        point("T3", 1),
+        point("T3", 2),
+    );
+    let mut line = Line::from_json(&json).unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    line
+}
+
+/// Method 1 per conductor position: a dead-end's back and ahead strings
+/// (separate attachments joined by a jumper) add up to the structure's
+/// wind and weight spans, as a suspension structure's one attachment
+/// does; a line end keeps half its one span.
+#[test]
+fn dead_end_spans_take_both_sides() {
+    let line = dead_end_line();
+    // The dead-end's two strings are one conductor position.
+    let p = capacity::positions(&line);
+    let key = |s: &str, set: u32| (s.to_string(), set, 1);
+    assert_eq!(p.get(&key("T3", 2)), Some(&key("T3", 1)));
+    assert_eq!(p.get(&key("T3", 1)), Some(&key("T3", 1)));
+    assert!(!p.contains_key(&key("T2", 1)));
+    // The example's tee-off jumper (a branch's end to a suspension point)
+    // joins nothing: the branch is another position.
+    let (example, library, weather, cases) = setup();
+    assert!(example.jumpers.len() == 1 && capacity::positions(&example).is_empty());
+    let budget = ols_wirefe::default_fe_budget();
+    let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    assert!(loads[0].failed.is_empty(), "{:?}", loads[0].failed);
+    let types = ols_structures::StructureLibrary::default();
+    let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+    let everyday = &usage[0];
+    // Spans: T1–T2 300 m, T2–T3 299.5 m, T3–T4 299.5 m (to the clamps).
+    for (id, span) in [("T1", 150.0), ("T2", 299.75), ("T3", 299.5), ("T4", 149.75)] {
+        let s = everyday
+            .structures
+            .iter()
+            .find(|s| s.structure == id)
+            .unwrap();
+        let [lo, hi] = s.weight_span.unwrap();
+        eprintln!(
+            "{id}: wind span {:.2} m, weight span {lo:.2}–{hi:.2} m",
+            s.wind_span
+        );
+        assert!((s.wind_span - span).abs() < 0.01, "{id}: {}", s.wind_span);
+        // Level: the low points mid-span (the weight span within a metre).
+        assert!(
+            (lo - span).abs() < 1.0 && (hi - span).abs() < 1.0,
+            "{id}: {lo} {hi}"
+        );
+        // One conductor position: one weight span.
+        assert!((hi - lo).abs() < 1e-9, "{id}: {lo} {hi}");
+    }
+}

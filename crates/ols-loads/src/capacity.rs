@@ -6,17 +6,20 @@
 //! load case (its type's `[capacity]`, see `ols_structures::structures`).
 //!
 //! - **Method 1, allowable spans**: the structure's wind span (half the sum
-//!   of its adjacent spans, the largest over its attachments) and weight
-//!   span (the wires' vertical load at the attachment, without the
-//!   insulator, over their vertical load per metre — the distance between
-//!   the low points of the adjacent spans for a catenary; the largest and
-//!   the smallest over its attachments) against the type's allowable spans
-//!   at the structure's line angle. Usage: the largest of wind span /
-//!   allowable and weight span / allowable; a weight span below the
-//!   minimum (uplift) is 100 % plus the shortfall over the allowable weight
-//!   span; a line angle beyond the type's last one fails outright. The
-//!   strength factor does not apply (allowable spans are the type's
-//!   design spans).
+//!   of the adjacent spans) and weight span (the wires' vertical load at
+//!   the attachments, without the insulators, over their vertical load per
+//!   metre — the distance between the low points of the adjacent spans for
+//!   a catenary; negative under uplift) of each conductor position, both
+//!   sides summed: one attachment (a suspension point, a line end), or a
+//!   dead-end's back and ahead strings — separate attachments of the
+//!   structure joined by a jumper between two section ends there. The
+//!   largest wind span and the largest and smallest weight span over the
+//!   positions are taken against the type's allowable spans at the
+//!   structure's line angle. Usage: the largest of wind span / allowable
+//!   and weight span / allowable; a weight span below the minimum (uplift)
+//!   is 100 % plus the shortfall over the allowable weight span; a line
+//!   angle beyond the type's last one fails outright. The strength factor
+//!   does not apply (allowable spans are the type's design spans).
 //! - **Method 2, allowable loads** (load trees): at every attachment the
 //!   type gives, the factored loads in the structure's axes (summed over a
 //!   V-string's legs) against the allowable loads times the load case's
@@ -90,10 +93,10 @@ pub struct StructureUsage {
     pub structure_type: Option<String>,
     /// Line angle, degrees (the largest of its routes, either way).
     pub line_angle_deg: f64,
-    /// Wind span, m.
+    /// Wind span, m: the largest over the conductor positions.
     pub wind_span: f64,
-    /// Weight span, m: smallest and largest over the attachments (none:
-    /// no wire load found).
+    /// Weight span, m: smallest and largest over the conductor positions
+    /// (none: no wire load found).
     pub weight_span: Option<[f64; 2]>,
     /// Method 1, when the type gives allowable spans.
     pub spans: Option<Check>,
@@ -132,7 +135,7 @@ pub struct CaseUsage {
 }
 
 /// An attachment point: (structure, set, phase).
-type Key = (String, u32, u32);
+pub(crate) type Key = (String, u32, u32);
 
 /// The loads at one attachment point in one load case.
 #[derive(Default)]
@@ -165,6 +168,48 @@ fn wind_spans(line: &Line) -> BTreeMap<Key, f64> {
             *out.entry((p.structure.clone(), p.set, p.phase))
                 .or_default() += back + ahead;
         }
+    }
+    out
+}
+
+/// The conductor position of each attachment point: the attachment points
+/// of a structure joined by a jumper at that structure whose two ends both
+/// end a section (a dead-end's back and ahead strain strings) are one
+/// position, keyed by the smallest of them; every other point is its own
+/// position. A jumper from a section's end to a point in another
+/// section's middle (a tee-off to a suspension point) joins nothing: the
+/// branch is another conductor position. Points not listed are their own
+/// position.
+pub(crate) fn positions(line: &Line) -> BTreeMap<Key, Key> {
+    let key = |p: &ols_line::SectionPoint| (p.structure.clone(), p.set, p.phase);
+    let ends: std::collections::BTreeSet<Key> = line
+        .sections
+        .iter()
+        .flat_map(|s| [s.points.first(), s.points.last()])
+        .flatten()
+        .map(key)
+        .collect();
+    let mut out: BTreeMap<Key, Key> = BTreeMap::new();
+    let root = |out: &BTreeMap<Key, Key>, mut k: Key| {
+        while let Some(next) = out.get(&k).filter(|n| **n != k) {
+            k = next.clone();
+        }
+        k
+    };
+    for j in &line.jumpers {
+        let (a, b) = (key(&j.from), key(&j.to));
+        if a.0 != b.0 || a == b || !ends.contains(&a) || !ends.contains(&b) {
+            continue;
+        }
+        let (ra, rb) = (root(&out, a), root(&out, b));
+        let (lo, hi) = if ra <= rb { (ra, rb) } else { (rb, ra) };
+        out.insert(hi, lo.clone());
+        out.entry(lo.clone()).or_insert(lo);
+    }
+    let keys: Vec<Key> = out.keys().cloned().collect();
+    for k in keys {
+        let r = root(&out, k.clone());
+        out.insert(k, r);
     }
     out
 }
@@ -210,6 +255,7 @@ pub fn usage(
     results: &[CaseLoads],
 ) -> Vec<CaseUsage> {
     let wind = wind_spans(line);
+    let position = positions(line);
     let angles = line_angles(line);
     let analyses = crate::analysis::Analyses::load(types);
     results
@@ -245,30 +291,38 @@ pub fn usage(
                     let capacity = type_def.and_then(|t| t.capacity.as_ref());
                     let analysed = type_def.is_some_and(|t| t.model.is_some() || t.pole.is_some());
                     let line_angle_deg = angles.get(id).copied().unwrap_or(0.0);
-                    let wind_span = points
-                        .iter()
-                        .map(|(k, _)| wind.get(*k).copied().unwrap_or(0.0))
-                        .fold(0.0, f64::max);
-                    // Weight span of each attachment.
-                    let spans: Vec<f64> = points
-                        .iter()
-                        .filter_map(|((_, set, phase), p)| {
-                            let insulator = structure
-                                .and_then(|s| {
-                                    s.attachments
-                                        .iter()
-                                        .find(|a| a.set == *set && a.phase == *phase)
-                                })
-                                .map_or(0.0, |a| a.insulator_weight);
-                            let ws: Vec<f64> = p
-                                .sections
-                                .iter()
-                                .filter_map(|s| bundle_weight(line, library, case?, s))
-                                .collect();
-                            let w = ws.iter().sum::<f64>() / ws.len().max(1) as f64;
-                            (w > 0.0).then(|| (p.vertical - insulator) / w)
-                        })
-                        .collect();
+                    // Weight span of one attachment: the wires' vertical
+                    // load there, without the insulator, over their vertical
+                    // load per metre.
+                    let attachment_weight_span = |(_, set, phase): &Key, p: &AtPoint| {
+                        let insulator = structure
+                            .and_then(|s| {
+                                s.attachments
+                                    .iter()
+                                    .find(|a| a.set == *set && a.phase == *phase)
+                            })
+                            .map_or(0.0, |a| a.insulator_weight);
+                        let ws: Vec<f64> = p
+                            .sections
+                            .iter()
+                            .filter_map(|s| bundle_weight(line, library, case?, s))
+                            .collect();
+                        let w = ws.iter().sum::<f64>() / ws.len().max(1) as f64;
+                        (w > 0.0).then(|| (p.vertical - insulator) / w)
+                    };
+                    // Per conductor position (a suspension point, or a
+                    // dead-end's back and ahead strings together): the wind
+                    // span and the weight span, summed over its attachments.
+                    let mut by_position: BTreeMap<&Key, (f64, Option<f64>)> = BTreeMap::new();
+                    for &(k, p) in &points {
+                        let e = by_position.entry(position.get(k).unwrap_or(k)).or_default();
+                        e.0 += wind.get(k).copied().unwrap_or(0.0);
+                        if let Some(w) = attachment_weight_span(k, p) {
+                            e.1 = Some(e.1.unwrap_or(0.0) + w);
+                        }
+                    }
+                    let wind_span = by_position.values().map(|v| v.0).fold(0.0, f64::max);
+                    let spans: Vec<f64> = by_position.values().filter_map(|v| v.1).collect();
                     let weight_span = (!spans.is_empty()).then(|| {
                         [
                             spans.iter().copied().fold(f64::INFINITY, f64::min),
