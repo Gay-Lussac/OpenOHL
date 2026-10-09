@@ -16,14 +16,14 @@
 //! same as solving everything again — checked by the tests after every
 //! kind of edit.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use ols_weather::WeatherCase;
 use ols_wirefe::default_fe_budget;
 
-use crate::jumper::{JumperShape, solve_jumpers};
+use crate::jumper::{JumperShape, solve_one_jumper};
 use crate::solve::{SectionShape, solve_section};
-use crate::{Line, LineError};
+use crate::{Jumper, Line, LineError, Section, Structure};
 
 /// What an update did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -34,7 +34,7 @@ pub struct Update {
     pub dropped: usize,
     /// Sections kept as they were.
     pub kept: usize,
-    /// Jumpers solved.
+    /// Jumpers solved (the others kept).
     pub jumpers: usize,
 }
 
@@ -44,6 +44,38 @@ pub struct SolvedLine {
     case: WeatherCase,
     sections: BTreeMap<String, Result<SectionShape, LineError>>,
     jumpers: BTreeMap<String, Result<JumperShape, LineError>>,
+    /// What each jumper was solved from: kept while unchanged.
+    jumper_inputs: BTreeMap<String, JumperInputs>,
+}
+
+/// What a jumper's solution depends on: itself, the sections at its ends
+/// and the structures it hangs on.
+#[derive(Debug, Clone, PartialEq)]
+struct JumperInputs {
+    jumper: Jumper,
+    sections: Vec<Section>,
+    structures: Vec<Structure>,
+}
+
+impl JumperInputs {
+    fn of(line: &Line, jumper: &Jumper) -> Self {
+        let ends = |p: &crate::SectionPoint| *p == jumper.from || *p == jumper.to;
+        Self {
+            jumper: jumper.clone(),
+            sections: line
+                .sections
+                .iter()
+                .filter(|s| s.points.iter().any(ends))
+                .cloned()
+                .collect(),
+            structures: line
+                .structures
+                .iter()
+                .filter(|s| s.id == jumper.from.structure || s.id == jumper.to.structure)
+                .cloned()
+                .collect(),
+        }
+    }
 }
 
 fn solve_one(
@@ -73,6 +105,7 @@ impl SolvedLine {
             case: case.clone(),
             sections: BTreeMap::new(),
             jumpers: BTreeMap::new(),
+            jumper_inputs: BTreeMap::new(),
         }
     }
 
@@ -82,6 +115,7 @@ impl SolvedLine {
             case: case.clone(),
             sections: BTreeMap::new(),
             jumpers: BTreeMap::new(),
+            jumper_inputs: BTreeMap::new(),
         };
         let all: Vec<String> = line.sections.iter().map(|s| s.id.clone()).collect();
         solved.update(line, library, &all);
@@ -95,10 +129,13 @@ impl SolvedLine {
 
     /// Brings the solutions up to date with `line` after an edit:
     /// re-solves the sections in `dirty`, solves sections not solved yet,
-    /// drops sections no longer in the line, refreshes the jumpers.
+    /// drops sections no longer in the line, and re-solves the jumpers
+    /// whose inputs changed (the jumper, the sections at its ends — or one
+    /// of them re-solved —, the structures it hangs on).
     ///
     /// Expected cost: one section solve (typically < 1 ms) per dirty or new
-    /// section, plus the jumpers.
+    /// section, plus the jumpers at them (a jumper cut to its sag: its end
+    /// sections solved again in its design case, a few ms).
     pub fn update(
         &mut self,
         line: &Line,
@@ -110,23 +147,39 @@ impl SolvedLine {
         self.sections
             .retain(|id, _| line.sections.iter().any(|s| &s.id == id));
         update.dropped = before - self.sections.len();
+        let mut resolved: HashSet<&str> = HashSet::new();
         for section in &line.sections {
             if dirty.contains(&section.id) || !self.sections.contains_key(&section.id) {
                 let result = solve_one(line, library, &self.case, &section.id);
                 self.sections.insert(section.id.clone(), result);
+                resolved.insert(&section.id);
                 update.solved += 1;
             } else {
                 update.kept += 1;
             }
         }
         let shapes = self.shapes(line);
-        self.jumpers = line
-            .jumpers
-            .iter()
-            .map(|j| j.id.clone())
-            .zip(solve_jumpers(line, library, &self.case, &shapes))
-            .collect();
-        update.jumpers = self.jumpers.len();
+        let mut jumpers = BTreeMap::new();
+        let mut inputs = BTreeMap::new();
+        for j in &line.jumpers {
+            let now = JumperInputs::of(line, j);
+            let kept = self.jumper_inputs.get(&j.id) == Some(&now)
+                && !now
+                    .sections
+                    .iter()
+                    .any(|s| resolved.contains(s.id.as_str()));
+            let result = match self.jumpers.remove(&j.id) {
+                Some(r) if kept => r,
+                _ => {
+                    update.jumpers += 1;
+                    solve_one_jumper(line, library, &self.case, &shapes, j)
+                }
+            };
+            jumpers.insert(j.id.clone(), result);
+            inputs.insert(j.id.clone(), now);
+        }
+        self.jumpers = jumpers;
+        self.jumper_inputs = inputs;
         update
     }
 
@@ -172,6 +225,7 @@ impl SolvedLine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::jumper::solve_jumpers;
     use crate::solve::solve_line;
     use ols_core::units::Temperature;
     use std::path::Path;
@@ -213,7 +267,7 @@ mod tests {
         }
         t6.position[0] += 3.0;
         let u = solved.update(&line, &lib, &["S3".to_owned()]);
-        assert_eq!((u.solved, u.kept, u.dropped), (1, 2, 0));
+        assert_eq!((u.solved, u.kept, u.dropped, u.jumpers), (1, 2, 0, 1));
         assert_same_as_full(&line, &solved);
 
         // Change S1's stringing.
@@ -223,6 +277,28 @@ mod tests {
         };
         let u = solved.update(&line, &lib, &["S1".to_owned()]);
         assert_eq!((u.solved, u.kept), (1, 2));
+        assert_same_as_full(&line, &solved);
+
+        // The jumper (S3 to S1 at T3) is kept when neither its sections,
+        // its structure nor itself changed — S2 alone, or nothing.
+        assert_eq!(solved.update(&line, &lib, &[]).jumpers, 0);
+        let u = solved.update(&line, &lib, &["S2".to_owned()]);
+        assert_eq!((u.solved, u.jumpers), (1, 0));
+        assert_same_as_full(&line, &solved);
+        // Itself changed: solved again, alone.
+        line.jumpers[0].sag = Some(2.0);
+        let u = solved.update(&line, &lib, &[]);
+        assert_eq!((u.solved, u.jumpers), (0, 1));
+        assert_same_as_full(&line, &solved);
+        // Its structure changed (a string at T3 heavier), no section said
+        // dirty: solved again.
+        let t3 = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+        t3.attachments[0].insulator_weight += 100.0;
+        assert_eq!(solved.update(&line, &lib, &[]).jumpers, 1);
+        // (Back as it was: its sections were not solved again.)
+        let t3 = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+        t3.attachments[0].insulator_weight -= 100.0;
+        assert_eq!(solved.update(&line, &lib, &[]).jumpers, 1);
         assert_same_as_full(&line, &solved);
 
         // Delete S2, add a copy of S3 under a new id: dropped, solved.

@@ -638,22 +638,32 @@ pub fn solve_jumpers(
 ) -> Vec<Result<JumperShape, LineError>> {
     line.jumpers
         .iter()
-        .map(|jumper| {
-            let cable = library.get(&jumper.cable).ok_or_else(|| {
-                LineError::Invalid(format!(
-                    "jumper {}: cable \"{}\" not in the libraries",
-                    jumper.id, jumper.cable
-                ))
-            })?;
-            if jumper.length.is_none() && jumper.sag.is_some() && !is_design_case(jumper, case) {
-                let design = design_shapes(line, library, jumper)?;
-                let mut cut = jumper.clone();
-                cut.length = Some(cut_length(line, jumper, &design, cable)?);
-                return solve_jumper(line, &cut, shapes, cable, case);
-            }
-            solve_jumper(line, jumper, shapes, cable, case)
-        })
+        .map(|jumper| solve_one_jumper(line, library, case, shapes, jumper))
         .collect()
+}
+
+/// Solves one jumper of the line between the solved sections `shapes`
+/// (see [`solve_jumpers`]).
+pub fn solve_one_jumper(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    shapes: &[SectionShape],
+    jumper: &Jumper,
+) -> Result<JumperShape, LineError> {
+    let cable = library.get(&jumper.cable).ok_or_else(|| {
+        LineError::Invalid(format!(
+            "jumper {}: cable \"{}\" not in the libraries",
+            jumper.id, jumper.cable
+        ))
+    })?;
+    if jumper.length.is_none() && jumper.sag.is_some() && !is_design_case(jumper, case) {
+        let design = design_shapes(line, library, jumper)?;
+        let mut cut = jumper.clone();
+        cut.length = Some(cut_length(line, jumper, &design, cable)?);
+        return solve_jumper(line, &cut, shapes, cable, case);
+    }
+    solve_jumper(line, jumper, shapes, cable, case)
 }
 
 /// The sections at a jumper's ends solved in its design case.
