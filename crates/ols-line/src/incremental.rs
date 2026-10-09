@@ -48,13 +48,15 @@ pub struct SolvedLine {
     jumper_inputs: BTreeMap<String, JumperInputs>,
 }
 
-/// What a jumper's solution depends on: itself, the sections at its ends
-/// and the structures it hangs on.
+/// What a jumper's solution depends on: itself, the sections at its ends,
+/// the structures it hangs on, and the line's direction there (its wind
+/// side).
 #[derive(Debug, Clone, PartialEq)]
 struct JumperInputs {
     jumper: Jumper,
     sections: Vec<Section>,
     structures: Vec<Structure>,
+    direction: Option<[f64; 2]>,
 }
 
 impl JumperInputs {
@@ -74,6 +76,13 @@ impl JumperInputs {
                 .filter(|s| s.id == jumper.from.structure || s.id == jumper.to.structure)
                 .cloned()
                 .collect(),
+            direction: match (line.attachment(&jumper.from), line.attachment(&jumper.to)) {
+                (Some(a), Some(b)) => line.direction_at([
+                    0.5 * (a.wire_point[0] + b.wire_point[0]),
+                    0.5 * (a.wire_point[1] + b.wire_point[1]),
+                ]),
+                _ => None,
+            },
         }
     }
 }

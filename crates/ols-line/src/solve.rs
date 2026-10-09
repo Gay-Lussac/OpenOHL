@@ -143,6 +143,37 @@ pub(crate) fn span_load(case: &WeatherCase, cable: &Cable, d: Vector3<f64>) -> V
         - Vector3::new(0.0, 0.0, load.vertical.si())
 }
 
+/// Load per unit length on a wire with chord `d` where the line runs along
+/// `along` (a plan unit vector): weight and ice down, and the case's wind
+/// blowing across the line from its side, of which the wire takes the part
+/// across itself (\\( \cos^2 \\) of the angle between the wind and the
+/// wire's normal: all of it along the line, none across it). Without a
+/// direction, as [`span_load`]. For wires whose own direction does not tell
+/// the line's (jumpers).
+pub(crate) fn wire_load_in_line_wind(
+    case: &WeatherCase,
+    cable: &Cable,
+    d: Vector3<f64>,
+    along: Option<[f64; 2]>,
+) -> Vector3<f64> {
+    let Some(a) = along else {
+        return span_load(case, cable, d);
+    };
+    let load = case.wire_load(cable.diameter, cable.weight());
+    let left = nalgebra::Vector2::new(-a[1], a[0]);
+    let h = d.xy();
+    // The wind across the wire: its part normal to the wire (|·| = sin of
+    // the angle between them), scaled once more by that sine.
+    let across = if h.norm() > 0.0 {
+        let u = h / h.norm();
+        left - u * left.dot(&u)
+    } else {
+        left
+    };
+    let push = across * across.norm() * (load.horizontal.si() * case.wind_from.to_left());
+    Vector3::new(push.x, push.y, -load.vertical.si())
+}
+
 /// Stringing reference of a section: clamp positions and unstressed lengths
 /// at a reference temperature.
 #[derive(Clone)]
@@ -885,6 +916,19 @@ pub fn solve_section(
     use crate::condition::{Condition, Method};
     // The line's bimetallic model for cables that do not give their own.
     let cable = &*line.bimetallic.apply(cable);
+    // The wind's side is the line's: a section whose points run against
+    // the line's direction is solved with the side swapped, so its spans
+    // blow to the same side as those entered along it.
+    let flipped;
+    let case = if against_the_line(line, section) {
+        flipped = WeatherCase {
+            wind_from: case.wind_from.opposite(),
+            ..case.clone()
+        };
+        &flipped
+    } else {
+        case
+    };
     let calc = section.calculation;
     let solve = |final_state: Option<&FinalState>| match calc.method() {
         Method::Fe => solve_fe(line, section, cable, case, final_state, budget),
@@ -1494,11 +1538,9 @@ fn core_branch(
     built: &Built,
     solution: &ols_wirefe::Solution,
 ) -> Option<(Cable, f64)> {
-    // The same limit as the ruling-span path (curves included).
-    let limit = ols_cables::mechanics::Mechanics::from_cable(cable).map_or_else(
-        |_| cable.outer_compression_limit(),
-        |m| m.outer_compression_limit(),
-    );
+    // The same limit as the ruling-span path and the jumpers (curves
+    // included).
+    let limit = cable.outer_compression_limit_with_curves();
     let core_part = cable.core.as_ref()?;
     if !limit.is_finite() {
         return None;
@@ -1518,6 +1560,22 @@ fn core_branch(
     let mut core = cable.clone();
     core.outer.modulus = ols_core::units::Stress::ZERO;
     Some((core, limit / core_part.axial_stiffness().si()))
+}
+
+/// Whether a section's points run against the line's direction (its first
+/// to last wire point, against the line's direction at their middle).
+fn against_the_line(line: &Line, section: &Section) -> bool {
+    let ends = (section.points.first(), section.points.last());
+    let (Some(a), Some(b)) = ends else {
+        return false;
+    };
+    let (Some(a), Some(b)) = (line.attachment(a), line.attachment(b)) else {
+        return false;
+    };
+    let (a, b) = (a.wire_point, b.wire_point);
+    let mid = [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])];
+    line.direction_at(mid)
+        .is_some_and(|d| (b[0] - a[0]) * d[0] + (b[1] - a[1]) * d[1] < 0.0)
 }
 
 /// Solves one section (it need not be the line's own: a section being

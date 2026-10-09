@@ -42,7 +42,7 @@ use ols_wirefe::catenary_element::default_element_budget;
 use ols_wirefe::{CableElement, CableProperties, Model, Node, TrussElement, default_fe_budget};
 
 use crate::rod::{Rod, RodSupport};
-use crate::solve::{DEFAULT_INSULATOR_STIFFNESS, SectionShape, p, span_load, v};
+use crate::solve::{DEFAULT_INSULATOR_STIFFNESS, SectionShape, p, v, wire_load_in_line_wind};
 use crate::{Jumper, Line, LineError, Point, SectionPoint};
 
 /// Solved geometry of a jumper.
@@ -92,6 +92,12 @@ fn end_position(
 /// points the jumper upwards, and the jumper then swings further in the
 /// wind than a hinged one (the bend at the clamps eases as it swings).
 pub const DEFAULT_TERMINAL_ANGLE_DEG: f64 = 30.0;
+
+/// Least slack of a jumper, as a share of its length: shorter than its
+/// clamps' distance by less, it is taut (a jumper's stretch at its tension
+/// is ~10⁻⁶; a 4 m jumper with 2 cm of sag has ~7·10⁻⁵). The same floor
+/// for cutting a jumper to a sag.
+const TAUT: f64 = 1e-5;
 
 /// The direction a section's end clamp holds the jumper in: the
 /// conductor's axis out of the section (the span's tangent at the clamp,
@@ -245,7 +251,7 @@ fn length_for_sag(
         };
         Ok(sag_below_chord(&element_shape(&props, a, d)?.0, a, b))
     };
-    let mut low = chord * (1.0 + 1e-5);
+    let mut low = chord * (1.0 + TAUT);
     if sag_of(low)? >= sag {
         return Err(format!(
             "a sag of {sag} m is less than the taut jumper's ({:.3} m)",
@@ -368,7 +374,7 @@ fn stiff_length_for_sag(
         let shape = stiff.solve(a, b, l0, still.load, None, still.axial_stiffness)?;
         Ok(sag_below_chord(&shape.points, a, b) - sag)
     };
-    let (mut lo, mut hi) = (chord * (1.0 + 1e-4), hinged);
+    let (mut lo, mut hi) = (chord * (1.0 + TAUT), hinged);
     let (mut flo, mut fhi) = (f(lo)?, f(hi)?);
     if flo >= 0.0 {
         return Err(format!(
@@ -476,6 +482,21 @@ pub fn solve_jumper(
     case: &WeatherCase,
 ) -> Result<JumperShape, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("jumper {}: {m}", jumper.id));
+    // Its ends are the solved clamps: a section through an end that did not
+    // solve leaves no clamp (the attachment's data point would be a wrong,
+    // plausible-looking end).
+    for end in [&jumper.from, &jumper.to] {
+        if let Some(s) = line
+            .sections
+            .iter()
+            .find(|s| s.points.contains(end) && !shapes.iter().any(|x| x.section == s.id))
+        {
+            return Err(invalid(format!(
+                "section {} at its end at {} is not solved in this weather case",
+                s.id, end.structure
+            )));
+        }
+    }
     let a = end_position(line, shapes, &jumper.from).map_err(|e| invalid(e.to_string()))?;
     let b = end_position(line, shapes, &jumper.to).map_err(|e| invalid(e.to_string()))?;
     let d = b - a;
@@ -514,7 +535,10 @@ pub fn solve_jumper(
     // temperature.
     let dt = case.temperature.celsius() - jumper.temperature;
     let l0 = reference * line.bimetallic.apply(cable).free_thermal_strain(dt).exp();
-    let load = span_load(case, cable, d);
+    // The line's wind, whichever way the jumper was entered: across the
+    // line from the case's side (a jumper across the line takes little).
+    let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
+    let load = wire_load_in_line_wind(case, cable, d, along);
     let props = CableProperties {
         unstressed_length: l0,
         axial_stiffness: ea,
@@ -527,7 +551,7 @@ pub fn solve_jumper(
     // taut and hold them back, and the pull of a jumper on its clamps is
     // not modelled — sections are solved first. Said so, instead of a
     // stretched jumper at hundreds of kN or a solver that cannot settle.
-    if d.norm() >= l0 * (1.0 - 1e-3) {
+    if d.norm() >= l0 * (1.0 - TAUT) {
         return Err(invalid(format!(
             "taut: {l0:.2} m long between clamps {:.2} m apart in this weather case (the \
              clamps swing apart; a jumper holding them back is not modelled yet)",
@@ -902,6 +926,107 @@ mod tests {
                 a[0].unstressed_length, a[0].sag, b[0].unstressed_length, b[0].sag
             );
         }
+    }
+
+    /// A nearly straight jumper (hinged; 5·10⁻⁵ longer than its clamps'
+    /// distance: ~0.5 mm on ~10.8 m) solves (the old floor, 10⁻³, called
+    /// it taut); under the floor it is taut.
+    #[test]
+    fn a_nearly_straight_jumper_solves_until_it_is_taut() {
+        let mut line = crate::tests::example();
+        let lib = library();
+        let t0 = line.jumpers[0].temperature;
+        let shapes = |line: &Line, t: f64| -> Vec<SectionShape> {
+            solve_line(line, &lib, &still(t))
+                .into_iter()
+                .map(Result::unwrap)
+                .collect()
+        };
+        let first = solve_jumpers(&line, &lib, &still(t0), &shapes(&line, t0))
+            .remove(0)
+            .unwrap();
+        let (a, b) = (v(first.points[0]), v(*first.points.last().unwrap()));
+        line.jumpers[0].sag = None;
+        line.jumpers[0].length = Some((b - a).norm() * (1.0 + 5e-5));
+        line.jumpers[0].bending_stiffness = Some(0.0);
+        let j = solve_jumpers(&line, &lib, &still(t0), &shapes(&line, t0))
+            .remove(0)
+            .unwrap();
+        assert!(j.sag > 0.0 && j.sag < 0.1, "{}", j.sag);
+        // Under the floor (5·10⁻⁶ longer): taut.
+        line.jumpers[0].length = Some((b - a).norm() * (1.0 + 5e-6));
+        let err = solve_jumpers(&line, &lib, &still(t0), &shapes(&line, t0))
+            .remove(0)
+            .unwrap_err();
+        assert!(err.to_string().contains("taut"), "{err}");
+    }
+
+    /// The wind blows to the same side whichever way a section or a jumper
+    /// was entered: the side is the line's (its direction from the routes).
+    #[test]
+    fn the_wind_side_does_not_depend_on_the_order_entered() {
+        let line = crate::tests::example();
+        let mut windy = still(15.0);
+        windy.wind_pressure = Stress::from_pascals(500.0);
+        let (shapes, jumpers) = solve_all(&line, &windy);
+        // S1 entered from its last structure to its first.
+        let mut rev = line.clone();
+        let s1 = rev.sections.iter_mut().find(|s| s.id == "S1").unwrap();
+        s1.points.reverse();
+        // Its jumper too, from `to` to `from`.
+        let j = &mut rev.jumpers[0];
+        std::mem::swap(&mut j.from, &mut j.to);
+        std::mem::swap(&mut j.angle_from_deg, &mut j.angle_to_deg);
+        let (rshapes, rjumpers) = solve_all(&rev, &windy);
+        // Each span's sideways offset from its chord (its centroid against
+        // the chord's middle, to the left of the line): the same side, and
+        // nearly the same (it is strung from its other end).
+        let a = shapes.iter().find(|s| s.section == "S1").unwrap();
+        let b = rshapes.iter().find(|s| s.section == "S1").unwrap();
+        let n = a.spans.len();
+        let offset = |s: &SectionShape, k: usize, left: Vector3<f64>| -> f64 {
+            let pts = &s.spans[k].points;
+            let c = pts.iter().map(|p| v(*p)).sum::<Vector3<f64>>() / pts.len() as f64;
+            let m = 0.5 * (v(pts[0]) + v(*pts.last().unwrap()));
+            (c - m).dot(&left)
+        };
+        for k in 0..n {
+            let pts = &a.spans[k].points;
+            let d = v(*pts.last().unwrap()) - v(pts[0]);
+            let left = Vector3::new(-d.y, d.x, 0.0).normalize();
+            let (f, r) = (offset(a, k, left), offset(b, n - 1 - k, left));
+            assert!(f.abs() > 0.1, "span {k} is blown: {f}");
+            assert!(
+                f * r > 0.0 && (f - r).abs() < 0.1 * f.abs(),
+                "span {k}: {f} {r}"
+            );
+        }
+        // The jumper's low point: the same place.
+        let (p, q) = (jumpers[0].low_point, rjumpers[0].low_point);
+        // (reversed before, it swung ~1.3 m the other way; a few mm from S1
+        // strung from its other end)
+        assert!((v(p) - v(q)).norm() < 0.01, "{p:?} {q:?}");
+    }
+
+    /// A section through a jumper's end that did not solve: the jumper
+    /// fails, naming it (not solved between data points).
+    #[test]
+    fn a_jumper_fails_when_a_section_at_its_end_is_not_solved() {
+        let line = crate::tests::example();
+        let (shapes, _) = solve_all(&line, &still(15.0));
+        let j = &line.jumpers[0];
+        let end = line
+            .sections
+            .iter()
+            .find(|s| s.points.contains(&j.from))
+            .unwrap()
+            .id
+            .clone();
+        let without: Vec<SectionShape> = shapes.into_iter().filter(|s| s.section != end).collect();
+        let err = solve_jumpers(&line, &library(), &still(15.0), &without)
+            .remove(0)
+            .unwrap_err();
+        assert!(err.to_string().contains(&format!("section {end}")), "{err}");
     }
 
     /// A rigid jumper: straight between its solved clamps in every case,
