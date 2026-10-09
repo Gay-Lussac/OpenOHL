@@ -6656,3 +6656,60 @@ fn local_plan_image() {
     }
     h.render().unwrap().save(format!("{dir}/plan.png")).unwrap();
 }
+
+/// Where an edit's re-solve goes, on a local project (`OLS_PROJECT`):
+/// one section re-solved in a solved case, its parts timed, with the
+/// bundles as they are and without their spacing.
+#[test]
+#[ignore = "local data"]
+fn local_resolve_timing() {
+    let Ok(file) = std::env::var("OLS_PROJECT") else {
+        return;
+    };
+    let mut model = model::load(
+        Sources {
+            file: file.into(),
+            point_budget: 1000,
+            corridor: 60.0,
+            ..Sources::default()
+        },
+        &|m| eprintln!("{m}"),
+    )
+    .unwrap();
+    let k = model.cases.iter().position(|c| c.ready).unwrap_or(0);
+    model.ensure_solved(k);
+    let library = model.library.clone();
+    for spaced in [true, false] {
+        let mut line = model.line.clone();
+        if !spaced {
+            for s in &mut line.sections {
+                s.bundle_spacing = None;
+            }
+            for j in &mut line.jumpers {
+                j.bundle_spacing = None;
+            }
+        }
+        let mut solved = model::Solved::from_live(
+            &line,
+            model.cases[k].case.clone(),
+            ols_line::incremental::SolvedLine::solve(&line, &library, &model.cases[k].case),
+        );
+        let dirty = vec![line.sections[10].id.clone()];
+        let t = std::time::Instant::now();
+        let shapes = solved.live.shapes(&line);
+        let t_shapes = t.elapsed();
+        let t = std::time::Instant::now();
+        let _ = ols_line::jumper::solve_jumpers(&line, &library, &solved.case, &shapes);
+        let t_jumpers = t.elapsed();
+        let t = std::time::Instant::now();
+        let _ = ols_line::bundles::BundleLines::new(&line, &solved.shapes, &solved.jumpers);
+        let t_bundles = t.elapsed();
+        let t = std::time::Instant::now();
+        solved.update(&line, &library, &dirty);
+        let t_update = t.elapsed();
+        println!(
+            "spacing {spaced}: update {t_update:.1?} = shapes {t_shapes:.1?}, jumpers {t_jumpers:.1?}, bundles {t_bundles:.1?}, rest; mirror {}",
+            solved.mirror.is_some()
+        );
+    }
+}
