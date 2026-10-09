@@ -900,6 +900,11 @@ impl Model {
             let to = dir.join(kind);
             std::fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
             for (name, text) in files {
+                // A name from the project file (a crafted one: "../…", an
+                // absolute path) never leaves the folder chosen.
+                if !ols_session::safe_file_name(&name) {
+                    return Err(format!("library file \"{name}\": not a plain file name"));
+                }
                 std::fs::write(to.join(&name), text).map_err(|e| format!("{name}: {e}"))?;
                 n += 1;
             }
