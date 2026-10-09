@@ -92,7 +92,11 @@ An edit re-solves its own sections. A jumper is solved again only if one of thes
 
 ## When a jumper fails
 
-- **Taut.** In wind, free strain strings can swing their clamps further apart than the jumper is long. The jumper's pull holding them back is not modelled, because sections are solved first. That jumper is reported as *taut* in that weather case, instead of being drawn at hundreds of kN.
+- **Taut.** The clamps end up at least as far apart as the jumper's unstressed length in that weather case: \\( |B - A| \ge L_0\,(1 - 10^{-3}) \\). The jumper's pull holding the clamps back is not modelled, because sections are solved first. So the jumper is reported as *taut* in that case, instead of being drawn at hundreds of kN. This is decided from the length and the clamps' distance alone, before the rod is solved. The clamps' exit angles and the bending stiffness play no part in it. Two situations lead there:
+  - **Wind.** Free strain strings swing their clamps apart.
+  - **Cold, on a nearly straight jumper.** A jumper with little slack loses it from both sides when it is cold. Its length shrinks with the temperature, and the dead-end clamps move apart as the colder, tighter sections pull their strain strings straighter. For example, a 4.2 m jumper given a 10 cm sag at 15 °C is only \\( \approx 8s^2/3c = 6 \\) mm longer than its chord. At −20 °C it is 3 mm shorter, and its clamps are a few millimetres further apart, so it is taut.
+
+  A jumper that is really a stiff bar (a rigid or tubular jumper) has no slack to lose and should not be modelled as a cable with a token sag. Programs that treat such jumpers as rigid members never report them as too short. OLS CAD has no rigid jumper kind yet: until it does, give such a jumper enough sag to stay slack in the coldest case, and know that its drawn shape is then approximate.
 - **Ends less than 0.1 m apart horizontally.** A vertical jumper is not supported yet.
 - **No convergence.** The message names the residual. This is rare since the solve runs in coordinates relative to the first end.
 - **Sag cannot be reached.** The sag asked for is less than the taut jumper's, or would need more than 20× the chord length.
