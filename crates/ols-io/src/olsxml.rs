@@ -281,6 +281,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         length,
         sag,
         temperature,
+        rigid,
         support,
         bending_stiffness,
         stiffness_factor,
@@ -297,6 +298,9 @@ fn write_jumper(out: &mut String, j: &Jumper) {
     opt_num(out, "length", *length);
     opt_num(out, "sag", *sag);
     attr(out, "temperature", &num(*temperature));
+    if *rigid {
+        attr(out, "rigid", "true");
+    }
     opt_num(out, "bending_stiffness", *bending_stiffness);
     opt_num(out, "stiffness_factor", *stiffness_factor);
     opt_num(out, "angle_from_deg", *angle_from_deg);
@@ -719,6 +723,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             "length",
             "sag",
             "temperature",
+            "rigid",
             "bending_stiffness",
             "stiffness_factor",
             "angle_from_deg",
@@ -750,6 +755,11 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         length: optional(e, "length")?,
         sag: optional(e, "sag")?,
         temperature: optional(e, "temperature")?.unwrap_or(15.0),
+        rigid: match e.attr("rigid") {
+            None | Some("false") => false,
+            Some("true") => true,
+            Some(v) => return Err(format!("jumper rigid=\"{v}\": true or false")),
+        },
         support,
         bending_stiffness: optional(e, "bending_stiffness")?,
         stiffness_factor: optional(e, "stiffness_factor")?,

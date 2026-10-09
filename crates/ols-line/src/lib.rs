@@ -144,6 +144,10 @@ pub struct Jumper {
     /// Temperature of `length` / `sag`, °C.
     #[serde(default = "default_jumper_temperature")]
     pub temperature: f64,
+    /// A rigid jumper (a tube or bar): the straight member between its
+    /// solved clamps, without length or sag; never taut, no thermal change.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub rigid: bool,
     /// Optional jumper support string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub support: Option<JumperSupport>,
@@ -901,8 +905,13 @@ impl Line {
             if route_ids.insert(r.id.as_str(), ()).is_some() {
                 return invalid(format!("duplicate route id {}", r.id));
             }
-            if r.structures.len() < 2 {
-                return invalid(format!("route {}: needs at least two structures", r.id));
+            // An alignment of its own may come before its structures (a
+            // branch being laid out).
+            if r.structures.len() < 2 && r.alignment.len() < 2 {
+                return invalid(format!(
+                    "route {}: needs two structures or an alignment of two points",
+                    r.id
+                ));
             }
             if r.alignment.len() == 1 {
                 return invalid(format!(
@@ -1012,9 +1021,11 @@ impl Line {
             if j.from == j.to {
                 return bad("both ends are the same attachment");
             }
-            match (j.length, j.sag) {
-                (Some(l), None) if l > 0.0 => {}
-                (None, Some(s)) if s > 0.0 => {}
+            match (j.rigid, j.length, j.sag) {
+                (true, None, None) => {}
+                (true, ..) => return bad("a rigid jumper has no length or sag"),
+                (false, Some(l), None) if l > 0.0 => {}
+                (false, None, Some(s)) if s > 0.0 => {}
                 _ => return bad("give either a positive length or a positive sag"),
             }
             if j.bending_stiffness

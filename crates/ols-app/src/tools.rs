@@ -32,6 +32,9 @@ pub enum Tool {
     StringWire,
     /// Right-click the ground: a new alignment point there.
     AddAlignment,
+    /// Right-click points in order (an alignment point: a junction; the
+    /// ground: a free point), Enter: a new alignment through them.
+    NewAlignment,
     /// Right-click a structure: the jumpers missing there; or two
     /// strings: a jumper between them.
     AddJumper,
@@ -39,7 +42,7 @@ pub enum Tool {
 
 impl Tool {
     /// Every tool (the inventory).
-    pub const ALL: [Tool; 10] = [
+    pub const ALL: [Tool; 11] = [
         Tool::Select,
         Tool::Move,
         Tool::Delete,
@@ -50,6 +53,7 @@ impl Tool {
         Tool::StringWire,
         Tool::AddAlignment,
         Tool::AddJumper,
+        Tool::NewAlignment,
     ];
 
     /// Name.
@@ -64,6 +68,7 @@ impl Tool {
             Tool::AddString => "Add string",
             Tool::StringWire => "String wire",
             Tool::AddAlignment => "Add alignment point",
+            Tool::NewAlignment => "New alignment",
             Tool::AddJumper => "Add jumper",
         }
     }
@@ -80,6 +85,7 @@ impl Tool {
             Tool::AddString => "⛓",
             Tool::StringWire => "≈",
             Tool::AddAlignment => "⛶",
+            Tool::NewAlignment => "⤳",
             Tool::AddJumper => "Ψ",
         }
     }
@@ -109,6 +115,9 @@ impl Tool {
             Tool::AddAlignment => {
                 "right-click the ground: a new alignment point in the nearest segment (the profile follows)"
             }
+            Tool::NewAlignment => {
+                "right-click points in order — an alignment point: the new one starts, passes or ends there (a junction); the ground: a free point. Enter: create it (Backspace: undo a point, Escape: cancel)"
+            }
             Tool::AddJumper => {
                 "right-click a structure: the jumpers missing there (section ends of the same circuit and phase); or two strings: a jumper between them"
             }
@@ -131,7 +140,10 @@ impl Tool {
 
     /// Alignment points can be right-clicked while it is held.
     pub fn picks_alignment(self) -> bool {
-        matches!(self, Tool::Delete | Tool::Edit | Tool::AddAlignment)
+        matches!(
+            self,
+            Tool::Delete | Tool::Edit | Tool::AddAlignment | Tool::NewAlignment
+        )
     }
 
     /// Key for saving.
@@ -146,6 +158,7 @@ impl Tool {
             Tool::AddString => "add_string",
             Tool::StringWire => "string_wire",
             Tool::AddAlignment => "add_alignment",
+            Tool::NewAlignment => "new_alignment",
             Tool::AddJumper => "add_jumper",
         }
     }

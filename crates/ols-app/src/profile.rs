@@ -20,7 +20,7 @@ pub struct ProfileView {
     /// Route shown (index in the line's routes).
     pub route: usize,
     /// The route was chosen in the list (else: the one with most structures).
-    chosen: bool,
+    pub(crate) chosen: bool,
     drawing: Option<((usize, usize), RouteDrawing)>,
     /// Visible stations.
     range: Option<[f64; 2]>,
