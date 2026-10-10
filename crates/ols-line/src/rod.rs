@@ -45,12 +45,13 @@ pub(crate) struct RodString {
 }
 
 /// A point of the rod held by strings: on piece `piece`, `offset` of its
-/// length from the piece's start; `weight` hangs there (N).
+/// length from the piece's start; `load` acts there (N: the weight
+/// hanging there, the wind on its strings).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RodHold {
     pub piece: usize,
     pub offset: f64,
-    pub weight: f64,
+    pub load: V,
     pub strings: Vec<RodString>,
 }
 
@@ -212,7 +213,7 @@ impl Rod {
             e += 2.0 * self.ei / self.pieces[n - 1] * (1.0 - d[n - 1].dot(&b));
         }
         for h in &self.holds {
-            e += h.weight * self.held(h, &nodes, d).z;
+            e -= h.load.dot(&self.held(h, &nodes, d));
         }
         e
     }
@@ -260,7 +261,7 @@ impl Rod {
             g[n - 1] -= e * (2.0 * self.ei / self.pieces[n - 1]);
         }
         for h in &self.holds {
-            let w = V::new(0.0, 0.0, -h.weight);
+            let w = h.load;
             for (i, gi) in g.iter_mut().enumerate().take(h.piece + 1) {
                 *gi -= w * self.coef(h, i);
             }
@@ -397,7 +398,7 @@ impl Rod {
             let l = *l;
             let mut f = self.q * (0.5 * l + tail) + lambda;
             for h in &self.holds {
-                f += V::new(0.0, 0.0, -h.weight) * (self.coef(h, i) / l);
+                f += h.load * (self.coef(h, i) / l);
             }
             for (&c, m) in active.iter().zip(mu) {
                 let h = &self.holds[c.0];
@@ -485,7 +486,8 @@ impl Rod {
         let all = self.strings();
         let (mut d, mut lambda, mut mu) = self.newton(start, &[], budget)?;
         let mut active: Vec<(usize, usize)> = Vec::new();
-        let force_scale = self.q.norm() * total + self.holds.iter().map(|h| h.weight).sum::<f64>();
+        let force_scale =
+            self.q.norm() * total + self.holds.iter().map(|h| h.load.norm()).sum::<f64>();
         for round in 0.. {
             let nodes = self.nodes(&d);
             // Taut strings that would push: let go.
@@ -582,7 +584,7 @@ impl Rod {
         let mut d: Vec<V> = start.iter().map(|x| x.normalize()).collect();
         let l = self.mean_piece();
         let force_scale =
-            self.q.norm() * self.length() + self.holds.iter().map(|h| h.weight).sum::<f64>();
+            self.q.norm() * self.length() + self.holds.iter().map(|h| h.load.norm()).sum::<f64>();
         let moment_tol = 1e-9 * (force_scale * l + self.ei / l).max(1e-9);
         let gap_tol = 1e-10 * self.length();
         let scaled = |r: &DVector<f64>| -> f64 {
@@ -799,13 +801,13 @@ mod tests {
                 RodHold {
                     piece: 2,
                     offset: 0.0,
-                    weight: 20.0,
+                    load: V::new(0.0, 0.0, -20.0),
                     strings: vec![string(V::new(1.5, 0.0, 1.0), 1.5)],
                 },
                 RodHold {
                     piece: 3,
                     offset: 0.5,
-                    weight: 35.0,
+                    load: V::new(0.0, 0.0, -35.0),
                     strings: vec![
                         string(V::new(2.0, -1.0, 1.0), 1.8),
                         string(V::new(2.0, 1.0, 1.2), 1.6),
@@ -867,7 +869,7 @@ mod tests {
                 holds: vec![RodHold {
                     piece: 15,
                     offset: 0.0,
-                    weight: 20.0,
+                    load: V::new(0.0, 0.0, -20.0),
                     strings: vec![string(V::new(2.0, 0.0, 0.5), 1.0)],
                 }],
                 ..Rod::uniform(
@@ -898,7 +900,7 @@ mod tests {
             holds: vec![RodHold {
                 piece: 19,
                 offset: 0.5,
-                weight: 30.0,
+                load: V::new(0.0, 0.0, -30.0),
                 strings,
             }],
             ..Rod::uniform(V::zeros(), V::new(3.0, 0.0, 0.0), 3.9, 39, q, ei)
@@ -1013,7 +1015,7 @@ mod tests {
                 .map(|(piece, x)| RodHold {
                     piece,
                     offset: 0.5,
-                    weight: 10.0,
+                    load: V::new(0.0, 0.0, -10.0),
                     strings: vec![string(V::new(x, 0.0, 0.8), 1.0)],
                 })
                 .collect(),

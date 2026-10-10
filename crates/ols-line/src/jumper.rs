@@ -367,6 +367,8 @@ struct ClampHold {
     at: f64,
     length: f64,
     weight: f64,
+    /// The wind on its strings (half of each), N.
+    wind: Vector3<f64>,
     strings: Vec<RodString>,
 }
 
@@ -447,7 +449,7 @@ impl Stiff {
                     } => vec![RodHold {
                         piece: (fraction * n as f64).round().clamp(1.0, (n - 1) as f64) as usize,
                         offset: 0.0,
-                        weight: *weight,
+                        load: Vector3::new(0.0, 0.0, -*weight),
                         strings: vec![*string],
                     }],
                     _ => Vec::new(),
@@ -462,7 +464,7 @@ impl Stiff {
                     .map(|(c, piece)| RodHold {
                         piece,
                         offset: 0.5,
-                        weight: c.weight,
+                        load: Vector3::new(0.0, 0.0, -c.weight) + c.wind,
                         strings: c.strings.clone(),
                     })
                     .collect();
@@ -603,8 +605,15 @@ fn rod_ends(line: &Line, jumper: &Jumper, shapes: &[SectionShape], cable: &Cable
 
 /// A jumper's support clamps to solve: each clamp's strings from the
 /// structure (tops, lengths) and the weight on it per subconductor (half of
-/// each string's, and its wire point's).
-fn clamp_holds(line: &Line, jumper: &Jumper, bundle: u32) -> Result<Vec<ClampHold>, String> {
+/// each string's, and its wire point's), and the wind on its strings (half
+/// of each: `wind` N per m² of wind area, across the line as on the
+/// line's suspension strings).
+fn clamp_holds(
+    line: &Line,
+    jumper: &Jumper,
+    bundle: u32,
+    wind: Vector3<f64>,
+) -> Result<Vec<ClampHold>, String> {
     jumper
         .supports
         .iter()
@@ -618,6 +627,7 @@ fn clamp_holds(line: &Line, jumper: &Jumper, bundle: u32) -> Result<Vec<ClampHol
             let (wire, strings) = crate::clamp_strings(structure, &c.wire)
                 .map_err(|m| format!("support clamp {n}: {m}"))?;
             let mut weight = wire.weight;
+            let mut push = Vector3::zeros();
             let mut held = Vec::with_capacity(strings.len());
             for s in strings {
                 let top = structure.point(&s.top).map(|p| v(p.position));
@@ -626,12 +636,14 @@ fn clamp_holds(line: &Line, jumper: &Jumper, bundle: u32) -> Result<Vec<ClampHol
                     return Err(format!("support clamp {n}: string {} has no top", s.label));
                 };
                 weight += s.weight / 2.0;
+                push += wind * (0.5 * s.wind_area);
                 held.push(RodString { top, length });
             }
             Ok(ClampHold {
                 at: c.at,
                 length: c.clamp_length,
                 weight: weight / f64::from(bundle),
+                wind: push / f64::from(bundle),
                 strings: held,
             })
         })
@@ -827,7 +839,13 @@ pub fn solve_jumper(
                 },
             },
             None if !jumper.supports.is_empty() => {
-                Held::Clamps(clamp_holds(line, jumper, bundle).map_err(invalid)?)
+                // The wind on the strings, across the line from the case's
+                // side (per m² of their wind area).
+                let wind = along.map_or(Vector3::zeros(), |a| {
+                    Vector3::new(-a[1], a[0], 0.0)
+                        * (case.wind_pressure.si() * case.wind_from.to_left())
+                });
+                Held::Clamps(clamp_holds(line, jumper, bundle, wind).map_err(invalid)?)
             }
             None => Held::Free,
         };
@@ -1703,6 +1721,43 @@ mod tests {
         assert!((v(w.clamp) - v(s.clamp)).xy().norm() > 0.05);
         assert!(through_the_clamp(&blown[0], w, 0.1) < 1e-9);
         println!("V in the wind: {forces:?} N, {took:.1?}");
+    }
+
+    /// The wind on a helping string's wind area pushes its clamp further
+    /// across (half the string's area at the clamp), the string still at
+    /// its length.
+    #[test]
+    fn the_wind_on_a_helping_string_swings_it_further() {
+        let (mut line, _) = with_clamps(&[("JW", 0.5, false)]);
+        let mut windy = still(15.0);
+        windy.wind_pressure = Stress::from_pascals(600.0);
+        let (_, calm) = solve_all(&line, &still(15.0));
+        let (_, bare) = solve_all(&line, &windy);
+        let structure = line.jumpers[0].supports[0]
+            .structure_id(&line.jumpers[0])
+            .to_owned();
+        let s = line
+            .structures
+            .iter_mut()
+            .find(|s| s.id == structure)
+            .unwrap();
+        for x in s.strings.iter_mut().filter(|x| x.wire == "JW") {
+            x.wind_area = 0.5;
+        }
+        let (_, blown) = solve_all(&line, &windy);
+        let at = |j: &JumperShape| v(j.supports[0].clamp);
+        let rest = at(&calm[0]);
+        let (a, b) = (
+            (at(&bare[0]) - rest).xy().norm(),
+            (at(&blown[0]) - rest).xy().norm(),
+        );
+        assert!(
+            b > a + 0.01,
+            "without {a:.3} m, with its wind area {b:.3} m"
+        );
+        let x = &blown[0].supports[0].strings[0];
+        assert!(x.force > 0.0);
+        assert!(through_the_clamp(&blown[0], &blown[0].supports[0], 0.1) < 1e-9);
     }
 
     /// Support clamps that do not fit: each refused with what is wrong.

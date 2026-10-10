@@ -438,7 +438,7 @@ pub fn ui(
                         }),
                     ),
                     (
-                        "support clamps",
+                        "helping strings",
                         if j.supports.is_empty() {
                             "none".into()
                         } else {

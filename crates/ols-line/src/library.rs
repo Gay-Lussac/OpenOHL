@@ -207,6 +207,7 @@ impl Line {
                 insulator: x.insulator,
                 weight: x.weight,
                 compression: x.compression,
+                wind_area: x.wind_area,
                 strain: x.strain,
                 ..Default::default()
             }));
@@ -248,14 +249,15 @@ impl Line {
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
         }
 
-        // Wind areas of library assemblies (a V's shared by its legs).
+        // Wind areas of library assemblies (a V's shared by its legs), for
+        // strings without their own.
         for s in &mut line.structures {
             let legs: BTreeMap<String, usize> = s
                 .strings
                 .iter()
                 .map(|x| (x.wire.clone(), s.strings_to(&x.wire).count()))
                 .collect();
-            for x in &mut s.strings {
+            for x in s.strings.iter_mut().filter(|x| x.wind_area == 0.0) {
                 if let Some(i) = x.insulator.as_deref().and_then(|id| insulators.get(id)) {
                     let share = if i.kind == AssemblyKind::VString {
                         1.0 / legs.get(&x.wire).copied().unwrap_or(1).max(1) as f64
@@ -597,6 +599,39 @@ mod tests {
         for result in crate::solve::solve_line(&resolved, &cables, &case) {
             assert!(result.is_ok(), "{result:?}");
         }
+    }
+
+    /// A type's string with its own wind area brings it into the line;
+    /// its own wins over its insulator's.
+    #[test]
+    fn a_type_strings_wind_area_reaches_the_line() {
+        let text = "id = \"W\"\nname = \"w\"\nkind = \"lattice\"\n\
+            [[point]]\nlabel = \"A1\"\npoint = [\"-6 m\", \"0 m\", \"30 m\"]\n\
+            [[wire]]\nlabel = \"W1\"\nset = 1\n\
+            [[string]]\nlabel = \"S1\"\ntop = \"A1\"\nwire = \"W1\"\nlength = \"4 m\"\nwind_area = \"0.35 m²\"\n";
+        let mut structures = StructureLibrary::default();
+        structures
+            .insert(
+                Path::new("w.olss"),
+                StructureType::parse(Path::new("w.olss"), text).unwrap(),
+            )
+            .unwrap();
+        let mut line = crate::tests::example();
+        line.structures[1].strings.clear();
+        line.structures[1].points.clear();
+        line.structures[1].wires.clear();
+        line.structures[1].structure_type = Some("W".into());
+        line.sections.retain(|s| {
+            s.points
+                .iter()
+                .all(|p| p.structure != line.structures[1].id)
+        });
+        line.jumpers.clear();
+        let resolved = line
+            .resolve(&structures, &InsulatorLibrary::default())
+            .unwrap();
+        assert_eq!(resolved.structures[1].string("S1").unwrap().wind_area, 0.35);
+        assert!(StructureType::parse(Path::new("w.olss"), &text.replace("0.35", "-1")).is_err());
     }
 
     /// The height adjustment raises a typed structure: its points, wire

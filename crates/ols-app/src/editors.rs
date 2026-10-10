@@ -96,6 +96,10 @@ pub struct StringRow {
     pub weight: f64,
     /// Compression it may take, N (none: tension only).
     pub compression: Option<f64>,
+    /// Area the wind blows on, m² (0: its insulator's, if any).
+    pub wind_area: f64,
+    /// Axial stiffness EA, N (kept as it was).
+    pub stiffness: Option<f64>,
     /// A strain string, lined up with its conductor.
     pub strain: bool,
 }
@@ -427,10 +431,11 @@ fn clamps_ui(
     model: &Model,
 ) {
     ui.separator();
-    ui.label("Support clamps").on_hover_text(
-        "Clamps on the jumper hanging on strings of a structure (an I or a V to a wire \
-         point without a set). Each swings and turns freely; the jumper runs straight \
-         through it.",
+    ui.label("Helping strings").on_hover_text(
+        "Insulator strings of the structure holding the jumper between its tension clamps, \
+         like suspension strings on the line: an I or a V to a wire point without a set. \
+         Each holds the jumper in a clamp that swings and turns freely; the jumper runs \
+         straight through the clamp. The strings take their weight and wind area.",
     );
     let ends: Vec<String> = {
         let mut v = vec![j.from.structure.clone()];
@@ -444,7 +449,7 @@ fn clamps_ui(
         .num_columns(5)
         .show(ui, |ui| {
             for (k, c) in j.supports.iter_mut().enumerate() {
-                ui.label(format!("clamp {}", k + 1));
+                ui.label(format!("helping string {}", k + 1));
                 let id = c.structure.clone().unwrap_or_else(|| from.clone());
                 egui::ComboBox::from_id_salt(("clamp-structure", k))
                     .selected_text(&id)
@@ -488,7 +493,7 @@ fn clamps_ui(
                             .max_decimals(3)
                             .suffix(" m"),
                     )
-                    .on_hover_text("The clamp's length: the jumper is straight through it");
+                    .on_hover_text("The length of its clamp: the jumper is straight through it");
                 });
                 if ui.button("Remove…").clicked() {
                     *remove = Some(k);
@@ -519,15 +524,17 @@ fn clamps_ui(
         }
     }
     let why_not = if j.support.is_some() {
-        Some("It has a support string: clamps replace it (remove it in the Jumpers table)")
+        Some("It has a support string: helping strings replace it (remove it in the Jumpers table)")
     } else if j.length.is_none() {
-        Some("A jumper held by clamps is given by its length")
+        Some("A jumper held by helping strings is given by its length")
     } else {
         None
     };
     let add = ui
-        .add_enabled(why_not.is_none(), egui::Button::new("Add clamp"))
-        .on_hover_text("A clamp on a wire point without a set of its first end's structure");
+        .add_enabled(why_not.is_none(), egui::Button::new("Add helping string"))
+        .on_hover_text(
+            "Held by the strings to a wire point without a set of its first end's structure",
+        );
     let add = match why_not {
         Some(why) => add.on_disabled_hover_text(why),
         None => add,
@@ -1062,6 +1069,8 @@ impl StringForm {
                     insulator: x.insulator.clone(),
                     weight: x.weight,
                     compression: x.compression,
+                    wind_area: x.wind_area,
+                    stiffness: x.stiffness,
                     strain: x.strain,
                 }
             })
@@ -1256,8 +1265,9 @@ impl StringForm {
                 insulator: x.insulator.clone(),
                 weight: x.weight,
                 compression: x.compression,
+                wind_area: x.wind_area,
+                stiffness: x.stiffness,
                 strain: x.strain,
-                ..Default::default()
             });
         }
         if s.structure_type.is_some() {
@@ -1970,6 +1980,10 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                             ui.horizontal(|ui| {
                                 ui.label("weight");
                                 value(ui, &mut x.weight, 1.0, " N");
+                                ui.label("wind area");
+                                value(ui, &mut x.wind_area, 0.01, " m²").on_hover_text(
+                                    "Area the wind blows on (0: its insulator's, if any); half at each end",
+                                );
                                 if !insulators.is_empty() || x.insulator.is_some() {
                                     egui::ComboBox::from_id_salt(("string-insulator", k))
                                         .selected_text(

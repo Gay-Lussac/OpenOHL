@@ -394,6 +394,9 @@ pub struct TypeString {
     /// Compression it may take (none: tension only).
     #[serde(default)]
     pub compression: Option<ols_core::units::Force>,
+    /// Area the wind blows on (default: its insulator's, else none).
+    #[serde(default)]
+    pub wind_area: Option<ols_core::units::Area>,
     /// A strain (dead-end) string, lined up with its conductor.
     #[serde(default)]
     pub strain: bool,
@@ -1046,6 +1049,8 @@ pub struct PlacedString {
     pub weight: f64,
     /// Compression it may take, N.
     pub compression: Option<f64>,
+    /// Area the wind blows on, m² (0: its insulator's, if any).
+    pub wind_area: f64,
     /// A strain string.
     pub strain: bool,
 }
@@ -1105,6 +1110,12 @@ impl StructureType {
                     return bad("length must be between 0 and 50 m");
                 }
                 _ => {}
+            }
+            if st
+                .wind_area
+                .is_some_and(|w| w.si().is_nan() || w.si() < 0.0)
+            {
+                return bad("wind area must be ≥ 0");
             }
             if st.weight.is_some_and(|w| w.si() < 0.0)
                 || st
@@ -1346,6 +1357,7 @@ impl StructureType {
                             (None, None) => 0.0,
                         },
                         compression: s.compression.map(|c| c.si()),
+                        wind_area: s.wind_area.map_or(0.0, |w| w.si()),
                         strain: s.strain || a.is_some_and(|a| a.kind == AssemblyKind::Strain),
                     })
                 })
