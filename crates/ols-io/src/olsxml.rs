@@ -185,12 +185,16 @@ fn write_structure(out: &mut String, s: &Structure) {
             label,
             position,
             set,
+            weight,
         } = w;
         out.push_str("    <wire");
         attr(out, "label", label);
         point_attrs(out, *position);
         if let Some(set) = set {
             let _ = write!(out, " set=\"{set}\"");
+        }
+        if *weight != 0.0 {
+            attr(out, "weight", &num(*weight));
         }
         out.push_str("/>\n");
     }
@@ -652,11 +656,12 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
     let mut wires: Vec<WirePoint> = e
         .children_named("wire")
         .map(|w| {
-            check(w, &["label", "x", "y", "z", "set"], &[])?;
+            check(w, &["label", "x", "y", "z", "set", "weight"], &[])?;
             Ok(WirePoint {
                 label: text(w, "label")?.to_owned(),
                 position: point(w)?,
                 set: optional(w, "set")?,
+                weight: optional(w, "weight")?.unwrap_or(0.0),
             })
         })
         .collect::<Result<_, String>>()?;

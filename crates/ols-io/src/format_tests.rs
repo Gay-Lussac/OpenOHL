@@ -64,7 +64,9 @@ fn rich_line() -> Line {
         label: "tip\nnext".into(),
         position: [w.position[0], w.position[1], w.position[2] + 0.5],
         set: None,
+        weight: 0.0,
     });
+    s.wires[0].weight = 3500.0;
     s.points.push(ols_line::StructurePoint {
         label: "VL".into(),
         position: [w.position[0] - 2.0, w.position[1], w.position[2] + 3.0],

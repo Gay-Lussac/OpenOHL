@@ -200,6 +200,7 @@ impl Line {
                 label: w.label,
                 position: w.position,
                 set: w.set,
+                weight: w.weight,
             }));
             strings.extend(placed.strings.into_iter().map(|x| InsulatorString {
                 label: x.label,

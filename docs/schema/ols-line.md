@@ -31,7 +31,7 @@ The names are those of the line file:
   </route>
   <structure id="T1" x="…" y="…" z="…" orientation_deg="-90" type="…" extension="…">
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
-    <wire label="W1" x="…" y="…" z="…" set="1"/> <!-- set: a wire ends here -->
+    <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
     <string label="S1" top="A1" wire="W1" insulator="…" weight="…" wind_area="…"
             stiffness="…" compression="…" strain="true"/>  <!-- top: a point or a wire -->
     <omit label="…"/> <omit set="2"/>           <!-- typed: the type's left out -->

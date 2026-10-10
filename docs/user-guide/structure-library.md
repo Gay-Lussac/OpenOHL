@@ -62,7 +62,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `id`, `name`, `kind` | yes | Identity and family. |
 | `detail` | no | How much of the structure the file describes (below): 1 a stick figure (default), 2 the outline of the pylon, 3 a full design. |
 | `point` | no | Points where strings hang: `label`, `point` (local). Labels are unique among points and wire points. |
-| `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below). |
+| `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below), optional `weight` (a counterweight hanging at it). |
 | `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `compression` (what it may take; none: tension only), `strain`, `side` (a strain string's span: ahead or back). |
 | `attachment` | no | Files of version 1: attachment points (`set`, `phase`, `point`, `insulator` or `string`, `side`), read as before (below). |
 | `extension` | no | Named height offsets added to every point. |

@@ -75,6 +75,8 @@ pub struct WireRow {
     pub at: [f64; 3],
     /// Set: a wire is clamped here.
     pub set: Option<u32>,
+    /// A counterweight hanging at it, N.
+    pub weight: f64,
 }
 
 /// A string in an editor.
@@ -887,6 +889,7 @@ impl StringForm {
                     label: w.label.clone(),
                     at: local(w.position),
                     set: w.set,
+                    weight: w.weight,
                 }
             })
             .collect();
@@ -990,6 +993,7 @@ impl StringForm {
                 label: label.clone(),
                 at: at(d),
                 set,
+                weight: 0.0,
             });
             label
         };
@@ -1083,6 +1087,7 @@ impl StringForm {
                 label: w.label.clone(),
                 position: global(w.at),
                 set: w.set,
+                weight: w.weight,
             });
         }
         for x in &self.strings {
@@ -1728,6 +1733,9 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 ui.label(*name);
                                 value(ui, &mut w.at[i], 0.05, " m");
                             }
+                            ui.label("counterweight");
+                            value(ui, &mut w.weight, 10.0, " N");
+                            w.weight = w.weight.max(0.0);
                         });
                         if ui.small_button("×").clicked() {
                             remove = Some(k);
@@ -1746,6 +1754,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                     label,
                     at: [at[0], at[1], at[2] - 1.0],
                     set: None,
+                    weight: 0.0,
                 });
             }
             ui.separator();

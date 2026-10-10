@@ -341,13 +341,24 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
             let mut fixed: Vec<(String, Vector3<f64>, Option<u32>)> = Vec::new();
             let mut free: Vec<(String, Vector3<f64>, Vector3<f64>)> = Vec::new();
             let mut shares = false;
+            // (Only where a section does end: a wire point with a set no
+            // section uses is free like any other.)
+            let used = |set: u32| {
+                line.sections.iter().any(|s| {
+                    s.points
+                        .iter()
+                        .any(|q| q.structure == structure.id && q.set == set)
+                })
+            };
             for &w in &component.wires {
                 let x = &structure.wires[w];
-                if x.label != wire.label && x.set.is_some() {
+                if x.label != wire.label && x.set.is_some_and(used) {
                     fixed.push((x.label.clone(), v(x.position), x.set));
                     shares = true;
                 } else {
-                    free.push((x.label.clone(), v(x.position), Vector3::zeros()));
+                    // A counterweight hanging at it (per subconductor).
+                    let hanging = Vector3::new(0.0, 0.0, -x.weight / bundle);
+                    free.push((x.label.clone(), v(x.position), hanging));
                 }
             }
             let mut at = |label: &str| -> Result<At, LineError> {
@@ -2512,7 +2523,7 @@ mod tests {
         t2.wires.push(crate::WirePoint {
             label: "V".into(),
             position: [w[0], w[1], w[2] + 0.5],
-            set: None,
+            ..Default::default()
         });
         for (label, dy) in [("VL", -3.0), ("VR", 3.0)] {
             t2.points.push(crate::StructurePoint {
@@ -2567,6 +2578,23 @@ mod tests {
         };
         // Hangs as given (the clamp 0.5 m below the tip).
         assert!(((tip(&calm) - v(calm.clamps[1])).norm() - 0.5).abs() < 1e-3);
+        // A set on the tip that no section uses (an export's own number
+        // for the V) leaves it free: the legs carry the wire.
+        let mut numbered = line.clone();
+        let t2 = numbered
+            .structures
+            .iter_mut()
+            .find(|s| s.id == "T2")
+            .unwrap();
+        t2.wires.iter_mut().find(|w| w.label == "V").unwrap().set = Some(99);
+        numbered.validate().unwrap();
+        let n = solve(&numbered, 0.0);
+        assert!(
+            n.strings[1].iter().all(|s| s.force > 100.0),
+            "{:?}",
+            n.strings[1]
+        );
+        assert!((v(n.clamps[1]) - v(calm.clamps[1])).norm() < 1e-6);
         let blown = solve(&line, 400.0);
         let across = |a: Vector3<f64>, b: Vector3<f64>| (a.y - b.y).abs();
         assert!(
@@ -2599,6 +2627,37 @@ mod tests {
         let after = solve(&clipped, 0.0);
         let along = (v(after.clamps[1]) - v(before.clamps[1])).x;
         assert!(along < -0.05, "pulled towards the loaded span: {along} m");
+    }
+
+    /// A counterweight at a suspension clamp: the string swings less in
+    /// the wind, the string carries the weight more.
+    #[test]
+    fn a_counterweight_holds_the_clamp_down() {
+        let lib = library();
+        let windy = WeatherCase {
+            wind_pressure: Stress::from_pascals(500.0),
+            ..WeatherCase::still("wind", Temperature::from_celsius(15.0))
+        };
+        let mut line = crate::tests::example();
+        line.sections[0].loads.clear();
+        let plain = solve_line(&line, &lib, &windy).remove(0).unwrap();
+        let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
+        let w = t2.wires.iter_mut().find(|w| w.set == Some(1)).unwrap();
+        w.weight = 3000.0;
+        line.validate().unwrap();
+        let held = solve_line(&line, &lib, &windy).remove(0).unwrap();
+        let swing = |s: &SectionShape| {
+            let top = v(s.strings[1][0].top);
+            let d = v(s.clamps[1]) - top;
+            d.xy().norm() / -d.z
+        };
+        assert!(
+            swing(&held) < 0.8 * swing(&plain),
+            "{} {}",
+            swing(&held),
+            swing(&plain)
+        );
+        assert!(held.strings[1][0].force > plain.strings[1][0].force + 2400.0);
     }
 
     /// V legs that may take some compression: the leeward leg pushed in a

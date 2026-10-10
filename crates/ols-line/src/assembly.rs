@@ -42,7 +42,7 @@ pub struct StructurePoint {
 
 /// A wire point: the bottom of one or more strings (or a point fixed to the
 /// structure, when no string reaches it), where a wire may be clamped.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WirePoint {
     /// Label, unique among the structure's points and wire points (e.g.
@@ -55,6 +55,9 @@ pub struct WirePoint {
     /// structure). None: strings only meet here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub set: Option<u32>,
+    /// A weight hanging at it, N (a counterweight), on the whole bundle.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub weight: f64,
 }
 
 /// One string: a straight member from its top to a wire point. Its length
@@ -262,6 +265,16 @@ impl Structure {
             }
         }
         let mut sets = BTreeSet::new();
+        if let Some(w) = self
+            .wires
+            .iter()
+            .find(|w| !(w.weight.is_finite() && w.weight >= 0.0))
+        {
+            return Err(format!(
+                "structure {id}: wire point {}: weight must be ≥ 0",
+                w.label
+            ));
+        }
         for w in &self.wires {
             if let Some(set) = w.set
                 && !sets.insert(set)
@@ -440,6 +453,7 @@ pub fn from_v1(
             label: wire.clone(),
             position: a.wire_point,
             set: Some(set_from_v1(a.set, a.phase)),
+            weight: 0.0,
         });
         let top = pick(&a.top_label, top_default);
         let string = |label: String, top: String, share: f64| InsulatorString {
@@ -576,6 +590,7 @@ mod tests {
             label: label.into(),
             position,
             set,
+            weight: 0.0,
         };
         let s = |label: &str, top: &str, wire: &str| InsulatorString {
             label: label.into(),
