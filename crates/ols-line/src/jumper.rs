@@ -637,7 +637,12 @@ fn clamp_holds(
                 };
                 weight += s.weight / 2.0;
                 push += wind * (0.5 * s.wind_area);
-                held.push(RodString { top, length });
+                held.push(RodString {
+                    top,
+                    length,
+                    // A string that may take compression pushes too.
+                    push: s.compression.is_some(),
+                });
             }
             Ok(ClampHold {
                 at: c.at,
@@ -836,6 +841,7 @@ pub fn solve_jumper(
                 string: RodString {
                     top: v(s.point),
                     length: s.length,
+                    push: false,
                 },
             },
             None if !jumper.supports.is_empty() => {
@@ -1758,6 +1764,30 @@ mod tests {
         let x = &blown[0].supports[0].strings[0];
         assert!(x.force > 0.0);
         assert!(through_the_clamp(&blown[0], &blown[0].supports[0], 0.1) < 1e-9);
+    }
+
+    /// A V helping string whose legs may take compression keeps its
+    /// clamp at both legs' lengths: one leg may push (negative force);
+    /// tension-only legs may go slack instead.
+    #[test]
+    fn a_v_helping_string_that_may_push_holds_its_clamp() {
+        let (mut line, _) = with_clamps(&[("JV", 0.5, true)]);
+        let mut windy = still(15.0);
+        windy.wind_pressure = Stress::from_pascals(800.0);
+        let st = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+        for x in st.strings.iter_mut().filter(|x| x.wire == "JV") {
+            x.compression = Some(50_000.0);
+        }
+        let (_, blown) = solve_all(&line, &windy);
+        let s = &blown[0].supports[0];
+        let forces: Vec<f64> = s.strings.iter().map(|x| x.force).collect();
+        assert!(
+            forces.iter().any(|f| *f < -1.0) && forces.iter().any(|f| *f > 1.0),
+            "{forces:?}"
+        );
+        for x in &s.strings {
+            assert!(((v(x.top) - v(s.clamp)).norm() - 1.16_f64.sqrt()).abs() < 1e-6);
+        }
     }
 
     /// Support clamps that do not fit: each refused with what is wrong.
