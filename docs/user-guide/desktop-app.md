@@ -175,6 +175,7 @@ The **Analyses** entries of the Checks menu open windows that compute on demand 
 | Weather cases | #, name, description, tags, air density factor (Pa/(m/s)², empty: 0.613), wind velocity (m/s; typed in, the pressure becomes Q·V²), wind pressure (Pa), ice thickness (mm), ice density (kg/m³), ice load (N/m), wire temperature, ambient temperature (°C) — Criteria › Weather cases |
 
 - Cells with a known set of values are **dropdowns**: cables, structure types, systems, insulators, status, condition, AC/DC, strain, tied structure; **display cases** lists the model's weather cases to tick, several at once.
+- **Colour** cells (sections, electrical systems, electrical circuits) are drawn in their colour, the text dark or light to stay readable. A default colour is shown dimmed. Text that is not a colour has no colour behind it. You can still type `#rrggbb`. The small striped button at the left of the cell opens the [colour tool](#colour-tool); its **OK** writes the colour in the cell as a change (pending until Apply). A colour picked for a default sets it, even the same colour.
 - A changed cell turns yellow and stays **pending**; **+ Add row** adds an object typed in a green row (🗑 removes it); 🗑 on a row marks it for deletion (struck through; click again to keep it). **Apply N changes** makes one command for all of them (one undo, ⌘Z), with the same checks as the editor windows — a cell that does not read is named and nothing is applied; **Revert** drops them. When the changes reach further than the rows changed, everything they also change is listed first and **Apply all that** confirms:
 - deletions that take other objects with them (a structure's sections and jumpers, a string's sections…);
 - a section's circuit name, phase or system, which also go on the other sections of its circuit.
@@ -183,6 +184,31 @@ The **Analyses** entries of the Checks menu open windows that compute on demand 
 - **#** orders alignment points and weather cases: `3.5` goes between 3 and 4.
 - Weather cases are not part of the project but the model's case file: **Apply** writes it (comments and layout kept, values with their units) and the model is solved again; not undone with ⌘Z. Without a case file (the default 15 °C case) make one in the Weather cases library editor (Criteria menu) and choose **Use for the model**.
 - Click a column title to sort (again: descending, again: unsorted). Numbers sort by value, and names in natural order, the numbers in them counted as numbers: sec2, sec10, sec100 (not sec10, sec100, sec2), whatever their leading zeros. the filter keeps rows with the text in any cell. **⤴** selects the row's object and brings the views to it (a weather case: shows it). A page with pending changes shows * on its tab and does not close.
+
+### Colour tool
+
+A small window to choose a colour. At the top, **Wheel** or **Sliders** (your choice is remembered):
+
+- **Wheel**: click or drag on the wheel. Round it is the hue (red to the right, green up left, blue down left). Outwards is the saturation (grey at the centre). The slider below is the brightness.
+- **Sliders**: red, green and blue (0–255), and hue (°), saturation and brightness (%).
+
+Below, the **old** and the **new** colour side by side, and the new one as `#rrggbb` (type one there too).
+
+The **palette** is your list of colours, in a box that scrolls. Each has a name, its colour and what it is used for (e.g. "380 kV circuits", "earth wires"). A click takes a colour; a double click takes it and closes the tool. Type a name and a use and press **+ Add** to add the new colour. ⏶ ⏷ move a colour, ✏ edits its name, use and colour, 🗑 deletes it (asked first). **Defaults** adds the program's own colours (phases, wires without a phase number, electrical systems) that are missing.
+
+**Export…** writes the palette to a file to share. **Import…** reads one: replace your palette, or add the colours not in it yet. A file that does not read is refused, with what is wrong. The file is TOML (`.olscolors`):
+
+```toml
+format = "ols-colors"
+version = 1
+
+[[color]]
+name = "Phase 1"
+color = "#e4572e"
+description = "380 kV circuits"
+```
+
+The palette is yours: remembered on this computer, not in the project. **OK** uses the new colour; **Cancel** (or closing the window) changes nothing.
 
 ## Alignments
 
