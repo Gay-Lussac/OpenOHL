@@ -200,16 +200,16 @@ fn length(v: f64) -> Item {
 /// The positions (local axes) of the joints, points and wire points of
 /// `t`, and its strings (top, wire point).
 #[derive(Default)]
-struct Geometry {
-    joints: Vec<(String, [f64; 3], bool)>,
-    members: Vec<(String, [f64; 3], [f64; 3], bool)>,
-    points: Vec<(String, [f64; 3])>,
-    wires: Vec<(String, [f64; 3], Option<u32>)>,
-    strings: Vec<(String, [f64; 3], [f64; 3])>,
-    sticks: Vec<Vec<[f64; 3]>>,
+pub(crate) struct Geometry {
+    pub(crate) joints: Vec<(String, [f64; 3], bool)>,
+    pub(crate) members: Vec<(String, [f64; 3], [f64; 3], bool)>,
+    pub(crate) points: Vec<(String, [f64; 3])>,
+    pub(crate) wires: Vec<(String, [f64; 3], Option<u32>)>,
+    pub(crate) strings: Vec<(String, [f64; 3], [f64; 3])>,
+    pub(crate) sticks: Vec<Vec<[f64; 3]>>,
 }
 
-fn geometry(t: &StructureType, insulators: &InsulatorLibrary) -> Geometry {
+pub(crate) fn geometry(t: &StructureType, insulators: &InsulatorLibrary) -> Geometry {
     let si = |p: &[ols_core::units::Length; 3]| p.map(|v| v.si());
     let mut g = Geometry {
         joints: t

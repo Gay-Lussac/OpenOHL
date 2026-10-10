@@ -109,6 +109,7 @@ fn without_component(
         orientation_deg: 0.0,
         structure_type: None,
         extension: None,
+        description: String::new(),
         height_adjust: 0.0,
         points: points.to_vec(),
         strings: strings.clone(),

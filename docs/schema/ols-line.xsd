@@ -241,6 +241,7 @@
             <xs:attribute name="orientation_deg" type="xs:double" default="0"/>
             <xs:attribute name="type" type="xs:string"/>
             <xs:attribute name="extension" type="xs:string"/>
+            <xs:attribute name="description" type="xs:string"/>
             <xs:attribute name="height_adjust" type="xs:double" default="0">
               <xs:annotation>
                 <xs:documentation>Typed structures: height of the type's feet above the ground at x y z (foundations), metres.</xs:documentation>
@@ -384,6 +385,11 @@
       <xs:attribute name="version" type="xs:unsignedInt" default="1"/>
       <xs:attribute name="name" type="xs:string" use="required"/>
       <xs:attribute name="crs" type="xs:string"/>
+      <xs:attribute name="ahead_deg" type="xs:double" default="0">
+        <xs:annotation>
+          <xs:documentation>Angles in plan around a structure turn clockwise seen from above; this one means ahead along the line (0: ahead 0°, right 90°; 270: right 0°, ahead 270°).</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
     </xs:complexType>
   </xs:element>
 </xs:schema>

@@ -336,6 +336,12 @@ pub struct Display {
     /// `{"L1": "#8b4513", "L2": "#202020", "L3": "#808080"}`.
     #[serde(default)]
     pub phase_colors: BTreeMap<String, String>,
+    /// Angles in plan around a structure (string directions, the compass)
+    /// turn clockwise seen from above; this is the angle that means ahead
+    /// along the line, degrees (default 0: ahead 0°, right 90°; e.g. 270:
+    /// right 0°, ahead 270°).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub ahead_deg: f64,
 }
 
 impl Display {
@@ -367,6 +373,9 @@ pub struct Structure {
     /// Height extension of the structure type.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<String>,
+    /// What it is, in words (free text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     /// Typed structures: how far the type's feet stand above the ground at
     /// `position` (foundations), metres; may be negative.
     #[serde(skip_serializing_if = "is_zero")]
@@ -411,6 +420,8 @@ struct StructureFile {
     structure_type: Option<String>,
     #[serde(default)]
     extension: Option<String>,
+    #[serde(default)]
+    description: String,
     #[serde(default)]
     height_adjust: f64,
     #[serde(default)]
@@ -462,6 +473,7 @@ impl From<StructureFile> for Structure {
             orientation_deg: f.orientation_deg,
             structure_type: f.structure_type,
             extension: f.extension,
+            description: f.description,
             height_adjust: f.height_adjust,
             points,
             strings,
@@ -1160,6 +1172,12 @@ impl Line {
             return invalid(format!(
                 "version {} is newer than supported ({LINE_FILE_VERSION})",
                 self.version
+            ));
+        }
+        if !(0.0..360.0).contains(&self.display.ahead_deg) {
+            return invalid(format!(
+                "display: the angle ahead {} must be from 0 to 360°",
+                self.display.ahead_deg
             ));
         }
         if let Some((label, c)) = self
