@@ -219,6 +219,10 @@ pub struct Ready {
     pub vegetation: crate::vegetation::VegetationWindow,
     /// Checks › As-built wires.
     pub wirefit: crate::wirefit::WireFitWindow,
+    /// Sections › Clearances › Vertical clearances.
+    pub vertical_clearances: crate::clearance_zones::ZoneWindow,
+    /// Sections › Clearances › Radial clearances.
+    pub radial_clearances: crate::clearance_zones::ZoneWindow,
     /// Terrain › Terrain surfaces (TIN).
     pub surfaces: crate::surfaces::SurfacesWindow,
     /// Terrain › Survey data › Class colours, when open.
@@ -302,6 +306,12 @@ impl Ready {
             galloping: Default::default(),
             vegetation: Default::default(),
             wirefit: Default::default(),
+            vertical_clearances: crate::clearance_zones::ZoneWindow::new(
+                ols_clearance::Measure::Vertical,
+            ),
+            radial_clearances: crate::clearance_zones::ZoneWindow::new(
+                ols_clearance::Measure::Radial,
+            ),
             surfaces: Default::default(),
             class_window: None,
             controls_window: None,
@@ -3722,6 +3732,24 @@ fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
+/// What a vertical or radial clearance window asks: its violations drawn
+/// (layer "Clearance violations"), a span gone to.
+fn clearance_zone_out(r: &mut Ready, out: crate::clearance_zones::Out) {
+    if let Some(marks) = out.marks {
+        r.plan.marks = marks.iter().map(|m| m.0).collect();
+        r.view3d.marks = marks;
+        r.view3d.dirty.insert(Layer::Clearances);
+    }
+    if let Some((target, at)) = out.go {
+        r.go_to(target);
+        if let Some(cam) = r.view3d.camera.as_mut() {
+            cam.target = at;
+            cam.distance = cam.distance.min(80.0);
+        }
+        r.plan.centre_on(at);
+    }
+}
+
 fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
     // The check needs its weather case solved, and its ground.
     r.model.ensure_solved(r.case);
@@ -4253,6 +4281,31 @@ fn menus(
         item(ui, Command::Table(TableKind::Systems), out);
         item(ui, Command::Table(TableKind::Circuits), out);
         ui.separator();
+        ui.menu_button("Clearances", |ui| {
+            if ui
+                .button("Vertical clearances…")
+                .on_hover_text(
+                    "Targets straight under the wires, within a width on each side; rules by \
+                     voltage, weather case, distance and LiDAR class; the wind stepped",
+                )
+                .clicked()
+            {
+                r.vertical_clearances.show(&r.model);
+                ui.close();
+            }
+            if ui
+                .button("Radial clearances…")
+                .on_hover_text(
+                    "The direct distance from the wires to the targets; rules by voltage, \
+                     weather case, distance and LiDAR class; the wind stepped",
+                )
+                .clicked()
+            {
+                r.radial_clearances.show(&r.model);
+                ui.close();
+            }
+        });
+        ui.separator();
         crate::menu::options_menu(ui, "Display options", |ui| {
             ui.label(
                 egui::RichText::new("How the wires are drawn and what is written next to them, in each view (yours only)")
@@ -4776,6 +4829,12 @@ impl eframe::App for App {
                 ];
                 if let Some(target) = go.into_iter().flatten().next() {
                     ready.go_to(target);
+                }
+                for out in [
+                    ready.vertical_clearances.ui(&ctx, &mut ready.model),
+                    ready.radial_clearances.ui(&ctx, &mut ready.model),
+                ] {
+                    clearance_zone_out(ready, out);
                 }
                 if let Some(mut w) = ready.class_window.take() {
                     let mut open = true;

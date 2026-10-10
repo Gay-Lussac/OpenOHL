@@ -57,6 +57,14 @@
 //!   wire within that horizontal distance of its ends;
 //!   `exclude_spans_at = ["con_*"]` leaves out spans ending at those
 //!   structures.
+//! - `voltages = [220]`: only the wires of these nominal voltages (kV; 0
+//!   for earthed wires) are checked (default: all).
+//! - Vertical zone: `vertical_band` is its half width across the line (to
+//!   the ground: default 0, straight below the wire);
+//!   `vertical_depth = "0.2 m"` cuts it along the line in slices of that
+//!   depth, the wire taken at its lowest over each slice.
+//! - `[wind]` (`steps`, `step`, `sides`): how the desktop clearance windows
+//!   apply the wind ([`WindSteps`]); `ols line` ignores it.
 //!
 //! ## Clearances by voltage
 //!
@@ -86,7 +94,7 @@
 
 use std::path::Path;
 
-use ols_core::units::Length;
+use ols_core::units::{Length, Stress};
 use ols_line::electrical::Potential;
 use serde::Deserialize;
 
@@ -297,9 +305,26 @@ pub struct Rule {
     pub exclude_spans_at: Vec<String>,
     /// Wire pairs of the same line checked, by circuit (`same_line`).
     pub circuits: CircuitFilter,
+    /// Only the wires of these nominal voltages are checked, kV (0: an
+    /// earthed wire); empty: every wire. Wire rules: the first wire of a
+    /// pair.
+    pub voltages: Vec<f64>,
+    /// Vertical clearances to points and the ground: the wire is taken at
+    /// its lowest (its highest for a target above it) within this distance
+    /// along the line, centred on the target — the zone under the wire is
+    /// cut in slices of this depth, m (0: the wire straight above the
+    /// target).
+    pub vertical_depth: f64,
 }
 
 impl Rule {
+    /// Whether the rule checks wires of nominal voltage `kv` (none:
+    /// earthed, 0 kV): its `voltages`, or every voltage.
+    pub fn checks_voltage(&self, kv: Option<f64>) -> bool {
+        let kv = kv.unwrap_or(0.0);
+        self.voltages.is_empty() || self.voltages.iter().any(|v| (v - kv).abs() < 1e-6)
+    }
+
     /// The requirements for a wire of voltage `kv` (none: 0 kV). Use
     /// [`Rule::check_voltages`] first: above a table's last row the last
     /// row's distance is used.
@@ -346,12 +371,18 @@ impl Rule {
                 .map(|(x, y)| self.pair_voltage(x.as_ref(), y.as_ref()))
                 .collect()
         };
+        // The wires of the rule's voltages.
+        let mine: Vec<Option<Potential>> = potentials
+            .iter()
+            .filter(|p| self.checks_voltage(p.map(|p| p.nominal_kv)))
+            .copied()
+            .collect();
         let mut v: Vec<Option<f64>> = match self.target {
             Target::Ground | Target::Points { .. } => {
-                potentials.iter().map(|p| p.map(|p| p.nominal_kv)).collect()
+                mine.iter().map(|p| p.map(|p| p.nominal_kv)).collect()
             }
-            Target::SameLine { .. } => pairs(potentials, potentials),
-            Target::OtherLines => pairs(potentials, others),
+            Target::SameLine { .. } => pairs(&mine, potentials),
+            Target::OtherLines => pairs(&mine, others),
         };
         v.sort_by(|a, b| a.unwrap_or(0.0).total_cmp(&b.unwrap_or(0.0)));
         v.dedup();
@@ -437,6 +468,10 @@ struct RawRule {
     exclude_spans_at: Vec<String>,
     #[serde(default)]
     circuits: Option<String>,
+    #[serde(default)]
+    voltages: Vec<f64>,
+    #[serde(default)]
+    vertical_depth: Option<Length>,
 }
 
 /// A requirement as written in a file: a distance, a table by voltage or a
@@ -509,8 +544,112 @@ struct RawRules {
     version: Option<u32>,
     #[serde(default)]
     name: String,
+    #[serde(default)]
+    wind: Option<RawWind>,
     #[serde(rename = "rule", default)]
     rules: Vec<RawRule>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawWind {
+    #[serde(default)]
+    steps: bool,
+    #[serde(default)]
+    step: Option<Stress>,
+    #[serde(default)]
+    sides: Option<String>,
+}
+
+/// The sides the wind blows from, looking ahead along the line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WindSides {
+    /// From the left and from the right, each in turn.
+    #[default]
+    Both,
+    /// From the left only.
+    Left,
+    /// From the right only.
+    Right,
+}
+
+impl WindSides {
+    /// Every choice.
+    pub const ALL: [WindSides; 3] = [WindSides::Both, WindSides::Left, WindSides::Right];
+
+    /// `both`, `left` or `right`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Both => "both",
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+
+    /// Reads `both`, `left` or `right`.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        Self::ALL
+            .into_iter()
+            .find(|s| s.as_str() == text)
+            .ok_or_else(|| format!("wind sides \"{text}\": use both, left or right"))
+    }
+
+    /// The sides, in turn.
+    pub fn sides(self) -> &'static [ols_weather::WindSide] {
+        use ols_weather::WindSide::{Left, Right};
+        match self {
+            Self::Both => &[Left, Right],
+            Self::Left => &[Left],
+            Self::Right => &[Right],
+        }
+    }
+}
+
+/// How the wind of a weather case is applied by the clearance windows of
+/// the desktop application (`[wind]` of a rule file; `ols line` checks the
+/// final state of each case only, with the case's own wind side).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindSteps {
+    /// Every wind pressure from 0 up to the case's, in steps of `step`
+    /// (else the case's pressure only).
+    pub stepped: bool,
+    /// Step of the wind pressure, Pa.
+    pub step: f64,
+    /// Sides the wind blows from.
+    pub sides: WindSides,
+}
+
+/// Default step of the wind pressure, Pa.
+pub const DEFAULT_WIND_STEP: f64 = 50.0;
+
+impl Default for WindSteps {
+    fn default() -> Self {
+        Self {
+            stepped: false,
+            step: DEFAULT_WIND_STEP,
+            sides: WindSides::Both,
+        }
+    }
+}
+
+impl WindSteps {
+    /// The wind pressures checked for a case of wind pressure `full` (Pa),
+    /// increasing: 0 and every step up to `full` when stepped (the last
+    /// one `full`), else `full` alone. At most `max` steps above 0 (the
+    /// step is made larger).
+    pub fn pressures(&self, full: f64, max: usize) -> Vec<f64> {
+        if full.is_nan() || full <= 0.0 {
+            return vec![0.0];
+        }
+        if !self.stepped {
+            return vec![full];
+        }
+        let step = self.step.max(full / max.max(1) as f64).max(1e-9);
+        let n = ((full / step) - 1e-9).ceil().max(1.0) as usize;
+        let mut v: Vec<f64> = (0..n).map(|k| k as f64 * step).collect();
+        v.push(full);
+        v
+    }
 }
 
 /// A set of rules.
@@ -520,6 +659,9 @@ pub struct RuleSet {
     pub name: String,
     /// Rules.
     pub rules: Vec<Rule>,
+    /// How the clearance windows of the desktop application apply the
+    /// wind (`[wind]`).
+    pub wind: Option<WindSteps>,
 }
 
 /// Default horizontal band for vertical clearance to points, m.
@@ -605,28 +747,55 @@ impl RuleSet {
                     return bad("circuits is for same_line rules");
                 }
                 let not_negative = |l: Option<Length>| l.is_none_or(|l| l.si() >= 0.0);
-                if !not_negative(r.vertical_band) || !not_negative(r.search_margin) {
-                    return bad("vertical_band and search_margin must be ≥ 0");
+                if !not_negative(r.vertical_band)
+                    || !not_negative(r.search_margin)
+                    || !not_negative(r.vertical_depth)
+                {
+                    return bad("vertical_band, vertical_depth and search_margin must be ≥ 0");
                 }
+                if r.voltages.iter().any(|v| !(v.is_finite() && *v >= 0.0)) {
+                    return bad("voltages must be ≥ 0 kV");
+                }
+                let band = default_band(&target);
                 Ok(Rule {
                     name: r.name,
                     target,
                     vertical,
                     radial,
                     pair_voltage,
-                    vertical_band: r.vertical_band.map_or(DEFAULT_VERTICAL_BAND, |l| l.si()),
+                    vertical_band: r.vertical_band.map_or(band, |l| l.si()),
                     search_margin: r.search_margin.map_or(DEFAULT_SEARCH_MARGIN, |l| l.si()),
                     cases: r.cases,
                     case_pairs: r.case_pairs,
                     exclude_near_ends: r.exclude_near_ends.map_or(0.0, |l| l.si().max(0.0)),
                     exclude_spans_at: r.exclude_spans_at,
                     circuits,
+                    voltages: r.voltages,
+                    vertical_depth: r.vertical_depth.map_or(0.0, |l| l.si()),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
+        let wind = raw
+            .wind
+            .map(|w| -> Result<WindSteps, String> {
+                let step = w.step.map_or(DEFAULT_WIND_STEP, |s| s.si());
+                if !(step.is_finite() && step > 0.0) {
+                    return Err("[wind] step must be > 0 Pa".into());
+                }
+                Ok(WindSteps {
+                    stepped: w.steps,
+                    step,
+                    sides: w
+                        .sides
+                        .as_deref()
+                        .map_or(Ok(WindSides::Both), WindSides::parse)?,
+                })
+            })
+            .transpose()?;
         Ok(Self {
             name: raw.name,
             rules,
+            wind,
         })
     }
 
@@ -646,15 +815,188 @@ impl RuleSet {
                 vertical: Some(Requirement::Fixed(vertical)),
                 radial: None,
                 pair_voltage: PairVoltage::Higher,
-                vertical_band: DEFAULT_VERTICAL_BAND,
+                vertical_band: 0.0,
                 search_margin: DEFAULT_SEARCH_MARGIN,
                 cases: Vec::new(),
                 case_pairs: Vec::new(),
                 exclude_near_ends: 0.0,
                 exclude_spans_at: Vec::new(),
                 circuits: CircuitFilter::Any,
+                voltages: Vec::new(),
+                vertical_depth: 0.0,
             }],
+            wind: None,
         }
+    }
+
+    /// The rule file's text (TOML), read back by [`RuleSet::parse`] as the
+    /// same set.
+    pub fn to_toml(&self) -> String {
+        use std::fmt::Write;
+        let mut t = format!(
+            "format = \"{RULE_FILE_FORMAT}\"\nversion = {RULE_FILE_VERSION}\nname = {}\n",
+            quoted(&self.name)
+        );
+        if let Some(w) = &self.wind {
+            let _ = write!(
+                t,
+                "\n# How the desktop clearance windows apply the wind (ols line: the final state).\n[wind]\nsteps = {}\nstep = \"{} Pa\"\nsides = \"{}\"\n",
+                w.stepped,
+                w.step,
+                w.sides.as_str()
+            );
+        }
+        for r in &self.rules {
+            t.push_str(&r.to_toml());
+        }
+        t
+    }
+
+    /// Writes the rule file.
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        std::fs::write(path, self.to_toml()).map_err(|e| format!("{}: {e}", path.display()))
+    }
+}
+
+/// Horizontal band of vertical clearances when a rule gives none: the
+/// ground straight below the wire, points within
+/// [`DEFAULT_VERTICAL_BAND`].
+pub(crate) fn default_band(target: &Target) -> f64 {
+    if matches!(target, Target::Ground) {
+        0.0
+    } else {
+        DEFAULT_VERTICAL_BAND
+    }
+}
+
+/// `text` as a TOML string.
+fn quoted(text: &str) -> String {
+    let mut s = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => s.push_str("\\\""),
+            '\\' => s.push_str("\\\\"),
+            c if c.is_control() => s.push_str(&format!("\\u{:04X}", c as u32)),
+            c => s.push(c),
+        }
+    }
+    s.push('"');
+    s
+}
+
+/// A length in a rule file.
+fn length(m: f64) -> String {
+    format!("\"{m} m\"")
+}
+
+fn list(items: impl Iterator<Item = String>) -> String {
+    format!("[{}]", items.collect::<Vec<_>>().join(", "))
+}
+
+impl Requirement {
+    /// As written in a rule file.
+    fn to_toml(&self) -> String {
+        match self {
+            Self::Fixed(d) => length(*d),
+            Self::ByVoltage(rows) => format!(
+                "{{ by_voltage = {} }}",
+                list(rows.iter().map(|(u, d)| format!("[{u:?}, {}]", length(*d))))
+            ),
+            Self::Formula {
+                base,
+                per_kv,
+                above_kv,
+            } => format!(
+                "{{ base = {}, per_kv = {}, above_kv = {above_kv:?} }}",
+                length(*base),
+                length(*per_kv)
+            ),
+        }
+    }
+}
+
+impl Rule {
+    /// The rule as a `[[rule]]` table of a rule file.
+    pub fn to_toml(&self) -> String {
+        use std::fmt::Write;
+        let mut t = format!("\n[[rule]]\nname = {}\n", quoted(&self.name));
+        let target = match &self.target {
+            Target::Ground => "ground",
+            Target::Points { .. } => "points",
+            Target::SameLine { .. } => "same_line",
+            Target::OtherLines => "other_lines",
+        };
+        let _ = writeln!(t, "target = \"{target}\"");
+        match &self.target {
+            Target::Points { classes, roles } => {
+                if !classes.is_empty() {
+                    let _ = writeln!(t, "classes = {}", list(classes.iter().map(u8::to_string)));
+                }
+                if !roles.is_empty() {
+                    let _ = writeln!(t, "roles = {}", list(roles.iter().map(|r| quoted(r))));
+                }
+            }
+            Target::SameLine {
+                include_same_phase: true,
+            } => t.push_str("include_same_phase = true\n"),
+            _ => {}
+        }
+        for (key, r) in [("vertical", &self.vertical), ("radial", &self.radial)] {
+            if let Some(r) = r {
+                let _ = writeln!(t, "{key} = {}", r.to_toml());
+            }
+        }
+        match self.pair_voltage {
+            PairVoltage::Higher => {}
+            PairVoltage::Sum => t.push_str("pair_voltage = \"sum\"\n"),
+            PairVoltage::Difference => t.push_str("pair_voltage = \"difference\"\n"),
+        }
+        if self.vertical_band != default_band(&self.target) {
+            let _ = writeln!(t, "vertical_band = {}", length(self.vertical_band));
+        }
+        if self.vertical_depth != 0.0 {
+            let _ = writeln!(t, "vertical_depth = {}", length(self.vertical_depth));
+        }
+        if self.search_margin != DEFAULT_SEARCH_MARGIN {
+            let _ = writeln!(t, "search_margin = {}", length(self.search_margin));
+        }
+        if !self.voltages.is_empty() {
+            let _ = writeln!(
+                t,
+                "voltages = {}",
+                list(self.voltages.iter().map(|v| format!("{v:?}")))
+            );
+        }
+        if !self.cases.is_empty() {
+            let _ = writeln!(t, "cases = {}", list(self.cases.iter().map(|c| quoted(c))));
+        }
+        if !self.case_pairs.is_empty() {
+            let _ = writeln!(
+                t,
+                "case_pairs = {}",
+                list(self.case_pairs.iter().map(|[a, b]| format!(
+                    "[{}, {}]",
+                    quoted(a),
+                    quoted(b)
+                )))
+            );
+        }
+        if self.exclude_near_ends != 0.0 {
+            let _ = writeln!(t, "exclude_near_ends = {}", length(self.exclude_near_ends));
+        }
+        if !self.exclude_spans_at.is_empty() {
+            let _ = writeln!(
+                t,
+                "exclude_spans_at = {}",
+                list(self.exclude_spans_at.iter().map(|c| quoted(c)))
+            );
+        }
+        match self.circuits {
+            CircuitFilter::Any => {}
+            CircuitFilter::Same => t.push_str("circuits = \"same\"\n"),
+            CircuitFilter::Different => t.push_str("circuits = \"different\"\n"),
+        }
+        t
     }
 }
 
