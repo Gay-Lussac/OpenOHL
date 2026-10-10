@@ -405,7 +405,10 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                         At::Fixed(i) => fixed[i].1,
                         At::Free(_) => unreachable!(),
                     };
-                    if middle && is_suspension(top, v(wire.position)) {
+                    // Flagged a dead end (strain): a tension string even
+                    // where the wire runs on.
+                    let flagged = structure.string(&m.label).is_some_and(|s| s.strain);
+                    if middle && !flagged && is_suspension(top, v(wire.position)) {
                         Shape::Suspension
                     } else {
                         Shape::Strain

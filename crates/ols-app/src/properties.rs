@@ -325,8 +325,13 @@ pub fn ui(
                     x.insulator.clone().unwrap_or_else(|| "—".into()),
                 ),
                 (
-                    "dead end",
-                    if x.strain { "yes (tension string)" } else { "no (suspension)" }.into(),
+                    "clamp",
+                    if line.is_dead_end(st, &x.wire) {
+                        "strain (a tension string at a dead end)"
+                    } else {
+                        "suspension"
+                    }
+                    .into(),
                 ),
                 (
                     "compression",

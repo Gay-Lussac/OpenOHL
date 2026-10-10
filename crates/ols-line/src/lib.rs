@@ -1003,6 +1003,21 @@ impl Line {
         self.structure(&point.structure)?.wire_at_set(point.set)
     }
 
+    /// Whether wire point `wire` of structure `structure` is a dead end: a
+    /// section ends at its set, or a string to it is flagged `strain` (a
+    /// tension string); else its strings are suspension strings.
+    pub fn is_dead_end(&self, structure: &Structure, wire: &str) -> bool {
+        let ends = structure.wire(wire).and_then(|w| w.set).is_some_and(|set| {
+            self.sections.iter().any(|s| {
+                [s.points.first(), s.points.last()]
+                    .into_iter()
+                    .flatten()
+                    .any(|p| p.structure == structure.id && p.set == set)
+            })
+        });
+        ends || structure.strings_to(wire).any(|x| x.strain)
+    }
+
     /// Display colour of a section: its own colour, else the line's colour
     /// for its phase label, else a default ([`DEFAULT_PHASE_COLORS`]) by the
     /// place of its phase label among its system's phases, or by the number
