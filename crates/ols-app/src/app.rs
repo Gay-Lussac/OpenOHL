@@ -1143,6 +1143,10 @@ impl Ready {
                 self.editor = StringForm::of(model, structure, *set).map(Form::String);
                 self.select(target);
             }
+            (Tool::Edit, Selection::String { structure, label }) => {
+                self.editor = StringForm::of_string(model, structure, label).map(Form::String);
+                self.select(target);
+            }
             (Tool::Edit, Selection::AlignmentPoint { route, index }) => {
                 self.editor =
                     crate::editors::AlignmentForm::of(model, route, *index).map(Form::Alignment);
@@ -2011,6 +2015,9 @@ impl Ready {
             Selection::Attachment { structure, set } => line
                 .wire_point(&ols_line::SectionPoint::new(structure.clone(), *set))
                 .is_some(),
+            Selection::String { structure, label } => line
+                .structure(structure)
+                .is_some_and(|s| s.string(label).is_some()),
             Selection::AlignmentPoint { route, index } => {
                 crate::selection::alignment_point(&self.model, route, *index).is_some()
             }
@@ -2085,6 +2092,17 @@ fn delete_action(line: &ols_line::Line, target: &Selection) -> Option<crate::edi
             set: *set,
             confirm: false,
         },
+        // A string: the strings of its set, with what goes with them.
+        Selection::String { structure, label } => {
+            let s = line.structure(structure)?;
+            let c = s.component(&s.string(label)?.wire);
+            let set = c.wires.iter().find_map(|&i| s.wires[i].set)?;
+            Action::DeleteAttachment {
+                structure: structure.clone(),
+                set,
+                confirm: false,
+            }
+        }
         Selection::AlignmentPoint { route, index } => Action::Command {
             what: format!("deleted alignment point {} of {route}", index + 1),
             command: ols_session::Command::RemoveAlignmentPoint {

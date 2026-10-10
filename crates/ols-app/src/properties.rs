@@ -276,6 +276,97 @@ pub fn ui(
                 }
             }
         }
+        Selection::String { structure, label } => {
+            let Some(st) = line.structure(&structure) else {
+                ui.label(format!("{structure}: not in the line"));
+                return;
+            };
+            let Some(x) = st.string(&label) else {
+                ui.label(format!("{structure} string {label}: not in the line"));
+                return;
+            };
+            ui.heading(format!("{structure} string {label}"));
+            if ui.link(format!("structure {structure}")).clicked() {
+                next = Some(Selection::Structure(structure.clone()));
+            }
+            let c = st.component(&x.wire);
+            let set = c.wires.iter().find_map(|&i| st.wires[i].set);
+            let hangs = if st.point(&x.top).is_some() {
+                format!("{} (a point of the structure)", x.top)
+            } else {
+                format!("{} (the bottom of another string)", x.top)
+            };
+            let users: Vec<&str> = line
+                .jumpers
+                .iter()
+                .filter(|j| {
+                    j.supports
+                        .iter()
+                        .any(|c| c.structure_id(j) == structure && c.wire == x.wire)
+                })
+                .map(|j| j.id.as_str())
+                .collect();
+            let wire = match (st.wire(&x.wire).and_then(|w| w.set), users.is_empty()) {
+                (Some(s), _) => format!("{} (set {s}: a wire is clamped here)", x.wire),
+                (None, false) => format!("{} (holds jumper {})", x.wire, users.join(", ")),
+                (None, true) => format!("{} (other strings hang from it)", x.wire),
+            };
+            let mut rows: Vec<(&str, String)> = vec![
+                ("hangs from", hangs),
+                ("to wire point", wire),
+                (
+                    "length",
+                    format!("{:.3} m", st.string_length(x).unwrap_or(0.0)),
+                ),
+                ("weight", format!("{:.0} N", x.weight)),
+                ("wind area", format!("{:.3} m²", x.wind_area)),
+                (
+                    "insulator",
+                    x.insulator.clone().unwrap_or_else(|| "—".into()),
+                ),
+                (
+                    "dead end",
+                    if x.strain { "yes (tension string)" } else { "no (suspension)" }.into(),
+                ),
+                (
+                    "compression",
+                    x.compression
+                        .map_or("none: tension only".into(), |c| format!("up to {c:.0} N")),
+                ),
+            ];
+            // Its force where it is drawn (each side of the wind).
+            for solved in model.cases.get(case).into_iter().flat_map(|c| c.drawn()) {
+                let shapes = solved.shapes.iter().flat_map(|sh| {
+                    line.sections
+                        .iter()
+                        .find(|s| s.id == sh.section)
+                        .into_iter()
+                        .flat_map(move |sec| sec.points.iter().zip(&sh.strings))
+                });
+                for (p, strings) in shapes {
+                    for y in strings.iter().filter(|y| p.structure == structure && y.label == label)
+                    {
+                        rows.push(("force", format!("{:.0} N{}", y.force, if y.slack { " (slack)" } else { "" })));
+                    }
+                }
+                for j in &solved.jumpers {
+                    for s in j.supports.iter().filter(|s| s.structure == structure) {
+                        for y in s.strings.iter().filter(|y| y.label == label) {
+                            rows.push(("force", format!("{:.0} N (jumper {})", y.force, j.jumper)));
+                        }
+                    }
+                }
+            }
+            if let Some(set) = set {
+                rows.push(("set", set.to_string()));
+            }
+            grid(ui, "string", &rows.iter().map(|(a, b)| (*a, b.clone())).collect::<Vec<_>>());
+            ui.label(
+                egui::RichText::new("Edit tool (or right-click with it): change it and where it hangs")
+                    .small()
+                    .weak(),
+            );
+        }
         Selection::AlignmentPoint { route, index } => {
             ui.heading(format!("Route {route}, alignment point {}", index + 1));
             let routes = line.effective_routes();

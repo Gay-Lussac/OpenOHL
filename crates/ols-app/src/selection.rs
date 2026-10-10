@@ -34,6 +34,14 @@ pub enum Selection {
         /// Set.
         set: u32,
     },
+    /// A string of a structure (one of a section's, or a helping string
+    /// of a jumper), by its label.
+    String {
+        /// Structure id.
+        structure: String,
+        /// The string's label.
+        label: String,
+    },
     /// An alignment point of a route.
     AlignmentPoint {
         /// Route id.
@@ -89,7 +97,7 @@ impl Snap {
             Snap::Structure => "Structures",
             Snap::Span => "Spans (wires)",
             Snap::Jumper => "Jumpers",
-            Snap::Attachment => "Attachment points",
+            Snap::Attachment => "Strings and attachment points",
             Snap::AlignmentPoint => "Alignment points",
             Snap::LidarPoint => "LiDAR points",
         }
@@ -166,7 +174,7 @@ impl Selection {
             Selection::Structure(_) => Snap::Structure,
             Selection::Jumper(_) => Snap::Jumper,
             Selection::Span { .. } => Snap::Span,
-            Selection::Attachment { .. } => Snap::Attachment,
+            Selection::Attachment { .. } | Selection::String { .. } => Snap::Attachment,
             Selection::AlignmentPoint { .. } => Snap::AlignmentPoint,
             Selection::LidarPoint(_) => Snap::LidarPoint,
         })
@@ -180,6 +188,7 @@ impl Selection {
             Selection::Span { section, span } => format!("{section} span {}", span + 1),
             Selection::Jumper(id) => format!("jumper {id}"),
             Selection::Attachment { structure, set } => format!("{structure} set {set}"),
+            Selection::String { structure, label } => format!("{structure} string {label}"),
             Selection::AlignmentPoint { route, index } => {
                 format!("route {route} alignment point {}", index + 1)
             }
@@ -215,6 +224,17 @@ impl Selection {
                 .line
                 .wire_point(&ols_line::SectionPoint::new(structure.clone(), *set))
                 .map(|w| w.position),
+            Selection::String { structure, label } => {
+                let (a, b) = string_pieces(model, case)
+                    .remove(&(structure.clone(), label.clone()))
+                    .and_then(|v| v.first().copied())
+                    .or_else(|| {
+                        let s = model.line.structure(structure)?;
+                        let x = s.string(label)?;
+                        Some((s.node(&x.top)?.position(), s.wire(&x.wire)?.position))
+                    })?;
+                Some([0, 1, 2].map(|k| 0.5 * (a[k] + b[k])))
+            }
             Selection::AlignmentPoint { route, index } => alignment_point(model, route, *index),
             Selection::LidarPoint(k) => model.points.get(*k).map(|(q, _)| lidar_xyz(model, q)),
         }
@@ -253,25 +273,95 @@ pub fn lidar_xyz(model: &Model, q: &[i32; 3]) -> [f64; 3] {
 /// a point).
 pub type Candidate = (Selection, [f64; 3], [f64; 3]);
 
+/// Strings as drawn: (top, bottom) pieces by (structure, label).
+pub type StringPieces = std::collections::HashMap<(String, String), Vec<([f64; 3], [f64; 3])>>;
+
+/// Where each string is drawn in weather case `case` (and its mirror, the
+/// wind from the other side): (top, bottom) by (structure, label) — a
+/// section's strings as solved, a jumper's helping strings to their
+/// clamps.
+pub fn string_pieces(model: &Model, case: usize) -> StringPieces {
+    let mut out = StringPieces::new();
+    for solved in model.cases.get(case).into_iter().flat_map(|c| c.drawn()) {
+        for shape in &solved.shapes {
+            let Some(sec) = model.line.sections.iter().find(|s| s.id == shape.section) else {
+                continue;
+            };
+            for (p, strings) in sec.points.iter().zip(&shape.strings) {
+                for x in strings {
+                    out.entry((p.structure.clone(), x.label.clone()))
+                        .or_default()
+                        .push((x.top, x.bottom));
+                }
+            }
+        }
+        for j in &solved.jumpers {
+            for s in &j.supports {
+                for x in &s.strings {
+                    out.entry((s.structure.clone(), x.label.clone()))
+                        .or_default()
+                        .push((x.top, s.clamp));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// What can be clicked, of the kinds switched on: structures (every line
-/// they are drawn with), spans and jumpers (every piece), attachment points
-/// (insulator top and clamp), alignment points. LiDAR points are picked
+/// they are drawn with but their strings), spans and jumpers (every
+/// piece), strings (all along them, where they are drawn: as solved in
+/// the case shown and its mirror) and attachment points (string tops and
+/// clamps, where drawn), alignment points. LiDAR points are picked
 /// separately ([`pick_in_model`]).
 pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
+    use crate::scene::Part;
     let mut out = Vec::new();
+    // Strings are clicked with the structures or the attachment points.
+    let strings = snaps.on(Snap::Attachment) || snaps.on(Snap::Structure);
+    let pieces = if strings {
+        string_pieces(model, case)
+    } else {
+        Default::default()
+    };
     for s in &model.line.structures {
         if snaps.on(Snap::Structure) {
             let sel = Selection::Structure(s.id.clone());
             out.push((sel.clone(), s.position, s.position));
-            for (_, pts) in crate::scene::structure_lines(s) {
+            for (part, pts) in crate::scene::structure_lines(s) {
+                if part == Part::Insulator {
+                    continue;
+                }
                 for w in pts.windows(2) {
                     out.push((sel.clone(), w[0], w[1]));
                 }
             }
         }
+        if strings {
+            // Every string all along it, where drawn (as given when not
+            // solved).
+            for x in &s.strings {
+                let sel = Selection::String {
+                    structure: s.id.clone(),
+                    label: x.label.clone(),
+                };
+                match pieces.get(&(s.id.clone(), x.label.clone())) {
+                    Some(drawn) => {
+                        for (a, b) in drawn {
+                            out.push((sel.clone(), *a, *b));
+                        }
+                    }
+                    None => {
+                        if let (Some(top), Some(w)) = (s.node(&x.top), s.wire(&x.wire)) {
+                            out.push((sel.clone(), top.position(), w.position));
+                        }
+                    }
+                }
+            }
+        }
         if snaps.on(Snap::Attachment) {
             // Every wire point and string top, for the set(s) it holds
-            // (the first one of a TAK's).
+            // (the first one of a TAK's); a clamp where it is drawn.
             for w in &s.wires {
                 let c = s.component(&w.label);
                 let Some(set) = w
@@ -284,7 +374,20 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
                     structure: s.id.clone(),
                     set,
                 };
-                out.push((sel.clone(), w.position, w.position));
+                let mut drawn = false;
+                for x in s.strings_to(&w.label) {
+                    for (_, bottom) in pieces
+                        .get(&(s.id.clone(), x.label.clone()))
+                        .into_iter()
+                        .flatten()
+                    {
+                        out.push((sel.clone(), *bottom, *bottom));
+                        drawn = true;
+                    }
+                }
+                if !drawn {
+                    out.push((sel.clone(), w.position, w.position));
+                }
                 if w.set.is_some() {
                     for x in s.strings_to(&w.label) {
                         if let Some(top) = s.node(&x.top) {
@@ -397,7 +500,13 @@ fn pick_scored(
         .filter_map(|(s, a, b)| {
             let (pa, pb) = (project(*a)?, project(*b)?);
             let d = ols_core::geometry::distance_to_segment(at, pa, pb);
-            let bonus = s.kind().map_or(0.0, Snap::priority);
+            // A string's body under the structure it hangs on (where it
+            // crosses the mast or an arm) and the points at its ends, over
+            // the wires.
+            let bonus = match s {
+                Selection::String { .. } => 2.5,
+                _ => s.kind().map_or(0.0, Snap::priority),
+            };
             (d <= radius).then_some((d - bonus, s))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
