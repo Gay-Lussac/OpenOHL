@@ -50,6 +50,10 @@ pub struct View3d {
     pub marks: Vec<([f64; 3], [f64; 3])>,
     /// A wire being strung: its points so far.
     pub draft: Vec<[f64; 3]>,
+    /// The camera was fitted to the line's structures or wires (else to
+    /// its alignments or the ground: fitted again when the first
+    /// structures come).
+    fitted_on_line: bool,
 }
 
 /// A layer drawn in chunks.
@@ -210,10 +214,23 @@ impl View3d {
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         self.rect = Some(rect);
         self.drawn = true;
+        // The first structures of a line that had none: fitted to them.
+        if self.camera.is_some() && !self.fitted_on_line && !model.line.structures.is_empty() {
+            self.camera = None;
+        }
+        let fitted_on_line = &mut self.fitted_on_line;
         let camera = self.camera.get_or_insert_with(|| {
+            // The line's structures, else its wires, else its alignments,
+            // else the ground.
             let mut s = scene::layer(model, Layer::Structures, case, selection);
             if s.bounds().is_none() {
                 s = scene::layer(model, Layer::Wires, case, selection);
+            }
+            *fitted_on_line = s.bounds().is_some();
+            for layer in [Layer::Alignment, Layer::Ground] {
+                if s.bounds().is_none() {
+                    s = scene::layer(model, layer, case, selection);
+                }
             }
             s.bounds().map_or(
                 Camera::fit(&ols_render::Bounds {

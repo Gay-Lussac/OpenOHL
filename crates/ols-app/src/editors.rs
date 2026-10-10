@@ -724,6 +724,15 @@ pub fn new_alignment(
     if points.len() < 2 {
         return Err("an alignment needs at least two points".into());
     }
+    // A line with nothing yet (no routes, no structures, no alignment):
+    // the first alignment is its own.
+    if stored.routes.is_empty() && stored.structures.is_empty() && stored.alignment.len() < 2 {
+        return Ok((
+            "new alignment main".into(),
+            alignment_put(stored, "line", points)?,
+            "main".into(),
+        ));
+    }
     let mut routes = explicit_routes(stored);
     let id = (2..)
         .map(|n| format!("alignment {n}"))

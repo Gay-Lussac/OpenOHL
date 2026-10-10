@@ -8063,3 +8063,83 @@ fn palettes_export_and_import() {
     assert_eq!(r.entries, p.entries);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// An empty project: the 3D view shows the ground; the first alignment is
+/// the line's own (it was refused: an empty "main" beside it); the view
+/// fits to the first structure.
+#[test]
+fn an_empty_project_gets_its_first_alignment_and_a_view() {
+    use crate::tools::Tool;
+    let gpu = ols_render::headless_device().is_ok();
+    assert!(
+        gpu || std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+        "no GPU"
+    );
+    let ex = root().join("examples/synthetic-line");
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-empty", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.ols");
+    std::fs::remove_file(&path).ok();
+    let mut line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    line.structures.clear();
+    line.sections.clear();
+    line.jumpers.clear();
+    line.routes.clear();
+    line.alignment.clear();
+    line.systems.clear();
+    ols_session::Session::open(&path)
+        .unwrap()
+        .import(&line, "tester")
+        .unwrap();
+    let model = model::load(
+        Sources {
+            file: path,
+            library: Some(root().join("libraries/cables")),
+            terrain: Some(ex.join("synthetic-survey.csv")),
+            point_budget: 1000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    if gpu {
+        // Fitted to the ground, not to a point.
+        let cam = harness.state_mut().ready().unwrap().view3d.camera.unwrap();
+        assert!(cam.distance > 100.0, "{}", cam.distance);
+    }
+    let ground = |h: &mut Harness<'_, App>, x: f64, y: f64| {
+        let r = h.state_mut().ready().unwrap();
+        [x, y, r.model.ground_at(x, y).unwrap()]
+    };
+    for (x, y) in [(0.0, 0.0), (310.0, 0.0), (640.0, 560.0)] {
+        let p = ground(&mut harness, x, y);
+        use_tool(&mut harness, Tool::NewAlignment, Selection::None, Some(p));
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.line.alignment.len(), 3, "{:?}", r.status);
+        assert!(r.model.line.routes.is_empty());
+    }
+    let p = ground(&mut harness, 310.0, 0.0);
+    use_tool(&mut harness, Tool::AddStructure, Selection::None, Some(p));
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    harness.run();
+    if gpu {
+        let cam = harness.state_mut().ready().unwrap().view3d.camera.unwrap();
+        assert!(
+            (cam.target[0] - 310.0).abs() < 1.0 && cam.target[1].abs() < 1.0,
+            "{:?}",
+            cam.target
+        );
+    }
+}
