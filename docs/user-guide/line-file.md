@@ -239,7 +239,7 @@ The electrical model is kept apart from the physical wires: a **system** is a gr
 | `voltage_kv` | yes | AC: nominal voltage between phases (rms). DC: pole voltage to earth. |
 | `frequency_hz` | no | AC frequency (50, 60, 16.7…). Systems of different frequencies are not synchronous. |
 | `color` | no | Display colour `#rrggbb` when wires are coloured by system (default: by the system's place in the line). |
-| `phases` | yes | `label` (matched with the sections' `phase_label`); AC `angle_deg` (default evenly spread: 0°, −120°, +120°; two phases 0°, 180°); DC `polarity` +1, −1 or 0 (default in that order). |
+| `phases` | yes | `label` (matched with the sections' `phase_label`); AC `angle_deg` (default evenly spread: 0°, −120°, +120°; two phases 0°, 180°); DC `polarity` +1, −1 or 0 (default in that order); `code`, the phase's line code when wires are drawn by system (`-` solid, else its dots and dashes repeated, e.g. `.-`; default `-`, `.-`, `.--` by place). |
 
 **Conductor paths.** Sections joined by jumpers, or sharing a wire point, form one conductor path. Setting `system` on one section of the path assigns the whole path to that system's phase `phase_label`; two sections of a path naming different phases is an error that names them. A path without a system is earthed.
 

@@ -26,17 +26,31 @@ pub enum Coloring {
     Systems,
 }
 
-/// Line codes of the phases of a system, in units (on, off, on, off…):
-/// the first phase solid, the second ·–·–, the third ·––·––; then again.
-const CODES: [&[f64]; 3] = [&[], &[1.0, 1.5, 5.0, 1.5], &[1.0, 1.5, 5.0, 1.5, 5.0, 1.5]];
+/// A line code's pattern in units (on, off, on, off…): `-` (or nothing)
+/// solid, else each `.` a dot (1 unit) and each `-` a dash (5), each
+/// followed by a gap (1.5), repeated.
+pub fn pattern(code: &str) -> Vec<f64> {
+    if code.trim().is_empty() || code.trim() == "-" {
+        return Vec::new();
+    }
+    code.trim()
+        .chars()
+        .filter_map(|c| match c {
+            '.' => Some(1.0),
+            '-' => Some(5.0),
+            _ => None,
+        })
+        .flat_map(|on| [on, 1.5])
+        .collect()
+}
 
-/// A wire's colour and line code (0: solid).
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// A wire's colour and line code pattern (empty: solid).
+#[derive(Debug, Clone, PartialEq)]
 pub struct Style {
     /// Colour.
     pub color: [u8; 3],
-    /// Line code: the phase's place in its system.
-    pub code: usize,
+    /// Line code ([`pattern`]).
+    pub pattern: Vec<f64>,
 }
 
 /// The styles of a line's sections and jumpers, and their directions.
@@ -59,16 +73,16 @@ impl Styles {
         let style = |s: &ols_line::Section| match coloring {
             Coloring::Circuits => Style {
                 color: crate::scene::rgb(&line.section_color(s)),
-                code: 0,
+                pattern: Vec::new(),
             },
             Coloring::Systems => match phases.get(&s.id).copied().flatten() {
                 Some((k, p)) => Style {
                     color: crate::scene::rgb(&line.system_color(k)),
-                    code: p,
+                    pattern: pattern(&line.systems[k].line_code(p)),
                 },
                 None => Style {
                     color: grey,
-                    code: 0,
+                    pattern: Vec::new(),
                 },
             },
         };
@@ -81,7 +95,7 @@ impl Styles {
             .jumpers
             .iter()
             .filter_map(|j| {
-                let mut st = sections.get(&line.jumper_section(j)?.id).copied()?;
+                let mut st = sections.get(&line.jumper_section(j)?.id).cloned()?;
                 if coloring == Coloring::Circuits
                     && let Some(c) = &j.color
                 {
@@ -99,17 +113,17 @@ impl Styles {
 
     /// A section's style.
     pub fn section(&self, id: &str) -> Style {
-        self.sections.get(id).copied().unwrap_or(Style {
+        self.sections.get(id).cloned().unwrap_or(Style {
             color: [176, 184, 192],
-            code: 0,
+            pattern: Vec::new(),
         })
     }
 
     /// A jumper's style.
     pub fn jumper(&self, id: &str) -> Style {
-        self.jumpers.get(id).copied().unwrap_or(Style {
+        self.jumpers.get(id).cloned().unwrap_or(Style {
             color: [200, 200, 200],
-            code: 0,
+            pattern: Vec::new(),
         })
     }
 }
@@ -144,12 +158,10 @@ impl StyleCache {
             (&j.id, &j.from, &j.to, &j.color).hash(&mut h);
         }
         for s in &line.systems {
-            (
-                &s.id,
-                &s.color,
-                s.phases.iter().map(|p| &p.label).collect::<Vec<_>>(),
-            )
-                .hash(&mut h);
+            (&s.id, &s.color).hash(&mut h);
+            for p in &s.phases {
+                (&p.label, &p.code).hash(&mut h);
+            }
         }
         line.circuit_starts.hash(&mut h);
         let key = h.finish();
@@ -161,11 +173,10 @@ impl StyleCache {
     }
 }
 
-/// `points` cut into the dashes of line code `code`, `unit` long each
-/// unit (the same unit as the points: metres in 3D, pixels on screen);
-/// solid: the polyline itself.
-pub fn dashes(points: &[[f64; 3]], code: usize, unit: f64) -> Vec<Vec<[f64; 3]>> {
-    let pattern = CODES[code % CODES.len()];
+/// `points` cut into the dashes of a line code's `pattern` ([`pattern`]),
+/// `unit` long each unit (the same unit as the points: metres in 3D,
+/// pixels on screen); solid: the polyline itself.
+pub fn dashes(points: &[[f64; 3]], pattern: &[f64], unit: f64) -> Vec<Vec<[f64; 3]>> {
     if pattern.is_empty() || points.len() < 2 || unit <= 0.0 {
         return vec![points.to_vec()];
     }
@@ -258,9 +269,10 @@ mod tests {
     #[test]
     fn line_codes_cut_a_wire_into_dashes() {
         let line = vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [22.0, 0.0, 0.0]];
-        assert_eq!(dashes(&line, 0, 1.0), vec![line.clone()]);
+        assert_eq!(dashes(&line, &pattern("-"), 1.0), vec![line.clone()]);
         // ·–·–: 1 on, 1.5 off, 5 on, 1.5 off (9 a period).
-        let d = dashes(&line, 1, 1.0);
+        assert_eq!(pattern(".-"), vec![1.0, 1.5, 5.0, 1.5]);
+        let d = dashes(&line, &pattern(".-"), 1.0);
         let len = |p: &Vec<[f64; 3]>| p.last().unwrap()[0] - p[0][0];
         // [0, 1], [2.5, 7.5], [9, 10], [11.5, 16.5], [18, 19], [20.5, 22].
         assert_eq!(d.len(), 6);
@@ -269,7 +281,7 @@ mod tests {
         // A dash across the bend keeps the corner.
         assert!(d.iter().any(|p| p.len() == 3));
         // ·––·––: two dashes after the dot.
-        let d = dashes(&line, 2, 1.0);
+        let d = dashes(&line, &pattern(".--"), 1.0);
         assert!((len(&d[2]) - 5.0).abs() < 1e-9 && (len(&d[3]) - 1.0).abs() < 1e-9);
     }
 

@@ -7599,15 +7599,20 @@ fn wires_by_system_with_line_codes_and_arrows() {
     let mut model = synthetic();
     let styles = Styles::new(&model.line, Coloring::Systems);
     let colour = crate::scene::rgb(&model.line.system_color(0));
+    let solid: Vec<f64> = Vec::new();
     assert_eq!(
-        (styles.section("S1").color, styles.section("S1").code),
-        (colour, 0)
+        styles.section("S1"),
+        crate::wire_style::Style {
+            color: colour,
+            pattern: solid.clone()
+        }
     );
     assert_eq!(
-        (styles.section("S2").color, styles.section("S2").code),
-        (colour, 1)
+        styles.section("S2").pattern,
+        crate::wire_style::pattern(".-")
     );
-    assert_eq!(styles.section("S3").code, 0);
+    assert_eq!(styles.section("S2").color, colour);
+    assert_eq!(styles.section("S3").pattern, solid);
     assert_eq!(styles.jumper("J-T3-branch").color, colour);
     // By circuit: each section's own (phase) colours.
     let by_circuit = Styles::new(&model.line, Coloring::Circuits);
@@ -7641,4 +7646,70 @@ fn wires_by_system_with_line_codes_and_arrows() {
         let path = PathBuf::from(dir).join("ols-cad-system-codes.png");
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
     }
+}
+
+/// The circuits table colours a whole circuit at once; the systems table
+/// gives each phase its line code ("- --." for L1 and L2).
+#[test]
+fn circuit_colours_and_system_line_codes_in_the_tables() {
+    use crate::tables::TableKind;
+    use crate::wire_style::{Coloring, Styles, pattern};
+    let model = synthetic_project("circuit-codes");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // The circuit of S1 (with the branch S3 by its jumper).
+    let key = {
+        let r = harness.state_mut().ready().unwrap();
+        let rows = TableKind::Circuits.rows(&r.model, 0);
+        rows.iter()
+            .find(|x| x.cells[6].contains("S3"))
+            .unwrap()
+            .key
+            .clone()
+    };
+    set_cell(&mut harness, TableKind::Circuits, &key, "colour", "#AA5500");
+    apply_table(&mut harness, TableKind::Circuits, true).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let colour = |id: &str| {
+            r.model
+                .line
+                .sections
+                .iter()
+                .find(|s| s.id == id)
+                .unwrap()
+                .color
+                .clone()
+        };
+        assert_eq!(colour("S1").as_deref(), Some("#aa5500"));
+        assert_eq!(colour("S3").as_deref(), Some("#aa5500"));
+        assert_eq!(colour("S2"), None);
+    }
+    set_cell(
+        &mut harness,
+        TableKind::Systems,
+        "ex220",
+        "line codes",
+        "- --.",
+    );
+    apply_table(&mut harness, TableKind::Systems, true).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let styles = Styles::new(&r.model.line, Coloring::Systems);
+    assert_eq!(styles.section("S2").pattern, pattern("--."));
+    assert!(styles.section("S1").pattern.is_empty());
+    // Not dots and dashes: refused.
+    set_cell(
+        &mut harness,
+        TableKind::Systems,
+        "ex220",
+        "line codes",
+        "- x",
+    );
+    assert!(
+        apply_table(&mut harness, TableKind::Systems, true)
+            .unwrap_err()
+            .contains("dots and dashes")
+    );
 }

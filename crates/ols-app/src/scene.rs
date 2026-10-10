@@ -385,7 +385,7 @@ pub fn wires(
                 points: &[[f64; 3]],
                 lines: Vec<Vec<[f64; 3]>>,
                 color: [u8; 4],
-                code: usize,
+                code: &[f64],
                 w: [f32; 2]| {
         if points.len() < 2 {
             return;
@@ -439,7 +439,7 @@ pub fn wires(
                     &span.points,
                     lines,
                     rgba(col, alpha),
-                    style.code,
+                    &style.pattern,
                     [1.5, 2.0],
                 );
                 if arrows
@@ -485,7 +485,7 @@ pub fn wires(
                 &j.points,
                 lines,
                 rgba(col, alpha),
-                style.code,
+                &style.pattern,
                 [1.2, 1.5],
             );
             if arrows && let Some(f) = styles.directions.jumpers.get(&j.jumper) {
