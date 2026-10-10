@@ -8663,3 +8663,70 @@ fn a_structure_without_a_type_is_edited_in_the_pylon_editor() {
     let stored = r.model.stored_line().unwrap().structure("T3").unwrap();
     assert!(stored.points.is_empty() && stored.strings.is_empty());
 }
+
+/// A string's own wire point renamed in the string window: its string
+/// follows each name typed, so its fields stay; an empty or taken name
+/// waits (not applied) and is dropped when the field is left.
+#[test]
+fn a_wire_point_renamed_keeps_its_string() {
+    use egui::Key;
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.editor = crate::editors::StringForm::of_string(&r.model, "T2", "S1")
+            .map(crate::editors::Form::String);
+    }
+    harness.run();
+    let form = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let Some(crate::editors::Form::String(f)) = &r.editor else {
+            panic!()
+        };
+        f.clone()
+    };
+    let f = form(&mut harness);
+    let wire = f.strings[0].wire.clone();
+    let other = f
+        .points
+        .iter()
+        .map(|p| p.label.clone())
+        .find(|l| *l != wire)
+        .unwrap();
+    fn field(v: &str) -> impl Fn(&egui_kittest::kittest::AccessKitNode<'_>) -> bool + '_ {
+        move |n| n.role() == egui::accesskit::Role::TextInput && n.value().as_deref() == Some(v)
+    }
+    harness.get_by(field(&wire)).focus();
+    harness.run();
+    // Every letter away: the field is empty, the string keeps its wire
+    // point and its fields.
+    for _ in 0..wire.len() + 2 {
+        harness.key_press(Key::Backspace);
+        harness.run();
+    }
+    let f = form(&mut harness);
+    assert!(
+        f.wires.iter().any(|w| w.label == f.strings[0].wire),
+        "{f:?}"
+    );
+    harness.get_by_label("clamp");
+    harness.get_by_label("counterweight");
+    // A taken name waits.
+    // (typed into the field still focused)
+    harness.event(egui::Event::Text(other.clone()));
+    harness.run();
+    let f = form(&mut harness);
+    assert_ne!(f.strings[0].wire, other);
+    assert!(f.wires.iter().any(|w| w.label == f.strings[0].wire));
+    // A free one is applied, the string with it.
+    harness.event(egui::Event::Text("-new".into()));
+    harness.run();
+    let f = form(&mut harness);
+    let new = format!("{other}-new");
+    assert_eq!(f.strings[0].wire, new);
+    assert!(f.wires.iter().any(|w| w.label == new));
+    harness.get_by_label("clamp");
+}
