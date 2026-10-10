@@ -187,6 +187,8 @@ pub struct SectionForm {
     pub note: Option<String>,
     /// Cable condition and method it is solved with.
     pub calculation: ols_line::condition::Calculation,
+    /// Display colour (`#rrggbb`; none: its phase's).
+    pub color: Option<String>,
 }
 
 /// An editor window's content.
@@ -1434,6 +1436,7 @@ impl SectionForm {
             stringing: s.stringing.clone(),
             note: None,
             calculation: s.calculation,
+            color: s.color.clone(),
         })
     }
 
@@ -1485,6 +1488,7 @@ impl SectionForm {
                 },
                 note: None,
                 calculation: Default::default(),
+                color: None,
             },
         };
         // In the blocks (rolling) by default: a clipped template's
@@ -1580,7 +1584,7 @@ impl SectionForm {
             points: self.points.clone(),
             stringing: self.stringing.clone(),
             loads: old.map_or_else(Vec::new, |o| o.loads.clone()),
-            color: old.and_then(|o| o.color.clone()),
+            color: self.color.clone(),
             calculation: self.calculation,
         }
     }

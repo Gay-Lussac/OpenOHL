@@ -7545,3 +7545,40 @@ fn the_pylon_workspace_shows_and_edits_a_type() {
     );
     assert!(page.error.is_none(), "{:?}", page.error);
 }
+
+/// A colour typed in the Sections table goes on every section of its
+/// circuit (by name), listed first to confirm; a bad colour is refused.
+#[test]
+fn a_circuit_takes_one_colour() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("circuit-colour");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let colours = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        r.model
+            .line
+            .sections
+            .iter()
+            .map(|s| (s.id.clone(), s.circuit.clone(), s.color.clone()))
+            .collect::<Vec<_>>()
+    };
+    set_cell(&mut harness, TableKind::Sections, "S1", "colour", "#12AB34");
+    assert_eq!(
+        apply_table(&mut harness, TableKind::Sections, false).unwrap_err(),
+        "needs a confirmation"
+    );
+    apply_table(&mut harness, TableKind::Sections, true).unwrap();
+    for (id, circuit, color) in colours(&mut harness) {
+        let want = (circuit == "Example 1").then(|| "#12ab34".to_owned());
+        assert_eq!(color, want, "{id} ({circuit})");
+    }
+    set_cell(&mut harness, TableKind::Sections, "S1", "colour", "red");
+    assert!(
+        apply_table(&mut harness, TableKind::Sections, true)
+            .unwrap_err()
+            .contains("#rrggbb")
+    );
+}

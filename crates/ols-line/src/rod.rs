@@ -37,11 +37,13 @@ use ols_core::budget::Budget;
 
 type V = Vector3<f64>;
 
-/// A rigid, tension-only string: fixed top, length.
+/// A rigid string: fixed top, length; tension only, or both ways
+/// (`push`: it may take compression, e.g. a V leg designed to push).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct RodString {
     pub top: V,
     pub length: f64,
+    pub push: bool,
 }
 
 /// A point of the rod held by strings: on piece `piece`, `offset` of its
@@ -490,19 +492,26 @@ impl Rod {
             self.q.norm() * total + self.holds.iter().map(|h| h.load.norm()).sum::<f64>();
         for round in 0.. {
             let nodes = self.nodes(&d);
-            // Taut strings that would push: let go.
+            // Taut strings that would push: let go (those that may push stay).
             let kept: Vec<(usize, usize)> = active
                 .iter()
                 .zip(&mu)
-                .filter(|(c, m)| -2.0 * **m * self.string(**c).length >= -1e-9 * force_scale)
+                .filter(|(c, m)| {
+                    let s = self.string(**c);
+                    s.push || -2.0 * **m * s.length >= -1e-9 * force_scale
+                })
                 .map(|(c, _)| *c)
                 .collect();
-            // Slack strings their points hang beyond: taut.
+            // Slack strings their points hang beyond: taut; those that may
+            // push, at their length whichever way.
             let newly: Vec<((usize, usize), f64)> = all
                 .iter()
                 .filter(|c| !active.contains(c))
                 .map(|&c| (c, self.arm(c, &nodes, &d).norm()))
-                .filter(|&(c, far)| far > self.string(c).length * (1.0 + 1e-9))
+                .filter(|&(c, far)| {
+                    let s = self.string(c);
+                    far > s.length * (1.0 + 1e-9) || (s.push && far < s.length * (1.0 - 1e-9))
+                })
                 .collect();
             if kept.len() == active.len() && newly.is_empty() {
                 break;
@@ -556,10 +565,10 @@ impl Rod {
                 direction: d[x.piece],
                 forces: (0..x.strings.len())
                     .map(|s| {
-                        active
-                            .iter()
-                            .position(|c| *c == (h, s))
-                            .map_or(0.0, |k| (-2.0 * mu[k] * x.strings[s].length).max(0.0))
+                        active.iter().position(|c| *c == (h, s)).map_or(0.0, |k| {
+                            let f = -2.0 * mu[k] * x.strings[s].length;
+                            if x.strings[s].push { f } else { f.max(0.0) }
+                        })
                     })
                     .collect(),
             })
@@ -717,7 +726,11 @@ mod tests {
     }
 
     fn string(top: V, length: f64) -> RodString {
-        RodString { top, length }
+        RodString {
+            top,
+            length,
+            push: false,
+        }
     }
 
     /// Without bending stiffness the rod hangs as the inextensible

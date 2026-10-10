@@ -167,6 +167,12 @@ const SECTIONS: &[Column] = &[
         Yes,
         "cable condition (Initial, after Creep, after Load, Max Sag of the two) and method (RS: ruling span, FE: finite elements); Creep and Load use Criteria › Creep-Stretch",
     ),
+    (
+        "colour",
+        75.0,
+        Yes,
+        "display colour #rrggbb (empty: its phase's); typed for one section, every section of its circuit takes it",
+    ),
 ];
 
 const STRINGS: &[Column] = &[
@@ -872,6 +878,7 @@ impl TableKind {
                                 .collect::<Vec<_>>()
                                 .join(" / "),
                             s.calculation.label().to_owned(),
+                            s.color.clone().unwrap_or_default(),
                         ],
                     }
                 })
@@ -1258,7 +1265,52 @@ impl TableKind {
                                 .join(", ")
                         ));
                     }
-                    let mate_puts = form.circuit_puts(stored, key, &by_hand)?;
+                    let mut mate_puts = form.circuit_puts(stored, key, &by_hand)?;
+                    // A colour typed: every section of its circuit (by its
+                    // name) takes it, listed to confirm.
+                    if c.changed(TableKind::Sections.column("colour"))
+                        && !form.circuit.trim().is_empty()
+                    {
+                        let mut taking = Vec::new();
+                        for s in stored.sections.iter().filter(|s| {
+                            s.id != *key
+                                && s.circuit == form.circuit
+                                && !by_hand.contains(&s.id)
+                                && s.color != form.color
+                        }) {
+                            let put = mate_puts.iter_mut().find(|(_, cmd)| {
+                                matches!(cmd, Command::Put { kind: Kind::Section, id, .. } if *id == s.id)
+                            });
+                            match put {
+                                Some((_, Command::Put { value, .. })) => {
+                                    value["color"] = serde_json::to_value(&form.color)
+                                        .map_err(|e| e.to_string())?;
+                                }
+                                _ => {
+                                    let mut m = s.clone();
+                                    m.color = form.color.clone();
+                                    mate_puts.push((
+                                        format!("section {}: the colour of its circuit", s.id),
+                                        Command::Put {
+                                            kind: Kind::Section,
+                                            id: s.id.clone(),
+                                            value: serde_json::to_value(&m)
+                                                .map_err(|e| e.to_string())?,
+                                            ord: None,
+                                        },
+                                    ));
+                                }
+                            }
+                            taking.push(s.id.clone());
+                        }
+                        if !taking.is_empty() {
+                            out.takes.push(format!(
+                                "section {key}: its circuit {}'s sections take its colour: {}",
+                                form.circuit,
+                                taking.join(", ")
+                            ));
+                        }
+                    }
                     if new_id != *key {
                         out.commands.push((
                             format!("renamed section {key} to {new_id}"),
@@ -1972,6 +2024,21 @@ fn section_cells(
     }
     form.circuit = c.get(2);
     form.phase_label = c.get(3);
+    let color = c
+        .get(TableKind::Sections.column("colour"))
+        .trim()
+        .to_lowercase();
+    form.color = if color.is_empty() {
+        None
+    } else {
+        let hex = color.trim_start_matches('#');
+        if hex.len() != 6 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            return Err(format!(
+                "{name} colour: \"{color}\" — write #rrggbb, e.g. #e4572e"
+            ));
+        }
+        Some(format!("#{hex}"))
+    };
     form.system = opt(&c.get(4));
     form.bundle = c
         .get(5)
