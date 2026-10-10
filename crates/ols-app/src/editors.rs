@@ -56,6 +56,70 @@ pub struct StructureForm {
     pub position: [f64; 3],
     /// The base follows the ground.
     pub on_ground: bool,
+    /// What it is, in words.
+    pub description: String,
+    /// Its own points where strings hang (a structure without a type), in
+    /// its axes.
+    pub points: Vec<PointRow>,
+    /// Placed on this alignment point (route as the views name it, index):
+    /// it stands there and the point is tied to it.
+    pub on_alignment: Option<(String, usize)>,
+    /// Its orientation follows the line: ahead along the alignment, its
+    /// cross-arms (right to left) on the bisector of the line angle.
+    pub along_line: bool,
+}
+
+/// The alignment points a structure can be put on: (route as the views
+/// name it, index, position, the structure tied to it).
+pub fn alignment_points(line: &Line) -> Vec<(String, usize, [f64; 3], Option<String>)> {
+    line.effective_routes()
+        .into_iter()
+        .filter(|r| !r.alignment.is_empty())
+        .flat_map(|r| {
+            r.alignment
+                .iter()
+                .enumerate()
+                .map(|(k, a)| (r.id.clone(), k, a.position, a.structure.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// The orientation (local x, to the right looking ahead, degrees
+/// counter-clockwise from east) a structure takes on the line: on
+/// alignment point `on` (route, index), ahead along its alignment and its
+/// cross-arms on the bisector of the line angle there; elsewhere at `at`,
+/// across the nearest stretch of the line. `None`: no line there.
+pub fn line_orientation(line: &Line, at: [f64; 3], on: Option<&(String, usize)>) -> Option<f64> {
+    let ahead = match on {
+        Some((route, k)) => {
+            let r = line
+                .effective_routes()
+                .into_iter()
+                .find(|r| &r.id == route)?;
+            let pts: Vec<[f64; 3]> = r.alignment.iter().map(|a| a.position).collect();
+            let unit = |a: [f64; 3], b: [f64; 3]| {
+                let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                let n = dx.hypot(dy);
+                (n > 1e-9).then(|| [dx / n, dy / n])
+            };
+            let back = (*k > 0).then(|| unit(pts[k - 1], pts[*k])).flatten();
+            let fore = pts.get(k + 1).and_then(|n| unit(pts[*k], *n));
+            match (back, fore) {
+                (Some(a), Some(b)) => {
+                    let s = [a[0] + b[0], a[1] + b[1]];
+                    let n = s[0].hypot(s[1]);
+                    if n < 1e-9 { b } else { [s[0] / n, s[1] / n] }
+                }
+                (Some(a), None) | (None, Some(a)) => a,
+                (None, None) => return None,
+            }
+        }
+        None => line.direction_at([at[0], at[1]])?,
+    };
+    // Right of ahead: ahead turned clockwise.
+    let right = [ahead[1], -ahead[0]];
+    Some(right[1].atan2(right[0]).to_degrees())
 }
 
 /// A point of a structure in an editor, in the structure's axes (across:
@@ -243,6 +307,15 @@ pub struct SectionForm {
     pub calculation: ols_line::condition::Calculation,
     /// Display colour (`#rrggbb`; none: its phase's).
     pub color: Option<String>,
+}
+
+/// What the editor windows need from the application: the GPU (previews)
+/// and the structure preview's state (the forms are copied every frame).
+pub struct FormExtra<'a> {
+    /// The GPU, for the previews.
+    pub rs: Option<&'a eframe::egui_wgpu::RenderState>,
+    /// The structure window's preview.
+    pub preview: &'a mut crate::preview3d::Preview,
 }
 
 /// An editor window's content.
@@ -978,21 +1051,70 @@ impl StructureForm {
         let structure_type = nearest
             .and_then(|s| s.structure_type.clone())
             .or_else(|| model.types.as_ref()?.0.iter().next().map(|t| t.id.clone()));
-        Self {
+        // On an alignment point near where it was asked for (5 m), not
+        // taken yet: there, tied to it.
+        let on_alignment = alignment_points(line)
+            .into_iter()
+            .filter(|p| p.3.is_none())
+            .map(|p| ((p.2[0] - at[0]).hypot(p.2[1] - at[1]), p))
+            .filter(|(d, _)| *d < 5.0)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, p)| (p.0, p.1));
+        let along = line_orientation(line, at, on_alignment.as_ref());
+        let mut f = Self {
             new: true,
             id,
             structure_type,
             extension: None,
             height_adjust: 0.0,
-            orientation_deg: nearest.map_or(0.0, |s| s.orientation_deg),
+            orientation_deg: along
+                .or_else(|| nearest.map(|s| s.orientation_deg))
+                .unwrap_or(0.0),
             position: at,
             on_ground: model.ground_at(at[0], at[1]).is_some(),
+            description: String::new(),
+            points: Vec::new(),
+            on_alignment: None,
+            along_line: along.is_some(),
+        };
+        if let Some(on) = on_alignment {
+            f.place_on(model, on);
+        }
+        f
+    }
+
+    /// Puts it on alignment point `on` (route, index): its position (the
+    /// base on the ground there when there is ground), and the line's
+    /// orientation there when it follows the line.
+    pub fn place_on(&mut self, model: &Model, on: (String, usize)) {
+        if let Some(p) = alignment_points(&model.line)
+            .into_iter()
+            .find(|p| p.0 == on.0 && p.1 == on.1)
+        {
+            self.position = p.2;
+            if let Some(z) = model.ground_at(p.2[0], p.2[1]) {
+                self.position[2] = z;
+                self.on_ground = true;
+            }
+        }
+        self.on_alignment = Some(on);
+        self.follow_line(model);
+    }
+
+    /// Its orientation from the line, when it follows it.
+    pub fn follow_line(&mut self, model: &Model) {
+        if self.along_line
+            && let Some(o) =
+                line_orientation(&model.line, self.position, self.on_alignment.as_ref())
+        {
+            self.orientation_deg = o;
         }
     }
 
     /// Structure `id` as stored.
     pub fn of(model: &Model, id: &str) -> Option<Self> {
         let s = model.line.structure(id)?;
+        let local = |p| to_local(s.position, s.orientation_deg, p);
         Some(Self {
             new: false,
             id: id.to_owned(),
@@ -1002,6 +1124,22 @@ impl StructureForm {
             orientation_deg: s.orientation_deg,
             position: s.position,
             on_ground: false,
+            description: s.description.clone(),
+            points: model
+                .stored_line()
+                .and_then(|l| l.structure(id))
+                .map(|st| {
+                    st.points
+                        .iter()
+                        .map(|p| PointRow {
+                            label: p.label.clone(),
+                            at: local(p.position),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            on_alignment: None,
+            along_line: false,
         })
     }
 
@@ -1019,6 +1157,8 @@ impl StructureForm {
                 structure_type: self.structure_type.clone(),
                 extension: self.extension.clone(),
                 height_adjust: self.height_adjust,
+                description: self.description.trim().to_owned(),
+                points: self.global_points(),
                 ..Structure::new(id.clone(), self.position)
             }
         } else {
@@ -1051,22 +1191,72 @@ impl StructureForm {
             s.structure_type = self.structure_type.clone();
             s.extension = self.extension.clone();
             s.height_adjust = self.height_adjust;
+            s.description = self.description.trim().to_owned();
+            // Its own points as in the window (in its axes, turned and
+            // moved with it).
+            let mut points = self.global_points();
+            for p in &s.points {
+                if !points.iter().any(|q| q.label == p.label)
+                    && s.strings.iter().any(|x| x.top == p.label)
+                {
+                    points.push(p.clone());
+                }
+            }
+            s.points = points;
             s
         };
+        let labels: std::collections::BTreeSet<&str> =
+            self.points.iter().map(|p| p.label.trim()).collect();
+        if labels.len() != self.points.len() || labels.contains("") {
+            return Err("every point needs a label of its own".into());
+        }
         let what = if self.new {
             format!("added structure {id}")
         } else {
             format!("changed structure {id}")
         };
+        let put = Command::Put {
+            kind: Kind::Structure,
+            id: id.clone(),
+            value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
+            ord: None,
+        };
+        // On an alignment point: tied to it (one command).
+        let Some((route, index)) = &self.on_alignment else {
+            return Ok((what, put));
+        };
+        let stored = stored.ok_or("read-only: open a project to edit")?;
+        let key = route_key(stored, route);
+        let mut alignment =
+            stored_alignment(stored, &key).ok_or_else(|| format!("no alignment {route}"))?;
+        let p = alignment
+            .get_mut(*index)
+            .ok_or_else(|| format!("alignment {route} has no point {}", index + 1))?;
+        if let Some(other) = p.structure.as_ref().filter(|o| **o != id) {
+            return Err(format!(
+                "alignment point {} of {route} is under {other} already",
+                index + 1
+            ));
+        }
+        p.structure = Some(id.clone());
+        p.position = [s.position[0], s.position[1], p.position[2]];
         Ok((
-            what,
-            Command::Put {
-                kind: Kind::Structure,
-                id,
-                value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
-                ord: None,
+            format!("{what} on alignment point {} of {route}", index + 1),
+            Command::Batch {
+                commands: vec![put, alignment_put(stored, &key, alignment)?],
             },
         ))
+    }
+
+    /// Its own points in project coordinates.
+    fn global_points(&self) -> Vec<StructurePoint> {
+        self.points
+            .iter()
+            .map(|p| StructurePoint {
+                label: p.label.trim().to_owned(),
+                position: to_global(self.position, self.orientation_deg, p.at),
+            })
+            .collect()
     }
 }
 
@@ -1834,10 +2024,16 @@ impl Form {
     }
 
     /// The window's content; what was asked for.
-    pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model, case: usize) -> Option<Outcome> {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        case: usize,
+        extra: &mut FormExtra<'_>,
+    ) -> Option<Outcome> {
         let mut out = None;
         match self {
-            Form::Structure(f) => structure_ui(ui, f, model),
+            Form::Structure(f) => structure_ui(ui, f, model, extra),
             Form::String(f) => {
                 if string_ui(ui, f, model) {
                     out = Some(Outcome::ResetString);
@@ -1873,80 +2069,455 @@ fn value(ui: &mut egui::Ui, v: &mut f64, speed: f64, suffix: &str) -> egui::Resp
     )
 }
 
-fn structure_ui(ui: &mut egui::Ui, f: &mut StructureForm, model: &Model) {
-    egui::Grid::new("structure-form").num_columns(2).show(ui, |ui| {
-        ui.label("id");
-        ui.add_enabled(f.new, egui::TextEdit::singleline(&mut f.id).desired_width(140.0));
-        ui.end_row();
-        ui.label("type");
-        let types: Vec<&ols_structures::StructureType> = model
-            .types
-            .as_ref()
-            .map(|(s, _)| s.iter().collect())
+fn structure_ui(
+    ui: &mut egui::Ui,
+    f: &mut StructureForm,
+    model: &Model,
+    extra: &mut FormExtra<'_>,
+) {
+    let types: Vec<&ols_structures::StructureType> = model
+        .types
+        .as_ref()
+        .map(|(s, _)| s.iter().collect())
+        .unwrap_or_default();
+    let help = |ui: &mut egui::Ui, text: &str| {
+        ui.label(egui::RichText::new(text).small().weak());
+    };
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(330.0);
+            egui::Grid::new("structure-form").num_columns(2).show(ui, |ui| {
+                ui.label("id");
+                ui.add_enabled(f.new, egui::TextEdit::singleline(&mut f.id).desired_width(140.0));
+                ui.end_row();
+                ui.label("type").on_hover_text(
+                    "A structure type of the library (its points and strings come from it), \
+                     or none: its points given here, its strings added with Add string",
+                );
+                egui::ComboBox::from_id_salt("structure-type")
+                    .selected_text(f.structure_type.as_deref().unwrap_or("(none: points given here)"))
+                    .height(400.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut f.structure_type, None, "(none: points given here)");
+                        for t in &types {
+                            ui.selectable_value(
+                                &mut f.structure_type,
+                                Some(t.id.clone()),
+                                format!("{} — {}", t.id, t.name),
+                            );
+                        }
+                    });
+                ui.end_row();
+                let extensions: Vec<String> = f
+                    .structure_type
+                    .as_deref()
+                    .and_then(|id| types.iter().find(|t| t.id == id))
+                    .map(|t| t.extensions.iter().map(|e| e.name.clone()).collect())
+                    .unwrap_or_default();
+                if !extensions.is_empty() {
+                    ui.label("extension");
+                    egui::ComboBox::from_id_salt("structure-extension")
+                        .selected_text(f.extension.as_deref().unwrap_or("(base)"))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut f.extension, None, "(base)");
+                            for e in &extensions {
+                                ui.selectable_value(&mut f.extension, Some(e.clone()), e);
+                            }
+                        });
+                    ui.end_row();
+                }
+                if f.structure_type.is_some() {
+                    ui.label("height adjustment");
+                    value(ui, &mut f.height_adjust, 0.01, " m")
+                        .on_hover_text("Height of the type's feet above the ground, e.g. for foundations");
+                    ui.end_row();
+                }
+                ui.label("description");
+                ui.add(
+                    egui::TextEdit::multiline(&mut f.description)
+                        .desired_rows(2)
+                        .desired_width(200.0)
+                        .hint_text("what it is (free text)"),
+                );
+                ui.end_row();
+            });
+            ui.separator();
+            ui.strong("Where it stands");
+            let points = alignment_points(&model.line);
+            let mut on = f.on_alignment.is_some();
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut on, false, "at coordinates");
+                ui.add_enabled_ui(!points.is_empty(), |ui| {
+                    ui.radio_value(&mut on, true, "on an alignment point")
+                        .on_disabled_hover_text("The line has no alignment points yet");
+                });
+            });
+            if on && f.on_alignment.is_none() {
+                if let Some(p) = points.iter().find(|p| p.3.is_none()) {
+                    f.place_on(model, (p.0.clone(), p.1));
+                }
+            } else if !on {
+                f.on_alignment = None;
+            }
+            match f.on_alignment.clone() {
+                Some((route, k)) => {
+                    let text = |r: &str, k: usize, p: [f64; 3]| {
+                        format!("{r}, point {} — E {:.1}, N {:.1}", k + 1, p[0], p[1])
+                    };
+                    let shown = points
+                        .iter()
+                        .find(|p| p.0 == route && p.1 == k)
+                        .map_or(String::new(), |p| text(&p.0, p.1, p.2));
+                    let mut chosen = None;
+                    egui::ComboBox::from_id_salt("structure-alignment-point")
+                        .selected_text(shown)
+                        .width(300.0)
+                        .height(300.0)
+                        .show_ui(ui, |ui| {
+                            for p in &points {
+                                let taken = p.3.as_ref().filter(|s| **s != f.id);
+                                let label = match taken {
+                                    Some(s) => format!("{} (under {s})", text(&p.0, p.1, p.2)),
+                                    None => text(&p.0, p.1, p.2),
+                                };
+                                if ui
+                                    .add_enabled(
+                                        taken.is_none(),
+                                        egui::Button::selectable(p.0 == route && p.1 == k, label),
+                                    )
+                                    .clicked()
+                                {
+                                    chosen = Some((p.0.clone(), p.1));
+                                }
+                            }
+                        });
+                    if let Some(c) = chosen {
+                        f.place_on(model, c);
+                    }
+                    help(ui, "It stands on the point, tied to it: the alignment follows it when it moves.");
+                }
+                None => {
+                    let before = f.position;
+                    egui::Grid::new("structure-position").num_columns(2).show(ui, |ui| {
+                        for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
+                            ui.label(name);
+                            ui.add_enabled_ui(k < 2 || !f.on_ground, |ui| {
+                                value(ui, &mut f.position[k], 0.1, " m");
+                            });
+                            ui.end_row();
+                        }
+                    });
+                    ui.checkbox(&mut f.on_ground, "base on the ground");
+                    if f.position != before {
+                        f.follow_line(model);
+                    }
+                }
+            }
+            if f.on_ground
+                && let Some(z) = model.ground_at(f.position[0], f.position[1])
+            {
+                f.position[2] = z;
+            }
+            ui.separator();
+            ui.strong("Orientation");
+            ui.horizontal(|ui| {
+                if ui
+                    .checkbox(&mut f.along_line, "along the line")
+                    .on_hover_text(
+                        "Ahead along the alignment; its cross-arms (right to left) on the \
+                         bisector of the line angle there",
+                    )
+                    .changed()
+                {
+                    f.follow_line(model);
+                }
+                ui.add_enabled_ui(!f.along_line, |ui| {
+                    value(ui, &mut f.orientation_deg, 0.1, "°").on_hover_text(
+                        "Direction of its right (local x: the cross-arms), counter-clockwise from east",
+                    );
+                });
+            });
+            help(ui, "Its right (the cross-arms), counter-clockwise from east; ahead is a quarter turn to the left of it.");
+        });
+        // The preview, in its own axes, with the compass.
+        extra.preview.shows(&format!("{} {}", f.id, f.new));
+        let (key, labels) = structure_preview_key(f, model);
+        let size = egui::vec2(360.0, 360.0);
+        extra.preview.ui(
+            ui,
+            extra.rs,
+            size,
+            key,
+            || structure_scene(f, model),
+            &labels,
+        );
+    });
+    if f.structure_type.is_none() {
+        ui.separator();
+        ui.strong("Points where strings hang");
+        help(
+            ui,
+            "In its axes: across (to the right looking ahead), along (ahead), up from its base. \
+             Strings are added on them with the Add string tool (or Edit on a string).",
+        );
+        let used: Vec<String> = model
+            .line
+            .structure(&f.id)
+            .map(|s| s.strings.iter().map(|x| x.top.clone()).collect())
             .unwrap_or_default();
-        egui::ComboBox::from_id_salt("structure-type")
-            .selected_text(f.structure_type.as_deref().unwrap_or("(none: strings given)"))
-            .height(400.0)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut f.structure_type, None, "(none: strings given)");
-                for t in &types {
-                    ui.selectable_value(&mut f.structure_type, Some(t.id.clone()), &t.id);
+        let mut remove = None;
+        egui::Grid::new("structure-points")
+            .num_columns(2)
+            .show(ui, |ui| {
+                for (k, p) in f.points.iter_mut().enumerate() {
+                    ui.add(egui::TextEdit::singleline(&mut p.label).desired_width(90.0));
+                    ui.horizontal(|ui| {
+                        for (i, name) in ["across", "along", "up"].iter().enumerate() {
+                            ui.label(*name);
+                            value(ui, &mut p.at[i], 0.05, " m");
+                        }
+                        if used.contains(&p.label) {
+                            ui.label(egui::RichText::new("strings hang from it").small().weak());
+                        } else if ui
+                            .small_button("×")
+                            .on_hover_text("Take the point away")
+                            .clicked()
+                        {
+                            remove = Some(k);
+                        }
+                    });
+                    ui.end_row();
                 }
             });
-        ui.end_row();
-        let extensions: Vec<String> = f
-            .structure_type
-            .as_deref()
-            .and_then(|id| types.iter().find(|t| t.id == id))
-            .map(|t| t.extensions.iter().map(|e| e.name.clone()).collect())
-            .unwrap_or_default();
-        if !extensions.is_empty() {
-            ui.label("extension");
-            egui::ComboBox::from_id_salt("structure-extension")
-                .selected_text(f.extension.as_deref().unwrap_or("(base)"))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut f.extension, None, "(base)");
-                    for e in &extensions {
-                        ui.selectable_value(&mut f.extension, Some(e.clone()), e);
-                    }
-                });
-            ui.end_row();
+        if let Some(k) = remove {
+            f.points.remove(k);
         }
-        if f.structure_type.is_some() {
-            ui.label("height adjustment");
-            value(ui, &mut f.height_adjust, 0.01, " m")
-                .on_hover_text("Height of the type's feet above the ground, e.g. for foundations");
-            ui.end_row();
+        if ui.small_button("+ point").clicked() {
+            let taken: Vec<&str> = f.points.iter().map(|p| p.label.as_str()).collect();
+            let label = next_id(
+                taken.iter().copied(),
+                f.points.last().map_or("A0", |p| p.label.as_str()),
+            );
+            let at = f
+                .points
+                .last()
+                .map_or([0.0, 0.0, 20.0], |p| [-p.at[0], p.at[1], p.at[2]]);
+            f.points.push(PointRow { label, at });
         }
-        ui.label("orientation");
-        value(ui, &mut f.orientation_deg, 0.1, "°").on_hover_text(
-            "Direction of the cross-arms (local x, to the right looking ahead), counter-clockwise from east",
-        );
-        ui.end_row();
-        for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
-            ui.label(name);
-            ui.add_enabled_ui(k < 2 || !f.on_ground, |ui| {
-                value(ui, &mut f.position[k], 0.1, " m");
-            });
-            ui.end_row();
-        }
-    });
-    ui.checkbox(&mut f.on_ground, "base on the ground");
-    if f.on_ground
-        && let Some(z) = model.ground_at(f.position[0], f.position[1])
+    }
+}
+
+/// What the structure window's preview shows, as a key (built again when
+/// it changes), and its labels.
+fn structure_preview_key(f: &StructureForm, model: &Model) -> (u64, Vec<crate::preview3d::Label>) {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    format!("{f:?}").hash(&mut h);
+    model.line.display.ahead_deg.to_bits().hash(&mut h);
+    if let Some(s) = model.line.structure(&f.id) {
+        format!("{:?}{:?}", s.strings, s.wires).hash(&mut h);
+    }
+    let g = structure_geometry(f, model);
+    let mut labels = compass_labels(f, model, &g);
+    let orange = egui::Color32::from_rgb(255, 160, 80);
+    let blue = egui::Color32::from_rgb(110, 200, 255);
+    for (l, p) in &g.points {
+        labels.push(([p[0], p[1], p[2] + 0.8], l.clone(), orange));
+    }
+    for (l, p, set) in &g.wires {
+        let text = set.map_or(l.clone(), |s| format!("{l} (set {s})"));
+        labels.push(([p[0], p[1], p[2] - 0.8], text, blue));
+    }
+    (h.finish(), labels)
+}
+
+/// The structure in its own axes (base at 0): its type's, or its own
+/// points with the strings it has.
+fn structure_geometry(f: &StructureForm, model: &Model) -> crate::type_workspace::Geometry {
+    let none = ols_structures::InsulatorLibrary::default();
+    if let Some((types, insulators)) = &model.types
+        && let Some(t) = f.structure_type.as_deref().and_then(|id| types.get(id))
     {
-        f.position[2] = z;
+        let mut g = crate::type_workspace::geometry(t, insulators);
+        // The base at 0.
+        let foot = t.foot_level();
+        let down = |p: &mut [f64; 3]| p[2] -= foot;
+        g.joints.iter_mut().for_each(|j| down(&mut j.1));
+        g.members.iter_mut().for_each(|m| {
+            down(&mut m.1);
+            down(&mut m.2)
+        });
+        g.points.iter_mut().for_each(|p| down(&mut p.1));
+        g.wires.iter_mut().for_each(|w| down(&mut w.1));
+        g.strings.iter_mut().for_each(|s| {
+            down(&mut s.1);
+            down(&mut s.2)
+        });
+        g.sticks.iter_mut().flatten().for_each(down);
+        return g;
     }
-    if f.new && f.structure_type.is_none() {
-        ui.label(
-            egui::RichText::new("Without a type, add its strings with the Add string tool.")
-                .small(),
+    let _ = &none;
+    let mut g = crate::type_workspace::Geometry {
+        points: f.points.iter().map(|p| (p.label.clone(), p.at)).collect(),
+        ..Default::default()
+    };
+    if let Some(s) = model.line.structure(&f.id) {
+        let local = |p| to_local(s.position, s.orientation_deg, p);
+        g.wires = s
+            .wires
+            .iter()
+            .map(|w| (w.label.clone(), local(w.position), w.set))
+            .collect();
+        let at = |l: &str| {
+            g.points
+                .iter()
+                .find(|p| p.0 == l)
+                .map(|p| p.1)
+                .or_else(|| g.wires.iter().find(|w| w.0 == l).map(|w| w.1))
+        };
+        g.strings = s
+            .strings
+            .iter()
+            .filter_map(|x| Some((x.label.clone(), at(&x.top)?, at(&x.wire)?)))
+            .collect();
+    }
+    // A mast to the highest point and arms to the points.
+    let top = g.points.iter().map(|p| p.1[2]).fold(5.0, f64::max);
+    g.sticks.push(vec![[0.0; 3], [0.0, 0.0, top]]);
+    for (_, p) in &g.points {
+        g.sticks.push(vec![[0.0, 0.0, p[2]], *p]);
+    }
+    g
+}
+
+/// The compass's radius: beyond the structure's reach in plan.
+fn compass_radius(g: &crate::type_workspace::Geometry) -> f64 {
+    let reach = g
+        .points
+        .iter()
+        .map(|p| p.1)
+        .chain(g.wires.iter().map(|w| w.1))
+        .chain(g.joints.iter().map(|j| j.1))
+        .chain(g.sticks.iter().flatten().copied())
+        .map(|p| p[0].hypot(p[1]))
+        .fold(3.0, f64::max);
+    (reach * 1.25).max(0.35 * height(g))
+}
+
+/// The structure's height (its highest point).
+fn height(g: &crate::type_workspace::Geometry) -> f64 {
+    g.points
+        .iter()
+        .map(|p| p.1)
+        .chain(g.wires.iter().map(|w| w.1))
+        .chain(g.sticks.iter().flatten().copied())
+        .map(|p| p[2])
+        .fold(0.0, f64::max)
+}
+
+/// Where a plan angle of the project's convention points, in the
+/// structure's axes (clockwise seen from above, ahead at the project's
+/// angle ahead).
+pub(crate) fn compass_direction(angle: f64, ahead: f64) -> [f64; 2] {
+    let phi = (angle - ahead).to_radians();
+    [phi.sin(), phi.cos()]
+}
+
+fn compass_labels(
+    f: &StructureForm,
+    model: &Model,
+    g: &crate::type_workspace::Geometry,
+) -> Vec<crate::preview3d::Label> {
+    let r = compass_radius(g) * 1.12;
+    let ahead = model.line.display.ahead_deg;
+    let mut out = Vec::new();
+    let grey = egui::Color32::from_rgb(200, 200, 200);
+    for a in [0.0, 90.0, 180.0, 270.0] {
+        let d = compass_direction(a, ahead);
+        let word = match ((a - ahead).rem_euclid(360.0)).round() as i64 {
+            0 => " ahead",
+            90 => " right",
+            180 => " back",
+            270 => " left",
+            _ => "",
+        };
+        out.push(([d[0] * r, d[1] * r, 0.0], format!("{a:.0}°{word}"), grey));
+    }
+    // North, from its orientation.
+    let o = f.orientation_deg.to_radians();
+    let n = [o.sin(), o.cos()];
+    out.push((
+        [n[0] * r * 0.8, n[1] * r * 0.8, 0.0],
+        "N".into(),
+        egui::Color32::from_rgb(120, 170, 255),
+    ));
+    out
+}
+
+/// The structure window's preview: the ground's compass, the structure's
+/// sticks, points, strings and wire points.
+fn structure_scene(f: &StructureForm, model: &Model) -> ols_render::Scene {
+    let g = structure_geometry(f, model);
+    let mut s = ols_render::Scene::new([0.0; 3]);
+    let r = compass_radius(&g);
+    let ahead = model.line.display.ahead_deg;
+    let ring: Vec<[f64; 3]> = (0..=72)
+        .map(|k| {
+            let t = f64::from(k) * std::f64::consts::TAU / 72.0;
+            [r * t.cos(), r * t.sin(), 0.0]
+        })
+        .collect();
+    s.polyline(&ring, [110, 115, 125, 255], 1.5);
+    for k in 0..24 {
+        let a = f64::from(k) * 15.0;
+        let d = compass_direction(a, ahead);
+        let inner = if k % 6 == 0 {
+            0.82
+        } else if k % 2 == 0 {
+            0.9
+        } else {
+            0.95
+        };
+        s.polyline(
+            &[
+                [d[0] * r * inner, d[1] * r * inner, 0.0],
+                [d[0] * r, d[1] * r, 0.0],
+            ],
+            [150, 155, 165, 255],
+            1.5,
         );
     }
+    // Ahead (green) and right (red) from the centre; north (blue).
+    s.polyline(&[[0.0; 3], [0.0, r * 0.75, 0.0]], [90, 200, 90, 255], 3.0);
+    s.polyline(&[[0.0; 3], [r * 0.75, 0.0, 0.0]], [230, 80, 70, 255], 3.0);
+    let o = f.orientation_deg.to_radians();
+    s.polyline(
+        &[[0.0; 3], [o.sin() * r * 0.6, o.cos() * r * 0.6, 0.0]],
+        [120, 170, 255, 255],
+        2.0,
+    );
+    for l in &g.sticks {
+        s.polyline(l, [215, 215, 220, 255], 2.0);
+    }
+    for (_, a, b, _) in &g.members {
+        s.polyline(&[*a, *b], [215, 215, 220, 255], 1.5);
+    }
+    for (_, a, b) in &g.strings {
+        s.polyline(&[*a, *b], [120, 180, 255, 255], 2.5);
+    }
+    for (_, p) in &g.points {
+        s.point(*p, [255, 150, 60, 255], 9.0);
+    }
+    for (_, p, _) in &g.wires {
+        s.point(*p, [90, 200, 255, 255], 9.0);
+    }
+    s
 }
 
 /// Returns true when "back to the type" is clicked.
 fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
+    // Directions in plan as the project counts them.
+    let ahead = model.line.display.ahead_deg;
     let mut reset = false;
     if f.new {
         ui.horizontal(|ui| {
@@ -2175,7 +2746,10 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                         && let Some(top) = tops[k]
                         && let Some(w) = f.wires.iter_mut().find(|w| w.label == f.strings[k].wire)
                     {
-                        let (mut down, mut dir, mut len) = polar(top, w.at);
+                        // Shown in the project's convention (ahead at its
+                        // angle, clockwise seen from above).
+                        let (mut down, dir, mut len) = polar(top, w.at);
+                        let mut dir = (dir + ahead).rem_euclid(360.0);
                         let mut changed = false;
                         ui.horizontal(|ui| {
                             ui.label("down/up");
@@ -2199,8 +2773,15 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                         .suffix("°"),
                                 )
                                 .on_hover_text(
-                                    "Direction in plan, in the structure's axes: 0° ahead along the \
-                                     line, 90° to the right, 180° back, 270° to the left",
+                                    format!(
+                                        "Direction in plan, clockwise seen from above: ahead along the line {:.0}°, \
+                                         to the right {:.0}°, back {:.0}°, to the left {:.0}° \
+                                         (Structures › Angles around structures)",
+                                        ahead,
+                                        (ahead + 90.0) % 360.0,
+                                        (ahead + 180.0) % 360.0,
+                                        (ahead + 270.0) % 360.0
+                                    ),
                                 )
                                 .changed();
                             ui.label("length");
@@ -2216,7 +2797,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 .changed();
                         });
                         if changed {
-                            w.at = from_polar(top, down, dir.rem_euclid(360.0), len.max(0.01));
+                            w.at = from_polar(top, down, (dir - ahead).rem_euclid(360.0), len.max(0.01));
                         }
                         ui.horizontal(|ui| {
                             ui.label("wire point");

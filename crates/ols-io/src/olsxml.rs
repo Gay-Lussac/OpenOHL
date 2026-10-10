@@ -150,6 +150,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         orientation_deg,
         structure_type,
         extension,
+        description,
         height_adjust,
         points,
         strings,
@@ -167,6 +168,7 @@ fn write_structure(out: &mut String, s: &Structure) {
     if *height_adjust != 0.0 {
         attr(out, "height_adjust", &num(*height_adjust));
     }
+    nonempty(out, "description", description);
     if points.is_empty()
         && strings.is_empty()
         && wires.is_empty()
@@ -462,6 +464,9 @@ pub fn to_xml(line: &Line) -> String {
     let _ = write!(out, " version=\"{version}\"");
     attr(&mut out, "name", name);
     nonempty(&mut out, "crs", crs);
+    if display.ahead_deg != 0.0 {
+        attr(&mut out, "ahead_deg", &num(display.ahead_deg));
+    }
     out.push_str(">\n");
     write_alignment(&mut out, alignment, "  ");
     for r in routes {
@@ -496,7 +501,10 @@ pub fn to_xml(line: &Line) -> String {
     for p in circuit_starts {
         section_point(&mut out, "circuit_start", p, "  ");
     }
-    let Display { phase_colors } = display;
+    let Display {
+        phase_colors,
+        ahead_deg: _,
+    } = display;
     for (label, color) in phase_colors {
         out.push_str("  <phase_color");
         attr(&mut out, "label", label);
@@ -669,6 +677,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             "type",
             "extension",
             "height_adjust",
+            "description",
         ],
         &["point", "wire", "string", "attachment", "omit", "member"],
     )?;
@@ -814,6 +823,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
         structure_type: owned(e, "type"),
         extension: owned(e, "extension"),
         height_adjust: optional(e, "height_adjust")?.unwrap_or(0.0),
+        description: owned(e, "description").unwrap_or_default(),
         points,
         strings,
         wires,
@@ -1015,7 +1025,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     }
     check(
         root,
-        &["format", "version", "name", "crs"],
+        &["format", "version", "name", "crs", "ahead_deg"],
         &[
             "alignment",
             "route",
@@ -1047,7 +1057,10 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             })
         })
         .collect::<Result<_, String>>()?;
-    let mut display = Display::default();
+    let mut display = Display {
+        ahead_deg: optional(root, "ahead_deg")?.unwrap_or(0.0),
+        ..Display::default()
+    };
     for c in root.children_named("phase_color") {
         check(c, &["label", "color"], &[])?;
         display

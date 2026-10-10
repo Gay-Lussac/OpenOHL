@@ -40,6 +40,7 @@ mod model;
 mod octree;
 mod plan;
 mod plugins;
+mod preview3d;
 mod profile;
 mod project_lines;
 mod properties;

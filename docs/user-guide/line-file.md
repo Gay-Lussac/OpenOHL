@@ -31,7 +31,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `jumpers` | no | Jumpers between wire points (below). |
 | `systems` | no | Electrical systems: phases or poles with their voltage ([below](#electrical-systems)). |
 | `circuit_starts` | no | The ends of electrical circuits that are starts: `[{ "structure", "set" }, …]` ([below](#electrical-systems)). A circuit none of whose ends is listed runs along the line. |
-| `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … } }` — wire colours (`#rrggbb`) by section `phase_label`. |
+| `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … }, "ahead_deg": 270 }` — wire colours (`#rrggbb`) by section `phase_label`; `ahead_deg`, the angle that means ahead along the line for angles in plan around a structure, which turn clockwise seen from above (default 0: right 90°; 270: right 0°, ahead 270°). |
 
 ## Structures
 
@@ -42,6 +42,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `orientation_deg` | no | Direction of the local x axis (right of the line), degrees CCW from east; used to place a structure type. |
 | `type` | no | Structure type id from the [structure library](structure-library.md); its points, strings and wire points are then generated. |
 | `extension` | no | Height extension of the type. |
+| `description` | no | What it is, in words (free text). |
 | `height_adjust` | no | With a `type`: height of the type's feet above the ground at `position` (foundations), metres; default 0. |
 | `points` | no | Points on the structure where strings hang: `{ "label", "position": [x, y, z] }` (below). |
 | `wires` | no | Wire points: `{ "label", "position": [x, y, z], "set": n }` (below). |

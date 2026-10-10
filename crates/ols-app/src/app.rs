@@ -149,6 +149,11 @@ pub struct Ready {
     /// Section editor: the other sections of its circuit the change also
     /// sets, shown on Apply; a second Apply with the same list applies.
     pub circuit_warned: Option<Vec<crate::editors::CircuitMate>>,
+    /// The structure window's preview (its camera, its image).
+    pub structure_preview: crate::preview3d::Preview,
+    /// The window of the angles around structures (the angle ahead being
+    /// typed), when open.
+    pub angles_window: Option<f64>,
     /// Tools: the hotbar (the active tool says what a click does).
     pub hotbar: crate::tools::Hotbar,
     /// The inventory window is open.
@@ -263,6 +268,8 @@ impl Ready {
             restring: None,
             new_alignment: Vec::new(),
             circuit_warned: None,
+            structure_preview: Default::default(),
+            angles_window: None,
             hotbar: crate::tools::Hotbar::default(),
             inventory: false,
             move_dialog: None,
@@ -2355,7 +2362,7 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
 
 /// The tool windows: hotbar, inventory, Go to, Move structure, the
 /// editor, the confirmation of a deletion.
-fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
+fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgpu::RenderState>) {
     // At the bottom of the 3D view, only while it is shown (and while the
     // inventory arranges it).
     let shown = r.view3d.drawn;
@@ -2371,8 +2378,9 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready) {
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
     move_window(ctx, r);
-    editor_window(ctx, r);
+    editor_window(ctx, r, rs);
     display_window(ctx, r);
+    angles_window(ctx, r);
     survey_window(ctx, r);
     survey_io_windows(ctx, r);
     r.drawings.show(ctx, &r.model, r.case);
@@ -3301,6 +3309,84 @@ pub struct DisplayWindow {
 /// (ticked here; the Sections table is not changed) or each section's own
 /// display cases from the Sections table; and the side the wind comes
 /// from. Apply (Enter) shows them; display only — this user's choice.
+/// Structures › Angles around structures: which angle means ahead. Angles
+/// in plan around a structure turn clockwise seen from above.
+fn angles_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(mut ahead) = r.angles_window else {
+        return;
+    };
+    let (mut apply, mut close) = (false, false);
+    let mut open = true;
+    egui::Window::new("Angles around structures")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.label(
+                "Angles in plan around a structure — the direction of a string, the compass of \
+                 the structure window — turn clockwise seen from above. Which angle means ahead \
+                 along the line is yours to choose for the project:",
+            );
+            ui.horizontal(|ui| {
+                ui.label("ahead is at");
+                ui.add(
+                    egui::DragValue::new(&mut ahead)
+                        .range(0.0..=359.0)
+                        .speed(1.0)
+                        .suffix("°"),
+                );
+                for a in [0.0, 90.0, 180.0, 270.0] {
+                    if ui.small_button(format!("{a:.0}°")).clicked() {
+                        ahead = a;
+                    }
+                }
+            });
+            let at = |q: f64| (ahead + q).rem_euclid(360.0);
+            egui::Grid::new("angles-around").show(ui, |ui| {
+                for (name, q, axis) in [
+                    ("ahead", 0.0, "+y"),
+                    ("right", 90.0, "+x"),
+                    ("back", 180.0, "−y"),
+                    ("left", 270.0, "−x"),
+                ] {
+                    ui.label(name);
+                    ui.label(format!("{:.0}°", at(q)));
+                    ui.label(egui::RichText::new(format!("structure axis {axis}")).weak());
+                    ui.end_row();
+                }
+            });
+            ui.label(
+                egui::RichText::new(
+                    "For the whole project (every user sees the same). The structure's axes stay: \
+                     x to the right of the line, y ahead, z up.",
+                )
+                .small()
+                .weak(),
+            );
+            ui.horizontal(|ui| {
+                apply = ui.button("Apply").clicked();
+                close = ui.button("Cancel").clicked();
+            });
+        });
+    if apply {
+        if let Some(stored) = r.model.stored_line() {
+            let mut line = stored.clone();
+            line.display.ahead_deg = ahead.rem_euclid(360.0);
+            let command = ols_session::line_settings_put(&line, None, None);
+            if r.perform(crate::edit::Action::Command {
+                what: format!("ahead at {:.0}° around structures", line.display.ahead_deg),
+                command,
+            }) {
+                r.angles_window = None;
+                return;
+            }
+        } else {
+            r.status = Some(("read-only: open a project to edit".into(), true));
+        }
+    }
+    r.angles_window = (open && !close).then_some(ahead);
+}
+
 fn display_window(ctx: &egui::Context, r: &mut Ready) {
     use crate::model::{CasesShown, WindDisplay};
     let Some(mut w) = r.display_window.clone() else {
@@ -3394,14 +3480,18 @@ fn display_window(ctx: &egui::Context, r: &mut Ready) {
 /// The editor window (structure, string, section): Apply (Enter) makes one
 /// command and closes it — unless the session refuses it (the reason is
 /// shown, the window stays); Cancel (Escape) closes it.
-fn editor_window(ctx: &egui::Context, r: &mut Ready) {
+fn editor_window(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgpu::RenderState>) {
     use crate::editors::{Form, Outcome};
     let Some(mut form) = r.editor.clone() else {
         return;
     };
     let mut outcome = None;
     tool_window(r, "editor", form.title()).show(ctx, |ui| {
-        outcome = form.ui(ui, &r.model, r.case);
+        let mut extra = crate::editors::FormExtra {
+            rs,
+            preview: &mut r.structure_preview,
+        };
+        outcome = form.ui(ui, &r.model, r.case, &mut extra);
         if let Some(mates) = &r.circuit_warned {
             crate::menu::message(
                 ui,
@@ -4070,6 +4160,36 @@ fn menus(
         ui.label(egui::RichText::new("Tables").small().weak());
         item(ui, Command::Table(TableKind::Structures), out);
         item(ui, Command::Table(TableKind::Strings), out);
+        ui.separator();
+        if ui
+            .button("Add structure…")
+            .on_hover_text(
+                "A new structure: on the first free alignment point, or at coordinates \
+                 (also: the Add structure tool, right-click the ground)",
+            )
+            .clicked()
+        {
+            let at = crate::editors::alignment_points(&r.model.line)
+                .into_iter()
+                .find(|p| p.3.is_none())
+                .map(|p| p.2)
+                .or_else(|| r.model.line.structures.last().map(|s| s.position))
+                .unwrap_or(r.model.origin);
+            r.editor = Some(crate::editors::Form::Structure(
+                crate::editors::StructureForm::new_at(&r.model, at),
+            ));
+            ui.close();
+        }
+        if ui
+            .button("Angles around structures…")
+            .on_hover_text(
+                "Which angle means ahead along the line (string directions, the compass)",
+            )
+            .clicked()
+        {
+            r.angles_window = Some(r.model.line.display.ahead_deg);
+            ui.close();
+        }
     });
     ui.menu_button("Sections", |ui| {
         use crate::library::LibraryKind;
@@ -4485,7 +4605,7 @@ impl eframe::App for App {
                 edit_keys(ui.ctx(), ready);
                 clearance_frame(ui.ctx(), ready);
                 popups(ui.ctx(), ready);
-                tool_windows(ui.ctx(), ready);
+                tool_windows(ui.ctx(), ready, self.render_state.as_ref());
                 egui::Panel::bottom("status").show(ui, |ui| {
                     ui.horizontal(|ui| {
                         match ready.model.can_edit() {

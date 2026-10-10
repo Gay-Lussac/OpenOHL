@@ -8143,3 +8143,107 @@ fn an_empty_project_gets_its_first_alignment_and_a_view() {
         );
     }
 }
+
+/// A new structure on an alignment point: it stands there, tied to it,
+/// ahead along the alignment and its cross-arms on the bisector of the
+/// line angle; its own points and description kept. The project's angle
+/// ahead turns the compass (270: right 0°, ahead 270°). Image with
+/// OLS_RENDER_PNG.
+#[test]
+fn a_structure_is_put_on_an_alignment_point_along_the_line() {
+    use crate::editors::{Form, PointRow, StructureForm, compass_direction, line_orientation};
+    let gpu = ols_render::headless_device().is_ok();
+    let model = synthetic_project_with("on-alignment", |l| {
+        // An alignment of its own: 0;0 → 300;0 → 300;300 (a right angle
+        // at its middle point).
+        l.routes.clear();
+        l.alignment = [
+            [0.0, 0.0, 500.0],
+            [300.0, 0.0, 500.0],
+            [300.0, 300.0, 500.0],
+        ]
+        .into_iter()
+        .map(ols_line::AlignmentPoint::free)
+        .collect();
+    });
+    // The bisector at the corner: ahead to the north-east, the right to
+    // the south-east (−45° from east); at the ends, across their stretch.
+    let line = &model.line;
+    let mid = line_orientation(line, [300.0, 0.0, 500.0], Some(&("main".into(), 1))).unwrap();
+    assert!((mid - -45.0).abs() < 1e-9, "{mid}");
+    let first = line_orientation(line, [0.0, 0.0, 500.0], Some(&("main".into(), 0))).unwrap();
+    assert!((first - -90.0).abs() < 1e-9, "{first}");
+    // The angle convention: ahead at 270 → 0° is the right (+x).
+    let d = compass_direction(0.0, 270.0);
+    assert!((d[0] - 1.0).abs() < 1e-12 && d[1].abs() < 1e-12);
+    let d = compass_direction(270.0, 270.0);
+    assert!(d[0].abs() < 1e-12 && (d[1] - 1.0).abs() < 1e-12);
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 950.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.angles_window = Some(270.0);
+    }
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .line
+            .display
+            .ahead_deg,
+        270.0
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut f = StructureForm::new_at(&r.model, [301.0, 2.0, 500.0]);
+        assert_eq!(
+            f.on_alignment,
+            Some(("main".into(), 1)),
+            "the point near the click"
+        );
+        f.structure_type = None;
+        f.description = "angle tower, invented".into();
+        f.points = vec![
+            PointRow {
+                label: "A1".into(),
+                at: [-6.0, 0.0, 25.0],
+            },
+            PointRow {
+                label: "A2".into(),
+                at: [6.0, 0.0, 25.0],
+            },
+        ];
+        r.editor = Some(Form::Structure(f));
+    }
+    harness.run();
+    harness.run();
+    harness.get_by_label("on an alignment point");
+    if gpu && let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ols-cad-structure-window.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_none(), "{:?}", r.status);
+    let id = r.model.line.structures.last().unwrap().id.clone();
+    let s = r.model.line.structure(&id).unwrap();
+    assert_eq!((s.position[0], s.position[1]), (300.0, 0.0));
+    assert!((s.orientation_deg - -45.0).abs() < 1e-9);
+    assert_eq!(s.description, "angle tower, invented");
+    assert_eq!(s.points.len(), 2);
+    assert_eq!(
+        r.model.line.alignment[1].structure.as_deref(),
+        Some(id.as_str())
+    );
+}
