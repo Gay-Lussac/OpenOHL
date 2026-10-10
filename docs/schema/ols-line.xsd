@@ -257,6 +257,7 @@
                   <xs:attribute name="label" type="xs:string" use="required"/>
                   <xs:attribute name="angle_deg" type="xs:double"/>
                   <xs:attribute name="polarity" type="xs:byte"/>
+                  <xs:attribute name="code" type="xs:string"/>
                 </xs:complexType>
               </xs:element>
             </xs:sequence>

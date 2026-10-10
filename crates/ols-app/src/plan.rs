@@ -38,7 +38,7 @@ const DASH_PX: f64 = 3.0;
 pub(crate) fn styled_wire(
     painter: &egui::Painter,
     pts: &[egui::Pos2],
-    code: usize,
+    code: &[f64],
     arrow: Option<bool>,
     stroke: egui::Stroke,
 ) {
@@ -284,7 +284,13 @@ impl PlanView {
                         (1.5, color(style.color))
                     };
                     let arrow = forward.filter(|_| arrows);
-                    styled_wire(&painter, &pts, style.code, arrow, egui::Stroke::new(w, col));
+                    styled_wire(
+                        &painter,
+                        &pts,
+                        &style.pattern,
+                        arrow,
+                        egui::Stroke::new(w, col),
+                    );
                 }
             }
         }
@@ -307,7 +313,13 @@ impl PlanView {
                 } else {
                     (1.0, color(style.color))
                 };
-                styled_wire(&painter, &pts, style.code, arrow, egui::Stroke::new(w, col));
+                styled_wire(
+                    &painter,
+                    &pts,
+                    &style.pattern,
+                    arrow,
+                    egui::Stroke::new(w, col),
+                );
             }
         }
         // Other project lines, in their colours.

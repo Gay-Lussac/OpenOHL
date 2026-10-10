@@ -301,6 +301,12 @@ const SYSTEMS: &[Column] = &[
         "phase labels, e.g. L1 L2 L3 (angles kept by position)",
     ),
     (
+        "line codes",
+        110.0,
+        Yes,
+        "how each phase is drawn when wires are coloured by system, in the order of the phases, separated by spaces: - solid, else its dots and dashes repeated (e.g. - .- .--); empty: by place",
+    ),
+    (
         "colour",
         75.0,
         Yes,
@@ -372,6 +378,12 @@ const CIRCUITS: &[Column] = &[
     ),
     ("sections", 240.0, Derived, "its sections, from its starts"),
     ("jumpers", 200.0, Derived, "its jumpers, from its starts"),
+    (
+        "colour",
+        75.0,
+        Yes,
+        "display colour #rrggbb for all its sections (and its jumpers with their own colour); empty: their phases' (\"mixed: …\" when they differ)",
+    ),
 ];
 
 // Columns of the weather case table (as in the criteria tables of other
@@ -972,7 +984,12 @@ impl TableKind {
                 .iter()
                 .enumerate()
                 .map(|(k, s)| Row {
-                    defaulted: (0..8).map(|c| c == 6 && s.color.is_none()).collect(),
+                    defaulted: (0..9)
+                        .map(|c| {
+                            (c == 6 && s.phases.iter().all(|p| p.code.is_none()))
+                                || (c == 7 && s.color.is_none())
+                        })
+                        .collect(),
                     key: s.id.clone(),
                     select: Selection::None,
                     cells: vec![
@@ -987,6 +1004,10 @@ impl TableKind {
                         s.phases
                             .iter()
                             .map(|p| p.label.clone())
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        (0..s.phases.len())
+                            .map(|p| s.line_code(p))
                             .collect::<Vec<_>>()
                             .join(" "),
                         line.system_color(k),
@@ -1793,6 +1814,7 @@ fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
                     list(&c.ends),
                     c.sections.join(" "),
                     c.jumpers.join(" "),
+                    common(&|s| s.color.clone().unwrap_or_default()),
                 ],
             }
         })
@@ -1872,7 +1894,14 @@ fn circuit_commands(
         };
         let set = |k: usize| edit.get(&k).map(|v| v.trim().to_owned());
         let (name, phase, system) = (set(1), set(2), set(3));
-        if name.is_none() && phase.is_none() && system.is_none() {
+        let color = match set(8) {
+            Some(v) if v.starts_with("mixed:") => {
+                return Err(format!("{}: give one colour for the circuit", row.cells[0]));
+            }
+            Some(v) => Some(parse_color(&v, &row.cells[0])?),
+            None => None,
+        };
+        if name.is_none() && phase.is_none() && system.is_none() && color.is_none() {
             continue;
         }
         for v in [&name, &phase].into_iter().flatten() {
@@ -1901,6 +1930,9 @@ fn circuit_commands(
             if let Some(sy) = &system {
                 sec.system = sy.clone();
             }
+            if let Some(col) = &color {
+                sec.color = col.clone();
+            }
             if sec != before {
                 changed.push(id.clone());
                 out.commands.push((
@@ -1909,6 +1941,29 @@ fn circuit_commands(
                         kind: Kind::Section,
                         id: id.clone(),
                         value: serde_json::to_value(&sec).map_err(|e| e.to_string())?,
+                        ord: None,
+                    },
+                ));
+            }
+        }
+        // Its jumpers with a colour of their own take the circuit's (the
+        // others follow their sections).
+        if let Some(col) = &color {
+            for id in &c.jumpers {
+                let Some(mut j) = stored.jumpers.iter().find(|j| &j.id == id).cloned() else {
+                    continue;
+                };
+                if j.color.is_none() || j.color == *col {
+                    continue;
+                }
+                j.color = col.clone();
+                changed.push(format!("jumper {id}"));
+                out.commands.push((
+                    format!("jumper {id}: the colour of its circuit {}", row.cells[0]),
+                    Command::Put {
+                        kind: Kind::Jumper,
+                        id: id.clone(),
+                        value: serde_json::to_value(&j).map_err(|e| e.to_string())?,
                         ord: None,
                     },
                 ));
@@ -2314,6 +2369,21 @@ fn jumper_cells(
     Ok(())
 }
 
+/// A colour typed in a cell: `#rrggbb` (lower case), or none when empty.
+fn parse_color(text: &str, name: &str) -> Result<Option<String>, String> {
+    let color = text.trim().to_lowercase();
+    if color.is_empty() {
+        return Ok(None);
+    }
+    let hex = color.trim_start_matches('#');
+    if hex.len() != 6 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(format!(
+            "{name} colour: \"{color}\" — write #rrggbb, e.g. #4c9be8"
+        ));
+    }
+    Ok(Some(format!("#{hex}")))
+}
+
 fn system_cells(s: &mut ols_line::electrical::System, c: &Cells, name: &str) -> Result<(), String> {
     s.name = c.get(1);
     s.kind = match c.get(2).trim().to_uppercase().as_str() {
@@ -2329,19 +2399,8 @@ fn system_cells(s: &mut ols_line::electrical::System, c: &Cells, name: &str) -> 
         .filter(|t| !t.is_empty())
         .map(str::to_owned)
         .collect();
-    let color = c.get(6).trim().to_lowercase();
     // A default shown reads empty: the colour by its place.
-    s.color = if color.is_empty() {
-        None
-    } else {
-        let hex = color.trim_start_matches('#');
-        if hex.len() != 6 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
-            return Err(format!(
-                "{name} colour: \"{color}\" — write #rrggbb, e.g. #4c9be8"
-            ));
-        }
-        Some(format!("#{hex}"))
-    };
+    s.color = parse_color(&c.get(7), name)?;
     let old = std::mem::take(&mut s.phases);
     s.phases = labels
         .into_iter()
@@ -2354,6 +2413,27 @@ fn system_cells(s: &mut ols_line::electrical::System, c: &Cells, name: &str) -> 
             p
         })
         .collect();
+    // Line codes, one per phase in order (fewer: the rest by place; a
+    // default shown reads empty).
+    let codes: Vec<String> = c.get(6).split_whitespace().map(str::to_owned).collect();
+    if codes.len() > s.phases.len() {
+        return Err(format!(
+            "{name} line codes: {} for {} phases",
+            codes.len(),
+            s.phases.len()
+        ));
+    }
+    for (k, p) in s.phases.iter_mut().enumerate() {
+        p.code = match codes.get(k) {
+            None => None,
+            Some(code) if ols_line::electrical::is_line_code(code) => Some(code.clone()),
+            Some(code) => {
+                return Err(format!(
+                    "{name} line code \"{code}\": dots and dashes, e.g. - .- .--"
+                ));
+            }
+        };
+    }
     Ok(())
 }
 

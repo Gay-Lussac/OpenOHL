@@ -240,12 +240,12 @@ impl ProfileView {
                 ),
                 _ => (None, None),
             };
-            let c = style.map_or_else(|| rgb(&w.color), |s| s.color);
+            let c = style.as_ref().map_or_else(|| rgb(&w.color), |s| s.color);
             let pts: Vec<egui::Pos2> = w.points.iter().map(|p| to_screen(p[0], p[2])).collect();
             crate::plan::styled_wire(
                 &painter,
                 &pts,
-                style.map_or(0, |s| s.code),
+                style.as_ref().map_or(&[][..], |s| &s.pattern),
                 forward.filter(|_| arrows),
                 egui::Stroke::new(
                     if selected { 3.5 } else { 1.3 },

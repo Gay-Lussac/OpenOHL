@@ -41,7 +41,7 @@ The names are those of the line file:
     <member>x y z x y z …</member>              <!-- stick drawing polyline -->
   </structure>
   <system id="…" name="…" kind="ac" voltage_kv="220" frequency_hz="50" color="#e4572e">
-    <phase label="L1" angle_deg="0" polarity="1"/>
+    <phase label="L1" angle_deg="0" polarity="1" code=".-"/>  <!-- code: line code by system -->
   </system>
   <section id="S1" cable="…" circuit="…" phase_label="L1" system="…" bundle="1"
            bundle_spacing="…" bundle_rotation_deg="…" color="#rrggbb" calculation="creep-rs">

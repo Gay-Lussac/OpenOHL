@@ -61,6 +61,20 @@ pub struct SystemPhase {
     /// 0 in order).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub polarity: Option<i8>,
+    /// Line code when wires are drawn by system: `-` a solid line, else
+    /// its dots and dashes repeated (e.g. `.-`, `--.`); default from
+    /// [`DEFAULT_LINE_CODES`] by its place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+}
+
+/// Default line codes of a system's phases, by place (repeating): solid,
+/// ·–, ·––.
+pub const DEFAULT_LINE_CODES: [&str; 3] = ["-", ".-", ".--"];
+
+/// Whether `code` is a line code: dots and dashes only.
+pub fn is_line_code(code: &str) -> bool {
+    !code.is_empty() && code.chars().all(|c| c == '.' || c == '-')
 }
 
 /// An electrical system.
@@ -94,6 +108,14 @@ pub const SYSTEM_COLORS: [&str; 8] = [
 ];
 
 impl System {
+    /// The line code of phase `k` (its own, else by its place).
+    pub fn line_code(&self, k: usize) -> String {
+        self.phases
+            .get(k)
+            .and_then(|p| p.code.clone())
+            .unwrap_or_else(|| DEFAULT_LINE_CODES[k % DEFAULT_LINE_CODES.len()].to_owned())
+    }
+
     /// Voltage of phase `k` to earth: (re, im) kV rms for AC, (signed
     /// value, 0) kV for DC.
     pub fn to_earth(&self, k: usize) -> [f64; 2] {
@@ -133,6 +155,17 @@ impl System {
         }
         if let Some(c) = self.color.as_deref().filter(|c| !crate::is_hex_color(c)) {
             return Err(format!("system {id}: colour \"{c}\" is not #rrggbb"));
+        }
+        if let Some(p) = self
+            .phases
+            .iter()
+            .find(|p| p.code.as_deref().is_some_and(|c| !is_line_code(c)))
+        {
+            return Err(format!(
+                "system {id}: phase {}: line code \"{}\" is not dots and dashes (e.g. - .- .--)",
+                p.label,
+                p.code.as_deref().unwrap_or("")
+            ));
         }
         let mut seen = BTreeMap::new();
         for p in &self.phases {
@@ -697,6 +730,7 @@ mod tests {
                     label: (*l).into(),
                     angle_deg: None,
                     polarity: None,
+                    code: None,
                 })
                 .collect(),
         }

@@ -421,12 +421,16 @@ fn write_system(out: &mut String, s: &System) {
             label,
             angle_deg,
             polarity,
+            code,
         } = p;
         out.push_str("    <phase");
         attr(out, "label", label);
         opt_num(out, "angle_deg", *angle_deg);
         if let Some(p) = polarity {
             let _ = write!(out, " polarity=\"{p}\"");
+        }
+        if let Some(c) = code {
+            attr(out, "code", c);
         }
         out.push_str("/>\n");
     }
@@ -983,11 +987,12 @@ fn read_system(e: &Element) -> Result<System, String> {
         phases: e
             .children_named("phase")
             .map(|p| {
-                check(p, &["label", "angle_deg", "polarity"], &[])?;
+                check(p, &["label", "angle_deg", "polarity", "code"], &[])?;
                 Ok(SystemPhase {
                     label: text(p, "label")?.to_owned(),
                     angle_deg: optional(p, "angle_deg")?,
                     polarity: optional(p, "polarity")?,
+                    code: owned(p, "code"),
                 })
             })
             .collect::<Result<_, String>>()?,
