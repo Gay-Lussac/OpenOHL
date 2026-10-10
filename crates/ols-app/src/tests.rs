@@ -1195,6 +1195,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             distance: 100.0,
             classes: Vec::new(),
             ground: true,
+            wires: ols_clearance::Wires::Sections,
         });
     }
     harness.run();

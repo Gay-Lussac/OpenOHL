@@ -161,16 +161,16 @@ The **Analyses** entries of the Checks menu open windows that compute on demand 
 
 ### Vertical and radial clearances
 
-**Sections › Clearances** opens two windows: **Vertical clearances…** and **Radial clearances…**. Each checks every span against its own list of rules (jumpers are checked by the Clearances tab). The window can be closed at any time; closing it stops a check that runs.
+**Sections › Clearances** opens two windows: **Vertical clearances…** and **Radial clearances…**. Each checks the spans and jumpers against its own list of rules. The window can be closed at any time; closing it stops a check that runs.
 
 **The zone.**
 
-- **Vertical**: straight under the wire. **Width on each side** (default 1 m) is the half width across the line, in plan. **Depth** (default 0.2 m) cuts the zone along the line in slices: a target is compared with the wire's lowest point over its slice, so a sloping wire is taken at its lowest. Targets above the wire count too, against its highest point. Bundles: the lowest (highest) subconductor.
+- **Vertical**: an area of points straight under (and over) the wire: **width on each side** (default 1 m) across the line, in plan, and **depth** (default 0.2 m) along it. The clearance is the shortest vertical distance between the wire and a point of the area: a point is compared with the wire's lowest point within the depth around it (its highest for a point above the wire — rare, but measured the same way). Bundles: the lowest (highest) subconductor.
 - **Radial**: the direct 3D distance from the wire, to each subconductor of a bundle.
 
-**The rules.** One row per rule: a name, the **voltage** of the wires (any, or one of the line's systems; earthed wires are 0 kV), the **weather cases** (ticked; none ticked: every case), the **distance** to keep (m) and the **targets**: LiDAR classes ticked from the point cloud's classes (the class scheme's when no cloud is open), and the **ground surface**. You never type a class number. **Add rule**, **Duplicate** and **Remove** (it asks first) edit the list.
+**The rules.** One row per rule: a name, the **voltage** of the wires (any, or one of the line's systems; earthed wires are 0 kV), the **weather cases** (ticked; none ticked: every case), the **distance** to keep (m), the **wires** checked (the sections' spans, the jumpers, or both — the default) and the **targets**: LiDAR classes ticked from the point cloud's classes (the class scheme's when no cloud is open), and the **ground surface**. You never type a class number. **Add rule**, **Duplicate** and **Remove** (it asks first) edit the list.
 
-**Import… and Export…** read and write rule files (`.olsr`, see [Clearance rules](terrain.md#clearance-rules-olsr)). A row is written as one `[[rule]]` per target kind (classes, ground), with `voltages`, `cases`, `vertical_band` (the width), `vertical_depth` and a `[wind]` table, so `ols line --rules` reads the file too. Importing keeps the ground and point rules with a clearance of the window's kind; a requirement by voltage gives one row per voltage of the line; roles become their classes. The window says what it left out (rules between wires, exclusion zones).
+**Import… and Export…** read and write rule files (`.olsr`, see [Clearance rules](terrain.md#clearance-rules-olsr)). A row is written as one `[[rule]]` per target kind (classes, ground), with `voltages`, `wires`, `cases`, `vertical_band` (the width), `vertical_depth` and a `[wind]` table, so `ols line --rules` reads the file too. Importing keeps the ground and point rules with a clearance of the window's kind; a requirement by voltage gives one row per voltage of the line; roles become their classes. The window says what it left out (rules between wires, exclusion zones).
 
 **Where they are kept.** Like the Clearances tab's rule files, with the project: next to the model, in `<model>.vertical-clearances.olsr` and `<model>.radial-clearances.olsr`. Every change is written there when the mouse is released. The Clearances tab lists these files too.
 

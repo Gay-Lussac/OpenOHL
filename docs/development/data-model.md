@@ -392,8 +392,9 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - `[[rule]]`: a target (LiDAR `classes`, the ground, other wires), a
   distance (`vertical` / `radial`, fixed or by voltage), the weather
   `cases` it applies to, `vertical_band` (zone width each side of the
-  wire), `vertical_depth` (slices along the line) and `voltages`
-  (kV of the wires checked; 0: earthed wires).
+  wire), `vertical_depth` (the area's depth along the line), `voltages`
+  (kV of the wires checked; 0: earthed wires) and `wires` (`sections`,
+  `jumpers` or `both`).
 - `[wind]` (optional): `steps`, `step` (Pa), `sides` — how the desktop
   clearance windows step the wind up to each case's pressure; `ols line`
   ignores it.

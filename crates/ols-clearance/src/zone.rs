@@ -41,8 +41,9 @@ use ols_weather::{WeatherCase, WindSide};
 use crate::checks::{Hit, PointCheck, Wire, WireSet, checked_parts, ground_check, wires_of};
 use crate::rules::{
     CircuitFilter, DEFAULT_SEARCH_MARGIN, PairVoltage, Requirement, Rule, RuleSet, Target,
-    WindSteps, default_band,
+    WindSteps, Wires, default_band,
 };
+use ols_line::jumper::JumperShape;
 
 /// Default half width of the vertical zone, m.
 pub const DEFAULT_WIDTH: f64 = 1.0;
@@ -108,6 +109,8 @@ pub struct ZoneRule {
     pub classes: Vec<u8>,
     /// The ground surface is a target too.
     pub ground: bool,
+    /// The wires checked: the sections' spans, the jumpers or both.
+    pub wires: Wires,
 }
 
 impl ZoneRule {
@@ -142,6 +145,7 @@ impl ZoneRule {
                 exclude_spans_at: Vec::new(),
                 circuits: CircuitFilter::Any,
                 voltages: self.voltage.into_iter().collect(),
+                wires: self.wires,
                 vertical_depth: if vertical { zone.depth } else { 0.0 },
                 target,
             }
@@ -270,14 +274,20 @@ pub fn from_rule_set(
                 distance,
                 classes: classes.clone(),
                 ground: matches!(rule.target, Target::Ground),
+                wires: rule.wires,
             };
             // The ground half of a row written as two rules.
             if let Some(last) = out.rules.last_mut()
                 && row.ground
                 && !last.ground
                 && !last.classes.is_empty()
-                && (&last.name, last.voltage, &last.cases, last.distance)
-                    == (&row.name, row.voltage, &row.cases, row.distance)
+                && (
+                    &last.name,
+                    last.voltage,
+                    &last.cases,
+                    last.distance,
+                    last.wires,
+                ) == (&row.name, row.voltage, &row.cases, row.distance, row.wires)
             {
                 last.ground = true;
                 continue;
@@ -288,8 +298,11 @@ pub fn from_rule_set(
     out
 }
 
-/// The sections of one state solved: one result per section.
-type StateSolve = Vec<Result<SectionShape, String>>;
+/// One state solved: one result per section, then per jumper.
+type StateSolve = (
+    Vec<Result<SectionShape, String>>,
+    Vec<Result<JumperShape, String>>,
+);
 
 /// One position of the wires: a weather case with its wind at one
 /// pressure, from one side.
@@ -365,12 +378,15 @@ pub fn wind_states(
 pub struct Solved {
     /// Per state: the sections solved.
     pub shapes: Vec<Vec<SectionShape>>,
+    /// Per state: the jumpers solved (those between the sections solved).
+    pub jumpers: Vec<Vec<JumperShape>>,
     /// Sections that failed, with why (once per section).
     pub failed: Vec<String>,
 }
 
 /// Solves the sections `sections` (ids; empty: every one) of `line` in
-/// every state, spread over the cores. Sections hanging on a common
+/// every state, spread over the cores, and with `jumpers` the jumpers
+/// between them ([`jumpers_needed`]). Sections hanging on a common
 /// assembly are solved together. `done` counts the states solved. Stops
 /// when `budget` runs out (time limit, cancelled), with an error.
 pub fn solve_states(
@@ -378,6 +394,7 @@ pub fn solve_states(
     library: &ols_cables::Library,
     states: &[WindState],
     sections: &[String],
+    jumpers: bool,
     budget: &Budget,
     done: &AtomicUsize,
 ) -> Result<Solved, String> {
@@ -404,6 +421,22 @@ pub fn solve_states(
             k += 1;
             keep[k - 1]
         });
+        // The jumpers whose sections are solved.
+        let kept: Vec<String> = part.sections.iter().map(|s| s.id.clone()).collect();
+        let jumpers: Vec<ols_line::Jumper> = line
+            .jumpers
+            .iter()
+            .filter(|j| {
+                [&j.from, &j.to].iter().all(|end| {
+                    line.sections
+                        .iter()
+                        .filter(|s| s.points.iter().any(|p| p == *end))
+                        .all(|s| kept.contains(&s.id))
+                })
+            })
+            .cloned()
+            .collect();
+        part.jumpers = jumpers;
         &part
     };
     let run = budget.start();
@@ -440,7 +473,19 @@ pub fn solve_states(
                             .into_iter()
                             .map(|r| r.map_err(|e| e.to_string()))
                             .collect();
-                    results.lock().expect("not poisoned")[k] = Some(solved);
+                    let ok: Vec<SectionShape> = solved
+                        .iter()
+                        .filter_map(|r| r.as_ref().ok().cloned())
+                        .collect();
+                    let jumpers = if !jumpers || line.jumpers.is_empty() {
+                        Vec::new()
+                    } else {
+                        ols_line::jumper::solve_jumpers(line, library, &state.case, &ok)
+                            .into_iter()
+                            .map(|r| r.map_err(|e| e.to_string()))
+                            .collect()
+                    };
+                    results.lock().expect("not poisoned")[k] = Some((solved, jumpers));
                     done.fetch_add(1, Ordering::Relaxed);
                 }
             });
@@ -458,8 +503,22 @@ pub fn solve_states(
         .iter()
         .zip(results.into_inner().expect("not poisoned"))
     {
+        let (r, jr) = r.unwrap_or_default();
+        let mut solved_jumpers = Vec::new();
+        for (jumper, r) in line.jumpers.iter().zip(jr) {
+            match r {
+                Ok(j) => solved_jumpers.push(j),
+                Err(e) => {
+                    let id = format!("jumper {}", jumper.id);
+                    if !out.failed.iter().any(|f| f.starts_with(&id)) {
+                        out.failed.push(format!("{id} ({}): {e}", state.describe()));
+                    }
+                }
+            }
+        }
+        out.jumpers.push(solved_jumpers);
         let mut shapes = Vec::new();
-        for (section, r) in line.sections.iter().zip(r.unwrap_or_default()) {
+        for (section, r) in line.sections.iter().zip(r) {
             match r {
                 Ok(s) => shapes.push(s),
                 Err(e) => {
@@ -537,14 +596,17 @@ struct Part {
 }
 
 /// Checks `rules` in the zone `zone` against the wires of every state
-/// (`shapes`, as [`solve_states`] gives them): each span's lowest
-/// clearance over all the states of each rule's cases.
+/// (`shapes` and `jumpers`, as [`solve_states`] gives them; `jumpers` may
+/// be empty): each span's (and jumper's) lowest clearance over all the
+/// states of each rule's cases.
+#[allow(clippy::too_many_arguments)]
 pub fn check_zones(
     line: &Line,
     zone: &Zone,
     rules: &[ZoneRule],
     states: &[WindState],
     shapes: &[Vec<SectionShape>],
+    jumpers: &[Vec<JumperShape>],
     targets: ZoneTargets,
     budget: &Budget,
 ) -> Result<ZoneReport, String> {
@@ -553,7 +615,11 @@ pub fn check_zones(
         lowest: vec![None; rules.len()],
         ..ZoneReport::default()
     };
-    let wires: Vec<Vec<Wire>> = shapes.iter().map(|s| wires_of(line, s, &[])).collect();
+    let wires: Vec<Vec<Wire>> = shapes
+        .iter()
+        .enumerate()
+        .map(|(k, s)| wires_of(line, s, jumpers.get(k).map_or(&[][..], Vec::as_slice)))
+        .collect();
     let mut groups: HashMap<(String, usize), usize> = HashMap::new();
     let mut spans: Vec<(String, usize)> = Vec::new();
     let mut group = |w: &Wire| -> usize {
@@ -595,8 +661,13 @@ pub fn check_zones(
             }
             if ws.is_empty() {
                 report.notes.push(format!(
-                    "\"{}\": no wire of {}",
+                    "\"{}\": no {} of {}",
                     rule.name,
+                    match rule.wires {
+                        Wires::Both => "wire",
+                        Wires::Sections => "section",
+                        Wires::Jumpers => "jumper",
+                    },
                     rule.voltage
                         .map_or("any voltage".into(), |v| format!("{v} kV"))
                 ));
@@ -724,6 +795,11 @@ pub fn check_zones(
     Ok(report)
 }
 
+/// Whether a rule checks jumpers.
+pub fn jumpers_needed(rules: &[ZoneRule]) -> bool {
+    rules.iter().any(|r| r.wires != Wires::Sections)
+}
+
 /// The sections the rules check: those of the voltages asked for (every
 /// section when a rule takes any voltage).
 pub fn sections_needed(line: &Line, rules: &[ZoneRule]) -> Vec<String> {
@@ -774,6 +850,7 @@ mod tests {
             distance,
             classes: classes.to_vec(),
             ground: false,
+            wires: Wires::Both,
         }
     }
 
@@ -793,11 +870,17 @@ mod tests {
             &library,
             &states,
             &sections_needed(&line, rules),
+            jumpers_needed(rules),
             &budget,
             &AtomicUsize::new(0),
         )
         .unwrap();
-        assert!(solved.failed.is_empty(), "{:?}", solved.failed);
+        // Taut jumpers in strong wind are reported, the sections solve.
+        assert!(
+            solved.failed.iter().all(|f| f.starts_with("jumper ")),
+            "{:?}",
+            solved.failed
+        );
         let mut feed = |classes: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
             if classes.contains(&5) {
                 for p in points {
@@ -812,6 +895,7 @@ mod tests {
             rules,
             &states,
             &solved.shapes,
+            &solved.jumpers,
             ZoneTargets {
                 ground: None,
                 points: Some(&mut feed),
@@ -862,6 +946,54 @@ mod tests {
         assert_eq!(states[0].side, None);
         assert_eq!(states[0].describe(), "wind, no wind");
         assert_eq!(states[2].describe(), "wind, 200 of 600 Pa from the right");
+    }
+
+    /// A rule takes the sections' spans, the jumpers or both: a point under
+    /// a jumper is found by the jumper rules only.
+    #[test]
+    fn rules_for_sections_jumpers_or_both() {
+        let (line, library) = example();
+        let still = [windy(0.0)];
+        let states = wind_states(&still, |_| true, &WindSteps::default());
+        let solved = solve_states(
+            &line,
+            &library,
+            &states,
+            &[],
+            true,
+            &Budget::new(),
+            &AtomicUsize::new(0),
+        )
+        .unwrap();
+        let j = &solved.jumpers[0][0];
+        let low = j.low_point;
+        let point = [low[0], low[1], low[2] - 1.5];
+        let zone = Zone::new(Measure::Vertical);
+        let found = |wires: Wires| {
+            let rules = [ZoneRule {
+                wires,
+                ..rule(3.0, &[5])
+            }];
+            let (_, report) = check(&zone, &rules, &still, &WindSteps::default(), &[point]);
+            report
+                .findings
+                .iter()
+                .map(|f| f.section.clone())
+                .collect::<Vec<_>>()
+        };
+        let jumper = format!("jumper:{}", j.jumper);
+        assert!(found(Wires::Jumpers).contains(&jumper));
+        assert!(found(Wires::Both).contains(&jumper));
+        assert!(!found(Wires::Sections).contains(&jumper));
+        assert!(
+            found(Wires::Jumpers)
+                .iter()
+                .all(|s| s.starts_with("jumper:"))
+        );
+        assert!(!jumpers_needed(&[ZoneRule {
+            wires: Wires::Sections,
+            ..rule(3.0, &[5])
+        }]));
     }
 
     /// A point where the wire passes at half the wind: missed by the final
@@ -1056,6 +1188,7 @@ mod tests {
                 distance: 4.5,
                 classes: vec![5, 6],
                 ground: true,
+                wires: Wires::Both,
             },
             ZoneRule {
                 name: "Ground points".into(),
@@ -1064,6 +1197,7 @@ mod tests {
                 distance: 3.25,
                 classes: vec![2],
                 ground: false,
+                wires: Wires::Sections,
             },
             ZoneRule {
                 name: "Terrain, earth wires".into(),
@@ -1072,6 +1206,7 @@ mod tests {
                 distance: 2.0,
                 classes: Vec::new(),
                 ground: true,
+                wires: Wires::Jumpers,
             },
         ];
         let set = to_rule_set("Window rules", &zone, &wind, &rows);

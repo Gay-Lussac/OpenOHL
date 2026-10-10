@@ -197,6 +197,7 @@ pub fn checked_parts(rule: &Rule, wires: &[Wire]) -> Vec<Wire> {
         .map(|w| {
             let mut part = w.clone();
             let excluded = !rule.checks_voltage(w.kv())
+                || !rule.wires.takes(&w.section)
                 || w.ends.iter().any(|e| {
                     rule.exclude_spans_at
                         .iter()

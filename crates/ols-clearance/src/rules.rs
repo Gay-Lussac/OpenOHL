@@ -59,6 +59,8 @@
 //!   structures.
 //! - `voltages = [220]`: only the wires of these nominal voltages (kV; 0
 //!   for earthed wires) are checked (default: all).
+//! - `wires = "sections"` or `"jumpers"`: only the sections' spans, or only
+//!   the jumpers, are checked (default `"both"`).
 //! - Vertical zone: `vertical_band` is its half width across the line (to
 //!   the ground: default 0, straight below the wire);
 //!   `vertical_depth = "0.2 m"` cuts it along the line in slices of that
@@ -309,12 +311,60 @@ pub struct Rule {
     /// earthed wire); empty: every wire. Wire rules: the first wire of a
     /// pair.
     pub voltages: Vec<f64>,
+    /// Which wires are checked: the sections' spans, the jumpers or both.
+    pub wires: Wires,
     /// Vertical clearances to points and the ground: the wire is taken at
     /// its lowest (its highest for a target above it) within this distance
     /// along the line, centred on the target — the zone under the wire is
     /// cut in slices of this depth, m (0: the wire straight above the
     /// target).
     pub vertical_depth: f64,
+}
+
+/// Which wires a rule checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Wires {
+    /// The sections' spans and the jumpers.
+    #[default]
+    Both,
+    /// The sections' spans only.
+    Sections,
+    /// The jumpers only.
+    Jumpers,
+}
+
+impl Wires {
+    /// `both`, `sections` or `jumpers`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Both => "both",
+            Self::Sections => "sections",
+            Self::Jumpers => "jumpers",
+        }
+    }
+
+    /// Reads `both`, `sections` or `jumpers`.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        match text {
+            "both" => Ok(Self::Both),
+            "sections" => Ok(Self::Sections),
+            "jumpers" => Ok(Self::Jumpers),
+            _ => Err(format!(
+                "wires = \"{text}\": give \"sections\", \"jumpers\" or \"both\""
+            )),
+        }
+    }
+
+    /// Whether a wire of section id `section` (`jumper:<id>` for a jumper)
+    /// is checked.
+    pub fn takes(self, section: &str) -> bool {
+        let jumper = section.starts_with("jumper:");
+        match self {
+            Self::Both => true,
+            Self::Sections => !jumper,
+            Self::Jumpers => jumper,
+        }
+    }
 }
 
 impl Rule {
@@ -470,6 +520,8 @@ struct RawRule {
     circuits: Option<String>,
     #[serde(default)]
     voltages: Vec<f64>,
+    #[serde(default)]
+    wires: Option<String>,
     #[serde(default)]
     vertical_depth: Option<Length>,
 }
@@ -771,6 +823,7 @@ impl RuleSet {
                     exclude_spans_at: r.exclude_spans_at,
                     circuits,
                     voltages: r.voltages,
+                    wires: r.wires.as_deref().map_or(Ok(Wires::Both), Wires::parse)?,
                     vertical_depth: r.vertical_depth.map_or(0.0, |l| l.si()),
                 })
             })
@@ -823,6 +876,7 @@ impl RuleSet {
                 exclude_spans_at: Vec::new(),
                 circuits: CircuitFilter::Any,
                 voltages: Vec::new(),
+                wires: Wires::Both,
                 vertical_depth: 0.0,
             }],
             wind: None,
@@ -966,6 +1020,9 @@ impl Rule {
                 "voltages = {}",
                 list(self.voltages.iter().map(|v| format!("{v:?}")))
             );
+        }
+        if self.wires != Wires::Both {
+            let _ = writeln!(t, "wires = \"{}\"", self.wires.as_str());
         }
         if !self.cases.is_empty() {
             let _ = writeln!(t, "cases = {}", list(self.cases.iter().map(|c| quoted(c))));

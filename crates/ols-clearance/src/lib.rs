@@ -42,6 +42,7 @@ pub use case::{
 };
 pub use checks::{Hit, PairMode, PairResult, PointCheck, Wire, WireResult, WireSet, wires_of};
 pub use envelope::{Envelope, EnvelopeEntry};
+pub use rules::Wires;
 pub use rules::{
     CircuitFilter, PairVoltage, Required, Requirement, Rule, RuleSet, Target, WindSides, WindSteps,
 };
