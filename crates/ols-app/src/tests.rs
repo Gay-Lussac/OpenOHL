@@ -7861,3 +7861,205 @@ fn the_string_window_explains_itself() {
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
     }
 }
+
+/// The colour cells of the tables open the colour tool; a palette colour
+/// picked and OK write it in the cell (pending until Apply), which Apply
+/// sets (OLS_RENDER_PNG: an image of the tool).
+#[test]
+fn the_colour_tool_writes_a_palette_colour_in_the_cell() {
+    use crate::tables::{ColorCell, TableKind};
+    let model = synthetic_project("colour-tool");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().open_page =
+        Some((crate::app::Tab::Table(TableKind::Systems), None));
+    harness.run();
+    harness.run();
+    // The systems' colours are defaults shown (dimmed): picked, set.
+    harness
+        .query_all_by_label("colour tool")
+        .next()
+        .expect("a colour cell")
+        .click();
+    harness.run();
+    let key = {
+        let r = harness.state_mut().ready().unwrap();
+        match &r.tables[&TableKind::Systems].color {
+            Some((ColorCell::Row { key, .. }, _)) => key.clone(),
+            other => panic!("{:?}", other.as_ref().map(|c| &c.0)),
+        }
+    };
+    harness.get_by_label("Wheel");
+    harness.get_by_label("Sliders");
+    // Opening it changes nothing.
+    let unchanged = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let t = &r.tables[&TableKind::Systems].color.as_ref().unwrap().1;
+        t.old == Some(t.rgb)
+    };
+    assert!(unchanged(&mut harness));
+    harness.get_by_label("Sliders").click();
+    harness.run();
+    assert!(unchanged(&mut harness));
+    harness.get_by_label("Wheel").click();
+    harness.run();
+    harness.get_by_label("Neutral").click();
+    harness.run();
+    if let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ols-cad-colour-tool.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    harness.get_by_label("OK").click();
+    harness.run();
+    let c = TableKind::Systems.column("colour");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let page = &r.tables[&TableKind::Systems];
+        assert!(page.color.is_none(), "OK closes it");
+        assert_eq!(page.edits[&key][&c], "#b0b8c0");
+    }
+    apply_table(&mut harness, TableKind::Systems, true).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let s = r.model.line.systems.iter().find(|s| s.id == key).unwrap();
+    assert_eq!(s.color.as_deref(), Some("#b0b8c0"));
+    // Cancel leaves the cell.
+    let page = r.tables.get_mut(&TableKind::Systems).unwrap();
+    page.open_color_tool(
+        TableKind::Systems,
+        ColorCell::Row {
+            key: key.clone(),
+            column: c,
+            original: "#b0b8c0".into(),
+        },
+        "#b0b8c0",
+    );
+    harness.run();
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let page = &r.tables[&TableKind::Systems];
+    assert!(page.color.is_none() && page.edits.is_empty());
+}
+
+/// Every colour reads back the same from hue, saturation and value; the
+/// wheel has red to the right, green up-left, saturation outwards.
+#[test]
+fn colours_go_round_hsv_and_the_wheel() {
+    use crate::color_tool::{hsv_to_rgb, rgb_to_hsv, wheel_hs, wheel_point};
+    for r in (0..=255u8).step_by(5) {
+        for g in (0..=255u8).step_by(15) {
+            for b in (0..=255u8).step_by(17) {
+                let c = [r, g, b];
+                assert_eq!(hsv_to_rgb(rgb_to_hsv(c)), c);
+            }
+        }
+    }
+    let hex = "#4c9be8";
+    let c = ols_core::text::parse_rgb(hex).unwrap();
+    assert_eq!(ols_core::text::format_rgb(hsv_to_rgb(rgb_to_hsv(c))), hex);
+    assert_eq!(hsv_to_rgb([120.0, 1.0, 1.0]), [0, 255, 0]);
+    let [h, s, v] = rgb_to_hsv([0, 0, 255]);
+    assert!((h - 240.0).abs() < 1e-9 && s == 1.0 && v == 1.0);
+    let o = egui::pos2(100.0, 100.0);
+    let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-3 && (a.1 - b.1).abs() < 1e-3;
+    assert!(near(
+        wheel_hs(o, 50.0, egui::pos2(125.0, 100.0)),
+        (0.0, 0.5)
+    ));
+    assert!(near(
+        wheel_hs(o, 50.0, egui::pos2(100.0, 50.0)),
+        (90.0, 1.0)
+    ));
+    assert!(near(
+        wheel_hs(o, 50.0, egui::pos2(60.0, 100.0)),
+        (180.0, 0.8)
+    ));
+    assert!(near(
+        wheel_hs(o, 50.0, egui::pos2(100.0, 200.0)),
+        (270.0, 1.0)
+    ));
+    assert!(near(wheel_hs(o, 50.0, o), (0.0, 0.0)));
+    let p = wheel_point(o, 50.0, 120.0, 0.6);
+    assert!(near(wheel_hs(o, 50.0, p), (120.0, 0.6)));
+    // Green (120°) is up and to the left.
+    assert!(p.x < o.x && p.y < o.y);
+}
+
+/// The palette is written and read back as a file; a file that is not a
+/// palette, or has bad colours, is refused with what is wrong; an import
+/// replaces the palette or adds what is missing.
+#[test]
+fn palettes_export_and_import() {
+    use crate::color_tool::{ColorTool, Palette, PaletteEntry};
+    let mut p = Palette::default();
+    assert_eq!(p.entries.len(), 3 + 1 + 8);
+    p.entries.push(PaletteEntry {
+        name: "Earth \"OPGW\"".into(),
+        color: [1, 2, 3],
+        description: "earth wires, 380 kV".into(),
+    });
+    let text = p.to_toml();
+    assert!(text.contains("format = \"ols-colors\""), "{text}");
+    assert_eq!(Palette::parse(&text).unwrap(), p.entries);
+    // Remembered.
+    let mut storage = Memory::default();
+    p.mode = crate::color_tool::Mode::Sliders;
+    p.save(&mut storage);
+    assert_eq!(Palette::load(&storage), p);
+    assert_eq!(Palette::load(&Memory::default()), Palette::default());
+    // Refused.
+    let e = Palette::parse("format = \"ols-colours\"\nversion = 1\n").unwrap_err();
+    assert!(e.contains("not a colour palette"), "{e}");
+    assert!(
+        Palette::parse("version = 1\n")
+            .unwrap_err()
+            .contains("format")
+    );
+    assert!(
+        Palette::parse("format = \"ols-colors\"\nversion = 9\n")
+            .unwrap_err()
+            .contains("newer")
+    );
+    let e = Palette::parse(
+        "format = \"ols-colors\"\nversion = 1\n[[color]]\nname = \"a\"\ncolor = \"red\"\n\
+         [[color]]\ncolor = \"#123456\"\n",
+    )
+    .unwrap_err();
+    assert!(
+        e.contains("colour 1 (a): color \"red\"") && e.contains("colour 2: name"),
+        "{e}"
+    );
+    assert!(Palette::parse("[[[").unwrap_err().contains("TOML"));
+    // Through a file: refused, then replaced and added.
+    let dir = std::env::temp_dir().join(format!("ols-colours-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bad = dir.join("bad.olscolors");
+    std::fs::write(&bad, "format = \"x\"\n").unwrap();
+    let mut tool = ColorTool::new("t", None);
+    tool.import_file(&bad);
+    assert!(tool.status.as_ref().unwrap().1);
+    let file = dir.join("mine.olscolors");
+    p.write(&file).unwrap();
+    let mut q = Palette {
+        entries: vec![p.entries[0].clone()],
+        mode: Default::default(),
+    };
+    tool.import_file(&file);
+    tool.finish_import(&mut q, false);
+    assert_eq!(q.entries, p.entries, "the one there not twice");
+    let mut r = Palette {
+        entries: vec![PaletteEntry {
+            name: "x".into(),
+            color: [9, 9, 9],
+            description: String::new(),
+        }],
+        mode: Default::default(),
+    };
+    tool.import_file(&file);
+    tool.finish_import(&mut r, true);
+    assert_eq!(r.entries, p.entries);
+    std::fs::remove_dir_all(&dir).ok();
+}
