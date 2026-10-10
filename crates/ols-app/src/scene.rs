@@ -277,6 +277,26 @@ pub fn structures(
             }
         }
     }
+    // Strings holding jumpers' support clamps: to the solved clamps, in
+    // the cases the jumpers are drawn in.
+    for c in model
+        .shown(case)
+        .into_iter()
+        .filter_map(|k| cases.get(k))
+        .flat_map(|c| c.drawn())
+    {
+        for s in c.jumpers.iter().flat_map(|j| &j.supports) {
+            let Some(st) = line.structure(&s.structure) else {
+                continue;
+            };
+            for x in &s.strings {
+                solved
+                    .entry((st.id.as_str(), x.label.clone()))
+                    .or_default()
+                    .push((x.top, s.clamp, false));
+            }
+        }
+    }
     let steel = tint.map_or([215, 215, 220, 255], |c| rgba(c, 230));
     let blue = tint.map_or([120, 180, 255, 255], |c| rgba(c, 230));
     for st in &line.structures {
@@ -435,6 +455,22 @@ pub fn wires(
             let (col, lines) = jumper_lines(line, j, &solved.bundles);
             let col = tint.unwrap_or(col);
             wire(out, &j.points, lines, rgba(col, alpha), [1.2, 1.5]);
+            // Its support clamps: a short bar along it.
+            let steel = tint.unwrap_or([205, 205, 210]);
+            let def = line.jumpers.iter().find(|d| d.id == j.jumper);
+            for (s, c) in j
+                .supports
+                .iter()
+                .zip(def.into_iter().flat_map(|d| &d.supports))
+            {
+                let h = c.clamp_length / 2.0;
+                let (m, d) = (s.clamp, s.direction);
+                let ends = vec![
+                    [0, 1, 2].map(|k| m[k] - d[k] * h),
+                    [0, 1, 2].map(|k| m[k] + d[k] * h),
+                ];
+                out.push(Prim::new(m, ends, rgba(steel, alpha), 4.0).at(0, 1));
+            }
         }
         // Yokes at the clamps (a bar, a triangle, a polygon), with their
         // section, in its cases.

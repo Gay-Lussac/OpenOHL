@@ -426,6 +426,26 @@ pub fn ui(
                             format!("{:.2} m, {:.0} N", s.length, s.weight)
                         }),
                     ),
+                    (
+                        "support clamps",
+                        if j.supports.is_empty() {
+                            "none".into()
+                        } else {
+                            j.supports
+                                .iter()
+                                .map(|c| {
+                                    format!(
+                                        "{} {} at {:.2} ({:.2} m)",
+                                        c.structure_id(j),
+                                        c.wire,
+                                        c.at,
+                                        c.clamp_length
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("; ")
+                        },
+                    ),
                 ],
             );
             ui.separator();
@@ -460,6 +480,44 @@ pub fn ui(
                         }
                     });
             });
+            // Its supports in the case shown: each clamp's strings.
+            if let Some(js) = model
+                .cases
+                .get(case)
+                .and_then(|c| c.jumpers.iter().find(|x| x.jumper == id))
+                .filter(|js| !js.supports.is_empty())
+            {
+                ui.separator();
+                ui.label(egui::RichText::new("Support strings (case shown)").strong());
+                cases_box(ui, "jumper-supports-scroll", |ui| {
+                    egui::Grid::new("jumper-supports")
+                        .striped(true)
+                        .show(ui, |ui| {
+                            for h in ["clamp", "string", "force (N)", "clamp z (m)"] {
+                                ui.label(egui::RichText::new(h).small());
+                            }
+                            ui.end_row();
+                            for (k, s) in js.supports.iter().enumerate() {
+                                let clamp = if s.wire.is_empty() {
+                                    format!("{}", k + 1)
+                                } else {
+                                    format!("{} {} {}", k + 1, s.structure, s.wire)
+                                };
+                                for x in &s.strings {
+                                    ui.label(&clamp);
+                                    ui.label(if x.label.is_empty() { "—" } else { &x.label });
+                                    ui.label(if x.force > 0.0 {
+                                        format!("{:.0}", x.force)
+                                    } else {
+                                        "slack".into()
+                                    });
+                                    ui.label(format!("{:.2}", s.clamp[2]));
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                });
+            }
             if let Some(why) = model
                 .cases
                 .get(case)

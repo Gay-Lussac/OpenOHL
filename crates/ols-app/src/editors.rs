@@ -205,6 +205,8 @@ pub enum Form {
 pub struct JumperForm {
     /// The jumper.
     pub jumper: ols_line::Jumper,
+    /// A support clamp to be removed, waiting for its confirmation.
+    pub remove: Option<usize>,
 }
 
 /// How a jumper is given.
@@ -220,7 +222,10 @@ impl JumperForm {
     pub fn of(model: &Model, id: &str) -> Option<Self> {
         let stored = model.stored_line().unwrap_or(&model.line);
         let jumper = stored.jumpers.iter().find(|j| j.id == id)?.clone();
-        Some(Self { jumper })
+        Some(Self {
+            jumper,
+            remove: None,
+        })
     }
 
     fn command(&self) -> Result<(String, Command), String> {
@@ -395,6 +400,152 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
         });
     if j.support.is_some() {
         ui.label(egui::RichText::new("Its support string is kept (Jumpers table).").small());
+    }
+    if !j.rigid {
+        clamps_ui(ui, j, &mut f.remove, model);
+    }
+}
+
+/// Wire points of structure `id` a support clamp may hang on: without a
+/// set, on one string or a V from structure points.
+fn clamp_wires(model: &Model, id: &str) -> Vec<String> {
+    model.line.structure(id).map_or(Vec::new(), |st| {
+        st.wires
+            .iter()
+            .filter(|w| ols_line::clamp_strings(st, &w.label).is_ok())
+            .map(|w| w.label.clone())
+            .collect()
+    })
+}
+
+/// A jumper's support clamps: each on a wire point of a structure, where
+/// along the jumper, how long; added and removed (a removal confirmed).
+fn clamps_ui(
+    ui: &mut egui::Ui,
+    j: &mut ols_line::Jumper,
+    remove: &mut Option<usize>,
+    model: &Model,
+) {
+    ui.separator();
+    ui.label("Support clamps").on_hover_text(
+        "Clamps on the jumper hanging on strings of a structure (an I or a V to a wire \
+         point without a set). Each swings and turns freely; the jumper runs straight \
+         through it.",
+    );
+    let ends: Vec<String> = {
+        let mut v = vec![j.from.structure.clone()];
+        if j.to.structure != j.from.structure {
+            v.push(j.to.structure.clone());
+        }
+        v
+    };
+    let from = j.from.structure.clone();
+    egui::Grid::new("jumper-clamps")
+        .num_columns(5)
+        .show(ui, |ui| {
+            for (k, c) in j.supports.iter_mut().enumerate() {
+                ui.label(format!("clamp {}", k + 1));
+                let id = c.structure.clone().unwrap_or_else(|| from.clone());
+                egui::ComboBox::from_id_salt(("clamp-structure", k))
+                    .selected_text(&id)
+                    .show_ui(ui, |ui| {
+                        for s in &ends {
+                            if ui.selectable_label(*s == id, s).clicked() {
+                                c.structure = (*s != from).then(|| s.clone());
+                            }
+                        }
+                    });
+                let id = c.structure.clone().unwrap_or_else(|| from.clone());
+                let wires = clamp_wires(model, &id);
+                egui::ComboBox::from_id_salt(("clamp-wire", k))
+                    .selected_text(&c.wire)
+                    .show_ui(ui, |ui| {
+                        if wires.is_empty() {
+                            ui.label("no wire point without a set on strings");
+                        }
+                        for w in &wires {
+                            ui.selectable_value(&mut c.wire, w.clone(), w);
+                        }
+                    })
+                    .response
+                    .on_hover_text("A wire point without a set, on one string or a V");
+                ui.horizontal(|ui| {
+                    ui.label("at");
+                    ui.add(
+                        egui::DragValue::new(&mut c.at)
+                            .speed(0.005)
+                            .range(0.01..=0.99)
+                            .max_decimals(3),
+                    )
+                    .on_hover_text(
+                        "Its middle, as a share of the jumper's length from its first end",
+                    );
+                    ui.label("long");
+                    ui.add(
+                        egui::DragValue::new(&mut c.clamp_length)
+                            .speed(0.005)
+                            .range(0.01..=1.0)
+                            .max_decimals(3)
+                            .suffix(" m"),
+                    )
+                    .on_hover_text("The clamp's length: the jumper is straight through it");
+                });
+                if ui.button("Remove…").clicked() {
+                    *remove = Some(k);
+                }
+                ui.end_row();
+            }
+        });
+    if let Some(k) = *remove {
+        if k >= j.supports.len() {
+            *remove = None;
+        } else {
+            ui.horizontal(|ui| {
+                ui.label(format!(
+                    "Remove clamp {} (on {} of {})? Nothing else goes with it; its strings stay \
+                     on the structure. Applied as one change.",
+                    k + 1,
+                    j.supports[k].wire,
+                    j.supports[k].structure_id(j)
+                ));
+                if ui.button("Remove").clicked() {
+                    j.supports.remove(k);
+                    *remove = None;
+                }
+                if ui.button("Keep").clicked() {
+                    *remove = None;
+                }
+            });
+        }
+    }
+    let why_not = if j.support.is_some() {
+        Some("It has a support string: clamps replace it (remove it in the Jumpers table)")
+    } else if j.length.is_none() {
+        Some("A jumper held by clamps is given by its length")
+    } else {
+        None
+    };
+    let add = ui
+        .add_enabled(why_not.is_none(), egui::Button::new("Add clamp"))
+        .on_hover_text("A clamp on a wire point without a set of its first end's structure");
+    let add = match why_not {
+        Some(why) => add.on_disabled_hover_text(why),
+        None => add,
+    };
+    if add.clicked() {
+        // After the last clamp, halfway to the end.
+        let after = j.supports.last().map_or(0.0, |c| c.at);
+        let mut c = ols_line::JumperClamp::new(
+            clamp_wires(model, &from)
+                .first()
+                .cloned()
+                .unwrap_or_default(),
+            0.5 * (after + 1.0),
+        );
+        if j.supports.is_empty() {
+            c.at = 0.5;
+        }
+        j.supports.push(c);
     }
 }
 
