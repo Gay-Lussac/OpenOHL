@@ -6823,6 +6823,61 @@ fn circuits_are_listed_and_turned() {
     assert_ne!(line.jumpers[0].from, jumper_from);
 }
 
+/// The Edit tool on a jumper opens its window, as on a span (the mouse is
+/// freed); Apply changes the jumper in one command.
+#[test]
+fn jumpers_are_edited_in_their_window() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project("jumper-window");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().view3d.captured = true;
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::Jumper("J-T3-branch".into()),
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Jumper(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert!(!r.view3d.captured, "the window frees the mouse");
+        assert_eq!(f.jumper.sag, Some(1.5));
+        f.jumper.sag = Some(2.0);
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        assert_eq!(r.model.line.jumpers[0].sag, Some(2.0));
+    }
+    // Rigid: no length nor sag.
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::Jumper("J-T3-branch".into()),
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Jumper(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        f.jumper.rigid = true;
+        f.jumper.sag = None;
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_none(), "{:?}", r.status);
+    assert!(r.model.line.jumpers[0].rigid && r.model.line.jumpers[0].sag.is_none());
+}
+
 /// A section's phase, circuit name or system changed — in its editor, in
 /// the Sections table, or for the circuit in the Electrical circuits table
 /// — goes on all the sections of its circuit, listed first to confirm.

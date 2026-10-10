@@ -129,6 +129,206 @@ pub enum Form {
     Section(SectionForm),
     /// An alignment point.
     Alignment(AlignmentForm),
+    /// A jumper.
+    Jumper(JumperForm),
+}
+
+/// A jumper being changed: the jumper as it will be put.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JumperForm {
+    /// The jumper.
+    pub jumper: ols_line::Jumper,
+}
+
+/// How a jumper is given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JumperBy {
+    Length,
+    Sag,
+    Rigid,
+}
+
+impl JumperForm {
+    /// Jumper `id` as stored.
+    pub fn of(model: &Model, id: &str) -> Option<Self> {
+        let stored = model.stored_line().unwrap_or(&model.line);
+        let jumper = stored.jumpers.iter().find(|j| j.id == id)?.clone();
+        Some(Self { jumper })
+    }
+
+    fn command(&self) -> Result<(String, Command), String> {
+        let j = &self.jumper;
+        Ok((
+            format!("changed jumper {}", j.id),
+            Command::Put {
+                kind: Kind::Jumper,
+                id: j.id.clone(),
+                value: serde_json::to_value(j).map_err(|e| e.to_string())?,
+                ord: None,
+            },
+        ))
+    }
+}
+
+fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
+    let j = &mut f.jumper;
+    let point = |p: &SectionPoint| format!("{} {}:{}", p.structure, p.set, p.phase);
+    egui::Grid::new("jumper-form")
+        .num_columns(2)
+        .show(ui, |ui| {
+            ui.label("ends");
+            ui.label(format!("{} → {}", point(&j.from), point(&j.to)));
+            ui.end_row();
+            ui.label("cable");
+            egui::ComboBox::from_id_salt("jumper-cable")
+                .selected_text(&j.cable)
+                .height(400.0)
+                .show_ui(ui, |ui| {
+                    for c in model.library.iter() {
+                        ui.selectable_value(&mut j.cable, c.id.clone(), &c.id);
+                    }
+                });
+            ui.end_row();
+            ui.label("given by");
+            let mut by = if j.rigid {
+                JumperBy::Rigid
+            } else if j.length.is_some() {
+                JumperBy::Length
+            } else {
+                JumperBy::Sag
+            };
+            let before = by;
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut by, JumperBy::Length, "length")
+                    .on_hover_text("Its unstressed (cut) length at its temperature");
+                ui.radio_value(&mut by, JumperBy::Sag, "sag")
+                    .on_hover_text("Its sag in still air at its temperature: cut to that");
+                ui.radio_value(&mut by, JumperBy::Rigid, "rigid")
+                    .on_hover_text("A tube or bar: straight between its clamps");
+            });
+            if by != before {
+                match by {
+                    JumperBy::Length => {
+                        j.rigid = false;
+                        j.sag = None;
+                        j.length = Some(j.length.unwrap_or(5.0));
+                    }
+                    JumperBy::Sag => {
+                        j.rigid = false;
+                        j.length = None;
+                        j.sag = Some(j.sag.unwrap_or(1.0));
+                    }
+                    JumperBy::Rigid => {
+                        j.rigid = true;
+                        j.length = None;
+                        j.sag = None;
+                    }
+                }
+            }
+            ui.end_row();
+            match by {
+                JumperBy::Length => {
+                    ui.label("length");
+                    if let Some(l) = &mut j.length {
+                        value(ui, l, 0.01, " m");
+                    }
+                    ui.end_row();
+                }
+                JumperBy::Sag => {
+                    ui.label("sag");
+                    if let Some(s) = &mut j.sag {
+                        value(ui, s, 0.01, " m");
+                    }
+                    ui.end_row();
+                }
+                JumperBy::Rigid => {}
+            }
+            if by != JumperBy::Rigid {
+                ui.label("temperature");
+                value(ui, &mut j.temperature, 0.5, " °C");
+                ui.end_row();
+                ui.label("stiffness EI");
+                let mut given = j.bending_stiffness.is_some();
+                ui.horizontal(|ui| {
+                    if ui.checkbox(&mut given, "given").changed() {
+                        j.bending_stiffness = given.then_some(0.0);
+                    }
+                    match &mut j.bending_stiffness {
+                        Some(ei) => {
+                            value(ui, ei, 1.0, " N·m²").on_hover_text("0: hinged ends");
+                        }
+                        None => {
+                            let mut k = j
+                                .stiffness_factor
+                                .unwrap_or(ols_line::jumper::DEFAULT_STIFFNESS_FACTOR);
+                            ui.label("factor");
+                            if ui
+                                .add(egui::DragValue::new(&mut k).speed(0.01).range(0.01..=1.0))
+                                .on_hover_text(
+                                    "Share of the cable's solid-bar stiffness (0.2–0.35 usual)",
+                                )
+                                .changed()
+                            {
+                                j.stiffness_factor = Some(k);
+                            }
+                            if let Some(c) = model.library.get(&j.cable) {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{:.0} N·m²",
+                                        ols_line::jumper::jumper_bending_stiffness(j, c)
+                                    ))
+                                    .weak(),
+                                );
+                            }
+                        }
+                    }
+                });
+                ui.end_row();
+                let d = ols_line::jumper::DEFAULT_TERMINAL_ANGLE_DEG;
+                for (name, angle) in [
+                    ("leaves from at", &mut j.angle_from_deg),
+                    ("leaves to at", &mut j.angle_to_deg),
+                ] {
+                    ui.label(name);
+                    let mut a = angle.unwrap_or(d);
+                    if value(ui, &mut a, 1.0, "° below the conductor").changed() {
+                        *angle = Some(a);
+                    }
+                    ui.end_row();
+                }
+            }
+            ui.label("bundle");
+            ui.horizontal(|ui| {
+                let mut own = j.bundle.is_some();
+                if ui
+                    .checkbox(&mut own, "its own")
+                    .on_hover_text("Else as the section at its first end")
+                    .changed()
+                {
+                    j.bundle = own.then(|| model.line.jumper_bundle(j).count.max(1));
+                    j.bundle_spacing = own.then(|| model.line.jumper_bundle(j).spacing).flatten();
+                }
+                if let Some(n) = &mut j.bundle {
+                    ui.add(egui::DragValue::new(n).range(1..=8));
+                    if *n > 1 {
+                        let mut sp = j.bundle_spacing.unwrap_or(0.4);
+                        ui.label("spacing");
+                        if value(ui, &mut sp, 0.01, " m").changed() || j.bundle_spacing.is_none() {
+                            j.bundle_spacing = Some(sp);
+                        }
+                    } else {
+                        j.bundle_spacing = None;
+                    }
+                } else {
+                    let b = model.line.jumper_bundle(j);
+                    ui.label(egui::RichText::new(format!("as its section: {}", b.count)).weak());
+                }
+            });
+            ui.end_row();
+        });
+    if j.support.is_some() {
+        ui.label(egui::RichText::new("Its support string is kept (Jumpers table).").small());
+    }
 }
 
 /// An alignment point being changed.
@@ -1021,6 +1221,7 @@ impl Form {
             Form::Section(f) if f.new => "String wire: new section".into(),
             Form::Section(f) => format!("Section {}", f.id),
             Form::Alignment(f) => format!("Alignment point {} of {}", f.index + 1, f.route),
+            Form::Jumper(f) => format!("Jumper {}", f.jumper.id),
         }
     }
 
@@ -1069,6 +1270,7 @@ impl Form {
                 Ok((what, Command::Batch { commands }))
             }
             Form::Alignment(f) => f.command(model),
+            Form::Jumper(f) => f.command(),
         }
     }
 
@@ -1088,6 +1290,7 @@ impl Form {
                 }
             }
             Form::Alignment(f) => alignment_ui(ui, f, model),
+            Form::Jumper(f) => jumper_ui(ui, f, model),
         }
         ui.separator();
         ui.horizontal(|ui| {

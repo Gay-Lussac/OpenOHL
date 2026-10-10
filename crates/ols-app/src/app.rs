@@ -1154,11 +1154,8 @@ impl Ready {
                 self.select(target);
             }
             (Tool::Edit, Selection::Jumper(id)) => {
-                // No window: its row in the Jumpers table.
-                self.open_page = Some((
-                    Tab::Table(crate::tables::TableKind::Jumpers),
-                    Some(id.clone()),
-                ));
+                // Its window, as a section's (it frees the mouse).
+                self.editor = crate::editors::JumperForm::of(model, id).map(Form::Jumper);
                 self.select(target);
             }
             (Tool::AddJumper, Selection::Structure(id)) => {
