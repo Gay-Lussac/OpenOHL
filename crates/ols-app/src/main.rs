@@ -22,6 +22,7 @@ mod bom;
 mod chunks;
 mod class_colors;
 mod clearance;
+mod clearance_zones;
 mod codes;
 mod color_tool;
 mod controls;

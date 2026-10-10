@@ -90,7 +90,9 @@ radial = "4.5 m"
 | `roles`, `classes` | Points rules: classes by role (resolved with `--lidar-classes`) and/or by number. |
 | `vertical`, `radial` | Required clearances (at least one): a distance, or depending on the voltage (below). |
 | `pair_voltage` | Wire rules: the voltage of a pair of wires is the `higher` of the two systems' nominal voltages (default), their `sum`, or the `difference` — the actual voltage between the two conductors from phase angles and DC polarities. |
-| `vertical_band` | Points count for vertical clearance within this horizontal distance of the wire (default 0.5 m). |
+| `vertical_band` | Points count for vertical clearance within this horizontal distance of the wire (default 0.5 m). For the ground: the highest ground within this distance (default 0: straight below the wire). |
+| `vertical_depth` | Vertical clearances to points and the ground: the zone is cut along the line in slices of this depth, e.g. `"0.2 m"`; a target is compared with the wire's lowest point over its slice (default 0: the wire straight above it). |
+| `voltages` | Only the wires of these nominal voltages are checked, e.g. `[220]` (kV; `0` for earthed wires); default: all. Wire rules: the first wire of a pair. |
 | `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
 | `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
 | `circuits` | `same_line`: `"different"` checks only pairs of wires of different circuits (circuit to circuit, e.g. the two circuits of a double-circuit tower; a phase and an earth wire), `"same"` only pairs of the same circuit (phase to phase); default `"any"`. Combine with `case_pairs` for one circuit iced and the other not. |
@@ -98,6 +100,15 @@ radial = "4.5 m"
 | `exclude_near_ends` | Exclusion zone: the wire within this horizontal distance of its ends (clamps) is not checked, e.g. `"10 m"` — where wires converge at supports by design. |
 | `exclude_spans_at` | Exclusion zone: spans ending at these structures are not checked, e.g. `["con_*"]` for down-leads into cable terminations (wildcards). |
 | `case_pairs` | Wire rules: `[["glaze ice", "max temperature"]]` — the first wire in the first case, the second wire in the second (e.g. an iced upper wire sagging towards a hot lower one); checked after all cases are solved. |
+
+A rule file may hold a `[wind]` table. The desktop [vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances) read and write it; `ols line` ignores it and checks each weather case as it is:
+
+```toml
+[wind]
+steps = true        # every pressure from 0 up to the case's, in steps
+step = "50 Pa"
+sides = "both"      # both, left or right
+```
 
 ### Clearances by voltage
 

@@ -186,21 +186,22 @@ fn structure_of(key: &str) -> &str {
 }
 
 /// The parts of `wires` that `rule` checks, in the same order (a wire left
-/// out entirely has no points): without spans ending at a structure of
-/// `exclude_spans_at`, and without the wire within `exclude_near_ends`
-/// (horizontal distance along the wire) of its ends — cut at the exact
-/// distance.
+/// out entirely has no points): only wires of the rule's `voltages`,
+/// without spans ending at a structure of `exclude_spans_at`, and without
+/// the wire within `exclude_near_ends` (horizontal distance along the
+/// wire) of its ends — cut at the exact distance.
 pub fn checked_parts(rule: &Rule, wires: &[Wire]) -> Vec<Wire> {
     let d = rule.exclude_near_ends;
     wires
         .iter()
         .map(|w| {
             let mut part = w.clone();
-            let excluded = w.ends.iter().any(|e| {
-                rule.exclude_spans_at
-                    .iter()
-                    .any(|p| ols_core::pattern::matches(p, structure_of(e)))
-            });
+            let excluded = !rule.checks_voltage(w.kv())
+                || w.ends.iter().any(|e| {
+                    rule.exclude_spans_at
+                        .iter()
+                        .any(|p| ols_core::pattern::matches(p, structure_of(e)))
+                });
             if excluded {
                 part.points.clear();
                 return part;
@@ -406,6 +407,11 @@ pub struct PointCheck {
     /// One result per wire of the set.
     pub results: Vec<WireResult>,
     seen: Vec<usize>,
+    groups: Option<Vec<usize>>,
+    /// With groups ([`PointCheck::grouped`]): the points below the
+    /// vertical and the radial requirement of any wire of each group (a
+    /// point counted once per group).
+    pub group_violations: Vec<[u64; 2]>,
 }
 
 impl PointCheck {
@@ -425,7 +431,19 @@ impl PointCheck {
                 .map(|w| WireResult::with(rule.required(w.kv())))
                 .collect(),
             seen: Vec::new(),
+            groups: None,
+            group_violations: Vec::new(),
         }
+    }
+
+    /// Also counts the points too close per group of wires — `group[w]`
+    /// for wire `w`, e.g. the positions of one span in several wind
+    /// states: a point too close to several of them counts once.
+    pub fn grouped(mut self, group: Vec<usize>) -> Self {
+        let n = group.iter().max().map_or(0, |g| g + 1);
+        self.group_violations = vec![[0, 0]; n];
+        self.groups = Some(group);
+        self
     }
 
     /// The rule checked.
@@ -469,15 +487,27 @@ impl PointCheck {
             }
             if let Some((q, _)) = over_in_plan(x, y, a, b, self.rule.vertical_band) {
                 // Vertical separation, above or below the wire (a tree
-                // overhanging a low wire, a line crossing over).
+                // overhanging a low wire, a line crossing over); with a
+                // depth, to the wire's lowest (highest) in the slice.
+                let gap = wire.vertical_gap(q, z) - slice_rise(a, b, self.rule.vertical_depth);
                 let hit = Hit {
-                    distance: wire.vertical_gap(q, z),
+                    distance: gap.max(0.0),
                     wire: q,
                     target: p,
                     class: Some(class),
                 };
                 if hit.distance <= reach && result.vertical(hit) && !vertical_bad.contains(&w) {
                     vertical_bad.push(w);
+                }
+            }
+        }
+        if let Some(groups) = &self.groups {
+            for (k, bad) in [&vertical_bad, &radial_bad].into_iter().enumerate() {
+                let mut gs: Vec<usize> = bad.iter().map(|w| groups[*w]).collect();
+                gs.sort_unstable();
+                gs.dedup();
+                for g in gs {
+                    self.group_violations[g][k] += 1;
                 }
             }
         }
@@ -490,9 +520,59 @@ impl PointCheck {
     }
 }
 
+/// How much the wire piece `a`–`b` rises or falls over half a slice of
+/// `depth` along the line, m: a vertical clearance is that much smaller
+/// over a slice than straight below the wire.
+fn slice_rise(a: P3, b: P3, depth: f64) -> f64 {
+    let plan = (b[0] - a[0]).hypot(b[1] - a[1]);
+    if depth <= 0.0 || plan <= 0.0 {
+        return 0.0;
+    }
+    (b[2] - a[2]).abs() / plan * depth / 2.0
+}
+
+/// The ground under the wire piece `a`–`b` within `band` (horizontal) of
+/// it: (t along the piece, ground point) at every TIN edge crossing under
+/// the piece and under its two edges `band` to each side, and every TIN
+/// vertex in between — the highest ground of the strip is at one of them.
+/// Without a band, the crossings straight below.
+fn ground_under(terrain: &Terrain, a: P3, b: P3, band: f64) -> Vec<(f64, P3)> {
+    let mut out: Vec<(f64, P3)> = Vec::new();
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let len = dx.hypot(dy);
+    let mut lines = vec![[0.0, 0.0]];
+    if band > 0.0 && len > 0.0 {
+        let n = [-dy / len * band, dx / len * band];
+        lines.push(n);
+        lines.push([-n[0], -n[1]]);
+    }
+    for o in lines {
+        for run in terrain.profile([a[0] + o[0], a[1] + o[1]], [b[0] + o[0], b[1] + o[1]]) {
+            out.extend(run.into_iter().map(|g| (g.t, g.point)));
+        }
+    }
+    if band > 0.0 && len > 0.0 {
+        let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+        let mut corners: Vec<P3> = Vec::new();
+        terrain.triangles_near(mid[0], mid[1], len / 2.0 + band, |tri| corners.extend(tri));
+        for c in corners {
+            let t = ((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / (len * len);
+            if (0.0..=1.0).contains(&t)
+                && over_in_plan(c[0], c[1], a, b, band).is_some()
+                && !out.iter().any(|(_, p)| *p == c)
+            {
+                out.push((t, c));
+            }
+        }
+    }
+    out
+}
+
 /// Vertical and radial clearances of every wire to the ground surface.
 /// Vertical: under every wire piece at every TIN edge crossing (exact for
-/// the polyline). Radial: wire samples every [`GROUND_STEP`] to the
+/// the polyline) — with the rule's `vertical_band`, the highest ground
+/// within that horizontal distance of the wire; with its `vertical_depth`,
+/// the wire's lowest in a slice of that depth. Radial: wire samples every [`GROUND_STEP`] to the
 /// triangles within the rule's reach (narrowed to the vertical clearance
 /// where that is smaller: the radial distance is never larger).
 pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireResult> {
@@ -506,17 +586,16 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
             for s in wire.points.windows(2) {
                 let (a, b) = (s[0], s[1]);
                 let (mut vertical_bad, mut radial_bad) = (false, false);
-                for run in terrain.profile([a[0], a[1]], [b[0], b[1]]) {
-                    for g in run {
-                        let z = a[2] + (b[2] - a[2]) * g.t + lowest;
-                        let hit = Hit {
-                            distance: z - g.point[2],
-                            wire: [g.point[0], g.point[1], z],
-                            target: g.point,
-                            class: None,
-                        };
-                        vertical_bad |= result.vertical(hit);
-                    }
+                let rise = slice_rise(a, b, rule.vertical_depth);
+                for (t, g) in ground_under(terrain, a, b, rule.vertical_band) {
+                    let z = a[2] + (b[2] - a[2]) * t + lowest;
+                    let hit = Hit {
+                        distance: z - rise - g[2],
+                        wire: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z],
+                        target: g,
+                        class: None,
+                    };
+                    vertical_bad |= result.vertical(hit);
                 }
                 result.vertical_violations += u64::from(vertical_bad);
                 if result.required.radial.is_none() {

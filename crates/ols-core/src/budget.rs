@@ -89,6 +89,11 @@ impl Budget {
         self
     }
 
+    /// The token that cancels it, if any (to share with sub-tasks).
+    pub fn token(&self) -> Option<&CancelToken> {
+        self.cancel.as_ref()
+    }
+
     /// Starts tracking a run against this budget.
     pub fn start(&self) -> Run<'_> {
         Run {
