@@ -6786,8 +6786,8 @@ fn circuits_are_listed_and_turned() {
             ols_line::electrical::conductor_paths(&r.model.line).len()
         );
         assert!(TableKind::Circuits.fixed_rows());
-        let row = rows.iter().find(|x| x.cells[4].contains("S3")).unwrap();
-        assert_eq!(row.cells[6], "no");
+        let row = rows.iter().find(|x| x.cells[6].contains("S3")).unwrap();
+        assert_eq!(row.cells[8], "no");
         (row.key.clone(), r.model.line.jumpers[0].from.clone())
     };
     set_cell(&mut harness, TableKind::Circuits, &key, "reversed", "yes");
@@ -6798,7 +6798,7 @@ fn circuits_are_listed_and_turned() {
         assert_eq!(line.circuit_starts.len(), 1);
         let rows = TableKind::Circuits.rows(&r.model, 0);
         let row = rows.iter().find(|x| x.key == key).unwrap();
-        assert_eq!(row.cells[6], "yes");
+        assert_eq!(row.cells[8], "yes");
         // The jumper points along the circuit: its `from` comes first.
         let c = ols_line::electrical::circuits(line)
             .into_iter()
@@ -6821,6 +6821,91 @@ fn circuits_are_listed_and_turned() {
     let at = |p| c.order.iter().position(|q| q == p);
     assert!(at(&line.jumpers[0].from) < at(&line.jumpers[0].to));
     assert_ne!(line.jumpers[0].from, jumper_from);
+}
+
+/// A section's phase, circuit name or system changed — in its editor, in
+/// the Sections table, or for the circuit in the Electrical circuits table
+/// — goes on all the sections of its circuit, listed first to confirm.
+#[test]
+fn a_circuit_keeps_one_name_and_phase() {
+    use crate::editors::Form;
+    use crate::tables::TableKind;
+    use crate::tools::Tool;
+    let model = synthetic_project("circuit-phase");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let phase = |h: &mut Harness<'_, App>, id: &str| {
+        let r = h.state_mut().ready().unwrap();
+        let s = r.model.line.sections.iter().find(|s| s.id == id).unwrap();
+        (s.phase_label.clone(), s.circuit.clone())
+    };
+    // S1 and the branch S3 are one circuit (the jumper at T3).
+    // The editor: the first Apply shows S3, the second applies.
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::Span {
+            section: "S1".into(),
+            span: 0,
+        },
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Section(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        f.phase_label = "L3".into();
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_some(), "not applied yet");
+        let warned = r.circuit_warned.clone().unwrap();
+        assert_eq!(warned, vec![("S3".to_owned(), vec!["phase"])]);
+    }
+    assert_eq!(phase(&mut harness, "S3").0, "L1");
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        assert!(r.circuit_warned.is_none());
+    }
+    assert_eq!(phase(&mut harness, "S1").0, "L3");
+    assert_eq!(phase(&mut harness, "S3").0, "L3");
+    // The Sections table: confirmed first, then both.
+    set_cell(&mut harness, TableKind::Sections, "S3", "phase", "L2");
+    assert_eq!(
+        apply_table(&mut harness, TableKind::Sections, false).unwrap_err(),
+        "needs a confirmation"
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let confirm = r.tables[&TableKind::Sections].confirm.clone().unwrap();
+        assert!(
+            confirm.iter().any(|t| t.contains("S1 (phase)")),
+            "{confirm:?}"
+        );
+    }
+    apply_table(&mut harness, TableKind::Sections, true).unwrap();
+    assert_eq!(phase(&mut harness, "S1").0, "L2");
+    assert_eq!(phase(&mut harness, "S3").0, "L2");
+    // The circuits table: its names differ ("mixed"); one name for all.
+    let key = {
+        let r = harness.state_mut().ready().unwrap();
+        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let row = rows.iter().find(|x| x.cells[6].contains("S3")).unwrap();
+        assert!(row.cells[1].starts_with("mixed:"), "{}", row.cells[1]);
+        assert_eq!(row.cells[2], "L2");
+        row.key.clone()
+    };
+    set_cell(&mut harness, TableKind::Circuits, &key, "name", "Main");
+    assert!(apply_table(&mut harness, TableKind::Circuits, false).is_err());
+    apply_table(&mut harness, TableKind::Circuits, true).unwrap();
+    assert_eq!(phase(&mut harness, "S1").1, "Main");
+    assert_eq!(phase(&mut harness, "S3").1, "Main");
 }
 
 /// A project whose library has a crafted name ("../…": written by another

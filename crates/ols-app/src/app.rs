@@ -146,6 +146,9 @@ pub struct Ready {
     pub restring: Option<String>,
     /// New alignment: the points right-clicked so far.
     pub new_alignment: Vec<ols_line::AlignmentPoint>,
+    /// Section editor: the other sections of its circuit the change also
+    /// sets, shown on Apply; a second Apply with the same list applies.
+    pub circuit_warned: Option<Vec<crate::editors::CircuitMate>>,
     /// Tools: the hotbar (the active tool says what a click does).
     pub hotbar: crate::tools::Hotbar,
     /// The inventory window is open.
@@ -259,6 +262,7 @@ impl Ready {
             chain: Vec::new(),
             restring: None,
             new_alignment: Vec::new(),
+            circuit_warned: None,
             hotbar: crate::tools::Hotbar::default(),
             inventory: false,
             move_dialog: None,
@@ -3352,6 +3356,13 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready) {
     let mut outcome = None;
     tool_window(r, "editor", form.title()).show(ctx, |ui| {
         outcome = form.ui(ui, &r.model, r.case);
+        if let Some(mates) = &r.circuit_warned {
+            crate::menu::message(
+                ui,
+                egui::RichText::new(circuit_warning(mates)).small(),
+                Some(egui::Color32::YELLOW),
+            );
+        }
         if let Some((text, true)) = &r.status {
             crate::menu::error_label(ui, egui::RichText::new(text).small());
         }
@@ -3394,6 +3405,24 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready) {
             r.editor = Some(form);
         }
     };
+    // A section whose circuit name, phase or system change takes the rest
+    // of its circuit along: shown first, applied on a second Apply.
+    let mates = match (&outcome, &form) {
+        (Some(Outcome::Apply), Form::Section(f)) => r
+            .model
+            .stored_line()
+            .map(|l| f.circuit_mates(l, &f.id))
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    if !mates.is_empty() && r.circuit_warned.as_ref() != Some(&mates) {
+        r.circuit_warned = Some(mates);
+        r.editor = Some(form);
+        return;
+    }
+    if outcome.is_some() {
+        r.circuit_warned = None;
+    }
     match outcome {
         Some(Outcome::Apply) => apply(r, form, false),
         Some(Outcome::ResetString) => apply(r, form, true),
@@ -3423,6 +3452,18 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready) {
         }
         None => r.editor = Some(form),
     }
+}
+
+/// What a section's change also sets on its circuit's other sections.
+fn circuit_warning(mates: &[crate::editors::CircuitMate]) -> String {
+    let list: Vec<String> = mates
+        .iter()
+        .map(|(id, what)| format!("{id} ({})", what.join(", ")))
+        .collect();
+    format!(
+        "Also changed, the same circuit: {}. Apply again to change them all.",
+        list.join(", ")
+    )
 }
 
 /// The "Move structure" window: E, N, z (or on the ground), previewed

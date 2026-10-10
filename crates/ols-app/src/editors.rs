@@ -716,7 +716,92 @@ impl StringForm {
     }
 }
 
+/// A section of a circuit that a change of another section's circuit
+/// name, phase or system also changes, and what changes on it.
+pub type CircuitMate = (String, Vec<&'static str>);
+
 impl SectionForm {
+    /// The other sections of its circuit (its conductor path) that its
+    /// circuit name, phase or system change too, when it changes them: an
+    /// existing section (`original`: its id in the line), the fields it
+    /// changes, on the sections that differ. A circuit keeps one name, one
+    /// phase and one system.
+    pub fn circuit_mates(&self, stored: &Line, original: &str) -> Vec<CircuitMate> {
+        if self.new {
+            return Vec::new();
+        }
+        let Some(old) = stored.sections.iter().find(|s| s.id == original) else {
+            return Vec::new();
+        };
+        let circuit = old.circuit != self.circuit;
+        let phase = old.phase_label != self.phase_label;
+        let system = old.system != self.system;
+        if !(circuit || phase || system) {
+            return Vec::new();
+        }
+        let path = ols_line::electrical::conductor_paths(stored)
+            .into_iter()
+            .find(|p| p.iter().any(|id| id == original))
+            .unwrap_or_default();
+        stored
+            .sections
+            .iter()
+            .filter(|m| m.id != original && path.contains(&m.id))
+            .filter_map(|m| {
+                let mut what = Vec::new();
+                if circuit && m.circuit != self.circuit {
+                    what.push("circuit");
+                }
+                if phase && m.phase_label != self.phase_label {
+                    what.push("phase");
+                }
+                if system && m.system != self.system {
+                    what.push("system");
+                }
+                (!what.is_empty()).then(|| (m.id.clone(), what))
+            })
+            .collect()
+    }
+
+    /// The puts giving the sections of [`Self::circuit_mates`] its circuit
+    /// name, phase and system (those it changes), but those in `skip`
+    /// (changed by hand alongside).
+    pub fn circuit_puts(
+        &self,
+        stored: &Line,
+        original: &str,
+        skip: &[String],
+    ) -> Result<Vec<(String, Command)>, String> {
+        let mut out = Vec::new();
+        for (id, what) in self.circuit_mates(stored, original) {
+            if skip.contains(&id) {
+                continue;
+            }
+            let Some(mut m) = stored.sections.iter().find(|s| s.id == id).cloned() else {
+                continue;
+            };
+            if what.contains(&"circuit") {
+                m.circuit = self.circuit.clone();
+            }
+            if what.contains(&"phase") {
+                m.phase_label = self.phase_label.clone();
+            }
+            if what.contains(&"system") {
+                m.system = self.system.clone();
+            }
+            out.push((
+                format!("section {id}: {} as its circuit", what.join(", ")),
+                Command::Put {
+                    kind: Kind::Section,
+                    id,
+                    value: serde_json::to_value(&m).map_err(|e| e.to_string())?,
+                    ord: None,
+                },
+            ));
+        }
+        Ok(out)
+    }
+
     /// Section `id` as stored.
     pub fn of(model: &Model, id: &str) -> Option<Self> {
         let s = model.line.sections.iter().find(|s| s.id == id)?;
@@ -960,7 +1045,29 @@ impl Form {
                 }
                 f.command(stored, reset)
             }
-            Form::Section(f) => f.command(stored),
+            Form::Section(f) => {
+                // Its circuit's other sections take its name, phase and
+                // system with it (one command).
+                let (what, cmd) = f.command(stored)?;
+                let mates = match stored {
+                    Some(l) => f.circuit_puts(l, &f.id, &[])?,
+                    None => Vec::new(),
+                };
+                if mates.is_empty() {
+                    return Ok((what, cmd));
+                }
+                let ids: Vec<&str> = mates
+                    .iter()
+                    .filter_map(|(_, c)| match c {
+                        Command::Put { id, .. } => Some(id.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                let what = format!("{what}, and its circuit's {}", ids.join(", "));
+                let mut commands = vec![cmd];
+                commands.extend(mates.into_iter().map(|(_, c)| c));
+                Ok((what, Command::Batch { commands }))
+            }
             Form::Alignment(f) => f.command(model),
         }
     }
