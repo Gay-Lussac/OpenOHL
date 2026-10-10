@@ -338,25 +338,19 @@ const CIRCUITS: &[Column] = &[
         "electrical system, for all its sections (empty: earthed)",
     ),
     (
-        "start",
-        120.0,
-        Derived,
-        "where it runs from: structure set:phase (reversed: its farthest end)",
+        "starts",
+        150.0,
+        Yes,
+        "its ends that are starts (power flows in): tick them; at least one start and one end; ⇄ swaps starts and ends",
     ),
     (
         "ends",
         200.0,
         Derived,
-        "where it ends: all its other ends along it (a circuit with taps has several)",
+        "its other ends (power flows out), along it; a circuit with taps has several",
     ),
-    ("sections", 240.0, Derived, "its sections, from its start"),
-    ("jumpers", 200.0, Derived, "its jumpers, from its start"),
-    (
-        "reversed",
-        70.0,
-        Yes,
-        "yes: it runs from its other end (against the line); its jumpers turn to point along it. Nothing physical changes: the wind's side is the line's",
-    ),
+    ("sections", 240.0, Derived, "its sections, from its starts"),
+    ("jumpers", 200.0, Derived, "its jumpers, from its starts"),
 ];
 
 // Columns of the weather case table (as in the criteria tables of other
@@ -738,6 +732,12 @@ impl TableKind {
     }
 
     /// The rows of the model (weather case `case` shown).
+    /// The "none" of its multiple choices, if it has one (display cases:
+    /// the cases shown; a circuit's starts need one).
+    fn none_choice(self) -> Option<&'static str> {
+        (self != TableKind::Circuits).then_some("none (the cases shown)")
+    }
+
     /// Its rows follow the model (the circuits, from the connections):
     /// none added or deleted here.
     pub fn fixed_rows(self) -> bool {
@@ -1595,9 +1595,8 @@ fn choices(
             false,
         ),
         (TableKind::Strings, "strain") => (vec!["no".into(), "yes".into()], false),
-        (TableKind::Jumpers, "rigid") | (TableKind::Circuits, "reversed") => {
-            (vec!["no".into(), "yes".into()], false)
-        }
+        (TableKind::Jumpers, "rigid") => (vec!["no".into(), "yes".into()], false),
+        (TableKind::Circuits, "starts") => (circuit_ends(cells), true),
         (TableKind::Circuits, "system") => (
             with_none(model.line.systems.iter().map(|x| x.id.clone()).collect()),
             false,
@@ -1620,6 +1619,7 @@ fn choice_cell(
     text: &mut String,
     (values, multi): (Vec<String>, bool),
     color: Option<egui::Color32>,
+    none: Option<&str>,
 ) -> bool {
     let mut changed = false;
     let mut shown = egui::RichText::new(if text.is_empty() {
@@ -1669,7 +1669,11 @@ fn choice_cell(
                     changed = true;
                 }
             }
-            if ui.small_button("none (the cases shown)").clicked() {
+            // Display cases: none is "the cases shown" (circuits' starts
+            // need one: no such button).
+            if let Some(label) = none
+                && ui.small_button(label).clicked()
+            {
                 text.clear();
                 changed = true;
             }
@@ -1698,17 +1702,11 @@ fn alignments(line: &ols_line::Line) -> Vec<(String, Vec<ols_line::AlignmentPoin
 /// The circuits (conductor paths), one row each: C1, C2… in the order of
 /// their first sections; keyed by their first section (stable when turned).
 fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
-    let along = {
-        let mut l = line.clone();
-        l.circuit_starts.clear();
-        ols_line::electrical::circuits(&l)
-    };
     ols_line::electrical::circuits(line)
         .into_iter()
         .enumerate()
         .map(|(k, c)| {
             let key = circuit_key(&c);
-            let default = along.iter().find(|d| circuit_key(d) == key);
             let sections: Vec<&ols_line::Section> = c
                 .sections
                 .iter()
@@ -1717,7 +1715,6 @@ fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
             // One value for the circuit, or what its sections say.
             let common = |get: &dyn Fn(&ols_line::Section) -> String| -> String {
                 let mut v: Vec<String> = sections.iter().map(|s| get(s)).collect();
-                v.dedup();
                 v.sort();
                 v.dedup();
                 match &v[..] {
@@ -1726,6 +1723,7 @@ fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
                     many => format!("mixed: {}", many.join(" / ")),
                 }
             };
+            let list = |v: &[SectionPoint]| v.iter().map(point).collect::<Vec<_>>().join("; ");
             Row {
                 defaulted: Vec::new(),
                 key,
@@ -1741,19 +1739,23 @@ fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
                     common(&|s| s.circuit.clone()),
                     common(&|s| s.phase_label.clone()),
                     common(&|s| s.system.clone().unwrap_or_default()),
-                    point(&c.start),
-                    c.ends.iter().map(point).collect::<Vec<_>>().join(", "),
+                    list(&c.starts),
+                    list(&c.ends),
                     c.sections.join(" "),
                     c.jumpers.join(" "),
-                    if default.is_some_and(|d| d.start != c.start) {
-                        "yes"
-                    } else {
-                        "no"
-                    }
-                    .into(),
                 ],
             }
         })
+        .collect()
+}
+
+/// The ends of a circuit's row: its starts and its ends cells.
+fn circuit_ends(cells: &[String]) -> Vec<String> {
+    cells[4]
+        .split(';')
+        .chain(cells[5].split(';'))
+        .map(|t| t.trim().to_owned())
+        .filter(|t| !t.is_empty())
         .collect()
 }
 
@@ -1781,20 +1783,32 @@ fn circuit_commands(
         let Some(edit) = page.edits.get(&row.key) else {
             continue;
         };
-        let Some(v) = edit.get(&8) else { continue };
-        let reversed = match v.trim() {
-            "yes" => true,
-            "no" | "" => false,
-            v => return Err(format!("{} reversed: yes or no, not \"{v}\"", row.cells[0])),
-        };
+        let Some(v) = edit.get(&4) else { continue };
         let Some(c) = along.iter().find(|c| circuit_key(c) == row.key) else {
             continue;
         };
-        // Its ends no longer chosen; the other end chosen when reversed.
-        line.circuit_starts
-            .retain(|p| *p != c.start && *p != c.end && !c.order.contains(p));
-        if reversed {
-            line.circuit_starts.push(c.end.clone());
+        let all: Vec<SectionPoint> = c.starts.iter().chain(&c.ends).cloned().collect();
+        let mut starts = Vec::new();
+        for t in v.split(';').map(str::trim).filter(|t| !t.is_empty()) {
+            let p = parse_point(t).map_err(|e| format!("{} starts: {e}", row.cells[0]))?;
+            if !all.contains(&p) {
+                return Err(format!(
+                    "{} starts: {t} is not one of its ends",
+                    row.cells[0]
+                ));
+            }
+            starts.push(p);
+        }
+        if starts.is_empty() {
+            return Err(format!("{}: give it at least one start", row.cells[0]));
+        }
+        if all.len() > 1 && starts.len() == all.len() {
+            return Err(format!("{}: leave it at least one end", row.cells[0]));
+        }
+        // Its ends' roles: none listed when it runs along the line.
+        line.circuit_starts.retain(|p| !all.contains(p));
+        if starts != c.starts {
+            line.circuit_starts.extend(starts);
         }
         turned.push(row.key.clone());
     }
@@ -1862,10 +1876,10 @@ fn circuit_commands(
         return Ok(());
     }
     out.commands.push((
-        "turned electrical circuits".into(),
+        "changed the starts and ends of electrical circuits".into(),
         ols_session::line_settings_put(&line, None, None),
     ));
-    // Their jumpers along them: `from` the end nearer the start.
+    // Their jumpers along them: `from` the end nearer a start.
     for c in ols_line::electrical::circuits(&line)
         .iter()
         .filter(|c| turned.contains(&circuit_key(c)))
@@ -2825,6 +2839,7 @@ impl TablePage {
                                             &mut text,
                                             list,
                                             Some(egui::Color32::LIGHT_GREEN),
+                                            kind.none_choice(),
                                         ) {
                                             self.added[k][c] = text;
                                         }
@@ -2864,7 +2879,37 @@ impl TablePage {
                                     _ => TableAction::Select(row.select.clone()),
                                 });
                             }
-                            if ui
+                            if kind == TableKind::Circuits {
+                                // Reverse: its starts become its ends and
+                                // back (pending until Apply).
+                                let shown = self
+                                    .edits
+                                    .get(&row.key)
+                                    .and_then(|e| e.get(&4))
+                                    .cloned()
+                                    .unwrap_or_else(|| row.cells[4].clone());
+                                let starts: Vec<&str> =
+                                    shown.split(';').map(str::trim).collect();
+                                let flipped: Vec<String> = circuit_ends(&row.cells)
+                                    .into_iter()
+                                    .filter(|p| !starts.contains(&p.as_str()))
+                                    .collect();
+                                if ui
+                                    .add_enabled(
+                                        editable && !flipped.is_empty(),
+                                        egui::Button::new("⇄")
+                                            .min_size(egui::vec2(24.0, row_height)),
+                                    )
+                                    .on_hover_text("Reverse: its starts become its ends and its ends its starts (on Apply)")
+                                    .clicked()
+                                {
+                                    self.edits
+                                        .entry(row.key.clone())
+                                        .or_default()
+                                        .insert(4, flipped.join("; "));
+                                    self.confirm = None;
+                                }
+                            } else if ui
                                 .add_enabled(
                                     editable && !kind.fixed_rows(),
                                     egui::Button::selectable(deleted, "🗑")
@@ -2923,6 +2968,7 @@ impl TablePage {
                                         &mut text,
                                         list,
                                         color,
+                                        kind.none_choice(),
                                     ) {
                                         self.set(&row.key, c, &text, original);
                                     }
