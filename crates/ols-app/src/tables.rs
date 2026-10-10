@@ -105,6 +105,12 @@ const STRUCTURES: &[Column] = &[
         "attachment points (Strings table)",
     ),
     ("sections", 60.0, Derived, "sections through it"),
+    (
+        "description",
+        220.0,
+        Yes,
+        "what it is, in words (free text)",
+    ),
 ];
 
 const SECTIONS: &[Column] = &[
@@ -175,6 +181,12 @@ const SECTIONS: &[Column] = &[
         Yes,
         "display colour #rrggbb (empty: its phase's); typed for one section, every section of its circuit takes it",
     ),
+    (
+        "description",
+        220.0,
+        Yes,
+        "what it is, in words (free text)",
+    ),
 ];
 
 const STRINGS: &[Column] = &[
@@ -224,6 +236,12 @@ const STRINGS: &[Column] = &[
         60.0,
         Derived,
         "sections through its wire points",
+    ),
+    (
+        "description",
+        220.0,
+        Yes,
+        "what it is, in words (free text)",
     ),
 ];
 
@@ -283,6 +301,12 @@ const JUMPERS: &[Column] = &[
         Derived,
         "helping strings holding it, in order: structure, wire point, where along (share of the length), clamp length (edit them in the jumper's Edit form)",
     ),
+    (
+        "description",
+        220.0,
+        Yes,
+        "what it is, in words (free text)",
+    ),
 ];
 
 const SYSTEMS: &[Column] = &[
@@ -315,6 +339,12 @@ const SYSTEMS: &[Column] = &[
         "display colour #rrggbb when wires are coloured by system (Sections › Display options); empty: by its place",
     ),
     ("sections", 70.0, Derived, "sections given this system"),
+    (
+        "description",
+        220.0,
+        Yes,
+        "what it is, in words (free text)",
+    ),
 ];
 
 const ALIGNMENTS: &[Column] = &[
@@ -338,6 +368,12 @@ const ALIGNMENTS: &[Column] = &[
         120.0,
         Yes,
         "tied under this structure (it follows it); empty: free",
+    ),
+    (
+        "description",
+        220.0,
+        Yes,
+        "what it is, in words (free text)",
     ),
 ];
 
@@ -821,6 +857,7 @@ impl TableKind {
                             .copied()
                             .unwrap_or(0)
                             .to_string(),
+                        s.description.clone(),
                     ],
                 })
                 .collect(),
@@ -899,6 +936,7 @@ impl TableKind {
                                 .join(" / "),
                             s.calculation.label().to_owned(),
                             s.color.clone().unwrap_or_default(),
+                            s.description.clone(),
                         ],
                     }
                 })
@@ -952,6 +990,7 @@ impl TableKind {
                                     })
                                     .sum::<usize>()
                                     .to_string(),
+                                x.description.clone(),
                             ],
                         }
                     })
@@ -980,6 +1019,7 @@ impl TableKind {
                         j.angle_to_deg.map_or(String::new(), |v| f(v, 1)),
                         if j.rigid { "yes" } else { "no" }.into(),
                         clamps_text(j),
+                        j.description.clone(),
                     ],
                 })
                 .collect(),
@@ -1020,6 +1060,7 @@ impl TableKind {
                             .filter(|x| x.system.as_deref() == Some(s.id.as_str()))
                             .count()
                             .to_string(),
+                        s.description.clone(),
                     ],
                 })
                 .collect(),
@@ -1041,6 +1082,7 @@ impl TableKind {
                             f(p.position[1], 3),
                             f(p.position[2], 3),
                             p.structure.clone().unwrap_or_default(),
+                            p.description.clone(),
                         ],
                     })
                 })
@@ -2063,6 +2105,10 @@ fn structure_cells(
             .ground_at(form.position[0], form.position[1])
             .ok_or_else(|| format!("{name}: give z (no ground there)"))?,
     };
+    form.description = c
+        .get(TableKind::Structures.column("description"))
+        .trim()
+        .to_owned();
     Ok(())
 }
 
@@ -2091,6 +2137,10 @@ fn section_cells(
     }
     form.circuit = c.get(2);
     form.phase_label = c.get(3);
+    form.description = c
+        .get(TableKind::Sections.column("description"))
+        .trim()
+        .to_owned();
     let color = c
         .get(TableKind::Sections.column("colour"))
         .trim()
@@ -2298,6 +2348,10 @@ fn reach_target(
 }
 
 fn string_cells(x: &mut ols_line::InsulatorString, c: &Cells, name: &str) -> Result<(), String> {
+    x.description = c
+        .get(TableKind::Strings.column("description"))
+        .trim()
+        .to_owned();
     x.label = c.get(1).trim().to_owned();
     x.top = c.get(2).trim().to_owned();
     x.wire = c.get(3).trim().to_owned();
@@ -2348,6 +2402,10 @@ fn jumper_cells(
     model: &Model,
     name: &str,
 ) -> Result<(), String> {
+    j.description = c
+        .get(TableKind::Jumpers.column("description"))
+        .trim()
+        .to_owned();
     j.from = parse_point(&c.get(1)).map_err(|e| format!("{name} from: {e}"))?;
     j.to = parse_point(&c.get(2)).map_err(|e| format!("{name} to: {e}"))?;
     j.cable = match opt(&c.get(3)) {
@@ -2393,6 +2451,10 @@ fn parse_color(text: &str, name: &str) -> Result<Option<String>, String> {
 }
 
 fn system_cells(s: &mut ols_line::electrical::System, c: &Cells, name: &str) -> Result<(), String> {
+    s.description = c
+        .get(TableKind::Systems.column("description"))
+        .trim()
+        .to_owned();
     s.name = c.get(1);
     s.kind = match c.get(2).trim().to_uppercase().as_str() {
         "AC" => ols_line::electrical::SystemKind::Ac,
@@ -2479,6 +2541,10 @@ fn alignment_commands(
             }
         };
         Ok(ols_line::AlignmentPoint {
+            description: c
+                .get(TableKind::Alignments.column("description"))
+                .trim()
+                .to_owned(),
             position,
             structure,
         })

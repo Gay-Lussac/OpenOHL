@@ -75,10 +75,12 @@ fn write_alignment(out: &mut String, points: &[AlignmentPoint], indent: &str) {
     let _ = writeln!(out, "{indent}<alignment>");
     for p in points {
         let AlignmentPoint {
+            description,
             position,
             structure,
         } = p;
         let _ = write!(out, "{indent}  <point");
+        nonempty(out, "description", description);
         point_attrs(out, *position);
         opt_text(out, "structure", structure.as_deref());
         out.push_str("/>\n");
@@ -181,14 +183,20 @@ fn write_structure(out: &mut String, s: &Structure) {
     }
     out.push_str(">\n");
     for p in points {
-        let StructurePoint { label, position } = p;
+        let StructurePoint {
+            description,
+            label,
+            position,
+        } = p;
         out.push_str("    <point");
         attr(out, "label", label);
+        nonempty(out, "description", description);
         point_attrs(out, *position);
         out.push_str("/>\n");
     }
     for w in wires {
         let WirePoint {
+            description,
             label,
             position,
             set,
@@ -196,6 +204,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         } = w;
         out.push_str("    <wire");
         attr(out, "label", label);
+        nonempty(out, "description", description);
         point_attrs(out, *position);
         if let Some(set) = set {
             let _ = write!(out, " set=\"{set}\"");
@@ -207,6 +216,7 @@ fn write_structure(out: &mut String, s: &Structure) {
     }
     for x in strings {
         let InsulatorString {
+            description,
             label,
             top,
             wire,
@@ -219,6 +229,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         } = x;
         out.push_str("    <string");
         attr(out, "label", label);
+        nonempty(out, "description", description);
         attr(out, "top", top);
         attr(out, "wire", wire);
         opt_text(out, "insulator", insulator.as_deref());
@@ -254,6 +265,7 @@ fn write_structure(out: &mut String, s: &Structure) {
 
 fn write_section(out: &mut String, s: &Section) {
     let Section {
+        description,
         id,
         cable,
         circuit,
@@ -270,6 +282,7 @@ fn write_section(out: &mut String, s: &Section) {
     } = s;
     out.push_str("  <section");
     attr(out, "id", id);
+    nonempty(out, "description", description);
     attr(out, "cable", cable);
     nonempty(out, "circuit", circuit);
     nonempty(out, "phase_label", phase_label);
@@ -323,6 +336,7 @@ fn write_section(out: &mut String, s: &Section) {
 
 fn write_jumper(out: &mut String, j: &Jumper) {
     let Jumper {
+        description,
         id,
         cable,
         from,
@@ -344,6 +358,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
     } = j;
     out.push_str("  <jumper");
     attr(out, "id", id);
+    nonempty(out, "description", description);
     attr(out, "cable", cable);
     opt_num(out, "length", *length);
     opt_num(out, "sag", *sag);
@@ -400,6 +415,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
 
 fn write_system(out: &mut String, s: &System) {
     let System {
+        description,
         id,
         name,
         kind,
@@ -410,6 +426,7 @@ fn write_system(out: &mut String, s: &System) {
     } = s;
     out.push_str("  <system");
     attr(out, "id", id);
+    nonempty(out, "description", description);
     nonempty(out, "name", name);
     attr(out, "kind", &enum_name(kind));
     attr(out, "voltage_kv", &num(*voltage_kv));
@@ -610,8 +627,9 @@ fn read_alignment(e: Option<&Element>) -> Result<Vec<AlignmentPoint>, String> {
     e.children
         .iter()
         .map(|p| {
-            check(p, &["x", "y", "z", "structure"], &[])?;
+            check(p, &["x", "y", "z", "structure", "description"], &[])?;
             Ok(AlignmentPoint {
+                description: owned(p, "description").unwrap_or_default(),
                 position: point(p)?,
                 structure: owned(p, "structure"),
             })
@@ -692,8 +710,9 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
     let mut points: Vec<StructurePoint> = e
         .children_named("point")
         .map(|p| {
-            check(p, &["label", "x", "y", "z"], &[])?;
+            check(p, &["label", "x", "y", "z", "description"], &[])?;
             Ok(StructurePoint {
+                description: owned(p, "description").unwrap_or_default(),
                 label: text(p, "label")?.to_owned(),
                 position: point(p)?,
             })
@@ -702,8 +721,13 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
     let mut wires: Vec<WirePoint> = e
         .children_named("wire")
         .map(|w| {
-            check(w, &["label", "x", "y", "z", "set", "weight"], &[])?;
+            check(
+                w,
+                &["label", "x", "y", "z", "set", "weight", "description"],
+                &[],
+            )?;
             Ok(WirePoint {
+                description: owned(w, "description").unwrap_or_default(),
                 label: text(w, "label")?.to_owned(),
                 position: point(w)?,
                 set: optional(w, "set")?,
@@ -726,10 +750,12 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                     "stiffness",
                     "compression",
                     "strain",
+                    "description",
                 ],
                 &[],
             )?;
             Ok(InsulatorString {
+                description: owned(x, "description").unwrap_or_default(),
                 label: text(x, "label")?.to_owned(),
                 top: text(x, "top")?.to_owned(),
                 wire: text(x, "wire")?.to_owned(),
@@ -848,6 +874,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
             "bundle_rotation_deg",
             "color",
             "calculation",
+            "description",
         ],
         &["point", "stringing", "load"],
     )?;
@@ -857,6 +884,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
             .map_err(|_| format!("<section>: calculation \"{c}\" unknown"))?,
     };
     Ok(Section {
+        description: owned(e, "description").unwrap_or_default(),
         id: text(e, "id")?.to_owned(),
         cable: text(e, "cable")?.to_owned(),
         circuit: owned(e, "circuit").unwrap_or_default(),
@@ -922,6 +950,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             "bundle",
             "bundle_spacing",
             "bundle_rotation_deg",
+            "description",
         ],
         &["from", "to", "support", "clamp"],
     )?;
@@ -951,6 +980,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         })
         .transpose()?;
     Ok(Jumper {
+        description: owned(e, "description").unwrap_or_default(),
         id: text(e, "id")?.to_owned(),
         cable: text(e, "cable")?.to_owned(),
         from: read_section_point(one(e, "from")?)?,
@@ -979,7 +1009,15 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
 fn read_system(e: &Element) -> Result<System, String> {
     check(
         e,
-        &["id", "name", "kind", "voltage_kv", "frequency_hz", "color"],
+        &[
+            "id",
+            "name",
+            "kind",
+            "voltage_kv",
+            "frequency_hz",
+            "color",
+            "description",
+        ],
         &["phase"],
     )?;
     let kind = match e.attr("kind") {
@@ -988,6 +1026,7 @@ fn read_system(e: &Element) -> Result<System, String> {
             .map_err(|_| format!("<system>: kind \"{k}\" unknown (ac or dc)"))?,
     };
     Ok(System {
+        description: owned(e, "description").unwrap_or_default(),
         id: text(e, "id")?.to_owned(),
         name: owned(e, "name").unwrap_or_default(),
         kind,

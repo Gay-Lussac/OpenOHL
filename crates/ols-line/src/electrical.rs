@@ -81,6 +81,9 @@ pub fn is_line_code(code: &str) -> bool {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct System {
+    /// What it is, in words (free text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     /// Unique id, referenced by sections.
     pub id: String,
     /// Name, e.g. `380 kV Alpha–Beta 1`.
@@ -718,6 +721,7 @@ mod tests {
 
     fn system(kind: SystemKind, kv: f64, labels: &[&str]) -> System {
         System {
+            description: Default::default(),
             id: "s".into(),
             name: String::new(),
             kind,

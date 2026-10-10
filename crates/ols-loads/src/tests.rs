@@ -515,10 +515,12 @@ fn jumper_support_strings_load_their_tops() {
     j.supports = vec![ols_line::JumperClamp::new("JW", 0.5)];
     let st = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
     st.points.push(ols_line::StructurePoint {
+        description: Default::default(),
         label: "JS".into(),
         position: [middle[0], middle[1], middle[2] + 2.0],
     });
     st.wires.push(ols_line::WirePoint {
+        description: Default::default(),
         label: "JW".into(),
         position: [middle[0], middle[1], middle[2] + 1.0],
         set: None,

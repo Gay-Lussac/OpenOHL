@@ -130,6 +130,8 @@ pub struct PointRow {
     pub label: String,
     /// Position, local.
     pub at: [f64; 3],
+    /// What it is, in words.
+    pub description: String,
 }
 
 /// A wire point in an editor, in the structure's axes.
@@ -146,6 +148,8 @@ pub struct WireRow {
     /// With a set: a dead end (its strings are tension strings, lined up
     /// with their conductor), else a suspension point.
     pub dead_end: bool,
+    /// What it is, in words.
+    pub description: String,
     /// What it was when opened (written to its strings only when changed:
     /// a string's `strain` flag also keeps its weight from being
     /// estimated).
@@ -220,6 +224,8 @@ pub struct StringRow {
     pub stiffness: Option<f64>,
     /// A strain string, lined up with its conductor.
     pub strain: bool,
+    /// What it is, in words.
+    pub description: String,
 }
 
 /// Shapes of the strings of a new wire point.
@@ -307,6 +313,8 @@ pub struct SectionForm {
     pub calculation: ols_line::condition::Calculation,
     /// Display colour (`#rrggbb`; none: its phase's).
     pub color: Option<String>,
+    /// What it is, in words.
+    pub description: String,
 }
 
 /// What the editor windows need from the application: the GPU (previews)
@@ -383,6 +391,13 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
         .show(ui, |ui| {
             ui.label("ends");
             ui.label(format!("{} → {}", point(&j.from), point(&j.to)));
+            ui.end_row();
+            ui.label("description");
+            ui.add(
+                egui::TextEdit::singleline(&mut j.description)
+                    .desired_width(240.0)
+                    .hint_text("what it is (free text)"),
+            );
             ui.end_row();
             ui.label("cable");
             egui::ComboBox::from_id_salt("jumper-cable")
@@ -702,6 +717,8 @@ pub struct AlignmentForm {
     pub structure: Option<String>,
     /// The point sits on the ground.
     pub on_ground: bool,
+    /// What it is, in words.
+    pub description: String,
 }
 
 /// The line's routes with their alignments, every one named: a line
@@ -890,6 +907,7 @@ impl AlignmentForm {
             position: p.position,
             structure: p.structure,
             on_ground: false,
+            description: p.description,
         })
     }
 
@@ -934,6 +952,7 @@ impl AlignmentForm {
         }
         routes[from].alignment.remove(self.index);
         let point = ols_line::AlignmentPoint {
+            description: self.description.trim().to_owned(),
             position,
             structure: self.structure.clone(),
         };
@@ -1012,6 +1031,7 @@ pub fn insert_alignment_point(
     points.insert(
         index.min(points.len()),
         ols_line::AlignmentPoint {
+            description: Default::default(),
             position: at,
             structure: None,
         },
@@ -1132,6 +1152,7 @@ impl StructureForm {
                     st.points
                         .iter()
                         .map(|p| PointRow {
+                            description: p.description.clone(),
                             label: p.label.clone(),
                             at: local(p.position),
                         })
@@ -1253,6 +1274,7 @@ impl StructureForm {
         self.points
             .iter()
             .map(|p| StructurePoint {
+                description: p.description.clone(),
                 label: p.label.trim().to_owned(),
                 position: to_global(self.position, self.orientation_deg, p.at),
             })
@@ -1280,6 +1302,7 @@ impl StringForm {
                 .points
                 .iter()
                 .map(|p| PointRow {
+                    description: p.description.clone(),
                     label: p.label.clone(),
                     at: to_local(s.position, s.orientation_deg, p.position),
                 })
@@ -1317,6 +1340,7 @@ impl StringForm {
             .map(|&i| {
                 let w = &s.wires[i];
                 WireRow {
+                    description: w.description.clone(),
                     label: w.label.clone(),
                     at: local(w.position),
                     set: w.set,
@@ -1332,6 +1356,7 @@ impl StringForm {
             .map(|&i| {
                 let x = &s.strings[i];
                 StringRow {
+                    description: x.description.clone(),
                     label: x.label.clone(),
                     top: x.top.clone(),
                     wire: x.wire.clone(),
@@ -1360,6 +1385,7 @@ impl StringForm {
                 .points
                 .iter()
                 .map(|p| PointRow {
+                    description: p.description.clone(),
                     label: p.label.clone(),
                     at: local(p.position),
                 })
@@ -1414,6 +1440,7 @@ impl StringForm {
         let point = |form: &mut Self, stem: &str, d: [f64; 3]| {
             let label = form.free_label(model, stem);
             form.points.push(PointRow {
+                description: Default::default(),
                 label: label.clone(),
                 at: at(d),
             });
@@ -1422,6 +1449,7 @@ impl StringForm {
         let wire = |form: &mut Self, stem: &str, d: [f64; 3], set: Option<u32>| {
             let label = form.free_label(model, stem);
             form.wires.push(WireRow {
+                description: Default::default(),
                 label: label.clone(),
                 at: at(d),
                 set,
@@ -1559,6 +1587,7 @@ impl StringForm {
             }
             s.points.retain(|q| q.label != p.label);
             s.points.push(StructurePoint {
+                description: p.description.clone(),
                 label: p.label.clone(),
                 position,
             });
@@ -1569,6 +1598,7 @@ impl StringForm {
         for w in &self.wires {
             s.wires.retain(|v| v.label != w.label);
             s.wires.push(WirePoint {
+                description: w.description.clone(),
                 label: w.label.clone(),
                 position: global(w.at),
                 set: w.set,
@@ -1584,6 +1614,7 @@ impl StringForm {
             };
             s.strings.retain(|y| y.label != x.label);
             s.strings.push(InsulatorString {
+                description: x.description.clone(),
                 label: x.label.clone(),
                 top: x.top.clone(),
                 wire: x.wire.clone(),
@@ -1760,6 +1791,7 @@ impl SectionForm {
             note: None,
             calculation: s.calculation,
             color: s.color.clone(),
+            description: s.description.clone(),
         })
     }
 
@@ -1812,6 +1844,7 @@ impl SectionForm {
                 note: None,
                 calculation: Default::default(),
                 color: None,
+                description: String::new(),
             },
         };
         // In the blocks (rolling) by default: a clipped template's
@@ -1896,6 +1929,7 @@ impl SectionForm {
     /// The section as typed (loads and colour kept from `old`).
     pub fn section(&self, old: Option<&Section>) -> Section {
         Section {
+            description: self.description.trim().to_owned(),
             id: self.id.trim().to_owned(),
             cable: self.cable.clone(),
             circuit: self.circuit.clone(),
@@ -2276,6 +2310,11 @@ fn structure_ui(
                             ui.label(*name);
                             value(ui, &mut p.at[i], 0.05, " m");
                         }
+                        ui.add(
+                            egui::TextEdit::singleline(&mut p.description)
+                                .desired_width(140.0)
+                                .hint_text("description"),
+                        );
                         if used.contains(&p.label) {
                             ui.label(egui::RichText::new("strings hang from it").small().weak());
                         } else if ui
@@ -2302,7 +2341,11 @@ fn structure_ui(
                 .points
                 .last()
                 .map_or([0.0, 0.0, 20.0], |p| [-p.at[0], p.at[1], p.at[2]]);
-            f.points.push(PointRow { label, at });
+            f.points.push(PointRow {
+                description: Default::default(),
+                label,
+                at,
+            });
         }
     }
 }
@@ -2678,6 +2721,14 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                         });
                     }
                     ui.horizontal(|ui| {
+                        ui.label("description");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut x.description)
+                                .desired_width(260.0)
+                                .hint_text("what it is (free text)"),
+                        );
+                    });
+                    ui.horizontal(|ui| {
                         ui.label("hangs from")
                             .on_hover_text("The point of the structure it is attached to");
                         egui::ComboBox::from_id_salt(("string-top", k))
@@ -2835,6 +2886,14 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 .on_hover_text("A weight hanging at the clamp (0: none)");
                             w.weight = w.weight.max(0.0);
                         });
+                        ui.horizontal(|ui| {
+                            ui.label("wire point description");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut w.description)
+                                    .desired_width(220.0)
+                                    .hint_text("what it is (free text)"),
+                            );
+                        });
                     }
                 });
                 // The library's values (and the wire point at its length).
@@ -2850,7 +2909,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                     Some(None) => {
                         let label = f.free_label(model, "W");
                         let top = tops[k].unwrap_or([0.0, 0.0, 20.0]);
-                        f.wires.push(WireRow {
+                        f.wires.push(WireRow { description: Default::default(),
                             label: label.clone(),
                             at: from_polar(top, 0.0, 0.0, lengths[k].unwrap_or(3.0)),
                             set: None,
@@ -2894,7 +2953,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                     .iter()
                     .find(|p| p.label == top)
                     .map_or([0.0, 0.0, 20.0], |p| p.at);
-                f.wires.push(WireRow {
+                f.wires.push(WireRow { description: Default::default(),
                     label: wire.clone(),
                     at: from_polar(at, 0.0, 0.0, 3.0),
                     set: None,
@@ -2926,6 +2985,11 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                         ui.label(*name);
                         value(ui, &mut p.at[i], 0.05, " m");
                     }
+                    ui.add(
+                        egui::TextEdit::singleline(&mut p.description)
+                            .desired_width(140.0)
+                            .hint_text("description"),
+                    );
                     if ui.small_button("×").clicked() {
                         drop = Some(k);
                     }
@@ -2940,7 +3004,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
             if ui.small_button("+ point").clicked() {
                 let label = f.free_label(model, "A");
                 let at = f.points.last().map_or([0.0, 0.0, 20.0], |p| p.at);
-                f.points.push(PointRow { label, at });
+                f.points.push(PointRow { description: Default::default(), label, at });
             }
         });
     if f.overrides_type {
@@ -2983,6 +3047,13 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
             ui.add_enabled(
                 f.new,
                 egui::TextEdit::singleline(&mut f.id).desired_width(140.0),
+            );
+            ui.end_row();
+            ui.label("description");
+            ui.add(
+                egui::TextEdit::singleline(&mut f.description)
+                    .desired_width(240.0)
+                    .hint_text("what it is (free text)"),
             );
             ui.end_row();
             ui.label("cable");
@@ -3199,6 +3270,14 @@ fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
                 .response
                 .on_hover_text("The alignment this point belongs to");
             ui.end_row();
+            ui.label("description");
+            ui.add(
+                egui::TextEdit::singleline(&mut f.description)
+                    .desired_width(240.0)
+                    .hint_text("what it is (free text)"),
+            );
+            ui.end_row();
+
             ui.label("order");
             let n = routes
                 .iter()

@@ -1740,6 +1740,8 @@ impl Session {
                     .structure(&structure)
                     .ok_or_else(|| refused(format!("no structure {structure}")))?;
                 alignment[index] = ols_line::AlignmentPoint {
+                    // Its description stays.
+                    description: alignment[index].description.clone(),
                     position: s.position,
                     structure: Some(structure),
                 };

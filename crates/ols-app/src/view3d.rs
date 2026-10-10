@@ -596,6 +596,11 @@ impl View3d {
         let mut placed: Vec<(f64, egui::Pos2, crate::annotations::Note)> =
             crate::annotations::notes(model, case, crate::annotations::View::ThreeD)
                 .into_iter()
+                .chain(crate::annotations::object_notes(
+                    model,
+                    case,
+                    crate::annotations::View::ThreeD,
+                ))
                 .filter_map(|note| {
                     let p = crate::annotations::anchor(&note, rect, screen)?;
                     let d = (0..3).map(|i| (note.at[i] - eye[i]).powi(2)).sum::<f64>();

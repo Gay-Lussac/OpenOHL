@@ -322,6 +322,7 @@ pub fn spotted_line(
         .unwrap_or_default()
         .into_iter()
         .map(|set| Section {
+            description: Default::default(),
             id: format!("W{set}"),
             cable: options.cable.clone(),
             circuit: String::new(),

@@ -55,7 +55,7 @@ With a `type`, the structure's own points, strings and wire points replace the t
 
 ### Points, strings and wire points
 
-What hangs on a structure is given explicitly:
+What hangs on a structure is given explicitly (each point, wire point and string may also have a `description`, free text):
 
 - **Points** (`points`): labelled points on the structure where strings hang.
 - **Wire points** (`wires`): where strings meet and where wires are clamped. A wire point with a **`set`** number is where a section or jumper ends (sections and jumpers name it by structure and set, unique on the structure). A wire point no string reaches is **fixed** to the structure (a wire clamped directly). Its `position` is where it is in still air: the strings' lengths are the distances from their tops to it. A **`weight`** (N) hangs at it: a counterweight under the clamp (a string's own `weight` is spread along the string, half to each end).
@@ -68,6 +68,7 @@ What hangs on a structure is given explicitly:
 | String field | Required | Meaning |
 |---|---|---|
 | `label` | yes | Unique among the structure's strings. |
+| `description` | no | What it is, in words (free text). |
 | `top` | yes | A point's or a wire point's label. |
 | `wire` | yes | A wire point's label. |
 | `insulator` | no | Insulator assembly id from the [insulator library](structure-library.md) (its wind area when resolved). |
@@ -104,6 +105,7 @@ How the wire is held at each point of a section follows from these. The usual ca
 | Field | Required | Meaning |
 |---|---|---|
 | `id` | yes | Unique id. |
+| `description` | no | What it is, in words (free text). |
 | `cable` | yes | Cable id from the wire libraries. |
 | `circuit`, `phase_label` | no | Labels. |
 | `system` | no | Electrical system (id in `systems`) whose phase `phase_label` the section carries. Give it once per conductor path: sections joined by jumpers (or sharing a wire point) follow. None on the whole path: earthed (earth wire, OPGW). Independent of the cable. |
@@ -187,6 +189,7 @@ A jumper is a slack cable joining two wire points: the ends of two sections at a
 | Field | Required | Meaning |
 |---|---|---|
 | `id` | yes | Unique id. |
+| `description` | no | What it is, in words (free text). |
 | `cable` | yes | Cable id from the wire libraries. |
 | `from`, `to` | yes | Wire points `{ "structure", "set" }`. |
 | `length` | one of | Unstressed (cut) length, m, at `temperature`. |

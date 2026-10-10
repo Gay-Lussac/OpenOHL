@@ -356,6 +356,13 @@ impl PlanView {
                 placer.paint(&painter, to_screen(note.at), &note);
             }
         }
+        // Labels of the structures, their points, strings, wire points.
+        for note in crate::annotations::object_notes(model, case, crate::annotations::View::Plan) {
+            let p = to_screen(note.at);
+            if rect.contains(p) {
+                placer.paint(&painter, p, &note);
+            }
+        }
         let labels = scale > 0.08;
         for s in &line.structures {
             let p = to_screen(s.position);

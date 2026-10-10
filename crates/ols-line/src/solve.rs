@@ -2420,6 +2420,7 @@ mod tests {
         t2.strings.remove(i);
         for (label, dy) in [("VL", -3.0), ("VR", 3.0)] {
             t2.points.push(crate::StructurePoint {
+                description: Default::default(),
                 label: label.into(),
                 position: [c[0], c[1] + dy, c[2]],
             });
@@ -2530,6 +2531,7 @@ mod tests {
         });
         for (label, dy) in [("VL", -3.0), ("VR", 3.0)] {
             t2.points.push(crate::StructurePoint {
+                description: Default::default(),
                 label: label.into(),
                 position: [c[0], c[1] + dy, c[2]],
             });
