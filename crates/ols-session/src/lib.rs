@@ -1412,12 +1412,21 @@ impl Session {
                             }
                         }
                         for j in &self.line.jumpers {
-                            if j.from.structure == id || j.to.structure == id {
+                            let clamp_on = |c: &ols_line::JumperClamp| {
+                                c.structure.as_deref() == Some(id.as_str())
+                            };
+                            if j.from.structure == id
+                                || j.to.structure == id
+                                || j.supports.iter().any(clamp_on)
+                            {
                                 let mut j = j.clone();
                                 for p in [&mut j.from, &mut j.to] {
                                     if p.structure == id {
                                         p.structure = new_id.clone();
                                     }
+                                }
+                                for c in j.supports.iter_mut().filter(|c| clamp_on(c)) {
+                                    c.structure = Some(new_id.clone());
                                 }
                                 out.push(Command::Put {
                                     kind: Kind::Jumper,
@@ -1874,6 +1883,7 @@ impl Session {
             .filter(|j| {
                 j.from.structure == id
                     || j.to.structure == id
+                    || j.supports.iter().any(|c| c.structure_id(j) == id)
                     || sections
                         .iter()
                         .any(|sec| sec.points.contains(&j.from) || sec.points.contains(&j.to))

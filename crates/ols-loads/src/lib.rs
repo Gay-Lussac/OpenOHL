@@ -202,7 +202,7 @@ pub struct AttachmentLoad {
     pub label: String,
     /// The sets of the wires hanging there.
     pub sets: Vec<u32>,
-    /// Sections hanging there.
+    /// Sections hanging there (and jumpers, by their support clamps).
     pub sections: Vec<String>,
     /// Where, line coordinates.
     pub at: Point,
@@ -280,6 +280,7 @@ pub fn structure_loads(
             s.calculation = calculation;
         }
         let results = ols_line::solve::solve_line_with(&solving, library, w, budget);
+        let mut solved = Vec::with_capacity(results.len());
         for (section, result) in line.sections.iter().zip(results) {
             let shape = match result {
                 Ok(shape) => shape,
@@ -290,7 +291,6 @@ pub fn structure_loads(
             };
             for (point, supports) in section.points.iter().zip(&shape.attachment_loads) {
                 let structure = line.structure(&point.structure);
-                let (right, ahead) = axes(structure.map_or(0.0, |s| s.orientation_deg));
                 // The sets hanging on the same strings.
                 let sets: Vec<u32> = structure
                     .and_then(|s| {
@@ -305,41 +305,52 @@ pub fn structure_loads(
                     })
                     .unwrap_or_else(|| vec![point.set]);
                 for support in supports {
-                    let f = support.force;
-                    let e = at
-                        .entry((point.structure.clone(), support.label.clone()))
-                        .or_insert_with(|| AttachmentLoad {
-                            structure: point.structure.clone(),
-                            point: support.label.clone(),
-                            label: support.label.clone(),
-                            sets: Vec::new(),
-                            sections: Vec::new(),
-                            at: support.at,
-                            force: [0.0; 3],
-                            local: [0.0; 3],
-                            factored: [0.0; 3],
-                        });
-                    if !e.sections.contains(&section.id) {
-                        e.sections.push(section.id.clone());
-                    }
-                    for set in &sets {
-                        if !e.sets.contains(set) {
-                            e.sets.push(*set);
-                        }
-                    }
-                    for (sum, x) in e.force.iter_mut().zip(f) {
-                        *sum += x;
-                    }
-                    let local = [
-                        f[0] * right[0] + f[1] * right[1],
-                        f[0] * ahead[0] + f[1] * ahead[1],
-                        -f[2],
-                    ];
-                    let factors = [case.transverse, case.longitudinal, case.vertical];
-                    for i in 0..3 {
-                        e.local[i] += local[i];
-                        e.factored[i] += local[i] * factors[i];
-                    }
+                    let place = Place {
+                        structure: &point.structure,
+                        label: &support.label,
+                        at: support.at,
+                    };
+                    add(
+                        &mut at,
+                        &line,
+                        case,
+                        place,
+                        support.force,
+                        &sets,
+                        &section.id,
+                    );
+                }
+            }
+            solved.push(shape);
+        }
+        // Jumpers' support clamps: their strings pull on their tops (the
+        // string's force towards the clamp, half its weight).
+        for j in line.jumpers.iter().filter(|j| !j.supports.is_empty()) {
+            let shape = match ols_line::jumper::solve_one_jumper(&line, library, w, &solved, j) {
+                Ok(shape) => shape,
+                Err(e) => {
+                    failed.push(format!("jumper {}: {e}", j.id));
+                    continue;
+                }
+            };
+            for support in &shape.supports {
+                let Some(structure) = line.structure(&support.structure) else {
+                    continue;
+                };
+                for x in &support.strings {
+                    let Some(string) = structure.string(&x.label) else {
+                        continue;
+                    };
+                    let towards = [0, 1, 2].map(|k| support.clamp[k] - x.top[k]);
+                    let d = towards.iter().map(|v| v * v).sum::<f64>().sqrt();
+                    let mut f = towards.map(|v| if d > 0.0 { v / d * x.force } else { 0.0 });
+                    f[2] -= string.weight / 2.0;
+                    let place = Place {
+                        structure: &support.structure,
+                        label: &string.top,
+                        at: x.top,
+                    };
+                    add(&mut at, &line, case, place, f, &[], &j.id);
                 }
             }
         }
@@ -350,6 +361,64 @@ pub fn structure_loads(
         });
     }
     Ok(out)
+}
+
+/// A point of a structure a load acts at.
+struct Place<'a> {
+    structure: &'a str,
+    label: &'a str,
+    at: Point,
+}
+
+/// Adds force `f` (line axes, N, unfactored) at a point of a structure,
+/// from `source` (a section or a jumper) and the wires of `sets`.
+fn add(
+    loads: &mut BTreeMap<(String, String), AttachmentLoad>,
+    line: &Line,
+    case: &LoadCase,
+    place: Place,
+    f: Point,
+    sets: &[u32],
+    source: &str,
+) {
+    let (right, ahead) = axes(
+        line.structure(place.structure)
+            .map_or(0.0, |s| s.orientation_deg),
+    );
+    let e = loads
+        .entry((place.structure.to_owned(), place.label.to_owned()))
+        .or_insert_with(|| AttachmentLoad {
+            structure: place.structure.to_owned(),
+            point: place.label.to_owned(),
+            label: place.label.to_owned(),
+            sets: Vec::new(),
+            sections: Vec::new(),
+            at: place.at,
+            force: [0.0; 3],
+            local: [0.0; 3],
+            factored: [0.0; 3],
+        });
+    if !e.sections.iter().any(|s| s == source) {
+        e.sections.push(source.to_owned());
+    }
+    for set in sets {
+        if !e.sets.contains(set) {
+            e.sets.push(*set);
+        }
+    }
+    for (sum, x) in e.force.iter_mut().zip(f) {
+        *sum += x;
+    }
+    let local = [
+        f[0] * right[0] + f[1] * right[1],
+        f[0] * ahead[0] + f[1] * ahead[1],
+        -f[2],
+    ];
+    let factors = [case.transverse, case.longitudinal, case.vertical];
+    for i in 0..3 {
+        e.local[i] += local[i];
+        e.factored[i] += local[i] * factors[i];
+    }
 }
 
 /// Adds the wind on the structures themselves to `results`: for every

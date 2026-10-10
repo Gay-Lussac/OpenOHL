@@ -73,7 +73,14 @@ impl JumperInputs {
             structures: line
                 .structures
                 .iter()
-                .filter(|s| s.id == jumper.from.structure || s.id == jumper.to.structure)
+                .filter(|s| {
+                    s.id == jumper.from.structure
+                        || s.id == jumper.to.structure
+                        || jumper
+                            .supports
+                            .iter()
+                            .any(|c| c.structure_id(jumper) == s.id)
+                })
                 .cloned()
                 .collect(),
             direction: match (line.wire_point(&jumper.from), line.wire_point(&jumper.to)) {

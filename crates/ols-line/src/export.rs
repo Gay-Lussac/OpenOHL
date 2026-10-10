@@ -206,13 +206,15 @@ pub fn viewer_html_with(
             json_string(&color),
             points.join(",")
         ));
-        if let Some((top, clamp, force)) = shape.support {
-            insulators.push(format!(
-                "[{},{},{}]",
-                fmt(local(&top)),
-                fmt(local(&clamp)),
-                u8::from(force <= 0.0)
-            ));
+        for support in &shape.supports {
+            for s in &support.strings {
+                insulators.push(format!(
+                    "[{},{},{}]",
+                    fmt(local(&s.top)),
+                    fmt(local(&support.clamp)),
+                    u8::from(s.force <= 0.0)
+                ));
+            }
         }
     }
     let legend: Vec<String> = legend

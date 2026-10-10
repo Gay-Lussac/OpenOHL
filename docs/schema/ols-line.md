@@ -59,6 +59,8 @@ The names are those of the line file:
     <from structure="T3" set="2"/>
     <to structure="T3" set="1"/>
     <support length="…" weight="…" fraction="0.5" x="…" y="…" z="…"/>
+    <!-- or support clamps, in order from `from` (structure: default the `from` end's) -->
+    <clamp structure="T3" wire="JW" at="0.5" clamp_length="0.1"/>
   </jumper>
   <circuit_start structure="T7" set="1"/>       <!-- a circuit's end that is a start -->
   <phase_color label="L1" color="#8b4513"/>     <!-- display colours -->
