@@ -873,6 +873,24 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         s.point(w.position, hi, 11.0);
                     }
                 }
+                Selection::String { structure, label } => {
+                    // Where it is drawn (both wind sides), else as given.
+                    let mut drawn = crate::selection::string_pieces(model, case)
+                        .remove(&(structure.clone(), label.clone()))
+                        .unwrap_or_default();
+                    if drawn.is_empty()
+                        && let Some(st) = line.structure(structure)
+                        && let Some(x) = st.string(label)
+                        && let (Some(top), Some(w)) = (st.node(&x.top), st.wire(&x.wire))
+                    {
+                        drawn.push((top.position(), w.position));
+                    }
+                    for (a, b) in drawn {
+                        s.polyline(&[a, b], hi, 4.0);
+                        s.point(a, hi, 9.0);
+                        s.point(b, hi, 9.0);
+                    }
+                }
                 Selection::AlignmentPoint { route, index } => {
                     if let Some(p) = crate::selection::alignment_point(model, route, *index) {
                         s.point(p, hi, 12.0);

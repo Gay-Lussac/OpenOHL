@@ -450,9 +450,10 @@ fn snaps_choose_what_can_be_clicked() {
             .filter_map(|(s, _, _)| s.kind())
             .collect::<std::collections::BTreeSet<_>>()
     };
+    // Strings (kind Attachment) are clicked with the structures.
     assert_eq!(
         kinds(&Snaps::default()),
-        [Snap::Structure, Snap::Span, Snap::Jumper]
+        [Snap::Structure, Snap::Span, Snap::Jumper, Snap::Attachment]
             .into_iter()
             .collect()
     );
@@ -522,7 +523,7 @@ fn attachment_and_alignment_point_properties() {
         .get_by_label_contains("Snap: what can be clicked")
         .click();
     harness.run();
-    harness.get_by_label("Attachment points");
+    harness.get_by_label("Strings and attachment points");
     harness.get_by_label("Spans (wires)");
 }
 
@@ -7712,4 +7713,105 @@ fn circuit_colours_and_system_line_codes_in_the_tables() {
             .unwrap_err()
             .contains("dots and dashes")
     );
+}
+
+/// A string is picked all along its body, where it is drawn; the string
+/// window places a wire point by angles and a length from the string's
+/// top, and its set's dead end (yes/no) makes its strings tension strings
+/// or suspension ones; a string whose wire point has no set (a jumper's
+/// helping string) opens too.
+#[test]
+fn strings_are_picked_along_their_body_and_edited_by_angles() {
+    use crate::editors::{StringForm, from_polar, polar};
+    use crate::selection::{Snaps, candidates, pick};
+    // Angles: 0° down, 90° level; direction 0° ahead, 90° to the right.
+    let top = [1.0, 2.0, 30.0];
+    for (down, dir, len) in [(0.0, 0.0, 4.0), (90.0, 90.0, 2.0), (30.0, 225.0, 3.5)] {
+        let at = from_polar(top, down, dir, len);
+        let (d, r, l) = polar(top, at);
+        assert!((d - down).abs() < 1e-9 && (l - len).abs() < 1e-9, "{d} {l}");
+        if down > 0.0 {
+            assert!((r - dir).abs() < 1e-9, "{r}");
+        }
+    }
+    let p = from_polar([0.0; 3], 90.0, 90.0, 2.0);
+    assert!((p[0] - 2.0).abs() < 1e-12 && p[1].abs() < 1e-12 && p[2].abs() < 1e-12);
+
+    let mut model = synthetic();
+    // T2's first string, at its middle as drawn: the string.
+    let pieces = crate::selection::string_pieces(&model, 0);
+    let (a, b) = pieces[&("T2".to_owned(), "S1".to_owned())][0];
+    let mid = [0, 1, 2].map(|k| 0.5 * (a[k] + b[k]));
+    // Seen along the line (it runs east: y, z on screen), 1 px per cm.
+    let project = |p: [f64; 3]| Some([p[1] * 100.0, -p[2] * 100.0]);
+    let at = project(mid).unwrap();
+    assert_eq!(
+        pick(&candidates(&model, 0, &Snaps::default()), at, 5.0, project),
+        Selection::String {
+            structure: "T2".into(),
+            label: "S1".into()
+        }
+    );
+    // Its window: the wire point from its top; the set a suspension point.
+    let f = StringForm::of_string(&model, "T2", "S1").unwrap();
+    let w = f.wires.iter().find(|w| w.set.is_some()).unwrap();
+    assert!(!w.dead_end);
+    // Made a dead end: its strings become tension strings.
+    let mut f2 = f.clone();
+    f2.wires
+        .iter_mut()
+        .for_each(|w| w.dead_end = w.set.is_some());
+    let mut s = model.line.structure("T2").unwrap().clone();
+    f2.apply_to(&mut s, None);
+    assert!(s.strings_to(&f2.wires[0].label).all(|x| x.strain));
+    // A wire point without a set (a helping string): it opens, set 0.
+    let st = model
+        .line
+        .structures
+        .iter_mut()
+        .find(|s| s.id == "T3")
+        .unwrap();
+    let w0 = st.wires[0].position;
+    st.wires.push(ols_line::WirePoint {
+        label: "JH".into(),
+        position: [w0[0], w0[1], w0[2] - 2.0],
+        set: None,
+        weight: 0.0,
+    });
+    st.strings.push(ols_line::InsulatorString {
+        label: "H1".into(),
+        top: st.points[0].label.clone(),
+        wire: "JH".into(),
+        ..Default::default()
+    });
+    let h = StringForm::of_string(&model, "T3", "H1").unwrap();
+    assert_eq!(h.set, 0);
+    assert_eq!(h.strings.len(), 1);
+}
+
+/// The string window: where the string hangs (a list of the structure's
+/// points), its wire point by angles and length, the set's dead end, with
+/// short explanations (OLS_RENDER_PNG: an image).
+#[test]
+fn the_string_window_explains_itself() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.editor = crate::editors::StringForm::of_string(&r.model, "T2", "S1")
+            .map(crate::editors::Form::String);
+    }
+    harness.run();
+    harness.get_by_label("hangs from");
+    harness.get_by_label("dead end");
+    harness.get_by_label("down/up");
+    harness.get_by_label("direction");
+    if let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ols-cad-string-window.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
 }
