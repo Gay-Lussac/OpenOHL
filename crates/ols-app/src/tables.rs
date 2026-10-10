@@ -2714,7 +2714,8 @@ impl TablePage {
                 let (x, y) = (shown_cell(&rows[a], c), shown_cell(&rows[b], c));
                 let o = match (x.trim().parse::<f64>(), y.trim().parse::<f64>()) {
                     (Ok(p), Ok(q)) => p.total_cmp(&q),
-                    _ => x.cmp(&y),
+                    // sec2 before sec10.
+                    _ => ols_core::text::natural_cmp(&x, &y),
                 };
                 if up { o } else { o.reverse() }
             });
