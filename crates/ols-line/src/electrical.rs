@@ -280,8 +280,12 @@ pub struct Circuit {
     /// Where it starts and ends (attachments at its two ends; the same for
     /// a closed loop).
     pub start: SectionPoint,
-    /// Where it ends.
+    /// Where it ends: its end farthest from its start (the start when it
+    /// is reversed).
     pub end: SectionPoint,
+    /// All its ends but its start, in order along it (a circuit with taps
+    /// has several).
+    pub ends: Vec<SectionPoint>,
     /// Its start was chosen ([`Line::circuit_starts`]); else it runs along
     /// the line, from its end that comes first.
     pub chosen: bool,
@@ -381,17 +385,15 @@ pub fn circuits(line: &Line) -> Vec<Circuit> {
                 }
             }
         }
-        let end = ends
-            .iter()
-            .filter(|p| **p != start)
-            .max_by_key(|p| order.iter().position(|q| q == *p))
-            .cloned()
-            .unwrap_or_else(|| start.clone());
+        let mut others: Vec<SectionPoint> = ends.iter().filter(|p| **p != start).cloned().collect();
+        others.sort_by_key(|p| order.iter().position(|q| q == p));
+        let end = others.last().cloned().unwrap_or_else(|| start.clone());
         out.push(Circuit {
             sections: secs,
             jumpers: jumps,
             start,
             end,
+            ends: others,
             chosen: chosen.is_some(),
             order,
         });
@@ -506,6 +508,28 @@ mod tests {
         assert_eq!(c.jumpers.len(), 1);
         assert_eq!(c.start.structure, "T1", "the end first along the line");
         assert!(!c.chosen);
+        // Two more ends: the main line's far end and the branch's.
+        let s3_end = line
+            .sections
+            .iter()
+            .find(|s| s.id == "S3")
+            .unwrap()
+            .points
+            .last()
+            .unwrap()
+            .clone();
+        let s1_end = line
+            .sections
+            .iter()
+            .find(|s| s.id == "S1")
+            .unwrap()
+            .points
+            .last()
+            .unwrap()
+            .clone();
+        assert_eq!(c.ends.len(), 2, "{:?}", c.ends);
+        assert!(c.ends.contains(&s3_end) && c.ends.contains(&s1_end));
+        assert_eq!(c.ends.last(), Some(&c.end));
         // Its start chosen at the branch's far end: the order turns.
         let far = line
             .sections

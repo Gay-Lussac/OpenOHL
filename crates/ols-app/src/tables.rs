@@ -338,12 +338,17 @@ const CIRCUITS: &[Column] = &[
         "electrical system, for all its sections (empty: earthed)",
     ),
     (
-        "from",
-        140.0,
+        "start",
+        120.0,
         Derived,
-        "where it starts: structure set:phase",
+        "where it runs from: structure set:phase (reversed: its farthest end)",
     ),
-    ("to", 140.0, Derived, "where it ends"),
+    (
+        "ends",
+        200.0,
+        Derived,
+        "where it ends: all its other ends along it (a circuit with taps has several)",
+    ),
     ("sections", 240.0, Derived, "its sections, from its start"),
     ("jumpers", 200.0, Derived, "its jumpers, from its start"),
     (
@@ -1737,7 +1742,7 @@ fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
                     common(&|s| s.phase_label.clone()),
                     common(&|s| s.system.clone().unwrap_or_default()),
                     point(&c.start),
-                    point(&c.end),
+                    c.ends.iter().map(point).collect::<Vec<_>>().join(", "),
                     c.sections.join(" "),
                     c.jumpers.join(" "),
                     if default.is_some_and(|d| d.start != c.start) {
