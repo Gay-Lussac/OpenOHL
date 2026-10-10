@@ -2620,17 +2620,42 @@ fn alignment_commands(
 
 /// Weather cases: the model's case file with the changes written in
 /// (comments and layout kept), checked; its path and new text.
+/// The weather case file the table writes: the model's, else (a project
+/// still on the default case) a new one the project keeps.
+pub fn weather_path(model: &Model) -> Option<PathBuf> {
+    model.sources.weather.clone().or_else(|| {
+        model.can_edit().ok()?;
+        Some(
+            model
+                .library_dir
+                .as_ref()?
+                .join("weather")
+                .join(NEW_WEATHER_FILE),
+        )
+    })
+}
+
+/// The name of a project's first weather case file.
+pub const NEW_WEATHER_FILE: &str = "weather-cases.olswc";
+
 fn weather_file(
     model: &Model,
     rows: &[Row],
     page: &TablePage,
 ) -> Result<(PathBuf, String), String> {
-    let path = model
-        .sources
-        .weather
-        .clone()
-        .ok_or_else(|| "the model has no weather case file".to_owned())?;
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let path =
+        weather_path(model).ok_or_else(|| "the model has no weather case file".to_owned())?;
+    // No file yet: the default case's row is written whole into a new one.
+    let new = model.sources.weather.is_none();
+    let text = if new {
+        format!(
+            "format = \"{}\"\nversion = {}\nname = \"Weather cases\"\n",
+            ols_weather::WEATHER_FILE_FORMAT,
+            ols_weather::WEATHER_FILE_VERSION
+        )
+    } else {
+        std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?
+    };
     let mut doc: toml_edit::DocumentMut = text
         .parse()
         .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -2734,16 +2759,19 @@ fn weather_file(
             continue;
         }
         let k: usize = row.key.parse().map_err(|_| "bad row".to_owned())?;
-        let mut t = old
-            .get(k)
-            .cloned()
-            .ok_or_else(|| format!("case {}: not in {}", row.cells[1], path.display()))?;
+        let mut t = if new {
+            toml_edit::Table::new()
+        } else {
+            old.get(k)
+                .cloned()
+                .ok_or_else(|| format!("case {}: not in {}", row.cells[1], path.display()))?
+        };
         let c = Cells {
             row: &row.cells,
             typed: page.edits.get(&row.key),
             defaulted: &row.defaulted,
         };
-        write(&mut t, &c, false)?;
+        write(&mut t, &c, new)?;
         cases.push((
             num(&c.get(W_ORDER), &format!("{} #", row.cells[W_NAME]))?,
             t,
@@ -2920,7 +2948,7 @@ impl TablePage {
     ) -> Option<TableAction> {
         // Weather cases are a file of the model, not part of the project.
         let editable = match kind {
-            TableKind::WeatherCases => model.sources.weather.is_some(),
+            TableKind::WeatherCases => weather_path(model).is_some(),
             _ => model.can_edit().is_ok(),
         };
         let columns = kind.columns();
@@ -2998,6 +3026,7 @@ impl TablePage {
                         "{} — Apply writes the file (comments kept) and solves the model again",
                         p.display()
                     ),
+                    None if weather_path(model).is_some() => "The project uses a default case (15 °C): add cases here (+ Add row), Apply keeps them in the project".into(),
                     None => "The model uses a default case (15 °C): make a case file in Criteria › Weather cases and choose Use for the model".into(),
                 })
                 .small()

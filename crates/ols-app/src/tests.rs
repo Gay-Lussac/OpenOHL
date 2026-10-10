@@ -8567,7 +8567,7 @@ fn a_structure_without_a_type_is_edited_in_the_pylon_editor() {
     harness.get_by_label("Edit pylon…").click();
     harness.run();
     harness.run();
-    harness.get_by_label("Structure T3");
+    harness.get_by_label("its own points, wire points and strings, in its axes");
     // The strings, editable: top, clamp, insulator, angles…
     harness.get_by_label("Strings").click();
     harness.run();
@@ -8729,4 +8729,140 @@ fn a_wire_point_renamed_keeps_its_string() {
     assert_eq!(f.strings[0].wire, new);
     assert!(f.wires.iter().any(|w| w.label == new));
     harness.get_by_label("clamp");
+}
+
+/// A new project starts with its own empty wire library (not the
+/// examples shipped with the program); weather cases are added in the
+/// table, Apply keeps them in the project as its first case file.
+#[test]
+fn a_new_project_starts_empty_and_takes_weather_cases() {
+    use crate::tables::TableKind;
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-fresh-libs", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("fresh.ols");
+    std::fs::remove_file(&path).ok();
+    crate::files::create_project(&path, "Fresh line", "EPSG:2056", "tester").unwrap();
+    // Library files lie next to it and are given (as by a previous
+    // project): not taken in.
+    std::fs::copy(
+        root().join("libraries/cables/acsr-examples.olsw"),
+        dir.join("around.olsw"),
+    )
+    .unwrap();
+    let sources = Sources {
+        library: Some(root().join("libraries/cables")),
+        weather: Some(root().join("examples/synthetic-line/weather-cases.olswc")),
+        file: path.clone(),
+        point_budget: 1000,
+        corridor: 60.0,
+        user: Some("tester".into()),
+        ..Sources::default()
+    };
+    let model = model::load(sources.clone(), &|_| {}).unwrap();
+    assert!(
+        model.library.is_empty(),
+        "{:?}",
+        model.library.iter().map(|c| &c.id).collect::<Vec<_>>()
+    );
+    assert_eq!(model.cases.len(), 1);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut row = TableKind::WeatherCases.new_row(&r.model, r.case, &[]);
+        row[1] = "cold".into();
+        r.tables
+            .entry(TableKind::WeatherCases)
+            .or_default()
+            .added
+            .push(row);
+    }
+    apply_table(&mut harness, TableKind::WeatherCases, true).unwrap();
+    let names = |m: &model::Model| {
+        m.cases
+            .iter()
+            .map(|c| c.case.name.clone())
+            .collect::<Vec<_>>()
+    };
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(names(&r.model), ["15 °C", "cold"]);
+    drop(harness);
+    // Kept in the project: opened again, both cases are there.
+    let model = model::load(sources, &|_| {}).unwrap();
+    assert_eq!(names(&model), ["15 °C", "cold"]);
+    assert!(model.library.is_empty());
+}
+
+/// The structure editor opens in a window of its own (it can be docked).
+#[test]
+fn the_structure_editor_opens_in_a_window() {
+    let mut dock = crate::app::default_dock();
+    crate::app::open_page(&mut dock, crate::app::Tab::StructureEditor);
+    let at = dock.find_tab(&crate::app::Tab::StructureEditor).unwrap();
+    assert!(!at.surface.is_main());
+}
+
+/// Structures › Add structure…: one click opens the window, one Apply
+/// adds the structure; again for the next one.
+#[test]
+fn add_structure_from_the_menu_takes_one_click_each() {
+    let model = synthetic_project("add-structure-menu");
+    let n = model.line.structures.len();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // First-person controls: a press in the 3D view captures the mouse.
+    harness.state_mut().ready().unwrap().view3d.controls =
+        crate::controls::Controls::by_name("minecraft").unwrap();
+    for k in 1..=2 {
+        // (the menu bar's, before the Structures layer of the Model page)
+        harness
+            .get_all_by_label("Structures")
+            .next()
+            .unwrap()
+            .click();
+        harness.run();
+        harness.get_by_label("Add structure…").click();
+        harness.run();
+        assert!(
+            harness.state_mut().ready().unwrap().editor.is_some(),
+            "window {k} opened"
+        );
+        harness.get_by_label("Apply").click();
+        harness.run();
+        let r = harness.state_mut().ready().unwrap();
+        assert!(!r.view3d.captured, "the mouse is free after Apply");
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        assert_eq!(r.model.line.structures.len(), n + k, "{:?}", r.status);
+    }
+}
+
+/// Opening a menu stops what was going on, as Escape would: the mouse is
+/// freed, an alignment being laid out is given up.
+#[test]
+fn opening_a_menu_escapes_what_was_going_on() {
+    let model = synthetic_project("menu-escapes");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.view3d.captured = true;
+        r.new_alignment = vec![ols_line::AlignmentPoint::free([0.0, 0.0, 500.0])];
+    }
+    harness.run();
+    harness
+        .get_all_by_label("Structures")
+        .next()
+        .unwrap()
+        .click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(!r.view3d.captured);
+    assert!(r.new_alignment.is_empty());
+    harness.get_by_label("Add structure…");
 }

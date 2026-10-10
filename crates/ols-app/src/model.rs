@@ -615,6 +615,11 @@ pub const DEFAULT_LIDAR_PERCENT: f64 = 25.0;
 /// Project setting holding the weather case file used.
 pub const WEATHER_SETTING: &str = "app.weather";
 
+/// Project setting: the project keeps libraries of its own from its
+/// creation — nothing is copied in from files around it or given when it
+/// opens (it starts empty; files come in from the library editors).
+pub const OWN_LIBRARIES_SETTING: &str = "app.own-libraries";
+
 /// Keeps the weather case file in the project's settings: its name when
 /// it is one of the project's own files (in the libraries' working
 /// folder), else its absolute path.
@@ -701,6 +706,11 @@ fn project_libraries(
     let user = sources.user.clone().unwrap_or_else(crate::files::user);
     // The weather file used last, when none is given and it is a file.
     let remembered = session.setting(WEATHER_SETTING).ok().flatten();
+    let own = session
+        .setting(OWN_LIBRARIES_SETTING)
+        .ok()
+        .flatten()
+        .is_some();
     let work = library_workdir(&sources.file);
     let _ = std::fs::remove_dir_all(&work);
     for (kind, ext) in PROJECT_LIBRARIES {
@@ -713,11 +723,15 @@ fn project_libraries(
         };
         let stored = session.library_files(kind).map_err(|e| e.to_string())?;
         let mut kept_in_files = false;
-        if stored.is_empty() || given {
+        if !own && (stored.is_empty() || given) {
+            // Files given, or next to the project: never the libraries
+            // shipped with the program (a new project starts empty).
+            let own =
+                |p: PathBuf, shipped: &str| (given || p != shipped_library(shipped)).then_some(p);
             let from: Option<PathBuf> = match kind {
-                "cables" => Some(library_path(sources)),
-                "structures" => Some(structures_dir(sources)),
-                "insulators" => Some(insulators_dir(sources)),
+                "cables" => own(library_path(sources), "cables"),
+                "structures" => own(structures_dir(sources), "structures"),
+                "insulators" => own(insulators_dir(sources), "insulators"),
                 "loadcases" => sources
                     .load_cases
                     .clone()
@@ -771,6 +785,22 @@ fn project_libraries(
         }
         let mut stored = session.library_files(kind).map_err(|e| e.to_string())?;
         if stored.is_empty() {
+            // Its own empty library (saved files go into the project).
+            if matches!(kind, "cables" | "structures" | "insulators") {
+                let dir = work.join(kind);
+                std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+                match kind {
+                    "cables" => sources.library = Some(dir),
+                    "structures" => sources.structures = Some(dir),
+                    _ => sources.insulators = Some(dir),
+                }
+            } else if own {
+                // None of its own yet: not those of another project.
+                match kind {
+                    "weather" => sources.weather = None,
+                    _ => sources.load_cases = None,
+                }
+            }
             continue;
         }
         // Weather case files of earlier versions gave the wind side: now a

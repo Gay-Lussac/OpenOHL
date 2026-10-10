@@ -498,6 +498,10 @@ pub fn create_project(path: &Path, name: &str, crs: &str, user: &str) -> Result<
     .map_err(|e| e.to_string())?;
     let mut session = ols_session::Session::open(&path).map_err(|e| e.to_string())?;
     session.import(&line, user).map_err(|e| e.to_string())?;
+    // Libraries of its own, empty: none copied in from around it.
+    session
+        .set_setting(crate::model::OWN_LIBRARIES_SETTING, Some("1"))
+        .map_err(|e| e.to_string())?;
     session.checkpoint().map_err(|e| e.to_string())?;
     Ok(path)
 }
