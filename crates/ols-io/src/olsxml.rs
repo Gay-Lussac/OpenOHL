@@ -259,6 +259,10 @@ fn write_section(out: &mut String, s: &Section) {
             fraction,
             vertical,
             label,
+            diameter,
+            drag,
+            wind_area,
+            ice_area,
         } = l;
         let _ = write!(
             out,
@@ -267,6 +271,18 @@ fn write_section(out: &mut String, s: &Section) {
             num(*vertical)
         );
         nonempty(out, "label", label);
+        if *diameter != 0.0 {
+            let _ = write!(out, " diameter=\"{}\"", num(*diameter));
+        }
+        for (name, value) in [
+            ("drag", drag),
+            ("wind_area", wind_area),
+            ("ice_area", ice_area),
+        ] {
+            if let Some(v) = value {
+                let _ = write!(out, " {name}=\"{}\"", num(*v));
+            }
+        }
         out.push_str("/>\n");
     }
     out.push_str("  </section>\n");
@@ -704,12 +720,29 @@ fn read_section(e: &Element) -> Result<Section, String> {
         loads: e
             .children_named("load")
             .map(|l| {
-                check(l, &["span", "fraction", "vertical", "label"], &[])?;
+                check(
+                    l,
+                    &[
+                        "span",
+                        "fraction",
+                        "vertical",
+                        "label",
+                        "diameter",
+                        "drag",
+                        "wind_area",
+                        "ice_area",
+                    ],
+                    &[],
+                )?;
                 Ok(SpanLoad {
                     span: number(l, "span")?,
                     fraction: number(l, "fraction")?,
                     vertical: number(l, "vertical")?,
                     label: owned(l, "label").unwrap_or_default(),
+                    diameter: optional(l, "diameter")?.unwrap_or(0.0),
+                    drag: optional(l, "drag")?,
+                    wind_area: optional(l, "wind_area")?,
+                    ice_area: optional(l, "ice_area")?,
                 })
             })
             .collect::<Result<_, String>>()?,

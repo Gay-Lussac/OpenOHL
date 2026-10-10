@@ -493,6 +493,7 @@ mod tests {
                 fraction,
                 vertical: 55.0,
                 label: "ball".into(),
+                ..Default::default()
             });
         }
         resolved.validate().unwrap();

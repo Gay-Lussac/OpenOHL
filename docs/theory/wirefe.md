@@ -35,6 +35,15 @@ In a line model (`ols-line`) this is a section **clipped in**. A section still *
 
 What this shows that the equal-tension (ruling span) model cannot: in the example job, support 3 is a **valley structure** (a 25 m descent into it, a 40 m rise out of it). Its weight span is only ~55 m, so in high wind its string swings ~89° — a real design issue (V-string, hold-down weights or a taller structure).
 
+## Point loads: marker balls and other bodies
+
+A point load in a span is a weight at a fraction of the span, and may also be a body of some size: a marker ball, an obstruction light. It's given a diameter \\( D \\) (taken as a sphere), a drag coefficient \\( C_d \\) (default 1), and optionally its wind area \\( A \\) or the surface \\( S \\) that takes the ice instead of the sphere's. In a weather case it carries:
+
+- **Ice:** the wire's radial ice thickness \\( t \\) (the case's thickness, or with an ice load and an ice density the thickness that load makes on the wire's bare diameter), as a shell of \\( \frac{\pi}{6}\left((D+2t)^3 - D^3\right) \\), or a layer \\( S\,t \\) on a given surface, at the case's ice density. A case with an ice load but no density gives no thickness, so the body takes no ice.
+- **Wind:** \\( F = p\,C_d\,\frac{\pi}{4}(D+2t)^2 \\) across the span, from the case's side (a given area \\( A \\) is grown by the ice as a sphere of that area).
+
+On a bundle the forces are shared by its subconductors. These loads can matter: a 0.6 m ball takes about 180 N of wind at 650 Pa and, with 16 mm of ice, about 170 N of ice, several times its own weight. A dozen of them on a long earth-wire span add a quarter or more to the wind on the wire. Without their wind area a long marked span swings metres less than it should.
+
 ## Line sections: strain assemblies, bundles, jumpers
 
 In a line model the section's ends, and middle points whose wire point is not below the insulator point, are **strain assemblies**: a free clamp on a member from the fixed insulator point, lined up with the conductor by equilibrium, so it moves with every weather case. A strain string given without a weight (geometry only, e.g. imported) gets the weight that holds it where the data puts it in the stringing state. A point whose wire and insulator points coincide is fixed. A **bundle** is solved as one subconductor carrying its share of the strings' weight and wind area; the string forces and reactions reported are the whole bundle's. **Jumpers** are solved separately, between the solved clamps, as inextensible elastic rods with bending stiffness (see [Jumpers](jumpers.md)).

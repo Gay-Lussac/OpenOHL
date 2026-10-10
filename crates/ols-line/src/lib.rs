@@ -396,8 +396,9 @@ impl Stringing {
     }
 }
 
-/// A point load in a span.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A point load in a span: its weight, and as a body of some size (a
+/// marker ball, an obstruction light) the wind on it and the ice it takes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpanLoad {
     /// Span index (0 = first span of the section).
@@ -410,6 +411,56 @@ pub struct SpanLoad {
     /// Label, e.g. `"marker ball"`.
     #[serde(default)]
     pub label: String,
+    /// Diameter of the body, m, taken as a sphere: its wind area
+    /// \\( \pi D^2/4 \\) and its surface for the ice. 0: a point, no wind
+    /// nor ice (unless given as areas).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub diameter: f64,
+    /// Drag coefficient of the body (none: 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drag: Option<f64>,
+    /// Wind area, m², instead of the sphere's (bare, without ice).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wind_area: Option<f64>,
+    /// Surface taking the ice, m², instead of the sphere's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ice_area: Option<f64>,
+}
+
+impl SpanLoad {
+    /// Downward and horizontal forces, N, on the whole bundle in a case,
+    /// on a wire of bare diameter `wire_diameter` (m). The ice is the
+    /// wire's radial ice, t, on the body's surface: on a sphere of
+    /// diameter D a shell of \\( \pi/6\,((D+2t)^3 - D^3) \\), on a given
+    /// surface S a layer S·t. The wind blows on the iced area: the
+    /// sphere's \\( \pi (D+2t)^2/4 \\), a given area A grown as a sphere's
+    /// of that area. A case with an ice load but no density has no
+    /// thickness: the body takes no ice.
+    pub fn forces(&self, case: &ols_weather::WeatherCase, wire_diameter: f64) -> [f64; 2] {
+        use std::f64::consts::PI;
+        let (t, rho) = case
+            .radial_ice(ols_core::units::Length::from_si(wire_diameter))
+            .map_or((0.0, 0.0), |(t, rho)| (t.si(), rho.si()));
+        let d = self.diameter.max(0.0);
+        let ice_volume = match self.ice_area {
+            Some(s) => s.max(0.0) * t,
+            None if d > 0.0 => PI / 6.0 * ((d + 2.0 * t).powi(3) - d.powi(3)),
+            None => 0.0,
+        };
+        let vertical = self.vertical + ice_volume * rho * ols_core::units::STANDARD_GRAVITY;
+        // The body's (bare) projected diameter.
+        let bare = match self.wind_area {
+            Some(a) => (4.0 * a.max(0.0) / PI).sqrt(),
+            None => d,
+        };
+        let wind_area = if bare > 0.0 {
+            PI / 4.0 * (bare + 2.0 * t).powi(2)
+        } else {
+            0.0
+        };
+        let horizontal = case.wind_pressure.si() * self.drag.unwrap_or(1.0) * wind_area;
+        [vertical, horizontal]
+    }
 }
 
 fn is_zero(x: &f64) -> bool {
@@ -979,13 +1030,17 @@ impl Line {
                     ));
                 }
             }
-            if let Some(l) = sec
-                .loads
-                .iter()
-                .find(|l| l.span >= spans || !(0.0 < l.fraction && l.fraction < 1.0))
-            {
+            if let Some(l) = sec.loads.iter().find(|l| {
+                l.span >= spans
+                    || !(0.0 < l.fraction && l.fraction < 1.0)
+                    || !(l.diameter >= 0.0 && l.diameter.is_finite())
+                    || [l.drag, l.wind_area, l.ice_area]
+                        .iter()
+                        .flatten()
+                        .any(|x| !(*x >= 0.0 && x.is_finite()))
+            }) {
                 return invalid(format!(
-                    "section {}: load {:?} is not inside a span",
+                    "section {}: load {:?} is not inside a span, or has a negative size",
                     sec.id, l.label
                 ));
             }
@@ -1079,6 +1134,69 @@ mod tests {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../examples/synthetic-line/synthetic-line.ols.json");
         Line::load(&path).unwrap()
+    }
+
+    /// A 0.6 m marker ball: its weight in still air, the wind on its
+    /// (iced) circle, the ice shell on its sphere.
+    #[test]
+    fn a_marker_ball_takes_wind_and_ice() {
+        use ols_core::units::{Density, Length, Stress, Temperature};
+        use std::f64::consts::PI;
+        let close = |a: f64, b: f64| assert!((a - b).abs() < 1e-9 * b.abs().max(1.0), "{a} {b}");
+        let ball = SpanLoad {
+            vertical: 55.0,
+            diameter: 0.6,
+            ..Default::default()
+        };
+        let still = ols_weather::WeatherCase::still("still", Temperature::from_celsius(15.0));
+        assert_eq!(ball.forces(&still, 0.025), [55.0, 0.0]);
+        let wind = ols_weather::WeatherCase {
+            wind_pressure: Stress::from_pascals(650.0),
+            ..still.clone()
+        };
+        let [down, across] = ball.forces(&wind, 0.025);
+        close(down, 55.0);
+        close(across, 650.0 * PI * 0.09); // ≈ 184 N
+        let half = SpanLoad {
+            drag: Some(0.5),
+            ..ball.clone()
+        };
+        close(half.forces(&wind, 0.025)[1], across / 2.0);
+        let given = SpanLoad {
+            wind_area: Some(0.1),
+            ..ball.clone()
+        };
+        close(given.forces(&wind, 0.025)[1], 65.0);
+        let ice = ols_weather::WeatherCase {
+            ice_thickness: Length::from_millimeters(10.0),
+            ice_density: Some(Density::from_kilograms_per_cubic_meter(900.0)),
+            ..wind
+        };
+        let [down, across] = ball.forces(&ice, 0.025);
+        let shell = PI / 6.0 * (0.62f64.powi(3) - 0.6f64.powi(3));
+        close(
+            down,
+            55.0 + shell * 900.0 * ols_core::units::STANDARD_GRAVITY,
+        );
+        close(across, 650.0 * PI / 4.0 * 0.62 * 0.62);
+        let surface = SpanLoad {
+            ice_area: Some(2.0),
+            ..ball.clone()
+        };
+        close(
+            surface.forces(&ice, 0.025)[0],
+            55.0 + 2.0 * 0.01 * 900.0 * ols_core::units::STANDARD_GRAVITY,
+        );
+        // A point without a size: its weight only.
+        let point = SpanLoad {
+            vertical: 55.0,
+            ..Default::default()
+        };
+        assert_eq!(point.forces(&ice, 0.025), [55.0, 0.0]);
+        // Negative sizes are refused.
+        let mut line = example();
+        line.sections[0].loads[0].diameter = -1.0;
+        assert!(line.validate().is_err());
     }
 
     #[test]
@@ -1200,6 +1318,7 @@ mod tests {
             fraction: 0.5,
             vertical: 55.0,
             label: "ball".into(),
+            ..Default::default()
         });
         assert!(line.validate().is_err());
         let mut line = example();

@@ -188,6 +188,23 @@ impl WeatherCase {
         Ok(())
     }
 
+    /// The radial ice on a wire of bare diameter `diameter`: its thickness
+    /// and density, for icing other objects on it (marker balls…). None
+    /// without ice, and with an ice load but no density (a weight only,
+    /// no thickness).
+    pub fn radial_ice(&self, diameter: Length) -> Option<(Length, Density)> {
+        let d = diameter.si();
+        match (self.ice_load, self.ice_density) {
+            (Some(_), None) => None,
+            (Some(_), Some(rho)) => {
+                let t = (self.ice(d).1 - d) / 2.0;
+                (t > 0.0).then(|| (Length::from_si(t), rho))
+            }
+            (None, rho) => (self.ice_thickness.si() > 0.0)
+                .then(|| (self.ice_thickness, rho.unwrap_or_else(default_ice_density))),
+        }
+    }
+
     /// Ice weight per length and iced diameter, m, on a bare diameter `d`
     /// (m).
     fn ice(&self, d: f64) -> (f64, f64) {
@@ -395,6 +412,40 @@ mod tests {
             ((actual - expected) / expected).abs() <= rel_tol,
             "actual {actual}, expected {expected}"
         );
+    }
+
+    /// The radial ice of an ice load and density weighs that load on the
+    /// wire; a load without a density has none; a thickness is itself.
+    #[test]
+    fn radial_ice_of_a_load_weighs_it() {
+        let d = Length::from_millimeters(25.0);
+        let still = WeatherCase::still("ice", Temperature::from_celsius(0.0));
+        assert!(still.radial_ice(d).is_none());
+        let by_load = WeatherCase {
+            ice_load: Some(ForcePerLength::from_newtons_per_meter(20.0)),
+            ice_density: Some(Density::from_kilograms_per_cubic_meter(900.0)),
+            ..still.clone()
+        };
+        let (t, rho) = by_load.radial_ice(d).unwrap();
+        let (d, t) = (d.si(), t.si());
+        let area = std::f64::consts::FRAC_PI_4 * ((d + 2.0 * t).powi(2) - d * d);
+        close(
+            area * rho.si() * ols_core::units::STANDARD_GRAVITY,
+            20.0,
+            1e-12,
+        );
+        let weight_only = WeatherCase {
+            ice_density: None,
+            ..by_load
+        };
+        assert!(weight_only.radial_ice(Length::from_si(d)).is_none());
+        let by_thickness = WeatherCase {
+            ice_thickness: Length::from_millimeters(10.0),
+            ..still
+        };
+        let (t, rho) = by_thickness.radial_ice(Length::from_si(d)).unwrap();
+        assert_eq!(t, Length::from_millimeters(10.0));
+        close(rho.kilograms_per_cubic_meter(), GLAZE_ICE_DENSITY, 1e-12);
     }
 
     #[test]
