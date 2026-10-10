@@ -106,10 +106,11 @@ pub struct Line {
         skip_serializing_if = "ols_cables::BimetallicModel::is_default"
     )]
     pub bimetallic: ols_cables::BimetallicModel,
-    /// The chosen start of electrical circuits (conductor paths): one end
-    /// attachment each. A circuit not listed runs along the line, from its
-    /// end that comes first ([`electrical::circuits`]). Its direction
-    /// orders its sections and jumpers; nothing physical depends on it.
+    /// The ends of electrical circuits (conductor paths) that are starts
+    /// (power flows in); a circuit none of whose ends is listed runs along
+    /// the line, from its end that comes first ([`electrical::circuits`]).
+    /// The roles order its sections and jumpers; nothing physical depends
+    /// on them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub circuit_starts: Vec<SectionPoint>,
     /// Those weather cases themselves, given by the program solving the

@@ -6768,8 +6768,9 @@ fn a_new_alignment_name_in_the_table_makes_the_alignment() {
 }
 
 /// Sections › Electrical circuits: one row per conductor path, counted
-/// from the connections; "reversed" turns a circuit — its start is kept in
-/// the line, its jumpers point along it — and back.
+/// from the connections; each end is a start or an end — ticked in
+/// "starts" (several feeds possible), swapped by ⇄ — at least one of each;
+/// its jumpers point along it; back to the line's direction, nothing kept.
 #[test]
 fn circuits_are_listed_and_turned() {
     use crate::tables::TableKind;
@@ -6778,7 +6779,14 @@ fn circuits_are_listed_and_turned() {
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    let (key, jumper_from) = {
+    let row = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let rows = TableKind::Circuits.rows(&r.model, 0);
+        rows.into_iter()
+            .find(|x| x.cells[6].contains("S3"))
+            .unwrap()
+    };
+    let (key, start, ends) = {
         let r = harness.state_mut().ready().unwrap();
         let rows = TableKind::Circuits.rows(&r.model, 0);
         assert_eq!(
@@ -6786,41 +6794,46 @@ fn circuits_are_listed_and_turned() {
             ols_line::electrical::conductor_paths(&r.model.line).len()
         );
         assert!(TableKind::Circuits.fixed_rows());
-        let row = rows.iter().find(|x| x.cells[6].contains("S3")).unwrap();
-        assert_eq!(row.cells[8], "no");
-        (row.key.clone(), r.model.line.jumpers[0].from.clone())
+        let x = rows.iter().find(|x| x.cells[6].contains("S3")).unwrap();
+        assert!(x.cells[4].starts_with("T1 "), "{}", x.cells[4]);
+        assert_eq!(x.cells[5].split(';').count(), 2, "two ends: {}", x.cells[5]);
+        (x.key.clone(), x.cells[4].clone(), x.cells[5].clone())
     };
-    set_cell(&mut harness, TableKind::Circuits, &key, "reversed", "yes");
+    // Reversed (⇄ puts its ends in "starts"): two starts, one end.
+    set_cell(&mut harness, TableKind::Circuits, &key, "starts", &ends);
     apply_table(&mut harness, TableKind::Circuits, false).unwrap();
     {
+        let x = row(&mut harness);
+        assert_eq!(x.cells[5], start);
         let r = harness.state_mut().ready().unwrap();
         let line = &r.model.line;
-        assert_eq!(line.circuit_starts.len(), 1);
-        let rows = TableKind::Circuits.rows(&r.model, 0);
-        let row = rows.iter().find(|x| x.key == key).unwrap();
-        assert_eq!(row.cells[8], "yes");
-        // The jumper points along the circuit: its `from` comes first.
+        assert_eq!(line.circuit_starts.len(), 2);
         let c = ols_line::electrical::circuits(line)
             .into_iter()
             .find(|c| c.sections.contains(&"S3".to_owned()))
             .unwrap();
-        let j = &line.jumpers[0];
         let at = |p| c.order.iter().position(|q| q == p);
-        assert!(at(&j.from) < at(&j.to));
+        assert!(
+            at(&line.jumpers[0].from) < at(&line.jumpers[0].to),
+            "along it"
+        );
     }
-    set_cell(&mut harness, TableKind::Circuits, &key, "reversed", "no");
+    // Every end a start: refused.
+    let all = format!("{start}; {ends}");
+    set_cell(&mut harness, TableKind::Circuits, &key, "starts", &all);
+    let err = apply_table(&mut harness, TableKind::Circuits, false).unwrap_err();
+    assert!(err.contains("at least one end"), "{err}");
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .remove(&TableKind::Circuits);
+    // Back along the line: nothing kept.
+    set_cell(&mut harness, TableKind::Circuits, &key, "starts", &start);
     apply_table(&mut harness, TableKind::Circuits, false).unwrap();
     let r = harness.state_mut().ready().unwrap();
-    let line = &r.model.line;
-    assert!(line.circuit_starts.is_empty());
-    // Along the line again (the example's jumper was entered against it).
-    let c = ols_line::electrical::circuits(line)
-        .into_iter()
-        .find(|c| c.sections.contains(&"S3".to_owned()))
-        .unwrap();
-    let at = |p| c.order.iter().position(|q| q == p);
-    assert!(at(&line.jumpers[0].from) < at(&line.jumpers[0].to));
-    assert_ne!(line.jumpers[0].from, jumper_from);
+    assert!(r.model.line.circuit_starts.is_empty());
 }
 
 /// The Edit tool on a jumper opens its window, as on a span (the mouse is
