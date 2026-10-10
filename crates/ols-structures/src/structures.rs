@@ -56,6 +56,7 @@
 //! [[wire]]
 //! label = "W1"
 //! set = 1
+//! # weight = "3 kN"   # a counterweight hanging at it
 //!
 //! [[string]]
 //! label = "S1-L"
@@ -335,6 +336,9 @@ pub struct TypeWire {
     /// Position in local axes (default: from its strings).
     #[serde(default)]
     pub point: Option<[Length; 3]>,
+    /// A weight hanging at it (a counterweight).
+    #[serde(default)]
+    pub weight: Option<ols_core::units::Force>,
 }
 
 /// A named height extension.
@@ -900,6 +904,8 @@ pub struct PlacedWire {
     pub position: [f64; 3],
     /// Set number.
     pub set: Option<u32>,
+    /// A weight hanging at it, N.
+    pub weight: f64,
 }
 
 /// A string of a placed structure.
@@ -1197,6 +1203,7 @@ impl StructureType {
                     label: w.label.clone(),
                     position: global(&w.label),
                     set: w.set,
+                    weight: w.weight.map_or(0.0, |f| f.si()),
                 })
                 .collect(),
             strings: self

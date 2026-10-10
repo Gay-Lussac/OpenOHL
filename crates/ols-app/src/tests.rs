@@ -7431,6 +7431,7 @@ fn string_editor_presets_make_valid_assemblies() {
                 t5.position[2] + 25.0,
             ],
             set: Some(1),
+            weight: 0.0,
         }],
         ..ols_line::Structure::new(
             "T10",

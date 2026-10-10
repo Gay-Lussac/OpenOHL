@@ -56,7 +56,7 @@ With a `type`, the structure's own points, strings and wire points replace the t
 What hangs on a structure is given explicitly:
 
 - **Points** (`points`): labelled points on the structure where strings hang.
-- **Wire points** (`wires`): where strings meet and where wires are clamped. A wire point with a **`set`** number is where a section or jumper ends (sections and jumpers name it by structure and set, unique on the structure). A wire point no string reaches is **fixed** to the structure (a wire clamped directly). Its `position` is where it is in still air: the strings' lengths are the distances from their tops to it.
+- **Wire points** (`wires`): where strings meet and where wires are clamped. A wire point with a **`set`** number is where a section or jumper ends (sections and jumpers name it by structure and set, unique on the structure). A wire point no string reaches is **fixed** to the structure (a wire clamped directly). Its `position` is where it is in still air: the strings' lengths are the distances from their tops to it. A **`weight`** (N) hangs at it: a counterweight under the clamp (a string's own `weight` is spread along the string, half to each end).
 - **Strings** (`strings`): straight members from a **top** — a point, *or another string's wire point* — to a wire point. Strings hang from each other, so any assembly is built from them:
   - an **I-string**: one string from a point to a wire point with a set;
   - a **V-string**: two strings from two points to one wire point;
