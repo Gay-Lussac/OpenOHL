@@ -1550,10 +1550,19 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                                 shape.unstressed_length,
                                 shape.sag,
                                 shape.max_tension,
-                                match shape.support {
-                                    Some((_, _, f)) => format!("   support string {f:.0} N"),
-                                    None => String::new(),
-                                }
+                                shape
+                                    .supports
+                                    .iter()
+                                    .flat_map(|s| &s.strings)
+                                    .map(|s| {
+                                        let name = if s.label.is_empty() {
+                                            "support string"
+                                        } else {
+                                            s.label.as_str()
+                                        };
+                                        format!("   {name} {:.0} N", s.force)
+                                    })
+                                    .collect::<String>()
                             );
                             jumpers.push(shape);
                         }

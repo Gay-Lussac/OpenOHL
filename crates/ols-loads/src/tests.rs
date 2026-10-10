@@ -493,3 +493,59 @@ fn dead_end_spans_take_both_sides() {
         assert!((hi - lo).abs() < 1e-9, "{id}: {lo} {hi}");
     }
 }
+
+/// A jumper's support clamp loads the top of its string on the structure:
+/// at least half the string's weight down, and the jumper's weight it
+/// carries; the load is the jumper's.
+#[test]
+fn jumper_support_strings_load_their_tops() {
+    let (mut line, library, weather, cases) = setup();
+    let still = WeatherCase::still("still", ols_core::units::Temperature::from_celsius(15.0));
+    let shapes: Vec<_> = ols_line::solve::solve_line(&line, &library, &still)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let free = ols_line::jumper::solve_jumpers(&line, &library, &still, &shapes)
+        .remove(0)
+        .unwrap();
+    let middle = free.points[free.points.len() / 2];
+    let j = &mut line.jumpers[0];
+    j.sag = None;
+    j.length = Some(free.unstressed_length);
+    j.supports = vec![ols_line::JumperClamp::new("JW", 0.5)];
+    let st = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+    st.points.push(ols_line::StructurePoint {
+        label: "JS".into(),
+        position: [middle[0], middle[1], middle[2] + 2.0],
+    });
+    st.wires.push(ols_line::WirePoint {
+        label: "JW".into(),
+        position: [middle[0], middle[1], middle[2] + 1.0],
+        set: None,
+        weight: 0.0,
+    });
+    st.strings.push(ols_line::InsulatorString {
+        label: "JI".into(),
+        top: "JS".into(),
+        wire: "JW".into(),
+        weight: 100.0,
+        ..Default::default()
+    });
+    line.validate().unwrap();
+    let budget = ols_wirefe::default_fe_budget();
+    let r = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    for c in &r {
+        assert!(c.failed.is_empty(), "{}: {:?}", c.case.name, c.failed);
+        let l = c
+            .loads
+            .iter()
+            .find(|l| l.structure == "T3" && l.point == "JS")
+            .expect("a load at the string's top");
+        assert_eq!(l.sections, vec![line.jumpers[0].id.clone()]);
+        assert!(l.sets.is_empty());
+        // Down: half the string, and part of the jumper (~16 N/m on a
+        // ~10.8 m jumper).
+        assert!(l.local[2] > 50.0 + 20.0, "{}: {:?}", c.case.name, l.local);
+        assert!(l.local[2] < 50.0 + 400.0, "{}: {:?}", c.case.name, l.local);
+    }
+}

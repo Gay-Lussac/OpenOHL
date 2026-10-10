@@ -20,7 +20,8 @@
 //!
 //! - [`Jumper`]: a slack cable joining two wire points — the ends of two
 //!   sections at a dead-end, or a tap from a branch to a through wire —
-//!   optionally held by a support string; solved by [`jumper`].
+//!   optionally held by a support string, or by support clamps on a
+//!   structure's strings ([`JumperClamp`]); solved by [`jumper`].
 //!
 //! [`solve`] turns a section into a finite-element model (exact catenary
 //! elements, insulator strings) and solves it in any weather state.
@@ -159,9 +160,16 @@ pub struct Jumper {
     /// solved clamps, without length or sag; never taut, no thermal change.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub rigid: bool,
-    /// Optional jumper support string.
+    /// Optional jumper support string, from a point given by its
+    /// coordinates (`supports` gives clamps held by a structure's strings;
+    /// not both).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub support: Option<JumperSupport>,
+    /// Support clamps on the jumper, in order from `from`, each held by
+    /// the strings of a structure ([`JumperClamp`]). The jumper runs
+    /// straight through each clamp; the clamp swings and turns freely.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supports: Vec<JumperClamp>,
     /// Bending stiffness EI of the cable, N·m²: the jumper leaves a
     /// section's end clamp along the conductor's axis and bends away from
     /// it, instead of hanging from a hinge. Default: estimated from the
@@ -217,6 +225,100 @@ pub struct JumperSupport {
     /// from `from`, 0–1.
     #[serde(default = "half")]
     pub fraction: f64,
+}
+
+/// Default length of a jumper's support clamp, m.
+pub const DEFAULT_CLAMP_LENGTH: f64 = 0.1;
+
+fn default_clamp_length() -> f64 {
+    DEFAULT_CLAMP_LENGTH
+}
+
+/// A support clamp on a jumper, hanging on the strings of a structure:
+/// one string (an I) or two strings from structure points (a V) to a wire
+/// point without a set. The clamp is a straight rigid piece of the
+/// jumper, `clamp_length` long, held at its middle. It swings and turns
+/// freely; the jumper leaves it in the direction it enters.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JumperClamp {
+    /// The structure holding it; default: that of the jumper's `from`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure: Option<String>,
+    /// The wire point its strings hold (no set: not a section's or a
+    /// jumper's end).
+    pub wire: String,
+    /// Where the clamp's middle is: fraction of the jumper's length from
+    /// `from`, 0–1.
+    pub at: f64,
+    /// Length of the clamp, m (default [`DEFAULT_CLAMP_LENGTH`]).
+    #[serde(default = "default_clamp_length")]
+    pub clamp_length: f64,
+}
+
+impl JumperClamp {
+    /// A clamp at `at` on wire point `wire` of the `from` end's structure.
+    pub fn new(wire: impl Into<String>, at: f64) -> Self {
+        JumperClamp {
+            structure: None,
+            wire: wire.into(),
+            at,
+            clamp_length: DEFAULT_CLAMP_LENGTH,
+        }
+    }
+
+    /// The structure holding the clamp: its own, else that of `jumper`'s
+    /// `from` end.
+    pub fn structure_id<'a>(&'a self, jumper: &'a Jumper) -> &'a str {
+        self.structure.as_deref().unwrap_or(&jumper.from.structure)
+    }
+}
+
+/// The strings holding a jumper's support clamp: the clamp's wire point
+/// and its strings, each from a structure point (one: an I; two: a V).
+/// An error says what is wrong with the clamp's wire point.
+pub fn clamp_strings<'a>(
+    structure: &'a Structure,
+    wire: &str,
+) -> Result<(&'a WirePoint, Vec<&'a InsulatorString>), String> {
+    let id = &structure.id;
+    let w = structure
+        .wire(wire)
+        .ok_or_else(|| format!("no wire point \"{wire}\" on structure {id}"))?;
+    if let Some(set) = w.set {
+        return Err(format!(
+            "wire point {wire} on structure {id} has set {set}: a support clamp hangs on a wire point without a set"
+        ));
+    }
+    let strings: Vec<&InsulatorString> = structure
+        .strings
+        .iter()
+        .filter(|s| s.wire == wire)
+        .collect();
+    if strings.is_empty() {
+        return Err(format!(
+            "no string holds wire point {wire} on structure {id}"
+        ));
+    }
+    if strings.len() > 2 {
+        return Err(format!(
+            "{} strings hold wire point {wire} on structure {id}: a support clamp hangs on one string (I) or two (V)",
+            strings.len()
+        ));
+    }
+    if let Some(s) = strings.iter().find(|s| structure.point(&s.top).is_none()) {
+        return Err(format!(
+            "string {} to wire point {wire} on structure {id} hangs from \"{}\", not a structure point: \
+             strings below other strings do not hold jumper clamps yet",
+            s.label, s.top
+        ));
+    }
+    if structure.strings.iter().any(|s| s.top == wire) {
+        return Err(format!(
+            "strings hang from wire point {wire} on structure {id}: a support clamp's wire point holds nothing else"
+        ));
+    }
+    Ok((w, strings))
 }
 
 /// Default wire colours by phase number (1, 2, 3, then repeating); phase 0
@@ -952,6 +1054,83 @@ impl Line {
         Ok(())
     }
 
+    /// Checks a jumper's support clamps: not with a `support` string, a
+    /// cut length given, each clamp inside the jumper and after the one
+    /// before (with room for both), its length above 0 and at most 1 m,
+    /// its wire point held as [`clamp_strings`] says (a typed structure's
+    /// wire points are checked once resolved).
+    fn check_clamps(&self, j: &Jumper) -> Result<(), String> {
+        if j.supports.is_empty() {
+            return Ok(());
+        }
+        if j.support.is_some() {
+            return Err(
+                "give a support string (support) or support clamps (supports), not both".into(),
+            );
+        }
+        if j.rigid {
+            return Err("a rigid jumper has no support clamps".into());
+        }
+        let Some(length) = j.length else {
+            return Err(
+                "a jumper with support clamps needs a length (its sag depends on them)".into(),
+            );
+        };
+        let mut end_before = 0.0;
+        for (k, c) in j.supports.iter().enumerate() {
+            let n = k + 1;
+            if !(c.clamp_length > 0.0 && c.clamp_length <= 1.0) {
+                return Err(format!(
+                    "support clamp {n}: its length must be above 0 and at most 1 m"
+                ));
+            }
+            if !(c.at > 0.0 && c.at < 1.0) {
+                return Err(format!(
+                    "support clamp {n}: at must be between 0 and 1 (a fraction of the length)"
+                ));
+            }
+            let (start, end) = (
+                c.at * length - c.clamp_length / 2.0,
+                c.at * length + c.clamp_length / 2.0,
+            );
+            if start <= end_before || end >= length {
+                return Err(format!(
+                    "support clamp {n} at {:.2} m along the jumper overlaps {} (clamps in order \
+                     from `from`, each {:.2} m long)",
+                    c.at * length,
+                    if end >= length {
+                        "the jumper's end".to_owned()
+                    } else if k == 0 {
+                        "the jumper's start".to_owned()
+                    } else {
+                        format!("clamp {k}")
+                    },
+                    c.clamp_length
+                ));
+            }
+            end_before = end;
+            let id = c.structure_id(j);
+            let Some(structure) = self.structure(id) else {
+                return Err(format!("support clamp {n}: unknown structure {id}"));
+            };
+            if structure.structure_type.is_some() && structure.wire(&c.wire).is_none() {
+                // From the structure's type: checked once resolved.
+                continue;
+            }
+            clamp_strings(structure, &c.wire).map_err(|m| format!("support clamp {n}: {m}"))?;
+            if j.supports[..k]
+                .iter()
+                .any(|d| d.structure_id(j) == id && d.wire == c.wire)
+            {
+                return Err(format!(
+                    "support clamps {n} and another hang on the same wire point {} of {id}",
+                    c.wire
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Checks references and basic consistency.
     pub fn validate(&self) -> Result<(), LineError> {
         let invalid = |m: String| Err(LineError::Invalid(m));
@@ -1158,6 +1337,8 @@ impl Line {
                     return bad("support fraction must be between 0 and 1");
                 }
             }
+            self.check_clamps(j)
+                .map_err(|m| LineError::Invalid(format!("jumper {}: {m}", j.id)))?;
             if let Some(c) = j.color.as_deref().filter(|c| !is_hex_color(c)) {
                 return bad(&format!("colour \"{c}\" is not #rrggbb"));
             }

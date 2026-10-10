@@ -136,6 +136,43 @@ fn rich_line() -> Line {
         j.length = None;
         j.sag = None;
     }
+    // A jumper held by support clamps: one on the string to "tip\nnext" of
+    // T2, one on a string of the `from` end's structure (no structure
+    // given).
+    let from = line.jumpers[0].from.structure.clone();
+    let t = line.structures.iter_mut().find(|s| s.id == from).unwrap();
+    let top = t.points[0].clone();
+    t.wires.push(ols_line::WirePoint {
+        label: "JW".into(),
+        position: [
+            top.position[0],
+            top.position[1] + 1.0,
+            top.position[2] - 1.5,
+        ],
+        set: None,
+        weight: 250.0,
+    });
+    t.strings.push(ols_line::InsulatorString {
+        label: "jumper string".into(),
+        top: top.label,
+        wire: "JW".into(),
+        ..Default::default()
+    });
+    let mut held = line.jumpers[0].clone();
+    held.id = "held".into();
+    held.support = None;
+    held.sag = None;
+    held.length = Some(12.5);
+    held.supports = vec![
+        ols_line::JumperClamp {
+            structure: Some(line.structures[1].id.clone()),
+            wire: "tip\nnext".into(),
+            at: 0.25,
+            clamp_length: 0.08,
+        },
+        ols_line::JumperClamp::new("JW", 0.75),
+    ];
+    line.jumpers.push(held);
     line
 }
 

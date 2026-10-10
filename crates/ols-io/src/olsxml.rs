@@ -16,8 +16,9 @@ use std::fmt::Write as _;
 use ols_line::condition::{Calculation, CreepStretch};
 use ols_line::electrical::{System, SystemKind, SystemPhase};
 use ols_line::{
-    AlignmentPoint, AttachmentV1, Display, InsulatorString, Jumper, JumperSupport, Line, Point,
-    Route, Section, SectionPoint, SpanLoad, Stringing, Structure, StructurePoint, WirePoint,
+    AlignmentPoint, AttachmentV1, Display, InsulatorString, Jumper, JumperClamp, JumperSupport,
+    Line, Point, Route, Section, SectionPoint, SpanLoad, Stringing, Structure, StructurePoint,
+    WirePoint,
 };
 
 use crate::xml::{Element, attribute as attr, escape};
@@ -329,6 +330,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         temperature,
         rigid,
         support,
+        supports,
         bending_stiffness,
         stiffness_factor,
         angle_from_deg,
@@ -375,6 +377,20 @@ fn write_jumper(out: &mut String, j: &Jumper) {
             num(*fraction)
         );
         point_attrs(out, *point);
+        out.push_str("/>\n");
+    }
+    for JumperClamp {
+        structure,
+        wire,
+        at,
+        clamp_length,
+    } in supports
+    {
+        out.push_str("    <clamp");
+        opt_text(out, "structure", structure.as_deref());
+        attr(out, "wire", wire);
+        attr(out, "at", &num(*at));
+        attr(out, "clamp_length", &num(*clamp_length));
         out.push_str("/>\n");
     }
     out.push_str("  </jumper>\n");
@@ -889,8 +905,21 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             "bundle_spacing",
             "bundle_rotation_deg",
         ],
-        &["from", "to", "support"],
+        &["from", "to", "support", "clamp"],
     )?;
+    let supports = e
+        .children_named("clamp")
+        .map(|c| {
+            check(c, &["structure", "wire", "at", "clamp_length"], &[])?;
+            Ok(JumperClamp {
+                structure: owned(c, "structure"),
+                wire: text(c, "wire")?.to_owned(),
+                at: number(c, "at")?,
+                clamp_length: optional(c, "clamp_length")?
+                    .unwrap_or(ols_line::DEFAULT_CLAMP_LENGTH),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let support = e
         .child("support")
         .map(|s| {
@@ -917,6 +946,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             Some(v) => return Err(format!("jumper rigid=\"{v}\": true or false")),
         },
         support,
+        supports,
         bending_stiffness: optional(e, "bending_stiffness")?,
         stiffness_factor: optional(e, "stiffness_factor")?,
         angle_from_deg: optional(e, "angle_from_deg")?,

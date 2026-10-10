@@ -48,6 +48,20 @@ The model is an **inextensible elastic rod**:
 - **Exit clauses.** 150 iterations and 60 s per solve. The error states the residual as a multiple of the tolerance.
 - **Stretch.** The cable's stretch is left out, because it is ~10⁻⁶ at a jumper's tension.
 
+## Support clamps: a rod with rigid pieces
+
+A jumper can hang on **support clamps** between its ends (`supports`). Each clamp hangs on strings of a structure: one string (an I) or two strings to one wire point (a V). The clamp is free to swing and turn, so no angle is assumed for it. The cable runs straight through it: over the clamp's few centimetres it cannot bend, so the direction it leaves in is the direction it enters in.
+
+A jumper with support clamps is always solved as the rod above, also with \\( EI = 0 \\) or hinged ends:
+
+- **Pieces.** The pieces now have their own lengths \\( \ell_i \\); node \\( m \\) is at \\( A + \sum_{i<m} \ell_i d_i \\). Each clamp is **one piece** of its length (`clamp_length`, default 0.1 m). One straight piece has one direction, so the jumper is straight through the clamp by construction, whatever its stiffness. The stretches between the clamps and the ends are cut into pieces of equal length, 16 to 40 in all (~0.12 m), at least one each, in proportion to their lengths.
+- **Bending.** \\( c_i = EI / \bar\ell \\) at the node between pieces \\( i \\) and \\( i+1 \\), with \\( \bar\ell \\) the mean of their lengths; \\( 2EI/\ell \\) at a clamped end, with that end piece's length. With equal pieces this is the rod above.
+- **Where the strings hold.** At the clamp's middle: \\( p = x_k + \tfrac12 \ell_k d_k \\) for the clamp's piece \\( k \\). The strings therefore turn the clamp too: it settles where the cable's pulls at its two ends and the strings balance.
+- **Strings.** Each string is a rigid, tension-only distance constraint from its fixed top (a structure point) to the clamp's middle: an I is a pendulum, a V two such constraints. A string is **slack** while the clamp is nearer its top than its length, or while its force would push. The solve keeps an **active set**: all strings are first left out; a string whose point then hangs beyond its length goes taut and is shortened to its length in steps (as a single support string is); a taut string whose force would push is let go; this repeats until no string changes. A V leg on the lee side of a strong wind goes slack this way.
+- **Loads on a clamp.** Half of each string's weight, and the wire point's own `weight` (a counterweight), shared by the subconductors. The wind on the strings is left out.
+- **Forces.** A string's tension is \\( T = -2 \mu L \\) from its multiplier \\( \mu \\) (constraint \\( |p - t|^2 = L^2 \\)); 0 when slack. The Jacobian of the system, with the strings' rows and columns, is checked against finite differences in the tests.
+- **Limits.** A clamp's strings hang from structure points: a string below another string (a V with a string below, a TAK) does not hold a clamp yet. The strings' pull on the structure goes into the structure loads, at their tops; the jumper's pull on the sections does not (sections are solved first).
+
 **Default \\( EI \\).** Without a `bending_stiffness`, \\( EI \\) is estimated from the cable between two limits:
 
 - **Strands locked together** (a solid bar): \\( EI_{max} = E\\,\pi d^4/64 \\), with the composite modulus \\( E = \sum E_i A_i / \sum A_i \\) and the overall diameter \\( d \\).
@@ -103,6 +117,8 @@ An edit re-solves its own sections. A jumper is solved again only if one of thes
   A jumper that is really a stiff bar (a rigid or tubular jumper) has no slack to lose, so it should not be modelled as a cable with a token sag. Give it `rigid` (below): it is then the straight member between its clamps and is never taut.
 - **A section at an end not solved.** The jumper's ends are the solved clamps of the sections through them. When one of those sections fails in a weather case, the jumper fails too and names it, rather than hanging between the attachments' data points.
 - **Ends less than 0.1 m apart horizontally.** A vertical jumper is not supported yet.
+- **A support string out of reach.** A string's top is farther from either end than the jumper's length to its clamp plus the string's length.
+- **Strings that do not settle.** Strings going taut and slack in turn 8 times. Not met in testing.
 - **No convergence.** The message names the residual. This is rare since the solve runs in coordinates relative to the first end.
 - **Sag cannot be reached.** The sag asked for is less than the taut jumper's, or would need more than 20× the chord length.
 
@@ -128,6 +144,7 @@ Computation (release build; times for one core — jumpers are independent, so a
 | Rod Newton iteration (\\( 2n+3 \\) unknowns, \\( n \approx 24 \\)) | ~50 µs | — |
 | Rod solve (5–30 iterations) | 0.25–1.5 ms; ~0.75 ms on average | 150 iterations, 60 s |
 | Rod solve with a support string | a few times the above | string steps no smaller than 1/64 of the way |
+| Rod solve with support clamps (I or V) | 2–5 ms for a 10.8 m jumper (sections included) | the same per solve; 8 rounds of strings going taut or slack |
 | Cut from a sag, hinged | ~50 µs | 200 iterations; 20× chord |
 | Cut from a sag, clamped | 5–15 ms (end sections plus 5–15 rod solves) | 40 iterations; 20× chord |
 | A weather case, 433 clamped jumpers | ~0.3 s on one core, divided by the number of cores | — |
