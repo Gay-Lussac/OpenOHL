@@ -90,6 +90,12 @@ pub fn object_bounds(line: &Line) -> BTreeMap<(Kind, String), Bounds> {
             .filter_map(|p| clamp_point(line, p))
             .collect();
         pts.extend(j.support.iter().map(|s| s.point));
+        // Its support clamps, where their wire points hang.
+        pts.extend(j.supports.iter().filter_map(|c| {
+            line.structure(c.structure_id(j))
+                .and_then(|s| s.wire(&c.wire))
+                .map(|w| w.position)
+        }));
         put(Kind::Jumper, &j.id, pts);
     }
     for r in &line.routes {

@@ -312,6 +312,16 @@
                   <xs:attributeGroup ref="ols:xyz"/>
                 </xs:complexType>
               </xs:element>
+              <!-- Support clamps, in order from `from`: each on the strings to a
+                   wire point without a set (structure: default the `from` end's). -->
+              <xs:element name="clamp" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="structure" type="xs:string"/>
+                  <xs:attribute name="wire" type="xs:string" use="required"/>
+                  <xs:attribute name="at" type="xs:double" use="required"/>
+                  <xs:attribute name="clamp_length" type="xs:double" default="0.1"/>
+                </xs:complexType>
+              </xs:element>
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
             <xs:attribute name="cable" type="xs:string" use="required"/>

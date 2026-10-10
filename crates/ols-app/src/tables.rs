@@ -263,6 +263,12 @@ const JUMPERS: &[Column] = &[
         Yes,
         "yes: a rigid jumper (tube or bar), straight between its clamps — no length or sag",
     ),
+    (
+        "clamps",
+        200.0,
+        Derived,
+        "support clamps, in order: structure, wire point, where along (share of the length), clamp length (edit them in the jumper's Edit form)",
+    ),
 ];
 
 const SYSTEMS: &[Column] = &[
@@ -933,6 +939,7 @@ impl TableKind {
                         j.angle_from_deg.map_or(String::new(), |v| f(v, 1)),
                         j.angle_to_deg.map_or(String::new(), |v| f(v, 1)),
                         if j.rigid { "yes" } else { "no" }.into(),
+                        clamps_text(j),
                     ],
                 })
                 .collect(),
@@ -1863,6 +1870,15 @@ fn circuit_commands(
             };
             if at(&j.to) < at(&j.from) {
                 let mut j = j.clone();
+                // Its clamps from the other end: on the same structures,
+                // in the other order.
+                let first = j.from.structure.clone();
+                for c in &mut j.supports {
+                    let id = c.structure.take().unwrap_or_else(|| first.clone());
+                    c.structure = (id != j.to.structure).then_some(id);
+                    c.at = 1.0 - c.at;
+                }
+                j.supports.reverse();
                 std::mem::swap(&mut j.from, &mut j.to);
                 std::mem::swap(&mut j.angle_from_deg, &mut j.angle_to_deg);
                 if let Some(s) = &mut j.support {
@@ -2154,6 +2170,23 @@ fn string_cells(x: &mut ols_line::InsulatorString, c: &Cells, name: &str) -> Res
         other => return Err(format!("{name} strain: \"{other}\" is not yes or no")),
     };
     Ok(())
+}
+
+/// A jumper's support clamps, in order: "T3 JW at 0.50 (0.10 m); …".
+fn clamps_text(j: &ols_line::Jumper) -> String {
+    j.supports
+        .iter()
+        .map(|c| {
+            format!(
+                "{} {} at {} ({} m)",
+                c.structure_id(j),
+                c.wire,
+                f(c.at, 3),
+                f(c.clamp_length, 3)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn jumper_cells(
