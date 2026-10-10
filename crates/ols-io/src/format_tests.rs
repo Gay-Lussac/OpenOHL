@@ -47,6 +47,7 @@ fn rich_line() -> Line {
     let s = &mut line.structures[1];
     s.structure_type = Some("tangent & <co>".into());
     s.extension = Some("+3".into());
+    s.height_adjust = 0.375;
     s.omit = vec!["gone \"x\"".into()];
     s.omit_sets = vec![2];
     s.members = vec![vec![[0.5, 1.0, 500.0], [0.25, 1.0, 530.125]]];

@@ -4,10 +4,15 @@
 
 //! Structure types (`*.olss`, one type per file) and their placement.
 //!
-//! **Local axes**: origin at the ground centre of the structure, **x to the
+//! **Local axes**: origin at the centre of the structure, **x to the
 //! right of the line** looking ahead, **y ahead** along the line, z up
 //! (right-handed). A placed structure has a position and a rotation: the
 //! direction of its local x axis, degrees counter-clockwise from east.
+//! z = 0 is the ground unless the type gives the level of its feet
+//! (`foot = "-32 m"`, e.g. for a pylon drawn from a level under its lowest
+//! crossarm): it is placed with its feet on the ground, raised by the
+//! structure's height adjustment (foundations); an extension lengthens it
+//! below z = 0, so everything above the feet rises by its `dz`.
 //!
 //! ```toml
 //! format = "ols-structure"
@@ -591,10 +596,13 @@ pub struct StructureType {
     /// figure, 2 its outline, 3 a full design); default 1.
     #[serde(default)]
     pub detail: Detail,
-    /// Height of the mast top for the stick drawing (default: the highest
-    /// attachment point).
+    /// Height of the mast top (local z) for the stick drawing (default:
+    /// the highest attachment point).
     #[serde(default)]
     pub height: Option<Length>,
+    /// Level of the feet in local z (default 0: z = 0 is the ground).
+    #[serde(default)]
+    pub foot: Option<Length>,
     /// Where the data comes from.
     #[serde(default)]
     pub source: Option<String>,
@@ -776,15 +784,7 @@ impl StructureType {
         extension: Option<&str>,
         insulators: &InsulatorLibrary,
     ) -> Result<Vec<PlacedAttachment>, String> {
-        let dz = match extension {
-            None => 0.0,
-            Some(name) => self
-                .extensions
-                .iter()
-                .find(|e| e.name == name)
-                .map(|e| e.dz.si())
-                .ok_or_else(|| format!("structure type {}: no extension \"{name}\"", self.id))?,
-        };
+        let dz = self.lift(extension)?;
         self.attachments
             .iter()
             .map(|a| {
@@ -1063,10 +1063,11 @@ impl StructureType {
             .find(|c| self.capacity_label(c) == label)
     }
 
-    /// A point's position in local axes (a version 2 point, or a version 1
-    /// attachment's point, by [`v1_point_label`]), raised by the extension.
+    /// A point's position above the feet (a version 2 point, or a version
+    /// 1 attachment's point, by [`v1_point_label`]), raised by the
+    /// extension.
     pub fn point_local(&self, label: &str, extension: Option<&str>) -> Option<[f64; 3]> {
-        let dz = self.extension_dz(extension).ok()?;
+        let dz = self.lift(extension).ok()?;
         self.points
             .iter()
             .find(|p| p.label == label)
@@ -1092,7 +1093,7 @@ impl StructureType {
         extension: Option<&str>,
         insulators: &InsulatorLibrary,
     ) -> Result<PlacedStrings, String> {
-        let dz = self.extension_dz(extension)?;
+        let dz = self.lift(extension)?;
         let err = |m: String| format!("structure type {}: {m}", self.id);
         let lift = |p: &[Length; 3]| [p[0].si(), p[1].si(), p[2].si() + dz];
         let mut local: std::collections::BTreeMap<&str, [f64; 3]> = self
@@ -1229,24 +1230,35 @@ impl StructureType {
         })
     }
 
-    fn extension_dz(&self, extension: Option<&str>) -> Result<f64, String> {
-        match extension {
-            None => Ok(0.0),
+    /// The level of the feet in local z ([`StructureType::foot`], default
+    /// 0).
+    pub fn foot_level(&self) -> f64 {
+        self.foot.map_or(0.0, |f| f.si())
+    }
+
+    /// How far a placed point rises above its local z: the extension's
+    /// `dz` less the level of the feet, so the feet stand on the ground.
+    pub fn lift(&self, extension: Option<&str>) -> Result<f64, String> {
+        let dz = match extension {
+            None => 0.0,
             Some(name) => self
                 .extensions
                 .iter()
                 .find(|e| e.name == name)
                 .map(|e| e.dz.si())
-                .ok_or_else(|| format!("structure type {}: no extension \"{name}\"", self.id)),
-        }
+                .ok_or_else(|| format!("structure type {}: no extension \"{name}\"", self.id))?,
+        };
+        Ok(dz - self.foot_level())
     }
 
-    /// The stick drawing in local axes: the `body` polylines (raised by the
-    /// extension above the ground), or a mast from the centre point to the
-    /// top and a crossarm from the mast to every attachment point.
+    /// The stick drawing above the feet: the `body` polylines (points
+    /// above the feet raised by the extension), or a mast from the centre
+    /// point to the top and a crossarm from the mast to every attachment
+    /// point.
     pub fn stick(&self, extension: Option<&str>) -> Result<Vec<Vec<[f64; 3]>>, String> {
-        let dz = self.extension_dz(extension)?;
+        let dz = self.lift(extension)?;
         if !self.body.is_empty() {
+            let foot = self.foot_level();
             return Ok(self
                 .body
                 .iter()
@@ -1255,7 +1267,11 @@ impl StructureType {
                         .iter()
                         .map(|p| {
                             let z = p[2].si();
-                            [p[0].si(), p[1].si(), if z > 0.0 { z + dz } else { z }]
+                            [
+                                p[0].si(),
+                                p[1].si(),
+                                if z > foot { z + dz } else { z - foot },
+                            ]
                         })
                         .collect()
                 })
@@ -1510,6 +1526,46 @@ mod tests {
         // Placed: rotated and moved like the attachments.
         let placed = t.place_stick([100.0, 50.0, 500.0], 90.0, None).unwrap();
         assert_eq!(placed[0][1], [100.0, 50.0, 550.0]);
+    }
+
+    #[test]
+    fn a_type_drawn_from_its_arms_stands_on_its_feet() {
+        // z = 0 under the lowest crossarm, the feet 30 m below it.
+        let mut text = String::from(
+            "id = \"F\"\nname = \"f\"\nkind = \"lattice\"\nheight = \"12 m\"\nfoot = \"-30 m\"\n",
+        );
+        text.push_str("[[point]]\nlabel = \"A1\"\npoint = [\"-9 m\", \"0 m\", \"0 m\"]\n");
+        text.push_str("[[wire]]\nlabel = \"W1\"\nset = 1\n");
+        text.push_str(
+            "[[string]]\nlabel = \"S1\"\ntop = \"A1\"\nwire = \"W1\"\nlength = \"4 m\"\n",
+        );
+        text.push_str("[[extension]]\nname = \"+3\"\ndz = \"3 m\"\n");
+        text.push_str(
+            "[[body]]\npoints = [[\"-4 m\", \"0 m\", \"-30 m\"], [\"0 m\", \"0 m\", \"12 m\"]]\n",
+        );
+        let t = StructureType::parse(Path::new("f.olss"), &text).unwrap();
+        let none = InsulatorLibrary::default();
+        let placed = t
+            .place_strings([0.0, 0.0, 500.0], 0.0, None, &none)
+            .unwrap();
+        assert_eq!(placed.points[0].position[2], 530.0);
+        assert_eq!(placed.wires[0].position[2], 526.0);
+        // An extension lengthens the body: the arms rise, the feet stay.
+        let placed = t
+            .place_strings([0.0, 0.0, 500.0], 0.0, Some("+3"), &none)
+            .unwrap();
+        assert_eq!(placed.points[0].position[2], 533.0);
+        let body = t.stick(Some("+3")).unwrap();
+        assert_eq!((body[0][0][2], body[0][1][2]), (0.0, 45.0));
+        // Generated sticks: the mast from the ground to the top.
+        let mut sticks = t.clone();
+        sticks.body.clear();
+        assert_eq!(
+            sticks.stick(None).unwrap()[0],
+            vec![[0.0; 3], [0.0, 0.0, 42.0]]
+        );
+        // Point positions for the pole check: above the feet.
+        assert_eq!(t.point_local("A1", None), Some([-9.0, 0.0, 30.0]));
     }
 
     #[test]

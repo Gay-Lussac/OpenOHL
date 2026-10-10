@@ -83,6 +83,7 @@ pub fn ui(
                         "extension",
                         s.extension.clone().unwrap_or_else(|| "—".into()),
                     ),
+                    ("height adjustment", format!("{:.2} m", s.height_adjust)),
                     ("easting", format!("{:.3} m", s.position[0])),
                     ("northing", format!("{:.3} m", s.position[1])),
                     ("ground", format!("{:.3} m", s.position[2])),

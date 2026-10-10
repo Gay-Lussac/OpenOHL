@@ -48,6 +48,8 @@ pub struct StructureForm {
     pub structure_type: Option<String>,
     /// Height extension of the type.
     pub extension: Option<String>,
+    /// Height of the type's feet above the ground (foundations), metres.
+    pub height_adjust: f64,
     /// Orientation of the local x axis, degrees from east.
     pub orientation_deg: f64,
     /// Position of the base.
@@ -758,6 +760,7 @@ impl StructureForm {
             id,
             structure_type,
             extension: None,
+            height_adjust: 0.0,
             orientation_deg: nearest.map_or(0.0, |s| s.orientation_deg),
             position: at,
             on_ground: model.ground_at(at[0], at[1]).is_some(),
@@ -772,6 +775,7 @@ impl StructureForm {
             id: id.to_owned(),
             structure_type: s.structure_type.clone(),
             extension: s.extension.clone(),
+            height_adjust: s.height_adjust,
             orientation_deg: s.orientation_deg,
             position: s.position,
             on_ground: false,
@@ -791,6 +795,7 @@ impl StructureForm {
                 orientation_deg: self.orientation_deg,
                 structure_type: self.structure_type.clone(),
                 extension: self.extension.clone(),
+                height_adjust: self.height_adjust,
                 ..Structure::new(id.clone(), self.position)
             }
         } else {
@@ -822,6 +827,7 @@ impl StructureForm {
             }
             s.structure_type = self.structure_type.clone();
             s.extension = self.extension.clone();
+            s.height_adjust = self.height_adjust;
             s
         };
         let what = if self.new {
@@ -1600,6 +1606,12 @@ fn structure_ui(ui: &mut egui::Ui, f: &mut StructureForm, model: &Model) {
                         ui.selectable_value(&mut f.extension, Some(e.clone()), e);
                     }
                 });
+            ui.end_row();
+        }
+        if f.structure_type.is_some() {
+            ui.label("height adjustment");
+            value(ui, &mut f.height_adjust, 0.01, " m")
+                .on_hover_text("Height of the type's feet above the ground, e.g. for foundations");
             ui.end_row();
         }
         ui.label("orientation");

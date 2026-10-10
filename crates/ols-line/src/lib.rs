@@ -265,6 +265,10 @@ pub struct Structure {
     /// Height extension of the structure type.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<String>,
+    /// Typed structures: how far the type's feet stand above the ground at
+    /// `position` (foundations), metres; may be negative.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub height_adjust: f64,
     /// Points on the structure where strings hang ([`assembly`]); for typed
     /// structures they replace the type's with the same label.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -305,6 +309,8 @@ struct StructureFile {
     structure_type: Option<String>,
     #[serde(default)]
     extension: Option<String>,
+    #[serde(default)]
+    height_adjust: f64,
     #[serde(default)]
     points: Vec<StructurePoint>,
     #[serde(default)]
@@ -354,6 +360,7 @@ impl From<StructureFile> for Structure {
             orientation_deg: f.orientation_deg,
             structure_type: f.structure_type,
             extension: f.extension,
+            height_adjust: f.height_adjust,
             points,
             strings,
             wires,
@@ -977,9 +984,12 @@ impl Line {
                 return invalid(format!("duplicate structure id {}", s.id));
             }
             let finite = |p: &Point| p.iter().all(|x| x.is_finite());
-            if !finite(&s.position) || !s.orientation_deg.is_finite() {
+            if !finite(&s.position)
+                || !s.orientation_deg.is_finite()
+                || !s.height_adjust.is_finite()
+            {
                 return invalid(format!(
-                    "structure {}: position or orientation not a number",
+                    "structure {}: position, orientation or height adjustment not a number",
                     s.id
                 ));
             }

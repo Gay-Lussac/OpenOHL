@@ -241,6 +241,11 @@
             <xs:attribute name="orientation_deg" type="xs:double" default="0"/>
             <xs:attribute name="type" type="xs:string"/>
             <xs:attribute name="extension" type="xs:string"/>
+            <xs:attribute name="height_adjust" type="xs:double" default="0">
+              <xs:annotation>
+                <xs:documentation>Typed structures: height of the type's feet above the ground at x y z (foundations), metres.</xs:documentation>
+              </xs:annotation>
+            </xs:attribute>
           </xs:complexType>
         </xs:element>
 

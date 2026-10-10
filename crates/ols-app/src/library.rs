@@ -228,7 +228,16 @@ const STRUCTURE: &[Field] = &[
     ),
     ("name", "\"New type\"", "display name"),
     ("kind", "\"lattice\"", "lattice, pole, portal or other"),
-    ("height", "\"40 m\"", "mast top for the stick drawing"),
+    (
+        "height",
+        "\"40 m\"",
+        "mast top for the stick drawing (local z)",
+    ),
+    (
+        "foot",
+        "\"-30 m\"",
+        "level of the feet in local z (default 0: z = 0 is the ground)",
+    ),
     ("source", "\"\"", "where the values come from"),
 ];
 
@@ -256,7 +265,11 @@ const ATTACHMENT: &[Field] = &[
 
 const EXTENSION: &[Field] = &[
     ("name", "\"+3\"", "name of the extension"),
-    ("dz", "\"3 m\"", "height added to every attachment point"),
+    (
+        "dz",
+        "\"3 m\"",
+        "body lengthened below z = 0: everything above the feet rises",
+    ),
 ];
 
 const BODY: &[Field] = &[(

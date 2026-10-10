@@ -151,6 +151,21 @@ Guiding principles:
 
 **Deliverable:** beta release usable on real projects (with independent verification).
 
+## Pylons — structures in their own axes, three levels of detail
+*Before 1.0, agreed with the project owner (2026-10-10). A pylon is defined
+in its own axes (x right of the line, y ahead, z up; 0;0 at the centre)
+and placed in the line by a position, an angle and a height adjustment.*
+
+- [ ] Placement: the type's z = 0 may be any reference level (usually under the lowest crossarm); `foot` gives the level of its feet, so the placed pylon stands with its feet on the ground, raised by the structure's `height_adjust` (foundations); extensions lengthen the body below the reference level
+- [ ] One file per pylon (`.olss`): joints and members in the type itself (sticks), level 3 adds sections, materials, supports and member kinds (truss / frame / cable) to the same members; `.olsfe` models still read. The level is **derived from the content** (1 stick figure → 2 lattice outline as soon as there are members → 3 as soon as every member has a section and material and there are supports); the marker follows
+- [ ] String points as joints or as a fraction along a member, so strings follow the members
+- [ ] Symmetry (optional): members and joints copied about x, y or both
+- [ ] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save
+- [ ] Level 2 and 3 drawn with their members in 3D and on plan & profile sheets
+- [ ] PLS-TOWER geometry from PLS XML (joints, members, sections) into levels 2 and 3 (local importer)
+- [ ] Level 2 from LiDAR: a plugin (later); the classes holding pylons chosen by the user from all classes, as in the display options
+- [ ] Clearances to the structure body: none for level 1 (LiDAR points only, separate topic); levels 2 and 3 computed — **the tests are to be defined with the project owner**
+
 ## Phase 6 — Ecosystem & 1.0
 - [ ] Stable plugin SDK (semantic versioning, compatibility guarantees)
 - [ ] Plugin registry / index
