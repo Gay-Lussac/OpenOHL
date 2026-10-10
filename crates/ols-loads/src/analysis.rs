@@ -3,7 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! The structure checks by analysis ([`ols_structures_fe`]): a structure
-//! type's finite-element model (`model = "….olsfe"`) and its pole (`pole =
+//! type's finite-element model (its members, when it is a full design, or
+//! a separate `model = "….olsfe"`) and its pole (`pole =
 //! "id"`, a `.olsp` file next to the type), loaded once per usage run and
 //! solved with each load case's factored attachment loads.
 
@@ -44,6 +45,11 @@ impl Analyses {
             if let Some(file) = &t.model {
                 out.models
                     .insert(t.id.clone(), Model::load(&dir.join(file)));
+            } else if t.detail() == ols_structures::Detail::Design
+                && let Some(path) = types.path(&t.id)
+            {
+                // A full design in the type's own file.
+                out.models.insert(t.id.clone(), Model::load(path));
             }
             if let Some(id) = &t.pole {
                 let poles = pole_dirs

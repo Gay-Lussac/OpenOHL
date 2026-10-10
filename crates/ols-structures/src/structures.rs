@@ -186,22 +186,25 @@ pub enum StructureKind {
     Other,
 }
 
-/// How much of a structure its file describes. Checks that depend on the
+/// How much of a structure its file describes, worked out from what the
+/// file holds ([`StructureType::detail`]). Checks that depend on the
 /// structure's shape (distances to the structure body, structure analysis)
 /// behave differently at each level: when designing such a check, decide
 /// (with the project owner) what it does for each of the three.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Deserialize)]
 #[serde(try_from = "u8")]
 pub enum Detail {
-    /// 1 — a stick figure: a mast and crossarms to the attachment points
-    /// (or a few `[[body]]` lines). Enough to place the wires and draw.
+    /// 1 — a stick figure: a mast and crossarms to the points where
+    /// strings hang. Enough to place the wires and draw.
     #[default]
     Stick = 1,
-    /// 2 — the outline of the full pylon: `[[body]]` sticks drawing its
-    /// outside, diagonals allowed; for distance checks to the structure.
+    /// 2 — the pylon's members as sticks (`[[node]]` joints and
+    /// `[[member]]`s without sections, or `[[body]]` polylines); for
+    /// drawings and distances to the structure.
     Outline = 2,
-    /// 3 — a full design: a finite-element model (`model`) with every
-    /// design element needed to build it; for structure analysis.
+    /// 3 — a full design: every member with its section, the supports
+    /// (or a separate finite-element model, `model`); for structure
+    /// analysis.
     Design = 3,
 }
 
@@ -293,8 +296,78 @@ pub struct InlineString {
 pub struct TypePoint {
     /// Label, unique among the type's points and wire points.
     pub label: String,
+    /// Position in local axes (filled from `node` or `member` when they
+    /// are given instead).
+    #[serde(default)]
+    pub point: Option<[Length; 3]>,
+    /// Or: at a joint of the pylon.
+    #[serde(default)]
+    pub node: Option<String>,
+    /// Or: along a member of the pylon…
+    #[serde(default)]
+    pub member: Option<String>,
+    /// …at this fraction from its first joint (0–1).
+    #[serde(default)]
+    pub at: Option<f64>,
+}
+
+impl TypePoint {
+    /// Its position in local axes (once the type is read).
+    pub fn position(&self) -> [Length; 3] {
+        self.point.unwrap_or([Length::ZERO; 3])
+    }
+}
+
+/// A joint of the pylon (levels 2 and 3), in local axes. The fields for
+/// the finite-element check (`support`, `spring`, `attachment`) are read
+/// by `ols_structures_fe`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeNode {
+    /// Id, unique among the joints.
+    pub id: String,
     /// Position in local axes.
     pub point: [Length; 3],
+    /// Support: `"fixed"`, `"pinned"` or the fixed directions.
+    #[serde(default)]
+    pub support: Option<toml::Value>,
+    /// Spring stiffnesses at a support.
+    #[serde(default)]
+    pub spring: Option<toml::Value>,
+    /// The point of the type it carries (also set by a point's `node`).
+    #[serde(default)]
+    pub attachment: Option<toml::Value>,
+}
+
+/// A member of the pylon between two joints (levels 2 and 3). Without a
+/// section it is only a stick; the finite-element fields (`kind`,
+/// `reference`, `roll`, `k`, `pretension`) are read by
+/// `ols_structures_fe`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeMember {
+    /// Id, unique among the members.
+    pub id: String,
+    /// Its two joints.
+    pub nodes: [String; 2],
+    /// Section (a `[[section]]` id): needed for a full design.
+    #[serde(default)]
+    pub section: Option<String>,
+    /// `truss` (default), `frame` or `cable`.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Frame: a direction in the local x–y plane.
+    #[serde(default)]
+    pub reference: Option<toml::Value>,
+    /// Frame: turns the local y, z about x.
+    #[serde(default)]
+    pub roll: Option<toml::Value>,
+    /// Effective length factor (buckling).
+    #[serde(default)]
+    pub k: Option<f64>,
+    /// Cable: pretension.
+    #[serde(default)]
+    pub pretension: Option<toml::Value>,
 }
 
 /// A string of a structure type (version 2): from its top (a point, or a
@@ -592,10 +665,10 @@ pub struct StructureType {
     pub name: String,
     /// Family.
     pub kind: StructureKind,
-    /// How much of the structure the file describes ([`Detail`]: 1 a stick
-    /// figure, 2 its outline, 3 a full design); default 1.
-    #[serde(default)]
-    pub detail: Detail,
+    /// Older files state the level; it now follows from the content
+    /// ([`StructureType::detail`]).
+    #[serde(default, rename = "detail")]
+    stated_detail: Option<toml::Value>,
     /// Height of the mast top (local z) for the stick drawing (default:
     /// the highest attachment point).
     #[serde(default)]
@@ -625,14 +698,33 @@ pub struct StructureType {
     /// drawn from the attachment points.
     #[serde(rename = "body", default)]
     pub body: Vec<Outline>,
+    /// Joints of the pylon (levels 2 and 3).
+    #[serde(rename = "node", default)]
+    pub nodes: Vec<TypeNode>,
+    /// Members of the pylon (levels 2 and 3).
+    #[serde(rename = "member", default)]
+    pub members: Vec<TypeMember>,
+    /// Finite-element check: analysis options (read by
+    /// `ols_structures_fe`).
+    #[serde(default)]
+    pub analysis: Option<toml::Table>,
+    /// Materials of the sections (read by `ols_structures_fe`).
+    #[serde(rename = "material", default)]
+    pub materials: Vec<toml::Table>,
+    /// Member sections (read by `ols_structures_fe`).
+    #[serde(rename = "section", default)]
+    pub sections: Vec<toml::Table>,
+    /// The model's own load case (read by `ols_structures_fe`).
+    #[serde(rename = "load", default)]
+    pub loads: Vec<toml::Table>,
     /// What it can carry (structure checks).
     #[serde(default)]
     pub capacity: Option<Capacity>,
     /// The wind on the structure itself (structure loads).
     #[serde(default)]
     pub wind: Option<StructureWind>,
-    /// Structure model for the finite-element check (`.olsfe` file,
-    /// relative to this file's folder).
+    /// A separate structure model for the finite-element check (`.olsfe`
+    /// file, relative to this file's folder) instead of the members here.
     #[serde(default)]
     pub model: Option<String>,
     /// Pole for the pole check (id of a `.olsp` file in this file's
@@ -680,6 +772,52 @@ impl LibraryItem for StructureType {
         &self.id
     }
 
+    /// Points at a joint or along a member get their position.
+    fn prepare(&mut self) -> Result<(), String> {
+        let joint = |id: &str| -> Result<[f64; 3], String> {
+            self.nodes
+                .iter()
+                .find(|n| n.id == id)
+                .map(|n| n.point.map(|v| v.si()))
+                .ok_or_else(|| format!("no joint \"{id}\""))
+        };
+        let mut placed = Vec::new();
+        for p in &self.points {
+            let bad = |m: String| format!("point {}: {m}", p.label);
+            let at = match (&p.point, &p.node, &p.member, p.at) {
+                (Some(_), None, None, None) => None,
+                (None, Some(n), None, None) => Some(joint(n).map_err(bad)?),
+                (None, None, Some(m), Some(f)) => {
+                    let member = self
+                        .members
+                        .iter()
+                        .find(|x| &x.id == m)
+                        .ok_or_else(|| bad(format!("no member \"{m}\"")))?;
+                    if !(0.0..=1.0).contains(&f) {
+                        return Err(bad("at must be between 0 and 1".into()));
+                    }
+                    let (a, b) = (
+                        joint(&member.nodes[0]).map_err(bad)?,
+                        joint(&member.nodes[1]).map_err(bad)?,
+                    );
+                    Some([0, 1, 2].map(|k| a[k] + f * (b[k] - a[k])))
+                }
+                _ => {
+                    return Err(bad(
+                        "give its point, a node, or a member and at (one of them)".into(),
+                    ));
+                }
+            };
+            placed.push(at);
+        }
+        for (p, at) in self.points.iter_mut().zip(placed) {
+            if let Some(at) = at {
+                p.point = Some(at.map(Length::from_meters));
+            }
+        }
+        Ok(())
+    }
+
     fn check(&self) -> Result<(), String> {
         ols_core::files::check_header(
             self.format.as_deref(),
@@ -688,22 +826,7 @@ impl LibraryItem for StructureType {
             STRUCTURE_FILE_VERSION,
             "structure",
         )?;
-        match self.detail {
-            Detail::Stick => {}
-            Detail::Outline if self.body.is_empty() => {
-                return Err(
-                    "detail 2 (outline): give the pylon's outline as [[body]] polylines".into(),
-                );
-            }
-            Detail::Outline => {}
-            Detail::Design if self.model.is_none() => {
-                return Err(
-                    "detail 3 (full design): name its finite-element model (model = \"….olsfe\")"
-                        .into(),
-                );
-            }
-            Detail::Design => {}
-        }
+        self.check_members()?;
         let mut seen = std::collections::BTreeSet::new();
         for a in &self.attachments {
             if !seen.insert((a.set, a.phase)) {
@@ -712,7 +835,7 @@ impl LibraryItem for StructureType {
                     a.set, a.phase
                 ));
             }
-            if a.point[2].si() < 0.0 {
+            if a.point[2].si() < self.foot_level() {
                 return Err(format!(
                     "attachment set {} phase {} is below ground",
                     a.set, a.phase
@@ -1071,7 +1194,7 @@ impl StructureType {
         self.points
             .iter()
             .find(|p| p.label == label)
-            .map(|p| p.point)
+            .map(TypePoint::position)
             .or_else(|| {
                 self.attachments
                     .iter()
@@ -1099,7 +1222,7 @@ impl StructureType {
         let mut local: std::collections::BTreeMap<&str, [f64; 3]> = self
             .points
             .iter()
-            .map(|p| (p.label.as_str(), lift(&p.point)))
+            .map(|p| (p.label.as_str(), lift(&p.position())))
             .chain(
                 self.wires
                     .iter()
@@ -1230,6 +1353,73 @@ impl StructureType {
         })
     }
 
+    /// How much of the structure the file describes, from what it holds:
+    /// a full design when every member has a section and a joint is
+    /// supported (or a separate `model` is named), the pylon's sticks when
+    /// it has members or `[[body]]` polylines, else a stick figure.
+    pub fn detail(&self) -> Detail {
+        if self.model.is_some() || self.missing_for_design().is_empty() {
+            Detail::Design
+        } else if !self.members.is_empty() || !self.body.is_empty() {
+            Detail::Outline
+        } else {
+            Detail::Stick
+        }
+    }
+
+    /// What the members still lack for a full design (empty: nothing).
+    pub fn missing_for_design(&self) -> Vec<String> {
+        if self.members.is_empty() {
+            return vec!["no members".into()];
+        }
+        let mut out = Vec::new();
+        let bare = self.members.iter().filter(|m| m.section.is_none()).count();
+        if bare > 0 {
+            out.push(format!("{bare} member(s) without a section"));
+        }
+        if !self.nodes.iter().any(|n| n.support.is_some()) {
+            out.push("no supported joint".into());
+        }
+        out
+    }
+
+    /// Joints, members and the points on them: ids unique, members between
+    /// two different joints, sections given.
+    fn check_members(&self) -> Result<(), String> {
+        let mut joints = std::collections::BTreeSet::new();
+        for n in &self.nodes {
+            if n.id.is_empty() || !joints.insert(n.id.as_str()) {
+                return Err(format!("joint \"{}\": empty or given twice", n.id));
+            }
+        }
+        let sections: std::collections::BTreeSet<&str> = self
+            .sections
+            .iter()
+            .filter_map(|s| s.get("id")?.as_str())
+            .collect();
+        let mut members = std::collections::BTreeSet::new();
+        for m in &self.members {
+            let bad = |x: String| Err(format!("member {}: {x}", m.id));
+            if m.id.is_empty() || !members.insert(m.id.as_str()) {
+                return bad("empty id or given twice".into());
+            }
+            for n in &m.nodes {
+                if !joints.contains(n.as_str()) {
+                    return bad(format!("no joint \"{n}\""));
+                }
+            }
+            if m.nodes[0] == m.nodes[1] {
+                return bad("both ends at the same joint".into());
+            }
+            if let Some(s) = &m.section
+                && !sections.contains(s.as_str())
+            {
+                return bad(format!("no section \"{s}\""));
+            }
+        }
+        Ok(())
+    }
+
     /// The level of the feet in local z ([`StructureType::foot`], default
     /// 0).
     pub fn foot_level(&self) -> f64 {
@@ -1251,37 +1441,35 @@ impl StructureType {
         Ok(dz - self.foot_level())
     }
 
-    /// The stick drawing above the feet: the `body` polylines (points
-    /// above the feet raised by the extension), or a mast from the centre
-    /// point to the top and a crossarm from the mast to every attachment
-    /// point.
+    /// The stick drawing above the feet: the members and the `body`
+    /// polylines (points above the feet raised by the extension), or a
+    /// mast from the centre point to the top and a crossarm from the mast
+    /// to every attachment point.
     pub fn stick(&self, extension: Option<&str>) -> Result<Vec<Vec<[f64; 3]>>, String> {
         let dz = self.lift(extension)?;
-        if !self.body.is_empty() {
+        if !self.body.is_empty() || !self.members.is_empty() {
             let foot = self.foot_level();
+            let up = |p: &[Length; 3]| {
+                let z = p[2].si();
+                [
+                    p[0].si(),
+                    p[1].si(),
+                    if z > foot { z + dz } else { z - foot },
+                ]
+            };
+            let joint = |id: &str| self.nodes.iter().find(|n| n.id == id).map(|n| up(&n.point));
             return Ok(self
-                .body
+                .members
                 .iter()
-                .map(|o| {
-                    o.points
-                        .iter()
-                        .map(|p| {
-                            let z = p[2].si();
-                            [
-                                p[0].si(),
-                                p[1].si(),
-                                if z > foot { z + dz } else { z - foot },
-                            ]
-                        })
-                        .collect()
-                })
+                .filter_map(|m| Some(vec![joint(&m.nodes[0])?, joint(&m.nodes[1])?]))
+                .chain(self.body.iter().map(|o| o.points.iter().map(up).collect()))
                 .collect());
         }
         let points: Vec<[f64; 3]> = self
             .attachments
             .iter()
             .map(|a| a.point)
-            .chain(self.points.iter().map(|p| p.point))
+            .chain(self.points.iter().map(TypePoint::position))
             .map(|p| [p[0].si(), p[1].si(), p[2].si() + dz])
             .collect();
         let highest = points.iter().map(|p| p[2]).fold(0.0, f64::max);
@@ -1365,26 +1553,82 @@ mod tests {
 
     #[test]
     fn detail_levels() {
-        let base = "id = \"t\"\nname = \"t\"\nkind = \"lattice\"\n";
-        let parse = |extra: &str| -> Result<Detail, String> {
-            let t: StructureType =
-                toml::from_str(&format!("{base}{extra}")).map_err(|e| e.to_string())?;
-            crate::LibraryItem::check(&t).map(|_| t.detail)
+        let parse = |body: &str| {
+            let text = format!("id = \"T\"\nname = \"t\"\nkind = \"lattice\"\n{body}");
+            StructureType::parse(Path::new("t.olss"), &text).map(|t| t.detail())
         };
-        // Default: a stick figure, as every file written before.
         assert_eq!(parse("").unwrap(), Detail::Stick);
-        assert_eq!(parse("detail = 1\n").unwrap(), Detail::Stick);
-        // 2 needs the outline, 3 the finite-element model.
-        assert!(parse("detail = 2\n").unwrap_err().contains("[[body]]"));
-        let outline = "detail = 2\n[[body]]\npoints = [[\"0 m\", \"0 m\", \"0 m\"], [\"0 m\", \"0 m\", \"30 m\"]]\n";
+        // A level stated by an older file is read, but the content decides.
+        assert_eq!(parse("detail = 3\n").unwrap(), Detail::Stick);
+        let outline =
+            "[[body]]\npoints = [[\"0 m\", \"0 m\", \"0 m\"], [\"0 m\", \"0 m\", \"30 m\"]]\n";
         assert_eq!(parse(outline).unwrap(), Detail::Outline);
-        assert!(parse("detail = 3\n").unwrap_err().contains("model"));
+        assert_eq!(parse("model = \"t.olsfe\"\n").unwrap(), Detail::Design);
+        // Joints and members: sticks; with sections and a support: a design.
+        let joints = "[[node]]\nid = \"B\"\npoint = [\"0 m\", \"0 m\", \"0 m\"]\n\
+                      [[node]]\nid = \"T\"\npoint = [\"0 m\", \"0 m\", \"30 m\"]\n";
+        let member = "[[member]]\nid = \"M\"\nnodes = [\"B\", \"T\"]\n";
         assert_eq!(
-            parse("detail = 3\nmodel = \"t.olsfe\"\n").unwrap(),
-            Detail::Design
+            parse(&format!("{joints}{member}")).unwrap(),
+            Detail::Outline
         );
-        assert!(parse("detail = 4\n").is_err());
+        let section = "[[section]]\nid = \"L\"\nmaterial = \"steel\"\narea = \"10 cm2\"\n";
+        let unsupported = format!("{joints}{section}{member}section = \"L\"\n");
+        let t = StructureType::parse(
+            Path::new("t.olss"),
+            &format!("id = \"T\"\nname = \"t\"\nkind = \"lattice\"\n{unsupported}"),
+        )
+        .unwrap();
+        assert_eq!(t.detail(), Detail::Outline);
+        assert_eq!(
+            t.missing_for_design(),
+            vec!["no supported joint".to_string()]
+        );
+        let design = unsupported.replacen(
+            "point = [\"0 m\", \"0 m\", \"0 m\"]\n",
+            "point = [\"0 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n",
+            1,
+        );
+        assert_eq!(parse(&design).unwrap(), Detail::Design);
+        // Members are drawn as sticks.
+        assert_eq!(
+            t.stick(None).unwrap(),
+            vec![vec![[0.0; 3], [0.0, 0.0, 30.0]]]
+        );
+        // Unknown joint or section, a member on one joint: refused.
+        for bad in [
+            "[[member]]\nid = \"M\"\nnodes = [\"B\", \"X\"]\n",
+            "[[member]]\nid = \"M\"\nnodes = [\"B\", \"B\"]\n",
+            "[[member]]\nid = \"M\"\nnodes = [\"B\", \"T\"]\nsection = \"Q\"\n",
+        ] {
+            assert!(parse(&format!("{joints}{bad}")).is_err(), "{bad}");
+        }
         assert_eq!(Detail::Outline.level(), 2);
+    }
+
+    /// Points at a joint or along a member follow it.
+    #[test]
+    fn points_on_joints_and_members() {
+        let text = "id = \"T\"\nname = \"t\"\nkind = \"lattice\"\n\
+            [[node]]\nid = \"N1\"\npoint = [\"0 m\", \"0 m\", \"30 m\"]\n\
+            [[node]]\nid = \"N2\"\npoint = [\"-10 m\", \"0 m\", \"30 m\"]\n\
+            [[member]]\nid = \"arm\"\nnodes = [\"N1\", \"N2\"]\n\
+            [[point]]\nlabel = \"tip\"\nnode = \"N2\"\n\
+            [[point]]\nlabel = \"mid\"\nmember = \"arm\"\nat = 0.25\n";
+        let t = StructureType::parse(Path::new("t.olss"), text).unwrap();
+        assert_eq!(t.point_local("tip", None), Some([-10.0, 0.0, 30.0]));
+        assert_eq!(t.point_local("mid", None), Some([-2.5, 0.0, 30.0]));
+        for bad in [
+            "[[point]]\nlabel = \"x\"\nnode = \"N9\"\n",
+            "[[point]]\nlabel = \"x\"\nmember = \"arm\"\nat = 1.5\n",
+            "[[point]]\nlabel = \"x\"\nnode = \"N1\"\npoint = [\"0 m\", \"0 m\", \"1 m\"]\n",
+            "[[point]]\nlabel = \"x\"\n",
+        ] {
+            assert!(
+                StructureType::parse(Path::new("t.olss"), &format!("{text}{bad}")).is_err(),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

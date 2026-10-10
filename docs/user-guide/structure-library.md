@@ -17,7 +17,6 @@ version = 2
 id = "DL380-tangent"              # letters, digits, - _ .
 name = "380 kV double circuit, tangent"
 kind = "lattice"                  # lattice | pole | portal | other
-detail = 1                        # 1 stick figure (default) | 2 outline | 3 full design
 source = "Drawing 12-345 rev B"
 
 [[point]]                            # where strings hang, local axes
@@ -60,8 +59,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | Field | Required | Meaning |
 |---|---|---|
 | `id`, `name`, `kind` | yes | Identity and family. |
-| `detail` | no | How much of the structure the file describes (below): 1 a stick figure (default), 2 the outline of the pylon, 3 a full design. |
-| `point` | no | Points where strings hang: `label`, `point` (local). Labels are unique among points and wire points. |
+| `point` | no | Points where strings hang: `label` and `point` (local), or `node` (at a joint), or `member` and `at` (along a member, 0–1 from its first joint) — then it moves with the pylon. Labels are unique among points and wire points. |
 | `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below), optional `weight` (a counterweight hanging at it). |
 | `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `compression` (what it may take; none: tension only), `strain`, `side` (a strain string's span: ahead or back). |
 | `attachment` | no | Files of version 1: attachment points (`set`, `phase`, `point`, `insulator` or `string`, `side`), read as before (below). |
@@ -70,7 +68,9 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest point) and a crossarm from the mast to every point. |
 | `height` | no | Mast top (local z) for the generated stick drawing. |
 | `capacity` | no | What the type can carry, for the structure checks (below). |
-| `model` | no | Structure model (`.olsfe`, path relative to this file) for the finite-element check — see [Structure analysis](structure-analysis.md). |
+| `node`, `member` | no | The pylon's joints and members (levels 2 and 3, below). |
+| `section`, `material`, `analysis`, `load` | no | A full design's sections, materials, analysis options and own loads — see [Structure analysis](structure-analysis.md). |
+| `model` | no | A separate structure model (`.olsfe`, path relative to this file) for the finite-element check, instead of the members here. |
 | `pole` | no | Pole id (a `.olsp` file in the same folder) for the pole check — see [Structure analysis](structure-analysis.md). |
 
 ### Points, strings and wire points
@@ -83,13 +83,35 @@ A wire point without a `point` is placed from its strings (their tops placed fir
 
 ### Detail levels
 
-A structure file describes its structure at one of three levels (`detail`):
+A structure file describes its structure at one of three levels. The level is **worked out from what the file holds** (a `detail = …` in older files is read and ignored) and shown in the structure's properties; it rises as the pylon is filled in:
 
 | Level | What the file holds | Used for |
 |---|---|---|
-| **1 — stick figure** (default) | A mast and crossarms to the attachment points, generated or a few `[[body]]` lines. | Placing the wires, drawings, the 3D view. Every file written before the level existed is level 1. |
-| **2 — outline** | The outside of the full pylon as `[[body]]` sticks, diagonals allowed. Required: at least one `[[body]]` polyline. | Distance checks to the structure (more realistic than a stick figure). |
-| **3 — full design** | A finite-element model (`model = "….olsfe"`) holding every design element needed to build the structure. Required: `model`. | Structure analysis (finite elements) and fabrication. |
+| **1 — stick figure** | Only the points, strings and wire points: a mast from the centre to the top and crossarms to the points are drawn. | Placing the wires, drawings, the 3D view. |
+| **2 — sticks of the pylon** | Joints (`[[node]]`) and members (`[[member]]`) without sections, or `[[body]]` polylines. | Drawings and the 3D view with the pylon's members; distances to the structure (planned). |
+| **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint — or a separate `model = "….olsfe"`. | Structure analysis (finite elements) and fabrication. |
+
+```toml
+[[node]]                             # a joint, local axes
+id = "B1"
+point = ["-2.5 m", "-2.5 m", "-30 m"]
+support = "pinned"                   # level 3: where the pylon is held
+
+[[node]]
+id = "T1"
+point = ["-6 m", "0 m", "0 m"]
+
+[[member]]
+id = "arm1"
+nodes = ["B1", "T1"]
+section = "L90x9"                    # level 3; without it: a stick
+
+[[point]]
+label = "A1"
+node = "T1"                          # at a joint (or member = "arm1", at = 0.5)
+```
+
+The joints and members take the same fields as in a [structure model](structure-analysis.md#structure-models-olsfe); a point on a joint carries its loads in the finite-element check.
 
 Checks that depend on the structure's shape — distances from the wires to the structure body, structure analysis, insulator swing to the structure — behave differently at each level; each such check says in its documentation what it does for levels 1, 2 and 3. The structure's level is shown in its properties.
 

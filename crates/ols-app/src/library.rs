@@ -263,6 +263,93 @@ const ATTACHMENT: &[Field] = &[
     ),
 ];
 
+const POINT: &[Field] = &[
+    (
+        "label",
+        "\"A1\"",
+        "label, unique among points and wire points",
+    ),
+    (
+        "point",
+        "[\"0 m\", \"0 m\", \"30 m\"]",
+        "position: across (right looking ahead), along (ahead), up",
+    ),
+    ("node", "\"\"", "or: at this joint"),
+    ("member", "\"\"", "or: along this member…"),
+    ("at", "0.5", "…at this fraction from its first joint"),
+];
+
+const WIRE: &[Field] = &[
+    (
+        "label",
+        "\"W1\"",
+        "label, unique among points and wire points",
+    ),
+    ("set", "1", "a wire is clamped here"),
+    (
+        "point",
+        "[\"0 m\", \"0 m\", \"26 m\"]",
+        "position (default: from its strings)",
+    ),
+    ("weight", "\"0 N\"", "a counterweight hanging at it"),
+];
+
+const STRING: &[Field] = &[
+    ("label", "\"S1\"", "label"),
+    ("top", "\"A1\"", "its top: a point or a wire point"),
+    ("wire", "\"W1\"", "its wire point"),
+    ("insulator", "\"\"", "insulator assembly id (or a length)"),
+    ("length", "\"4 m\"", "length"),
+    ("weight", "\"500 N\"", "weight"),
+    (
+        "compression",
+        "\"0 N\"",
+        "compression it may take (none: tension only)",
+    ),
+    (
+        "strain",
+        "true",
+        "a strain string, lined up with its conductor",
+    ),
+    ("side", "\"ahead\"", "strain: ahead or back"),
+];
+
+const NODE: &[Field] = &[
+    ("id", "\"N1\"", "joint id"),
+    (
+        "point",
+        "[\"0 m\", \"0 m\", \"0 m\"]",
+        "position in local axes",
+    ),
+    (
+        "support",
+        "\"pinned\"",
+        "fixed, pinned or the directions held",
+    ),
+];
+
+const MEMBER: &[Field] = &[
+    ("id", "\"M1\"", "member id"),
+    ("nodes", "[\"N1\", \"N2\"]", "its two joints"),
+    ("section", "\"\"", "section id (a full design)"),
+    ("kind", "\"truss\"", "truss, frame or cable"),
+    ("k", "1.0", "effective length factor"),
+];
+
+const MATERIAL: &[Field] = &[
+    ("id", "\"steel\"", "material id"),
+    ("elasticity", "\"210 GPa\"", "modulus of elasticity"),
+    ("density", "\"7850 kg/m3\"", "density"),
+    ("yield", "\"355 MPa\"", "yield strength"),
+];
+
+const SECTION: &[Field] = &[
+    ("id", "\"L90x9\"", "section id"),
+    ("material", "\"steel\"", "material id"),
+    ("area", "\"15 cm2\"", "area"),
+    ("i_min", "\"50 cm4\"", "smallest second moment (buckling)"),
+];
+
 const EXTENSION: &[Field] = &[
     ("name", "\"+3\"", "name of the extension"),
     (
@@ -334,6 +421,13 @@ impl LibraryKind {
             (LibraryKind::StructureTypes, "attachment") => ATTACHMENT,
             (LibraryKind::StructureTypes, "extension") => EXTENSION,
             (LibraryKind::StructureTypes, "body") => BODY,
+            (LibraryKind::StructureTypes, "point") => POINT,
+            (LibraryKind::StructureTypes, "wire") => WIRE,
+            (LibraryKind::StructureTypes, "string") => STRING,
+            (LibraryKind::StructureTypes, "node") => NODE,
+            (LibraryKind::StructureTypes, "member") => MEMBER,
+            (LibraryKind::StructureTypes, "material") => MATERIAL,
+            (LibraryKind::StructureTypes, "section") => SECTION,
             _ => &[],
         }
     }
@@ -341,7 +435,18 @@ impl LibraryKind {
     /// Arrays of tables a table at `context` can get.
     fn arrays(self, context: &str) -> &'static [&'static str] {
         match (self, context) {
-            (LibraryKind::StructureTypes, "") => &["attachment", "extension", "body"],
+            (LibraryKind::StructureTypes, "") => &[
+                "point",
+                "wire",
+                "string",
+                "extension",
+                "node",
+                "member",
+                "material",
+                "section",
+                "body",
+                "attachment",
+            ],
             _ => &[],
         }
     }
@@ -1568,7 +1673,7 @@ fn table_ui(
     if only_known {
         return changed;
     }
-    // Arrays of tables (a structure type's attachments, extensions, body).
+    // Arrays of tables (a structure type's points, strings, joints, …).
     let mut arrays: Vec<String> = keys
         .iter()
         .filter(|k| matches!(table.get(k), Some(Item::ArrayOfTables(_))))
@@ -1603,7 +1708,10 @@ fn table_ui(
                             _ => format!(
                                 "{key} {}: {}",
                                 i + 1,
-                                t.get("name").and_then(Item::as_str).unwrap_or("")
+                                ["name", "label", "id"]
+                                    .into_iter()
+                                    .find_map(|k| t.get(k).and_then(Item::as_str))
+                                    .unwrap_or("")
                             ),
                         };
                         egui::CollapsingHeader::new(title)

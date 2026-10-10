@@ -614,10 +614,63 @@ impl Model {
         Ok(model)
     }
 
-    /// Reads a model file.
+    /// The model of a structure type file (`.olss`) that holds its
+    /// members: its `[[node]]`, `[[member]]`, `[[section]]`,
+    /// `[[material]]`, `[[load]]` and `[analysis]` tables. A `[[point]]` on
+    /// a joint (`node = "…"`) makes that joint carry the point's loads.
+    pub fn from_structure_type(text: &str) -> Result<Self, String> {
+        let file: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
+        let mut model = toml::Table::new();
+        for key in [
+            "name", "source", "analysis", "material", "section", "member", "load",
+        ] {
+            if let Some(v) = file.get(key) {
+                model.insert(key.into(), v.clone());
+            }
+        }
+        let mut nodes = file
+            .get("node")
+            .and_then(toml::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let points = file.get("point").and_then(toml::Value::as_array);
+        for p in points.into_iter().flatten() {
+            let (Some(label), Some(at)) = (
+                p.get("label").and_then(toml::Value::as_str),
+                p.get("node").and_then(toml::Value::as_str),
+            ) else {
+                continue;
+            };
+            let node = nodes
+                .iter_mut()
+                .filter_map(toml::Value::as_table_mut)
+                .find(|n| n.get("id").and_then(toml::Value::as_str) == Some(at))
+                .ok_or_else(|| format!("point {label}: no joint {at}"))?;
+            match node.get("attachment").and_then(toml::Value::as_str) {
+                Some(other) if other != label => {
+                    return Err(format!(
+                        "joint {at} carries points {other} and {label}: one point per joint"
+                    ));
+                }
+                _ => {
+                    node.insert("attachment".into(), label.into());
+                }
+            }
+        }
+        model.insert("node".into(), nodes.into());
+        Self::parse(&toml::to_string(&model).map_err(|e| e.to_string())?)
+    }
+
+    /// Reads a model file (`.olsfe`), or a structure type file (`.olss`)
+    /// holding its members.
     pub fn load(path: &Path) -> Result<Self, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
+        if path.extension().is_some_and(|e| e == "olss") {
+            Self::from_structure_type(&text)
+        } else {
+            Self::parse(&text)
+        }
+        .map_err(|e| format!("{}: {e}", path.display()))
     }
 
     /// Plausibility checks: positive properties, members of non-zero

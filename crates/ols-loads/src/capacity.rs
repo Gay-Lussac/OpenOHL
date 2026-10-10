@@ -25,8 +25,8 @@
 //!   V-string's legs) against the allowable loads times the load case's
 //!   strength factor; per direction, or added up with a linear
 //!   interaction. Usage: the largest over the attachments.
-//! - **Finite elements** (`fe`): the type's structure model (`model =
-//!   "….olsfe"`) solved with the factored attachment loads (and its
+//! - **Finite elements** (`fe`): the type's structure model (its members
+//!   when it is a full design, or `model = "….olsfe"`) solved with the factored attachment loads (and its
 //!   members' weight times the vertical factor); usage: the member using
 //!   most of its capacity times the strength factor
 //!   ([`ols_structures_fe`]).
@@ -318,7 +318,9 @@ pub fn usage(
                     let type_id = structure.and_then(|s| s.structure_type.clone());
                     let type_def = type_id.as_deref().and_then(|t| types.get(t));
                     let capacity = type_def.and_then(|t| t.capacity.as_ref());
-                    let analysed = type_def.is_some_and(|t| t.model.is_some() || t.pole.is_some());
+                    let analysed = type_def.is_some_and(|t| {
+                        t.detail() == ols_structures::Detail::Design || t.pole.is_some()
+                    });
                     let line_angle_deg = angles.get(id).copied().unwrap_or(0.0);
                     // Per conductor position (a suspension point, or a
                     // dead-end's back and ahead strings together): its wire

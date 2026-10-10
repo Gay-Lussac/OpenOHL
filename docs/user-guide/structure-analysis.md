@@ -2,20 +2,22 @@
 
 Besides the allowable spans and load trees of a structure type ([Structure libraries](structure-library.md#capacity)), OLS CAD can check a structure by **analysis**:
 
-- a **structure model** (`.olsfe`): a 3D finite-element model of a lattice tower, frame or guyed mast — member forces and how much of its capacity each member uses;
+- a **structure model**: a 3D finite-element model of a lattice tower, frame or guyed mast — member forces and how much of its capacity each member uses. It is the members of a type that is a full design ([detail level 3](structure-library.md#detail-levels): every member with a section, a supported joint), in the type's own `.olss`; or a separate `.olsfe` file the type names;
 - a **pole** (`.olsp`): wood, steel or concrete pole — bending moment along the pole against its moment capacity.
 
-A structure type names them; every structure of that type is then checked in every load case with the factored attachment loads ([Load cases](loads.md)). The theory is in [Structure analysis](../theory/structures-fe.md).
+Every structure of that type is then checked in every load case with the factored attachment loads ([Load cases](loads.md)). The theory is in [Structure analysis](../theory/structures-fe.md).
 
 ```toml
 # In the structure type (.olss), before the [[point]] tables:
-model = "DL380-tangent.olsfe"   # relative to the .olss file
+model = "DL380-tangent.olsfe"   # optional: a separate model, relative to the .olss file
 pole = "wood-14m"               # id of a .olsp file in the same folder
 ```
 
-All values in these files are **your data** (drawings, supplier tables, the pole manufacturer or the design code). OLS CAD ships only invented examples: `examples/synthetic-line/Structures/type-02.olsfe` (a small lattice tower) and `steel-pole-30m.olsp`.
+All values in these files are **your data** (drawings, supplier tables, the pole manufacturer or the design code). OLS CAD ships only invented examples: `examples/synthetic-line/Structures/type-02.olss` (a small lattice tower, its members in the type) and `steel-pole-30m.olsp`.
 
 ## Structure models (.olsfe)
+
+The tables below go into the structure type itself (a full design), or into a separate `.olsfe` file with this header:
 
 ```toml
 format = "ols-structure-model"
@@ -68,7 +70,7 @@ force = ["4 kN", "0 kN", "-9 kN"]
 
 Units: lengths, areas (`mm2`, `m2`), stresses, forces as elsewhere; second moments in `cm4`, `mm4`, `m4`, `in4`; section moduli in `cm3`, `mm3`, `m3`, `in3`; moments in `kN m`, `N m`, `kip ft`. A plain number is SI.
 
-**Attachments**: a node with `attachment = "label"` receives the factored loads at that point of the structure type (where strings hang): transverse along x, longitudinal along y, vertical downwards. Version 1 models' `attachment = [set, phase]` names the point `A<set>-<phase>`. A loaded point without a node is reported in the usage notes and its load is left out.
+**Attachments**: a node with `attachment = "label"` (in a structure type, also a `[[point]]` with `node = "…"`) receives the factored loads at that point of the structure type (where strings hang): transverse along x, longitudinal along y, vertical downwards. Version 1 models' `attachment = [set, phase]` names the point `A<set>-<phase>`. A loaded point without a node is reported in the usage notes and its load is left out.
 
 **Members**: trusses take axial force only; frames are 3D beams (six degrees of freedom at their nodes); cables take tension only and may be pretensioned — a cable that would be compressed goes slack. Truss-only nodes have no rotations; a node held by nothing in one direction is a mechanism and is named in the error.
 
@@ -107,8 +109,8 @@ One model with the loads of one structure, from the CSV of `ols line --loads-csv
 
 ```bash
 ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-csv loads.csv
-ols structures fe Structures/type-02.olsfe --loads loads.csv --structure T2 [--case wind] [--csv members.csv]
-ols structures fe Structures/type-02.olsfe          # the model's own [[load]]s
+ols structures fe Structures/type-02.olss --loads loads.csv --structure T2 [--case wind] [--csv members.csv]
+ols structures fe Structures/type-02.olss           # the model's own [[load]]s (an .olsfe works too)
 ols structures pole Structures/steel-pole-30m.olsp --type Structures/type-05.olss \
     --loads loads.csv --structure T6 --wind-pressure 840
 ```
