@@ -166,6 +166,22 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [ ] PLS-TOWER geometry from PLS XML (joints, members, sections) into levels 2 and 3 (local importer)
 - [ ] Level 2 from LiDAR: a plugin (later); the classes holding pylons chosen by the user from all classes, as in the display options
 - [ ] Clearances to the structure body: none for level 1 (LiDAR points only, separate topic); levels 2 and 3 computed — **the tests are to be defined with the project owner**
+- [ ] **Fully integrated structure editors with a 3D preview** for every detail level (1 stick figure, 2 sticks of the pylon, 3 full design), all in one window: geometry, members, sections, materials, supports, strings and wire points, the type's use in the line, checks — lattice towers and **poles of wood, steel (and concrete)** alike (poles today: `.olsp` files edited as text)
+
+## Structure–line interaction — levels of computation
+*Agreed with the project owner (2026-10-10): how far the line and its structures are computed together, chosen per run.*
+
+- [ ] **Level 1** — one way: the line solved on rigid structures, the conductors' forces put on the structures, every structure checked once, and stop (today's structure loads and usage)
+- [ ] **Levels 2 and 3** — in between (to be defined with the project owner: e.g. the structures' deflection under the line's loads applied once and the line solved again; each structure as a stiffness at its attachment points in the line solve)
+- [ ] **Level 4** — fully coupled: the structures' deformations and the line's forces on them iterated until both converge (displacements and forces between passes below tolerances; exit clauses, damping, reports of what did not converge)
+- [ ] The level chosen per run (app, CLI, load cases), shown with every result; the structure detail each level needs (stiffness from level 3 models, poles from their `.olsp`, simple springs for stick figures)
+
+## Foundations
+- [ ] A **foundations module**: foundation types per structure (pad and chimney, piles, rock anchors, pole embedment…), their data in their own library files, the loads from the structure checks (Level 1 and up) on them, checks by the user's code parameters (uplift, compression, overturning, sliding), bill of materials and costs; the structure's `height_adjust` linked to the foundation's reveal
+
+## Server and version control — more capabilities
+- [ ] **Server**: more editing through the web client (structures, strings, sections), terrain and point clouds in the web client, several projects per server, accounts and roles managed in the app, presence and locks per object, a server log and backups
+- [ ] **Version control**: cherry-pick, visual diffs in the views, history export for audits, revision comparison of results (sag, clearances, loads), automatic sync of offline copies, custom roles, area grants drawn in the plan
 
 ## Phase 6 — Ecosystem & 1.0
 - [ ] Stable plugin SDK (semantic versioning, compatibility guarantees)
