@@ -47,6 +47,8 @@ pub enum Tab {
     People,
     /// The loads on the structures.
     Loads,
+    /// A structure without a type in the pylon editor.
+    StructureEditor,
 }
 
 impl Tab {
@@ -77,6 +79,7 @@ impl Tab {
             Tab::Python => "Python console",
             Tab::People => "People",
             Tab::Loads => "Structure loads",
+            Tab::StructureEditor => "Structure editor",
         }
     }
 }
@@ -241,6 +244,8 @@ pub struct Ready {
     pub jumper_from: Option<ols_line::SectionPoint>,
     /// A page to bring to the front (with a table filter), from a tool.
     pub open_page: Option<(Tab, Option<String>)>,
+    /// A structure without a type in the pylon editor.
+    pub placed: Option<crate::placed_editor::PlacedEditor>,
     /// Table pages opened.
     pub tables: std::collections::BTreeMap<crate::tables::TableKind, crate::tables::TablePage>,
 }
@@ -313,6 +318,7 @@ impl Ready {
             design_code: Default::default(),
             jumper_from: None,
             open_page: None,
+            placed: None,
             clearances: crate::clearance::Clearances::new(
                 &model.sources.file,
                 model.sources.rules.as_deref(),
@@ -1041,6 +1047,10 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Clearances => {
                 clearance_panel(ui, r);
+                None
+            }
+            Tab::StructureEditor => {
+                r.placed_ui(ui, self.rs);
                 None
             }
             Tab::Loads => {
@@ -1967,6 +1977,130 @@ impl Ready {
         self.open_page = Some((Tab::Library(kind), None));
     }
 
+    /// Opens structure `id` (one without a type) in the pylon editor.
+    pub fn edit_structure(&mut self, id: &str) {
+        if self
+            .placed
+            .as_ref()
+            .is_some_and(|p| p.id != id && p.dirty())
+        {
+            self.status = Some((
+                "the structure editor has changes not applied: apply or revert them first".into(),
+                true,
+            ));
+        } else if self.placed.as_ref().is_none_or(|p| p.id != id) {
+            match crate::placed_editor::PlacedEditor::open(&self.model.line, id) {
+                Ok(p) => self.placed = Some(p),
+                Err(e) => {
+                    self.status = Some((e, true));
+                    return;
+                }
+            }
+        }
+        self.open_page = Some((Tab::StructureEditor, None));
+    }
+
+    /// The structure editor page.
+    fn placed_ui(&mut self, ui: &mut egui::Ui, rs: Option<&egui_wgpu::RenderState>) {
+        use crate::placed_editor::PlacedAction;
+        let Some(mut p) = self.placed.take() else {
+            ui.label(
+                "No structure open. Select a structure without a type and press \
+                 Edit pylon… in Properties.",
+            );
+            return;
+        };
+        let empty = ols_structures::InsulatorLibrary::default();
+        let insulators = self.model.types.as_ref().map_or(&empty, |(_, i)| i);
+        let line = self.model.line.clone();
+        let action = p.ui(ui, rs, insulators, &line);
+        let stored = self.model.stored_line().unwrap_or(&self.model.line).clone();
+        match action {
+            Some(PlacedAction::Apply) => match p.command(&stored, insulators) {
+                Ok((what, command)) => {
+                    if self.perform(crate::edit::Action::Command { what, command }) {
+                        p.applied();
+                        p.message = Some(("applied".into(), false));
+                    }
+                }
+                Err(e) => p.message = Some((e, true)),
+            },
+            Some(PlacedAction::MakeType(type_id)) => match self.make_type(&p, &stored, &type_id) {
+                Ok(()) => {
+                    self.status = Some((format!("{} has type {type_id} now", p.id), false));
+                    self.placed = None;
+                    self.edit_type(&type_id);
+                    return;
+                }
+                Err(e) => p.message = Some((e, true)),
+            },
+            None => {}
+        }
+        self.placed = Some(p);
+    }
+
+    /// Saves the editor's document as structure type `type_id` of the
+    /// project and gives its structure that type (its own points, strings
+    /// and sticks go: they come from the type).
+    fn make_type(
+        &mut self,
+        p: &crate::placed_editor::PlacedEditor,
+        stored: &ols_line::Line,
+        type_id: &str,
+    ) -> Result<(), String> {
+        let kind = crate::library::LibraryKind::StructureTypes;
+        if self
+            .model
+            .types
+            .as_ref()
+            .is_some_and(|(t, _)| t.path(type_id).is_some())
+        {
+            return Err(format!("there is a structure type {type_id} already"));
+        }
+        // The project's own types: its folder, else a Structures folder
+        // next to the line (never the shipped library).
+        let sources = &self.model.sources;
+        let dir = match &sources.structures {
+            Some(_) => kind.new_file_dir(sources),
+            None => crate::model::model_dir(sources).join("Structures"),
+        };
+        let path = dir.join(format!("{type_id}.olss"));
+        if path.exists() {
+            return Err(format!("{} exists already", path.display()));
+        }
+        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        std::fs::write(&path, p.type_text(type_id))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        self.library_saved(kind, crate::library::PageAction::Saved(path.clone()));
+        let mut s = stored
+            .structure(&p.id)
+            .ok_or_else(|| format!("no structure {}", p.id))?
+            .clone();
+        s.structure_type = Some(type_id.to_owned());
+        s.points.clear();
+        s.strings.clear();
+        s.wires.clear();
+        s.members.clear();
+        s.omit.clear();
+        let command = ols_session::Command::Put {
+            kind: ols_session::Kind::Structure,
+            id: p.id.clone(),
+            value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
+            ord: None,
+        };
+        if self.perform(crate::edit::Action::Command {
+            what: format!("{} takes structure type {type_id}", p.id),
+            command,
+        }) {
+            Ok(())
+        } else {
+            Err(self
+                .status
+                .clone()
+                .map_or_else(|| "not changed".into(), |(m, _)| m))
+        }
+    }
+
     pub fn perform(&mut self, action: crate::edit::Action) -> bool {
         use crate::edit::{Action, EditError};
         let retry = action.confirmed();
@@ -1983,6 +2117,10 @@ impl Ready {
             }
             Action::EditType { id } => {
                 self.edit_type(&id);
+                return true;
+            }
+            Action::EditStructure { id } => {
+                self.edit_structure(&id);
                 return true;
             }
             Action::Command { what, command } => self.model.apply(&what, command),

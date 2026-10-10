@@ -8380,3 +8380,116 @@ fn a_structure_type_opens_on_its_own() {
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
     }
 }
+
+/// A structure without a type opens in the pylon editor ("Edit pylon…"):
+/// as it is, its items read back unchanged; a point moved goes on the
+/// structure on Apply (one command); "Make it a type…" saves it as a
+/// structure type of the project and the structure takes it.
+#[test]
+fn a_structure_without_a_type_is_edited_in_the_pylon_editor() {
+    let model = synthetic_project("placed-editor");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().selection = Selection::Structure("T3".into());
+    harness.run();
+    harness.get_by_label("Edit pylon…").click();
+    harness.run();
+    harness.run();
+    harness.get_by_label("Structure T3");
+    // The strings, editable: top, clamp, insulator, angles…
+    harness.get_by_label("Strings").click();
+    harness.run();
+    harness.get_by_label("hangs from");
+    harness.get_by_label("down/up");
+    harness.get_by_label("clamp");
+    let near = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-3);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let p = r.placed.as_ref().unwrap();
+        assert!(!p.dirty());
+        let stored = r.model.stored_line().unwrap().clone();
+        let insulators = ols_structures::InsulatorLibrary::default();
+        let back = p.structure(&stored, &insulators).unwrap();
+        let s = stored.structure("T3").unwrap();
+        assert_eq!(back.points.len(), s.points.len());
+        for (a, b) in back.points.iter().zip(&s.points) {
+            assert_eq!(a.label, b.label);
+            assert!(near(a.position, b.position), "{a:?} {b:?}");
+        }
+        for (a, b) in back.wires.iter().zip(&s.wires) {
+            assert_eq!((&a.label, a.set), (&b.label, b.set));
+            assert!(near(a.position, b.position), "{a:?} {b:?}");
+        }
+        assert_eq!(back.strings.len(), s.strings.len());
+        for (a, b) in back.strings.iter().zip(&s.strings) {
+            assert_eq!(
+                (&a.label, &a.top, &a.wire, a.strain, a.stiffness),
+                (&b.label, &b.top, &b.wire, b.strain, b.stiffness)
+            );
+            assert!((a.weight - b.weight).abs() < 1e-6, "{a:?} {b:?}");
+        }
+    }
+    // The first point 1 m higher.
+    let (label, before) = {
+        let r = harness.state_mut().ready().unwrap();
+        let p = r.placed.as_mut().unwrap();
+        let t = p.doc["point"].as_array_of_tables_mut().unwrap();
+        let first = t.get_mut(0).unwrap();
+        let z: f64 = first["point"]
+            .as_array()
+            .unwrap()
+            .get(2)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .trim_end_matches(" m")
+            .parse()
+            .unwrap();
+        let mut a = first["point"].as_array().unwrap().clone();
+        a.replace(2, format!("{:.3} m", z + 1.0));
+        first["point"] = toml_edit::value(a);
+        let label = first["label"].as_str().unwrap().to_owned();
+        let s = r.model.line.structure("T3").unwrap();
+        let before = s.points.iter().find(|q| q.label == label).unwrap().position;
+        (label, before)
+    };
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r.model.line.structure("T3").unwrap();
+        let after = s.points.iter().find(|q| q.label == label).unwrap().position;
+        assert!(
+            near(after, [before[0], before[1], before[2] + 1.0]),
+            "{after:?}"
+        );
+        assert!(!r.placed.as_ref().unwrap().dirty());
+        r.placed.as_mut().unwrap().type_id = Some("my-pylon".into());
+    }
+    harness.run();
+    harness.get_by_label("Save and use").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(
+        r.placed.is_none(),
+        "{:?} {:?} {}",
+        r.status,
+        r.placed.as_ref().map(|p| p.message.clone()),
+        r.placed
+            .as_ref()
+            .map_or(String::new(), |p| p.doc.to_string())
+    );
+    let s = r.model.line.structure("T3").unwrap();
+    assert_eq!(s.structure_type.as_deref(), Some("my-pylon"));
+    let after = s.points.iter().find(|q| q.label == label).unwrap().position;
+    assert!(
+        near(after, [before[0], before[1], before[2] + 1.0]),
+        "{after:?}"
+    );
+    assert_eq!(s.strings.len(), 3);
+    let stored = r.model.stored_line().unwrap().structure("T3").unwrap();
+    assert!(stored.points.is_empty() && stored.strings.is_empty());
+}

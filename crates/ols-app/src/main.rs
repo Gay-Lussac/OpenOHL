@@ -38,6 +38,7 @@ mod lod;
 mod menu;
 mod model;
 mod octree;
+mod placed_editor;
 mod plan;
 mod plugins;
 mod preview3d;
