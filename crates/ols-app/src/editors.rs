@@ -2706,6 +2706,28 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                     .collect();
                 let mut ends_at: Option<Option<String>> = None;
                 let mut pick: Option<usize> = None;
+                // A wire point renamed: (old, new) for its strings.
+                let mut rename: Option<(String, String)> = None;
+                // Names its wire point may not take (its own current one
+                // aside).
+                let wire_now = f.strings[k].wire.clone();
+                let structure = model.line.structure(&f.structure);
+                let names: Vec<String> = f
+                    .points
+                    .iter()
+                    .map(|p| p.label.clone())
+                    .chain(f.wires.iter().map(|w| w.label.clone()))
+                    .chain(f.strings.iter().map(|x| x.label.clone()))
+                    .chain(structure.into_iter().flat_map(|s| {
+                        s.points
+                            .iter()
+                            .map(|p| p.label.clone())
+                            .chain(s.wires.iter().map(|w| w.label.clone()))
+                            .chain(s.strings.iter().map(|x| x.label.clone()))
+                    }))
+                    .filter(|l| *l != wire_now)
+                    .collect();
+                let clash = |text: &str, own: &str| text != own && names.iter().any(|l| l == text);
                 egui::Frame::group(ui.style()).show(ui, |ui| {
                     let x = &mut f.strings[k];
                     ui.horizontal(|ui| {
@@ -2889,7 +2911,38 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                         }
                         ui.horizontal(|ui| {
                             ui.label("wire point");
-                            ui.add(egui::TextEdit::singleline(&mut w.label).desired_width(90.0));
+                            // Typed into a copy: its strings follow each
+                            // valid name; one taken or empty waits (shown
+                            // red) and is dropped when the field is left.
+                            let id = ui.id().with(("wire-label", k));
+                            let (own, mut text) = ui
+                                .data_mut(|d| d.get_temp::<(String, String)>(id))
+                                .unwrap_or_else(|| (w.label.clone(), w.label.clone()));
+                            let bad = if text.trim().is_empty() {
+                                Some("give it a name")
+                            } else if clash(&text, &own) {
+                                Some("taken: another point, wire point or string has this name")
+                            } else {
+                                None
+                            };
+                            let mut edit = egui::TextEdit::singleline(&mut text).desired_width(90.0);
+                            if bad.is_some() {
+                                edit = edit.text_color(egui::Color32::LIGHT_RED);
+                            }
+                            let r = ui.add(edit);
+                            if let Some(why) = bad {
+                                r.clone().on_hover_text(why);
+                            }
+                            if r.changed() {
+                                let ok = !text.trim().is_empty() && !clash(&text, &own);
+                                if ok && text != w.label {
+                                    rename = Some((w.label.clone(), text.clone()));
+                                    w.label = text.clone();
+                                }
+                                ui.data_mut(|d| d.insert_temp(id, (own, text)));
+                            } else if !r.has_focus() {
+                                ui.data_mut(|d| d.remove::<(String, String)>(id));
+                            }
                             let mut has = w.set.is_some();
                             if ui
                                 .checkbox(&mut has, "set")
@@ -2933,6 +2986,17 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                         });
                     }
                 });
+                // Its strings follow a wire point renamed.
+                if let Some((old, new)) = rename {
+                    for x in &mut f.strings {
+                        if x.wire == old {
+                            x.wire.clone_from(&new);
+                        }
+                        if x.top == old {
+                            x.top.clone_from(&new);
+                        }
+                    }
+                }
                 // The library's values (and the wire point at its length).
                 if let Some(n) = pick {
                     let a = library[n].2.clone();
