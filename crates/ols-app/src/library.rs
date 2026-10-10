@@ -1057,7 +1057,15 @@ impl LibraryPage {
                     self.workspace.ahead = cx.ahead;
                     self.workspace.redraw();
                 }
-                if self.workspace.ui(ui, doc, cx.rs, insulators, used_by) {
+                let note = match used_by {
+                    None => "opened alone (no line)".to_owned(),
+                    Some(0) => "used by no structure of the line".to_owned(),
+                    Some(1) => "used by 1 structure of the line (it follows when saved)".to_owned(),
+                    Some(n) => {
+                        format!("used by {n} structures of the line (they follow when saved)")
+                    }
+                };
+                if self.workspace.ui(ui, doc, cx.rs, insulators, &note) {
                     self.buffers.clear();
                     self.check();
                 }

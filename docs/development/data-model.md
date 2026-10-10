@@ -160,6 +160,8 @@ ahead span — computed, not stored).
 | `omit_sets` | `[u32]` | — | typed: the type's wire points with these sets left out, with what hangs only for them | sets in the type |
 | `members` | `[[x,y,z]]` | m | stick drawing polylines (views and drawings only) | — |
 
+A structure without a type holds its own `points`, `wires`, `strings` and `members`; the desktop app edits them as a structure type in local axes (`to_local`/`to_global`) and writes them back with one `Put`. *Make it a type* writes that document as a `.olss`, sets `type` and empties the structure's own lists.
+
 | Entity.field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `StructurePoint.label` | string | — | unique among the structure's points **and** wire points | — |

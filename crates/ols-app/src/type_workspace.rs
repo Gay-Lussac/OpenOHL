@@ -676,7 +676,7 @@ impl Workspace {
         doc: &mut DocumentMut,
         rs: Option<&egui_wgpu::RenderState>,
         insulators: &InsulatorLibrary,
-        used_by: Option<usize>,
+        note: &str,
     ) -> bool {
         self.refresh(doc);
         let Some(t) = self.shown.clone() else {
@@ -705,12 +705,7 @@ impl Workspace {
                 t.strings.len()
             ));
             ui.separator();
-            ui.label(match used_by {
-                None => "opened alone (no line)".to_owned(),
-                Some(0) => "used by no structure of the line".to_owned(),
-                Some(1) => "used by 1 structure of the line (it follows when saved)".to_owned(),
-                Some(n) => format!("used by {n} structures of the line (they follow when saved)"),
-            });
+            ui.label(note);
         });
         changed |= self.tools(ui, doc, &t);
         if let Some((m, error)) = &self.message {
@@ -727,7 +722,7 @@ impl Workspace {
             .resizable(true)
             .default_size(180.0)
             .show(ui, |ui| {
-                changed |= self.tables(ui, doc, &t, &g);
+                changed |= self.tables(ui, doc, &t, &g, insulators);
             });
         egui::CentralPanel::default().show(ui, |ui| {
             changed |= self.view(ui, doc, rs, &t, &g);
@@ -1161,6 +1156,7 @@ impl Workspace {
         doc: &mut DocumentMut,
         t: &StructureType,
         g: &Geometry,
+        insulators: &InsulatorLibrary,
     ) -> bool {
         let mut changed = false;
         ui.horizontal(|ui| {
@@ -1391,45 +1387,224 @@ impl Workspace {
                     });
                 }
                 Sheet::Strings => {
-                    egui::Grid::new("type-strings").striped(true).show(ui, |ui| {
-                        for h in [
-                            "string",
-                            "top",
-                            "wire point",
-                            "insulator / length",
-                            "weight",
-                            "wind area",
-                            "compression",
-                        ] {
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for s in &t.strings {
-                            ui.label(&s.label);
-                            ui.label(&s.top);
-                            ui.label(&s.wire);
-                            ui.label(match (&s.insulator, s.length) {
-                                (Some(i), _) => i.clone(),
-                                (None, Some(l)) => format!("{:.3} m", l.si()),
-                                _ => "—".into(),
-                            });
-                            ui.label(s.weight.map_or("—".into(), |w| format!("{:.0} N", w.si())));
-                            ui.label(s.wind_area.map_or("—".into(), |w| format!("{:.3} m²", w.si())));
-                            ui.label(
-                                s.compression
-                                    .map_or("tension only".into(), |c| format!("{:.0} N", c.si())),
-                            );
-                            ui.end_row();
-                        }
-                    });
-                    ui.label(
-                        egui::RichText::new(
-                            "Pick a point (or two) and use the I / V presets above; the other fields in Fields.",
-                        )
-                        .weak(),
-                    );
+                    changed |= self.strings_sheet(ui, doc, t, g, insulators);
                 }
             });
+        changed
+    }
+}
+
+impl Workspace {
+    /// The Strings sheet: each string's top, clamp, insulator from the
+    /// library (or a length), its direction from its top (down/up and in
+    /// plan, the project's angles) where it alone holds its wire point,
+    /// weight, wind area, compression and description — all editable.
+    fn strings_sheet(
+        &mut self,
+        ui: &mut egui::Ui,
+        doc: &mut DocumentMut,
+        t: &StructureType,
+        g: &Geometry,
+        insulators: &InsulatorLibrary,
+    ) -> bool {
+        use crate::editors::{from_polar, polar};
+        let mut changed = false;
+        let ahead = self.ahead;
+        let at = |label: &str| {
+            g.points
+                .iter()
+                .map(|p| (&p.0, p.1))
+                .chain(g.wires.iter().map(|w| (&w.0, w.1)))
+                .find(|(l, _)| *l == label)
+                .map(|(_, p)| p)
+        };
+        let tops: Vec<&str> = t
+            .points
+            .iter()
+            .map(|p| p.label.as_str())
+            .chain(t.wires.iter().map(|w| w.label.as_str()))
+            .collect();
+        let assemblies: Vec<&ols_structures::InsulatorAssembly> = insulators.iter().collect();
+        egui::Grid::new("type-strings").striped(true).show(ui, |ui| {
+            for (h, tip) in [
+                ("string", "Its label"),
+                ("hangs from", "A point of the structure, or another string's wire point"),
+                ("wire point", "Its bottom: where the wire is clamped (with a set) or other strings hang"),
+                ("clamp", "Suspension: the wire runs through. Strain: the wire ends here (a section ends on its set)"),
+                ("insulator", "An assembly of the insulator library (its length, weight and wind area), or none: a length"),
+                ("length", "From its top to its wire point"),
+                ("down/up", "Angle from straight down: 0° down, 90° level, 180° up"),
+                ("direction", "In plan, clockwise seen from above (ahead at the project's angle)"),
+                ("weight", "Its weight (default: its insulator's)"),
+                ("wind area", "The area the wind blows on (default: its insulator's)"),
+                ("compression", "The push it may take (V legs); none: tension only"),
+                ("description", "What it is, in words"),
+            ] {
+                ui.strong(h).on_hover_text(tip);
+            }
+            ui.end_row();
+            for s in &t.strings {
+                let Some(e) = entry(doc, "string", "label", &s.label) else {
+                    continue;
+                };
+                let a = s
+                    .insulator
+                    .as_ref()
+                    .and_then(|i| assemblies.iter().find(|a| &a.id == i).copied());
+                ui.label(&s.label);
+                // Hangs from.
+                let mut top = s.top.clone();
+                egui::ComboBox::from_id_salt(("string-top", &s.label))
+                    .selected_text(&top)
+                    .show_ui(ui, |ui| {
+                        for l in tops.iter().filter(|l| **l != s.wire) {
+                            ui.selectable_value(&mut top, (*l).to_owned(), *l);
+                        }
+                    });
+                if top != s.top {
+                    e.insert("top", toml_edit::value(top));
+                    changed = true;
+                }
+                ui.label(&s.wire);
+                // Clamp.
+                let mut strain = s.strain;
+                egui::ComboBox::from_id_salt(("string-clamp", &s.label))
+                    .selected_text(if strain { "strain" } else { "suspension" })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut strain, false, "suspension");
+                        ui.selectable_value(&mut strain, true, "strain");
+                    });
+                if strain != s.strain {
+                    if strain {
+                        e.insert("strain", toml_edit::value(true));
+                    } else {
+                        e.remove("strain");
+                    }
+                    changed = true;
+                }
+                // Where it points from its top (it alone holds its wire
+                // point).
+                let alone = t.strings.iter().filter(|x| x.wire == s.wire).count() == 1;
+                let ends = at(&s.top).zip(at(&s.wire));
+                let (down, dir, len) = ends.map_or((0.0, 0.0, 0.0), |(a, b)| polar(a, b));
+                let mut aim: Option<(f64, f64, f64)> = None;
+                // Insulator.
+                let mut pick = s.insulator.clone();
+                egui::ComboBox::from_id_salt(("string-insulator", &s.label))
+                    .selected_text(pick.as_deref().unwrap_or("— (a length)"))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut pick, None, "— (a length)");
+                        for a in &assemblies {
+                            ui.selectable_value(&mut pick, Some(a.id.clone()), &a.id)
+                                .on_hover_text(format!(
+                                    "{}: {:.3} m, {:.0} N",
+                                    a.name,
+                                    a.length.si(),
+                                    a.weight.si()
+                                ));
+                        }
+                    });
+                if pick != s.insulator {
+                    match pick.as_ref().and_then(|i| assemblies.iter().find(|a| &a.id == i)) {
+                        Some(a) => {
+                            e.insert("insulator", toml_edit::value(a.id.clone()));
+                            for k in ["length", "weight", "wind_area"] {
+                                e.remove(k);
+                            }
+                            let strain = a.kind == ols_structures::AssemblyKind::Strain;
+                            if strain {
+                                e.insert("strain", toml_edit::value(true));
+                            } else {
+                                e.remove("strain");
+                            }
+                            aim = Some((down, dir, a.length.si()));
+                        }
+                        None => {
+                            e.remove("insulator");
+                            e.insert("length", length(len.max(0.01)));
+                        }
+                    }
+                    changed = true;
+                }
+                // Length, angles.
+                let mut l = a.map_or(s.length.map_or(len, |l| l.si()), |a| a.length.si());
+                if a.is_some() {
+                    ui.label(format!("{l:.3} m"));
+                } else if ui
+                    .add(egui::DragValue::new(&mut l).range(0.01..=50.0).speed(0.01).max_decimals(3).suffix(" m"))
+                    .changed()
+                {
+                    e.insert("length", length(l));
+                    aim = Some((down, dir, l));
+                    changed = true;
+                }
+                if alone && ends.is_some() {
+                    let (mut dn, mut dr) = (down, (dir + ahead).rem_euclid(360.0));
+                    let a1 = ui.add(egui::DragValue::new(&mut dn).range(0.0..=180.0).speed(0.5).max_decimals(2).suffix("°"));
+                    let a2 = ui.add(egui::DragValue::new(&mut dr).range(0.0..=360.0).speed(0.5).max_decimals(2).suffix("°"));
+                    if a1.changed() || a2.changed() {
+                        aim = Some((dn, (dr - ahead).rem_euclid(360.0), l));
+                    }
+                } else {
+                    let why = "Several strings hold its wire point (a V): move the wire point";
+                    ui.label("—").on_hover_text(why);
+                    ui.label("—").on_hover_text(why);
+                    aim = None;
+                }
+                // Weight, wind area, compression.
+                let mut w = s.weight.map(|w| w.si()).or(a.map(|a| a.weight.si())).unwrap_or(0.0);
+                if ui.add(egui::DragValue::new(&mut w).range(0.0..=1e6).speed(1.0).max_decimals(1).suffix(" N")).changed() {
+                    e.insert("weight", toml_edit::value(format!("{w} N")));
+                    changed = true;
+                }
+                let mut wa = s.wind_area.map(|w| w.si()).or(a.map(|a| a.wind_area.si())).unwrap_or(0.0);
+                if ui.add(egui::DragValue::new(&mut wa).range(0.0..=100.0).speed(0.005).max_decimals(3).suffix(" m²")).changed() {
+                    e.insert("wind_area", toml_edit::value(format!("{wa} m²")));
+                    changed = true;
+                }
+                ui.horizontal(|ui| {
+                    let mut push = s.compression.is_some();
+                    let mut c = s.compression.map_or(0.0, |c| c.si());
+                    let a = ui.checkbox(&mut push, "");
+                    let b = ui.add_enabled(push, egui::DragValue::new(&mut c).range(0.0..=1e7).speed(10.0).max_decimals(0).suffix(" N"));
+                    if a.changed() || b.changed() {
+                        if push {
+                            e.insert("compression", toml_edit::value(format!("{c} N")));
+                        } else {
+                            e.remove("compression");
+                        }
+                        changed = true;
+                    }
+                });
+                let mut d = s.description.clone();
+                if ui.add(egui::TextEdit::singleline(&mut d).desired_width(160.0)).changed() {
+                    if d.trim().is_empty() {
+                        e.remove("description");
+                    } else {
+                        e.insert("description", toml_edit::value(d));
+                    }
+                    changed = true;
+                }
+                ui.end_row();
+                // The wire point it alone holds follows.
+                if alone
+                    && let Some((dn, dr, l)) = aim
+                    && let Some(top) = at(&s.top)
+                {
+                    let to = from_polar(top, dn, dr, l.max(0.01));
+                    if let Some(w) = entry(doc, "wire", "label", &s.wire) {
+                        w.insert("point", point_value(to));
+                        changed = true;
+                    }
+                }
+            }
+        });
+        ui.label(
+            egui::RichText::new(
+                "New strings: pick a point (or two) and use the I / V presets above.",
+            )
+            .weak(),
+        );
         changed
     }
 }

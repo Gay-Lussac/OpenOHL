@@ -137,6 +137,17 @@ pub fn ui(
             {
                 action = Some(crate::edit::Action::EditType { id: t.clone() });
             }
+            if s.structure_type.is_none()
+                && ui
+                    .button("Edit pylon…")
+                    .on_hover_text(
+                        "Edit its points, wire points, strings and drawing in the pylon \
+                         editor (Make it a type… there saves it as a structure type)",
+                    )
+                    .clicked()
+            {
+                action = Some(crate::edit::Action::EditStructure { id: id.clone() });
+            }
             ui.separator();
             ui.label(egui::RichText::new("Wire points").strong());
             egui::Grid::new("attachments").striped(true).show(ui, |ui| {

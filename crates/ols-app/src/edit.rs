@@ -303,6 +303,12 @@ pub enum Action {
         /// Structure type.
         id: String,
     },
+    /// Open structure `id` (one without a type) in the pylon editor (no
+    /// edit by itself).
+    EditStructure {
+        /// Structure.
+        id: String,
+    },
     /// Undo the user's last command.
     Undo,
     /// Redo the user's last undo.
