@@ -339,6 +339,8 @@ pub struct App {
     pub quickbar: crate::menu::QuickBar,
     /// Level of detail of the 3D view.
     pub lod: crate::lod::LodSettings,
+    /// The colour tool's palette (this user's, remembered).
+    pub palette: crate::color_tool::Palette,
     /// Files opened recently.
     pub recent: crate::files::Recent,
     /// What this user shows of each project (remembered locally).
@@ -405,6 +407,7 @@ impl App {
             hotbar: crate::tools::Hotbar::default(),
             quickbar: Default::default(),
             lod: Default::default(),
+            palette: Default::default(),
             recent: Default::default(),
             view_prefs: Default::default(),
             default_class_scheme: None,
@@ -818,6 +821,7 @@ impl App {
             hotbar: crate::tools::Hotbar::default(),
             quickbar: Default::default(),
             lod: Default::default(),
+            palette: Default::default(),
             recent: Default::default(),
             view_prefs: Default::default(),
             default_class_scheme: None,
@@ -891,6 +895,8 @@ struct Viewer<'a> {
     ready: &'a mut Ready,
     rs: Option<&'a egui_wgpu::RenderState>,
     lod: &'a mut crate::lod::LodSettings,
+    /// The colour tool's palette.
+    palette: &'a mut crate::color_tool::Palette,
     /// The Python plugins' scripts (for the console).
     scripts: Vec<(String, PathBuf)>,
 }
@@ -1031,7 +1037,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Table(kind) => {
                 let kind = *kind;
                 let page = r.tables.entry(kind).or_default();
-                match page.ui(ui, kind, &r.model, r.case, &r.selection) {
+                match page.ui(ui, kind, &r.model, r.case, &r.selection, self.palette) {
                     Some(crate::tables::TableAction::Select(s)) => {
                         r.go_to(s);
                     }
@@ -4383,6 +4389,7 @@ impl eframe::App for App {
         }
         self.quickbar.save(storage);
         self.lod.save(storage);
+        self.palette.save(storage);
         self.recent.save(storage);
         self.plugins.save(storage);
         if let State::Ready(r) = &self.state {
@@ -4683,6 +4690,7 @@ impl eframe::App for App {
                                     ready,
                                     rs: self.render_state.as_ref(),
                                     lod: &mut self.lod,
+                                    palette: &mut self.palette,
                                     scripts: self.plugins.python_scripts(),
                                 },
                             );

@@ -14,6 +14,8 @@
 //! Results (a section's tension and largest sag) are typed as targets:
 //! the section's condition is found that gives them. Rows can be filtered
 //! and sorted; ⤴ selects a row's object and brings the views to it.
+//! Colour cells are drawn in their colour and open the colour tool
+//! ([`crate::color_tool`]), which writes the colour chosen as a typed edit.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -169,7 +171,7 @@ const SECTIONS: &[Column] = &[
     ),
     (
         "colour",
-        75.0,
+        100.0,
         Yes,
         "display colour #rrggbb (empty: its phase's); typed for one section, every section of its circuit takes it",
     ),
@@ -308,7 +310,7 @@ const SYSTEMS: &[Column] = &[
     ),
     (
         "colour",
-        75.0,
+        100.0,
         Yes,
         "display colour #rrggbb when wires are coloured by system (Sections › Display options); empty: by its place",
     ),
@@ -380,7 +382,7 @@ const CIRCUITS: &[Column] = &[
     ("jumpers", 200.0, Derived, "its jumpers, from its starts"),
     (
         "colour",
-        75.0,
+        100.0,
         Yes,
         "display colour #rrggbb for all its sections (and its jumpers with their own colour); empty: their phases' (\"mixed: …\" when they differ)",
     ),
@@ -2720,6 +2722,30 @@ pub struct TablePage {
     pub message: Option<(String, bool)>,
     /// What the deletions take with them, waiting for a second Apply.
     pub confirm: Option<Vec<String>>,
+    /// The colour tool, open for a colour cell.
+    pub color: Option<(ColorCell, crate::color_tool::ColorTool)>,
+}
+
+/// A colour cell the colour tool writes to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ColorCell {
+    /// Column `column` of the row `key`, whose value was `original` (empty
+    /// for a default shown: what is picked is set even when the same).
+    Row {
+        /// The row's key.
+        key: String,
+        /// The column.
+        column: usize,
+        /// Its value.
+        original: String,
+    },
+    /// Column `column` of new row `index`.
+    New {
+        /// The new row.
+        index: usize,
+        /// The column.
+        column: usize,
+    },
 }
 
 /// What a table asks of the application.
@@ -2746,6 +2772,38 @@ impl TablePage {
         self.added.clear();
         self.deleted.clear();
         self.confirm = None;
+    }
+
+    /// Opens the colour tool for `cell`, showing `text` (its colour, if
+    /// it reads) as the old colour.
+    pub fn open_color_tool(&mut self, kind: TableKind, cell: ColorCell, text: &str) {
+        let what = match &cell {
+            ColorCell::Row { key, .. } => key.clone(),
+            ColorCell::New { .. } => "new row".into(),
+        };
+        let old = ols_core::text::parse_rgb(text.trim());
+        self.color = Some((
+            cell,
+            crate::color_tool::ColorTool::new(format!("Colour — {}: {what}", kind.title()), old),
+        ));
+    }
+
+    /// Writes a colour chosen in the colour tool to its cell (a typed edit,
+    /// pending until Apply).
+    pub fn write_color(&mut self, cell: &ColorCell, color: [u8; 3]) {
+        let text = ols_core::text::format_rgb(color);
+        match cell {
+            ColorCell::Row {
+                key,
+                column,
+                original,
+            } => self.set(key, *column, &text, original),
+            ColorCell::New { index, column } => {
+                if let Some(c) = self.added.get_mut(*index).and_then(|r| r.get_mut(*column)) {
+                    *c = text;
+                }
+            }
+        }
     }
 
     /// Sets a cell of an existing row (back to its value: not pending).
@@ -2792,6 +2850,7 @@ impl TablePage {
         model: &Model,
         case: usize,
         selection: &Selection,
+        palette: &mut crate::color_tool::Palette,
     ) -> Option<TableAction> {
         // Weather cases are a file of the model, not part of the project.
         let editable = match kind {
@@ -2941,6 +3000,8 @@ impl TablePage {
             row_height
         };
         let added = self.added.len();
+        // A colour cell's tool button clicked: the cell and its text.
+        let mut open_tool: Option<(ColorCell, String)> = None;
         // The grid: a line at every column edge and under every row, from
         // the columns' widths (each cell `width` wide, 2 apart, after the
         // two row buttons) — every row the same widths whatever its cells.
@@ -3038,6 +3099,23 @@ impl TablePage {
                                         }
                                         continue;
                                     }
+                                    if col.0 == "colour" {
+                                        let (tool, _) = color_cell(
+                                            ui,
+                                            [col.1, row_height],
+                                            &mut self.added[k][c],
+                                            Some(egui::Color32::LIGHT_GREEN),
+                                            false,
+                                            col.3,
+                                        );
+                                        if tool {
+                                            open_tool = Some((
+                                                ColorCell::New { index: k, column: c },
+                                                self.added[k][c].clone(),
+                                            ));
+                                        }
+                                        continue;
+                                    }
                                     let edit = egui::TextEdit::singleline(&mut self.added[k][c])
                                         .text_color(egui::Color32::LIGHT_GREEN);
                                     ui.add_sized([col.1, row_height], edit);
@@ -3129,6 +3207,26 @@ impl TablePage {
                                     if deleted {
                                         t = t.strikethrough().color(egui::Color32::LIGHT_RED);
                                     }
+                                    // A colour read-only: on its colour.
+                                    let swatch = (col.0 == "colour" && !deleted)
+                                        .then(|| ols_core::text::parse_rgb(original.trim()))
+                                        .flatten()
+                                        .map(crate::color_tool::color32);
+                                    if let Some(fill) = swatch {
+                                        let (rect, _) = ui.allocate_exact_size(
+                                            egui::vec2(col.1, row_height),
+                                            egui::Sense::hover(),
+                                        );
+                                        ui.painter().rect_filled(rect.shrink(1.0), 2.0, fill);
+                                        ui.painter().text(
+                                            rect.left_center() + egui::vec2(4.0, 0.0),
+                                            egui::Align2::LEFT_CENTER,
+                                            original,
+                                            egui::TextStyle::Body.resolve(ui.style()),
+                                            crate::color_tool::text_on(fill),
+                                        );
+                                        continue;
+                                    }
                                     ui.add_sized(
                                         [col.1, row_height],
                                         egui::Label::new(t).truncate(),
@@ -3167,6 +3265,43 @@ impl TablePage {
                                     }
                                     continue;
                                 }
+                                if col.0 == "colour" {
+                                    let hover = if default {
+                                        format!(
+                                            "default (not set on it; type or pick to set it) — {}",
+                                            col.3
+                                        )
+                                    } else {
+                                        col.3.to_owned()
+                                    };
+                                    let (tool, changed) = color_cell(
+                                        ui,
+                                        [col.1, row_height],
+                                        &mut text,
+                                        edited.is_some().then_some(egui::Color32::YELLOW),
+                                        default,
+                                        &hover,
+                                    );
+                                    if changed {
+                                        self.set(&row.key, c, &text, original);
+                                    }
+                                    if tool {
+                                        open_tool = Some((
+                                            ColorCell::Row {
+                                                key: row.key.clone(),
+                                                column: c,
+                                                // A default: set even when the same.
+                                                original: if default {
+                                                    String::new()
+                                                } else {
+                                                    original.clone()
+                                                },
+                                            },
+                                            text.clone(),
+                                        ));
+                                    }
+                                    continue;
+                                }
                                 let mut edit = egui::TextEdit::singleline(&mut text);
                                 if edited.is_some() {
                                     edit = edit.text_color(egui::Color32::YELLOW);
@@ -3191,6 +3326,99 @@ impl TablePage {
                     }
                 });
         });
+        if let Some((cell, text)) = open_tool {
+            self.open_color_tool(kind, cell, &text);
+        }
+        if let Some((cell, tool)) = &mut self.color {
+            let id = egui::Id::new(("colour-tool", kind));
+            match tool.show(ui.ctx(), id, palette) {
+                Some(crate::color_tool::Outcome::Pick(c)) => {
+                    let cell = cell.clone();
+                    self.write_color(&cell, c);
+                    self.color = None;
+                }
+                Some(crate::color_tool::Outcome::Cancel) => self.color = None,
+                None => {}
+            }
+        }
         action
     }
+}
+
+/// A colour cell: its text typed on its colour (dimmed for a `default`
+/// shown, outlined in `mark` when changed), and a button opening the colour
+/// tool. Whether that button was clicked, and whether the text changed.
+fn color_cell(
+    ui: &mut egui::Ui,
+    size: [f32; 2],
+    text: &mut String,
+    mark: Option<egui::Color32>,
+    default: bool,
+    hover: &str,
+) -> (bool, bool) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size[0], size[1]), egui::Sense::hover());
+    let bg = ui.visuals().extreme_bg_color;
+    let fill = ols_core::text::parse_rgb(text.trim()).map(|c| {
+        let c = crate::color_tool::color32(c);
+        if default { bg.lerp_to_gamma(c, 0.4) } else { c }
+    });
+    let text_color = match (fill, mark) {
+        (Some(f), _) => {
+            let t = crate::color_tool::text_on(f);
+            if default { t.gamma_multiply(0.7) } else { t }
+        }
+        (None, Some(m)) => m,
+        (None, None) if default => ui.visuals().weak_text_color(),
+        (None, None) => ui.visuals().text_color(),
+    };
+    let painter = ui.painter();
+    painter.rect_filled(rect.shrink(1.0), 2.0, fill.unwrap_or(bg));
+    if let Some(m) = mark {
+        painter.rect_stroke(
+            rect.shrink(1.0),
+            2.0,
+            egui::Stroke::new(1.5, m),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    child.spacing_mut().item_spacing.x = 2.0;
+    let (b, button) = child.allocate_exact_size(egui::vec2(18.0, size[1]), egui::Sense::click());
+    button.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "colour tool"));
+    // Three stripes of colour: the tool.
+    let icon = egui::Rect::from_center_size(b.center(), egui::vec2(12.0, 12.0));
+    let stripes = [
+        egui::Color32::from_rgb(0xe4, 0x57, 0x2e),
+        egui::Color32::from_rgb(0xf2, 0xc1, 0x4e),
+        egui::Color32::from_rgb(0x4c, 0x9b, 0xe8),
+    ];
+    for (k, s) in stripes.into_iter().enumerate() {
+        let x = icon.left() + 4.0 * k as f32;
+        child.painter().rect_filled(
+            egui::Rect::from_min_size(egui::pos2(x, icon.top()), egui::vec2(4.0, 12.0)),
+            0.0,
+            s,
+        );
+    }
+    let outline = if button.hovered() {
+        child.visuals().widgets.hovered.fg_stroke
+    } else {
+        egui::Stroke::new(1.0, text_color)
+    };
+    child
+        .painter()
+        .rect_stroke(icon, 1.0, outline, egui::StrokeKind::Outside);
+    let button = button.on_hover_text("The colour tool: a wheel, sliders, your palette");
+    let edit = egui::TextEdit::singleline(text)
+        .frame(egui::Frame::NONE)
+        .text_color(text_color);
+    let changed = child
+        .add_sized([size[0] - 22.0, size[1]], edit)
+        .on_hover_text(hover)
+        .changed();
+    (button.clicked(), changed)
 }
