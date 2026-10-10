@@ -33,6 +33,8 @@ pub struct AlignmentPoint {
     pub position: Point,
     /// Structure it is tied to (it follows the structure when it moves).
     pub structure: Option<String>,
+    /// What it is, in words (free text).
+    pub description: String,
 }
 
 impl AlignmentPoint {
@@ -41,6 +43,7 @@ impl AlignmentPoint {
         Self {
             position,
             structure: None,
+            description: String::new(),
         }
     }
 }
@@ -53,6 +56,8 @@ enum AlignmentRepr {
         position: Point,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         structure: Option<String>,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        description: String,
     },
 }
 
@@ -63,9 +68,11 @@ impl From<AlignmentRepr> for AlignmentPoint {
             AlignmentRepr::Tied {
                 position,
                 structure,
+                description,
             } => Self {
                 position,
                 structure,
+                description,
             },
         }
     }
@@ -73,12 +80,13 @@ impl From<AlignmentRepr> for AlignmentPoint {
 
 impl From<AlignmentPoint> for AlignmentRepr {
     fn from(a: AlignmentPoint) -> Self {
-        match a.structure {
-            None => Self::Free(a.position),
-            Some(s) => Self::Tied {
-                position: a.position,
-                structure: Some(s),
-            },
+        if a.structure.is_none() && a.description.is_empty() {
+            return Self::Free(a.position);
+        }
+        Self::Tied {
+            position: a.position,
+            structure: a.structure,
+            description: a.description,
         }
     }
 }
@@ -299,6 +307,7 @@ impl Line {
             .iter()
             .filter_map(|id| self.structure(id))
             .map(|s| AlignmentPoint {
+                description: Default::default(),
                 position: s.position,
                 structure: Some(s.id.clone()),
             })

@@ -84,6 +84,7 @@
         <xs:complexType>
           <xs:attributeGroup ref="ols:xyz"/>
           <xs:attribute name="structure" type="xs:string"/>
+          <xs:attribute name="description" type="xs:string"/>
         </xs:complexType>
       </xs:element>
     </xs:sequence>
@@ -154,6 +155,7 @@
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="label" type="xs:string" use="required"/>
+                  <xs:attribute name="description" type="xs:string"/>
                   <xs:attributeGroup ref="ols:xyz"/>
                 </xs:complexType>
               </xs:element>
@@ -165,6 +167,7 @@
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="label" type="xs:string" use="required"/>
+                  <xs:attribute name="description" type="xs:string"/>
                   <xs:attributeGroup ref="ols:xyz"/>
                   <xs:attribute name="set" type="xs:unsignedInt"/>
                   <xs:attribute name="weight" type="xs:double" default="0"/>
@@ -178,6 +181,7 @@
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="label" type="xs:string" use="required"/>
+                  <xs:attribute name="description" type="xs:string"/>
                   <xs:attribute name="top" type="xs:string" use="required"/>
                   <xs:attribute name="wire" type="xs:string" use="required"/>
                   <xs:attribute name="insulator" type="xs:string"/>
@@ -263,6 +267,7 @@
               </xs:element>
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="description" type="xs:string"/>
             <xs:attribute name="name" type="xs:string"/>
             <xs:attribute name="kind" type="ols:systemKind" default="ac"/>
             <xs:attribute name="voltage_kv" type="xs:double" use="required"/>
@@ -290,6 +295,7 @@
               </xs:element>
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="description" type="xs:string"/>
             <xs:attribute name="cable" type="xs:string" use="required"/>
             <xs:attribute name="circuit" type="xs:string"/>
             <xs:attribute name="phase_label" type="xs:string"/>
@@ -327,6 +333,7 @@
               </xs:element>
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="description" type="xs:string"/>
             <xs:attribute name="cable" type="xs:string" use="required"/>
             <xs:attribute name="length" type="xs:double"/>
             <xs:attribute name="sag" type="xs:double"/>

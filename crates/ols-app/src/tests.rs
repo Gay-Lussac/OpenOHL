@@ -7425,6 +7425,7 @@ fn string_editor_presets_make_valid_assemblies() {
     line.structures.push(t9);
     let t10 = ols_line::Structure {
         wires: vec![ols_line::WirePoint {
+            description: Default::default(),
             label: "W1".into(),
             position: [
                 t5.position[0] + 500.0,
@@ -7773,6 +7774,7 @@ fn strings_are_picked_along_their_body_and_edited_by_angles() {
         .unwrap();
     let w0 = st.wires[0].position;
     st.wires.push(ols_line::WirePoint {
+        description: Default::default(),
         label: "JH".into(),
         position: [w0[0], w0[1], w0[2] - 2.0],
         set: None,
@@ -8215,10 +8217,12 @@ fn a_structure_is_put_on_an_alignment_point_along_the_line() {
         f.description = "angle tower, invented".into();
         f.points = vec![
             PointRow {
+                description: Default::default(),
                 label: "A1".into(),
                 at: [-6.0, 0.0, 25.0],
             },
             PointRow {
+                description: Default::default(),
                 label: "A2".into(),
                 at: [6.0, 0.0, 25.0],
             },
@@ -8245,5 +8249,93 @@ fn a_structure_is_put_on_an_alignment_point_along_the_line() {
     assert_eq!(
         r.model.line.alignment[1].structure.as_deref(),
         Some(id.as_str())
+    );
+}
+
+/// Descriptions: typed in the tables, kept, shown as labels with the
+/// objects' labels when asked for (Structures › Display options).
+#[test]
+fn descriptions_are_typed_and_shown_as_labels() {
+    use crate::annotations::{Kind, View, object_notes};
+    use crate::tables::TableKind;
+    let model = synthetic_project("descriptions");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    set_cell(
+        &mut harness,
+        TableKind::Structures,
+        "T2",
+        "description",
+        "angle tower",
+    );
+    apply_table(&mut harness, TableKind::Structures, true).unwrap();
+    set_cell(
+        &mut harness,
+        TableKind::Strings,
+        "T2\tS1",
+        "description",
+        "glass, 2019",
+    );
+    apply_table(&mut harness, TableKind::Strings, true).unwrap();
+    set_cell(
+        &mut harness,
+        TableKind::Sections,
+        "S1",
+        "description",
+        "phase L1",
+    );
+    apply_table(&mut harness, TableKind::Sections, true).unwrap();
+    set_cell(
+        &mut harness,
+        TableKind::Jumpers,
+        "J-T3-branch",
+        "description",
+        "branch loop",
+    );
+    apply_table(&mut harness, TableKind::Jumpers, true).unwrap();
+    set_cell(
+        &mut harness,
+        TableKind::Systems,
+        "ex220",
+        "description",
+        "220 kV",
+    );
+    apply_table(&mut harness, TableKind::Systems, true).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let line = &r.model.line;
+    let t2 = line.structure("T2").unwrap();
+    assert_eq!(t2.description, "angle tower");
+    assert_eq!(t2.string("S1").unwrap().description, "glass, 2019");
+    assert_eq!(line.sections[0].description, "phase L1");
+    assert_eq!(line.jumpers[0].description, "branch loop");
+    assert_eq!(line.systems[0].description, "220 kV");
+    // Labels: none until asked for; then the structures, points, strings,
+    // wire points, with their descriptions when ticked.
+    assert!(object_notes(&r.model, 0, View::Plan).is_empty());
+    let d = &mut r.model.section_display;
+    for ticks in [
+        &mut d.structure_label,
+        &mut d.point_label,
+        &mut d.string_label,
+        &mut d.wire_label,
+        &mut d.descriptions,
+    ] {
+        ticks[View::Plan as usize] = true;
+    }
+    let notes = object_notes(&r.model, 0, View::Plan);
+    assert!(notes.iter().all(|n| n.kind == Kind::Object));
+    let texts: Vec<&str> = notes.iter().map(|n| n.text.as_str()).collect();
+    assert!(texts.contains(&"T2 — angle tower"), "{texts:?}");
+    assert!(texts.contains(&"S1 — glass, 2019"), "{texts:?}");
+    assert!(texts.iter().any(|t| t.ends_with("(set 1)")), "{texts:?}");
+    // A string's label sits where it is drawn: at its middle as solved.
+    let pieces = crate::selection::string_pieces(&r.model, 0);
+    let (a, b) = pieces[&("T2".to_owned(), "S1".to_owned())][0];
+    let n = notes.iter().find(|n| n.text.starts_with("S1 —")).unwrap();
+    assert!(
+        (0..3).all(|k| (n.at[k] - 0.5 * (a[k] + b[k])).abs() < 1e-9)
+            || notes.iter().filter(|n| n.text.starts_with("S1 —")).count() > 1
     );
 }

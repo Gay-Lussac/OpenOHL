@@ -1594,6 +1594,7 @@ mod tests {
             let q = v(free.points[k]);
             let w = q + Vector3::new(0.0, 0.0, 1.0);
             st.wires.push(WirePoint {
+                description: Default::default(),
                 label: label.into(),
                 position: p(w),
                 set: None,
@@ -1608,6 +1609,7 @@ mod tests {
             for (n, top) in tops.into_iter().enumerate() {
                 let top_label = format!("{label}-top{n}");
                 st.points.push(StructurePoint {
+                    description: Default::default(),
                     label: top_label.clone(),
                     position: p(top),
                 });
@@ -1863,6 +1865,7 @@ mod tests {
                 let st = t3(l);
                 let jw = st.wire("JW").unwrap().position;
                 st.wires.push(WirePoint {
+                    description: Default::default(),
                     label: "JX".into(),
                     position: [jw[0], jw[1], jw[2] - 0.5],
                     set: None,

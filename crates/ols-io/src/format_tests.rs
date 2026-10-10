@@ -48,6 +48,10 @@ fn rich_line() -> Line {
     s.structure_type = Some("tangent & <co>".into());
     s.extension = Some("+3".into());
     s.height_adjust = 0.375;
+    s.description = "a \"tower\" & <more>".into();
+    s.points[0].description = "left arm tip".into();
+    s.wires[0].description = "the clamp".into();
+    s.strings[0].description = "glass, 2019".into();
     s.omit = vec!["gone \"x\"".into()];
     s.omit_sets = vec![2];
     s.members = vec![vec![[0.5, 1.0, 500.0], [0.25, 1.0, 530.125]]];
@@ -62,6 +66,7 @@ fn rich_line() -> Line {
     // A V with a string below: strings hanging from strings.
     let w = s.wires[0].clone();
     s.wires.push(ols_line::WirePoint {
+        description: Default::default(),
         label: "tip\nnext".into(),
         position: [w.position[0], w.position[1], w.position[2] + 0.5],
         set: None,
@@ -69,6 +74,7 @@ fn rich_line() -> Line {
     });
     s.wires[0].weight = 3500.0;
     s.points.push(ols_line::StructurePoint {
+        description: Default::default(),
         label: "VL".into(),
         position: [w.position[0] - 2.0, w.position[1], w.position[2] + 3.0],
     });
@@ -106,6 +112,14 @@ fn rich_line() -> Line {
         fraction: 0.25,
     });
     line.jumpers[0].bundle = Some(1);
+    line.jumpers[0].description = "loop at the dead end".into();
+    line.sections[0].description = "phase L1 of circuit 1".into();
+    line.systems[0].description = "the 220 kV system".into();
+    let first = match line.routes.first_mut() {
+        Some(r) => r.alignment.first_mut(),
+        None => line.alignment.first_mut(),
+    };
+    first.expect("an alignment point").description = "start at the substation".into();
     line.jumpers[0].angle_from_deg = Some(-10.0);
     line.systems[0].kind = ols_line::electrical::SystemKind::Dc;
     line.systems[0].phases[0].polarity = Some(-1);
@@ -121,6 +135,7 @@ fn rich_line() -> Line {
     line.alignment = vec![ols_line::AlignmentPoint::free([0.0, 0.0, 1.0])];
     line.routes[1].alignment = vec![
         ols_line::AlignmentPoint {
+            description: Default::default(),
             position: line.structures[2].position,
             structure: Some(line.structures[2].id.clone()),
         },
@@ -143,6 +158,7 @@ fn rich_line() -> Line {
     let t = line.structures.iter_mut().find(|s| s.id == from).unwrap();
     let top = t.points[0].clone();
     t.wires.push(ols_line::WirePoint {
+        description: Default::default(),
         label: "JW".into(),
         position: [
             top.position[0],

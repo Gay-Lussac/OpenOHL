@@ -33,6 +33,9 @@ use crate::{Point, Structure};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StructurePoint {
+    /// What it is, in words (free text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     /// Label, unique among the structure's points and wire points (e.g.
     /// `"A1-L"`).
     pub label: String,
@@ -45,6 +48,9 @@ pub struct StructurePoint {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WirePoint {
+    /// What it is, in words (free text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     /// Label, unique among the structure's points and wire points (e.g.
     /// `"W1"`).
     pub label: String,
@@ -65,6 +71,9 @@ pub struct WirePoint {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InsulatorString {
+    /// What it is, in words (free text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     /// Label, unique among the structure's strings.
     pub label: String,
     /// Top: a structure point, or the wire point of another string.
@@ -452,6 +461,7 @@ pub fn from_v1(
         };
         let (wire, _) = take(wire_label, a.wire_point, false);
         wires.push(WirePoint {
+            description: Default::default(),
             label: wire.clone(),
             position: a.wire_point,
             set: Some(set_from_v1(a.set, a.phase)),
@@ -459,6 +469,7 @@ pub fn from_v1(
         });
         let top = pick(&a.top_label, top_default);
         let string = |label: String, top: String, share: f64| InsulatorString {
+            description: Default::default(),
             label,
             top,
             wire: wire.clone(),
@@ -475,6 +486,7 @@ pub fn from_v1(
                     let (label, new) = take(format!("{top}{suffix}"), *leg, true);
                     if new {
                         points.push(StructurePoint {
+                            description: Default::default(),
                             label: label.clone(),
                             position: *leg,
                         });
@@ -487,6 +499,7 @@ pub fn from_v1(
                 let (label, new) = take(top, a.insulator_point, true);
                 if new {
                     points.push(StructurePoint {
+                        description: Default::default(),
                         label: label.clone(),
                         position: a.insulator_point,
                     });
@@ -587,10 +600,12 @@ mod tests {
     #[test]
     fn strings_hang_from_strings() {
         let p = |label: &str, position: Point| StructurePoint {
+            description: Default::default(),
             label: label.into(),
             position,
         };
         let w = |label: &str, position: Point, set: Option<u32>| WirePoint {
+            description: Default::default(),
             label: label.into(),
             position,
             set,

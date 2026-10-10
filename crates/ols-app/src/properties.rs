@@ -62,6 +62,7 @@ pub fn ui(
                 return;
             };
             ui.heading(format!("Structure {id}"));
+            description(ui, &s.description);
             grid(
                 ui,
                 "structure",
@@ -210,6 +211,7 @@ pub fn ui(
                 return;
             };
             ui.heading(format!("{structure} set {set}"));
+            description(ui, &w.description);
             if ui.link(format!("structure {structure}")).clicked() {
                 next = Some(Selection::Structure(structure.clone()));
             }
@@ -286,6 +288,7 @@ pub fn ui(
                 return;
             };
             ui.heading(format!("{structure} string {label}"));
+            description(ui, &x.description);
             if ui.link(format!("structure {structure}")).clicked() {
                 next = Some(Selection::Structure(structure.clone()));
             }
@@ -375,6 +378,13 @@ pub fn ui(
         Selection::AlignmentPoint { route, index } => {
             ui.heading(format!("Route {route}, alignment point {}", index + 1));
             let routes = line.effective_routes();
+            if let Some(a) = routes
+                .iter()
+                .find(|r| r.id == route)
+                .and_then(|r| r.alignment.get(index))
+            {
+                description(ui, &a.description);
+            }
             let r = routes.iter().find(|r| r.id == route);
             let tied = r.and_then(|r| {
                 if r.alignment.is_empty() {
@@ -449,6 +459,7 @@ pub fn ui(
                 return;
             };
             ui.heading(format!("Jumper {id}"));
+            description(ui, &j.description);
             ui.horizontal(|ui| {
                 for end in [&j.from, &j.to] {
                     if ui
@@ -640,6 +651,7 @@ pub fn ui(
             };
             let (a, b) = (&sec.points[span].structure, &sec.points[span + 1].structure);
             ui.heading(format!("{section} span {}", span + 1));
+            description(ui, &sec.description);
             ui.horizontal(|ui| {
                 for st in [a, b] {
                     if ui.link(format!("structure {st}")).clicked() {
@@ -763,4 +775,11 @@ pub fn cases_box(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui)) {
             .auto_shrink([false, false])
             .show(ui, add);
     });
+}
+
+/// An object's description under its heading (when it has one).
+fn description(ui: &mut egui::Ui, text: &str) {
+    if !text.trim().is_empty() {
+        ui.label(egui::RichText::new(text.trim()).italics());
+    }
 }

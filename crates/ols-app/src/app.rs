@@ -4161,6 +4161,16 @@ fn menus(
         item(ui, Command::Table(TableKind::Structures), out);
         item(ui, Command::Table(TableKind::Strings), out);
         ui.separator();
+        crate::menu::options_menu(ui, "Display options", |ui| {
+            ui.label(
+                egui::RichText::new("Labels in each view (yours only)")
+                    .small()
+                    .weak(),
+            );
+            if r.model.section_display.structures_ui(ui) {
+                r.refresh_views();
+            }
+        });
         if ui
             .button("Add structure…")
             .on_hover_text(

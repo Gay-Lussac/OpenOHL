@@ -138,6 +138,9 @@ fn half() -> f64 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Jumper {
+    /// What it is, in words (free text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     /// Unique id.
     pub id: String,
     /// Cable id in the wire libraries.
@@ -664,6 +667,9 @@ fn is_zero(x: &f64) -> bool {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Section {
+    /// What it is, in words (free text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     /// Unique id.
     pub id: String,
     /// Cable id in the wire libraries (`.olsw`).
