@@ -40,7 +40,7 @@ The names are those of the line file:
          <wire_point>, <leg>; <omit set phase>; section points with a phase -->
     <member>x y z x y z …</member>              <!-- stick drawing polyline -->
   </structure>
-  <system id="…" name="…" kind="ac" voltage_kv="220" frequency_hz="50">
+  <system id="…" name="…" kind="ac" voltage_kv="220" frequency_hz="50" color="#e4572e">
     <phase label="L1" angle_deg="0" polarity="1"/>
   </system>
   <section id="S1" cable="…" circuit="…" phase_label="L1" system="…" bundle="1"

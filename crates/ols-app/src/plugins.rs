@@ -237,7 +237,15 @@ fn create_project(
         &job.user,
         job.clip_in,
     )?;
-    Ok((made.path, made.project.notes))
+    let mut notes = made.project.notes;
+    notes.extend(
+        made.project
+            .line
+            .system_warnings()
+            .into_iter()
+            .map(|w| format!("warning: {w}")),
+    );
+    Ok((made.path, notes))
 }
 
 fn formats_of(r: &ols_io::Registry, errors: Vec<String>) -> Formats {

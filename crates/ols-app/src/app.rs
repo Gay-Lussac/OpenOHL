@@ -1488,6 +1488,27 @@ impl Ready {
             }
             self.refresh_views();
         }
+        // A system's circuits should run the same way: said, not refused.
+        use crate::tables::TableKind;
+        if done
+            && matches!(
+                kind,
+                TableKind::Sections | TableKind::Systems | TableKind::Circuits | TableKind::Jumpers
+            )
+        {
+            let warnings = self.model.line.system_warnings();
+            if !warnings.is_empty() {
+                let done_what = self
+                    .status
+                    .clone()
+                    .map_or(String::new(), |s| format!("{}; ", s.0));
+                // Done, with a warning (shown yellow).
+                self.status = Some((
+                    format!("{done_what}warning: {}", warnings.join("; ")),
+                    false,
+                ));
+            }
+        }
         if let Some(page) = self.tables.get_mut(&kind) {
             if done {
                 page.clear();
@@ -4040,11 +4061,14 @@ fn menus(
         ui.separator();
         crate::menu::options_menu(ui, "Display options", |ui| {
             ui.label(
-                egui::RichText::new("Written next to the wires, in each view (yours only)")
+                egui::RichText::new("How the wires are drawn and what is written next to them, in each view (yours only)")
                     .small()
                     .weak(),
             );
-            r.model.section_display.ui(ui);
+            if r.model.section_display.ui(ui) {
+                // Colours, line codes and arrows: drawn again.
+                r.refresh_views();
+            }
         });
     });
     ui.menu_button("Criteria", |ui| {

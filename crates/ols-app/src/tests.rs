@@ -7582,3 +7582,63 @@ fn a_circuit_takes_one_colour() {
             .contains("#rrggbb")
     );
 }
+
+/// Wires coloured by system: the system's colour, its phases in line
+/// codes (S1 L1 solid, S2 L2 ·–·–), the branch (joined to S1) like S1;
+/// the 3D view and plan draw the codes and arrows (OLS_RENDER_PNG: an
+/// image).
+#[test]
+fn wires_by_system_with_line_codes_and_arrows() {
+    use crate::annotations::View;
+    use crate::wire_style::{Coloring, Styles};
+    let gpu = ols_render::headless_device().is_ok();
+    assert!(
+        gpu || std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+        "no GPU"
+    );
+    let mut model = synthetic();
+    let styles = Styles::new(&model.line, Coloring::Systems);
+    let colour = crate::scene::rgb(&model.line.system_color(0));
+    assert_eq!(
+        (styles.section("S1").color, styles.section("S1").code),
+        (colour, 0)
+    );
+    assert_eq!(
+        (styles.section("S2").color, styles.section("S2").code),
+        (colour, 1)
+    );
+    assert_eq!(styles.section("S3").code, 0);
+    assert_eq!(styles.jumper("J-T3-branch").color, colour);
+    // By circuit: each section's own (phase) colours.
+    let by_circuit = Styles::new(&model.line, Coloring::Circuits);
+    assert_ne!(
+        by_circuit.section("S1").color,
+        by_circuit.section("S2").color
+    );
+    model.section_display.coloring = Coloring::Systems;
+    model.section_display.direction = [true; 3];
+    let lines = |m: &model::Model| {
+        let mut out = Vec::new();
+        crate::scene::wires(&mut out, m, &m.line, &m.cases, 0, true, None);
+        out.len()
+    };
+    let coded = lines(&model);
+    let display = model.section_display.clone();
+    model.section_display.coloring = Coloring::Circuits;
+    model.section_display.direction[View::ThreeD as usize] = false;
+    let plain = lines(&model);
+    assert!(coded > plain + 20, "dashes and arrows: {coded} vs {plain}");
+    model.section_display = display;
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    if gpu && let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ols-cad-system-codes.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+}

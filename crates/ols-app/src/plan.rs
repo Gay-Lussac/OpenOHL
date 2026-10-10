@@ -9,7 +9,6 @@
 use eframe::egui;
 
 use crate::model::Model;
-use crate::scene::rgb;
 use crate::selection::{self, Selection};
 
 /// State of the plan view.
@@ -27,6 +26,45 @@ pub struct PlanView {
     pub drawn: Option<egui::Rect>,
     /// Orthophoto tiles read.
     backgrounds: crate::backgrounds::PlanCache,
+    /// The wires' colours, line codes and directions.
+    styles: crate::wire_style::StyleCache,
+}
+
+/// Length of a unit of the phases' line codes on screen, px.
+const DASH_PX: f64 = 3.0;
+
+/// A wire on screen in its line code, and its direction as an arrow head
+/// (`Some`: forward or back) at its middle.
+pub(crate) fn styled_wire(
+    painter: &egui::Painter,
+    pts: &[egui::Pos2],
+    code: usize,
+    arrow: Option<bool>,
+    stroke: egui::Stroke,
+) {
+    let flat: Vec<[f64; 3]> = pts
+        .iter()
+        .map(|p| [f64::from(p.x), f64::from(p.y), 0.0])
+        .collect();
+    let back = |l: &[[f64; 3]]| -> Vec<egui::Pos2> {
+        l.iter()
+            .map(|p| egui::pos2(p[0] as f32, p[1] as f32))
+            .collect()
+    };
+    for d in crate::wire_style::dashes(&flat, code, DASH_PX) {
+        painter.add(egui::Shape::line(back(&d), stroke));
+    }
+    if let Some(forward) = arrow
+        && let Some(legs) =
+            crate::wire_style::chevron(&flat, forward, 9.0, crate::wire_style::across)
+    {
+        for l in legs {
+            painter.add(egui::Shape::line(
+                back(&l),
+                egui::Stroke::new(1.5, stroke.color),
+            ));
+        }
+    }
 }
 
 fn color(c: [u8; 3]) -> egui::Color32 {
@@ -227,14 +265,15 @@ impl PlanView {
             ));
         }
         {
-            // Each section in each of its display cases.
+            // Each section in each of its display cases, coloured and
+            // coded as Sections › Display options say.
             let shapes = model.shapes_shown(case);
+            let display = &model.section_display;
+            let arrows = display.direction[crate::annotations::View::Plan as usize];
+            let styles = self.styles.get(line, display.coloring);
             for shape in &shapes {
-                let col = line
-                    .sections
-                    .iter()
-                    .find(|x| x.id == shape.section)
-                    .map_or([176, 184, 192], |s| rgb(&line.section_color(s)));
+                let style = styles.section(&shape.section);
+                let forward = styles.directions.sections.get(&shape.section).copied();
                 for (k, span) in shape.spans.iter().enumerate() {
                     let selected = matches!(selection, Selection::Span { section, span: n }
                         if *section == shape.section && *n == k);
@@ -242,23 +281,33 @@ impl PlanView {
                     let (w, col) = if selected {
                         (4.0, egui::Color32::WHITE)
                     } else {
-                        (1.5, color(col))
+                        (1.5, color(style.color))
                     };
-                    painter.add(egui::Shape::line(pts, egui::Stroke::new(w, col)));
+                    let arrow = forward.filter(|_| arrows);
+                    styled_wire(&painter, &pts, style.code, arrow, egui::Stroke::new(w, col));
                 }
             }
         }
         for solved in model.cases.get(case).into_iter().flat_map(|c| c.drawn()) {
             for j in &solved.jumpers {
                 let selected = matches!(selection, Selection::Jumper(id) if *id == j.jumper);
-                let (col, _) = crate::scene::jumper_lines(line, j, &solved.bundles);
+                let styles = self.styles.get(line, model.section_display.coloring);
+                let style = styles.jumper(&j.jumper);
+                let arrow = styles
+                    .directions
+                    .jumpers
+                    .get(&j.jumper)
+                    .copied()
+                    .filter(|_| {
+                        model.section_display.direction[crate::annotations::View::Plan as usize]
+                    });
                 let pts: Vec<egui::Pos2> = j.points.iter().map(|p| to_screen(*p)).collect();
                 let (w, col) = if selected {
                     (4.0, egui::Color32::WHITE)
                 } else {
-                    (1.0, color(col))
+                    (1.0, color(style.color))
                 };
-                painter.add(egui::Shape::line(pts, egui::Stroke::new(w, col)));
+                styled_wire(&painter, &pts, style.code, arrow, egui::Stroke::new(w, col));
             }
         }
         // Other project lines, in their colours.

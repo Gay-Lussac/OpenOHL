@@ -265,6 +265,7 @@
             <xs:attribute name="kind" type="ols:systemKind" default="ac"/>
             <xs:attribute name="voltage_kv" type="xs:double" use="required"/>
             <xs:attribute name="frequency_hz" type="xs:double"/>
+            <xs:attribute name="color" type="xs:string"/>
           </xs:complexType>
         </xs:element>
 

@@ -24,6 +24,8 @@ pub struct ProfileView {
     drawing: Option<((usize, usize), RouteDrawing)>,
     /// Visible stations.
     range: Option<[f64; 2]>,
+    /// The wires' colours, line codes and directions.
+    styles: crate::wire_style::StyleCache,
 }
 
 impl ProfileView {
@@ -220,12 +222,31 @@ impl ProfileView {
                 col,
             );
         }
+        // Coloured and coded as Sections › Display options say.
+        let display = &model.section_display;
+        let arrows = display.direction[crate::annotations::View::Profile as usize];
+        let styles = self.styles.get(&model.line, display.coloring);
         for w in &d.wires {
-            let selected = trace_selection(&w.label).is_some_and(|s| s == *selection);
-            let c = rgb(&w.color);
+            let traced = trace_selection(&w.label);
+            let selected = traced.as_ref().is_some_and(|s| s == selection);
+            let (style, forward) = match &traced {
+                Some(Selection::Span { section, .. }) => (
+                    Some(styles.section(section)),
+                    styles.directions.sections.get(section).copied(),
+                ),
+                Some(Selection::Jumper(id)) => (
+                    Some(styles.jumper(id)),
+                    styles.directions.jumpers.get(id).copied(),
+                ),
+                _ => (None, None),
+            };
+            let c = style.map_or_else(|| rgb(&w.color), |s| s.color);
             let pts: Vec<egui::Pos2> = w.points.iter().map(|p| to_screen(p[0], p[2])).collect();
-            painter.add(egui::Shape::line(
-                pts,
+            crate::plan::styled_wire(
+                &painter,
+                &pts,
+                style.map_or(0, |s| s.code),
+                forward.filter(|_| arrows),
                 egui::Stroke::new(
                     if selected { 3.5 } else { 1.3 },
                     if selected {
@@ -234,7 +255,7 @@ impl ProfileView {
                         egui::Color32::from_rgb(c[0], c[1], c[2])
                     },
                 ),
-            ));
+            );
         }
         // Section labels and sags (Sections › Display options), on this
         // route's traces of the spans.

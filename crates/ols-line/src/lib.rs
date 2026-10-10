@@ -344,7 +344,7 @@ impl Display {
     }
 }
 
-fn is_hex_color(text: &str) -> bool {
+pub(crate) fn is_hex_color(text: &str) -> bool {
     text.len() == 7 && text.starts_with('#') && text[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
 

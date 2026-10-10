@@ -245,6 +245,9 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             for n in &p.notes {
                 println!("  - {n}");
             }
+            for w in p.line.system_warnings() {
+                println!("  - warning: {w}");
+            }
             println!(
                 "created {}: {} structures, {} sections, {} jumpers, {} library files, in {:.1?}",
                 made.path.display(),
