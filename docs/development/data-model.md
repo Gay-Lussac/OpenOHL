@@ -384,6 +384,25 @@ poles `.olsp` (`ols-pole`) next to the `.olss`
 rules `.olsr`; thermal ambient `.olsta`; unit costs `.olscost`; galloping
 `.olsg`; LiDAR class schemes `.olsc`.
 
+### Clearance rules (`.olsr`)
+
+Source: `crates/ols-clearance/src/rules.rs` (`RuleSet`, `RuleSet::to_toml`
+writes one back). Full reference: [Terrain and clearances](../user-guide/terrain.md).
+
+- `[[rule]]`: a target (LiDAR `classes`, the ground, other wires), a
+  distance (`vertical` / `radial`, fixed or by voltage), the weather
+  `cases` it applies to, `vertical_band` (zone width each side of the
+  wire), `vertical_depth` (slices along the line) and `voltages`
+  (kV of the wires checked; 0: earthed wires).
+- `[wind]` (optional): `steps`, `step` (Pa), `sides` — how the desktop
+  clearance windows step the wind up to each case's pressure; `ols line`
+  ignores it.
+- The desktop Vertical and Radial clearance windows keep their rules next
+  to the model, in `<model>.vertical-clearances.olsr` and
+  `<model>.radial-clearances.olsr` (one `[[rule]]` per row and target
+  kind). Rules refer to LiDAR classes by number (`.olsc` schemes) and to
+  weather cases by name.
+
 ### Structure type (`.olss`)
 
 Source: `crates/ols-structures/src/structures.rs`. All positions in
