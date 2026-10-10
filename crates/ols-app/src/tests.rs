@@ -7482,3 +7482,66 @@ fn the_start_screen_opens_the_plugin_manager() {
     assert!(h.state().plugins.open);
     h.get_by_label("Plugin manager");
 }
+
+/// A structure's "Edit pylon…" opens its type in the pylon workspace: the
+/// level from its content, the structures using it, the tables; a joint
+/// added goes into the file as edited (not saved).
+#[test]
+fn the_pylon_workspace_shows_and_edits_a_type() {
+    use crate::library::LibraryKind;
+    let gpu = ols_render::headless_device().is_ok();
+    assert!(
+        gpu || std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+        "no GPU"
+    );
+    let ex = root().join("examples/synthetic-line");
+    let model = model::load(
+        Sources {
+            file: ex.join("synthetic-line-typed.ols.json"),
+            library: Some(root().join("libraries/cables")),
+            structures: Some(ex.join("Structures")),
+            point_budget: 1000,
+            corridor: 60.0,
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    let mut builder = Harness::builder().with_size(egui::vec2(1500.0, 950.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    harness.state_mut().ready().unwrap().selection = Selection::Structure("T2".into());
+    harness.run();
+    harness.get_by_label("Edit pylon…").click();
+    harness.run();
+    harness.run();
+    harness.get_by_label("Level 3 — full design");
+    harness.get_by_label("used by 2 structures of the line (they follow when saved)");
+    harness.get_by_label("Joints");
+    if gpu && let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ols-cad-pylon-workspace.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    // A joint above the one picked.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let page = r.libraries.get_mut(&LibraryKind::StructureTypes).unwrap();
+        page.workspace.selected = vec![crate::type_workspace::Handle::Joint("A1".into())];
+    }
+    harness.get_by_label("Add joint").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let page = &r.libraries[&LibraryKind::StructureTypes];
+    assert!(page.dirty());
+    let text = page.text().unwrap();
+    assert!(
+        text.contains("point = [\"6.000 m\", \"0.000 m\", \"31.000 m\"]"),
+        "{text}"
+    );
+    assert!(page.error.is_none(), "{:?}", page.error);
+}

@@ -1054,7 +1054,11 @@ impl TabViewer for Viewer<'_> {
                     .libraries
                     .entry(kind)
                     .or_insert_with(|| crate::library::LibraryPage::new(kind, &sources));
-                if let Some(action) = page.ui(ui, &sources) {
+                let cx = crate::library::PageContext {
+                    rs: self.rs,
+                    model: &r.model,
+                };
+                if let Some(action) = page.ui(ui, &sources, cx) {
                     r.library_saved(kind, action);
                 }
                 None
@@ -1850,6 +1854,41 @@ impl Ready {
     }
 
     /// Performs an edit and updates the views; whether it was made.
+    /// Opens structure type `id` in the pylon workspace of the Structure
+    /// types page.
+    pub fn edit_type(&mut self, id: &str) {
+        let kind = crate::library::LibraryKind::StructureTypes;
+        let Some(path) = self
+            .model
+            .types
+            .as_ref()
+            .and_then(|(t, _)| t.path(id))
+            .map(std::path::Path::to_path_buf)
+        else {
+            self.status = Some((format!("structure type {id}: no file read"), true));
+            return;
+        };
+        let sources = self.model.sources.clone();
+        let page = self
+            .libraries
+            .entry(kind)
+            .or_insert_with(|| crate::library::LibraryPage::new(kind, &sources));
+        if page.file.as_deref() != Some(path.as_path()) {
+            if page.dirty() {
+                self.status = Some((
+                    "the Structure types page has unsaved changes: save or discard them first"
+                        .into(),
+                    true,
+                ));
+                self.open_page = Some((Tab::Library(kind), None));
+                return;
+            }
+            page.add_file(&path);
+        }
+        page.workspace.on = true;
+        self.open_page = Some((Tab::Library(kind), None));
+    }
+
     pub fn perform(&mut self, action: crate::edit::Action) -> bool {
         use crate::edit::{Action, EditError};
         let retry = action.confirmed();
@@ -1862,6 +1901,10 @@ impl Ready {
             Action::CancelPreview { id } => {
                 self.model.cancel_preview(self.case, &id);
                 self.refresh_views();
+                return true;
+            }
+            Action::EditType { id } => {
+                self.edit_type(&id);
                 return true;
             }
             Action::Command { what, command } => self.model.apply(&what, command),

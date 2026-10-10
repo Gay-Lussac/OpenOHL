@@ -52,6 +52,7 @@ mod survey_io;
 mod tables;
 mod thermal;
 mod tools;
+mod type_workspace;
 mod vegetation;
 mod versions;
 mod view3d;

@@ -297,6 +297,12 @@ pub enum Action {
         /// Confirmed.
         confirm: bool,
     },
+    /// Open structure type `id` in the pylon workspace (no edit by
+    /// itself).
+    EditType {
+        /// Structure type.
+        id: String,
+    },
     /// Undo the user's last command.
     Undo,
     /// Redo the user's last undo.

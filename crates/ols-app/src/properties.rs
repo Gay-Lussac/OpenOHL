@@ -125,6 +125,17 @@ pub fn ui(
                     }
                 });
             }
+            if let Some(t) = &s.structure_type
+                && ui
+                    .button("Edit pylon…")
+                    .on_hover_text(format!(
+                        "Open type {t} in the pylon workspace (every structure of the type \
+                         follows when saved)"
+                    ))
+                    .clicked()
+            {
+                action = Some(crate::edit::Action::EditType { id: t.clone() });
+            }
             ui.separator();
             ui.label(egui::RichText::new("Wire points").strong());
             egui::Grid::new("attachments").striped(true).show(ui, |ui| {
