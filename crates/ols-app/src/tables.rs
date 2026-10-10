@@ -320,10 +320,22 @@ const CIRCUITS: &[Column] = &[
         "one per conductor path: sections joined by jumpers or a shared attachment (counted from the connections)",
     ),
     (
-        "system:phase",
-        130.0,
-        Derived,
-        "its electrical system and phase (Sections table); none: earthed",
+        "name",
+        110.0,
+        Yes,
+        "circuit name, for all its sections (\"mixed: …\" when they differ)",
+    ),
+    (
+        "phase",
+        70.0,
+        Yes,
+        "phase label, for all its sections (\"mixed: …\" when they differ)",
+    ),
+    (
+        "system",
+        110.0,
+        Yes,
+        "electrical system, for all its sections (empty: earthed)",
     ),
     (
         "from",
@@ -1199,6 +1211,26 @@ impl TableKind {
                         SectionForm::of(model, key).ok_or_else(|| format!("no section {key}"))?;
                     section_cells(&mut form, &c, model, case, key)?;
                     let (what, cmd) = form.command(Some(stored))?;
+                    // Its circuit's other sections take its name, phase and
+                    // system (but those changed here by hand): listed to
+                    // confirm.
+                    let by_hand: Vec<String> = page.edits.keys().cloned().collect();
+                    let mates: Vec<_> = form
+                        .circuit_mates(stored, key)
+                        .into_iter()
+                        .filter(|(id, _)| !by_hand.contains(id))
+                        .collect();
+                    if !mates.is_empty() {
+                        out.takes.push(format!(
+                            "section {key}: its circuit's {} change too",
+                            mates
+                                .iter()
+                                .map(|(id, what)| format!("{id} ({})", what.join(", ")))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                    let mate_puts = form.circuit_puts(stored, key, &by_hand)?;
                     if new_id != *key {
                         out.commands.push((
                             format!("renamed section {key} to {new_id}"),
@@ -1212,6 +1244,7 @@ impl TableKind {
                     } else {
                         out.commands.push((what, cmd));
                     }
+                    out.commands.extend(mate_puts);
                 }
                 for cells in &page.added {
                     let c = Cells {
@@ -1560,6 +1593,10 @@ fn choices(
         (TableKind::Jumpers, "rigid") | (TableKind::Circuits, "reversed") => {
             (vec!["no".into(), "yes".into()], false)
         }
+        (TableKind::Circuits, "system") => (
+            with_none(model.line.systems.iter().map(|x| x.id.clone()).collect()),
+            false,
+        ),
         (TableKind::Systems, "kind") => (vec!["AC".into(), "DC".into()], false),
         (TableKind::WeatherCases, "Wind from\n ") => (vec!["right".into(), "left".into()], false),
         (TableKind::Alignments, "structure") => (
@@ -1656,7 +1693,6 @@ fn alignments(line: &ols_line::Line) -> Vec<(String, Vec<ols_line::AlignmentPoin
 /// The circuits (conductor paths), one row each: C1, C2… in the order of
 /// their first sections; keyed by their first section (stable when turned).
 fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
-    let phases = line.section_phases().unwrap_or_default();
     let along = {
         let mut l = line.clone();
         l.circuit_starts.clear();
@@ -1668,15 +1704,23 @@ fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
         .map(|(k, c)| {
             let key = circuit_key(&c);
             let default = along.iter().find(|d| circuit_key(d) == key);
-            let phase = c
+            let sections: Vec<&ols_line::Section> = c
                 .sections
-                .first()
-                .and_then(|s| phases.get(s).copied().flatten())
-                .and_then(|(sys, ph)| {
-                    let s = line.systems.get(sys)?;
-                    Some(format!("{}:{}", s.id, s.phases.get(ph)?.label))
-                })
-                .unwrap_or_default();
+                .iter()
+                .filter_map(|id| line.sections.iter().find(|s| &s.id == id))
+                .collect();
+            // One value for the circuit, or what its sections say.
+            let common = |get: &dyn Fn(&ols_line::Section) -> String| -> String {
+                let mut v: Vec<String> = sections.iter().map(|s| get(s)).collect();
+                v.dedup();
+                v.sort();
+                v.dedup();
+                match &v[..] {
+                    [] => String::new(),
+                    [one] => one.clone(),
+                    many => format!("mixed: {}", many.join(" / ")),
+                }
+            };
             Row {
                 defaulted: Vec::new(),
                 key,
@@ -1689,7 +1733,9 @@ fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
                     }),
                 cells: vec![
                     format!("C{}", k + 1),
-                    phase,
+                    common(&|s| s.circuit.clone()),
+                    common(&|s| s.phase_label.clone()),
+                    common(&|s| s.system.clone().unwrap_or_default()),
                     point(&c.start),
                     point(&c.end),
                     c.sections.join(" "),
@@ -1730,7 +1776,7 @@ fn circuit_commands(
         let Some(edit) = page.edits.get(&row.key) else {
             continue;
         };
-        let Some(v) = edit.get(&6) else { continue };
+        let Some(v) = edit.get(&8) else { continue };
         let reversed = match v.trim() {
             "yes" => true,
             "no" | "" => false,
@@ -1746,6 +1792,66 @@ fn circuit_commands(
             line.circuit_starts.push(c.end.clone());
         }
         turned.push(row.key.clone());
+    }
+    // Name, phase and system: on all its sections.
+    for row in rows {
+        let Some(edit) = page.edits.get(&row.key) else {
+            continue;
+        };
+        let Some(c) = along.iter().find(|c| circuit_key(c) == row.key) else {
+            continue;
+        };
+        let set = |k: usize| edit.get(&k).map(|v| v.trim().to_owned());
+        let (name, phase, system) = (set(1), set(2), set(3));
+        if name.is_none() && phase.is_none() && system.is_none() {
+            continue;
+        }
+        for v in [&name, &phase].into_iter().flatten() {
+            if v.starts_with("mixed:") {
+                return Err(format!("{}: give one value for the circuit", row.cells[0]));
+            }
+        }
+        let system = match system {
+            None => None,
+            Some(v) if v.is_empty() => Some(None),
+            Some(v) if stored.systems.iter().any(|x| x.id == v) => Some(Some(v)),
+            Some(v) => return Err(format!("{}: no electrical system \"{v}\"", row.cells[0])),
+        };
+        let mut changed = Vec::new();
+        for id in &c.sections {
+            let Some(mut sec) = stored.sections.iter().find(|s| &s.id == id).cloned() else {
+                continue;
+            };
+            let before = sec.clone();
+            if let Some(n) = &name {
+                sec.circuit = n.clone();
+            }
+            if let Some(p) = &phase {
+                sec.phase_label = p.clone();
+            }
+            if let Some(sy) = &system {
+                sec.system = sy.clone();
+            }
+            if sec != before {
+                changed.push(id.clone());
+                out.commands.push((
+                    format!("section {id}: as its circuit {}", row.cells[0]),
+                    Command::Put {
+                        kind: Kind::Section,
+                        id: id.clone(),
+                        value: serde_json::to_value(&sec).map_err(|e| e.to_string())?,
+                        ord: None,
+                    },
+                ));
+            }
+        }
+        if !changed.is_empty() {
+            out.takes.push(format!(
+                "circuit {}: sections {}",
+                row.cells[0],
+                changed.join(", ")
+            ));
+        }
     }
     if turned.is_empty() {
         return Ok(());
@@ -2530,13 +2636,18 @@ impl TablePage {
         if let Some(takes) = &self.confirm {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The deletions also take (one log entry, undo brings everything back):",
+                "This also changes (one log entry, undo brings everything back):",
             );
-            for t in takes {
-                ui.label(egui::RichText::new(format!("  {t}")).small());
-            }
+            egui::ScrollArea::vertical()
+                .id_salt("table-confirm")
+                .max_height(160.0)
+                .show(ui, |ui| {
+                    for t in takes {
+                        ui.label(egui::RichText::new(format!("  {t}")).small());
+                    }
+                });
             ui.horizontal(|ui| {
-                if ui.button("Apply and delete all that").clicked() {
+                if ui.button("Apply all that").clicked() {
                     apply = true;
                     confirmed = true;
                 }
