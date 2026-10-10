@@ -47,16 +47,35 @@ fn rich_line() -> Line {
     let s = &mut line.structures[1];
     s.structure_type = Some("tangent & <co>".into());
     s.extension = Some("+3".into());
-    s.omit = vec![[2, 1]];
+    s.omit = vec!["gone \"x\"".into()];
+    s.omit_sets = vec![2];
     s.members = vec![vec![[0.5, 1.0, 500.0], [0.25, 1.0, 530.125]]];
-    let a = &mut s.attachments[0];
-    a.legs = Some([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+    let a = &mut s.strings[0];
+    a.label = "top \"A\" & <b>".into();
     a.insulator = Some("v-string".into());
-    a.insulator_weight = 812.5;
-    a.insulator_wind_area = 0.3;
-    a.top_label = "top \"A\"".into();
-    a.bottom_label = "bottom\nnext".into();
-    a.strain_member = true;
+    a.weight = 812.5;
+    a.wind_area = 0.3;
+    a.stiffness = Some(4e7);
+    a.compression = Some(1500.0);
+    a.strain = true;
+    // A V with a string below: strings hanging from strings.
+    let w = s.wires[0].clone();
+    s.wires.push(ols_line::WirePoint {
+        label: "tip\nnext".into(),
+        position: [w.position[0], w.position[1], w.position[2] + 0.5],
+        set: None,
+    });
+    s.points.push(ols_line::StructurePoint {
+        label: "VL".into(),
+        position: [w.position[0] - 2.0, w.position[1], w.position[2] + 3.0],
+    });
+    s.strings.push(ols_line::InsulatorString {
+        label: "leg".into(),
+        top: "VL".into(),
+        wire: "tip\nnext".into(),
+        weight: 100.0,
+        ..Default::default()
+    });
     let ball = &mut line.sections[0].loads[0];
     ball.diameter = 0.6;
     ball.drag = Some(0.8);

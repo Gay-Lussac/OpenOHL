@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use eframe::egui;
-use ols_line::{SectionPoint, Stringing};
+use ols_line::{SectionPoint, Stringing, Structure};
 use ols_session::{Command, Kind};
 
 use crate::editors::{SectionForm, StringForm, StructureForm};
@@ -171,36 +171,22 @@ const SECTIONS: &[Column] = &[
 
 const STRINGS: &[Column] = &[
     ("structure", 110.0, New, "the structure it hangs on"),
+    ("string", 90.0, Yes, "its label on the structure"),
     (
-        "string",
-        55.0,
+        "from",
+        90.0,
         Yes,
-        "set:phase (renumbering: sections and jumpers follow)",
+        "its top: a point of the structure, or another string's wire point",
     ),
-    ("label", 100.0, Yes, "label"),
+    ("to", 90.0, Yes, "its wire point"),
     (
-        "top across",
-        75.0,
-        Yes,
-        "insulator point: across the line (right looking ahead), m",
+        "sets",
+        60.0,
+        Derived,
+        "the sets (wire ends) hanging on it and the strings joined to it",
     ),
-    (
-        "top along",
-        75.0,
-        Yes,
-        "insulator point: along the line (ahead), m",
-    ),
-    ("top up", 75.0, Yes, "insulator point: up from the base, m"),
-    ("wire across", 75.0, Yes, "wire point: across, m"),
-    ("wire along", 75.0, Yes, "wire point: along, m"),
-    ("wire up", 75.0, Yes, "wire point: up, m"),
-    (
-        "length m",
-        65.0,
-        Yes,
-        "string length (typed: the wire point straight below)",
-    ),
-    ("weight N", 75.0, Yes, "insulator weight"),
+    ("length m", 65.0, Derived, "from its top to its wire point"),
+    ("weight N", 75.0, Yes, "its weight"),
     (
         "insulator",
         110.0,
@@ -208,12 +194,23 @@ const STRINGS: &[Column] = &[
         "insulator assembly id (empty: none)",
     ),
     (
+        "compression N",
+        90.0,
+        Yes,
+        "compression it may take (empty: tension only; beyond it: flagged)",
+    ),
+    (
         "strain",
         55.0,
         Yes,
-        "yes: a strain string (free along its conductor)",
+        "yes: a strain string (lined up with its conductor)",
     ),
-    ("sections", 60.0, Derived, "sections through it"),
+    (
+        "sections",
+        60.0,
+        Derived,
+        "sections through its wire points",
+    ),
 ];
 
 const JUMPERS: &[Column] = &[
@@ -452,21 +449,24 @@ fn f(v: f64, decimals: usize) -> String {
 }
 
 fn point(p: &SectionPoint) -> String {
-    format!("{} {}:{}", p.structure, p.set, p.phase)
+    format!("{} {}", p.structure, p.set)
 }
 
-/// "T3 2:1" → a section point.
+/// "T3 2" → a section point (files written before: "T3 2:1", the set
+/// [`ols_line::assembly::set_from_v1`]).
 fn parse_point(text: &str) -> Result<SectionPoint, String> {
     let t = text.trim();
     let (s, sp) = t
         .rsplit_once(' ')
-        .ok_or_else(|| format!("\"{t}\": write structure set:phase, e.g. T3 2:1"))?;
-    let (set, phase) = parse_set_phase(sp)?;
-    Ok(SectionPoint {
-        structure: s.trim().to_owned(),
-        set,
-        phase,
-    })
+        .ok_or_else(|| format!("\"{t}\": write structure and set, e.g. T3 2"))?;
+    let set = match parse_set_phase(sp) {
+        Ok((set, phase)) => ols_line::assembly::set_from_v1(set, phase),
+        Err(_) => sp
+            .trim()
+            .parse()
+            .map_err(|_| format!("\"{t}\": write structure and set, e.g. T3 2"))?,
+    };
+    Ok(SectionPoint::new(s.trim(), set))
 }
 
 fn parse_set_phase(text: &str) -> Result<(u32, u32), String> {
@@ -606,32 +606,32 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
             }
         }
         TableKind::Strings => {
-            let mut weight: std::collections::HashMap<(&str, u32, u32), f64> =
+            // Weights estimated for strain strings given without one.
+            let mut weight: std::collections::HashMap<(&str, String), f64> =
                 std::collections::HashMap::new();
             if let Some(solved) = model.cases.get(case) {
                 for shape in &solved.shapes {
                     let Some(sec) = line.sections.iter().find(|s| s.id == shape.section) else {
                         continue;
                     };
-                    for (p, w) in sec.points.iter().zip(&shape.estimated_weights) {
-                        if let Some(w) = w {
-                            weight.insert((p.structure.as_str(), p.set, p.phase), *w);
+                    for ((p, w), strings) in sec
+                        .points
+                        .iter()
+                        .zip(&shape.estimated_weights)
+                        .zip(&shape.strings)
+                    {
+                        if let (Some(w), [x]) = (w, strings.as_slice()) {
+                            weight.insert((p.structure.as_str(), x.label.clone()), *w);
                         }
                     }
                 }
             }
             for row in rows.iter_mut() {
-                let (structure, sp) = row.key.split_once('\t').unwrap_or((&row.key, ""));
-                let Some((set_no, phase)) = sp
-                    .split_once(':')
-                    .and_then(|(a, b)| Some((a.parse().ok()?, b.parse().ok()?)))
-                else {
-                    continue;
-                };
-                if let Some(w) = weight.get(&(structure, set_no, phase)).copied() {
+                let (structure, label) = row.key.split_once('\t').unwrap_or((&row.key, ""));
+                if let Some(w) = weight.get(&(structure, label.to_owned())).copied() {
                     let w = f(w, 1);
-                    row.cells[10].clear();
-                    set(row, 10, w);
+                    row.cells[6].clear();
+                    set(row, 6, w);
                 }
             }
         }
@@ -746,15 +746,13 @@ impl TableKind {
 
     pub fn rows(self, model: &Model, case: usize) -> Vec<Row> {
         let line = &model.line;
-        let mut through: std::collections::HashMap<(&str, u32, u32), usize> =
+        let mut through: std::collections::HashMap<(&str, u32), usize> =
             std::collections::HashMap::new();
         let mut at_structure: std::collections::HashMap<&str, usize> =
             std::collections::HashMap::new();
         for s in &line.sections {
             for p in &s.points {
-                *through
-                    .entry((p.structure.as_str(), p.set, p.phase))
-                    .or_default() += 1;
+                *through.entry((p.structure.as_str(), p.set)).or_default() += 1;
             }
             let mut ids: Vec<&str> = s.points.iter().map(|p| p.structure.as_str()).collect();
             ids.sort_unstable();
@@ -779,7 +777,7 @@ impl TableKind {
                         f(s.position[0], 3),
                         f(s.position[1], 3),
                         f(s.position[2], 3),
-                        s.attachments.len().to_string(),
+                        s.sets().count().to_string(),
                         at_structure
                             .get(s.id.as_str())
                             .copied()
@@ -871,37 +869,45 @@ impl TableKind {
                 .iter()
                 .flat_map(|s| {
                     let through = &through;
-                    s.attachments.iter().filter_map(move |a| {
-                        let form = StringForm::of(model, &s.id, a.set, a.phase)?;
-                        Some(Row {
+                    s.strings.iter().map(move |x| {
+                        let sets: Vec<u32> = s
+                            .component(&x.wire)
+                            .wires
+                            .iter()
+                            .filter_map(|&i| s.wires[i].set)
+                            .collect();
+                        Row {
                             defaulted: Vec::new(),
-                            key: format!("{}\t{}:{}", s.id, a.set, a.phase),
-                            select: Selection::Attachment {
-                                structure: s.id.clone(),
-                                set: a.set,
-                                phase: a.phase,
+                            key: format!("{}\t{}", s.id, x.label),
+                            select: match sets.first() {
+                                Some(&set) => Selection::Attachment {
+                                    structure: s.id.clone(),
+                                    set,
+                                },
+                                None => Selection::Structure(s.id.clone()),
                             },
                             cells: vec![
                                 s.id.clone(),
-                                format!("{}:{}", a.set, a.phase),
-                                form.label.clone(),
-                                f(form.top[0], 3),
-                                f(form.top[1], 3),
-                                f(form.top[2], 3),
-                                f(form.bottom[0], 3),
-                                f(form.bottom[1], 3),
-                                f(form.bottom[2], 3),
-                                f(form.length(), 3),
-                                f(form.weight, 1),
-                                form.insulator.clone().unwrap_or_default(),
-                                if form.strain { "yes" } else { "no" }.into(),
-                                through
-                                    .get(&(s.id.as_str(), a.set, a.phase))
-                                    .copied()
-                                    .unwrap_or(0)
+                                x.label.clone(),
+                                x.top.clone(),
+                                x.wire.clone(),
+                                sets.iter()
+                                    .map(u32::to_string)
+                                    .collect::<Vec<_>>()
+                                    .join(" "),
+                                s.string_length(x).map_or(String::new(), |l| f(l, 3)),
+                                f(x.weight, 1),
+                                x.insulator.clone().unwrap_or_default(),
+                                x.compression.map_or(String::new(), |c| f(c, 0)),
+                                if x.strain { "yes" } else { "no" }.into(),
+                                sets.iter()
+                                    .map(|set| {
+                                        through.get(&(s.id.as_str(), *set)).copied().unwrap_or(0)
+                                    })
+                                    .sum::<usize>()
                                     .to_string(),
                             ],
-                        })
+                        }
                     })
                 })
                 .collect(),
@@ -1055,8 +1061,7 @@ impl TableKind {
                 cells[10] = "15".into();
             }
             TableKind::Strings => {
-                cells[1] = "1:1".into();
-                cells[12] = "no".into();
+                cells[9] = "no".into();
             }
             TableKind::Jumpers => {
                 cells[0] = taken_after(
@@ -1266,37 +1271,50 @@ impl TableKind {
                 }
             }
             TableKind::Strings => {
-                // One put per structure with all its strings, after the
-                // deletions (sections through a deleted string go).
-                let mut by_structure: BTreeMap<String, Vec<(Option<&String>, Cells)>> =
-                    BTreeMap::new();
-                let mut deleted: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
-                for key in &page.deleted {
-                    let (s, sp) = key.split_once('\t').unwrap_or((key, ""));
-                    let (set, phase) = parse_set_phase(sp)?;
-                    let i = session
-                        .attachment_deletion(s, set, phase)
-                        .map_err(|e| e.to_string())?;
-                    if i.has_dependents() {
-                        out.takes.push(i.summary());
+                // One put per structure with all its strings changed.
+                let mut structures: BTreeMap<String, Structure> = BTreeMap::new();
+                let take = |structures: &mut BTreeMap<String, Structure>,
+                            id: &str|
+                 -> Result<(), String> {
+                    if !structures.contains_key(id) {
+                        let s = stored
+                            .structure(id)
+                            .ok_or_else(|| format!("no structure {id}"))?
+                            .clone();
+                        structures.insert(id.to_owned(), s);
                     }
-                    deleted.entry(s.to_owned()).or_default().push((set, phase));
-                    out.commands.push((
-                        format!("deleted string {s} {set}:{phase}"),
-                        Command::DeleteAttachment {
-                            structure: s.to_owned(),
-                            set,
-                            phase,
-                            confirm: true,
-                        },
-                    ));
+                    Ok(())
+                };
+                // A string of a typed structure's type becomes its own with
+                // the strings and wire points that move with it.
+                let own = |s: &mut Structure, label: &str| -> Result<(), String> {
+                    if s.string(label).is_some() {
+                        return Ok(());
+                    }
+                    let form = StringForm::of_string(model, &s.id, label)
+                        .ok_or_else(|| format!("no string {} {label}", s.id))?;
+                    form.apply_to(s, model.line.structure(&s.id));
+                    Ok(())
+                };
+                for key in &page.deleted {
+                    let (id, label) = key.split_once('\t').unwrap_or((key, ""));
+                    take(&mut structures, id)?;
+                    let s = structures.get_mut(id).expect("taken");
+                    own(s, label)?;
+                    s.strings.retain(|x| x.label != label);
                 }
                 for key in page.edits.keys().filter(|k| !page.deleted.contains(*k)) {
-                    let (s, _) = key.split_once('\t').unwrap_or((key, ""));
-                    by_structure
-                        .entry(s.to_owned())
-                        .or_default()
-                        .push((Some(key), existing(key)?));
+                    let (id, label) = key.split_once('\t').unwrap_or((key, ""));
+                    take(&mut structures, id)?;
+                    let c = existing(key)?;
+                    let s = structures.get_mut(id).expect("taken");
+                    own(s, label)?;
+                    let x = s
+                        .strings
+                        .iter_mut()
+                        .find(|x| x.label == label)
+                        .ok_or_else(|| format!("no string {id} {label}"))?;
+                    string_cells(x, &c, &format!("{id} {label}"))?;
                 }
                 for cells in &page.added {
                     let c = Cells {
@@ -1304,71 +1322,25 @@ impl TableKind {
                         typed: None,
                         defaulted: &[],
                     };
-                    let s = c.get(0).trim().to_owned();
-                    if s.is_empty() {
+                    let id = c.get(0).trim().to_owned();
+                    if id.is_empty() {
                         return Err("a new string needs its structure".into());
                     }
-                    by_structure.entry(s).or_default().push((None, c));
-                }
-                for s_id in deleted.keys() {
-                    by_structure.entry(s_id.clone()).or_default();
-                }
-                for (structure, strings) in by_structure {
-                    let mut s = stored
-                        .structure(&structure)
-                        .ok_or_else(|| format!("no structure {structure}"))?
-                        .clone();
-                    for (set, phase) in deleted.get(&structure).into_iter().flatten() {
-                        s.attachments.retain(|a| (a.set, a.phase) != (*set, *phase));
-                        if s.structure_type.is_some() && !s.omit.contains(&[*set, *phase]) {
-                            s.omit.push([*set, *phase]);
-                        }
+                    take(&mut structures, &id)?;
+                    let s = structures.get_mut(&id).expect("taken");
+                    let mut x = ols_line::InsulatorString::default();
+                    string_cells(&mut x, &c, &format!("{id} new string"))?;
+                    if x.label.is_empty() {
+                        x.label = format!("S{}", s.strings.len() + 1);
                     }
-                    for (key, c) in strings {
-                        let (set, phase) = parse_set_phase(&c.get(1))?;
-                        let name = format!("{structure} {set}:{phase}");
-                        let mut form = match key {
-                            Some(key) => {
-                                let (old_set, old_phase) =
-                                    parse_set_phase(key.split_once('\t').map_or("", |x| x.1))?;
-                                let form = StringForm::of(model, &structure, old_set, old_phase)
-                                    .ok_or_else(|| format!("no string {name}"))?;
-                                if (set, phase) != (old_set, old_phase) {
-                                    out.commands.push((
-                                        format!(
-                                            "renumbered string {structure} {old_set}:{old_phase} to {set}:{phase}"
-                                        ),
-                                        Command::RenameAttachment {
-                                            structure: structure.clone(),
-                                            set: old_set,
-                                            phase: old_phase,
-                                            new_set: set,
-                                            new_phase: phase,
-                                        },
-                                    ));
-                                    s.attachments
-                                        .retain(|a| (a.set, a.phase) != (old_set, old_phase));
-                                    if s.structure_type.is_some()
-                                        && !s.omit.contains(&[old_set, old_phase])
-                                    {
-                                        s.omit.push([old_set, old_phase]);
-                                    }
-                                }
-                                form
-                            }
-                            None => StringForm::new_on(model, &structure)
-                                .ok_or_else(|| format!("no structure {structure}"))?,
-                        };
-                        form.set = set;
-                        form.phase = phase;
-                        string_cells(&mut form, &c, key.is_none(), &name)?;
-                        form.apply_to(&mut s);
-                    }
+                    s.strings.push(x);
+                }
+                for (id, s) in structures {
                     out.commands.push((
-                        format!("changed strings of {structure}"),
+                        format!("changed strings of {id}"),
                         Command::Put {
                             kind: Kind::Structure,
-                            id: structure.clone(),
+                            id: id.clone(),
                             value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
                             ord: None,
                         },
@@ -2164,22 +2136,19 @@ fn reach_target(
     Ok(())
 }
 
-fn string_cells(form: &mut StringForm, c: &Cells, new: bool, name: &str) -> Result<(), String> {
-    let n = |i: usize, default: f64| -> Result<f64, String> {
-        Ok(opt_num(&c.get(i), &format!("{name} {}", STRINGS[i].0))?.unwrap_or(default))
-    };
-    form.label = c.get(2);
-    for k in 0..3 {
-        form.top[k] = n(3 + k, form.top[k])?;
-        form.bottom[k] = n(6 + k, form.bottom[k])?;
+fn string_cells(x: &mut ols_line::InsulatorString, c: &Cells, name: &str) -> Result<(), String> {
+    x.label = c.get(1).trim().to_owned();
+    x.top = c.get(2).trim().to_owned();
+    x.wire = c.get(3).trim().to_owned();
+    if x.top.is_empty() || x.wire.is_empty() {
+        return Err(format!(
+            "{name}: give its top (from) and its wire point (to)"
+        ));
     }
-    if c.changed(9) || (new && !c.get(9).trim().is_empty()) {
-        let len = num(&c.get(9), &format!("{name} length"))?;
-        form.bottom = [form.top[0], form.top[1], form.top[2] - len.max(0.0)];
-    }
-    form.weight = n(10, form.weight)?;
-    form.insulator = opt(&c.get(11));
-    form.strain = match c.get(12).trim().to_lowercase().as_str() {
+    x.weight = opt_num(&c.get(6), &format!("{name} weight"))?.unwrap_or(0.0);
+    x.insulator = opt(&c.get(7));
+    x.compression = opt_num(&c.get(8), &format!("{name} compression"))?;
+    x.strain = match c.get(9).trim().to_lowercase().as_str() {
         "yes" | "true" | "1" => true,
         "no" | "false" | "0" | "" => false,
         other => return Err(format!("{name} strain: \"{other}\" is not yes or no")),

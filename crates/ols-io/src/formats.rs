@@ -132,12 +132,7 @@ pub(crate) fn place(s: &mut Structure, position: [f64; 3], orientation_deg: f64)
             position[2] + p[2] - from[2],
         ];
     };
-    for a in &mut s.attachments {
-        map(&mut a.insulator_point);
-        map(&mut a.wire_point);
-        a.legs.iter_mut().flatten().for_each(map);
-    }
-    s.members.iter_mut().flatten().for_each(map);
+    s.points_mut().for_each(map);
     s.position = position;
     s.orientation_deg = orientation_deg;
 }

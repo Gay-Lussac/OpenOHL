@@ -1,6 +1,6 @@
 # Line files (`.ols.json`)
 
-A **line file** describes a line in 3D: structures with their attachment points, and the wire sections strung through them. It is JSON (the open exchange format of ADR-0004). Example: [`examples/synthetic-line/synthetic-line.ols.json`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/synthetic-line.ols.json).
+A **line file** describes a line in 3D: structures with the strings hanging on them and their wire points, and the wire sections strung through them. It is JSON (the open exchange format of ADR-0004). Example: [`examples/synthetic-line/synthetic-line.ols.json`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/synthetic-line.ols.json).
 
 ```bash
 cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
@@ -28,9 +28,9 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `alignment` | no | Alignment points (PIs) of the implicit route (files without `routes`). |
 | `structures` | yes | List of structures. |
 | `sections` | yes | List of wire sections. |
-| `jumpers` | no | Jumpers between attachment points (below). |
+| `jumpers` | no | Jumpers between wire points (below). |
 | `systems` | no | Electrical systems: phases or poles with their voltage ([below](#electrical-systems)). |
-| `circuit_starts` | no | The ends of electrical circuits that are starts: `[{ "structure", "set", "phase" }, …]` ([below](#electrical-systems)). A circuit none of whose ends is listed runs along the line. |
+| `circuit_starts` | no | The ends of electrical circuits that are starts: `[{ "structure", "set" }, …]` ([below](#electrical-systems)). A circuit none of whose ends is listed runs along the line. |
 | `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … } }` — wire colours (`#rrggbb`) by section `phase_label`. |
 
 ## Structures
@@ -40,35 +40,60 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `id` | yes | Unique id, referenced by sections. |
 | `position` | yes | Structure origin `[x, y, z]` (centre at ground). |
 | `orientation_deg` | no | Direction of the local x axis (right of the line), degrees CCW from east; used to place a structure type. |
-| `type` | no | Structure type id from the [structure library](structure-library.md); attachments are then generated. |
+| `type` | no | Structure type id from the [structure library](structure-library.md); its points, strings and wire points are then generated. |
 | `extension` | no | Height extension of the type. |
-| `attachments` | yes, unless `type` | Attachment points (below); with a `type` they override the type's attachments with the same set and phase. |
-| `omit` | no | With a `type`: attachments of the type left out, as `[set, phase]` pairs (an explicit attachment with the same set and phase still counts). |
+| `points` | no | Points on the structure where strings hang: `{ "label", "position": [x, y, z] }` (below). |
+| `wires` | no | Wire points: `{ "label", "position": [x, y, z], "set": n }` (below). |
+| `strings` | no | Strings between them (below). |
+| `omit` | no | With a `type`: labels of the type's points, strings or wire points left out. |
+| `omit_sets` | no | With a `type`: the type's wire points with these sets left out, with what moves with them. |
 | `members` | no | Stick drawing: polylines of `[x, y, z]` points, for views and drawings only; from the structure type when it is placed. |
 
-### Attachments
+With a `type`, the structure's own points, strings and wire points replace the type's with the same label, and a wire point with a set replaces the type's wire point with that set and what moves with it.
 
-| Field | Required | Meaning |
+### Points, strings and wire points
+
+What hangs on a structure is given explicitly:
+
+- **Points** (`points`): labelled points on the structure where strings hang.
+- **Wire points** (`wires`): where strings meet and where wires are clamped. A wire point with a **`set`** number is where a section or jumper ends (sections and jumpers name it by structure and set, unique on the structure). A wire point no string reaches is **fixed** to the structure (a wire clamped directly). Its `position` is where it is in still air: the strings' lengths are the distances from their tops to it.
+- **Strings** (`strings`): straight members from a **top** — a point, *or another string's wire point* — to a wire point. Strings hang from each other, so any assembly is built from them:
+  - an **I-string**: one string from a point to a wire point with a set;
+  - a **V-string**: two strings from two points to one wire point;
+  - a **V with a string below**: a V to a wire point without a set, and a string from it down to the clamp (the V swings along the line about its tops, the string below swings across);
+  - a **TAK**: a string from a point down to a wire point without a set, and two strain strings from it to two wire points with sets, where one section ends and the next begins. Sections sharing an assembly are solved together ([theory](../theory/wirefe.md#strings-hanging-from-strings)).
+
+| String field | Required | Meaning |
 |---|---|---|
-| `set`, `phase` | yes | Identify the attachment (unique per structure). |
-| `label` | no | Free text. |
-| `insulator_point` | yes | Where the insulator assembly attaches to the structure `[x, y, z]`. |
-| `wire_point` | yes | Where the wire is clamped `[x, y, z]`. |
-| `insulator_weight` | no (0) | Insulator weight, N. |
-| `insulator_wind_area` | no (0) | Area of the assembly the wind blows on, m² (from the insulator library when resolved); half its wind load goes on the clamp. |
-| `insulator` | no | Insulator assembly id from the [insulator library](structure-library.md). Strain attachments are free members with or without one (below). |
-| `legs` | no | V-string: the two leg attachment points `[[x,y,z], [x,y,z]]` on the structure. Both legs end at `wire_point` (which must hang below both); `insulator_point` is then informative (e.g. their centre). Generated from `v_string` assemblies for typed structures. |
-| `top_label`, `bottom_label` | no | Labels of the string's top (insulator point) and bottom (wire point). |
-| `strain_member` | no (false) | A strain string: in a section's middle or end it is solved as a free member along its conductor (like a library strain assembly) instead of holding the wire at `wire_point`. |
+| `label` | yes | Unique among the structure's strings. |
+| `top` | yes | A point's or a wire point's label. |
+| `wire` | yes | A wire point's label. |
+| `insulator` | no | Insulator assembly id from the [insulator library](structure-library.md) (its wind area when resolved). |
+| `weight` | no (0) | Weight, N, half at each end. |
+| `wind_area` | no (0) | Area the wind blows on, m², half at each end. |
+| `stiffness` | no | Axial stiffness EA, N (default 5·10⁷ N). |
+| `compression` | no | Compression it may take, N: it then acts both ways (a post, a V leg designed to push), and the solve **flags** it beyond that. Without it: tension only, slack when pushed. |
+| `strain` | no (false) | A strain (dead-end) string: placed along its conductor when its structure type is placed, lined up with it when solved. |
 
-The **assembly type follows from the geometry**: in the middle of a section, an attachment with `legs` is a **V-string** (two tension-only legs of lengths `|wire_point − leg|` to one free clamp, `insulator_weight` split between them); otherwise a wire point *below* its insulator point, swung less than 45°, is a **suspension string** of length `|wire_point − insulator_point|` that swings freely when solved. The first and last points of every section, and other attachments, are **strain assemblies**: a free member of length `|wire_point − insulator_point|` hanging from the insulator point, lined up with its conductor by equilibrium, so it moves with every weather case (droops when the wire is hot, swings with the wind) and its pull is in the calculation. A strain assembly given only as geometry, without `insulator_weight` (imported lines), gets the weight that holds it where `wire_point` puts it in the section's stringing state (still air at the stringing temperature): the moment of the wire's pull at the clamp balances that of the weight at the member's middle; its unstressed length is shortened by its stretch under that pull. A string whose data droops less than the wire pulls it down cannot be held there by any weight: its weight is 0 and it lines up with the wire. A point whose wire and insulator points coincide (within 1 cm) is fixed there. On a 930-span real line, mid-spans match the source's reported points as with clamps held at their data positions (median 1.5 cm, p90 3.3 cm).
+How the wire is held at each point of a section follows from these. The usual cases keep the behaviour they have always had:
 
-A V-string holds its clamp across the line while both legs are in tension; when the wind load leans further from vertical than the windward leg, the leeward leg goes **slack** and the clamp swings about the windward leg's top. `ols line` lists slack legs, and the viewer draws them in magenta.
+- in the middle of a section, one string hanging below its top (swung less than 45°) is a **suspension string** that swings freely when solved;
+- one string at a section's end (or not hanging) is a **strain assembly**: a free member lined up with its conductor by equilibrium, so it moves with every weather case and its pull is in the calculation. One given only as geometry, without a weight or insulator and not marked `strain` (imported lines), gets the weight that holds it where its wire point puts it in the section's stringing state (still air at the stringing temperature): the moment of the wire's pull at the clamp balances that of the weight at the member's middle; its unstressed length is shortened by its stretch under that pull. A string whose data droops less than the wire pulls it down cannot be held there by any weight: its weight is 0 and it lines up with the wire. On a 930-span real line, mid-spans match the source's reported points as with clamps held at their data positions (median 1.5 cm, p90 3.3 cm);
+- a V holds its clamp across the line while both strings are in tension; when the wind load leans further from vertical than the windward string, the leeward one goes **slack** and the clamp swings about the windward one's top (`ols line` lists slack strings);
+- anything else — strings hanging from strings — is solved as given: every wire point a free node, every string a bar.
 
 ```json
-{ "set": 1, "phase": 1, "insulator_point": [310.0, -6.0, 535.0], "wire_point": [310.0, -6.0, 531.5],
-  "legs": [[310.0, -9.0, 535.0], [310.0, -3.0, 535.0]], "insulator_weight": 1000.0 }
+{ "id": "T2", "position": [310.0, 0.0, 505.0],
+  "points": [ { "label": "VL", "position": [310.0, -9.0, 535.0] },
+              { "label": "VR", "position": [310.0, -3.0, 535.0] } ],
+  "wires": [ { "label": "V1", "position": [310.0, -6.0, 532.0] },
+             { "label": "W1", "position": [310.0, -6.0, 531.5], "set": 1 } ],
+  "strings": [ { "label": "L", "top": "VL", "wire": "V1", "weight": 400 },
+               { "label": "R", "top": "VR", "wire": "V1", "weight": 400, "compression": 2000 },
+               { "label": "S", "top": "V1", "wire": "W1", "weight": 50 } ] }
 ```
+
+**Files written before** (line file version 1) gave each string as an `attachment` (`set`, `phase`, `insulator_point`, `wire_point`, optional `legs`, …) and section points with a phase. They are read as points, strings and wire points: an attachment's point labelled by its `top_label`, else `A<set>-<phase>`; its wire point by its `bottom_label`, else its `label`, else `W<set>-<phase>`; V legs as two strings; a wire point within 1 cm of its insulator point fixed. A (set, phase) becomes the set itself for phase 1 — the usual case, one wire per set — and `set + 1000 · (phase + 1)` for other phases, everywhere (structures, sections, jumpers, project history). They are written as version 2.
 
 `cargo run -p ols-cli -- line FILE --stations` prints the stationing, offsets and line angles of every route.
 
@@ -79,11 +104,11 @@ A V-string holds its clamp across the line while both legs are in tension; when 
 | `id` | yes | Unique id. |
 | `cable` | yes | Cable id from the wire libraries. |
 | `circuit`, `phase_label` | no | Labels. |
-| `system` | no | Electrical system (id in `systems`) whose phase `phase_label` the section carries. Give it once per conductor path: sections joined by jumpers (or sharing an attachment) follow. None on the whole path: earthed (earth wire, OPGW). Independent of the cable. |
+| `system` | no | Electrical system (id in `systems`) whose phase `phase_label` the section carries. Give it once per conductor path: sections joined by jumpers (or sharing a wire point) follow. None on the whole path: earthed (earth wire, OPGW). Independent of the cable. |
 | `bundle` | no (1) | Subconductors per phase. Tension, sag and loads are per subconductor; the solve follows the bundle's centre line with each subconductor's share of the insulator weights (string forces are reported for the whole bundle). |
 | `bundle_spacing` | no | Distance between neighbouring subconductors, m (e.g. `0.4` for 400 mm). They sit evenly on a circle around the centre line, across the wire — radius `s / (2·sin(π/n))` — so clearances are measured to the nearest subconductor. Without it a bundle is checked as one wire. |
 | `bundle_rotation_deg` | no (0) | Turns the arrangement (counter-clockwise looking ahead). 0: the two lowest subconductors level — two side by side, three with one on top, four in a square. |
-| `points` | yes | `{ "structure": id, "set": n, "phase": n }` in line order; spans are between consecutive points. |
+| `points` | yes | `{ "structure": id, "set": n }` (a wire point) in line order; spans are between consecutive points. |
 | `stringing` | yes | See below. |
 | `loads` | no | Point loads: `{ "span": index, "fraction": 0–1 (horizontal, from the back point), "vertical": N, "label": "…" }`. |
 | `color` | no | Display colour `#rrggbb`, overriding the phase colour. |
@@ -111,7 +136,7 @@ RS and FE agree to about 1 % (the FE strings swing to even out the spans' tensio
 
 ### Colours
 
-Wires are drawn in the section's `color`, else the line's `display.phase_colors` entry for the section's `phase_label`, else a default by the phase number of the section's first point: phase 1 red `#e4572e`, 2 yellow `#f2c14e`, 3 blue `#4c9be8` (then repeating), phase 0 (e.g. shield wires) grey `#b0b8c0`. Utilities' conventions differ, so set them per project:
+Wires are drawn in the section's `color`, else the line's `display.phase_colors` entry for the section's `phase_label`, else a default by the place of its `phase_label` among its system's phases (or the number its phase label ends with, `L2`): first red `#e4572e`, second yellow `#f2c14e`, third blue `#4c9be8` (then repeating); without either (e.g. shield wires) grey `#b0b8c0`. Utilities' conventions differ, so set them per project:
 
 ```json
 "display": { "phase_colors": { "L1": "#8b4513", "L2": "#202020", "L3": "#808080" } }
@@ -146,13 +171,13 @@ In each weather case the suspension strings swing along the line to balance the 
 
 ## Jumpers
 
-A jumper is a slack cable joining two attachment points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire (the example joins the branch's first point at the Y pylon T3 to the main L1 wire).
+A jumper is a slack cable joining two wire points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire (the example joins the branch's first point at the Y pylon T3 to the main L1 wire).
 
 ```json
 "jumpers": [
   { "id": "J-T3-branch", "cable": "acsr-drake-26-7",
-    "from": { "structure": "T3", "set": 2, "phase": 1 },
-    "to":   { "structure": "T3", "set": 1, "phase": 1 },
+    "from": { "structure": "T3", "set": 2 },
+    "to":   { "structure": "T3", "set": 1 },
     "sag": 1.5, "temperature": 15.0 }
 ]
 ```
@@ -161,7 +186,7 @@ A jumper is a slack cable joining two attachment points: the ends of two section
 |---|---|---|
 | `id` | yes | Unique id. |
 | `cable` | yes | Cable id from the wire libraries. |
-| `from`, `to` | yes | Attachments `{ "structure", "set", "phase" }`. |
+| `from`, `to` | yes | Wire points `{ "structure", "set" }`. |
 | `length` | one of | Unstressed (cut) length, m, at `temperature`. |
 | `rigid` | one of | `true`: a rigid jumper (a tube or bar), the straight member between its solved clamps; it takes no `length` or `sag`, does not change with the temperature, and is never taut. |
 | `sag` | one of | Or the largest vertical distance below the end-to-end chord, m, in still air at `temperature`; the cut length is found from it (jumpers without support). |
@@ -176,7 +201,7 @@ A jumper is a slack cable joining two attachment points: the ends of two section
 
 How much the clamps hold a jumper back depends on their angles: a clamp along the chord between the ends (a straight dead-end with terminals straight on) does not resist a swing about that chord at all, and a jumper leaving its clamps upwards (terminals straight on along spans rising to the structure) swings further than a hinged one, since the bend at the clamps eases as it swings out. Terminals angled down (the default 30°) hold it back.
 
-Each end is the **solved clamp** of the section through that attachment (so the jumper follows strain assemblies and swung suspension clamps), or the attachment's `wire_point` if no section uses it. The jumper is one exact catenary element (two with a support string) carrying the weather case's weight, ice and wind (horizontal, perpendicular to the jumper's chord); its length scales with \\( e^{\alpha \Delta t} \\) from `temperature`. Sections are solved first: a jumper's tension (a few hundred N) does not change them. A jumper given by its `sag` is cut once and keeps that length until it, the sections at its ends or their structures change; the computation, its costs and the expected ranges are in the theory manual ([Jumpers](../theory/jumpers.md)). `ols line` prints each jumper's length, sag and tension, includes jumpers in the ground clearance check (as `jumper:<id>`) and draws them in the viewer. Clearance from jumpers to the structure body comes with structure outlines.
+Each end is the **solved clamp** of the section through that wire point (so the jumper follows strain assemblies and swung suspension clamps), or the wire point's position if no section uses it. The jumper is one exact catenary element (two with a support string) carrying the weather case's weight, ice and wind (horizontal, perpendicular to the jumper's chord); its length scales with \\( e^{\alpha \Delta t} \\) from `temperature`. Sections are solved first: a jumper's tension (a few hundred N) does not change them. A jumper given by its `sag` is cut once and keeps that length until it, the sections at its ends or their structures change; the computation, its costs and the expected ranges are in the theory manual ([Jumpers](../theory/jumpers.md)). `ols line` prints each jumper's length, sag and tension, includes jumpers in the ground clearance check (as `jumper:<id>`) and draws them in the viewer. Clearance from jumpers to the structure body comes with structure outlines.
 
 
 A jumper is drawn and checked as a bundle like its section: `bundle`, `bundle_spacing` and `bundle_rotation_deg` default to those of the section at `from` (the first section through that point) and can be set on the jumper, each on its own (e.g. only a different spacing). A support string's weight is shared by the subconductors.
@@ -207,7 +232,7 @@ The electrical model is kept apart from the physical wires: a **system** is a gr
 | `frequency_hz` | no | AC frequency (50, 60, 16.7…). Systems of different frequencies are not synchronous. |
 | `phases` | yes | `label` (matched with the sections' `phase_label`); AC `angle_deg` (default evenly spread: 0°, −120°, +120°; two phases 0°, 180°); DC `polarity` +1, −1 or 0 (default in that order). |
 
-**Conductor paths.** Sections joined by jumpers, or sharing an attachment point, form one conductor path. Setting `system` on one section of the path assigns the whole path to that system's phase `phase_label`; two sections of a path naming different phases is an error that names them. A path without a system is earthed.
+**Conductor paths.** Sections joined by jumpers, or sharing a wire point, form one conductor path. Setting `system` on one section of the path assigns the whole path to that system's phase `phase_label`; two sections of a path naming different phases is an error that names them. A path without a system is earthed.
 
 **Electrical circuits.** Each conductor path is an electrical circuit, so the line has as many circuits as it has paths, counted from its connections. Each end of a circuit is a **start** (power flows in) or an **end** (power flows out), with at least one of each; a circuit with taps, or fed from several sides, can have several of either. The starts are those listed in `circuit_starts`. A circuit none of whose ends is listed runs along the line: its end that comes first along the line (its routes) is its start, the others are its ends. Reversing a circuit swaps every role. The roles order its sections and jumpers from its starts outwards, and the desktop app turns its jumpers to point along it (`from` nearer a start). Nothing physical depends on them: the wind's side is the line's (see [Conventions](../theory/conventions.md)).
 

@@ -76,10 +76,10 @@ impl JumperInputs {
                 .filter(|s| s.id == jumper.from.structure || s.id == jumper.to.structure)
                 .cloned()
                 .collect(),
-            direction: match (line.attachment(&jumper.from), line.attachment(&jumper.to)) {
+            direction: match (line.wire_point(&jumper.from), line.wire_point(&jumper.to)) {
                 (Some(a), Some(b)) => line.direction_at([
-                    0.5 * (a.wire_point[0] + b.wire_point[0]),
-                    0.5 * (a.wire_point[1] + b.wire_point[1]),
+                    0.5 * (a.position[0] + b.position[0]),
+                    0.5 * (a.position[1] + b.position[1]),
                 ]),
                 _ => None,
             },
@@ -165,6 +165,39 @@ impl SolvedLine {
                 update.solved += 1;
             } else {
                 update.kept += 1;
+            }
+        }
+        // Sections sharing an assembly with one solved again: solved
+        // together.
+        for group in crate::solve::coupled_groups(line) {
+            if !group
+                .iter()
+                .any(|&k| resolved.contains(line.sections[k].id.as_str()))
+            {
+                continue;
+            }
+            let mut results: Vec<Result<SectionShape, LineError>> = line
+                .sections
+                .iter()
+                .map(|s| {
+                    self.sections
+                        .get(&s.id)
+                        .cloned()
+                        .unwrap_or_else(|| Err(LineError::Invalid("not solved".into())))
+                })
+                .collect();
+            crate::solve::solve_coupled(
+                line,
+                library,
+                &self.case,
+                &group,
+                &mut results,
+                &default_fe_budget(),
+            );
+            for &k in &group {
+                let id = &line.sections[k].id;
+                self.sections.insert(id.clone(), results[k].clone());
+                resolved.insert(id);
             }
         }
         let shapes = self.shapes(line);
@@ -278,11 +311,7 @@ mod tests {
 
         // Move T6 (branch only): only S3 is dirty.
         let t6 = line.structures.iter_mut().find(|s| s.id == "T6").unwrap();
-        for a in &mut t6.attachments {
-            a.insulator_point[0] += 3.0;
-            a.wire_point[0] += 3.0;
-        }
-        t6.position[0] += 3.0;
+        *t6 = t6.moved_to([t6.position[0] + 3.0, t6.position[1], t6.position[2]]);
         let u = solved.update(&line, &lib, &["S3".to_owned()]);
         assert_eq!((u.solved, u.kept, u.dropped, u.jumpers), (1, 2, 0, 1));
         assert_same_as_full(&line, &solved);
@@ -310,11 +339,11 @@ mod tests {
         // Its structure changed (a string at T3 heavier), no section said
         // dirty: solved again.
         let t3 = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
-        t3.attachments[0].insulator_weight += 100.0;
+        t3.strings[0].weight += 100.0;
         assert_eq!(solved.update(&line, &lib, &[]).jumpers, 1);
         // (Back as it was: its sections were not solved again.)
         let t3 = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
-        t3.attachments[0].insulator_weight -= 100.0;
+        t3.strings[0].weight -= 100.0;
         assert_eq!(solved.update(&line, &lib, &[]).jumpers, 1);
         assert_same_as_full(&line, &solved);
 

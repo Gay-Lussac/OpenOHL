@@ -1,6 +1,6 @@
 {
   "format": "ols-line",
-  "version": 1,
+  "version": 2,
   "name": "Synthetic example line (invented coordinates)",
   "crs": "local (invented)",
   "alignment": [],
@@ -53,8 +53,7 @@
         500.0
       ],
       "orientation_deg": -90.0,
-      "type": "type-01",
-      "attachments": []
+      "type": "type-01"
     },
     {
       "id": "T2",
@@ -64,8 +63,7 @@
         505.0
       ],
       "orientation_deg": -90.0,
-      "type": "type-02",
-      "attachments": []
+      "type": "type-02"
     },
     {
       "id": "T3",
@@ -75,8 +73,7 @@
         498.0
       ],
       "orientation_deg": -85.00003722519921,
-      "type": "type-03",
-      "attachments": []
+      "type": "type-03"
     },
     {
       "id": "T4",
@@ -86,8 +83,7 @@
         510.0
       ],
       "orientation_deg": -79.99999388123949,
-      "type": "type-02",
-      "attachments": []
+      "type": "type-02"
     },
     {
       "id": "T5",
@@ -97,8 +93,7 @@
         503.0
       ],
       "orientation_deg": -79.99991331208057,
-      "type": "type-04",
-      "attachments": []
+      "type": "type-04"
     },
     {
       "id": "T6",
@@ -108,8 +103,7 @@
         504.0
       ],
       "orientation_deg": 0.0,
-      "type": "type-05",
-      "attachments": []
+      "type": "type-05"
     },
     {
       "id": "T7",
@@ -119,8 +113,7 @@
         496.0
       ],
       "orientation_deg": 0.0,
-      "type": "type-06",
-      "attachments": []
+      "type": "type-06"
     }
   ],
   "systems": [
@@ -131,9 +124,18 @@
       "voltage_kv": 220,
       "frequency_hz": 50,
       "phases": [
-        { "label": "L1", "angle_deg": 0 },
-        { "label": "L2", "angle_deg": -120 },
-        { "label": "L3", "angle_deg": 120 }
+        {
+          "label": "L1",
+          "angle_deg": 0
+        },
+        {
+          "label": "L2",
+          "angle_deg": -120
+        },
+        {
+          "label": "L3",
+          "angle_deg": 120
+        }
       ]
     }
   ],
@@ -148,28 +150,23 @@
       "points": [
         {
           "structure": "T1",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T2",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T3",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T4",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T5",
-          "set": 1,
-          "phase": 1
+          "set": 1
         }
       ],
       "stringing": {
@@ -196,28 +193,23 @@
       "points": [
         {
           "structure": "T1",
-          "set": 1,
-          "phase": 2
+          "set": 11
         },
         {
           "structure": "T2",
-          "set": 1,
-          "phase": 2
+          "set": 11
         },
         {
           "structure": "T3",
-          "set": 1,
-          "phase": 2
+          "set": 11
         },
         {
           "structure": "T4",
-          "set": 1,
-          "phase": 2
+          "set": 11
         },
         {
           "structure": "T5",
-          "set": 1,
-          "phase": 2
+          "set": 11
         }
       ],
       "stringing": {
@@ -241,18 +233,15 @@
       "points": [
         {
           "structure": "T3",
-          "set": 2,
-          "phase": 1
+          "set": 2
         },
         {
           "structure": "T6",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T7",
-          "set": 1,
-          "phase": 1
+          "set": 1
         }
       ],
       "stringing": {
@@ -269,13 +258,11 @@
       "cable": "acsr-drake-26-7",
       "from": {
         "structure": "T3",
-        "set": 2,
-        "phase": 1
+        "set": 2
       },
       "to": {
         "structure": "T3",
-        "set": 1,
-        "phase": 1
+        "set": 1
       },
       "sag": 1.5,
       "temperature": 15.0

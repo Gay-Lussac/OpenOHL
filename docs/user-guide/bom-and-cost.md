@@ -6,8 +6,8 @@ The **bill of materials** lists what a line is built from: structures by type an
 
 | Item | How |
 |---|---|
-| Structures | By type and extension (structures given by their attachments only are listed as "(no type)"). |
-| Insulator assemblies | One per attachment a section is strung through (a bundle hangs from one assembly), by insulator assembly id. Strings given in a pylon file or only as geometry are listed by kind and length, e.g. `string suspension 3.500 m`, `string strain 5.025 m`, `string V-string 4.200 m`. A wire clamped straight to the structure has no assembly. |
+| Structures | By type and extension (structures given by their strings only are listed as "(no type)"). |
+| Insulator assemblies | Every string holding a wire point a section is strung through (a bundle hangs from one; strings shared by sections counted once), by insulator assembly id. Strings given in a pylon file or only as geometry are listed by kind and length, e.g. `string suspension 3.500 m`, `string strain 5.025 m` (a V: two strings). A wire clamped straight to the structure has none. |
 | Wire | Per cable and role — `conductor`, `earth wire` (sections whose conductor path has no electrical system), `wire` (a line without electrical systems), `jumper`. The **unstressed (cut) length** of every span at the section's stringing condition: the given lengths of a section clipped in; for a section in the blocks, the lengths that give its tension or sag (the same calculation that clips it in). Times the subconductors of the bundle. If a section cannot be solved, its chords are used and a note says so. |
 | Jumpers | Their cut length if given, else the chord between the clamps plus the parabolic slack \\( 8 d^2 / 3 c \\) for the sag \\( d \\) over the chord \\( c \\); times the jumper's bundle. |
 | Spacers | Bundles only: along each span one spacer every `spacer_interval` (\\( \lceil L / s \rceil - 1 \\) per span). |

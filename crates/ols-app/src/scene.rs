@@ -92,37 +92,29 @@ pub enum Part {
 }
 
 /// The lines a structure is drawn with (and picked by): its stick drawing,
-/// or a mast up to the highest attachment and arms out to the insulators;
-/// then the insulator strings (V-strings: both legs).
+/// or a mast up to the highest point and arms out to its points; then its
+/// strings as given (from their tops to their wire points).
 pub fn structure_lines(st: &ols_line::Structure) -> Vec<(Part, Vec<[f64; 3]>)> {
     let mut out = Vec::new();
     if st.members.is_empty() {
         let top = st
-            .attachments
+            .points
             .iter()
-            .map(|a| a.insulator_point[2])
+            .map(|p| p.position[2])
             .fold(st.position[2], f64::max);
         let mast = |z: f64| [st.position[0], st.position[1], z];
         out.push((Part::Mast, vec![st.position, mast(top)]));
-        for a in &st.attachments {
-            out.push((
-                Part::Member,
-                vec![mast(a.insulator_point[2]), a.insulator_point],
-            ));
+        for p in &st.points {
+            out.push((Part::Member, vec![mast(p.position[2]), p.position]));
         }
     } else {
         for m in &st.members {
             out.push((Part::Member, m.clone()));
         }
     }
-    for a in &st.attachments {
-        match &a.legs {
-            Some(legs) => {
-                for l in legs {
-                    out.push((Part::Insulator, vec![*l, a.wire_point]));
-                }
-            }
-            None => out.push((Part::Insulator, vec![a.insulator_point, a.wire_point])),
+    for x in &st.strings {
+        if let (Some(top), Some(wire)) = (st.node(&x.top), st.wire(&x.wire)) {
+            out.push((Part::Insulator, vec![top.position(), wire.position]));
         }
     }
     out
@@ -261,7 +253,10 @@ pub fn structures(
     case: usize,
     tint: Option<[u8; 3]>,
 ) {
-    let mut clamps: std::collections::HashMap<(&str, u32, u32), Vec<[f64; 3]>> =
+    // The strings as solved (top, bottom, beyond their compression), by
+    // structure and string.
+    type Drawn = Vec<([f64; 3], [f64; 3], bool)>;
+    let mut solved: std::collections::HashMap<(&str, String), Drawn> =
         std::collections::HashMap::new();
     for sec in &line.sections {
         // Both wind sides shown: the strings to each side's clamps.
@@ -272,11 +267,13 @@ pub fn structures(
             .flat_map(|c| c.drawn())
             .filter_map(|c| c.shapes.iter().find(|x| x.section == sec.id));
         for shape in shapes {
-            for (p, c) in sec.points.iter().zip(&shape.clamps) {
-                clamps
-                    .entry((p.structure.as_str(), p.set, p.phase))
-                    .or_default()
-                    .push(*c);
+            for (p, strings) in sec.points.iter().zip(&shape.strings) {
+                for x in strings {
+                    solved
+                        .entry((p.structure.as_str(), x.label.clone()))
+                        .or_default()
+                        .push((x.top, x.bottom, x.over));
+                }
             }
         }
     }
@@ -298,28 +295,29 @@ pub fn structures(
         if lattice {
             // Levels 1 and 2 of a lattice: a mast line to its top.
             let top = st
-                .attachments
+                .points
                 .iter()
-                .map(|a| a.insulator_point[2])
+                .map(|p| p.position[2])
                 .chain(st.members.iter().flatten().map(|p| p[2]))
                 .fold(at[2], f64::max);
             out.push(Prim::new(at, vec![at, [at[0], at[1], top]], steel, 2.5).at(1, 2));
         }
-        for a in &st.attachments {
-            let solved = clamps.get(&(st.id.as_str(), a.set, a.phase));
-            let ends: Vec<[f64; 3]> = match solved {
-                Some(c) if !c.is_empty() => c.clone(),
-                _ => vec![a.wire_point],
-            };
-            for end in ends {
-                match &a.legs {
-                    Some(legs) => {
-                        for l in legs {
-                            out.push(Prim::new(at, vec![*l, end], blue, 2.0).at(0, 1));
-                        }
+        // The strings, as solved in the cases shown (else as given);
+        // flagged ones (beyond the compression they may take) in red.
+        let red = tint.map_or([235, 60, 50, 255], |c| rgba(c, 230));
+        for x in &st.strings {
+            match solved.get(&(st.id.as_str(), x.label.clone())) {
+                Some(drawn) => {
+                    for (top, bottom, over) in drawn {
+                        let col = if *over { red } else { blue };
+                        out.push(Prim::new(at, vec![*top, *bottom], col, 2.0).at(0, 1));
                     }
-                    None => {
-                        out.push(Prim::new(at, vec![a.insulator_point, end], blue, 2.0).at(0, 1))
+                }
+                None => {
+                    if let (Some(top), Some(wire)) = (st.node(&x.top), st.wire(&x.wire)) {
+                        out.push(
+                            Prim::new(at, vec![top.position(), wire.position], blue, 2.0).at(0, 1),
+                        );
                     }
                 }
             }
@@ -748,8 +746,8 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
             match selection {
                 Selection::Structure(id) => {
                     if let Some(st) = line.structure(id) {
-                        for a in &st.attachments {
-                            s.point(a.wire_point, hi, 9.0);
+                        for w in &st.wires {
+                            s.point(w.position, hi, 9.0);
                         }
                         s.point(st.position, hi, 12.0);
                     }
@@ -785,19 +783,19 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         }
                     }
                 }
-                Selection::Attachment {
-                    structure,
-                    set,
-                    phase,
-                } => {
-                    if let Some(a) = line.attachment(&ols_line::SectionPoint {
-                        structure: structure.clone(),
-                        set: *set,
-                        phase: *phase,
-                    }) {
-                        s.polyline(&[a.insulator_point, a.wire_point], hi, 3.0);
-                        s.point(a.insulator_point, hi, 9.0);
-                        s.point(a.wire_point, hi, 11.0);
+                Selection::Attachment { structure, set } => {
+                    // The strings holding it, as given.
+                    if let Some(st) = line.structure(structure)
+                        && let Some(w) = st.wire_at_set(*set)
+                    {
+                        for &i in &st.component(&w.label).strings {
+                            let x = &st.strings[i];
+                            if let (Some(top), Some(bottom)) = (st.node(&x.top), st.wire(&x.wire)) {
+                                s.polyline(&[top.position(), bottom.position], hi, 3.0);
+                                s.point(top.position(), hi, 9.0);
+                            }
+                        }
+                        s.point(w.position, hi, 11.0);
                     }
                 }
                 Selection::AlignmentPoint { route, index } => {

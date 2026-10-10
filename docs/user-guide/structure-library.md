@@ -13,24 +13,39 @@ Both are TOML with units on every quantity (`"12.5 m"`, `"1.4 kN"`), like [wire 
 
 ```toml
 format = "ols-structure"          # optional header
-version = 1
+version = 2
 id = "DL380-tangent"              # letters, digits, - _ .
 name = "380 kV double circuit, tangent"
 kind = "lattice"                  # lattice | pole | portal | other
 detail = 1                        # 1 stick figure (default) | 2 outline | 3 full design
 source = "Drawing 12-345 rev B"
 
-[[attachment]]
-set = 1
-phase = 1
-label = "L1 left"
-point = ["-12.5 m", "0 m", "45 m"]   # insulator attachment point, local axes
-insulator = "I-380-double"           # default assembly (from the insulator library)
+[[point]]                            # where strings hang, local axes
+label = "A1"
+point = ["-12.5 m", "0 m", "45 m"]
 
-[[attachment]]                       # a strain set on a dead-end type
-set = 2
-phase = 1
+[[wire]]                             # where the wire is clamped: set 1
+label = "W1"
+set = 1
+
+[[string]]                           # an I-string from A1 to W1
+label = "S1"
+top = "A1"
+wire = "W1"
+insulator = "I-380-double"           # from the insulator library (or length, weight)
+
+[[point]]                            # a strain set on a dead-end type
+label = "A2"
 point = ["-12.5 m", "1.2 m", "38 m"]
+
+[[wire]]
+label = "W2"
+set = 2
+
+[[string]]
+label = "S2"
+top = "A2"
+wire = "W2"
 insulator = "S-380-double"
 side = "ahead"                       # ahead (+y) | back (−y): which span it serves
 
@@ -46,13 +61,24 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 |---|---|---|
 | `id`, `name`, `kind` | yes | Identity and family. |
 | `detail` | no | How much of the structure the file describes (below): 1 a stick figure (default), 2 the outline of the pylon, 3 a full design. |
-| `attachment` | no | Attachment points: `set`, `phase`, `point` (local), optional `label`, `insulator`, `side` (strain sets). Set/phase pairs are unique; points must not be below ground. |
-| `extension` | no | Named height offsets added to every attachment. |
-| `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest attachment) and a crossarm from the mast to every attachment point. |
+| `point` | no | Points where strings hang: `label`, `point` (local). Labels are unique among points and wire points. |
+| `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below). |
+| `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `compression` (what it may take; none: tension only), `strain`, `side` (a strain string's span: ahead or back). |
+| `attachment` | no | Files of version 1: attachment points (`set`, `phase`, `point`, `insulator` or `string`, `side`), read as before (below). |
+| `extension` | no | Named height offsets added to every point. |
+| `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest point) and a crossarm from the mast to every point. |
 | `height` | no | Mast top for the generated stick drawing. |
 | `capacity` | no | What the type can carry, for the structure checks (below). |
 | `model` | no | Structure model (`.olsfe`, path relative to this file) for the finite-element check — see [Structure analysis](structure-analysis.md). |
 | `pole` | no | Pole id (a `.olsp` file in the same folder) for the pole check — see [Structure analysis](structure-analysis.md). |
+
+### Points, strings and wire points
+
+A string hangs from its top — a point of the structure, or another string's wire point — to a wire point, so any assembly is built from strings ([line file](line-file.md#points-strings-and-wire-points)): two strings to one wire point make a V; a third from that wire point down to a wire point with a set, a V with a string below; a string down to a wire point and two strain strings from it to two sets, a TAK.
+
+A wire point without a `point` is placed from its strings (their tops placed first): below its one string by the string's length (a library assembly: its vertical drop), or along the line with a `side`; with several strings, below the middle of their tops where their lengths meet. A string's weight is its own, else its assembly's.
+
+**Version 1 files** gave each string as an `[[attachment]]` with a set and phase; they are read as before: an attachment's point is labelled by its string's `top` label, else `A<set>-<phase>`, and its set is the set itself for phase 1, else `set + 1000 · (phase + 1)` ([line file](line-file.md#points-strings-and-wire-points)).
 
 ### Detail levels
 
@@ -84,11 +110,11 @@ angle = "10 deg"
 wind_span = "300 m"
 weight_span = "550 m"
 
-# Method 2: allowable loads at an attachment (a load tree), structure axes,
-# compared with the factored loads × the load case's strength factor.
+# Method 2: allowable loads at a point of the structure (a load tree),
+# structure axes, compared with the factored loads × the load case's
+# strength factor.
 [[capacity.attachment]]
-set = 1
-phase = 1
+point = "A1"                  # version 1 files: set, phase of an attachment
 vertical = "40 kN"            # downwards
 uplift = "10 kN"              # optional (none: an upward load fails)
 transverse = "30 kN"          # either way
@@ -96,7 +122,7 @@ longitudinal = "20 kN"        # either way
 interaction = "linear"        # optional: the ratios add up (default: each on its own)
 ```
 
-Angles rise from 0; spans are above 0, the minimum weight span below the weight span. A direction without a value is not checked. Every `capacity.attachment` names an attachment of the type; attachments without one are reported as not in the load tree. The synthetic example's types (`examples/synthetic-line/Structures`) carry invented capacities.
+Angles rise from 0; spans are above 0, the minimum weight span below the weight span. A direction without a value is not checked. Every `capacity.attachment` names a point of the type; points loaded without one are reported as not in the load tree. The synthetic example's types (`examples/synthetic-line/Structures`) carry invented capacities.
 
 ### Wind on the structure
 
@@ -112,46 +138,56 @@ Each band: bottom and top above the ground, projected area, drag coefficient (fr
 
 ## Simple pylon files
 
-How much string detail is worth modelling depends on the pylon. A **simple pylon file** gives each string in the pylon itself: where it hangs, its length, and a label at its top (insulator attachment point) and at its bottom (wire attachment point) — no insulator library needed:
+How much string detail is worth modelling depends on the pylon. A **simple pylon file** gives each string's length and weight in the pylon itself — no insulator library needed:
 
 ```toml
 format = "ols-structure"
-version = 1
+version = 2
 id = "D380-tangent"
 name = "380 kV double circuit, tangent: 3 crossarms each side + earth wire"
 kind = "lattice"
 height = "62 m"
 
-[[attachment]]
-set = 1
-phase = 1
+[[point]]
+label = "A1"
 point = ["-12 m", "0 m", "40 m"]
-string = { length = "5.2 m", weight = "1.4 kN", top = "A1-1", bottom = "L1" }
 
-[[attachment]]                      # … one per crossarm end, both sides
+[[wire]]
+label = "L1"
+set = 1
 
-[[attachment]]                      # the earth wire, clamped on the mast top
+[[string]]
+label = "S1"
+top = "A1"
+wire = "L1"
+length = "5.2 m"
+weight = "1.4 kN"
+
+# … one per crossarm end, both sides
+
+[[wire]]                            # the earth wire, clamped on the mast top
+label = "E"
 set = 9
-phase = 1
-label = "earth wire"
 point = ["0 m", "0 m", "62 m"]
 
-[[attachment]]                      # a strain string on a dead-end: with a side
-set = 2
-phase = 1
+[[point]]                           # a strain string on a dead-end: with a side
+label = "A2"
 point = ["-12 m", "1.5 m", "36 m"]
+
+[[wire]]
+label = "L2"
+set = 2
+
+[[string]]
+label = "S2"
+top = "A2"
+wire = "L2"
+length = "5.0 m"
+strain = true
 side = "ahead"
-string = { length = "5.0 m", top = "A2-1", bottom = "L2" }
 ```
 
-| `string` field | Required | Meaning |
-|---|---|---|
-| `length` | yes | From the attachment point to the wire point. |
-| `weight` | no (0) | Weight of the string. |
-| `top` | no | Label of the insulator attachment point. |
-| `bottom` | no | Label of the wire attachment point. |
-
-A string hangs down (suspension) or, with a `side`, is a strain string along the line — solved as a free member that lines up with its conductor, like a library strain assembly. An attachment has an `insulator` (library) or a `string`, not both; with neither, the wire is clamped at the point. The labels are kept on the line's attachments; the stick drawing appears in the 3D viewer and in the plan and profile sheets.
+A string hangs down (suspension) or, with a `side`, is a strain string along the line — solved as a free member that lines up with its conductor, like a library strain assembly. A wire point no string reaches is clamped where it is. The stick drawing appears in the 3D viewer and in the plan and profile sheets.
 
 ## Insulator assemblies (`.olsi`)
 
@@ -171,23 +207,23 @@ wind_area = "0.6 m²"         # projected area for wind (default 0)
 | Kind | Geometry | In the solver |
 |---|---|---|
 | `suspension` | clamp `length` below the attachment point | free clamp on a tension-only member (swings) |
-| `v_string` | two legs from ±`half_width` (along the structure's local x, across the line) to a clamp below | two tension-only legs to a free clamp; the leeward leg goes slack in strong wind |
+| `v_string` | two legs from ±`half_width` (along the structure's local x, across the line) to a clamp below | two tension-only legs to a free clamp; the leeward leg goes slack in strong wind (a version 1 attachment; in version 2 each leg is a string naming the assembly, which gives each half its wind area) |
 | `strain` | clamp `length` from the attachment point, along its conductor | free member of that length: direction and droop follow the conductor tension and the assembly weight |
 
-General linked assemblies (yokes, jumper support strings, counterweights) are planned (DESIGN_GOALS §6, §11).
+Strings hanging from strings (a V with a string below, a TAK) are built from strings in the structure type (above). Yokes, jumper support strings and counterweights as strings are planned (DESIGN_GOALS §6, §11).
 
 ## Using types in a line
 
-A structure in a [line file](line-file.md) references a type instead of listing attachments:
+A structure in a [line file](line-file.md) references a type instead of listing its strings:
 
 ```json
 { "id": "T12", "type": "DL380-tangent", "position": [2600123.4, 1200456.7, 512.3],
   "orientation_deg": -31.5, "extension": "+3" }
 ```
 
-`orientation_deg` is the direction of the type's local x axis (right of the line), degrees counter-clockwise from east. When solving, OLS CAD places the type (`--structures`, `--insulators` library directories), keeps any `attachments` listed on the structure as **overrides** (same set and phase), and aims every strain assembly at its neighbouring point along the section.
+`orientation_deg` is the direction of the type's local x axis (right of the line), degrees counter-clockwise from east. When solving, OLS CAD places the type (`--structures`, `--insulators` library directories), keeps the structure's own points, strings and wire points as **overrides** (the same label; a wire point with a set replaces the type's with that set and what moves with it), leaves out those in `omit` / `omit_sets`, and aims every strain string at its neighbouring point along the section.
 
-**Clamps given as geometry vs library assemblies**: an attachment with a library `insulator` is modelled as a free member (it needs its weight); an attachment given only as geometry (e.g. imported from another program) keeps its clamp where the data puts it — imported clamp positions already are the source's equilibrium.
+**Strings given as geometry vs library assemblies**: a string with a library `insulator` is modelled as a free member (it needs its weight); a strain string given only as geometry (e.g. imported from another program) gets the weight that keeps its clamp where the data puts it — imported clamp positions already are the source's equilibrium.
 
 ## Deriving libraries from an existing line
 
@@ -195,6 +231,6 @@ A structure in a [line file](line-file.md) references a type instead of listing 
 cargo run -p ols-cli -- structures derive my-line.ols.json --out project/ --inline-strings
 ```
 
-writes simple pylon files, one per type, into `project/Structures/` (strings in the files, labels `A<set>-<phase>` and `W<set>-<phase>` to rename) and `project/my-line-typed.ols.json`. Without `--inline-strings`, `--out derived/` writes `derived/structures/*.olss`, `derived/insulators/*.olsi` and `derived/my-line-typed.ols.json` (the line referencing the types). Each structure's rotation is taken from its route (bisector of its back and ahead spans), attachment layouts that match within 1 cm become one type, and insulators are classified from the geometry (section ends are always strain assemblies; other clamps hanging below their attachment, swung less than 45°, are suspension strings) and grouped by kind, length and weight. The self-check reports how closely the derived libraries reproduce the attachment points and insulator lengths.
+writes simple pylon files, one per type, into `project/Structures/` (version 1 attachments with their strings, labels `A<set>-<phase>` and `W<set>-<phase>` to rename; a set hanging on several strings is derived as one string from their middle) and `project/my-line-typed.ols.json`. Without `--inline-strings`, `--out derived/` writes `derived/structures/*.olss`, `derived/insulators/*.olsi` and `derived/my-line-typed.ols.json` (the line referencing the types). Each structure's rotation is taken from its route (bisector of its back and ahead spans), attachment layouts that match within 1 cm become one type, and insulators are classified from the geometry (section ends are always strain assemblies; other clamps hanging below their attachment, swung less than 45°, are suspension strings) and grouped by kind, length and weight. The self-check reports how closely the derived libraries reproduce the attachment points and insulator lengths.
 
 On a real 78-structure line (local check, data not in the repository) every tower turned out to be individual — each has its own layout — while about 1 500 attachments reduced to 33 insulator assemblies; the self-check reproduced all attachment points and lengths within 1 cm. Weights, stiffness and wind areas cannot be derived from geometry: fill them in.

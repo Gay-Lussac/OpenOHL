@@ -16,8 +16,8 @@ use std::fmt::Write as _;
 use ols_line::condition::{Calculation, CreepStretch};
 use ols_line::electrical::{System, SystemKind, SystemPhase};
 use ols_line::{
-    AlignmentPoint, Attachment, Display, Jumper, JumperSupport, Line, Point, Route, Section,
-    SectionPoint, SpanLoad, Stringing, Structure,
+    AlignmentPoint, AttachmentV1, Display, InsulatorString, Jumper, JumperSupport, Line, Point,
+    Route, Section, SectionPoint, SpanLoad, Stringing, Structure, StructurePoint, WirePoint,
 };
 
 use crate::xml::{Element, attribute as attr, escape};
@@ -86,14 +86,10 @@ fn write_alignment(out: &mut String, points: &[AlignmentPoint], indent: &str) {
 }
 
 fn section_point(out: &mut String, tag: &str, p: &SectionPoint, indent: &str) {
-    let SectionPoint {
-        structure,
-        set,
-        phase,
-    } = p;
+    let SectionPoint { structure, set } = p;
     let _ = write!(out, "{indent}<{tag}");
     attr(out, "structure", structure);
-    let _ = writeln!(out, " set=\"{set}\" phase=\"{phase}\"/>");
+    let _ = writeln!(out, " set=\"{set}\"/>");
 }
 
 fn write_stringing(out: &mut String, s: &Stringing, indent: &str) {
@@ -153,8 +149,11 @@ fn write_structure(out: &mut String, s: &Structure) {
         orientation_deg,
         structure_type,
         extension,
-        attachments,
+        points,
+        strings,
+        wires,
         omit,
+        omit_sets,
         members,
     } = s;
     out.push_str("  <structure");
@@ -163,54 +162,77 @@ fn write_structure(out: &mut String, s: &Structure) {
     attr(out, "orientation_deg", &num(*orientation_deg));
     opt_text(out, "type", structure_type.as_deref());
     opt_text(out, "extension", extension.as_deref());
-    if attachments.is_empty() && omit.is_empty() && members.is_empty() {
+    if points.is_empty()
+        && strings.is_empty()
+        && wires.is_empty()
+        && omit.is_empty()
+        && omit_sets.is_empty()
+        && members.is_empty()
+    {
         out.push_str("/>\n");
         return;
     }
     out.push_str(">\n");
-    for a in attachments {
-        let Attachment {
-            set,
-            phase,
-            label,
-            insulator_point,
-            wire_point,
-            insulator_weight,
-            insulator,
-            insulator_wind_area,
-            legs,
-            top_label,
-            bottom_label,
-            strain_member,
-        } = a;
-        let _ = write!(out, "    <attachment set=\"{set}\" phase=\"{phase}\"");
-        nonempty(out, "label", label);
-        if *insulator_weight != 0.0 {
-            attr(out, "insulator_weight", &num(*insulator_weight));
-        }
-        opt_text(out, "insulator", insulator.as_deref());
-        if *insulator_wind_area != 0.0 {
-            attr(out, "insulator_wind_area", &num(*insulator_wind_area));
-        }
-        nonempty(out, "top_label", top_label);
-        nonempty(out, "bottom_label", bottom_label);
-        if *strain_member {
-            attr(out, "strain_member", "true");
-        }
-        out.push_str(">\n      <insulator_point");
-        point_attrs(out, *insulator_point);
-        out.push_str("/>\n      <wire_point");
-        point_attrs(out, *wire_point);
+    for p in points {
+        let StructurePoint { label, position } = p;
+        out.push_str("    <point");
+        attr(out, "label", label);
+        point_attrs(out, *position);
         out.push_str("/>\n");
-        for leg in legs.iter().flatten() {
-            out.push_str("      <leg");
-            point_attrs(out, *leg);
-            out.push_str("/>\n");
-        }
-        out.push_str("    </attachment>\n");
     }
-    for [set, phase] in omit {
-        let _ = writeln!(out, "    <omit set=\"{set}\" phase=\"{phase}\"/>");
+    for w in wires {
+        let WirePoint {
+            label,
+            position,
+            set,
+        } = w;
+        out.push_str("    <wire");
+        attr(out, "label", label);
+        point_attrs(out, *position);
+        if let Some(set) = set {
+            let _ = write!(out, " set=\"{set}\"");
+        }
+        out.push_str("/>\n");
+    }
+    for x in strings {
+        let InsulatorString {
+            label,
+            top,
+            wire,
+            insulator,
+            weight,
+            wind_area,
+            stiffness,
+            compression,
+            strain,
+        } = x;
+        out.push_str("    <string");
+        attr(out, "label", label);
+        attr(out, "top", top);
+        attr(out, "wire", wire);
+        opt_text(out, "insulator", insulator.as_deref());
+        for (name, v) in [("weight", weight), ("wind_area", wind_area)] {
+            if *v != 0.0 {
+                attr(out, name, &num(*v));
+            }
+        }
+        for (name, v) in [("stiffness", stiffness), ("compression", compression)] {
+            if let Some(v) = v {
+                attr(out, name, &num(*v));
+            }
+        }
+        if *strain {
+            attr(out, "strain", "true");
+        }
+        out.push_str("/>\n");
+    }
+    for label in omit {
+        out.push_str("    <omit");
+        attr(out, "label", label);
+        out.push_str("/>\n");
+    }
+    for set in omit_sets {
+        let _ = writeln!(out, "    <omit set=\"{set}\"/>");
     }
     for m in members {
         let list: Vec<String> = m.iter().flat_map(|p| p.iter().map(|v| num(*v))).collect();
@@ -559,11 +581,15 @@ fn read_alignment(e: Option<&Element>) -> Result<Vec<AlignmentPoint>, String> {
 
 fn read_section_point(e: &Element) -> Result<SectionPoint, String> {
     check(e, &["structure", "set", "phase"], &[])?;
-    Ok(SectionPoint {
-        structure: text(e, "structure")?.to_owned(),
-        set: number(e, "set")?,
-        phase: number(e, "phase")?,
-    })
+    let set = number(e, "set")?;
+    // Files written before give a phase too.
+    Ok(SectionPoint::new(
+        text(e, "structure")?,
+        match optional(e, "phase")? {
+            Some(phase) => ols_line::assembly::set_from_v1(set, phase),
+            None => set,
+        },
+    ))
 }
 
 fn read_stringing(e: &Element) -> Result<Stringing, String> {
@@ -603,10 +629,70 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
     check(
         e,
         &["id", "x", "y", "z", "orientation_deg", "type", "extension"],
-        &["attachment", "omit", "member"],
+        &["point", "wire", "string", "attachment", "omit", "member"],
     )?;
     let id = text(e, "id")?.to_owned();
-    let attachments = e
+    let flag = |a: &Element, name: &str| -> Result<bool, String> {
+        match a.attr(name) {
+            None | Some("false") | Some("0") => Ok(false),
+            Some("true") | Some("1") => Ok(true),
+            Some(o) => Err(format!("{name}=\"{o}\": true or false")),
+        }
+    };
+    let mut points: Vec<StructurePoint> = e
+        .children_named("point")
+        .map(|p| {
+            check(p, &["label", "x", "y", "z"], &[])?;
+            Ok(StructurePoint {
+                label: text(p, "label")?.to_owned(),
+                position: point(p)?,
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    let mut wires: Vec<WirePoint> = e
+        .children_named("wire")
+        .map(|w| {
+            check(w, &["label", "x", "y", "z", "set"], &[])?;
+            Ok(WirePoint {
+                label: text(w, "label")?.to_owned(),
+                position: point(w)?,
+                set: optional(w, "set")?,
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    let mut strings: Vec<InsulatorString> = e
+        .children_named("string")
+        .map(|x| {
+            check(
+                x,
+                &[
+                    "label",
+                    "top",
+                    "wire",
+                    "insulator",
+                    "weight",
+                    "wind_area",
+                    "stiffness",
+                    "compression",
+                    "strain",
+                ],
+                &[],
+            )?;
+            Ok(InsulatorString {
+                label: text(x, "label")?.to_owned(),
+                top: text(x, "top")?.to_owned(),
+                wire: text(x, "wire")?.to_owned(),
+                insulator: owned(x, "insulator"),
+                weight: optional(x, "weight")?.unwrap_or(0.0),
+                wind_area: optional(x, "wind_area")?.unwrap_or(0.0),
+                stiffness: optional(x, "stiffness")?,
+                compression: optional(x, "compression")?,
+                strain: flag(x, "strain")?,
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    // Files written before: attachments.
+    let attachments: Vec<AttachmentV1> = e
         .children_named("attachment")
         .map(|a| {
             check(
@@ -628,7 +714,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 .children_named("leg")
                 .map(point)
                 .collect::<Result<_, _>>()?;
-            Ok(Attachment {
+            Ok(AttachmentV1 {
                 set: number(a, "set")?,
                 phase: number(a, "phase")?,
                 label: owned(a, "label").unwrap_or_default(),
@@ -644,21 +730,32 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 },
                 top_label: owned(a, "top_label").unwrap_or_default(),
                 bottom_label: owned(a, "bottom_label").unwrap_or_default(),
-                strain_member: match a.attr("strain_member") {
-                    None | Some("false") | Some("0") => false,
-                    Some("true") | Some("1") => true,
-                    Some(o) => return Err(format!("strain_member=\"{o}\": true or false")),
-                },
+                strain_member: flag(a, "strain_member")?,
             })
         })
         .collect::<Result<_, String>>()?;
-    let omit = e
-        .children_named("omit")
-        .map(|o| {
-            check(o, &["set", "phase"], &[])?;
-            Ok([number(o, "set")?, number(o, "phase")?])
-        })
-        .collect::<Result<_, String>>()?;
+    if !attachments.is_empty() {
+        let (p, x, w) = ols_line::assembly::from_v1(&attachments);
+        points.extend(p);
+        strings.extend(x);
+        wires.extend(w);
+    }
+    let (mut omit, mut omit_sets) = (Vec::new(), Vec::new());
+    for o in e.children_named("omit") {
+        check(o, &["label", "set", "phase"], &[])?;
+        match (
+            owned(o, "label"),
+            optional::<u32>(o, "set")?,
+            optional(o, "phase")?,
+        ) {
+            (Some(l), None, None) => omit.push(l),
+            (None, Some(set), None) => omit_sets.push(set),
+            (None, Some(set), Some(phase)) => {
+                omit_sets.push(ols_line::assembly::set_from_v1(set, phase));
+            }
+            _ => return Err(format!("structure {id}: <omit> takes a label or a set")),
+        }
+    }
     let members = e
         .children_named("member")
         .map(|m| {
@@ -674,8 +771,11 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
         orientation_deg: optional(e, "orientation_deg")?.unwrap_or(0.0),
         structure_type: owned(e, "type"),
         extension: owned(e, "extension"),
-        attachments,
+        points,
+        strings,
+        wires,
         omit,
+        omit_sets,
         members,
         id,
     })
@@ -931,9 +1031,17 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             }
         }
     };
+    // Older versions are read into the current one; newer ones refused.
+    let version: u32 = optional(root, "version")?.unwrap_or(ols_line::LINE_FILE_VERSION);
+    if version > ols_line::LINE_FILE_VERSION {
+        return Err(format!(
+            "version {version} is newer than supported ({})",
+            ols_line::LINE_FILE_VERSION
+        ));
+    }
     Ok(Line {
         format: owned(root, "format").unwrap_or_else(|| ols_line::LINE_FILE_FORMAT.into()),
-        version: optional(root, "version")?.unwrap_or(ols_line::LINE_FILE_VERSION),
+        version: ols_line::LINE_FILE_VERSION,
         bimetallic,
         name: text(root, "name")?.to_owned(),
         crs: owned(root, "crs").unwrap_or_default(),

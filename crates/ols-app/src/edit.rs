@@ -285,8 +285,6 @@ pub enum Action {
         structure: String,
         /// Set.
         set: u32,
-        /// Phase.
-        phase: u32,
         /// Confirmed.
         confirm: bool,
     },
@@ -314,15 +312,9 @@ impl Action {
                 id: id.clone(),
                 confirm: true,
             }),
-            Action::DeleteAttachment {
-                structure,
-                set,
-                phase,
-                ..
-            } => Some(Action::DeleteAttachment {
+            Action::DeleteAttachment { structure, set, .. } => Some(Action::DeleteAttachment {
                 structure: structure.clone(),
                 set: *set,
-                phase: *phase,
                 confirm: true,
             }),
             _ => None,

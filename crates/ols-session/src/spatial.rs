@@ -55,8 +55,8 @@ pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS spatial_index (
      CREATE INDEX IF NOT EXISTS spatial_tile ON spatial_index (line, level, tx, ty);";
 
 fn clamp_point(line: &Line, p: &SectionPoint) -> Option<Point> {
-    match line.attachment(p) {
-        Some(a) => Some(a.wire_point),
+    match line.wire_point(p) {
+        Some(w) => Some(w.position),
         None => line.structure(&p.structure).map(|s| s.position),
     }
 }
@@ -71,11 +71,8 @@ pub fn object_bounds(line: &Line) -> BTreeMap<(Kind, String), Bounds> {
     };
     for s in &line.structures {
         let mut pts = vec![s.position];
-        for a in &s.attachments {
-            pts.push(a.insulator_point);
-            pts.push(a.wire_point);
-            pts.extend(a.legs.iter().flatten());
-        }
+        pts.extend(s.points.iter().map(|p| p.position));
+        pts.extend(s.wires.iter().map(|w| w.position));
         pts.extend(s.members.iter().flatten());
         put(Kind::Structure, &s.id, pts);
     }

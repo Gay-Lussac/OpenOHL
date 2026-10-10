@@ -131,7 +131,7 @@ pub fn candidates(
             let Some(price) = cost.structure_total(&t.id, ext) else {
                 continue;
             };
-            let placed = match t.place([0.0; 3], 0.0, ext, insulators) {
+            let placed = match t.wire_ends([0.0; 3], 0.0, ext, insulators) {
                 Ok(p) if !p.is_empty() => p,
                 Ok(_) => {
                     notes.push(format!("{}: no attachments, not used", t.id));
@@ -144,7 +144,7 @@ pub fn candidates(
             };
             let height = placed
                 .iter()
-                .map(|a| a.wire_point[2])
+                .map(|(_, wire, _)| wire[2])
                 .fold(f64::INFINITY, f64::min);
             out.push((
                 Candidate {
@@ -152,7 +152,7 @@ pub fn candidates(
                     extension: ext.map(str::to_owned),
                     height,
                     cost: price,
-                    dead_end: placed.iter().all(|a| a.strain),
+                    dead_end: placed.iter().all(|(_, _, strain)| *strain),
                     capacity: t.capacity.clone(),
                 },
                 placed.len(),
@@ -297,25 +297,21 @@ pub fn spotted_line(
             let c = &rp.problem.candidates[p.candidate];
             let xy = point_at(&rp.centreline, p.station, 0.0);
             Structure {
-                id: format!("T{}", k + 1),
-                position: [xy[0], xy[1], p.ground],
                 orientation_deg: heading(&rp.centreline, p.station) - 90.0,
                 structure_type: Some(c.structure_type.clone()),
                 extension: c.extension.clone(),
-                attachments: Vec::new(),
-                omit: Vec::new(),
-                members: Vec::new(),
+                ..Structure::new(format!("T{}", k + 1), [xy[0], xy[1], p.ground])
             }
         })
         .collect();
-    // Attachments every chosen type has.
-    let mut common: Option<BTreeSet<(u32, u32)>> = None;
+    // Wire points every chosen type has, by set.
+    let mut common: Option<BTreeSet<u32>> = None;
     for s in &out.structures {
-        let set: BTreeSet<(u32, u32)> = s
+        let set: BTreeSet<u32> = s
             .structure_type
             .as_deref()
             .and_then(|t| types.get(t))
-            .map(|t| t.attachments.iter().map(|a| (a.set, a.phase)).collect())
+            .map(|t| t.sets().into_iter().collect())
             .unwrap_or_default();
         common = Some(match common {
             None => set,
@@ -325,8 +321,8 @@ pub fn spotted_line(
     out.sections = common
         .unwrap_or_default()
         .into_iter()
-        .map(|(set, phase)| Section {
-            id: format!("W{set}-{phase}"),
+        .map(|set| Section {
+            id: format!("W{set}"),
             cable: options.cable.clone(),
             circuit: String::new(),
             phase_label: String::new(),
@@ -337,11 +333,7 @@ pub fn spotted_line(
             points: out
                 .structures
                 .iter()
-                .map(|s| SectionPoint {
-                    structure: s.id.clone(),
-                    set,
-                    phase,
-                })
+                .map(|s| SectionPoint::new(s.id.clone(), set))
                 .collect(),
             stringing: Stringing::Tension {
                 horizontal_tension: options.horizontal_tension,

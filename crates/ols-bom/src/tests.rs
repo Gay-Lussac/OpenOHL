@@ -95,8 +95,8 @@ fn synthetic_line_lengths() {
     let section = &line.sections[0];
     let mut hand = 0.0;
     for p in section.points.windows(2) {
-        let a = line.attachment(&p[0]).unwrap().wire_point;
-        let b = line.attachment(&p[1]).unwrap().wire_point;
+        let a = line.wire_point(&p[0]).unwrap().position;
+        let b = line.wire_point(&p[1]).unwrap().position;
         let c = distance(a, b);
         let d = w * c * c / (8.0 * h);
         hand += (c + 8.0 * d * d / (3.0 * c)) * (1.0 - h / ea);
@@ -119,8 +119,8 @@ fn synthetic_line_lengths() {
     let jumper = bom.cables.iter().find(|c| c.role == "jumper").unwrap();
     let j = &line.jumpers[0];
     let chord = distance(
-        line.attachment(&j.from).unwrap().wire_point,
-        line.attachment(&j.to).unwrap().wire_point,
+        line.wire_point(&j.from).unwrap().position,
+        line.wire_point(&j.to).unwrap().position,
     );
     assert!((jumper.length_m - (chord + 8.0 * 1.5 * 1.5 / (3.0 * chord))).abs() < 1e-9);
 }

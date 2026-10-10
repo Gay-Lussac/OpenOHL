@@ -189,22 +189,22 @@ impl LoadCases {
     }
 }
 
-/// The load at one support of an attachment point in a load case.
+/// The load at one point of a structure in a load case: a point strings
+/// hang on (or a wire point a wire is fixed to), or the wind on the
+/// structure itself.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AttachmentLoad {
     /// Structure.
     pub structure: String,
-    /// Set.
-    pub set: u32,
-    /// Phase.
-    pub phase: u32,
-    /// The attachment's label.
+    /// The point's label (empty: the wind on the structure itself).
+    pub point: String,
+    /// What it is, for reports (the point's label, or the wind band).
     pub label: String,
+    /// The sets of the wires hanging there.
+    pub sets: Vec<u32>,
     /// Sections hanging there.
     pub sections: Vec<String>,
-    /// The support (0; 0 and 1: the legs of a V-string).
-    pub support: usize,
-    /// Where (insulator top, or the clamp), line coordinates.
+    /// Where, line coordinates.
     pub at: Point,
     /// The force on the structure, line axes (x east, y north, z up), N,
     /// unfactored.
@@ -221,7 +221,7 @@ pub struct AttachmentLoad {
 pub struct CaseLoads {
     /// The load case.
     pub case: LoadCase,
-    /// Loads at the attachments, by structure, set, phase, support.
+    /// Loads at the structures' points, by structure and point.
     pub loads: Vec<AttachmentLoad>,
     /// Sections not solved, with why (their loads are missing).
     pub failed: Vec<String>,
@@ -270,20 +270,18 @@ pub fn structure_loads(
             .into_iter()
             .find(|c| c.condition() == case.condition.condition() && c.method() == Method::Fe)
             .expect("every condition has an FE calculation");
-        // (structure, set, phase, support) → load.
-        let mut at: BTreeMap<(String, u32, u32, usize), AttachmentLoad> = BTreeMap::new();
+        // (structure, point) → load.
+        let mut at: BTreeMap<(String, String), AttachmentLoad> = BTreeMap::new();
         let mut failed = Vec::new();
-        for section in &line.sections {
-            let Some(cable) = library.get(&section.cable) else {
-                failed.push(format!(
-                    "{}: cable {} not in the wire library",
-                    section.id, section.cable
-                ));
-                continue;
-            };
-            let mut s = section.clone();
+        // Every section in the load case's condition, solved together where
+        // they share strings.
+        let mut solving = line.clone();
+        for s in &mut solving.sections {
             s.calculation = calculation;
-            let shape = match ols_line::solve::solve_section(&line, &s, cable, w, budget) {
+        }
+        let results = ols_line::solve::solve_line_with(&solving, library, w, budget);
+        for (section, result) in line.sections.iter().zip(results) {
+            let shape = match result {
                 Ok(shape) => shape,
                 Err(e) => {
                     failed.push(format!("{}: {e}", section.id));
@@ -293,30 +291,41 @@ pub fn structure_loads(
             for (point, supports) in section.points.iter().zip(&shape.attachment_loads) {
                 let structure = line.structure(&point.structure);
                 let (right, ahead) = axes(structure.map_or(0.0, |s| s.orientation_deg));
-                let label = structure
+                // The sets hanging on the same strings.
+                let sets: Vec<u32> = structure
                     .and_then(|s| {
-                        s.attachments
-                            .iter()
-                            .find(|a| a.set == point.set && a.phase == point.phase)
+                        let w = s.wire_at_set(point.set)?;
+                        Some(
+                            s.component(&w.label)
+                                .wires
+                                .iter()
+                                .filter_map(|&i| s.wires[i].set)
+                                .collect(),
+                        )
                     })
-                    .map_or(String::new(), |a| a.label.clone());
-                for (k, (p, f)) in supports.iter().enumerate() {
+                    .unwrap_or_else(|| vec![point.set]);
+                for support in supports {
+                    let f = support.force;
                     let e = at
-                        .entry((point.structure.clone(), point.set, point.phase, k))
+                        .entry((point.structure.clone(), support.label.clone()))
                         .or_insert_with(|| AttachmentLoad {
                             structure: point.structure.clone(),
-                            set: point.set,
-                            phase: point.phase,
-                            label: label.clone(),
+                            point: support.label.clone(),
+                            label: support.label.clone(),
+                            sets: Vec::new(),
                             sections: Vec::new(),
-                            support: k,
-                            at: *p,
+                            at: support.at,
                             force: [0.0; 3],
                             local: [0.0; 3],
                             factored: [0.0; 3],
                         });
                     if !e.sections.contains(&section.id) {
                         e.sections.push(section.id.clone());
+                    }
+                    for set in &sets {
+                        if !e.sets.contains(set) {
+                            e.sets.push(*set);
+                        }
                     }
                     for (sum, x) in e.force.iter_mut().zip(f) {
                         *sum += x;
@@ -347,7 +356,7 @@ pub fn structure_loads(
 /// structure whose type gives wind bands (`[[wind.band]]`), one load per
 /// band — the load case's wind pressure × drag × area, across the line
 /// (the wind side of the weather case), at the band's mid-height on the
-/// structure's centre line — as set 0, phase 0, labelled "wind on the
+/// structure's centre line — without a point, labelled "wind on the
 /// structure". Factored by the load case's transverse factor. Height
 /// extensions are not added to the bands.
 pub fn add_structure_wind(
@@ -374,18 +383,17 @@ pub fn add_structure_wind(
                 continue;
             };
             let (right, _) = axes(s.orientation_deg);
-            for (k, b) in bands.bands.iter().enumerate() {
+            for b in &bands.bands {
                 let (from, to) = (b.from.si(), b.to.si());
                 // Wind from the right blows towards the left (−x).
                 let f = q * b.drag * b.area.si() * w.wind_from.to_left();
                 let local = [-f, 0.0, 0.0];
                 r.loads.push(AttachmentLoad {
                     structure: s.id.clone(),
-                    set: 0,
-                    phase: 0,
+                    point: String::new(),
                     label: format!("wind on the structure ({from}–{to} m)"),
+                    sets: Vec::new(),
                     sections: Vec::new(),
-                    support: k,
                     at: [
                         s.position[0],
                         s.position[1],
@@ -400,12 +408,13 @@ pub fn add_structure_wind(
     }
 }
 
-/// The loads as CSV (one row per load case and support; forces in N):
-/// `case,structure,set,phase,label,support,x,y,z,transverse,longitudinal,
-/// vertical,factored_transverse,factored_longitudinal,factored_vertical`.
+/// The loads as CSV (one row per load case and point; forces in N):
+/// `case,structure,point,label,sets,x,y,z,transverse,longitudinal,
+/// vertical,factored_transverse,factored_longitudinal,factored_vertical`
+/// (`sets` separated by spaces).
 pub fn to_csv(results: &[CaseLoads]) -> String {
     let mut out = String::from(
-        "case,structure,set,phase,label,support,x,y,z,transverse,longitudinal,vertical,\
+        "case,structure,point,label,sets,x,y,z,transverse,longitudinal,vertical,\
          factored_transverse,factored_longitudinal,factored_vertical\n",
     );
     let quote = ols_core::text::csv_field;
@@ -413,13 +422,16 @@ pub fn to_csv(results: &[CaseLoads]) -> String {
         for l in &r.loads {
             let _ = writeln!(
                 out,
-                "{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}",
+                "{},{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}",
                 quote(&r.case.name),
                 quote(&l.structure),
-                l.set,
-                l.phase,
+                quote(&l.point),
                 quote(&l.label),
-                l.support,
+                l.sets
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" "),
                 l.at[0],
                 l.at[1],
                 l.at[2],

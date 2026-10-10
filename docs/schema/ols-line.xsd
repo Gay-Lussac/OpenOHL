@@ -90,9 +90,13 @@
   </xs:complexType>
 
   <xs:complexType name="sectionPoint">
+    <xs:annotation>
+      <xs:documentation>A wire point by its structure and set (version 1
+        files also give a phase).</xs:documentation>
+    </xs:annotation>
     <xs:attribute name="structure" type="xs:string" use="required"/>
     <xs:attribute name="set" type="xs:unsignedInt" use="required"/>
-    <xs:attribute name="phase" type="xs:unsignedInt" use="required"/>
+    <xs:attribute name="phase" type="xs:unsignedInt"/>
   </xs:complexType>
 
   <xs:complexType name="stringing">
@@ -143,7 +147,52 @@
         <xs:element name="structure" minOccurs="0" maxOccurs="unbounded">
           <xs:complexType>
             <xs:sequence>
+              <xs:element name="point" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A point of the structure where strings
+                    hang (label unique among points and wire points).</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="label" type="xs:string" use="required"/>
+                  <xs:attributeGroup ref="ols:xyz"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="wire" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A wire point: where strings meet; with a
+                    set, where a section or jumper ends. No string to it:
+                    fixed to the structure.</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="label" type="xs:string" use="required"/>
+                  <xs:attributeGroup ref="ols:xyz"/>
+                  <xs:attribute name="set" type="xs:unsignedInt"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="string" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A string from its top (a point, or
+                    another string's wire point) to a wire point; its
+                    length is the distance between them.</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="label" type="xs:string" use="required"/>
+                  <xs:attribute name="top" type="xs:string" use="required"/>
+                  <xs:attribute name="wire" type="xs:string" use="required"/>
+                  <xs:attribute name="insulator" type="xs:string"/>
+                  <xs:attribute name="weight" type="xs:double" default="0"/>
+                  <xs:attribute name="wind_area" type="xs:double" default="0"/>
+                  <xs:attribute name="stiffness" type="xs:double"/>
+                  <xs:attribute name="compression" type="xs:double"/>
+                  <xs:attribute name="strain" type="xs:boolean" default="false"/>
+                </xs:complexType>
+              </xs:element>
               <xs:element name="attachment" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>Version 1 files: a string per set and
+                    phase (read as points, strings and wire points; not
+                    written).</xs:documentation>
+                </xs:annotation>
                 <xs:complexType>
                   <xs:sequence>
                     <xs:element name="insulator_point" type="ols:point"/>
@@ -167,9 +216,16 @@
                 </xs:complexType>
               </xs:element>
               <xs:element name="omit" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>Typed structures: a point, string or
+                    wire point of the type left out (label), or its wire
+                    point with a set and what moves with it (set; version 1
+                    files: set and phase).</xs:documentation>
+                </xs:annotation>
                 <xs:complexType>
-                  <xs:attribute name="set" type="xs:unsignedInt" use="required"/>
-                  <xs:attribute name="phase" type="xs:unsignedInt" use="required"/>
+                  <xs:attribute name="label" type="xs:string"/>
+                  <xs:attribute name="set" type="xs:unsignedInt"/>
+                  <xs:attribute name="phase" type="xs:unsignedInt"/>
                 </xs:complexType>
               </xs:element>
               <xs:element name="member" type="ols:doubleList" minOccurs="0" maxOccurs="unbounded">

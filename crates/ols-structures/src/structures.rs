@@ -28,6 +28,61 @@
 //! dz = "3 m"
 //! ```
 //!
+//! **Strings (version 2)**: what hangs on the structure, defined
+//! explicitly — **points** on the structure (`[[point]]`), **strings**
+//! between them (`[[string]]`: a top — a point, or another string's wire
+//! point — and a wire point, with an insulator from the library or a length
+//! and weight given here, optionally the compression it may take) and
+//! **wire points** (`[[wire]]`, where strings meet; with a `set`, where a
+//! wire is clamped). A V-string is two strings to one wire point, a V with
+//! a string below a third string from that wire point, a TAK a suspension
+//! string to a wire point and two strain strings from it. A wire point's
+//! position may be given; otherwise it hangs below its string (a strain
+//! string with a `side`: along the line), or below the middle of its
+//! strings' tops where their lengths meet:
+//!
+//! ```toml
+//! [[point]]
+//! label = "A1-L"
+//! point = ["-14 m", "0 m", "40 m"]
+//!
+//! [[point]]
+//! label = "A1-R"
+//! point = ["-10 m", "0 m", "40 m"]
+//!
+//! [[wire]]
+//! label = "V1"
+//!
+//! [[wire]]
+//! label = "W1"
+//! set = 1
+//!
+//! [[string]]
+//! label = "S1-L"
+//! top = "A1-L"
+//! wire = "V1"
+//! length = "4.5 m"
+//! weight = "400 N"
+//!
+//! [[string]]
+//! label = "S1-R"
+//! top = "A1-R"
+//! wire = "V1"
+//! length = "4.5 m"
+//! weight = "400 N"
+//!
+//! [[string]]
+//! label = "S1"
+//! top = "V1"
+//! wire = "W1"
+//! length = "0.5 m"
+//! weight = "50 N"
+//! ```
+//!
+//! Version 1 files give each string as an `[[attachment]]` (set, phase,
+//! point, insulator or string): read as before, their points labelled by
+//! the string's top label or `A<set>-<phase>`.
+//!
 //! **Simple pylons**: the insulator strings can be given in the pylon file
 //! itself instead of from the insulator library — where the string hangs
 //! (`point`), its length, and a label at its top (insulator attachment
@@ -71,8 +126,7 @@
 //! weight_span = "550 m"
 //!
 //! [[capacity.attachment]]
-//! set = 1
-//! phase = 1
+//! point = "A1-L"              # a point of the structure (version 1: set, phase)
 //! vertical = "40 kN"          # downwards
 //! uplift = "10 kN"            # optional (default: none allowed)
 //! transverse = "30 kN"
@@ -110,7 +164,7 @@ pub const STRUCTURE_FILE_EXTENSION: &str = "olss";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ols-structure";
 /// Newest format version read.
-pub const STRUCTURE_FILE_VERSION: u32 = 1;
+pub const STRUCTURE_FILE_VERSION: u32 = 2;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -227,6 +281,62 @@ pub struct InlineString {
     pub bottom: String,
 }
 
+/// A point of a structure type where strings hang (version 2).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypePoint {
+    /// Label, unique among the type's points and wire points.
+    pub label: String,
+    /// Position in local axes.
+    pub point: [Length; 3],
+}
+
+/// A string of a structure type (version 2): from its top (a point, or a
+/// wire point) to a wire point.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeString {
+    /// Label, unique among the type's strings.
+    pub label: String,
+    /// Its top: a point, or another string's wire point.
+    pub top: String,
+    /// Its wire point.
+    pub wire: String,
+    /// Insulator assembly from the library (its length, weight, wind
+    /// area).
+    #[serde(default)]
+    pub insulator: Option<String>,
+    /// Or: its length…
+    #[serde(default)]
+    pub length: Option<Length>,
+    /// …and weight (default 0).
+    #[serde(default)]
+    pub weight: Option<ols_core::units::Force>,
+    /// Compression it may take (none: tension only).
+    #[serde(default)]
+    pub compression: Option<ols_core::units::Force>,
+    /// A strain (dead-end) string, lined up with its conductor.
+    #[serde(default)]
+    pub strain: bool,
+    /// Strain strings: which span it points to (placing its wire point).
+    #[serde(default)]
+    pub side: Option<Side>,
+}
+
+/// A wire point of a structure type (version 2).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeWire {
+    /// Label, unique among the type's points and wire points.
+    pub label: String,
+    /// Set number: a wire is clamped here.
+    #[serde(default)]
+    pub set: Option<u32>,
+    /// Position in local axes (default: from its strings).
+    #[serde(default)]
+    pub point: Option<[Length; 3]>,
+}
+
 /// A named height extension.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -270,10 +380,15 @@ pub enum Interaction {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AttachmentCapacity {
-    /// Set number.
-    pub set: u32,
-    /// Phase number.
-    pub phase: u32,
+    /// The point of the structure.
+    #[serde(default)]
+    pub point: Option<String>,
+    /// Or (version 1): the set…
+    #[serde(default)]
+    pub set: Option<u32>,
+    /// …and phase of an attachment.
+    #[serde(default)]
+    pub phase: Option<u32>,
     /// Downwards.
     #[serde(default)]
     pub vertical: Option<ols_core::units::Force>,
@@ -289,6 +404,16 @@ pub struct AttachmentCapacity {
     /// How the ratios combine.
     #[serde(default)]
     pub interaction: Interaction,
+}
+
+impl AttachmentCapacity {
+    fn name(&self) -> String {
+        match (&self.point, self.set, self.phase) {
+            (Some(p), ..) => format!("point {p}"),
+            (None, Some(s), Some(ph)) => format!("set {s} phase {ph}"),
+            _ => "an attachment".into(),
+        }
+    }
 }
 
 /// What a structure type can carry (both methods optional).
@@ -356,13 +481,6 @@ impl Capacity {
             .map(|l| l.angle.map_or(0.0, |x| x.degrees()))
     }
 
-    /// The allowable loads of attachment (`set`, `phase`).
-    pub fn attachment(&self, set: u32, phase: u32) -> Option<&AttachmentCapacity> {
-        self.attachments
-            .iter()
-            .find(|a| a.set == set && a.phase == phase)
-    }
-
     fn check(&self) -> Result<(), String> {
         let mut last = -1.0;
         for l in &self.spans {
@@ -382,23 +500,22 @@ impl Capacity {
                 ));
             }
         }
-        let mut seen = std::collections::BTreeSet::new();
         for c in &self.attachments {
-            if !seen.insert((c.set, c.phase)) {
-                return Err(format!(
-                    "capacity: attachment set {} phase {} given twice",
-                    c.set, c.phase
-                ));
-            }
             let positive = [c.vertical, c.uplift, c.transverse, c.longitudinal]
                 .into_iter()
                 .flatten()
                 .all(|f| f.si() > 0.0);
             if !positive {
-                return Err(format!(
-                    "capacity: attachment set {} phase {}: loads must be above 0",
-                    c.set, c.phase
-                ));
+                return Err(format!("capacity: {}: loads must be above 0", c.name()));
+            }
+            match (&c.point, c.set, c.phase) {
+                (Some(_), None, None) | (None, Some(_), Some(_)) => {}
+                _ => {
+                    return Err(format!(
+                        "capacity: {}: give a point, or (version 1) a set and phase",
+                        c.name()
+                    ));
+                }
             }
         }
         Ok(())
@@ -477,7 +594,16 @@ pub struct StructureType {
     /// Where the data comes from.
     #[serde(default)]
     pub source: Option<String>,
-    /// Attachment points.
+    /// Points where strings hang (version 2).
+    #[serde(rename = "point", default)]
+    pub points: Vec<TypePoint>,
+    /// Strings (version 2).
+    #[serde(rename = "string", default)]
+    pub strings: Vec<TypeString>,
+    /// Wire points (version 2).
+    #[serde(rename = "wire", default)]
+    pub wires: Vec<TypeWire>,
+    /// Attachment points (version 1).
     #[serde(rename = "attachment", default)]
     pub attachments: Vec<TypeAttachment>,
     /// Height extensions.
@@ -595,20 +721,21 @@ impl LibraryItem for StructureType {
                 }
             }
         }
+        self.check_strings()?;
         if let Some(w) = &self.wind {
             w.check()?;
         }
         if let Some(c) = &self.capacity {
             c.check()?;
-            if let Some(a) = c
-                .attachments
-                .iter()
-                .find(|c| !seen.contains(&(c.set, c.phase)))
-            {
-                return Err(format!(
-                    "capacity: attachment set {} phase {} is not an attachment of the type",
-                    a.set, a.phase
-                ));
+            let mut points = std::collections::BTreeSet::new();
+            for a in &c.attachments {
+                let label = self.capacity_label(a);
+                if self.point_local(&label, None).is_none() {
+                    return Err(format!("capacity: {} is not a point of the type", a.name()));
+                }
+                if !points.insert(label) {
+                    return Err(format!("capacity: {} given twice", a.name()));
+                }
             }
         }
         Ok(())
@@ -733,7 +860,368 @@ impl StructureType {
     }
 }
 
+/// The set number of a version 1 (set, phase): the set itself for phase 1
+/// (the usual case: one wire per set), else `set + 1000 · (phase + 1)` —
+/// unique as long as sets stay below 1000, and the same everywhere it is
+/// met (structure types, lines, project history).
+pub fn set_from_v1(set: u32, phase: u32) -> u32 {
+    if phase == 1 {
+        set
+    } else {
+        set + 1000 * (phase + 1)
+    }
+}
+
+/// The label of a version 1 attachment's point (its string's top label, else
+/// `A<set>-<phase>`), as lines read it.
+pub fn v1_point_label(a: &TypeAttachment) -> String {
+    a.string
+        .as_ref()
+        .map(|s| s.top.clone())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| format!("A{}-{}", a.set, a.phase))
+}
+
+/// A point of a placed structure, in global coordinates.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlacedPoint {
+    /// Label.
+    pub label: String,
+    /// Position.
+    pub position: [f64; 3],
+}
+
+/// A wire point of a placed structure, in global coordinates.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlacedWire {
+    /// Label.
+    pub label: String,
+    /// Position in still air.
+    pub position: [f64; 3],
+    /// Set number.
+    pub set: Option<u32>,
+}
+
+/// A string of a placed structure.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlacedString {
+    /// Label.
+    pub label: String,
+    /// Top label.
+    pub top: String,
+    /// Wire point label.
+    pub wire: String,
+    /// Insulator assembly id.
+    pub insulator: Option<String>,
+    /// Weight, N.
+    pub weight: f64,
+    /// Compression it may take, N.
+    pub compression: Option<f64>,
+    /// A strain string.
+    pub strain: bool,
+}
+
+/// The points, strings and wire points of a placed structure (version 2
+/// items).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PlacedStrings {
+    /// Points.
+    pub points: Vec<PlacedPoint>,
+    /// Strings.
+    pub strings: Vec<PlacedString>,
+    /// Wire points.
+    pub wires: Vec<PlacedWire>,
+}
+
 impl StructureType {
+    /// Checks the version 2 items: labels unique, tops and wire points
+    /// there, a length for strings without an insulator.
+    fn check_strings(&self) -> Result<(), String> {
+        let mut labels = std::collections::BTreeSet::new();
+        for label in self
+            .points
+            .iter()
+            .map(|p| &p.label)
+            .chain(self.wires.iter().map(|w| &w.label))
+        {
+            if label.is_empty() || !labels.insert(label.as_str()) {
+                return Err(format!(
+                    "point or wire point \"{label}\": empty or given twice"
+                ));
+            }
+        }
+        let mut sets = std::collections::BTreeSet::new();
+        for w in &self.wires {
+            if let Some(set) = w.set
+                && !sets.insert(set)
+            {
+                return Err(format!("two wire points with set {set}"));
+            }
+        }
+        let mut strings = std::collections::BTreeSet::new();
+        for st in &self.strings {
+            let bad = |m: &str| Err(format!("string {}: {m}", st.label));
+            if st.label.is_empty() || !strings.insert(st.label.as_str()) {
+                return bad("empty label or given twice");
+            }
+            if !labels.contains(st.top.as_str()) {
+                return bad(&format!("no point \"{}\" for its top", st.top));
+            }
+            if !self.wires.iter().any(|w| w.label == st.wire) {
+                return bad(&format!("no wire point \"{}\"", st.wire));
+            }
+            match (&st.insulator, st.length) {
+                (Some(_), Some(_)) => return bad("give an insulator or a length, not both"),
+                (None, Some(l)) if !(l.si() > 0.0 && l.si() < 50.0) => {
+                    return bad("length must be between 0 and 50 m");
+                }
+                _ => {}
+            }
+            if st.weight.is_some_and(|w| w.si() < 0.0)
+                || st
+                    .compression
+                    .is_some_and(|c| c.si().is_nan() || c.si() < 0.0)
+            {
+                return bad("weight and compression must be ≥ 0");
+            }
+        }
+        Ok(())
+    }
+
+    /// The label a capacity entry refers to (version 1: the attachment's
+    /// point label).
+    pub fn capacity_label(&self, c: &AttachmentCapacity) -> String {
+        if let Some(p) = &c.point {
+            return p.clone();
+        }
+        self.attachments
+            .iter()
+            .find(|a| Some(a.set) == c.set && Some(a.phase) == c.phase)
+            .map(v1_point_label)
+            .unwrap_or_else(|| format!("A{}-{}", c.set.unwrap_or(0), c.phase.unwrap_or(0)))
+    }
+
+    /// The wire ends of the type placed at `position` with `rotation_deg`
+    /// and an optional extension: for each set, its wire point (still air)
+    /// and whether it hangs on strain strings only (version 1 attachments
+    /// and version 2 wire points together).
+    pub fn wire_ends(
+        &self,
+        position: [f64; 3],
+        rotation_deg: f64,
+        extension: Option<&str>,
+        insulators: &InsulatorLibrary,
+    ) -> Result<Vec<(u32, [f64; 3], bool)>, String> {
+        let mut out: Vec<(u32, [f64; 3], bool)> = self
+            .place(position, rotation_deg, extension, insulators)?
+            .into_iter()
+            .map(|a| (set_from_v1(a.set, a.phase), a.wire_point, a.strain))
+            .collect();
+        let placed = self.place_strings(position, rotation_deg, extension, insulators)?;
+        for w in &placed.wires {
+            let Some(set) = w.set else { continue };
+            let on: Vec<&PlacedString> = placed
+                .strings
+                .iter()
+                .filter(|x| x.wire == w.label)
+                .collect();
+            out.push((
+                set,
+                w.position,
+                !on.is_empty() && on.iter().all(|x| x.strain),
+            ));
+        }
+        Ok(out)
+    }
+
+    /// The sets of the type's wire points (version 1 attachments: their
+    /// [`set_from_v1`]), in order.
+    pub fn sets(&self) -> Vec<u32> {
+        let mut sets: Vec<u32> = self
+            .attachments
+            .iter()
+            .map(|a| set_from_v1(a.set, a.phase))
+            .chain(self.wires.iter().filter_map(|w| w.set))
+            .collect();
+        sets.sort_unstable();
+        sets.dedup();
+        sets
+    }
+
+    /// The allowable loads at the point labelled `label` (Method 2).
+    pub fn capacity_at(&self, label: &str) -> Option<&AttachmentCapacity> {
+        self.capacity
+            .as_ref()?
+            .attachments
+            .iter()
+            .find(|c| self.capacity_label(c) == label)
+    }
+
+    /// A point's position in local axes (a version 2 point, or a version 1
+    /// attachment's point, by [`v1_point_label`]), raised by the extension.
+    pub fn point_local(&self, label: &str, extension: Option<&str>) -> Option<[f64; 3]> {
+        let dz = self.extension_dz(extension).ok()?;
+        self.points
+            .iter()
+            .find(|p| p.label == label)
+            .map(|p| p.point)
+            .or_else(|| {
+                self.attachments
+                    .iter()
+                    .find(|a| v1_point_label(a) == label)
+                    .map(|a| a.point)
+            })
+            .map(|p| [p[0].si(), p[1].si(), p[2].si() + dz])
+    }
+
+    /// The version 2 points, strings and wire points placed at `position`
+    /// with `rotation_deg` and an optional extension. A wire point without
+    /// a position hangs below its one string (a strain string with a side:
+    /// along the line), or below the middle of its strings' tops where
+    /// their lengths meet.
+    pub fn place_strings(
+        &self,
+        position: [f64; 3],
+        rotation_deg: f64,
+        extension: Option<&str>,
+        insulators: &InsulatorLibrary,
+    ) -> Result<PlacedStrings, String> {
+        let dz = self.extension_dz(extension)?;
+        let err = |m: String| format!("structure type {}: {m}", self.id);
+        let lift = |p: &[Length; 3]| [p[0].si(), p[1].si(), p[2].si() + dz];
+        let mut local: std::collections::BTreeMap<&str, [f64; 3]> = self
+            .points
+            .iter()
+            .map(|p| (p.label.as_str(), lift(&p.point)))
+            .chain(
+                self.wires
+                    .iter()
+                    .filter_map(|w| Some((w.label.as_str(), lift(w.point.as_ref()?)))),
+            )
+            .collect();
+        let assembly = |st: &TypeString| -> Result<Option<&crate::InsulatorAssembly>, String> {
+            match &st.insulator {
+                None => Ok(None),
+                Some(id) => insulators
+                    .get(id)
+                    .map(Some)
+                    .ok_or_else(|| err(format!("insulator \"{id}\" not in the library"))),
+            }
+        };
+        // Wire points without a position, from the tops placed: each pass
+        // places those whose strings' tops are all placed.
+        for _ in 0..=self.wires.len() {
+            let mut progress = false;
+            for w in &self.wires {
+                if local.contains_key(w.label.as_str()) {
+                    continue;
+                }
+                let on: Vec<&TypeString> =
+                    self.strings.iter().filter(|s| s.wire == w.label).collect();
+                if on.is_empty() {
+                    return Err(err(format!(
+                        "wire point {}: no position and no string",
+                        w.label
+                    )));
+                }
+                let Some(tops) = on
+                    .iter()
+                    .map(|s| local.get(s.top.as_str()).copied())
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    continue;
+                };
+                let lengths = on
+                    .iter()
+                    .map(|s| {
+                        Ok(match (assembly(s)?, s.length) {
+                            (Some(a), _) => a.length.si(),
+                            (None, Some(l)) => l.si(),
+                            (None, None) => {
+                                return Err(err(format!("string {}: no length", s.label)));
+                            }
+                        })
+                    })
+                    .collect::<Result<Vec<f64>, String>>()?;
+                let at = match (on.as_slice(), tops.as_slice()) {
+                    ([s], [t]) => match s.side {
+                        Some(Side::Ahead) => [t[0], t[1] + lengths[0], t[2]],
+                        Some(Side::Back) => [t[0], t[1] - lengths[0], t[2]],
+                        None => [t[0], t[1], t[2] - lengths[0]],
+                    },
+                    _ => {
+                        let n = tops.len() as f64;
+                        let c = [0, 1, 2].map(|k| tops.iter().map(|t| t[k]).sum::<f64>() / n);
+                        let r = ((tops[0][0] - c[0]).powi(2) + (tops[0][1] - c[1]).powi(2)).sqrt();
+                        let l = lengths.iter().sum::<f64>() / n;
+                        if l <= r {
+                            return Err(err(format!(
+                                "wire point {}: its strings are too short to meet",
+                                w.label
+                            )));
+                        }
+                        [c[0], c[1], c[2] - (l * l - r * r).sqrt()]
+                    }
+                };
+                local.insert(w.label.as_str(), at);
+                progress = true;
+            }
+            if !progress {
+                break;
+            }
+        }
+        if let Some(w) = self
+            .wires
+            .iter()
+            .find(|w| !local.contains_key(w.label.as_str()))
+        {
+            return Err(err(format!(
+                "wire point {}: its strings hang from points without a position",
+                w.label
+            )));
+        }
+        let global = |label: &str| to_global(position, rotation_deg, local[label]);
+        Ok(PlacedStrings {
+            points: self
+                .points
+                .iter()
+                .map(|p| PlacedPoint {
+                    label: p.label.clone(),
+                    position: global(&p.label),
+                })
+                .collect(),
+            wires: self
+                .wires
+                .iter()
+                .map(|w| PlacedWire {
+                    label: w.label.clone(),
+                    position: global(&w.label),
+                    set: w.set,
+                })
+                .collect(),
+            strings: self
+                .strings
+                .iter()
+                .map(|s| {
+                    let a = assembly(s)?;
+                    Ok(PlacedString {
+                        label: s.label.clone(),
+                        top: s.top.clone(),
+                        wire: s.wire.clone(),
+                        insulator: s.insulator.clone(),
+                        weight: match (a, s.weight) {
+                            (_, Some(w)) => w.si(),
+                            (Some(a), None) => a.weight.si(),
+                            (None, None) => 0.0,
+                        },
+                        compression: s.compression.map(|c| c.si()),
+                        strain: s.strain || a.is_some_and(|a| a.kind == AssemblyKind::Strain),
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+        })
+    }
+
     fn extension_dz(&self, extension: Option<&str>) -> Result<f64, String> {
         match extension {
             None => Ok(0.0),
@@ -766,15 +1254,17 @@ impl StructureType {
                 })
                 .collect());
         }
-        let highest = self
+        let points: Vec<[f64; 3]> = self
             .attachments
             .iter()
-            .map(|a| a.point[2].si() + dz)
-            .fold(0.0, f64::max);
+            .map(|a| a.point)
+            .chain(self.points.iter().map(|p| p.point))
+            .map(|p| [p[0].si(), p[1].si(), p[2].si() + dz])
+            .collect();
+        let highest = points.iter().map(|p| p[2]).fold(0.0, f64::max);
         let top = self.height.map_or(highest, |h| (h.si() + dz).max(highest));
         let mut lines = vec![vec![[0.0, 0.0, 0.0], [0.0, 0.0, top]]];
-        for a in &self.attachments {
-            let p = [a.point[0].si(), a.point[1].si(), a.point[2].si() + dz];
+        for p in points {
             let arm = vec![[0.0, 0.0, p[2]], p];
             if p[0].hypot(p[1]) > 1e-9 && !lines.contains(&arm) {
                 lines.push(arm);
@@ -1027,5 +1517,125 @@ mod tests {
         );
         let text = "id = \"X\"\nname = \"x\"\nkind = \"lattice\"\n[[attachment]]\nset = 1\nphase = 1\npoint = [\"0 m\", \"0 m\", \"-1 m\"]";
         assert!(StructureType::parse(Path::new("x.olss"), text).is_err());
+    }
+
+    /// Version 2: a V with a string below and a TAK, their wire points
+    /// placed from the strings (the V's tip where its legs meet, the clamp
+    /// below it; the TAK's strain strings along the line), the capacity
+    /// by point; the sets of both kinds of file.
+    #[test]
+    fn strings_hang_from_strings_in_a_type() {
+        let text = r#"
+            id = "VT"
+            name = "V and TAK"
+            kind = "lattice"
+            [[point]]
+            label = "L"
+            point = ["-3 m", "0 m", "30 m"]
+            [[point]]
+            label = "R"
+            point = ["3 m", "0 m", "30 m"]
+            [[point]]
+            label = "K"
+            point = ["0 m", "0 m", "40 m"]
+            [[wire]]
+            label = "V"
+            [[wire]]
+            label = "C"
+            set = 1
+            [[wire]]
+            label = "N"
+            [[wire]]
+            label = "B"
+            set = 2
+            [[wire]]
+            label = "F"
+            set = 3
+            [[string]]
+            label = "l"
+            top = "L"
+            wire = "V"
+            length = "5 m"
+            weight = "400 N"
+            [[string]]
+            label = "r"
+            top = "R"
+            wire = "V"
+            length = "5 m"
+            [[string]]
+            label = "i"
+            top = "V"
+            wire = "C"
+            insulator = "I5"
+            [[string]]
+            label = "k"
+            top = "K"
+            wire = "N"
+            length = "4 m"
+            [[string]]
+            label = "b"
+            top = "N"
+            wire = "B"
+            length = "2 m"
+            side = "back"
+            strain = true
+            compression = "500 N"
+            [[string]]
+            label = "f"
+            top = "N"
+            wire = "F"
+            insulator = "S6"
+            side = "ahead"
+            [[capacity.attachment]]
+            point = "K"
+            vertical = "10 kN"
+        "#;
+        let t = StructureType::parse(Path::new("vt.olss"), text).unwrap();
+        assert_eq!(t.sets(), vec![1, 2, 3]);
+        assert!(t.capacity_at("K").is_some() && t.capacity_at("L").is_none());
+        let placed = t.place_strings([0.0; 3], 0.0, None, &insulators()).unwrap();
+        let at = |l: &str| placed.wires.iter().find(|w| w.label == l).unwrap().position;
+        let close = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-9);
+        // The tip 4 m below the tops (legs of 5 m, 3 m out), the clamp the
+        // insulator's 5 m below it.
+        assert!(close(at("V"), [0.0, 0.0, 26.0]), "{:?}", at("V"));
+        assert!(close(at("C"), [0.0, 0.0, 21.0]), "{:?}", at("C"));
+        assert!(close(at("N"), [0.0, 0.0, 36.0]));
+        assert!(close(at("B"), [0.0, -2.0, 36.0]));
+        assert!(close(at("F"), [0.0, 6.0, 36.0]));
+        let string = |l: &str| placed.strings.iter().find(|x| x.label == l).unwrap();
+        assert_eq!(string("l").weight, 400.0);
+        assert_eq!(string("i").weight, 1000.0);
+        assert!(string("f").strain && string("b").strain && !string("k").strain);
+        assert_eq!(string("b").compression, Some(500.0));
+        let ends = t.wire_ends([0.0; 3], 0.0, None, &insulators()).unwrap();
+        assert_eq!(ends.len(), 3);
+        assert!(
+            ends.iter().find(|e| e.0 == 2).unwrap().2,
+            "B on strain strings"
+        );
+        // Version 1 files still read, their sets for phases other than 1
+        // their own.
+        let v1 = tower();
+        let mut expected: Vec<u32> = v1
+            .attachments
+            .iter()
+            .map(|a| set_from_v1(a.set, a.phase))
+            .collect();
+        expected.sort_unstable();
+        expected.dedup();
+        assert_eq!(v1.sets(), expected);
+        assert_eq!(set_from_v1(4, 2), 3004);
+        // A wire point no string reaches and without a position: refused.
+        let bad = text.replace("label = \"i\"", "label = \"i\"\n").replace(
+            "[[string]]\n            label = \"i\"\n\n            top = \"V\"\n            wire = \"C\"\n            insulator = \"I5\"",
+            "",
+        );
+        let t = StructureType::parse(Path::new("vt.olss"), &bad).unwrap();
+        assert!(
+            t.place_strings([0.0; 3], 0.0, None, &insulators())
+                .unwrap_err()
+                .contains("no position and no string")
+        );
     }
 }

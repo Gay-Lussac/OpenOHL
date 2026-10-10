@@ -245,15 +245,11 @@ pub fn build(
                 xy: [s.position[0], s.position[1]],
                 base: s.position[2],
                 top: s
-                    .attachments
+                    .points
                     .iter()
-                    .map(|a| a.insulator_point[2])
+                    .map(|p| p.position[2])
                     .fold(s.position[2], f64::max),
-                attachments: s
-                    .attachments
-                    .iter()
-                    .map(|a| to_route(&a.insulator_point))
-                    .collect(),
+                attachments: s.points.iter().map(|p| to_route(&p.position)).collect(),
                 sticks: s
                     .members
                     .iter()

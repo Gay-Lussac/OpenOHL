@@ -81,9 +81,14 @@ fn end_position(
             return Ok(v(*clamp));
         }
     }
-    line.attachment(point)
-        .map(|a| v(a.wire_point))
-        .ok_or_else(|| LineError::Invalid(format!("no attachment {point:?}")))
+    line.wire_point(point)
+        .map(|w| v(w.position))
+        .ok_or_else(|| {
+            LineError::Invalid(format!(
+                "no wire point with set {} on {}",
+                point.set, point.structure
+            ))
+        })
 }
 
 /// Angle of a jumper terminal below the conductor's axis when the jumper
@@ -1101,9 +1106,13 @@ mod tests {
         assert!(far != line.jumpers[0].from.structure);
         let st = line.structures.iter_mut().find(|t| t.id == far).unwrap();
         st.position[2] += 2.0;
-        for a in &mut st.attachments {
-            a.insulator_point[2] += 2.0;
-            a.wire_point[2] += 2.0;
+        for a in st
+            .points
+            .iter_mut()
+            .map(|p| &mut p.position)
+            .chain(st.wires.iter_mut().map(|w| &mut w.position))
+        {
+            a[2] += 2.0;
         }
         let (kept2, fresh2) = kept_and_fresh(&line);
         assert_eq!(kept2, fresh2);

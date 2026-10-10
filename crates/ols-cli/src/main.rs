@@ -1504,14 +1504,20 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                             max_sag,
                             shape.iterations
                         );
-                        // Slack V-string legs: the clamp hangs on one leg.
-                        for (point, forces) in section.points.iter().zip(&shape.insulators) {
-                            if forces.len() == 2 && forces.contains(&0.0) {
-                                println!(
-                                    "  {:<12}   slack V-string leg at {} set {} phase {}",
-                                    "", point.structure, point.set, point.phase
-                                );
+                        // Slack strings of a V (or more): the clamp hangs on
+                        // the others.
+                        for (point, strings) in section.points.iter().zip(&shape.strings) {
+                            if strings.len() >= 2 {
+                                for x in strings.iter().filter(|x| x.slack) {
+                                    println!(
+                                        "  {:<12}   slack string {} at {} set {}",
+                                        "", x.label, point.structure, point.set
+                                    );
+                                }
                             }
+                        }
+                        for flag in &shape.flags {
+                            println!("  {:<12}   {flag}", "");
                         }
                         shapes.push(shape);
                     }

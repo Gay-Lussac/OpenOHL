@@ -6,20 +6,24 @@
 //!
 //! Each section becomes an [`ols_wirefe::Model`]:
 //!
-//! - the first and last points, and middle points whose wire point is not
-//!   below the insulator point, are **strain assemblies**: a free clamp on
-//!   a member from the (fixed) insulator point, lined up with its
-//!   conductor by equilibrium, so it moves with every weather case; a
-//!   string without a weight (geometry only, e.g. imported) gets the weight
-//!   that holds it where the data puts it in the stringing state
-//!   (`estimate_strain_weights`); a point whose wire and insulator points
-//!   coincide is **fixed** there;
-//! - middle points whose wire point hangs below the insulator point are
-//!   **suspension strings**: a free clamp on a truss of that length from the
-//!   (fixed) insulator point;
-//! - middle points with two `legs` are **V-strings**: a free clamp on two
-//!   tension-only trusses from the (fixed) leg points; a leg pushed into
-//!   compression goes slack (reported in [`SectionShape::insulators`]);
+//! - at every point of the section, what holds the wire is built as the
+//!   structure gives it ([`crate::assembly`]): its structure points are
+//!   fixed nodes, its wire points free nodes, its strings bars between them
+//!   (tension only, or both ways when they may take compression); a wire
+//!   point no string reaches is **fixed**. The usual shapes:
+//!   - a **suspension string** (one string hanging from the structure, in
+//!     the middle of the section): a free clamp on a bar of that length;
+//!   - a **strain assembly** (one string at a section end, or not hanging):
+//!     a free clamp on a member lined up with its conductor by
+//!     equilibrium, so it moves with every weather case; one given without
+//!     a weight (geometry only, e.g. imported) gets the weight that holds
+//!     it where the data puts it in the stringing state
+//!     (`estimate_strain_weights`);
+//!   - a **V-string** (two strings to the clamp): a leg pushed into
+//!     compression goes slack (reported in [`SectionShape::strings`]);
+//!   - anything else: strings hanging from strings (a V with a string
+//!     below, a TAK), each wire point a free node. Wire points of the same
+//!     assembly where *other* sections end are held where they are given.
 //! - every span is one exact catenary element (split at point loads);
 //! - wind acts perpendicular to each span, horizontally, so the cable plane
 //!   swings differently in every span.
@@ -92,10 +96,9 @@ pub struct SectionShape {
     pub clamps: Vec<Point>,
     /// One shape per span.
     pub spans: Vec<SpanShape>,
-    /// Axial force of each insulator member at every point of the section,
-    /// N (tension positive; the whole bundle's): empty for fixed points, one value for I-strings
-    /// and strain assemblies, two for V-string legs (0 = slack leg).
-    pub insulators: Vec<Vec<f64>>,
+    /// The strings holding the wire at every point of the section, as
+    /// solved (empty for a fixed point; none from the ruling span).
+    pub strings: Vec<Vec<StringState>>,
     /// Weight estimated for each strain assembly given without one (the
     /// whole bundle's, N), at every point of the section (`None`: given or
     /// not a strain assembly).
@@ -104,10 +107,46 @@ pub struct SectionShape {
     pub iterations: u64,
     /// The loads the section puts on its structures (finite elements
     /// only; empty from the ruling span): at every point of the section,
-    /// for each support (insulator top, or the clamp of a wire fixed to
-    /// the structure), where it is and the force on the structure, N (the
-    /// whole bundle's; the support's reaction reversed).
-    pub attachment_loads: Vec<Vec<(Point, Point)>>,
+    /// for each structure point holding it (or the wire point of a wire
+    /// fixed to the structure), its label, where it is and the force on the
+    /// structure, N (the whole bundle's; the support's reaction reversed).
+    pub attachment_loads: Vec<Vec<Support>>,
+    /// What to look at: strings beyond the compression they may take.
+    pub flags: Vec<String>,
+    /// The wires' pull on the clamp at every point of the section, N (the
+    /// whole bundle's; finite elements only, else empty).
+    pub pulls: Vec<Point>,
+    /// The wire points of the strings holding the wire at every point, as
+    /// solved: label, position (finite elements only, else empty).
+    pub nodes: Vec<Vec<(String, Point)>>,
+}
+
+/// A string as solved.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StringState {
+    /// Its label on the structure.
+    pub label: String,
+    /// Its top, m.
+    pub top: Point,
+    /// Its bottom (wire point), m.
+    pub bottom: Point,
+    /// Axial force, N (the whole bundle's; tension positive).
+    pub force: f64,
+    /// Slack: a tension-only string pushed (it carries nothing).
+    pub slack: bool,
+    /// In more compression than it may take.
+    pub over: bool,
+}
+
+/// A point of a structure the section pulls on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Support {
+    /// Label of the structure point (or of the fixed wire point).
+    pub label: String,
+    /// Where it is, m.
+    pub at: Point,
+    /// Force on the structure, N (the whole bundle's).
+    pub force: Point,
 }
 
 struct Built {
@@ -116,11 +155,13 @@ struct Built {
     clamps: Vec<usize>,
     /// For each span, the cable elements (in order).
     span_elements: Vec<Vec<usize>>,
-    /// For each section point, its insulator trusses.
-    members: Vec<Vec<usize>>,
-    /// For each section point, its fixed nodes (insulator tops, or the
-    /// clamp of a wire fixed to the structure).
-    supports: Vec<Vec<usize>>,
+    /// For each section point, its strings' trusses (with their labels).
+    members: Vec<Vec<(String, usize)>>,
+    /// For each section point, its fixed nodes on the structure (structure
+    /// points, or the clamp of a wire fixed to the structure), labelled.
+    supports: Vec<Vec<(String, usize)>>,
+    /// For each section point, its holder's free nodes, labelled.
+    free: Vec<Vec<(String, usize)>>,
 }
 
 fn is_suspension(insulator: Vector3<f64>, wire: Vector3<f64>) -> bool {
@@ -183,105 +224,320 @@ struct Reference {
     temperature: f64,
 }
 
-/// Clamp layout of a section: fixed points, suspension strings, strain
-/// assemblies. Section ends are always strain points (or fixed).
-#[derive(Clone)]
-enum Clamp {
-    /// Wire fixed at a point (no insulator length).
-    Fixed(Vector3<f64>),
-    /// Suspension string: free clamp hanging from `top`.
-    Suspension {
-        top: Vector3<f64>,
-        length: f64,
-        weight: f64,
-        /// Wind area, m² (per subconductor, like the weight).
-        wind_area: f64,
-    },
-    /// Strain assembly: free clamp on a member of `length` from `top`; it
-    /// lines up with its conductor by equilibrium (direction and droop
-    /// depend on the tension — a steep down-lead's string hangs 47° below
-    /// horizontal in real data). `initial` is the starting position.
-    Strain {
-        top: Vector3<f64>,
-        length: f64,
-        weight: f64,
-        wind_area: f64,
-        initial: Vector3<f64>,
-        /// No weight given: estimated from `initial`.
-        estimate: bool,
-    },
-    /// V-string: free clamp on two tension-only legs from `tops`; `plumb`
-    /// is the still-air clamp position from the data.
-    VString {
-        tops: [Vector3<f64>; 2],
-        lengths: [f64; 2],
-        weight: f64,
-        wind_area: f64,
-        plumb: Vector3<f64>,
-    },
+/// A node of a holder: fixed (on the structure, or another section's
+/// clamp held where given) or free (a wire point on strings).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum At {
+    Fixed(usize),
+    Free(usize),
 }
 
-fn clamps_of(line: &Line, section: &Section) -> Result<Vec<Clamp>, LineError> {
+/// One string of a holder (weight and wind area per subconductor).
+#[derive(Clone, Debug)]
+struct Member {
+    label: String,
+    top: At,
+    bottom: At,
+    length: f64,
+    weight: f64,
+    wind_area: f64,
+    stiffness: f64,
+    /// Compression it may take, N (the whole bundle's); none: tension only.
+    compression: Option<f64>,
+}
+
+/// The shape of a holder, for the passes that treat the usual ones as
+/// they always were (`settled`, `plumb`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Shape {
+    /// The wire fixed to the structure.
+    Fixed,
+    /// One string from the structure hanging below it, in the middle of the
+    /// section.
+    Suspension,
+    /// One string from the structure, otherwise (a strain assembly).
+    Strain,
+    /// Two strings from the structure to the clamp, in the middle.
+    VString,
+    /// Anything else.
+    General,
+}
+
+/// What holds the wire at one point of a section: the strings of its
+/// wire point's assembly between fixed and free nodes.
+#[derive(Clone, Debug)]
+struct Holder {
+    /// Fixed nodes: label, position, and for another section's clamp held
+    /// where given (not on the structure), its set.
+    fixed: Vec<(String, Vector3<f64>, Option<u32>)>,
+    /// Free nodes: label, position given, load on it (another section's
+    /// pull on its clamp, per subconductor).
+    free: Vec<(String, Vector3<f64>, Vector3<f64>)>,
+    clamp: At,
+    members: Vec<Member>,
+    shape: Shape,
+    /// A strain assembly without a weight: weighed from where it is given.
+    estimate: bool,
+    /// This section reports the loads on the structure points (another
+    /// section sharing the assembly comes first otherwise), and solves the
+    /// assembly when coupled.
+    reports: bool,
+    /// Other sections end on the assembly too.
+    shared: bool,
+}
+
+impl Holder {
+    fn position(&self, at: At) -> Vector3<f64> {
+        match at {
+            At::Fixed(i) => self.fixed[i].1,
+            At::Free(i) => self.free[i].1,
+        }
+    }
+
+    /// The single string of a suspension or strain holder.
+    fn single(&self) -> Option<&Member> {
+        match self.members.as_slice() {
+            [m] => Some(m),
+            _ => None,
+        }
+    }
+}
+
+/// The holders of a section's points (weights and wind areas per
+/// subconductor).
+fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> {
     let n = section.points.len();
+    let bundle = f64::from(section.bundle.max(1));
+    let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     section
         .points
         .iter()
         .enumerate()
         .map(|(k, point)| {
-            let a = line.attachment(point).ok_or_else(|| {
-                LineError::Invalid(format!(
-                    "section {}: missing attachment {point:?}",
-                    section.id
+            let structure = line
+                .structure(&point.structure)
+                .ok_or_else(|| invalid(format!("no structure {}", point.structure)))?;
+            let wire = structure.wire_at_set(point.set).ok_or_else(|| {
+                invalid(format!(
+                    "no wire point with set {} on {}",
+                    point.set, point.structure
                 ))
             })?;
-            let (ins, wire) = (v(a.insulator_point), v(a.wire_point));
             let middle = k > 0 && k < n - 1;
-            Ok(if let (true, Some(legs)) = (middle, &a.legs) {
-                let tops = legs.map(v);
-                Clamp::VString {
-                    tops,
-                    lengths: tops.map(|t| (wire - t).norm()),
-                    weight: a.insulator_weight / f64::from(section.bundle.max(1)),
-                    wind_area: a.insulator_wind_area / f64::from(section.bundle.max(1)),
-                    plumb: wire,
+            let component = structure.component(&wire.label);
+            if component.strings.is_empty() {
+                return Ok(Holder {
+                    fixed: vec![(wire.label.clone(), v(wire.position), None)],
+                    free: Vec::new(),
+                    clamp: At::Fixed(0),
+                    members: Vec::new(),
+                    shape: Shape::Fixed,
+                    estimate: false,
+                    reports: true,
+                    shared: false,
+                });
+            }
+            // Other sections' clamps in the assembly are held where given.
+            let mut fixed: Vec<(String, Vector3<f64>, Option<u32>)> = Vec::new();
+            let mut free: Vec<(String, Vector3<f64>, Vector3<f64>)> = Vec::new();
+            let mut shares = false;
+            for &w in &component.wires {
+                let x = &structure.wires[w];
+                if x.label != wire.label && x.set.is_some() {
+                    fixed.push((x.label.clone(), v(x.position), x.set));
+                    shares = true;
+                } else {
+                    free.push((x.label.clone(), v(x.position), Vector3::zeros()));
                 }
-            } else if middle && is_suspension(ins, wire) {
-                Clamp::Suspension {
-                    top: ins,
-                    length: (wire - ins).norm(),
-                    weight: a.insulator_weight / f64::from(section.bundle.max(1)),
-                    wind_area: a.insulator_wind_area / f64::from(section.bundle.max(1)),
+            }
+            let mut at = |label: &str| -> Result<At, LineError> {
+                if let Some(i) = free.iter().position(|f| f.0 == label) {
+                    return Ok(At::Free(i));
                 }
-            } else if (wire - ins).norm() > 0.01 {
-                // A strain assembly is a free member, so it moves with the
-                // weather. One given only as geometry, without a weight,
-                // would line up with its conductor and lose the droop the
-                // data shows (freed without weights, a 930-span comparison
-                // got worse: median 1.1 → 4.2 cm): its weight is estimated
-                // from where the data puts it.
-                Clamp::Strain {
-                    top: ins,
-                    length: (wire - ins).norm(),
-                    weight: a.insulator_weight / f64::from(section.bundle.max(1)),
-                    wind_area: a.insulator_wind_area / f64::from(section.bundle.max(1)),
-                    initial: wire,
-                    estimate: a.insulator.is_none()
-                        && !a.strain_member
-                        && a.insulator_weight == 0.0,
+                if let Some(i) = fixed.iter().position(|f| f.0 == label) {
+                    return Ok(At::Fixed(i));
                 }
-            } else {
-                Clamp::Fixed(wire)
+                let q = structure
+                    .point(label)
+                    .ok_or_else(|| invalid(format!("no point {label} on {}", structure.id)))?;
+                fixed.push((q.label.clone(), v(q.position), None));
+                Ok(At::Fixed(fixed.len() - 1))
+            };
+            let mut members = Vec::new();
+            for &i in &component.strings {
+                let st = &structure.strings[i];
+                let (top, bottom) = (at(&st.top)?, at(&st.wire)?);
+                members.push((st, top, bottom));
+            }
+            let clamp = At::Free(
+                free.iter()
+                    .position(|f| f.0 == wire.label)
+                    .expect("the wire point is free"),
+            );
+            let members: Vec<Member> = members
+                .into_iter()
+                .map(|(st, top, bottom)| Member {
+                    label: st.label.clone(),
+                    top,
+                    bottom,
+                    length: structure.string_length(st).unwrap_or(0.0),
+                    weight: st.weight / bundle,
+                    wind_area: st.wind_area / bundle,
+                    stiffness: st.stiffness.unwrap_or(DEFAULT_INSULATOR_STIFFNESS),
+                    compression: st.compression,
+                })
+                .collect();
+            let from_structure = |m: &Member| matches!(m.top, At::Fixed(i) if fixed[i].2.is_none());
+            let shape = match members.as_slice() {
+                [m] if from_structure(m) && m.bottom == clamp => {
+                    let top = match m.top {
+                        At::Fixed(i) => fixed[i].1,
+                        At::Free(_) => unreachable!(),
+                    };
+                    if middle && is_suspension(top, v(wire.position)) {
+                        Shape::Suspension
+                    } else {
+                        Shape::Strain
+                    }
+                }
+                [a, b]
+                    if middle
+                        && from_structure(a)
+                        && from_structure(b)
+                        && a.bottom == clamp
+                        && b.bottom == clamp =>
+                {
+                    Shape::VString
+                }
+                _ => Shape::General,
+            };
+            // A strain assembly given only as geometry, without a weight,
+            // would line up with its conductor and lose the droop the data
+            // shows (freed without weights, a 930-span comparison got worse:
+            // median 1.1 → 4.2 cm): its weight is estimated from where the
+            // data puts it.
+            let estimate = shape == Shape::Strain && {
+                let st = structure
+                    .string(&members[0].label)
+                    .expect("the holder's string");
+                st.insulator.is_none() && !st.strain && st.weight == 0.0
+            };
+            // A shared assembly's loads go with the first section through it.
+            let reports = !shares || {
+                let sets: Vec<u32> = component
+                    .wires
+                    .iter()
+                    .filter_map(|&w| structure.wires[w].set)
+                    .collect();
+                let first = line.sections.iter().find(|x| {
+                    x.points
+                        .iter()
+                        .any(|q| q.structure == structure.id && sets.contains(&q.set))
+                });
+                first.is_none_or(|x| x.id == section.id)
+            };
+            Ok(Holder {
+                fixed,
+                free,
+                clamp,
+                members,
+                shape,
+                estimate,
+                reports,
+                shared: shares,
             })
         })
         .collect()
 }
 
-fn plumb(clamp: &Clamp) -> Vector3<f64> {
-    match clamp {
-        Clamp::Fixed(p) => *p,
-        Clamp::Suspension { top, length, .. } => top - Vector3::new(0.0, 0.0, *length),
-        Clamp::Strain { initial, .. } => *initial,
-        Clamp::VString { plumb, .. } => *plumb,
+/// The holders as coupled: where the section solves a shared assembly,
+/// other sections' clamps in it freed and pulled as `coupling.pulls` gives
+/// (the whole bundle's pull of those wires on their clamp; without one,
+/// held where given); where another section solves it, the clamp held
+/// where `coupling.held` puts it.
+fn pulled(layout: &[Holder], section: &Section, coupling: &Coupling) -> Vec<Holder> {
+    let bundle = f64::from(section.bundle.max(1));
+    layout
+        .iter()
+        .zip(&section.points)
+        .map(|(h, point)| {
+            if h.shared
+                && !h.reports
+                && let Some(at) = coupling.held.get(point)
+            {
+                return Holder {
+                    fixed: vec![(h.free[0].0.clone(), v(*at), Some(point.set))],
+                    free: Vec::new(),
+                    clamp: At::Fixed(0),
+                    members: Vec::new(),
+                    shape: Shape::Fixed,
+                    estimate: false,
+                    reports: false,
+                    shared: true,
+                };
+            }
+            let freed: Vec<(usize, Vector3<f64>)> = h
+                .fixed
+                .iter()
+                .enumerate()
+                .filter_map(|(i, (_, _, other))| {
+                    let set = (*other)?;
+                    let pull = coupling
+                        .pulls
+                        .get(&crate::SectionPoint::new(point.structure.clone(), set))?;
+                    Some((i, v(*pull) / bundle))
+                })
+                .collect();
+            if freed.is_empty() {
+                return h.clone();
+            }
+            let mut out = h.clone();
+            out.fixed.clear();
+            let mut map_fixed = Vec::new();
+            for (i, f) in h.fixed.iter().enumerate() {
+                match freed.iter().find(|(j, _)| *j == i) {
+                    Some((_, load)) => {
+                        out.free.push((f.0.clone(), f.1, *load));
+                        map_fixed.push(At::Free(out.free.len() - 1));
+                    }
+                    None => {
+                        out.fixed.push(f.clone());
+                        map_fixed.push(At::Fixed(out.fixed.len() - 1));
+                    }
+                }
+            }
+            let remap = |at: At| match at {
+                At::Fixed(i) => map_fixed[i],
+                free => free,
+            };
+            out.clamp = remap(h.clamp);
+            for m in &mut out.members {
+                m.top = remap(m.top);
+                m.bottom = remap(m.bottom);
+            }
+            out
+        })
+        .collect()
+}
+
+/// How a section sharing assemblies with others is solved with them
+/// ([`solve_coupled`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Coupling {
+    /// The other sections' wires' pull on their clamps (the whole bundle's),
+    /// by section point: on the assemblies this section solves.
+    pub pulls: std::collections::BTreeMap<crate::SectionPoint, Point>,
+    /// Where this section's clamps are held, by section point: on the
+    /// assemblies another section solves.
+    pub held: std::collections::BTreeMap<crate::SectionPoint, Point>,
+}
+
+/// The clamp's position to start from: plumb below a suspension string's
+/// top, else where it is given.
+fn plumb(holder: &Holder) -> Vector3<f64> {
+    match (holder.shape, holder.single()) {
+        (Shape::Suspension, Some(m)) => holder.position(m.top) - Vector3::new(0.0, 0.0, m.length),
+        _ => holder.position(holder.clamp),
     }
 }
 
@@ -289,7 +545,7 @@ fn plumb(clamp: &Clamp) -> Vector3<f64> {
 #[allow(clippy::too_many_arguments)]
 fn build(
     section: &Section,
-    layout: &[Clamp],
+    layout: &[Holder],
     reference: &Reference,
     cable: &Cable,
     case: &WeatherCase,
@@ -306,85 +562,91 @@ fn build(
     let mut clamps = Vec::with_capacity(n);
     let mut members = Vec::with_capacity(n);
     let mut supports = Vec::with_capacity(n);
-    for (k, clamp) in layout.iter().enumerate() {
-        match clamp {
-            Clamp::Fixed(p) => {
-                supports.push(vec![model.nodes.len()]);
-                clamps.push(model.nodes.len());
-                model.nodes.push(Node::fixed(*p));
-                members.push(vec![]);
-            }
-            Clamp::VString {
-                tops,
-                lengths,
-                weight,
-                ..
-            } => {
-                let first = model.nodes.len();
-                supports.push(vec![first, first + 1]);
-                model.nodes.push(Node::fixed(tops[0]));
-                model.nodes.push(Node::fixed(tops[1]));
-                let clamp_node = model.nodes.len();
-                clamps.push(clamp_node);
-                model.nodes.push(Node::free(reference.clamps[k]));
-                members.push(vec![model.trusses.len(), model.trusses.len() + 1]);
-                for (leg, length) in [first, first + 1].into_iter().zip(lengths) {
+    let mut frees = Vec::with_capacity(n);
+    let mut free_labels: Vec<Vec<(String, usize)>> = Vec::with_capacity(n);
+    for (k, holder) in layout.iter().enumerate() {
+        // Free nodes start where given, moved with the clamp to where the
+        // reference puts it.
+        let shift = reference.clamps[k] - holder.position(holder.clamp);
+        let fixed_nodes: Vec<usize> = holder
+            .fixed
+            .iter()
+            .map(|(_, position, _)| {
+                model.nodes.push(Node::fixed(*position));
+                model.nodes.len() - 1
+            })
+            .collect();
+        let free_nodes: Vec<usize> = holder
+            .free
+            .iter()
+            .map(|(_, position, load)| {
+                let mut node = Node::free(position + shift);
+                node.load = *load;
+                model.nodes.push(node);
+                model.nodes.len() - 1
+            })
+            .collect();
+        let node = |at: At| match at {
+            At::Fixed(i) => fixed_nodes[i],
+            At::Free(i) => free_nodes[i],
+        };
+        clamps.push(node(holder.clamp));
+        supports.push(
+            holder
+                .fixed
+                .iter()
+                .zip(&fixed_nodes)
+                .filter(|((_, _, other), _)| other.is_none())
+                .map(|((label, _, _), &i)| (label.clone(), i))
+                .collect(),
+        );
+        frees.push(free_nodes.clone());
+        free_labels.push(
+            holder
+                .free
+                .iter()
+                .zip(&free_nodes)
+                .map(|((label, _, _), &i)| (label.clone(), i))
+                .collect(),
+        );
+        members.push(
+            holder
+                .members
+                .iter()
+                .map(|m| {
                     model.trusses.push(TrussElement {
-                        i: leg,
-                        j: clamp_node,
-                        unstressed_length: *length,
-                        axial_stiffness: DEFAULT_INSULATOR_STIFFNESS,
-                        tension_only: true,
-                        weight: weight / 2.0,
+                        i: node(m.top),
+                        j: node(m.bottom),
+                        unstressed_length: m.length,
+                        axial_stiffness: m.stiffness,
+                        tension_only: m.compression.is_none(),
+                        weight: m.weight,
                     });
-                }
-            }
-            Clamp::Suspension {
-                top,
-                length,
-                weight,
-                ..
-            }
-            | Clamp::Strain {
-                top,
-                length,
-                weight,
-                ..
-            } => {
-                let top_node = model.nodes.len();
-                supports.push(vec![top_node]);
-                model.nodes.push(Node::fixed(*top));
-                clamps.push(model.nodes.len());
-                model.nodes.push(Node::free(reference.clamps[k]));
-                members.push(vec![model.trusses.len()]);
-                model.trusses.push(TrussElement {
-                    i: top_node,
-                    j: top_node + 1,
-                    unstressed_length: *length,
-                    axial_stiffness: DEFAULT_INSULATOR_STIFFNESS,
-                    tension_only: true,
-                    weight: *weight,
-                });
-            }
-        }
+                    (m.label.clone(), model.trusses.len() - 1)
+                })
+                .collect(),
+        );
     }
 
-    // Wind on the strings: half on the clamp, across the line there.
-    for (k, clamp) in layout.iter().enumerate() {
-        let area = match clamp {
-            Clamp::Suspension { wind_area, .. }
-            | Clamp::Strain { wind_area, .. }
-            | Clamp::VString { wind_area, .. } => *wind_area,
-            Clamp::Fixed(_) => 0.0,
-        };
-        if area > 0.0 && case.wind_pressure.si() > 0.0 {
-            let along =
-                reference.clamps[(k + 1).min(n - 1)] - reference.clamps[k.saturating_sub(1)];
-            let horizontal = along.xy();
-            if horizontal.norm() > 0.0 {
-                let transverse = Vector3::new(-horizontal.y, horizontal.x, 0.0) / horizontal.norm();
-                model.nodes[clamps[k]].load +=
-                    transverse * (0.5 * case.wind_pressure.si() * area * case.wind_from.to_left());
+    // Wind on the strings: half of each string's on each of its free ends,
+    // across the line there.
+    for (k, holder) in layout.iter().enumerate() {
+        if case.wind_pressure.si() <= 0.0 {
+            break;
+        }
+        let along = reference.clamps[(k + 1).min(n - 1)] - reference.clamps[k.saturating_sub(1)];
+        let horizontal = along.xy();
+        if horizontal.norm() == 0.0 {
+            continue;
+        }
+        let transverse = Vector3::new(-horizontal.y, horizontal.x, 0.0) / horizontal.norm();
+        for m in holder.members.iter().filter(|m| m.wind_area > 0.0) {
+            let push = transverse
+                * (0.5 * case.wind_pressure.si() * m.wind_area * case.wind_from.to_left());
+            for end in [m.top, m.bottom] {
+                if let At::Free(i) = end {
+                    model.nodes[frees[k][i]].load += push;
+                }
             }
         }
     }
@@ -482,13 +744,14 @@ fn build(
         span_elements,
         members,
         supports,
+        free: free_labels,
     })
 }
 
 /// Builds and solves a section model.
 fn solve_built(
     section: &Section,
-    layout: &[Clamp],
+    layout: &[Holder],
     reference: &Reference,
     cable: &Cable,
     case: &WeatherCase,
@@ -517,26 +780,32 @@ fn solve_built(
 /// (a few ms); only for sections with such strings.
 fn estimate_strain_weights(
     section: &Section,
-    mut layout: Vec<Clamp>,
+    mut layout: Vec<Holder>,
     cable: &Cable,
     budget: &Budget,
-) -> Result<(Vec<Clamp>, Vec<Option<f64>>), LineError> {
+) -> Result<(Vec<Holder>, Vec<Option<f64>>), LineError> {
     let mut estimated = vec![None; layout.len()];
-    if !layout
-        .iter()
-        .any(|c| matches!(c, Clamp::Strain { estimate: true, .. }))
-    {
+    if !layout.iter().any(|h| h.estimate) {
         return Ok((layout, estimated));
     }
-    let held: Vec<Clamp> = layout
+    // Those clamps held where the data puts them.
+    let held: Vec<Holder> = layout
         .iter()
-        .map(|c| match c {
-            Clamp::Strain {
-                estimate: true,
-                initial,
-                ..
-            } => Clamp::Fixed(*initial),
-            other => other.clone(),
+        .map(|h| {
+            if h.estimate {
+                Holder {
+                    fixed: vec![(String::new(), h.position(h.clamp), Some(0))],
+                    free: Vec::new(),
+                    clamp: At::Fixed(0),
+                    members: Vec::new(),
+                    shape: Shape::Fixed,
+                    estimate: false,
+                    reports: false,
+                    shared: false,
+                }
+            } else {
+                h.clone()
+            }
         })
         .collect();
     let reference = reference(section, &held, cable, budget)?;
@@ -545,36 +814,34 @@ fn estimate_strain_weights(
         ols_core::units::Temperature::from_celsius(reference.temperature),
     );
     let (built, solution) = solve_built(section, &held, &reference, cable, &case, true, budget)?;
-    for (k, clamp) in layout.iter_mut().enumerate() {
-        if let Clamp::Strain {
-            top,
-            length,
-            weight,
-            initial,
-            estimate: estimate @ true,
-            ..
-        } = clamp
-        {
-            // The wires' pull on the clamp: the support's reaction, reversed.
-            let pull = -solution.reactions[built.clamps[k]];
-            let r = *initial - *top;
-            let moment = r.cross(&pull);
-            let per_newton = (r / 2.0).cross(&Vector3::new(0.0, 0.0, -1.0));
-            let norm = per_newton.norm_squared();
-            *weight = if norm > 0.0 {
-                (-moment.dot(&per_newton) / norm).max(0.0)
-            } else {
-                0.0
-            };
-            // The data's length is the loaded one: unstressed, the member
-            // is shorter by its stretch (5 mm on a 5 m string at 50 kN;
-            // left in, the slack cut short tight spans' tension by up to
-            // 4 % on a real line).
-            let force = pull.dot(&r.normalize()) + *weight / 2.0 * (-r.z / r.norm());
-            *length /= 1.0 + force.max(0.0) / DEFAULT_INSULATOR_STIFFNESS;
-            *estimate = false;
-            estimated[k] = Some(*weight * f64::from(section.bundle.max(1)));
+    for (k, holder) in layout.iter_mut().enumerate() {
+        if !holder.estimate {
+            continue;
         }
+        let (top, initial) = (
+            holder.position(holder.members[0].top),
+            holder.position(holder.clamp),
+        );
+        let member = &mut holder.members[0];
+        // The wires' pull on the clamp: the support's reaction, reversed.
+        let pull = -solution.reactions[built.clamps[k]];
+        let r = initial - top;
+        let moment = r.cross(&pull);
+        let per_newton = (r / 2.0).cross(&Vector3::new(0.0, 0.0, -1.0));
+        let norm = per_newton.norm_squared();
+        member.weight = if norm > 0.0 {
+            (-moment.dot(&per_newton) / norm).max(0.0)
+        } else {
+            0.0
+        };
+        // The data's length is the loaded one: unstressed, the member is
+        // shorter by its stretch (5 mm on a 5 m string at 50 kN; left in,
+        // the slack cut short tight spans' tension by up to 4 % on a real
+        // line).
+        let force = pull.dot(&r.normalize()) + member.weight / 2.0 * (-r.z / r.norm());
+        member.length /= 1.0 + force.max(0.0) / member.stiffness;
+        holder.estimate = false;
+        estimated[k] = Some(member.weight * f64::from(section.bundle.max(1)));
     }
     Ok((layout, estimated))
 }
@@ -593,7 +860,7 @@ fn estimate_strain_weights(
 /// crew fixes it by clamping in plumb along the line.
 fn reference(
     section: &Section,
-    layout: &[Clamp],
+    layout: &[Holder],
     cable: &Cable,
     budget: &Budget,
 ) -> Result<Reference, LineError> {
@@ -652,7 +919,7 @@ fn reference(
         let (built, solved) = solve_built(section, layout, &reference, cable, &case, false, budget)
             .map_err(|e| invalid(format!("stringing: {e}")))?;
         let previous = clamps.clone();
-        clamps = settled(layout, &clamps, |k| solved.positions[built.clamps[k]]);
+        clamps = settled(layout, &clamps, &built, &solved);
         // Converged when the clamps used for the next pass (after the
         // transverse-only projection) stop moving.
         let moved = clamps
@@ -680,14 +947,15 @@ fn worst(m: f64, d: f64) -> f64 {
 /// pulls of equal tensions cancel at any position (a neutral direction the
 /// iteration would creep along), and the crew clamps in plumb along it.
 fn settled(
-    layout: &[Clamp],
+    layout: &[Holder],
     clamps: &[Vector3<f64>],
-    solved: impl Fn(usize) -> Vector3<f64>,
+    built: &Built,
+    solution: &ols_wirefe::Solution,
 ) -> Vec<Vector3<f64>> {
     let n = clamps.len();
     (0..n)
         .map(|k| {
-            let position = solved(k);
+            let position = solution.positions[built.clamps[k]];
             // Line direction at the clamp: the bisector of the two spans'
             // horizontal directions (where their equal pulls cancel).
             let unit = |a: usize, b: usize| {
@@ -696,8 +964,11 @@ fn settled(
             };
             let along = unit(k.saturating_sub(1), k) + unit(k, (k + 1).min(n - 1));
             let along = Vector3::new(along.x, along.y, 0.0).normalize();
-            match &layout[k] {
-                Clamp::Suspension { top, .. } => {
+            let holder = &layout[k];
+            let middle = k > 0 && k + 1 < n;
+            match holder.shape {
+                Shape::Suspension => {
+                    let top = holder.position(holder.members[0].top);
                     let swing = position - top;
                     let transverse_only = swing - along * swing.dot(&along);
                     top + transverse_only * (swing.norm() / transverse_only.norm())
@@ -706,7 +977,8 @@ fn settled(
                 // through its leg tops: the same neutral direction, removed
                 // by rotating the clamp about that axis back into the plane
                 // across the line.
-                Clamp::VString { tops, .. } => {
+                Shape::VString => {
+                    let tops = [0, 1].map(|i| holder.position(holder.members[i].top));
                     let axis = (tops[1] - tops[0]).normalize();
                     let centre = (tops[0] + tops[1]) / 2.0;
                     let r = position - centre;
@@ -715,10 +987,81 @@ fn settled(
                     let across = radial - along * radial.dot(&along);
                     centre + axis * r.dot(&axis) + across * (radial.norm() / across.norm())
                 }
+                // Strings hanging from strings: where the assembly hangs
+                // under the clamp's load with its part along the line taken
+                // away (the same neutral direction).
+                Shape::General if middle => {
+                    across_only(built, solution, k, along).unwrap_or(position)
+                }
                 _ => position,
             }
         })
         .collect()
+}
+
+/// The wires' pull on the clamp of section point `k` in a solution (per
+/// subconductor): what balances the strings, the loads and the support
+/// there.
+fn clamp_pull(built: &Built, solution: &ols_wirefe::Solution, k: usize) -> Vector3<f64> {
+    let c = built.clamps[k];
+    let node = &built.model.nodes[c];
+    if node.fixed {
+        return -solution.reactions[c];
+    }
+    let mut on_clamp = node.load;
+    for (_, t) in &built.members[k] {
+        let truss = &built.model.trusses[*t];
+        if truss.i != c && truss.j != c {
+            continue;
+        }
+        let other = if truss.i == c { truss.j } else { truss.i };
+        let d = solution.positions[other] - solution.positions[c];
+        on_clamp += d.normalize() * solution.truss_forces[*t];
+        on_clamp.z -= truss.weight / 2.0;
+    }
+    -on_clamp
+}
+
+/// Where a holder's clamp hangs under the wires' pull in a solution
+/// (`k`: its section point), less that pull's part along the line: the
+/// assembly alone, from its solved shape, under its own loads and that
+/// pull. None if it does not solve.
+fn across_only(
+    built: &Built,
+    solution: &ols_wirefe::Solution,
+    k: usize,
+    along: Vector3<f64>,
+) -> Option<Vector3<f64>> {
+    let c = built.clamps[k];
+    let trusses: Vec<usize> = built.members[k].iter().map(|(_, t)| *t).collect();
+    let pull = clamp_pull(built, solution, k);
+    let pull = pull - along * pull.dot(&along);
+    // The assembly alone: its nodes (renumbered), its strings.
+    let mut nodes: Vec<usize> = Vec::new();
+    for &t in &trusses {
+        for i in [built.model.trusses[t].i, built.model.trusses[t].j] {
+            if !nodes.contains(&i) {
+                nodes.push(i);
+            }
+        }
+    }
+    let index = |i: usize| nodes.iter().position(|&n| n == i).expect("listed");
+    let mut model = Model::default();
+    for &i in &nodes {
+        let mut node = built.model.nodes[i];
+        node.position = solution.positions[i];
+        if i == c {
+            node.load += pull;
+        }
+        model.nodes.push(node);
+    }
+    for &t in &trusses {
+        let mut truss = built.model.trusses[t];
+        (truss.i, truss.j) = (index(truss.i), index(truss.j));
+        model.trusses.push(truss);
+    }
+    let solved = model.solve(&default_fe_budget()).ok()?;
+    Some(solved.positions[index(c)])
 }
 
 /// The horizontal tension giving sag `sag` (m) in span `span` between the
@@ -762,7 +1105,7 @@ pub(crate) fn tension_for_sag(
 /// tension; exit clause: 200 steps.
 fn rolled(
     section: &Section,
-    layout: &[Clamp],
+    layout: &[Holder],
     reference: &Reference,
     cable: &Cable,
     case: &WeatherCase,
@@ -784,7 +1127,7 @@ fn rolled(
     )?;
     for _ in 0..20 {
         let (built, solved) = solve_built(section, layout, &r, cable, case, false, budget)?;
-        let clamps = settled(layout, &r.clamps, |k| solved.positions[built.clamps[k]]);
+        let clamps = settled(layout, &r.clamps, &built, &solved);
         let moved = clamps
             .iter()
             .zip(&r.clamps)
@@ -907,7 +1250,7 @@ pub fn clip_lengths(
     cable: &Cable,
 ) -> Result<(Vec<f64>, f64), LineError> {
     let budget = default_fe_budget();
-    let (layout, _) = estimate_strain_weights(section, clamps_of(line, section)?, cable, &budget)?;
+    let (layout, _) = estimate_strain_weights(section, holders_of(line, section)?, cable, &budget)?;
     let r = reference(section, &layout, cable, &budget)?;
     Ok((r.lengths, r.temperature))
 }
@@ -922,6 +1265,19 @@ pub fn solve_section(
     cable: &Cable,
     case: &WeatherCase,
     budget: &Budget,
+) -> Result<SectionShape, LineError> {
+    solve_section_coupled(line, section, cable, case, budget, &Coupling::default())
+}
+
+/// [`solve_section`] sharing assemblies with other sections (a TAK:
+/// [`solve_coupled`]).
+pub fn solve_section_coupled(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    case: &WeatherCase,
+    budget: &Budget,
+    coupling: &Coupling,
 ) -> Result<SectionShape, LineError> {
     use crate::condition::{Condition, Method};
     // The line's bimetallic model for cables that do not give their own.
@@ -941,7 +1297,7 @@ pub fn solve_section(
     };
     let calc = section.calculation;
     let solve = |final_state: Option<&FinalState>| match calc.method() {
-        Method::Fe => solve_fe(line, section, cable, case, final_state, budget),
+        Method::Fe => solve_fe(line, section, cable, case, final_state, budget, coupling),
         Method::Rs => solve_rs(line, section, cable, case, final_state, budget),
     };
     match calc.condition() {
@@ -1028,7 +1384,7 @@ fn strung(
     budget: &Budget,
 ) -> Result<Strung, LineError> {
     use ols_core::units::{ForcePerLength, Length, Temperature};
-    let (layout, _) = estimate_strain_weights(section, clamps_of(line, section)?, cable, budget)?;
+    let (layout, _) = estimate_strain_weights(section, holders_of(line, section)?, cable, budget)?;
     let reference = reference(section, &layout, cable, budget)?;
     let still = WeatherCase::still(
         "stringing",
@@ -1303,10 +1659,13 @@ fn solve_rs(
         section: section.id.clone(),
         clamps: clamps.iter().map(|c| p(*c)).collect(),
         spans: out,
-        insulators: vec![Vec::new(); n],
+        strings: vec![Vec::new(); n],
         iterations: 0,
         estimated_weights: vec![None; n],
         attachment_loads: Vec::new(),
+        flags: Vec::new(),
+        pulls: Vec::new(),
+        nodes: Vec::new(),
     })
 }
 
@@ -1363,10 +1722,14 @@ fn solve_fe(
     case: &WeatherCase,
     final_state: Option<&FinalState>,
     budget: &Budget,
+    coupling: &Coupling,
 ) -> Result<SectionShape, LineError> {
     let (layout, estimated_weights) =
-        estimate_strain_weights(section, clamps_of(line, section)?, cable, budget)?;
+        estimate_strain_weights(section, holders_of(line, section)?, cable, budget)?;
     let mut reference = reference(section, &layout, cable, budget)?;
+    // In the weather case, other sections' clamps in the assemblies pulled
+    // as given (held in the stringing state).
+    let loaded = pulled(&layout, section, coupling);
     let curves = curves_of(cable);
     // Curves: each span's tension in the stringing state (still air at the
     // reference temperature), where the reference lengths are cut.
@@ -1395,10 +1758,10 @@ fn solve_fe(
         }
     }
     if !section.stringing.clipped() && reference.lengths.len() > 1 {
-        reference = rolled(section, &layout, &reference, cable, case, budget)?;
+        reference = rolled(section, &loaded, &reference, cable, case, budget)?;
     }
     let (mut built, mut solution) =
-        solve_built(section, &layout, &reference, cable, case, true, budget)?;
+        solve_built(section, &loaded, &reference, cable, case, true, budget)?;
     if let (Some(m), Some(strung)) = (&curves, &strung) {
         use ols_cables::mechanics::MaterialState;
         use ols_core::units::{Force, Temperature};
@@ -1439,7 +1802,7 @@ fn solve_fe(
                 *l = b * k;
             }
             (built, solution) =
-                solve_built(section, &layout, &reference, cable, case, true, budget)?;
+                solve_built(section, &loaded, &reference, cable, case, true, budget)?;
         }
         if !settled {
             return Err(LineError::Invalid(format!(
@@ -1454,7 +1817,7 @@ fn solve_fe(
         for l in &mut reference.lengths {
             *l *= 1.0 + offset;
         }
-        (built, solution) = solve_built(section, &layout, &reference, &core, case, true, budget)?;
+        (built, solution) = solve_built(section, &loaded, &reference, &core, case, true, budget)?;
     }
     let pos = &solution.positions;
     let mut spans = Vec::with_capacity(built.span_elements.len());
@@ -1503,30 +1866,81 @@ fn solve_fe(
             sag,
         });
     }
+    // Forces of the whole bundle (the model is one subconductor).
+    let bundle = f64::from(section.bundle.max(1));
+    let mut flags = Vec::new();
+    let strings: Vec<Vec<StringState>> = built
+        .members
+        .iter()
+        .zip(&loaded)
+        .enumerate()
+        .map(|(k, (trusses, holder))| {
+            trusses
+                .iter()
+                .zip(&holder.members)
+                .map(|((label, t), m)| {
+                    let truss = &built.model.trusses[*t];
+                    let force = solution.truss_forces[*t] * bundle;
+                    let (top, bottom) = (pos[truss.i], pos[truss.j]);
+                    let slack = truss.tension_only
+                        && (bottom - top).norm() < truss.unstressed_length * (1.0 - 1e-9);
+                    let over = m.compression.is_some_and(|c| -force > c);
+                    if over {
+                        flags.push(format!(
+                            "{} string {label}: {:.0} N of compression, more than the {:.0} N it may take",
+                            section.points[k].structure,
+                            -force,
+                            m.compression.unwrap_or(0.0)
+                        ));
+                    }
+                    StringState {
+                        label: label.clone(),
+                        top: p(top),
+                        bottom: p(bottom),
+                        force,
+                        slack,
+                        over,
+                    }
+                })
+                .collect()
+        })
+        .collect();
     Ok(SectionShape {
         section: section.id.clone(),
         clamps: built.clamps.iter().map(|&c| p(pos[c])).collect(),
         spans,
-        insulators: built
-            .members
-            .iter()
-            // Forces of the whole bundle (the model is one subconductor).
-            .map(|m| {
-                m.iter()
-                    .map(|&t| solution.truss_forces[t] * f64::from(section.bundle.max(1)))
-                    .collect()
-            })
-            .collect(),
+        strings,
         iterations: solution.iterations,
         estimated_weights,
         attachment_loads: built
             .supports
             .iter()
-            .map(|nodes| {
-                let bundle = f64::from(section.bundle.max(1));
+            .zip(&loaded)
+            .map(|(nodes, holder)| {
+                if !holder.reports {
+                    return Vec::new();
+                }
                 nodes
                     .iter()
-                    .map(|&n| (p(pos[n]), p(-solution.reactions[n] * bundle)))
+                    .map(|(label, n)| Support {
+                        label: label.clone(),
+                        at: p(pos[*n]),
+                        force: p(-solution.reactions[*n] * bundle),
+                    })
+                    .collect()
+            })
+            .collect(),
+        flags,
+        pulls: (0..built.clamps.len())
+            .map(|k| p(clamp_pull(&built, &solution, k) * bundle))
+            .collect(),
+        nodes: built
+            .free
+            .iter()
+            .map(|nodes| {
+                nodes
+                    .iter()
+                    .map(|(label, n)| (label.clone(), p(pos[*n])))
                     .collect()
             })
             .collect(),
@@ -1579,10 +1993,10 @@ fn against_the_line(line: &Line, section: &Section) -> bool {
     let (Some(a), Some(b)) = ends else {
         return false;
     };
-    let (Some(a), Some(b)) = (line.attachment(a), line.attachment(b)) else {
+    let (Some(a), Some(b)) = (line.wire_point(a), line.wire_point(b)) else {
         return false;
     };
-    let (a, b) = (a.wire_point, b.wire_point);
+    let (a, b) = (a.position, b.position);
     let mid = [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])];
     line.direction_at(mid)
         .is_some_and(|d| (b[0] - a[0]) * d[0] + (b[1] - a[1]) * d[1] < 0.0)
@@ -1606,24 +2020,190 @@ pub fn solve_one(
 }
 
 /// Solves every section; returns one result per section, in order.
+/// Sections sharing an assembly are solved together ([`solve_coupled`]).
 pub fn solve_line(
     line: &Line,
     library: &ols_cables::Library,
     case: &WeatherCase,
 ) -> Vec<Result<SectionShape, LineError>> {
-    let budget = default_fe_budget();
-    line.sections
+    solve_line_with(line, library, case, &default_fe_budget())
+}
+
+/// [`solve_line`] with the exit clauses of `budget` for each solve.
+pub fn solve_line_with(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+) -> Vec<Result<SectionShape, LineError>> {
+    let mut results: Vec<Result<SectionShape, LineError>> = line
+        .sections
         .iter()
         .map(|section| {
-            let cable = library.get(&section.cable).ok_or_else(|| {
-                LineError::Invalid(format!(
-                    "section {}: cable \"{}\" not in the libraries",
-                    section.id, section.cable
-                ))
-            })?;
-            solve_section(line, section, cable, case, &budget)
+            let cable = cable_of(library, section)?;
+            solve_section(line, section, cable, case, budget)
         })
-        .collect()
+        .collect();
+    for group in coupled_groups(line) {
+        solve_coupled(line, library, case, &group, &mut results, budget);
+    }
+    results
+}
+
+fn cable_of<'a>(
+    library: &'a ols_cables::Library,
+    section: &Section,
+) -> Result<&'a Cable, LineError> {
+    library.get(&section.cable).ok_or_else(|| {
+        LineError::Invalid(format!(
+            "section {}: cable \"{}\" not in the libraries",
+            section.id, section.cable
+        ))
+    })
+}
+
+/// The groups of sections (indices) whose assemblies are joined — a
+/// section ending on a string that another one's string hangs from too (a
+/// TAK) — with more than one section each.
+pub fn coupled_groups(line: &Line) -> Vec<Vec<usize>> {
+    let n = line.sections.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    // The section ending at each (structure, set).
+    let mut at: std::collections::BTreeMap<(&str, u32), Vec<usize>> = Default::default();
+    for (k, sec) in line.sections.iter().enumerate() {
+        for p in &sec.points {
+            at.entry((p.structure.as_str(), p.set)).or_default().push(k);
+        }
+    }
+    for (k, sec) in line.sections.iter().enumerate() {
+        for p in &sec.points {
+            let Some(s) = line.structure(&p.structure) else {
+                continue;
+            };
+            let Some(w) = s.wire_at_set(p.set) else {
+                continue;
+            };
+            let c = s.component(&w.label);
+            for &i in &c.wires {
+                let Some(set) = s.wires[i].set else { continue };
+                for &j in at.get(&(p.structure.as_str(), set)).into_iter().flatten() {
+                    let (a, b) = (find(&mut parent, k), find(&mut parent, j));
+                    if a != b {
+                        parent[a.max(b)] = a.min(b);
+                    }
+                }
+            }
+        }
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+    for k in 0..n {
+        let r = find(&mut parent, k);
+        groups.entry(r).or_default().push(k);
+    }
+    groups.into_values().filter(|g| g.len() > 1).collect()
+}
+
+/// Passes of the coupling between sections sharing an assembly (exit
+/// clause; a TAK settles in a few).
+pub const COUPLING_PASSES: usize = 30;
+
+/// Solves a group of sections sharing assemblies together (Dirichlet–
+/// Neumann): the first section through a shared assembly solves it, the
+/// other sections' wires pulling on their clamps in it; the others hold
+/// their clamp where that solution puts it, which gives their pull for
+/// the next pass — half way from the last one (the pulls overshoot
+/// otherwise). Until the pulls change less than 0.1 N (or 1e-6 of
+/// themselves). `results` holds the sections' solutions, solved alone,
+/// and gets the coupled ones; a section that fails keeps its error, the
+/// others then stay as solved alone. Not settling in
+/// [`COUPLING_PASSES`] passes is an error for the group.
+///
+/// Expected cost: a few solves of each section of the group.
+pub fn solve_coupled(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    group: &[usize],
+    results: &mut [Result<SectionShape, LineError>],
+    budget: &Budget,
+) {
+    type Points = std::collections::BTreeMap<crate::SectionPoint, Point>;
+    let pulls_of = |results: &[Result<SectionShape, LineError>]| -> Option<Points> {
+        let mut pulls = Points::new();
+        for &k in group {
+            let shape = results[k].as_ref().ok()?;
+            for (p, f) in line.sections[k].points.iter().zip(&shape.pulls) {
+                pulls.insert(p.clone(), *f);
+            }
+        }
+        Some(pulls)
+    };
+    // Where the solved assemblies put the clamps of the group's points.
+    let held_of = |results: &[Result<SectionShape, LineError>]| -> Points {
+        let mut held = Points::new();
+        for &k in group {
+            let Ok(shape) = &results[k] else { continue };
+            for (p, nodes) in line.sections[k].points.iter().zip(&shape.nodes) {
+                let Some(s) = line.structure(&p.structure) else {
+                    continue;
+                };
+                for (label, at) in nodes {
+                    if let Some(set) = s.wire(label).and_then(|w| w.set)
+                        && set != p.set
+                    {
+                        held.insert(crate::SectionPoint::new(p.structure.clone(), set), *at);
+                    }
+                }
+            }
+        }
+        held
+    };
+    let Some(mut pulls) = pulls_of(results) else {
+        return;
+    };
+    for _ in 0..COUPLING_PASSES {
+        for &k in group {
+            let section = &line.sections[k];
+            let coupling = Coupling {
+                pulls: pulls.clone(),
+                held: held_of(results),
+            };
+            results[k] = cable_of(library, section).and_then(|cable| {
+                solve_section_coupled(line, section, cable, case, budget, &coupling)
+            });
+        }
+        let Some(next) = pulls_of(results) else {
+            return;
+        };
+        let change = next
+            .iter()
+            .map(|(p, f)| {
+                let old = pulls.get(p).copied().unwrap_or([0.0; 3]);
+                (v(*f) - v(old)).norm() / (0.1 + 1e-6 * v(*f).norm())
+            })
+            .fold(0.0, f64::max);
+        if change < 1.0 {
+            return;
+        }
+        for (p, f) in next {
+            let old = pulls.get(&p).copied().unwrap_or(f);
+            pulls.insert(p, [0, 1, 2].map(|c| 0.5 * (old[c] + f[c])));
+        }
+    }
+    for &k in group {
+        results[k] = Err(LineError::Invalid(format!(
+            "section {}: the sections sharing its strings did not settle together in \
+             {COUPLING_PASSES} passes",
+            line.sections[k].id
+        )));
+    }
 }
 
 #[cfg(test)]
@@ -1689,7 +2269,7 @@ mod tests {
         // the same amount to the right.
         let first = line.sections[0].points[..2]
             .iter()
-            .map(|p| v(line.attachment(p).unwrap().wire_point))
+            .map(|p| v(line.wire_point(p).unwrap().position))
             .collect::<Vec<_>>();
         let ahead = (first[1] - first[0]).xy();
         let left_of = |d: Vector3<f64>| ahead.x * d.y - ahead.y * d.x;
@@ -1717,8 +2297,8 @@ mod tests {
         bundled.sections[0].bundle = 3;
         bundled.sections[0].bundle_spacing = Some(0.4);
         for s in &mut bundled.structures {
-            for a in &mut s.attachments {
-                a.insulator_weight *= 3.0;
+            for a in &mut s.strings {
+                a.weight *= 3.0;
             }
         }
         // Point loads are on the whole bundle too.
@@ -1731,15 +2311,11 @@ mod tests {
         for (p, q) in a.clamps.iter().zip(&b.clamps) {
             assert!((v(*p) - v(*q)).norm() < 1e-9, "{p:?} {q:?}");
         }
-        for (f, g) in a
-            .insulators
-            .iter()
-            .flatten()
-            .zip(b.insulators.iter().flatten())
-        {
+        for (f, g) in a.strings.iter().flatten().zip(b.strings.iter().flatten()) {
+            let (f, g) = (f.force, g.force);
             assert!((3.0 * f - g).abs() < 1e-6 * g.abs().max(1.0), "{f} {g}");
         }
-        assert!(a.insulators.iter().flatten().count() > 0);
+        assert!(a.strings.iter().flatten().count() > 0);
     }
 
     #[test]
@@ -1753,8 +2329,8 @@ mod tests {
         // Wind on the strings swings the clamps further.
         let mut catching = line.clone();
         for s in &mut catching.structures {
-            for a in &mut s.attachments {
-                a.insulator_wind_area = 0.5;
+            for a in &mut s.strings {
+                a.wind_area = 0.5;
             }
         }
         let rest = solve_line(&line, &lib, &still).remove(0).unwrap();
@@ -1776,8 +2352,8 @@ mod tests {
             l.vertical *= 3.0;
         }
         for s in &mut bundled.structures {
-            for a in &mut s.attachments {
-                a.insulator_weight *= 3.0;
+            for a in &mut s.strings {
+                a.weight *= 3.0;
             }
         }
         let c = solve_line(&bundled, &lib, &still).remove(0).unwrap();
@@ -1818,19 +2394,29 @@ mod tests {
         assert!(b.z < a.z - 0.01, "{a} {b}");
     }
 
-    /// The synthetic line with T2's first attachment (a 3.5 m I-string,
-    /// line along x) replaced by a V-string with legs ±3 m across the line.
+    /// The synthetic line with T2's string at set 1 (a 3.5 m I-string,
+    /// line along x) replaced by a V-string: two strings from points ±3 m
+    /// across the line (`VL`, `VR`), 500 N each.
     fn with_v_string() -> Line {
         let mut line = crate::tests::example();
         let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
-        let a = t2
-            .attachments
-            .iter_mut()
-            .find(|a| (a.set, a.phase) == (1, 1))
-            .unwrap();
-        let c = a.insulator_point;
-        a.legs = Some([[c[0], c[1] - 3.0, c[2]], [c[0], c[1] + 3.0, c[2]]]);
-        a.insulator_weight = 1000.0;
+        let wire = t2.wire_at_set(1).unwrap().label.clone();
+        let i = t2.strings.iter().position(|s| s.wire == wire).unwrap();
+        let c = t2.node(&t2.strings[i].top).unwrap().position();
+        t2.strings.remove(i);
+        for (label, dy) in [("VL", -3.0), ("VR", 3.0)] {
+            t2.points.push(crate::StructurePoint {
+                label: label.into(),
+                position: [c[0], c[1] + dy, c[2]],
+            });
+            t2.strings.push(crate::InsulatorString {
+                label: format!("leg {label}"),
+                top: label.into(),
+                wire: wire.clone(),
+                weight: 500.0,
+                ..Default::default()
+            });
+        }
         line.sections[0].loads.clear();
         line.validate().unwrap();
         line
@@ -1851,14 +2437,17 @@ mod tests {
         let v_line = with_v_string();
         let calm = solve(&v_line, 0.0);
         // Still air: both legs in tension, carrying the weight span.
-        assert_eq!(calm.insulators[1].len(), 2);
+        let forces = |s: &SectionShape, k: usize| -> Vec<f64> {
+            s.strings[k].iter().map(|x| x.force).collect()
+        };
+        assert_eq!(calm.strings[1].len(), 2);
         assert!(
-            calm.insulators[1].iter().all(|&f| f > 1000.0),
+            forces(&calm, 1).iter().all(|&f| f > 1000.0),
             "{:?}",
-            calm.insulators[1]
+            forces(&calm, 1)
         );
         // The section's end: a strain assembly (one member) or a fixed point.
-        assert!(calm.insulators[0].len() <= 1);
+        assert!(calm.strings[0].len() <= 1);
         // Strung at 25 kN with the V clamped plumb: 25 kN at stringing.
         for span in &calm.spans {
             assert!(
@@ -1872,9 +2461,9 @@ mod tests {
         // line (< 1 mm: only the leg stretch), while an I-string swings.
         let blown = solve(&v_line, 400.0);
         assert!(
-            blown.insulators[1].iter().all(|&f| f > 0.0),
+            forces(&blown, 1).iter().all(|&f| f > 0.0),
             "{:?}",
-            blown.insulators[1]
+            forces(&blown, 1)
         );
         let mut i_line = crate::tests::example();
         i_line.sections[0].loads.clear();
@@ -1889,19 +2478,241 @@ mod tests {
         // vertical), the leeward leg goes slack and the clamp swings about the
         // windward leg's top — out and up on a circle of the leg length.
         let gale = solve(&v_line, 800.0);
-        let legs = &gale.insulators[1];
+        let legs = &gale.strings[1];
         assert!(
-            legs.contains(&0.0) && legs.iter().any(|&f| f > 1000.0),
+            legs.iter().any(|l| l.slack && l.force == 0.0) && legs.iter().any(|l| l.force > 1000.0),
             "{legs:?}"
         );
         assert!(across(&gale, &calm) > 0.1);
-        let windward = v_line.structure("T2").unwrap().attachments[0].legs.unwrap()
-            [usize::from(legs[1] > 0.0)];
-        let radius = (v(gale.clamps[1]) - v(windward)).norm();
+        let taut = legs.iter().find(|l| !l.slack).unwrap();
+        let windward = v(taut.top);
+        let radius = (v(gale.clamps[1]) - windward).norm();
         assert!(
             (radius - (3.0f64.powi(2) + 3.5f64.powi(2)).sqrt()).abs() < 2e-3,
             "{radius}"
         );
+    }
+
+    /// The synthetic line with T2's string at set 1 replaced by a V
+    /// (points `VL`, `VR` ±3 m across the line, at the string's top) to a
+    /// tip `V` 0.5 m above the clamp, and a 0.5 m string from the tip down
+    /// to the clamp: a V-string with a string below.
+    fn with_v_and_string_below() -> Line {
+        let mut line = crate::tests::example();
+        let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
+        let wire = t2.wire_at_set(1).unwrap().clone();
+        let i = t2
+            .strings
+            .iter()
+            .position(|s| s.wire == wire.label)
+            .unwrap();
+        let c = t2.node(&t2.strings[i].top).unwrap().position();
+        t2.strings.remove(i);
+        let w = wire.position;
+        t2.wires.push(crate::WirePoint {
+            label: "V".into(),
+            position: [w[0], w[1], w[2] + 0.5],
+            set: None,
+        });
+        for (label, dy) in [("VL", -3.0), ("VR", 3.0)] {
+            t2.points.push(crate::StructurePoint {
+                label: label.into(),
+                position: [c[0], c[1] + dy, c[2]],
+            });
+            t2.strings.push(crate::InsulatorString {
+                label: format!("leg {label}"),
+                top: label.into(),
+                wire: "V".into(),
+                weight: 400.0,
+                wind_area: 0.2,
+                ..Default::default()
+            });
+        }
+        t2.strings.push(crate::InsulatorString {
+            label: "below".into(),
+            top: "V".into(),
+            wire: wire.label.clone(),
+            weight: 100.0,
+            ..Default::default()
+        });
+        line.sections[0].loads.clear();
+        line.validate().unwrap();
+        line
+    }
+
+    /// A V with a string below: all three strings carry the wire in still
+    /// air; in the wind the V's tip stays put across the line while the
+    /// string below swings; with the section clipped in, a heavy load in
+    /// one span pulls the clamp along the line (the V swings about its
+    /// tops) — a clamp held by a short string alone would hardly move.
+    #[test]
+    fn a_string_hanging_from_a_v_swings_below_it() {
+        let lib = library();
+        let case = |pa: f64| WeatherCase {
+            wind_pressure: Stress::from_pascals(pa),
+            ..WeatherCase::still("wind", Temperature::from_celsius(15.0))
+        };
+        let line = with_v_and_string_below();
+        let solve = |line: &Line, pa: f64| solve_line(line, &lib, &case(pa)).remove(0).unwrap();
+        let calm = solve(&line, 0.0);
+        let holder = &calm.strings[1];
+        assert_eq!(holder.len(), 3);
+        assert!(holder.iter().all(|s| s.force > 100.0), "{holder:?}");
+        let tip = |s: &SectionShape| {
+            v(s.strings[1]
+                .iter()
+                .find(|x| x.label == "below")
+                .unwrap()
+                .top)
+        };
+        // Hangs as given (the clamp 0.5 m below the tip).
+        assert!(((tip(&calm) - v(calm.clamps[1])).norm() - 0.5).abs() < 1e-3);
+        let blown = solve(&line, 400.0);
+        let across = |a: Vector3<f64>, b: Vector3<f64>| (a.y - b.y).abs();
+        assert!(
+            across(tip(&blown), tip(&calm)) < 2e-3,
+            "the V holds its tip"
+        );
+        let swing = across(v(blown.clamps[1]), v(calm.clamps[1]));
+        assert!(
+            swing > 0.05 && swing < 0.5,
+            "the string below swings {swing} m"
+        );
+
+        // Clipped in, then a 3 kN load in the middle of the first span.
+        let mut clipped = line.clone();
+        let cable = lib.get(&clipped.sections[0].cable).unwrap();
+        let (lengths, temperature) = clip_lengths(&clipped, &clipped.sections[0], cable).unwrap();
+        clipped.sections[0].stringing = Stringing::UnstressedLengths {
+            lengths,
+            temperature,
+            sagged: None,
+        };
+        let before = solve(&clipped, 0.0);
+        clipped.sections[0].loads.push(crate::SpanLoad {
+            span: 0,
+            fraction: 0.5,
+            vertical: 3000.0,
+            label: "load".into(),
+            ..Default::default()
+        });
+        let after = solve(&clipped, 0.0);
+        let along = (v(after.clamps[1]) - v(before.clamps[1])).x;
+        assert!(along < -0.05, "pulled towards the loaded span: {along} m");
+    }
+
+    /// V legs that may take some compression: the leeward leg pushed in a
+    /// gale holds the clamp (less swing than a tension-only V) and is
+    /// flagged when pushed beyond what it may take.
+    #[test]
+    fn a_v_leg_may_take_compression_and_is_flagged_beyond_it() {
+        let lib = library();
+        let gale = WeatherCase {
+            wind_pressure: Stress::from_pascals(800.0),
+            ..WeatherCase::still("gale", Temperature::from_celsius(15.0))
+        };
+        let tension_only = with_v_string();
+        let with = |limit: f64| {
+            let mut line = with_v_string();
+            let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
+            for s in t2.strings.iter_mut().filter(|s| s.label.starts_with("leg")) {
+                s.compression = Some(limit);
+            }
+            solve_line(&line, &lib, &gale).remove(0).unwrap()
+        };
+        let free = solve_line(&tension_only, &lib, &gale).remove(0).unwrap();
+        let strut = with(1e9);
+        let pushed = strut.strings[1]
+            .iter()
+            .map(|s| s.force)
+            .fold(f64::INFINITY, f64::min);
+        assert!(pushed < -10.0, "a leg in compression: {pushed} N");
+        assert!(strut.flags.is_empty(), "{:?}", strut.flags);
+        let swing = |s: &SectionShape| (s.clamps[1][1] - free.clamps[1][1]).abs();
+        assert!(swing(&strut) > 0.05, "the strut holds the clamp back");
+        let weak = with(-pushed / 2.0);
+        assert!(weak.strings[1].iter().any(|s| s.over));
+        assert_eq!(weak.flags.len(), 1, "{:?}", weak.flags);
+        assert!(weak.flags[0].contains("compression"));
+    }
+
+    /// A TAK: a suspension string from the structure down to a node, two
+    /// strain strings from that node to the ends of two sections. The
+    /// sections pull it towards the tighter one; solved together they agree
+    /// on where it is, and differ from either solved alone with the other's
+    /// clamp held.
+    #[test]
+    fn a_tak_couples_the_sections_on_it() {
+        let cable = crate::tests::example().sections[0].cable.clone();
+        let text = format!(
+            r#"{{
+            "name": "tak", "structures": [
+              {{"id": "A", "position": [0, 0, 0], "wires": [{{"label": "W", "position": [0, 0, 40], "set": 1}}]}},
+              {{"id": "B", "position": [300, 0, 0],
+                "points": [{{"label": "K", "position": [300, 0, 45]}}],
+                "wires": [
+                  {{"label": "N", "position": [300, 0, 40]}},
+                  {{"label": "EB", "position": [297, 0, 40], "set": 1}},
+                  {{"label": "EF", "position": [303, 0, 40], "set": 2}}],
+                "strings": [
+                  {{"label": "k", "top": "K", "wire": "N", "weight": 500}},
+                  {{"label": "b", "top": "N", "wire": "EB", "weight": 300}},
+                  {{"label": "f", "top": "N", "wire": "EF", "weight": 300}}]}},
+              {{"id": "C", "position": [600, 0, 0], "wires": [{{"label": "W", "position": [600, 0, 40], "set": 1}}]}}],
+            "sections": [
+              {{"id": "X", "cable": "{cable}", "points": [{{"structure": "A", "set": 1}}, {{"structure": "B", "set": 1}}],
+                "stringing": {{"kind": "tension", "horizontal_tension": 20000, "temperature": 15}}}},
+              {{"id": "Y", "cable": "{cable}", "points": [{{"structure": "B", "set": 2}}, {{"structure": "C", "set": 1}}],
+                "stringing": {{"kind": "tension", "horizontal_tension": 16000, "temperature": 15}}}}]
+            }}"#
+        );
+        let line = Line::from_json(&text).unwrap();
+        assert_eq!(coupled_groups(&line), vec![vec![0, 1]]);
+        let lib = library();
+        let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let node = |s: &SectionShape, k: usize| {
+            v(s.strings[k].iter().find(|x| x.label == "k").unwrap().bottom)
+        };
+        let budget = default_fe_budget();
+        let alone: Vec<SectionShape> = line
+            .sections
+            .iter()
+            .map(|s| solve_section(&line, s, lib.get(&cable).unwrap(), &case, &budget).unwrap())
+            .collect();
+        let together: Vec<SectionShape> = solve_line(&line, &lib, &case)
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        // X (first) solves the TAK, Y's wires pulling on its end; Y holds
+        // its end where X puts it.
+        let x = node(&together[0], 1);
+        let end_of_y = v(together[0].strings[1]
+            .iter()
+            .find(|s| s.label == "f")
+            .unwrap()
+            .bottom);
+        assert!((end_of_y - v(together[1].clamps[0])).norm() < 1e-9);
+        assert!(together[1].strings[0].is_empty());
+        // Pulled towards the tighter section X (towards A, −x), the strain
+        // strings in line with the sections.
+        assert!(x.x < 300.0 - 0.05, "{x}");
+        assert!((node(&alone[0], 1) - x).norm() > 0.01);
+        // In balance: X's model pulls Y's end as hard as Y's wires do.
+        let pull_y = v(together[1].pulls[0]);
+        let f = together[0].strings[1]
+            .iter()
+            .find(|s| s.label == "f")
+            .unwrap();
+        let along_f = (v(f.bottom) - v(f.top)).normalize();
+        assert!(
+            (pull_y.dot(&along_f) - f.force).abs() < 0.01 * f.force + 50.0,
+            "{} vs {}",
+            pull_y.dot(&along_f),
+            f.force
+        );
+        // The structure's loads: once, by X.
+        assert!(!together[0].attachment_loads[1].is_empty());
+        assert!(together[1].attachment_loads[0].is_empty());
     }
 
     #[test]
@@ -2026,21 +2837,31 @@ mod tests {
         // The example's dead-end strings droop less (5.7°) than the wire
         // pulls them down (8.4°): no weight holds them there (estimated 0;
         // freed, they drop 0.23 m). Drooping 12°, as a weight can hold them:
-        for (structure, drop) in [("T1", 1.06), ("T5", 1.07)] {
+        let ends: Vec<crate::SectionPoint> = {
+            let s2 = line.sections.iter().find(|s| s.id == "S2").unwrap();
+            vec![s2.points[0].clone(), s2.points.last().unwrap().clone()]
+        };
+        for (end, drop) in ends.iter().zip([1.06, 1.07]) {
             let st = line
                 .structures
                 .iter_mut()
-                .find(|s| s.id == structure)
+                .find(|s| s.id == end.structure)
                 .unwrap();
-            let a = st.attachments.iter_mut().find(|a| a.phase == 2).unwrap();
-            a.wire_point[2] = a.insulator_point[2] - drop;
+            let wire = st.wire_at_set(end.set).unwrap().label.clone();
+            let top = st.strings_to(&wire).next().unwrap().top.clone();
+            let z = st.node(&top).unwrap().position()[2] - drop;
+            st.wires
+                .iter_mut()
+                .find(|w| w.label == wire)
+                .unwrap()
+                .position[2] = z;
         }
         let s2 = line.sections.iter().find(|s| s.id == "S2").unwrap();
         let cable = lib.get(&s2.cable).unwrap();
         let solve = |case: &WeatherCase| {
             solve_section(&line, s2, cable, case, &default_fe_budget()).unwrap()
         };
-        let data = v(line.attachment(&s2.points[0]).unwrap().wire_point);
+        let data = v(line.wire_point(&s2.points[0]).unwrap().position);
         let at = |s: &SectionShape| v(s.clamps[0]);
         let stringing = solve(&WeatherCase::still("15", Temperature::from_celsius(15.0)));
         // Within a few mm: the member stretches under the wire's pull (1.6 mm
@@ -2051,7 +2872,7 @@ mod tests {
             at(&stringing) - data
         );
         // A member: its force is about the conductor's tension.
-        assert_eq!(stringing.insulators[0].len(), 1);
+        assert_eq!(stringing.strings[0].len(), 1);
         // Hot: less tension, the string droops; wind: it swings sideways.
         let hot = solve(&WeatherCase::still("80", Temperature::from_celsius(80.0)));
         assert!(
@@ -2129,7 +2950,7 @@ mod tests {
             .attachment_loads
             .iter()
             .flatten()
-            .map(|(_, f)| -f[2])
+            .map(|l| -l.force[2])
             .sum();
         assert!(down >= wires * 0.999, "{down} vs wires {wires}");
         assert!(down < wires * 1.2, "{down} vs wires {wires}");
@@ -2141,7 +2962,7 @@ mod tests {
             s.attachment_loads
                 .iter()
                 .flatten()
-                .map(|(_, f)| nalgebra::Vector2::new(f[0], f[1]))
+                .map(|l| nalgebra::Vector2::new(l.force[0], l.force[1]))
                 .sum()
         };
         assert!((side(&blown) - side(&shape)).norm() > 100.0);
@@ -2310,13 +3131,8 @@ mod tests {
                 .iter_mut()
                 .find(|x| x.id == p.structure)
                 .unwrap();
-            let a = st
-                .attachments
-                .iter_mut()
-                .find(|a| a.set == p.set && a.phase == p.phase)
-                .unwrap();
-            a.insulator_point = a.wire_point;
-            a.insulator_weight = 0.0;
+            let wire = st.wire_at_set(p.set).unwrap().label.clone();
+            st.strings.retain(|s| s.wire != wire);
         }
         let budget = default_fe_budget();
         let sag = |line: &Line, c: Calculation, t: f64| {

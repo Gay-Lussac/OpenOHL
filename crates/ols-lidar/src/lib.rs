@@ -135,8 +135,8 @@ impl Corridor {
             .map(|s| {
                 s.points
                     .iter()
-                    .filter_map(|p| line.attachment(p))
-                    .map(|a| [a.wire_point[0], a.wire_point[1]])
+                    .filter_map(|p| line.wire_point(p))
+                    .map(|w| [w.position[0], w.position[1]])
                     .collect()
             })
             .collect();

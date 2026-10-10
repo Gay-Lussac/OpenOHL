@@ -134,29 +134,31 @@ pub struct CaseUsage {
     pub structures: Vec<StructureUsage>,
 }
 
-/// An attachment point: (structure, set, phase).
-pub(crate) type Key = (String, u32, u32);
+/// A wire end: (structure, set).
+pub(crate) type Key = (String, u32);
 
-/// The loads at one attachment point in one load case.
+/// The loads at one point of a structure in one load case.
 #[derive(Default)]
 struct AtPoint {
-    /// Factored, structure axes, summed over the supports, N.
+    /// Factored, structure axes, N.
     factored: [f64; 3],
     /// The unfactored vertical load (down), N.
     vertical: f64,
     /// The sections hanging there.
     sections: Vec<String>,
+    /// The sets of the wires hanging there.
+    sets: Vec<u32>,
 }
 
-/// Half the horizontal spans next to each attachment point, summed over
-/// the sections through it, m, by (structure, set, phase).
+/// Half the horizontal spans next to each wire end, summed over the
+/// sections through it, m, by (structure, set).
 fn wind_spans(line: &Line) -> BTreeMap<Key, f64> {
     let mut out: BTreeMap<Key, f64> = BTreeMap::new();
     for s in &line.sections {
         let at: Vec<Option<[f64; 3]>> = s
             .points
             .iter()
-            .map(|p| line.attachment(p).map(|a| a.wire_point))
+            .map(|p| line.wire_point(p).map(|w| w.position))
             .collect();
         let half = |a: Option<[f64; 3]>, b: Option<[f64; 3]>| match (a, b) {
             (Some(a), Some(b)) => 0.5 * (b[0] - a[0]).hypot(b[1] - a[1]),
@@ -165,23 +167,22 @@ fn wind_spans(line: &Line) -> BTreeMap<Key, f64> {
         for (k, p) in s.points.iter().enumerate() {
             let back = if k > 0 { half(at[k - 1], at[k]) } else { 0.0 };
             let ahead = at.get(k + 1).map_or(0.0, |&b| half(at[k], b));
-            *out.entry((p.structure.clone(), p.set, p.phase))
-                .or_default() += back + ahead;
+            *out.entry((p.structure.clone(), p.set)).or_default() += back + ahead;
         }
     }
     out
 }
 
-/// The conductor position of each attachment point: the attachment points
-/// of a structure joined by a jumper at that structure whose two ends both
-/// end a section (a dead-end's back and ahead strain strings) are one
-/// position, keyed by the smallest of them; every other point is its own
-/// position. A jumper from a section's end to a point in another
-/// section's middle (a tee-off to a suspension point) joins nothing: the
-/// branch is another conductor position. Points not listed are their own
-/// position.
+/// The conductor position of each wire end: the wire ends of a structure
+/// joined by a jumper at that structure whose two ends both end a section
+/// (a dead-end's back and ahead strain strings), or hanging on the same
+/// strings (a TAK), are one position, keyed by the smallest of them; every
+/// other end is its own position. A jumper from a section's end to a point
+/// in another section's middle (a tee-off to a suspension point) joins
+/// nothing: the branch is another conductor position. Ends not listed are
+/// their own position.
 pub(crate) fn positions(line: &Line) -> BTreeMap<Key, Key> {
-    let key = |p: &ols_line::SectionPoint| (p.structure.clone(), p.set, p.phase);
+    let key = |p: &ols_line::SectionPoint| (p.structure.clone(), p.set);
     let ends: std::collections::BTreeSet<Key> = line
         .sections
         .iter()
@@ -196,15 +197,32 @@ pub(crate) fn positions(line: &Line) -> BTreeMap<Key, Key> {
         }
         k
     };
+    let join = |out: &mut BTreeMap<Key, Key>, a: Key, b: Key| {
+        let (ra, rb) = (root(out, a), root(out, b));
+        let (lo, hi) = if ra <= rb { (ra, rb) } else { (rb, ra) };
+        out.insert(hi, lo.clone());
+        out.entry(lo.clone()).or_insert(lo);
+    };
     for j in &line.jumpers {
         let (a, b) = (key(&j.from), key(&j.to));
         if a.0 != b.0 || a == b || !ends.contains(&a) || !ends.contains(&b) {
             continue;
         }
-        let (ra, rb) = (root(&out, a), root(&out, b));
-        let (lo, hi) = if ra <= rb { (ra, rb) } else { (rb, ra) };
-        out.insert(hi, lo.clone());
-        out.entry(lo.clone()).or_insert(lo);
+        join(&mut out, a, b);
+    }
+    // Wire ends on the same strings.
+    for s in &line.structures {
+        for w in s.wires.iter().filter(|w| w.set.is_some()) {
+            let sets: Vec<u32> = s
+                .component(&w.label)
+                .wires
+                .iter()
+                .filter_map(|&i| s.wires[i].set)
+                .collect();
+            for pair in sets.windows(2) {
+                join(&mut out, (s.id.clone(), pair[0]), (s.id.clone(), pair[1]));
+            }
+        }
     }
     let keys: Vec<Key> = out.keys().cloned().collect();
     for k in keys {
@@ -262,12 +280,14 @@ pub fn usage(
         .iter()
         .map(|r| {
             let case = weather.iter().find(|w| w.name == r.case.weather);
-            // Per attachment: the factored loads (summed over the
-            // supports) and the wires' unfactored vertical load.
-            let mut at: BTreeMap<Key, AtPoint> = BTreeMap::new();
-            // Set 0: wind on the structure body, not an attachment.
-            for l in r.loads.iter().filter(|l| l.set != 0) {
-                let e = at.entry((l.structure.clone(), l.set, l.phase)).or_default();
+            // Per point of a structure: the factored loads and the
+            // wires' unfactored vertical load (the wind on the structure
+            // body is at no point).
+            let mut at: BTreeMap<(String, String), AtPoint> = BTreeMap::new();
+            for l in r.loads.iter().filter(|l| !l.point.is_empty()) {
+                let e = at
+                    .entry((l.structure.clone(), l.point.clone()))
+                    .or_default();
                 for (sum, f) in e.factored.iter_mut().zip(l.factored) {
                     *sum += f;
                 }
@@ -277,10 +297,19 @@ pub fn usage(
                         e.sections.push(s.clone());
                     }
                 }
+                for set in &l.sets {
+                    if !e.sets.contains(set) {
+                        e.sets.push(*set);
+                    }
+                }
             }
-            let mut by_structure: BTreeMap<&str, Vec<(&Key, &AtPoint)>> = BTreeMap::new();
-            for (k, v) in &at {
-                by_structure.entry(k.0.as_str()).or_default().push((k, v));
+            type ByPoint<'a> = Vec<(&'a String, &'a AtPoint)>;
+            let mut by_structure: BTreeMap<&str, ByPoint> = BTreeMap::new();
+            for ((structure, label), v) in &at {
+                by_structure
+                    .entry(structure.as_str())
+                    .or_default()
+                    .push((label, v));
             }
             let structures = by_structure
                 .into_iter()
@@ -291,34 +320,52 @@ pub fn usage(
                     let capacity = type_def.and_then(|t| t.capacity.as_ref());
                     let analysed = type_def.is_some_and(|t| t.model.is_some() || t.pole.is_some());
                     let line_angle_deg = angles.get(id).copied().unwrap_or(0.0);
-                    // Weight span of one attachment: the wires' vertical
-                    // load there, without the insulator, over their vertical
-                    // load per metre.
-                    let attachment_weight_span = |(_, set, phase): &Key, p: &AtPoint| {
-                        let insulator = structure
-                            .and_then(|s| {
-                                s.attachments
-                                    .iter()
-                                    .find(|a| a.set == *set && a.phase == *phase)
-                            })
-                            .map_or(0.0, |a| a.insulator_weight);
-                        let ws: Vec<f64> = p
-                            .sections
+                    // Per conductor position (a suspension point, or a
+                    // dead-end's back and ahead strings together): its wire
+                    // ends, the points they hang on and the strings between.
+                    let mut ends: BTreeMap<Key, Vec<u32>> = BTreeMap::new();
+                    for (_, p) in &points {
+                        for set in &p.sets {
+                            let k = (id.to_owned(), *set);
+                            let pos = position.get(&k).cloned().unwrap_or(k);
+                            let e = ends.entry(pos).or_default();
+                            if !e.contains(set) {
+                                e.push(*set);
+                            }
+                        }
+                    }
+                    // The wind span (summed over its ends) and the weight
+                    // span: the wires' vertical load at its points, without
+                    // the strings, over their vertical load per metre.
+                    let mut by_position: BTreeMap<&Key, (f64, Option<f64>)> = BTreeMap::new();
+                    for (pos, sets) in &ends {
+                        let e = by_position.entry(pos).or_default();
+                        for set in sets {
+                            e.0 += wind.get(&(id.to_owned(), *set)).copied().unwrap_or(0.0);
+                        }
+                        let here: Vec<&AtPoint> = points
                             .iter()
+                            .filter(|(_, p)| p.sets.iter().any(|s| sets.contains(s)))
+                            .map(|(_, p)| *p)
+                            .collect();
+                        let vertical: f64 = here.iter().map(|p| p.vertical).sum();
+                        let strings: f64 = structure.map_or(0.0, |s| {
+                            let mut seen = std::collections::BTreeSet::new();
+                            for set in sets {
+                                if let Some(w) = s.wire_at_set(*set) {
+                                    seen.extend(s.component(&w.label).strings);
+                                }
+                            }
+                            seen.iter().map(|&i| s.strings[i].weight).sum()
+                        });
+                        let ws: Vec<f64> = here
+                            .iter()
+                            .flat_map(|p| &p.sections)
                             .filter_map(|s| bundle_weight(line, library, case?, s))
                             .collect();
                         let w = ws.iter().sum::<f64>() / ws.len().max(1) as f64;
-                        (w > 0.0).then(|| (p.vertical - insulator) / w)
-                    };
-                    // Per conductor position (a suspension point, or a
-                    // dead-end's back and ahead strings together): the wind
-                    // span and the weight span, summed over its attachments.
-                    let mut by_position: BTreeMap<&Key, (f64, Option<f64>)> = BTreeMap::new();
-                    for &(k, p) in &points {
-                        let e = by_position.entry(position.get(k).unwrap_or(k)).or_default();
-                        e.0 += wind.get(k).copied().unwrap_or(0.0);
-                        if let Some(w) = attachment_weight_span(k, p) {
-                            e.1 = Some(e.1.unwrap_or(0.0) + w);
+                        if w > 0.0 {
+                            e.1 = Some((vertical - strings) / w);
                         }
                     }
                     let wind_span = by_position.values().map(|v| v.0).fold(0.0, f64::max);
@@ -389,14 +436,12 @@ pub fn usage(
                             }
                         }
                     });
-                    let loads_check = capacity.filter(|c| !c.attachments.is_empty()).map(|c| {
+                    let loads_check = capacity.filter(|c| !c.attachments.is_empty()).map(|_| {
                         let phi = r.case.strength;
                         let mut worst = (0.0, String::new());
-                        for ((_, set, phase), p) in &points {
-                            let Some(cap) = c.attachment(*set, *phase) else {
-                                notes.push(format!(
-                                    "attachment {set}:{phase} not in the type's load tree"
-                                ));
+                        for (label, p) in &points {
+                            let Some(cap) = type_def.and_then(|t| t.capacity_at(label)) else {
+                                notes.push(format!("point {label} not in the type's load tree"));
                                 continue;
                             };
                             let [t, l, v] = p.factored;
@@ -426,7 +471,7 @@ pub fn usage(
                                 Interaction::Linear => (
                                     ratios.iter().map(|r| r.0).sum::<f64>(),
                                     format!(
-                                        "{set}:{phase} combined {}",
+                                        "{label} combined {}",
                                         ratios
                                             .iter()
                                             .map(|r| format!("{} {:.0} %", r.1, r.0 * 100.0))
@@ -441,7 +486,7 @@ pub fn usage(
                                         (
                                             r.0,
                                             format!(
-                                                "{set}:{phase} {} {:.1} kN of {:.1} kN × {phi}",
+                                                "{label} {} {:.1} kN of {:.1} kN × {phi}",
                                                 r.1,
                                                 r.2.abs() / 1000.0,
                                                 r.3 / 1000.0
@@ -461,7 +506,7 @@ pub fn usage(
                     });
                     let factored: Vec<crate::analysis::Factored> = points
                         .iter()
-                        .map(|((_, set, phase), p)| (*set, *phase, p.factored))
+                        .map(|(label, p)| ((*label).clone(), p.factored))
                         .collect();
                     let fe = type_def.and_then(|t| analyses.fe(t, &factored, &r.case, &mut notes));
                     let pole = type_def

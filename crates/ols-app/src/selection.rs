@@ -26,14 +26,13 @@ pub enum Selection {
         /// Span index in the section.
         span: usize,
     },
-    /// An attachment point of a structure.
+    /// A wire point of a structure where wires end (with the strings
+    /// holding it), by its set.
     Attachment {
         /// Structure id.
         structure: String,
         /// Set.
         set: u32,
-        /// Phase.
-        phase: u32,
     },
     /// An alignment point of a route.
     AlignmentPoint {
@@ -180,11 +179,7 @@ impl Selection {
             Selection::Structure(id) => format!("structure {id}"),
             Selection::Span { section, span } => format!("{section} span {}", span + 1),
             Selection::Jumper(id) => format!("jumper {id}"),
-            Selection::Attachment {
-                structure,
-                set,
-                phase,
-            } => format!("{structure} set {set} phase {phase}"),
+            Selection::Attachment { structure, set } => format!("{structure} set {set}"),
             Selection::AlignmentPoint { route, index } => {
                 format!("route {route} alignment point {}", index + 1)
             }
@@ -198,9 +193,9 @@ impl Selection {
             Selection::None => None,
             Selection::Structure(id) => model.line.structure(id).map(|s| {
                 let top = s
-                    .attachments
+                    .wires
                     .iter()
-                    .map(|a| a.wire_point[2])
+                    .map(|w| w.position[2])
                     .fold(s.position[2], f64::max);
                 [s.position[0], s.position[1], 0.5 * (s.position[2] + top)]
             }),
@@ -216,18 +211,10 @@ impl Selection {
                 .spans
                 .get(*span)
                 .map(|s| s.mid_point),
-            Selection::Attachment {
-                structure,
-                set,
-                phase,
-            } => model
+            Selection::Attachment { structure, set } => model
                 .line
-                .attachment(&ols_line::SectionPoint {
-                    structure: structure.clone(),
-                    set: *set,
-                    phase: *phase,
-                })
-                .map(|a| a.wire_point),
+                .wire_point(&ols_line::SectionPoint::new(structure.clone(), *set))
+                .map(|w| w.position),
             Selection::AlignmentPoint { route, index } => alignment_point(model, route, *index),
             Selection::LidarPoint(k) => model.points.get(*k).map(|(q, _)| lidar_xyz(model, q)),
         }
@@ -283,14 +270,28 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
             }
         }
         if snaps.on(Snap::Attachment) {
-            for a in &s.attachments {
+            // Every wire point and string top, for the set(s) it holds
+            // (the first one of a TAK's).
+            for w in &s.wires {
+                let c = s.component(&w.label);
+                let Some(set) = w
+                    .set
+                    .or_else(|| c.wires.iter().find_map(|&i| s.wires[i].set))
+                else {
+                    continue;
+                };
                 let sel = Selection::Attachment {
                     structure: s.id.clone(),
-                    set: a.set,
-                    phase: a.phase,
+                    set,
                 };
-                out.push((sel.clone(), a.insulator_point, a.insulator_point));
-                out.push((sel, a.wire_point, a.wire_point));
+                out.push((sel.clone(), w.position, w.position));
+                if w.set.is_some() {
+                    for x in s.strings_to(&w.label) {
+                        if let Some(top) = s.node(&x.top) {
+                            out.push((sel.clone(), top.position(), top.position()));
+                        }
+                    }
+                }
             }
         }
     }

@@ -52,17 +52,18 @@ fn structures_carry_the_wires() {
     for c in &r {
         assert!(c.failed.is_empty(), "{}: {:?}", c.case.name, c.failed);
         assert!(!c.loads.is_empty());
-        // Every point of every section has its support(s).
-        let points: std::collections::BTreeSet<(String, u32, u32)> = line
+        // Every point of every section is held at some point of its
+        // structure.
+        let points: std::collections::BTreeSet<(String, u32)> = line
             .sections
             .iter()
             .flat_map(|s| s.points.iter())
-            .map(|p| (p.structure.clone(), p.set, p.phase))
+            .map(|p| (p.structure.clone(), p.set))
             .collect();
-        let loaded: std::collections::BTreeSet<(String, u32, u32)> = c
+        let loaded: std::collections::BTreeSet<(String, u32)> = c
             .loads
             .iter()
-            .map(|l| (l.structure.clone(), l.set, l.phase))
+            .flat_map(|l| l.sets.iter().map(|set| (l.structure.clone(), *set)))
             .collect();
         assert_eq!(loaded, points);
     }
@@ -87,7 +88,7 @@ fn structures_carry_the_wires() {
         csv.lines().count(),
         1 + r.iter().map(|c| c.loads.len()).sum::<usize>()
     );
-    assert!(csv.starts_with("case,structure,set,phase"));
+    assert!(csv.starts_with("case,structure,point,label,sets"));
 }
 
 #[test]
@@ -112,17 +113,18 @@ fn typed(capacity: ols_structures::Capacity) -> (Line, ols_structures::Structure
     let mut types = ols_structures::StructureLibrary::default();
     for t in loaded.iter() {
         let mut t = t.clone();
-        // The load tree of the type's own attachments.
+        // The load tree of the type's own points.
         let mut c = capacity.clone();
         c.attachments = capacity
             .attachments
             .first()
             .map(|a| {
-                t.attachments
+                t.points
                     .iter()
                     .map(|x| ols_structures::AttachmentCapacity {
-                        set: x.set,
-                        phase: x.phase,
+                        point: Some(x.label.clone()),
+                        set: None,
+                        phase: None,
                         ..a.clone()
                     })
                     .collect()
@@ -179,7 +181,7 @@ fn allowable_spans() {
         .iter()
         .find(|s| s.structure == "T1")
         .unwrap();
-    let a = |id: &str| line.structure(id).unwrap().attachments[0].wire_point;
+    let a = |id: &str| line.structure(id).unwrap().wires[0].position;
     let half = 0.5 * (a("T2")[0] - a("T1")[0]).hypot(a("T2")[1] - a("T1")[1]);
     assert!(
         (t1.wind_span - half).abs() < 0.5,
@@ -223,9 +225,13 @@ fn allowable_loads() {
         let phi = r.case.strength;
         for s in &u.structures {
             // Expected: the largest ratio over this structure's attachments.
-            let mut sums: BTreeMap<(u32, u32), [f64; 3]> = BTreeMap::new();
-            for l in r.loads.iter().filter(|l| l.structure == s.structure) {
-                let e = sums.entry((l.set, l.phase)).or_default();
+            let mut sums: BTreeMap<&str, [f64; 3]> = BTreeMap::new();
+            for l in r
+                .loads
+                .iter()
+                .filter(|l| l.structure == s.structure && !l.point.is_empty())
+            {
+                let e = sums.entry(l.point.as_str()).or_default();
                 for (sum, f) in e.iter_mut().zip(l.factored) {
                     *sum += f;
                 }
@@ -302,7 +308,7 @@ fn wind_on_the_structures() {
         .collect();
     for (r, n) in loads.iter().zip(before) {
         let w = weather.iter().find(|w| w.name == r.case.weather).unwrap();
-        assert!(r.loads[n..].iter().all(|l| l.set == 0));
+        assert!(r.loads[n..].iter().all(|l| l.point.is_empty()));
         // Those of type-02 (one band here; the example's other types may
         // have their own).
         let added: Vec<&AttachmentLoad> = r.loads[n..]
@@ -451,7 +457,7 @@ fn dead_end_spans_take_both_sides() {
     let line = dead_end_line();
     // The dead-end's two strings are one conductor position.
     let p = capacity::positions(&line);
-    let key = |s: &str, set: u32| (s.to_string(), set, 1);
+    let key = |s: &str, set: u32| (s.to_string(), set);
     assert_eq!(p.get(&key("T3", 2)), Some(&key("T3", 1)));
     assert_eq!(p.get(&key("T3", 1)), Some(&key("T3", 1)));
     assert!(!p.contains_key(&key("T2", 1)));

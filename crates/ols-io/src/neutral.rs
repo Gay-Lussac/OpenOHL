@@ -231,17 +231,13 @@ pub fn to_line(data: Neutral, base: Option<&Line>, options: &Options) -> Result<
                 }
             }
             None => line.structures.push(Structure {
-                id: id.clone(),
-                position: p.position,
                 orientation_deg: p
                     .orientation_deg
                     .or_else(|| orientation(&positions, k))
                     .unwrap_or(0.0),
                 structure_type: p.structure_type.or_else(|| default_type.cloned()),
                 extension: p.extension,
-                attachments: Vec::new(),
-                omit: Vec::new(),
-                members: Vec::new(),
+                ..Structure::new(id.clone(), p.position)
             }),
         }
         ids.push(id);

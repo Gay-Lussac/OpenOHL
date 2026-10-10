@@ -163,25 +163,23 @@ fn structure_sticks(s: &ols_line::Structure) -> Vec<Vec<Point>> {
         .collect();
     if lines.is_empty() {
         let top = s
-            .attachments
+            .points
             .iter()
-            .map(|a| local(a.insulator_point)[2])
+            .map(|p| local(p.position)[2])
             .fold(0.0, f64::max);
         let top = if top > 0.0 { top } else { 10.0 };
         lines.push(vec![[0.0, 0.0, 0.0], [0.0, 0.0, top]]);
-        for a in &s.attachments {
-            let p = local(a.insulator_point);
+        for q in &s.points {
+            let p = local(q.position);
             if p[0].hypot(p[1]) > 0.01 {
                 lines.push(vec![[0.0, 0.0, p[2]], p]);
             }
         }
     }
-    for a in &s.attachments {
-        match &a.legs {
-            Some(legs) => {
-                lines.push(vec![local(legs[0]), local(a.wire_point), local(legs[1])]);
-            }
-            None => lines.push(vec![local(a.insulator_point), local(a.wire_point)]),
+    // The strings, as given.
+    for x in &s.strings {
+        if let (Some(top), Some(wire)) = (s.node(&x.top), s.wire(&x.wire)) {
+            lines.push(vec![local(top.position()), local(wire.position)]);
         }
     }
     lines

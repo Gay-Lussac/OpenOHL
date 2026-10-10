@@ -30,7 +30,7 @@ pub mod cost;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use ols_line::{Attachment, Line, Stringing};
+use ols_line::{InsulatorString, Line, Stringing, Structure};
 use serde::Serialize;
 
 pub use cost::CostData;
@@ -124,24 +124,18 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }
 
-/// Name of an attachment's insulator assembly in the bill (none: the wire
-/// is clamped to the structure).
-fn insulator_name(a: &Attachment) -> Option<String> {
-    if let Some(id) = &a.insulator {
+/// Name of a string in the bill: its insulator assembly, else `string
+/// <kind> <length>` (kind: strain for strain strings and those not
+/// hanging below their top, else suspension).
+fn insulator_name(s: &Structure, string: &InsulatorString) -> Option<String> {
+    if let Some(id) = &string.insulator {
         return Some(id.clone());
     }
-    let length = distance(a.insulator_point, a.wire_point);
-    if length < 1e-6 && a.legs.is_none() {
-        return None;
-    }
-    let d = [
-        a.wire_point[0] - a.insulator_point[0],
-        a.wire_point[1] - a.insulator_point[1],
-        a.wire_point[2] - a.insulator_point[2],
-    ];
-    let kind = if a.legs.is_some() {
-        "V-string"
-    } else if a.strain_member || !(d[2] < 0.0 && d[0].hypot(d[1]) < -d[2]) {
+    let top = s.node(&string.top)?.position();
+    let wire = s.wire(&string.wire)?.position;
+    let length = distance(top, wire);
+    let d = [wire[0] - top[0], wire[1] - top[1], wire[2] - top[2]];
+    let kind = if string.strain || !(d[2] < 0.0 && d[0].hypot(d[1]) < -d[2]) {
         "strain"
     } else {
         "suspension"
@@ -190,29 +184,32 @@ pub fn bill_of_materials(
         })
         .collect();
 
-    // One assembly per attachment strung through.
-    let mut used = BTreeSet::new();
-    for s in &line.sections {
-        for p in &s.points {
-            used.insert((p.structure.clone(), p.set, p.phase));
+    // The strings holding the wires strung (each once, also when sections
+    // share them).
+    let mut used: BTreeSet<(String, usize)> = BTreeSet::new();
+    for sec in &line.sections {
+        for p in &sec.points {
+            let wire = line
+                .structure(&p.structure)
+                .and_then(|s| Some((s, s.wire_at_set(p.set)?)));
+            match wire {
+                Some((s, w)) => {
+                    for i in s.component(&w.label).strings {
+                        used.insert((s.id.clone(), i));
+                    }
+                }
+                None => notes.push(format!(
+                    "{} set {}: no such wire point (strings not counted)",
+                    p.structure, p.set
+                )),
+            }
         }
     }
     let mut insulators: BTreeMap<String, usize> = BTreeMap::new();
-    for (structure, set, phase) in &used {
-        let point = ols_line::SectionPoint {
-            structure: structure.clone(),
-            set: *set,
-            phase: *phase,
-        };
-        match line.attachment(&point) {
-            Some(a) => {
-                if let Some(name) = insulator_name(a) {
-                    *insulators.entry(name).or_default() += 1;
-                }
-            }
-            None => notes.push(format!(
-                "{structure} set {set} phase {phase}: no such attachment (insulator not counted)"
-            )),
+    for (structure, i) in &used {
+        let s = line.structure(structure).expect("found above");
+        if let Some(name) = insulator_name(s, &s.strings[*i]) {
+            *insulators.entry(name).or_default() += 1;
         }
     }
     let insulators = insulators
@@ -255,8 +252,8 @@ pub fn bill_of_materials(
         let chords = || -> Vec<f64> {
             s.points
                 .windows(2)
-                .map(|w| match (line.attachment(&w[0]), line.attachment(&w[1])) {
-                    (Some(a), Some(b)) => distance(a.wire_point, b.wire_point),
+                .map(|w| match (line.wire_point(&w[0]), line.wire_point(&w[1])) {
+                    (Some(a), Some(b)) => distance(a.position, b.position),
                     _ => 0.0,
                 })
                 .collect()
@@ -313,11 +310,11 @@ pub fn bill_of_materials(
         });
     }
     for j in &line.jumpers {
-        let ends = (line.attachment(&j.from), line.attachment(&j.to));
+        let ends = (line.wire_point(&j.from), line.wire_point(&j.to));
         let length = match (j.length, ends) {
             (Some(l), _) => l,
             (None, (Some(a), Some(b))) => {
-                parabolic_length(distance(a.wire_point, b.wire_point), j.sag.unwrap_or(0.0))
+                parabolic_length(distance(a.position, b.position), j.sag.unwrap_or(0.0))
             }
             _ => {
                 notes.push(format!("jumper {}: ends not found (not counted)", j.id));

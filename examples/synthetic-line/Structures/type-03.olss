@@ -1,31 +1,56 @@
 # Derived from the geometry of an existing line — check and complete.
 format = "ols-structure"
-version = 1
+version = 2
 id = "type-03"
 name = "type-03 (1 structures, e.g. T3)"
 kind = "other"
 source = "derived from: T3"
 
-[[attachment]]
-set = 1
-phase = 1
-label = "suspension"
+[[point]]
+label = "A1"
 point = ["6.000 m", "-0.025 m", "30.000 m"]
-string = { length = "3.500 m", weight = "900.0 N", top = "A1-1", bottom = "W1-1" }
 
-[[attachment]]
+[[wire]]
+label = "W1"
 set = 1
-phase = 2
-label = "suspension"
-point = ["-6.000 m", "0.025 m", "30.000 m"]
-string = { length = "3.500 m", weight = "900.0 N", top = "A1-2", bottom = "W1-2" }
 
-[[attachment]]
-set = 2
-phase = 1
-label = "branch dead-end"
+[[string]]
+label = "S1"
+top = "A1"
+wire = "W1"
+length = "3.500 m"
+weight = "900.0 N"
+
+[[point]]
+label = "A11"
+point = ["-6.000 m", "0.025 m", "30.000 m"]
+
+[[wire]]
+label = "W11"
+set = 11
+
+[[string]]
+label = "S11"
+top = "A11"
+wire = "W11"
+length = "3.500 m"
+weight = "900.0 N"
+
+[[point]]
+label = "A2"
 point = ["-1.494 m", "0.131 m", "26.000 m"]
-string = { length = "5.025 m", weight = "0.0 N", top = "A2-1", bottom = "W2-1" }
+
+[[wire]]
+label = "W2"
+set = 2
+
+[[string]]
+label = "S2"
+top = "A2"
+wire = "W2"
+length = "5.025 m"
+weight = "0.0 N"
+strain = true
 side = "ahead"
 
 # Capacity (invented values for the example): allowable spans by line
@@ -42,22 +67,19 @@ wind_span = "340 m"
 weight_span = "550 m"
 
 [[capacity.attachment]]
-set = 1
-phase = 1
+point = "A1"
 vertical = "10 kN"
 transverse = "20 kN"
 longitudinal = "5 kN"
 
 [[capacity.attachment]]
-set = 1
-phase = 2
+point = "A11"
 vertical = "10 kN"
 transverse = "20 kN"
 longitudinal = "5 kN"
 
 [[capacity.attachment]]
-set = 2
-phase = 1
+point = "A2"
 vertical = "5 kN"
 uplift = "2 kN"
 transverse = "45 kN"
@@ -65,6 +87,7 @@ longitudinal = "10 kN"
 interaction = "linear"
 
 # Wind on the structure (invented values for the example).
+
 [[wind.band]]
 from = "0 m"
 to = "30 m"

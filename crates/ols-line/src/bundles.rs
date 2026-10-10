@@ -18,8 +18,8 @@ use crate::jumper::JumperShape;
 use crate::solve::SectionShape;
 use crate::{Line, Point, SectionPoint, bundle_point};
 
-fn key(p: &SectionPoint) -> (String, u32, u32) {
-    (p.structure.clone(), p.set, p.phase)
+fn key(p: &SectionPoint) -> (String, u32) {
+    (p.structure.clone(), p.set)
 }
 
 fn unit(v: [f64; 3]) -> Option<[f64; 3]> {
@@ -50,7 +50,7 @@ impl BundleLines {
     pub fn new(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -> Self {
         let mut out = BundleLines::default();
         // Corners at each clamp, by attachment.
-        let mut clamps: HashMap<(String, u32, u32), Vec<Point>> = HashMap::new();
+        let mut clamps: HashMap<(String, u32), Vec<Point>> = HashMap::new();
         for shape in shapes {
             let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
                 continue;
