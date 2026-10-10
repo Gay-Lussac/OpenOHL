@@ -2985,6 +2985,50 @@ fn thinning_keeps_the_ends() {
     assert_eq!(crate::scene::thin(&pts[..3], 5).len(), 3);
 }
 
+/// A marker ball with a size is drawn as a sphere on its wire, kept
+/// through the project file; one without a size is not.
+#[test]
+fn a_sized_marker_ball_is_drawn_on_its_wire() {
+    let m = synthetic_project_with("ball", |l| l.sections[0].loads[0].diameter = 0.6);
+    assert_eq!(m.line.sections[0].loads[0].diameter, 0.6);
+    let balls = |m: &model::Model| -> Vec<crate::scene::Prim> {
+        crate::scene::prims(m, crate::scene::Layer::Wires, 0)
+            .into_iter()
+            .filter(|p| p.filled)
+            .collect()
+    };
+    let drawn = balls(&m);
+    assert_eq!(drawn.len(), 1);
+    let pts = &drawn[0].points;
+    assert_eq!(pts.len() % 3, 0);
+    // Centred on the wire at the ball's place, 0.3 m round.
+    let l = &m.line.sections[0].loads[0];
+    let shape = &m.cases[0].shapes[0];
+    let at = crate::scene::at_fraction(&shape.spans[l.span].points, l.fraction).unwrap();
+    let mid = |k: usize| pts.iter().map(|p| p[k]).sum::<f64>() / pts.len() as f64;
+    for (k, a) in at.iter().enumerate() {
+        assert!((mid(k) - a).abs() < 0.05, "{k}");
+    }
+    assert!(pts.iter().all(|p| {
+        let d = (0..3).map(|k| (p[k] - at[k]).powi(2)).sum::<f64>().sqrt();
+        (d - 0.3).abs() < 1e-9
+    }));
+    let mut s = ols_render::Scene::new(m.origin);
+    crate::scene::draw_prims(&mut s, &drawn, 0, 60);
+    assert_eq!(s.counts().2, pts.len() / 3);
+    assert!(balls(&synthetic_project("no-ball")).is_empty());
+}
+
+/// The point at a fraction of a span: along its plan chord.
+#[test]
+fn a_fraction_of_a_span_is_along_its_chord() {
+    let pts = [[0.0, 0.0, 10.0], [50.0, 5.0, 4.0], [100.0, 0.0, 10.0]];
+    let p = crate::scene::at_fraction(&pts, 0.25).unwrap();
+    assert!((p[0] - 25.0).abs() < 1e-12 && (p[2] - 7.0).abs() < 1e-12);
+    assert_eq!(crate::scene::at_fraction(&pts, 1.0).unwrap(), pts[2]);
+    assert!(crate::scene::at_fraction(&pts[..1], 0.5).is_none());
+}
+
 /// The 3D view draws the chunked layers chunk by chunk: they load over a
 /// few frames; a render distance of 0 draws none; other details rebuild.
 #[test]

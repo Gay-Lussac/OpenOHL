@@ -49,7 +49,8 @@ The names are those of the line file:
     <!-- or kind="sag" sag="…" temperature="…" span="…" -->
     <!-- or kind="unstressed_lengths" temperature="…">
            <lengths>300.1 299.9 …</lengths><stringing kind="sag" …/></stringing> -->
-    <load span="1" fraction="0.5" vertical="55" label="marker ball"/>
+    <load span="1" fraction="0.5" vertical="55" label="marker ball" diameter="0.6" drag="1"/>
+    <!-- diameter (m, a sphere), drag (default 1), wind_area / ice_area (m²): optional -->
   </section>
   <jumper id="…" cable="…" length="…" sag="…" temperature="15" bending_stiffness="…" stiffness_factor="…"
           angle_from_deg="…" angle_to_deg="…" color="…" bundle="…" bundle_spacing="…"

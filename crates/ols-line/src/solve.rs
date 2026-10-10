@@ -401,21 +401,31 @@ fn build(
             axial_stiffness: ea,
             load: gravity,
         };
-        let mut sites: Vec<(f64, f64)> = Vec::new();
+        let mut sites: Vec<(f64, Vector3<f64>)> = Vec::new();
         let mut shape = None;
         if with_loads && section.loads.iter().any(|l| l.span == s) {
             let solved = shape_props
                 .solve(d, None, &element_budget)
                 .map_err(|e| invalid(format!("span {s}: {e}")))?;
+            // The wind across the span, from the case's side.
+            let horizontal = d.xy();
+            let left = if horizontal.norm() > 0.0 {
+                Vector3::new(-horizontal.y, horizontal.x, 0.0) / horizontal.norm()
+                    * case.wind_from.to_left()
+            } else {
+                Vector3::zeros()
+            };
             sites = section
                 .loads
                 .iter()
                 .filter(|l| l.span == s)
                 .map(|l| {
+                    let [down, across] = l.forces(case, cable.diameter.si());
                     (
                         shape_props.arc_length_at_fraction(d, &solved, l.fraction),
                         // The model is one subconductor: its share.
-                        l.vertical / f64::from(section.bundle.max(1)),
+                        (left * across - Vector3::new(0.0, 0.0, down))
+                            / f64::from(section.bundle.max(1)),
                     )
                 })
                 .collect();
@@ -428,19 +438,19 @@ fn build(
             if s0 - prev_s < 1e-6 || s0 < LUMP_AT_CLAMP {
                 // Coincident with the previous point, or next to the clamp:
                 // add to that node.
-                model.nodes[prev_node].load.z -= force;
+                model.nodes[prev_node].load += force;
                 continue;
             }
             if reference.lengths[s] - s0 < LUMP_AT_CLAMP {
                 // Next to the ahead clamp: on it.
-                model.nodes[clamps[s + 1]].load.z -= force;
+                model.nodes[clamps[s + 1]].load += force;
                 continue;
             }
             let node = model.nodes.len();
             let start =
                 reference.clamps[s] + shape_props.point_at(d, shape.as_ref().expect("solved"), s0);
             let mut site = Node::free(start);
-            site.load = Vector3::new(0.0, 0.0, -force);
+            site.load = force;
             model.nodes.push(site);
             elements.push(model.cables.len());
             model.cables.push(CableElement {
@@ -1774,6 +1784,38 @@ mod tests {
         for (p, q) in rest.clamps.iter().zip(&c.clamps) {
             assert!((v(*p) - v(*q)).norm() < 1e-6, "{p:?} {q:?}");
         }
+    }
+
+    /// S1's marker ball, given a size, swings its span further in the
+    /// wind and sags it more under ice; in still air it changes nothing.
+    #[test]
+    fn a_sized_marker_ball_catches_wind_and_ice() {
+        let lib = library();
+        let still = WeatherCase::still("still", Temperature::from_celsius(0.0));
+        let windy = WeatherCase {
+            wind_pressure: Stress::from_pascals(650.0),
+            ..still.clone()
+        };
+        let icy = WeatherCase {
+            ice_thickness: Length::from_millimeters(15.0),
+            ..still.clone()
+        };
+        let line = crate::tests::example();
+        let ball = &line.sections[0].loads[0];
+        let span = ball.span;
+        let mut sized = line.clone();
+        sized.sections[0].loads[0].diameter = 0.6;
+        let solve = |l: &Line, c: &WeatherCase| solve_line(l, &lib, c).remove(0).unwrap();
+        let mid = |s: &SectionShape| v(s.spans[span].mid_point);
+        let rest = mid(&solve(&line, &still));
+        assert!((mid(&solve(&sized, &still)) - rest).norm() < 1e-9);
+        let (a, b) = (mid(&solve(&line, &windy)), mid(&solve(&sized, &windy)));
+        assert!(
+            (b - rest).xy().norm() > (a - rest).xy().norm() + 0.01,
+            "{a} {b}"
+        );
+        let (a, b) = (mid(&solve(&line, &icy)), mid(&solve(&sized, &icy)));
+        assert!(b.z < a.z - 0.01, "{a} {b}");
     }
 
     /// The synthetic line with T2's first attachment (a 3.5 m I-string,

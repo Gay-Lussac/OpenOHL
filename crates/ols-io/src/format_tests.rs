@@ -57,6 +57,11 @@ fn rich_line() -> Line {
     a.top_label = "top \"A\"".into();
     a.bottom_label = "bottom\nnext".into();
     a.strain_member = true;
+    let ball = &mut line.sections[0].loads[0];
+    ball.diameter = 0.6;
+    ball.drag = Some(0.8);
+    ball.wind_area = Some(0.25);
+    ball.ice_area = Some(1.1);
     let sec = &mut line.sections[0];
     sec.stringing = Stringing::UnstressedLengths {
         lengths: vec![300.1, 299.987654321, 0.1 + 0.2, 1e-7],

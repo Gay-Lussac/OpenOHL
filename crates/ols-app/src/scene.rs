@@ -222,6 +222,9 @@ pub struct Prim {
     pub levels: (usize, usize),
     /// Thinned to the layer's points per span at levels 1 and 2 (wires).
     pub thinned: bool,
+    /// The points are triangles (three by three), drawn filled and lit,
+    /// not a polyline: solid bodies (marker balls).
+    pub filled: bool,
 }
 
 impl Prim {
@@ -233,6 +236,7 @@ impl Prim {
             width,
             levels: (0, 0),
             thinned: false,
+            filled: false,
         }
     }
 
@@ -402,6 +406,32 @@ pub fn wires(
                 };
                 wire(out, &span.points, lines, rgba(col, alpha), [1.5, 2.0]);
             }
+            // Marker balls and other bodies with a size, on the wire
+            // (the bundle's centre) where they hang.
+            let ball = tint.unwrap_or(BALL_COLOR);
+            for l in line
+                .sections
+                .iter()
+                .find(|sec| sec.id == shape.section)
+                .into_iter()
+                .flat_map(|sec| &sec.loads)
+            {
+                let d = l
+                    .wind_area
+                    .map_or(l.diameter, |a| (4.0 * a / std::f64::consts::PI).sqrt());
+                let Some(at) = shape
+                    .spans
+                    .get(l.span)
+                    .and_then(|sp| at_fraction(&sp.points, l.fraction))
+                else {
+                    continue;
+                };
+                if d > 0.0 {
+                    let mut p = Prim::new(at, sphere(at, d / 2.0), rgba(ball, alpha), 0.0).at(0, 1);
+                    p.filled = true;
+                    out.push(p);
+                }
+            }
         }
         for j in solved.jumpers.iter().filter(|_| this_case) {
             let (col, lines) = jumper_lines(line, j, &solved.bundles);
@@ -426,6 +456,113 @@ pub fn wires(
             out.push(Prim::new(y[0], ring, rgba(steel, alpha), 2.0).at(0, 0));
         }
     }
+}
+
+/// Colour of marker balls and other bodies on the wires (aviation
+/// orange).
+const BALL_COLOR: [u8; 3] = [240, 110, 30];
+
+/// The point of a span's polyline at a horizontal fraction of the way
+/// between its ends (measured along their plan chord).
+pub fn at_fraction(points: &[[f64; 3]], fraction: f64) -> Option<[f64; 3]> {
+    let (a, b) = (points.first()?, points.last()?);
+    let chord = [b[0] - a[0], b[1] - a[1]];
+    let len2 = chord[0] * chord[0] + chord[1] * chord[1];
+    if len2 <= 0.0 {
+        return None;
+    }
+    let t = |p: &[f64; 3]| ((p[0] - a[0]) * chord[0] + (p[1] - a[1]) * chord[1]) / len2;
+    points.windows(2).find_map(|w| {
+        let (t0, t1) = (t(&w[0]), t(&w[1]));
+        ((t0 - fraction) * (t1 - fraction) <= 0.0 && t1 != t0).then(|| {
+            let u = (fraction - t0) / (t1 - t0);
+            [0, 1, 2].map(|k| w[0][k] + u * (w[1][k] - w[0][k]))
+        })
+    })
+}
+
+/// A sphere of radius `r` around `c` as triangles (12 around, 8 from
+/// pole to pole), counter-clockwise seen from outside.
+pub fn sphere(c: [f64; 3], r: f64) -> Vec<[f64; 3]> {
+    use std::f64::consts::PI;
+    let (around, down) = (12, 8);
+    let at = |i: usize, j: usize| {
+        let (phi, theta) = (
+            PI * j as f64 / down as f64,
+            2.0 * PI * i as f64 / around as f64,
+        );
+        [
+            c[0] + r * phi.sin() * theta.cos(),
+            c[1] + r * phi.sin() * theta.sin(),
+            c[2] + r * phi.cos(),
+        ]
+    };
+    let mut out = Vec::with_capacity(around * down * 6);
+    for j in 0..down {
+        for i in 0..around {
+            let [a, b, c, d] = [at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1)];
+            if j > 0 {
+                out.extend([a, c, b]);
+            }
+            if j + 1 < down {
+                out.extend([b, c, d]);
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+#[test]
+fn spheres_face_out_and_are_lit_from_above() {
+    let ball = sphere([0.0; 3], 1.0);
+    for t in ball.as_chunks::<3>().0 {
+        // Outward: the normal points away from the centre.
+        let u = [0, 1, 2].map(|k| t[1][k] - t[0][k]);
+        let v = [0, 1, 2].map(|k| t[2][k] - t[0][k]);
+        let n = [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ];
+        let c = [0, 1, 2].map(|k| (t[0][k] + t[1][k] + t[2][k]) / 3.0);
+        assert!((0..3).map(|k| n[k] * c[k]).sum::<f64>() > 0.0);
+    }
+    let top = ball
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .find(|t| t.iter().all(|p| p[2] > 0.9))
+        .unwrap();
+    let bottom = ball
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .find(|t| t.iter().all(|p| p[2] < -0.9))
+        .unwrap();
+    let c = [200, 100, 50, 255];
+    assert!(lit(top, c)[0] > lit(bottom, c)[0]);
+}
+
+/// A filled triangle's shade: its colour lit from the north-west, above,
+/// on its outer side (counter-clockwise seen from outside); its shadow
+/// side darker.
+fn lit(t: &[[f64; 3]], color: [u8; 4]) -> [u8; 4] {
+    let u = [0, 1, 2].map(|k| t[1][k] - t[0][k]);
+    let v = [0, 1, 2].map(|k| t[2][k] - t[0][k]);
+    let n = [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ];
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
+    let light = [-0.5, 0.5, 0.75];
+    let l = (0.5f64 * 0.5 + 0.5 * 0.5 + 0.75 * 0.75).sqrt();
+    let cos = (0..3).map(|k| n[k] * light[k]).sum::<f64>() / (len * l);
+    let f = 0.35 + 0.65 * cos.max(0.0);
+    let [r, g, b, a] = color;
+    let shade = |x: u8| (f64::from(x) * f).min(255.0) as u8;
+    [shade(r), shade(g), shade(b), a]
 }
 
 /// The primitives of a layer drawn as primitives (structures, wires,
@@ -472,7 +609,11 @@ pub fn draw_prims<'a>(
         if level < p.levels.0 || level > p.levels.1 {
             continue;
         }
-        if p.thinned && level > 0 {
+        if p.filled {
+            for t in p.points.as_chunks::<3>().0 {
+                s.triangle(*t, [lit(t, p.color); 3]);
+            }
+        } else if p.thinned && level > 0 {
             s.polyline(&thin(&p.points, per_span), p.color, p.width);
         } else {
             s.polyline(&p.points, p.color, p.width);
