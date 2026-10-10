@@ -61,6 +61,7 @@
 
 - [Validation cases](development/validation.md)
 - [Writing plugins](development/plugins.md)
+- [Data model map](development/data-model.md)
 - [Performance and time budgets](development/performance.md)
 - [Desktop app conventions](development/ui.md)
 - [Structure detail levels in checks](development/structure-detail.md)
