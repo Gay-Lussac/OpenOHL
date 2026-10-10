@@ -91,8 +91,9 @@ radial = "4.5 m"
 | `vertical`, `radial` | Required clearances (at least one): a distance, or depending on the voltage (below). |
 | `pair_voltage` | Wire rules: the voltage of a pair of wires is the `higher` of the two systems' nominal voltages (default), their `sum`, or the `difference` — the actual voltage between the two conductors from phase angles and DC polarities. |
 | `vertical_band` | Points count for vertical clearance within this horizontal distance of the wire (default 0.5 m). For the ground: the highest ground within this distance (default 0: straight below the wire). |
-| `vertical_depth` | Vertical clearances to points and the ground: the zone is cut along the line in slices of this depth, e.g. `"0.2 m"`; a target is compared with the wire's lowest point over its slice (default 0: the wire straight above it). |
+| `vertical_depth` | Vertical clearances to points and the ground: the depth along the line of the area under the wire (`vertical_band` its half width across), e.g. `"0.2 m"`. The clearance is the shortest vertical distance between the wire and a point of the area: a point is compared with the wire's lowest point within that depth around it (its highest for a point above the wire). Default 0: the wire straight above the point. |
 | `voltages` | Only the wires of these nominal voltages are checked, e.g. `[220]` (kV; `0` for earthed wires); default: all. Wire rules: the first wire of a pair. |
+| `wires` | Which wires are checked: `"sections"` (the spans), `"jumpers"`, or `"both"` (default). |
 | `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
 | `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
 | `circuits` | `same_line`: `"different"` checks only pairs of wires of different circuits (circuit to circuit, e.g. the two circuits of a double-circuit tower; a phase and an earth wire), `"same"` only pairs of the same circuit (phase to phase); default `"any"`. Combine with `case_pairs` for one circuit iced and the other not. |

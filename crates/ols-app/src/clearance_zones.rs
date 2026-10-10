@@ -406,6 +406,7 @@ impl ZoneWindow {
                     distance: 5.0,
                     classes: Vec::new(),
                     ground: false,
+                    wires: ols_clearance::Wires::Both,
                 });
                 self.dirty = true;
             }
@@ -477,6 +478,7 @@ impl ZoneWindow {
                             "voltage",
                             "weather cases",
                             "distance m",
+                            "wires",
                             "targets",
                             "",
                         ] {
@@ -497,6 +499,7 @@ impl ZoneWindow {
                                         .max_decimals(3),
                                 )
                                 .changed();
+                            self.dirty |= wires_ui(ui, (self.zone.measure, k), r);
                             self.dirty |= targets_ui(ui, (self.zone.measure, k), r, &classes);
                             ui.horizontal(|ui| {
                                 if ui.small_button("Duplicate").clicked() {
@@ -649,9 +652,12 @@ impl ZoneWindow {
                         }
                         ui.end_row();
                         for f in &report.zone.findings {
-                            let span = Selection::Span {
-                                section: f.section.clone(),
-                                span: f.span,
+                            let span = match f.section.strip_prefix("jumper:") {
+                                Some(j) => Selection::Jumper(j.to_owned()),
+                                None => Selection::Span {
+                                    section: f.section.clone(),
+                                    span: f.span,
+                                },
                             };
                             if ui
                                 .link(span.describe())
@@ -724,6 +730,7 @@ fn run(
         library,
         &states,
         &zone::sections_needed(line, &rules),
+        zone::jumpers_needed(&rules),
         &budget,
         done,
     )?;
@@ -740,6 +747,13 @@ fn run(
         .flatten()
         .flat_map(|s| &s.spans)
         .map(|s| s.points.iter().map(|p| [p[0], p[1]]).collect())
+        .chain(
+            solved
+                .jumpers
+                .iter()
+                .flatten()
+                .map(|j| j.points.iter().map(|p| [p[0], p[1]]).collect()),
+        )
         .collect();
     let mut feed = |classes: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
         let Some(spec) = &cloud else {
@@ -756,6 +770,7 @@ fn run(
         &rules,
         &states,
         &solved.shapes,
+        &solved.jumpers,
         ZoneTargets {
             ground: ground.as_deref(),
             points: cloud.is_some().then_some(&mut feed as _),
@@ -881,6 +896,28 @@ fn cases_ui(ui: &mut egui::Ui, id: (Measure, usize), r: &mut ZoneRule, cases: &[
             }
         });
     });
+    changed
+}
+
+/// The wires a rule checks: the sections' spans, the jumpers or both.
+fn wires_ui(ui: &mut egui::Ui, id: (Measure, usize), r: &mut ZoneRule) -> bool {
+    use ols_clearance::Wires;
+    let mut changed = false;
+    let name = |w: Wires| match w {
+        Wires::Both => "sections + jumpers",
+        Wires::Sections => "sections",
+        Wires::Jumpers => "jumpers",
+    };
+    egui::ComboBox::from_id_salt(("zone-wires", id.0.as_str(), id.1))
+        .selected_text(name(r.wires))
+        .width(130.0)
+        .show_ui(ui, |ui| {
+            for w in [Wires::Both, Wires::Sections, Wires::Jumpers] {
+                changed |= ui.selectable_value(&mut r.wires, w, name(w)).changed();
+            }
+        })
+        .response
+        .on_hover_text("The wires the rule checks: the sections' spans, the jumpers, or both");
     changed
 }
 
