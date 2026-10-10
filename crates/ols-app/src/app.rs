@@ -250,6 +250,8 @@ pub struct Ready {
     pub open_page: Option<(Tab, Option<String>)>,
     /// A structure without a type in the pylon editor.
     pub placed: Option<crate::placed_editor::PlacedEditor>,
+    /// A menu was open last frame.
+    pub menu_open: bool,
     /// Table pages opened.
     pub tables: std::collections::BTreeMap<crate::tables::TableKind, crate::tables::TablePage>,
 }
@@ -329,6 +331,7 @@ impl Ready {
             jumper_from: None,
             open_page: None,
             placed: None,
+            menu_open: false,
             clearances: crate::clearance::Clearances::new(
                 &model.sources.file,
                 model.sources.rules.as_deref(),
@@ -1605,6 +1608,16 @@ impl Ready {
     /// Whether it worked.
     pub fn write_table_file(&mut self, path: &std::path::Path, text: &str) -> bool {
         use crate::library::LibraryKind;
+        // A project's first weather case file: it uses it from now on.
+        if self.model.sources.weather.is_none() {
+            if let Some(dir) = path.parent()
+                && let Err(e) = std::fs::create_dir_all(dir)
+            {
+                self.status = Some((format!("{}: {e}", dir.display()), true));
+                return false;
+            }
+            self.model.sources.weather = Some(path.to_path_buf());
+        }
         if let Err(e) = std::fs::write(path, text) {
             self.status = Some((format!("{}: {e}", path.display()), true));
             return false;
@@ -2331,6 +2344,22 @@ fn goto_key(ctx: &egui::Context, r: &mut Ready) {
 /// opens at the crosshair in first person (else at the mouse), and a
 /// captured mouse is freed — a window needs the cursor.
 fn popups(ctx: &egui::Context, r: &mut Ready) {
+    // A menu opened: what was going on stops, as with Escape — the mouse
+    // is freed, a wire being strung and an alignment being laid out are
+    // given up — so the menu's command works on the first click.
+    let menu = egui::Popup::is_any_open(ctx);
+    if menu && !r.menu_open {
+        if r.view3d.captured {
+            crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
+        }
+        if !r.chain.is_empty() {
+            r.cancel_string_wire();
+        }
+        if !r.new_alignment.is_empty() {
+            r.cancel_new_alignment();
+        }
+    }
+    r.menu_open = menu;
     let open = r.goto.is_some()
         || r.move_dialog.is_some()
         || r.confirm.is_some()
@@ -4045,7 +4074,8 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
 }
 
 /// Shows `tab`: brings it to the front if it is open; library pages open
-/// together in a floating window, the other pages next to the first one.
+/// together in a floating window, tables in another, the structure editor
+/// in its own (each can be docked), the other pages next to the first one.
 pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
     if let Some(path) = dock.find_tab(&tab) {
         let _ = dock.set_active_tab(path);
@@ -4055,6 +4085,7 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
         Tab::Library(_) => 1,
         Tab::Table(_) => 2,
         Tab::Python => 3,
+        Tab::StructureEditor => 4,
         _ => 0,
     };
     if group(&tab) > 0 {
@@ -4065,10 +4096,10 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
             let surface = dock.add_window(vec![tab]);
             if let Some(w) = dock.get_window_state_mut(surface) {
                 w.set_position(egui::pos2(140.0, 110.0));
-                w.set_size(if group(&tab) == 2 {
-                    egui::vec2(1250.0, 560.0)
-                } else {
-                    egui::vec2(900.0, 620.0)
+                w.set_size(match group(&tab) {
+                    2 => egui::vec2(1250.0, 560.0),
+                    4 => egui::vec2(1150.0, 760.0),
+                    _ => egui::vec2(900.0, 620.0),
                 });
             }
         }
