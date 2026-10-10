@@ -82,7 +82,16 @@ pub struct System {
     pub frequency_hz: Option<f64>,
     /// Phases (AC) or poles (DC).
     pub phases: Vec<SystemPhase>,
+    /// Display colour (`#rrggbb`) when wires are coloured by system;
+    /// default from [`SYSTEM_COLORS`] by its place in the line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
+
+/// Default system colours, by the system's place in the line (repeating).
+pub const SYSTEM_COLORS: [&str; 8] = [
+    "#e4572e", "#4c9be8", "#f2c14e", "#76b041", "#a05cc8", "#17bebb", "#ff8fab", "#c9a227",
+];
 
 impl System {
     /// Voltage of phase `k` to earth: (re, im) kV rms for AC, (signed
@@ -121,6 +130,9 @@ impl System {
         }
         if self.phases.is_empty() {
             return Err(format!("system {id}: needs at least one phase or pole"));
+        }
+        if let Some(c) = self.color.as_deref().filter(|c| !crate::is_hex_color(c)) {
+            return Err(format!("system {id}: colour \"{c}\" is not #rrggbb"));
         }
         let mut seen = BTreeMap::new();
         for p in &self.phases {
@@ -403,7 +415,100 @@ pub fn circuits(line: &Line) -> Vec<Circuit> {
     out
 }
 
+/// The direction of the sections and jumpers in their circuits
+/// ([`circuits`]), by id: `true` when it runs (its points in order, a
+/// jumper from `from` to `to`) away from the circuit's starts.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Directions {
+    /// Sections.
+    pub sections: BTreeMap<String, bool>,
+    /// Jumpers.
+    pub jumpers: BTreeMap<String, bool>,
+}
+
+/// The directions of a line's sections and jumpers ([`Directions`]).
+pub fn directions(line: &Line) -> Directions {
+    let mut out = Directions::default();
+    for c in circuits(line) {
+        let place = |p: &SectionPoint| c.order.iter().position(|q| q == p);
+        for id in &c.sections {
+            let Some(s) = line.sections.iter().find(|s| &s.id == id) else {
+                continue;
+            };
+            if let (Some(a), Some(b)) = (
+                s.points.first().and_then(place),
+                s.points.last().and_then(place),
+            ) {
+                out.sections.insert(id.clone(), a <= b);
+            }
+        }
+        for id in &c.jumpers {
+            let Some(j) = line.jumpers.iter().find(|j| &j.id == id) else {
+                continue;
+            };
+            if let (Some(a), Some(b)) = (place(&j.from), place(&j.to)) {
+                out.jumpers.insert(id.clone(), a <= b);
+            }
+        }
+    }
+    out
+}
+
 impl Line {
+    /// The colour of system `k` (its own, else by its place).
+    pub fn system_color(&self, k: usize) -> String {
+        self.systems
+            .get(k)
+            .and_then(|s| s.color.clone())
+            .unwrap_or_else(|| SYSTEM_COLORS[k % SYSTEM_COLORS.len()].to_owned())
+    }
+
+    /// Systems whose circuits do not all run the same way: from other
+    /// start structures, or to other end structures (one circuit's ends
+    /// not among the other's: a branch adding an end is the same way). One
+    /// warning each, naming every circuit's ends. Not an error: a system
+    /// may be wired so on purpose.
+    pub fn system_warnings(&self) -> Vec<String> {
+        let Ok(phases) = self.section_phases() else {
+            return Vec::new();
+        };
+        let structures = |ps: &[SectionPoint]| -> std::collections::BTreeSet<String> {
+            ps.iter().map(|p| p.structure.clone()).collect()
+        };
+        type Ends = std::collections::BTreeSet<String>;
+        let mut by_system: BTreeMap<usize, Vec<(String, Ends, Ends)>> = BTreeMap::new();
+        for c in circuits(self) {
+            let Some(Some((k, _))) = c.sections.first().and_then(|id| phases.get(id)) else {
+                continue;
+            };
+            by_system.entry(*k).or_default().push((
+                c.sections.join("+"),
+                structures(&c.starts),
+                structures(&c.ends),
+            ));
+        }
+        let mut out = Vec::new();
+        let names = |s: &Ends| s.iter().cloned().collect::<Vec<_>>().join(" ");
+        for (k, list) in by_system {
+            let (starts, ends) = (&list[0].1, &list[0].2);
+            let same = list
+                .iter()
+                .all(|x| &x.1 == starts && (x.2.is_subset(ends) || x.2.is_superset(ends)));
+            if same {
+                continue;
+            }
+            out.push(format!(
+                "system {}: its circuits do not run the same way — {}",
+                self.systems[k].id,
+                list.iter()
+                    .map(|(c, a, b)| format!("{c} from {} to {}", names(a), names(b)))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ));
+        }
+        out
+    }
+
     /// The system and phase of every section (by id): given on the section
     /// or on another section of its conductor path; `None` for earthed
     /// sections. Errors on unknown systems or phases and on contradicting
@@ -498,6 +603,32 @@ mod tests {
     /// be a start (several feeds); its sections, jumpers and attachments
     /// come from its starts outwards.
     #[test]
+    fn a_systems_circuits_run_the_same_way_or_are_warned_of() {
+        let mut line = crate::tests::example();
+        // S1 (with the branch S3 by its jumper) and S2: both from T1 (the
+        // branch adds an end).
+        assert!(
+            line.system_warnings().is_empty(),
+            "{:?}",
+            line.system_warnings()
+        );
+        let d = directions(&line);
+        assert!(d.sections["S1"]);
+        assert!(d.sections["S2"]);
+        // The branch's jumper runs from the branch's side at T3 back to S1.
+        assert!(!d.jumpers["J-T3-branch"]);
+        // S2 turned: from T5.
+        line.circuit_starts = vec![line.sections[1].points.last().unwrap().clone()];
+        let w = line.system_warnings();
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("system ex220") && w[0].contains("S2 from T5 to T1"),
+            "{w:?}"
+        );
+        assert!(!directions(&line).sections["S2"]);
+    }
+
+    #[test]
     fn circuits_follow_the_connections_and_their_starts() {
         let mut line = example();
         let paths = conductor_paths(&line);
@@ -559,6 +690,7 @@ mod tests {
             kind,
             voltage_kv: kv,
             frequency_hz: None,
+            color: None,
             phases: labels
                 .iter()
                 .map(|l| SystemPhase {

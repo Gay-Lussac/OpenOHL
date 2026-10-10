@@ -300,6 +300,12 @@ const SYSTEMS: &[Column] = &[
         Yes,
         "phase labels, e.g. L1 L2 L3 (angles kept by position)",
     ),
+    (
+        "colour",
+        75.0,
+        Yes,
+        "display colour #rrggbb when wires are coloured by system (Sections › Display options); empty: by its place",
+    ),
     ("sections", 70.0, Derived, "sections given this system"),
 ];
 
@@ -964,8 +970,9 @@ impl TableKind {
             TableKind::Systems => line
                 .systems
                 .iter()
-                .map(|s| Row {
-                    defaulted: Vec::new(),
+                .enumerate()
+                .map(|(k, s)| Row {
+                    defaulted: (0..8).map(|c| c == 6 && s.color.is_none()).collect(),
                     key: s.id.clone(),
                     select: Selection::None,
                     cells: vec![
@@ -982,6 +989,7 @@ impl TableKind {
                             .map(|p| p.label.clone())
                             .collect::<Vec<_>>()
                             .join(" "),
+                        line.system_color(k),
                         line.sections
                             .iter()
                             .filter(|x| x.system.as_deref() == Some(s.id.as_str()))
@@ -2321,6 +2329,19 @@ fn system_cells(s: &mut ols_line::electrical::System, c: &Cells, name: &str) -> 
         .filter(|t| !t.is_empty())
         .map(str::to_owned)
         .collect();
+    let color = c.get(6).trim().to_lowercase();
+    // A default shown reads empty: the colour by its place.
+    s.color = if color.is_empty() {
+        None
+    } else {
+        let hex = color.trim_start_matches('#');
+        if hex.len() != 6 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            return Err(format!(
+                "{name} colour: \"{color}\" — write #rrggbb, e.g. #4c9be8"
+            ));
+        }
+        Some(format!("#{hex}"))
+    };
     let old = std::mem::take(&mut s.phases);
     s.phases = labels
         .into_iter()
@@ -2790,6 +2811,8 @@ impl TablePage {
             let t = egui::RichText::new(m).small();
             if *error {
                 crate::menu::error_label(ui, t);
+            } else if m.contains("warning:") {
+                crate::menu::message(ui, t, Some(egui::Color32::YELLOW));
             } else {
                 ui.colored_label(egui::Color32::LIGHT_GREEN, t);
             }

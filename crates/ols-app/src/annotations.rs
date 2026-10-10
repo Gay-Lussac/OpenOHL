@@ -45,19 +45,50 @@ pub struct SectionDisplay {
     /// Each span's sag, at mid-span.
     #[serde(default)]
     pub sag: [bool; 3],
+    /// The direction of each section and jumper in its circuit (arrows).
+    #[serde(default)]
+    pub direction: [bool; 3],
+    /// What colours the wires: their circuits or their systems.
+    #[serde(default)]
+    pub coloring: crate::wire_style::Coloring,
 }
 
 impl SectionDisplay {
-    /// The menu: a tick per item and view. Returns whether it changed.
+    /// The menu: the wires' colouring, a tick per item and view. Returns
+    /// whether it changed.
     pub fn ui(&mut self, ui: &mut egui::Ui) -> bool {
+        use crate::wire_style::Coloring;
         let mut changed = false;
+        ui.label(egui::RichText::new("Wire colours").small().weak());
+        changed |= ui
+            .radio_value(&mut self.coloring, Coloring::Circuits, "Circuits")
+            .on_hover_text(
+                "Each section's colour (a circuit's sections share one), else its phase's",
+            )
+            .changed();
+        changed |= ui
+            .radio_value(
+                &mut self.coloring,
+                Coloring::Systems,
+                "Systems, phases by line code",
+            )
+            .on_hover_text(
+                "Each system's colour (Systems table); its first phase solid, the second ·–·–, \
+                 the third ·––·––; earth wires grey",
+            )
+            .changed();
+        ui.separator();
         egui::Grid::new("section-display").show(ui, |ui| {
             ui.label("");
             for v in View::ALL {
                 ui.label(v.name());
             }
             ui.end_row();
-            for (name, ticks) in [("Section label", &mut self.label), ("Sag", &mut self.sag)] {
+            for (name, ticks) in [
+                ("Section label", &mut self.label),
+                ("Sag", &mut self.sag),
+                ("Direction", &mut self.direction),
+            ] {
                 ui.label(name);
                 for v in View::ALL {
                     let on = &mut ticks[v as usize];

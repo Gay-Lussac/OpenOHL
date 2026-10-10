@@ -404,6 +404,7 @@ fn write_system(out: &mut String, s: &System) {
         voltage_kv,
         frequency_hz,
         phases,
+        color,
     } = s;
     out.push_str("  <system");
     attr(out, "id", id);
@@ -411,6 +412,9 @@ fn write_system(out: &mut String, s: &System) {
     attr(out, "kind", &enum_name(kind));
     attr(out, "voltage_kv", &num(*voltage_kv));
     opt_num(out, "frequency_hz", *frequency_hz);
+    if let Some(c) = color {
+        attr(out, "color", c);
+    }
     out.push_str(">\n");
     for p in phases {
         let SystemPhase {
@@ -961,7 +965,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
 fn read_system(e: &Element) -> Result<System, String> {
     check(
         e,
-        &["id", "name", "kind", "voltage_kv", "frequency_hz"],
+        &["id", "name", "kind", "voltage_kv", "frequency_hz", "color"],
         &["phase"],
     )?;
     let kind = match e.attr("kind") {
@@ -975,6 +979,7 @@ fn read_system(e: &Element) -> Result<System, String> {
         kind,
         voltage_kv: number(e, "voltage_kv")?,
         frequency_hz: optional(e, "frequency_hz")?,
+        color: owned(e, "color"),
         phases: e
             .children_named("phase")
             .map(|p| {

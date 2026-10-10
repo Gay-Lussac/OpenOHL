@@ -376,15 +376,16 @@ pub fn wires(
         (true, Some(_)) => 230,
         (true, None) => 255,
     };
-    let colors: std::collections::HashMap<&str, [u8; 3]> = line
-        .sections
-        .iter()
-        .map(|sec| (sec.id.as_str(), rgb(&line.section_color(sec))))
-        .collect();
+    // Colours and line codes (Sections › Display options), the
+    // directions as arrows in the case shown.
+    let display = &model.section_display;
+    let styles = crate::wire_style::Styles::new(line, display.coloring);
+    let arrows = tint.is_none() && display.direction[crate::annotations::View::ThreeD as usize];
     let wire = |out: &mut Vec<Prim>,
                 points: &[[f64; 3]],
                 lines: Vec<Vec<[f64; 3]>>,
                 color: [u8; 4],
+                code: usize,
                 w: [f32; 2]| {
         if points.len() < 2 {
             return;
@@ -392,12 +393,26 @@ pub fn wires(
         let at = middle(points);
         let bundle = lines.len() > 1;
         for l in lines {
-            out.push(Prim::new(at, l, color, if bundle { w[0] } else { w[1] }).at(0, 0));
+            for d in crate::wire_style::dashes(&l, code, DASH_UNIT) {
+                out.push(Prim::new(at, d, color, if bundle { w[0] } else { w[1] }).at(0, 0));
+            }
         }
-        let mut centre = Prim::new(at, points.to_vec(), color, w[1]).at(1, 2);
-        centre.thinned = true;
-        out.push(centre);
+        for d in crate::wire_style::dashes(points, code, DASH_UNIT) {
+            let mut centre = Prim::new(at, d, color, w[1]).at(1, 2);
+            centre.thinned = true;
+            out.push(centre);
+        }
     };
+    let arrow =
+        |out: &mut Vec<Prim>, points: &[[f64; 3]], forward: bool, size: f64, color: [u8; 4]| {
+            if let Some(legs) =
+                crate::wire_style::chevron(points, forward, size, crate::wire_style::across)
+            {
+                for l in legs {
+                    out.push(Prim::new(l[1], l.to_vec(), color, 2.0).at(0, 1));
+                }
+            }
+        };
     // Both wind sides shown: each case's mirror drawn with it.
     for (k, solved) in cases
         .iter()
@@ -409,12 +424,9 @@ pub fn wires(
             if shown != model.section_cases(&shape.section, case).contains(&k) {
                 continue;
             }
-            let col = tint.unwrap_or_else(|| {
-                colors
-                    .get(shape.section.as_str())
-                    .copied()
-                    .unwrap_or([176, 184, 192])
-            });
+            let style = styles.section(&shape.section);
+            let col = tint.unwrap_or(style.color);
+            let forward = styles.directions.sections.get(&shape.section).copied();
             for (n, span) in shape.spans.iter().enumerate() {
                 // Bundles: each subconductor (one section, solved and
                 // selected as one), ending on the yokes.
@@ -422,7 +434,20 @@ pub fn wires(
                     Some(l) => l.clone(),
                     None => vec![span.points.clone()],
                 };
-                wire(out, &span.points, lines, rgba(col, alpha), [1.5, 2.0]);
+                wire(
+                    out,
+                    &span.points,
+                    lines,
+                    rgba(col, alpha),
+                    style.code,
+                    [1.5, 2.0],
+                );
+                if arrows
+                    && this_case
+                    && let Some(f) = forward
+                {
+                    arrow(out, &span.points, f, 6.0, rgba(col, alpha));
+                }
             }
             // Marker balls and other bodies with a size, on the wire
             // (the bundle's centre) where they hang.
@@ -452,9 +477,20 @@ pub fn wires(
             }
         }
         for j in solved.jumpers.iter().filter(|_| this_case) {
-            let (col, lines) = jumper_lines(line, j, &solved.bundles);
-            let col = tint.unwrap_or(col);
-            wire(out, &j.points, lines, rgba(col, alpha), [1.2, 1.5]);
+            let (_, lines) = jumper_lines(line, j, &solved.bundles);
+            let style = styles.jumper(&j.jumper);
+            let col = tint.unwrap_or(style.color);
+            wire(
+                out,
+                &j.points,
+                lines,
+                rgba(col, alpha),
+                style.code,
+                [1.2, 1.5],
+            );
+            if arrows && let Some(f) = styles.directions.jumpers.get(&j.jumper) {
+                arrow(out, &j.points, *f, 1.5, rgba(col, alpha));
+            }
             // Its support clamps: a short bar along it.
             let steel = tint.unwrap_or([205, 205, 210]);
             let def = line.jumpers.iter().find(|d| d.id == j.jumper);
@@ -491,6 +527,9 @@ pub fn wires(
         }
     }
 }
+
+/// Length of a unit of the phases' line codes in 3D, m.
+const DASH_UNIT: f64 = 1.5;
 
 /// Colour of marker balls and other bodies on the wires (aviation
 /// orange).
