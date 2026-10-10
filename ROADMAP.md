@@ -160,7 +160,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] One file per pylon (`.olss`): joints and members in the type itself (sticks), level 3 adds sections, materials, supports and member kinds (truss / frame / cable) to the same members; `.olsfe` models still read. The level is **derived from the content** (1 stick figure → 2 lattice outline as soon as there are members → 3 as soon as every member has a section and material and there are supports); the marker follows
 - [x] String points as joints or as a fraction along a member, so strings follow the members
 - [ ] Symmetry (optional): members and joints copied about x, y or both
-- [ ] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save
+- [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view still to come)*
 - [ ] Level 2 and 3 drawn with their members in 3D and on plan & profile sheets
 - [ ] PLS-TOWER geometry from PLS XML (joints, members, sections) into levels 2 and 3 (local importer)
 - [ ] Level 2 from LiDAR: a plugin (later); the classes holding pylons chosen by the user from all classes, as in the display options

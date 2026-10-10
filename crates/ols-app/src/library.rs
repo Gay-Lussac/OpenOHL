@@ -593,6 +593,17 @@ pub struct LibraryPage {
     pub message: Option<(String, bool)>,
     /// Fields being typed, by path (a number half typed does not parse).
     buffers: HashMap<String, String>,
+    /// Structure types: the pylon workspace (instead of the fields).
+    pub workspace: crate::type_workspace::Workspace,
+}
+
+/// What the pylon workspace of the structure types page needs from the
+/// application.
+pub struct PageContext<'a> {
+    /// For its 3D view.
+    pub rs: Option<&'a eframe::egui_wgpu::RenderState>,
+    /// The model (its insulators, the structures using a type).
+    pub model: &'a crate::model::Model,
 }
 
 /// What the page asks of the application.
@@ -626,6 +637,7 @@ impl LibraryPage {
             warning: None,
             message: None,
             buffers: HashMap::new(),
+            workspace: Default::default(),
         };
         let first = match kind {
             LibraryKind::WeatherCases => sources.weather.clone(),
@@ -642,6 +654,10 @@ impl LibraryPage {
     /// Opens `path` (unsaved changes are dropped).
     pub fn open(&mut self, path: &Path) {
         self.buffers.clear();
+        // A new pylon: nothing picked, the view fitted to it.
+        let on = self.workspace.on;
+        self.workspace = Default::default();
+        self.workspace.on = on;
         self.item = 0;
         self.message = None;
         match std::fs::read_to_string(path) {
@@ -837,7 +853,12 @@ impl LibraryPage {
     }
 
     /// The page.
-    pub fn ui(&mut self, ui: &mut egui::Ui, sources: &Sources) -> Option<PageAction> {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        sources: &Sources,
+        cx: PageContext<'_>,
+    ) -> Option<PageAction> {
         let mut action = None;
         let kind = self.kind;
         ui.horizontal_wrapped(|ui| {
@@ -1002,6 +1023,35 @@ impl LibraryPage {
             return action;
         }
         let mut changed = false;
+        if kind == LibraryKind::StructureTypes {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.workspace.on, false, "Fields")
+                    .on_hover_text("Every field of the file");
+                ui.selectable_value(&mut self.workspace.on, true, "Pylon")
+                    .on_hover_text(
+                        "The pylon in its own axes: joints, members, points, wire points and \
+                         strings, in 3D and in tables",
+                    );
+            });
+            if self.workspace.on {
+                let id = self.workspace.shown().map(|t| t.id.clone());
+                let used_by = cx
+                    .model
+                    .line
+                    .structures
+                    .iter()
+                    .filter(|s| s.structure_type.is_some() && s.structure_type == id)
+                    .count();
+                let none = ols_structures::InsulatorLibrary::default();
+                let insulators = cx.model.types.as_ref().map_or(&none, |t| &t.1);
+                let doc = self.doc.as_mut().expect("checked");
+                if self.workspace.ui(ui, doc, cx.rs, insulators, used_by) {
+                    self.buffers.clear();
+                    self.check();
+                }
+                return action;
+            }
+        }
         match kind.items_key() {
             Some(key) => {
                 let items = self.items();
