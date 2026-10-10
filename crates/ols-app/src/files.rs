@@ -72,9 +72,13 @@ impl Recent {
 /// The file dialog for opening: projects and line files.
 pub fn pick_file() -> Option<PathBuf> {
     rfd::FileDialog::new()
-        .add_filter("OLS CAD project or line", &["ols", "json"])
+        .add_filter(
+            "OLS CAD project, line or structure type",
+            &["ols", "json", "olss"],
+        )
         .add_filter("OLS CAD project", &["ols"])
         .add_filter("Line file", &["json"])
+        .add_filter("Structure type (opened on its own)", &["olss"])
         .pick_file()
 }
 

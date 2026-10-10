@@ -257,6 +257,8 @@ Every field is shown as written in the file, with its units (`"28.1 mm"`, `"55 G
 
 ### The pylon workspace
 
+**A structure type on its own**: `ols-cad pylon.olss`, **File › Open** (choose a `.olss`) or the start page's recent files open a structure type file without a line: its editor is the whole window — the pylon workspace below and every field of the file (**Fields**), **Save** (⌘S), the other types of its folder in the list. The insulator assemblies of its folder (and of an `Insulators` folder there) are those its strings may take. Which angle means ahead is yours for files opened alone (at the top, remembered on this computer); a project has its own (Structures › Angles around structures). Unsaved changes are asked about before another file opens. In a project, the same editor is the Structure types page, and **Edit pylon…** opens a structure's type in it; what the type gives — its points, strings and wire points, with their descriptions — comes into the line with every structure of that type.
+
 On the **Structure types** page, **Pylon** (next to **Fields**) shows the type in its own axes — x to the right of the line (red), y ahead (green), z up (blue), 0;0 at the centre, the ground grid at the level of its feet — in its own 3D view, with tables below it. **Edit pylon…** in a typed structure's properties opens its type there.
 
 - The top line gives the **level** worked out from the file ([detail levels](structure-library.md#detail-levels)) and, for a pylon with members, what it lacks for a full design (members without a section, no supported joint); the counts; how many structures of the line use the type (they follow when it is saved).

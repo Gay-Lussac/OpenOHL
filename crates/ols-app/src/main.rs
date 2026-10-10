@@ -49,6 +49,7 @@ mod remote;
 mod scene;
 mod selection;
 mod spot;
+mod structure_desk;
 mod surfaces;
 mod survey_io;
 mod tables;
@@ -195,6 +196,10 @@ fn main() -> std::process::ExitCode {
                 app.recent = files::Recent::load(st);
                 app.view_prefs = model::ViewPrefsStore::load(st);
                 app.palette = color_tool::Palette::load(st);
+                app.ahead_alone = st
+                    .get_string("ahead-alone")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0.0);
                 backgrounds::set_converter(&st.get_string("ecw-converter").unwrap_or_default());
                 app.default_class_scheme = st
                     .get_string("class-scheme")

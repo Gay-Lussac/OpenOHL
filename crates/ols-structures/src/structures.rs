@@ -296,6 +296,9 @@ pub struct InlineString {
 pub struct TypePoint {
     /// Label, unique among the type's points and wire points.
     pub label: String,
+    /// What it is, in words (free text).
+    #[serde(default)]
+    pub description: String,
     /// Position in local axes (filled from `node` or `member` when they
     /// are given instead).
     #[serde(default)]
@@ -377,6 +380,9 @@ pub struct TypeMember {
 pub struct TypeString {
     /// Label, unique among the type's strings.
     pub label: String,
+    /// What it is, in words (free text).
+    #[serde(default)]
+    pub description: String,
     /// Its top: a point, or another string's wire point.
     pub top: String,
     /// Its wire point.
@@ -411,6 +417,9 @@ pub struct TypeString {
 pub struct TypeWire {
     /// Label, unique among the type's points and wire points.
     pub label: String,
+    /// What it is, in words (free text).
+    #[serde(default)]
+    pub description: String,
     /// Set number: a wire is clamped here.
     #[serde(default)]
     pub set: Option<u32>,
@@ -1017,6 +1026,8 @@ pub fn v1_point_label(a: &TypeAttachment) -> String {
 pub struct PlacedPoint {
     /// Label.
     pub label: String,
+    /// What it is, in words.
+    pub description: String,
     /// Position.
     pub position: [f64; 3],
 }
@@ -1026,6 +1037,8 @@ pub struct PlacedPoint {
 pub struct PlacedWire {
     /// Label.
     pub label: String,
+    /// What it is, in words.
+    pub description: String,
     /// Position in still air.
     pub position: [f64; 3],
     /// Set number.
@@ -1039,6 +1052,8 @@ pub struct PlacedWire {
 pub struct PlacedString {
     /// Label.
     pub label: String,
+    /// What it is, in words.
+    pub description: String,
     /// Top label.
     pub top: String,
     /// Wire point label.
@@ -1327,6 +1342,7 @@ impl StructureType {
                 .points
                 .iter()
                 .map(|p| PlacedPoint {
+                    description: p.description.clone(),
                     label: p.label.clone(),
                     position: global(&p.label),
                 })
@@ -1335,6 +1351,7 @@ impl StructureType {
                 .wires
                 .iter()
                 .map(|w| PlacedWire {
+                    description: w.description.clone(),
                     label: w.label.clone(),
                     position: global(&w.label),
                     set: w.set,
@@ -1347,6 +1364,7 @@ impl StructureType {
                 .map(|s| {
                     let a = assembly(s)?;
                     Ok(PlacedString {
+                        description: s.description.clone(),
                         label: s.label.clone(),
                         top: s.top.clone(),
                         wire: s.wire.clone(),
