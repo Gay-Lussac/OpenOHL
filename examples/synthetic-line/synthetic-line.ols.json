@@ -1,6 +1,6 @@
 {
   "format": "ols-line",
-  "version": 1,
+  "version": 2,
   "name": "Synthetic example line (invented coordinates)",
   "crs": "local (invented)",
   "structures": [
@@ -12,36 +12,54 @@
         500
       ],
       "orientation_deg": -90.0,
-      "attachments": [
+      "points": [
         {
-          "set": 1,
-          "phase": 1,
-          "label": "dead-end",
-          "insulator_point": [
+          "label": "A1",
+          "position": [
             0.0,
             -6.0,
             530.0
-          ],
-          "wire_point": [
-            5.0,
-            -6.0,
-            529.5
           ]
         },
         {
-          "set": 1,
-          "phase": 2,
-          "label": "dead-end",
-          "insulator_point": [
+          "label": "A11",
+          "position": [
             0.0,
             6.0,
             530.0
+          ]
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            5.0,
+            -6.0,
+            529.5
           ],
-          "wire_point": [
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
             5.0,
             6.0,
             529.5
-          ]
+          ],
+          "set": 11
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1"
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11"
         }
       ]
     },
@@ -53,38 +71,56 @@
         505
       ],
       "orientation_deg": -90.0,
-      "attachments": [
+      "points": [
         {
-          "set": 1,
-          "phase": 1,
-          "label": "suspension",
-          "insulator_point": [
+          "label": "A1",
+          "position": [
             310.0,
             -6.0,
             535.0
-          ],
-          "wire_point": [
-            310.0,
-            -6.0,
-            531.5
-          ],
-          "insulator_weight": 900.0
+          ]
         },
         {
-          "set": 1,
-          "phase": 2,
-          "label": "suspension",
-          "insulator_point": [
+          "label": "A11",
+          "position": [
             310.0,
             6.0,
             535.0
+          ]
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            310.0,
+            -6.0,
+            531.5
           ],
-          "wire_point": [
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
             310.0,
             6.0,
             531.5
           ],
-          "insulator_weight": 900.0
+          "set": 11
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "weight": 900.0
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11",
+          "weight": 900.0
         }
       ]
     },
@@ -96,53 +132,78 @@
         498
       ],
       "orientation_deg": -85.24,
-      "attachments": [
+      "points": [
         {
-          "set": 1,
-          "phase": 1,
-          "label": "suspension",
-          "insulator_point": [
+          "label": "A1",
+          "position": [
             640.498,
             -5.979,
             528.0
-          ],
-          "wire_point": [
-            640.498,
-            -5.979,
-            524.5
-          ],
-          "insulator_weight": 900.0
+          ]
         },
         {
-          "set": 1,
-          "phase": 2,
-          "label": "suspension",
-          "insulator_point": [
+          "label": "A11",
+          "position": [
             639.502,
             5.979,
             528.0
-          ],
-          "wire_point": [
-            639.502,
-            5.979,
-            524.5
-          ],
-          "insulator_weight": 900.0
+          ]
         },
         {
-          "set": 2,
-          "phase": 1,
-          "label": "branch dead-end",
-          "insulator_point": [
+          "label": "A2",
+          "position": [
             640,
             1.5,
             524.0
+          ]
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            640.498,
+            -5.979,
+            524.5
           ],
-          "wire_point": [
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
+            639.502,
+            5.979,
+            524.5
+          ],
+          "set": 11
+        },
+        {
+          "label": "W2",
+          "position": [
             640,
             6.5,
             523.5
-          ]
+          ],
+          "set": 2
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "weight": 900.0
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11",
+          "weight": 900.0
+        },
+        {
+          "label": "S2",
+          "top": "A2",
+          "wire": "W2"
         }
       ]
     },
@@ -154,38 +215,56 @@
         510
       ],
       "orientation_deg": -80.0,
-      "attachments": [
+      "points": [
         {
-          "set": 1,
-          "phase": 1,
-          "label": "suspension",
-          "insulator_point": [
+          "label": "A1",
+          "position": [
             936.484,
             46.186,
             540.0
-          ],
-          "wire_point": [
-            936.484,
-            46.186,
-            536.5
-          ],
-          "insulator_weight": 900.0
+          ]
         },
         {
-          "set": 1,
-          "phase": 2,
-          "label": "suspension",
-          "insulator_point": [
+          "label": "A11",
+          "position": [
             934.4,
             58.003,
             540.0
+          ]
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            936.484,
+            46.186,
+            536.5
           ],
-          "wire_point": [
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
             934.4,
             58.003,
             536.5
           ],
-          "insulator_weight": 900.0
+          "set": 11
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "weight": 900.0
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11",
+          "weight": 900.0
         }
       ]
     },
@@ -197,36 +276,54 @@
         503
       ],
       "orientation_deg": -80.0,
-      "attachments": [
+      "points": [
         {
-          "set": 1,
-          "phase": 1,
-          "label": "dead-end",
-          "insulator_point": [
+          "label": "A1",
+          "position": [
             1251.623,
             101.753,
             533.0
-          ],
-          "wire_point": [
-            1246.699,
-            100.885,
-            532.5
           ]
         },
         {
-          "set": 1,
-          "phase": 2,
-          "label": "dead-end",
-          "insulator_point": [
+          "label": "A11",
+          "position": [
             1249.539,
             113.571,
             533.0
+          ]
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            1246.699,
+            100.885,
+            532.5
           ],
-          "wire_point": [
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
             1244.615,
             112.702,
             532.5
-          ]
+          ],
+          "set": 11
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1"
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11"
         }
       ]
     },
@@ -238,22 +335,33 @@
         504.0
       ],
       "orientation_deg": 0.0,
-      "attachments": [
+      "points": [
         {
-          "set": 1,
-          "phase": 1,
-          "label": "suspension",
-          "insulator_point": [
+          "label": "A1",
+          "position": [
             640,
             280.0,
             530.0
-          ],
-          "wire_point": [
+          ]
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
             640,
             280.0,
             526.5
           ],
-          "insulator_weight": 900.0
+          "set": 1
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "weight": 900.0
         }
       ]
     },
@@ -265,21 +373,32 @@
         496.0
       ],
       "orientation_deg": 0.0,
-      "attachments": [
+      "points": [
         {
-          "set": 1,
-          "phase": 1,
-          "label": "dead-end",
-          "insulator_point": [
+          "label": "A1",
+          "position": [
             640,
             560.0,
             522.0
-          ],
-          "wire_point": [
+          ]
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
             640,
             555.0,
             521.5
-          ]
+          ],
+          "set": 1
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1"
         }
       ]
     }
@@ -292,9 +411,18 @@
       "voltage_kv": 220,
       "frequency_hz": 50,
       "phases": [
-        { "label": "L1", "angle_deg": 0 },
-        { "label": "L2", "angle_deg": -120 },
-        { "label": "L3", "angle_deg": 120 }
+        {
+          "label": "L1",
+          "angle_deg": 0
+        },
+        {
+          "label": "L2",
+          "angle_deg": -120
+        },
+        {
+          "label": "L3",
+          "angle_deg": 120
+        }
       ]
     }
   ],
@@ -309,28 +437,23 @@
       "points": [
         {
           "structure": "T1",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T2",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T3",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T4",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T5",
-          "set": 1,
-          "phase": 1
+          "set": 1
         }
       ],
       "stringing": {
@@ -357,28 +480,23 @@
       "points": [
         {
           "structure": "T1",
-          "set": 1,
-          "phase": 2
+          "set": 11
         },
         {
           "structure": "T2",
-          "set": 1,
-          "phase": 2
+          "set": 11
         },
         {
           "structure": "T3",
-          "set": 1,
-          "phase": 2
+          "set": 11
         },
         {
           "structure": "T4",
-          "set": 1,
-          "phase": 2
+          "set": 11
         },
         {
           "structure": "T5",
-          "set": 1,
-          "phase": 2
+          "set": 11
         }
       ],
       "stringing": {
@@ -401,18 +519,15 @@
       "points": [
         {
           "structure": "T3",
-          "set": 2,
-          "phase": 1
+          "set": 2
         },
         {
           "structure": "T6",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "T7",
-          "set": 1,
-          "phase": 1
+          "set": 1
         }
       ],
       "stringing": {
@@ -426,8 +541,14 @@
     {
       "id": "J-T3-branch",
       "cable": "acsr-drake-26-7",
-      "from": { "structure": "T3", "set": 2, "phase": 1 },
-      "to": { "structure": "T3", "set": 1, "phase": 1 },
+      "from": {
+        "structure": "T3",
+        "set": 2
+      },
+      "to": {
+        "structure": "T3",
+        "set": 1
+      },
       "sag": 1.5,
       "temperature": 15.0
     }

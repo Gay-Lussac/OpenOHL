@@ -184,9 +184,7 @@ fn structures_csv_round_trips_and_moves_attachments() {
         .unwrap();
     for (a, b) in same.structures.iter().zip(&m.line.structures) {
         assert!((0..3).all(|k| (a.position[k] - b.position[k]).abs() < 1e-4));
-        assert!((0..3).all(|k| {
-            (a.attachments[0].wire_point[k] - b.attachments[0].wire_point[k]).abs() < 1e-4
-        }));
+        assert!((0..3).all(|k| { (a.wires[0].position[k] - b.wires[0].position[k]).abs() < 1e-4 }));
     }
     // Move the first structure 2 m east and turn it by 90°.
     let first = &m.line.structures[0];
@@ -202,7 +200,7 @@ fn structures_csv_round_trips_and_moves_attachments() {
         .import(text.as_bytes(), Some(&m.line), &Options::new())
         .unwrap();
     let s = &moved.structures[0];
-    let (a0, a1) = (first.attachments[0].wire_point, s.attachments[0].wire_point);
+    let (a0, a1) = (first.wires[0].position, s.wires[0].position);
     let (dx, dy) = (a0[0] - first.position[0], a0[1] - first.position[1]);
     assert!(
         (a1[0] - (s.position[0] - dy)).abs() < 1e-9 && (a1[1] - (s.position[1] + dx)).abs() < 1e-9

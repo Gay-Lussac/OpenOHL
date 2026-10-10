@@ -105,31 +105,22 @@ pub fn viewer_html_with(
             continue;
         };
         for (k, point) in section.points.iter().enumerate() {
-            let (Some(a), Some(clamp)) = (line.attachment(point), shape.clamps.get(k)) else {
-                continue;
-            };
-            solved_points.insert((point.structure.clone(), point.set, point.phase));
-            let forces = shape.insulators.get(k).map_or(&[][..], Vec::as_slice);
-            let tops: Vec<Point> = match &a.legs {
-                Some(legs) if forces.len() == 2 => legs.to_vec(),
-                _ => vec![a.insulator_point],
-            };
-            for (j, top) in tops.iter().enumerate() {
-                let slack = forces.len() == 2 && forces[j] <= 0.0;
+            solved_points.insert((point.structure.clone(), point.set));
+            for st in shape.strings.get(k).into_iter().flatten() {
                 insulators.push(format!(
                     "[{},{},{}]",
-                    fmt(local(top)),
-                    fmt(local(clamp)),
-                    u8::from(slack)
+                    fmt(local(&st.top)),
+                    fmt(local(&st.bottom)),
+                    u8::from(st.slack)
                 ));
             }
         }
     }
     for s in &line.structures {
         let top = s
-            .attachments
+            .points
             .iter()
-            .map(|a| a.insulator_point[2])
+            .map(|p| p.position[2])
             .fold(s.position[2], f64::max);
         // Stick drawing when the structure has one, else a mast line.
         let sticks: Vec<String> = s
@@ -152,15 +143,22 @@ pub fn viewer_html_with(
             fmt(local(&[s.position[0], s.position[1], top])),
             sticks.join(",")
         ));
-        for a in &s.attachments {
-            if solved_points.contains(&(s.id.clone(), a.set, a.phase)) {
+        // Strings no solved section hangs on: as given.
+        for st in &s.strings {
+            let solved = s
+                .component(&st.wire)
+                .wires
+                .iter()
+                .filter_map(|&w| s.wires[w].set)
+                .any(|set| solved_points.contains(&(s.id.clone(), set)));
+            if solved {
                 continue;
             }
-            for top in a.legs.map_or(vec![a.insulator_point], |l| l.to_vec()) {
+            if let (Some(a), Some(b)) = (s.node(&st.top), s.wire(&st.wire)) {
                 insulators.push(format!(
                     "[{},{},0]",
-                    fmt(local(&top)),
-                    fmt(local(&a.wire_point))
+                    fmt(local(&a.position())),
+                    fmt(local(&b.position))
                 ));
             }
         }
@@ -176,7 +174,7 @@ pub fn viewer_html_with(
         let label = section.map_or_else(String::new, |s| {
             let text = format!("{} {}", s.circuit, s.phase_label);
             match text.trim() {
-                "" => format!("phase {}", s.points.first().map_or(0, |p| p.phase)),
+                "" => format!("section {}", s.id),
                 t => t.to_owned(),
             }
         });

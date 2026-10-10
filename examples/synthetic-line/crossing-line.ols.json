@@ -1,6 +1,6 @@
 {
   "format": "ols-line",
-  "version": 1,
+  "version": 2,
   "name": "Crossing line (invented)",
   "crs": "local (invented)",
   "structures": [
@@ -11,20 +11,15 @@
         -150.0,
         499.0
       ],
-      "attachments": [
+      "wires": [
         {
-          "set": 1,
-          "phase": 1,
-          "insulator_point": [
+          "label": "W1",
+          "position": [
             155.0,
             -150.0,
             518.0
           ],
-          "wire_point": [
-            155.0,
-            -150.0,
-            518.0
-          ]
+          "set": 1
         }
       ]
     },
@@ -35,20 +30,15 @@
         150.0,
         500.0
       ],
-      "attachments": [
+      "wires": [
         {
-          "set": 1,
-          "phase": 1,
-          "insulator_point": [
+          "label": "W1",
+          "position": [
             155.0,
             150.0,
             518.0
           ],
-          "wire_point": [
-            155.0,
-            150.0,
-            518.0
-          ]
+          "set": 1
         }
       ]
     }
@@ -59,7 +49,17 @@
       "name": "110 kV crossing system",
       "voltage_kv": 110,
       "frequency_hz": 50,
-      "phases": [{ "label": "L1" }, { "label": "L2" }, { "label": "L3" }]
+      "phases": [
+        {
+          "label": "L1"
+        },
+        {
+          "label": "L2"
+        },
+        {
+          "label": "L3"
+        }
+      ]
     }
   ],
   "sections": [
@@ -72,13 +72,11 @@
       "points": [
         {
           "structure": "C1",
-          "set": 1,
-          "phase": 1
+          "set": 1
         },
         {
           "structure": "C2",
-          "set": 1,
-          "phase": 1
+          "set": 1
         }
       ],
       "stringing": {

@@ -297,30 +297,45 @@ impl Model {
     /// testing: 100 iterations without convergence). Projecting removes the
     /// curvature error while keeping Newton's radial (length) update.
     /// Nodes held by several bars (V-strings) get a few alternating passes.
+    /// A bar between two free nodes (a string hanging from a string) is
+    /// projected the same way about its end nearer the supports, after
+    /// that end.
     fn project_links(&self, old: &[Vector3<f64>], trial: &mut [Vector3<f64>]) {
+        // Bars from the supports outwards: each node's distance (in bars)
+        // from a fixed node; a bar swings its farther end about the nearer.
+        let depth = self.truss_depths();
         // Intended lengths from Newton's (unprojected) step, computed ONCE.
         // Recomputing them from already-projected points in every pass
         // shrank each string by a factor cos θ per pass — a bug found by
         // tracing: −6.5 µm on a 3 m string, thousands of newtons of fake force.
-        let links: Vec<(usize, usize, f64, bool)> = self
+        let mut links: Vec<(usize, usize, f64, bool)> = self
             .trusses
             .iter()
             .filter_map(|t| {
                 let (fixed, free) = match (self.nodes[t.i].fixed, self.nodes[t.j].fixed) {
                     (true, false) => (t.i, t.j),
                     (false, true) => (t.j, t.i),
-                    _ => return None,
+                    (false, false) => match (depth[t.i], depth[t.j]) {
+                        (Some(a), Some(b)) if a < b => (t.i, t.j),
+                        (Some(a), Some(b)) if b < a => (t.j, t.i),
+                        _ => return None,
+                    },
+                    (true, true) => return None,
                 };
                 let old_chord = old[free] - old[fixed];
                 let old_len = old_chord.norm();
                 if old_len == 0.0 {
                     return None;
                 }
-                let intended = old_len + (old_chord / old_len).dot(&(trial[free] - old[free]));
+                // The length change Newton intended: the ends' relative
+                // move along the bar (the nearer end may move too).
+                let moved = (trial[free] - old[free]) - (trial[fixed] - old[fixed]);
+                let intended = old_len + (old_chord / old_len).dot(&moved);
                 let slack = t.tension_only && intended > (trial[free] - trial[fixed]).norm();
                 Some((fixed, free, intended, slack))
             })
             .collect();
+        links.sort_by_key(|&(_, free, _, _)| depth[free]);
         // Several passes reconcile nodes held by more than one string.
         for _ in 0..5 {
             for &(fixed, free, intended, slack) in &links {
@@ -333,6 +348,31 @@ impl Model {
                 trial[free] = trial[fixed] + chord * (intended / len);
             }
         }
+    }
+
+    /// Each node's distance in bars from a fixed node (None: not reached
+    /// through bars).
+    fn truss_depths(&self) -> Vec<Option<usize>> {
+        let mut depth: Vec<Option<usize>> =
+            self.nodes.iter().map(|n| n.fixed.then_some(0)).collect();
+        // Few bars: relax until nothing changes (at most one pass per bar).
+        for _ in 0..=self.trusses.len() {
+            let mut changed = false;
+            for t in &self.trusses {
+                for (a, b) in [(t.i, t.j), (t.j, t.i)] {
+                    if let Some(d) = depth[a]
+                        && depth[b].is_none_or(|e| e > d + 1)
+                    {
+                        depth[b] = Some(d + 1);
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        depth
     }
 
     /// Solves the equilibrium of the free nodes.

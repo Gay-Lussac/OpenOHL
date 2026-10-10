@@ -165,7 +165,25 @@ struct NodeFile {
     #[serde(default)]
     spring: Option<[f64; 6]>,
     #[serde(default)]
-    attachment: Option<[u32; 2]>,
+    attachment: Option<AttachmentFile>,
+}
+
+/// The point of the structure at a node: its label, or (version 1) the
+/// attachment's `[set, phase]` (the point `A<set>-<phase>`).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AttachmentFile {
+    Label(String),
+    SetPhase([u32; 2]),
+}
+
+impl AttachmentFile {
+    fn label(&self) -> String {
+        match self {
+            AttachmentFile::Label(l) => l.clone(),
+            AttachmentFile::SetPhase([s, p]) => format!("A{s}-{p}"),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -256,8 +274,9 @@ pub struct Node {
     pub fixed: [bool; 6],
     /// Spring stiffness per degree of freedom (N/m, N·m/rad; 0: none).
     pub spring: [f64; 6],
-    /// The structure type's attachment (set, phase) at this node.
-    pub attachment: Option<(u32, u32)>,
+    /// The label of the structure type's point (where strings hang) at this
+    /// node.
+    pub attachment: Option<String>,
 }
 
 impl Node {
@@ -538,7 +557,7 @@ impl Model {
                 point: n.point.map(|x| x.si()),
                 fixed,
                 spring: n.spring.unwrap_or([0.0; 6]),
-                attachment: n.attachment.map(|[s, p]| (s, p)),
+                attachment: n.attachment.as_ref().map(AttachmentFile::label),
             });
         }
         let node = |id: &str, what: &str| {
@@ -637,13 +656,10 @@ impl Model {
         }
         let mut attachments = std::collections::BTreeSet::new();
         for n in &self.nodes {
-            if let Some(a) = n.attachment
+            if let Some(a) = &n.attachment
                 && !attachments.insert(a)
             {
-                return Err(format!(
-                    "attachment {}:{} on two nodes (node {})",
-                    a.0, a.1, n.id
-                ));
+                return Err(format!("point {a} on two nodes (node {})", n.id));
             }
         }
         for m in &self.members {
@@ -694,11 +710,11 @@ impl Model {
         Ok(())
     }
 
-    /// The node at attachment (`set`, `phase`).
-    pub fn attachment_node(&self, set: u32, phase: u32) -> Option<usize> {
+    /// The node at the structure's point labelled `label`.
+    pub fn attachment_node(&self, label: &str) -> Option<usize> {
         self.nodes
             .iter()
-            .position(|n| n.attachment == Some((set, phase)))
+            .position(|n| n.attachment.as_deref() == Some(label))
     }
 
     /// Length of a member, m.

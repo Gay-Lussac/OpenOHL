@@ -135,7 +135,7 @@ impl Wire {
 }
 
 fn key(p: &ols_line::SectionPoint) -> String {
-    format!("{}:{}:{}", p.structure, p.set, p.phase)
+    format!("{}:{}", p.structure, p.set)
 }
 
 /// The wires of a solved line: every span of every section, and every

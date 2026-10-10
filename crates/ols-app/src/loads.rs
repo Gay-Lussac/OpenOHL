@@ -278,9 +278,9 @@ impl LoadsPage {
                     .show(ui, |ui| {
                         for h in [
                             "structure",
-                            "set:phase",
-                            "label",
-                            "support",
+                            "point",
+                            "sets",
+                            "",
                             "transverse kN",
                             "longitudinal kN",
                             "vertical kN",
@@ -304,13 +304,15 @@ impl LoadsPage {
                             {
                                 go = Some(l.structure.clone());
                             }
-                            ui.label(format!("{}:{}", l.set, l.phase));
                             ui.label(&l.label);
-                            ui.label(if l.support == 0 && l.label.is_empty() {
-                                String::new()
-                            } else {
-                                format!("{}", l.support + 1)
-                            });
+                            ui.label(
+                                l.sets
+                                    .iter()
+                                    .map(u32::to_string)
+                                    .collect::<Vec<_>>()
+                                    .join(" "),
+                            );
+                            ui.label("");
                             let v = if self.unfactored { l.local } else { l.factored };
                             for x in v {
                                 ui.label(

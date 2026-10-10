@@ -232,12 +232,10 @@ pub fn conductor_paths(line: &Line) -> Vec<Vec<String>> {
         }
     };
     // Sections at each attachment point.
-    let mut at: BTreeMap<(&str, u32, u32), Vec<usize>> = BTreeMap::new();
+    let mut at: BTreeMap<(&str, u32), Vec<usize>> = BTreeMap::new();
     for (k, s) in line.sections.iter().enumerate() {
         for p in &s.points {
-            at.entry((p.structure.as_str(), p.set, p.phase))
-                .or_default()
-                .push(k);
+            at.entry((p.structure.as_str(), p.set)).or_default().push(k);
         }
     }
     for list in at.values() {
@@ -246,10 +244,10 @@ pub fn conductor_paths(line: &Line) -> Vec<Vec<String>> {
         }
     }
     for j in &line.jumpers {
-        let key = |p: &crate::SectionPoint| (p.structure.clone(), p.set, p.phase);
+        let key = |p: &crate::SectionPoint| (p.structure.clone(), p.set);
         let (f, t) = (key(&j.from), key(&j.to));
-        let first = |k: &(String, u32, u32)| {
-            at.get(&(k.0.as_str(), k.1, k.2))
+        let first = |k: &(String, u32)| {
+            at.get(&(k.0.as_str(), k.1))
                 .and_then(|v| v.first().copied())
         };
         if let (Some(a), Some(b)) = (first(&f), first(&t)) {
@@ -347,8 +345,8 @@ pub fn circuits(line: &Line) -> Vec<Circuit> {
         // The chosen starts (ends of it listed in the line), else the end
         // first along the line.
         let along = |p: &SectionPoint| {
-            line.attachment(p)
-                .and_then(|a| line.place_along([a.wire_point[0], a.wire_point[1]]))
+            line.wire_point(p)
+                .and_then(|w| line.place_along([w.position[0], w.position[1]]))
                 .unwrap_or((usize::MAX, f64::INFINITY))
         };
         let by_place = |a: &SectionPoint, b: &SectionPoint| {

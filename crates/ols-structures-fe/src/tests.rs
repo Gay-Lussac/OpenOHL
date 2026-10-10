@@ -447,7 +447,7 @@ fn example_model_parses() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../examples/synthetic-line/Structures/type-02.olsfe");
     let m = Model::load(&path).unwrap();
-    assert!(m.attachment_node(1, 1).is_some() && m.attachment_node(1, 2).is_some());
+    assert!(m.attachment_node("A1").is_some() && m.attachment_node("A11").is_some());
     let (sol, usage) = analyse(
         &m,
         &Loads {

@@ -8,7 +8,7 @@ Besides the allowable spans and load trees of a structure type ([Structure libra
 A structure type names them; every structure of that type is then checked in every load case with the factored attachment loads ([Load cases](loads.md)). The theory is in [Structure analysis](../theory/structures-fe.md).
 
 ```toml
-# In the structure type (.olss), before the [[attachment]] tables:
+# In the structure type (.olss), before the [[point]] tables:
 model = "DL380-tangent.olsfe"   # relative to the .olss file
 pole = "wood-14m"               # id of a .olsp file in the same folder
 ```
@@ -50,7 +50,7 @@ support = "pinned"        # fixed | pinned | a list of "x", "y", "z", "rx", "ry"
 [[node]]
 id = "A1"
 point = ["6 m", "0 m", "30 m"]
-attachment = [1, 1]       # carries the type's attachment set 1, phase 1
+attachment = "A1"         # carries the type's point A1 (version 1: [set, phase])
 
 [[member]]
 id = "leg1"
@@ -68,7 +68,7 @@ force = ["4 kN", "0 kN", "-9 kN"]
 
 Units: lengths, areas (`mm2`, `m2`), stresses, forces as elsewhere; second moments in `cm4`, `mm4`, `m4`, `in4`; section moduli in `cm3`, `mm3`, `m3`, `in3`; moments in `kN m`, `N m`, `kip ft`. A plain number is SI.
 
-**Attachments**: a node with `attachment = [set, phase]` receives the factored loads of that attachment (summed over a V-string's legs): transverse along x, longitudinal along y, vertical downwards. An attachment without a node is reported in the usage notes and its load is left out.
+**Attachments**: a node with `attachment = "label"` receives the factored loads at that point of the structure type (where strings hang): transverse along x, longitudinal along y, vertical downwards. Version 1 models' `attachment = [set, phase]` names the point `A<set>-<phase>`. A loaded point without a node is reported in the usage notes and its load is left out.
 
 **Members**: trusses take axial force only; frames are 3D beams (six degrees of freedom at their nodes); cables take tension only and may be pretensioned — a cable that would be compressed goes slack. Truss-only nodes have no rotations; a node held by nothing in one direction is a mechanism and is named in the error.
 
@@ -95,7 +95,7 @@ density = "650 kg/m3"          # optional: the pole's weight in P-Delta
 drag = 1.0                     # shape factor on the wind pressure
 ```
 
-The check takes the factored loads at the **type's attachment points** (horizontal loads × height, vertical loads × their offset from the axis, both directions combined) and the **wind on the pole** (the weather case's wind pressure × the transverse factor × drag × diameter, across the line), at 41 heights from the ground line to the top. With `elasticity`, a frame model of the tapered pole gives the P-Delta amplification of the ground-line moment, applied at every height. Usage: the largest moment over (strength factor × capacity) — for a tapered wood pole it may be above the ground line.
+The check takes the factored loads at the **type's points** (horizontal loads × height, vertical loads × their offset from the axis, both directions combined) and the **wind on the pole** (the weather case's wind pressure × the transverse factor × drag × diameter, across the line), at 41 heights from the ground line to the top. With `elasticity`, a frame model of the tapered pole gives the P-Delta amplification of the ground-line moment, applied at every height. Usage: the largest moment over (strength factor × capacity) — for a tapered wood pole it may be above the ground line.
 
 ## In the application and the line run
 

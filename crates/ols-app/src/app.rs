@@ -1131,15 +1131,8 @@ impl Ready {
                 self.editor = StructureForm::of(model, id).map(Form::Structure);
                 self.select(target);
             }
-            (
-                Tool::Edit,
-                Selection::Attachment {
-                    structure,
-                    set,
-                    phase,
-                },
-            ) => {
-                self.editor = StringForm::of(model, structure, *set, *phase).map(Form::String);
+            (Tool::Edit, Selection::Attachment { structure, set }) => {
+                self.editor = StringForm::of(model, structure, *set).map(Form::String);
                 self.select(target);
             }
             (Tool::Edit, Selection::AlignmentPoint { route, index }) => {
@@ -1199,24 +1192,13 @@ impl Ready {
                     ));
                 }
             }
-            (
-                Tool::AddJumper,
-                Selection::Attachment {
-                    structure,
-                    set,
-                    phase,
-                },
-            ) => {
-                let p = ols_line::SectionPoint {
-                    structure: structure.clone(),
-                    set: *set,
-                    phase: *phase,
-                };
+            (Tool::AddJumper, Selection::Attachment { structure, set }) => {
+                let p = ols_line::SectionPoint::new(structure.clone(), *set);
                 match self.jumper_from.take() {
                     None => {
                         self.status = Some((
                             format!(
-                                "Add jumper from {structure} {set}:{phase}: right-click the other string (the same one again: cancel)"
+                                "Add jumper from {structure} set {set}: right-click the other string (the same one again: cancel)"
                             ),
                             false,
                         ));
@@ -1314,25 +1296,14 @@ impl Ready {
                 self.editor = StringForm::new_on(model, id).map(Form::String);
                 self.select(Selection::Structure(id.clone()));
             }
-            (
-                Tool::StringWire,
-                Selection::Attachment {
-                    structure,
-                    set,
-                    phase,
-                },
-            ) => {
-                let p = ols_line::SectionPoint {
-                    structure: structure.clone(),
-                    set: *set,
-                    phase: *phase,
-                };
+            (Tool::StringWire, Selection::Attachment { structure, set }) => {
+                let p = ols_line::SectionPoint::new(structure.clone(), *set);
                 if self.chain.last() == Some(&p) {
                     return;
                 }
                 if self.chain.contains(&p) {
                     self.status = Some((
-                        format!("String wire: {structure} {set}:{phase} is in the section already"),
+                        format!("String wire: {structure} set {set} is in the section already"),
                         true,
                     ));
                     return;
@@ -1637,7 +1608,7 @@ impl Ready {
         self.view3d.draft = if self.new_alignment.is_empty() {
             self.chain
                 .iter()
-                .filter_map(|p| self.model.line.attachment(p).map(|a| a.wire_point))
+                .filter_map(|p| self.model.line.wire_point(p).map(|w| w.position))
                 .collect()
         } else {
             self.new_alignment.iter().map(|p| p.position).collect()
@@ -1893,14 +1864,13 @@ impl Ready {
             Action::DeleteAttachment {
                 structure,
                 set,
-                phase,
                 confirm,
             } => self.model.apply(
-                &format!("deleted string {set}:{phase} of {structure}"),
+                &format!("deleted set {set} of {structure}"),
                 ols_session::Command::DeleteAttachment {
                     structure,
                     set,
-                    phase,
+                    phase: None,
                     confirm,
                 },
             ),
@@ -1941,7 +1911,7 @@ impl Ready {
             self.selection = Selection::None;
         }
         self.chain
-            .retain(|p| self.model.line.attachment(p).is_some());
+            .retain(|p| self.model.line.wire_point(p).is_some());
         self.update_draft();
         self.refresh_views();
         done
@@ -1970,16 +1940,8 @@ impl Ready {
                 .sections
                 .iter()
                 .any(|s| &s.id == section && *span + 1 < s.points.len()),
-            Selection::Attachment {
-                structure,
-                set,
-                phase,
-            } => line
-                .attachment(&ols_line::SectionPoint {
-                    structure: structure.clone(),
-                    set: *set,
-                    phase: *phase,
-                })
+            Selection::Attachment { structure, set } => line
+                .wire_point(&ols_line::SectionPoint::new(structure.clone(), *set))
                 .is_some(),
             Selection::AlignmentPoint { route, index } => {
                 crate::selection::alignment_point(&self.model, route, *index).is_some()
@@ -2050,14 +2012,9 @@ fn delete_action(line: &ols_line::Line, target: &Selection) -> Option<crate::edi
         Selection::Structure(id) => del(Kind::Structure, id),
         Selection::Span { section, .. } => del(Kind::Section, section),
         Selection::Jumper(id) => del(Kind::Jumper, id),
-        Selection::Attachment {
-            structure,
-            set,
-            phase,
-        } => Action::DeleteAttachment {
+        Selection::Attachment { structure, set } => Action::DeleteAttachment {
             structure: structure.clone(),
             set: *set,
-            phase: *phase,
             confirm: false,
         },
         Selection::AlignmentPoint { route, index } => Action::Command {
@@ -3388,8 +3345,7 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready) {
                     }),
                     Form::String(f) if f.new => r.select(Selection::Attachment {
                         structure: f.structure.clone(),
-                        set: f.set,
-                        phase: f.phase,
+                        set: f.wires.iter().find_map(|w| w.set).unwrap_or(f.set),
                     }),
                     _ => {}
                 }

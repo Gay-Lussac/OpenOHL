@@ -57,10 +57,10 @@ fn commands_are_validated_and_report_dirty_sections() {
     assert_eq!(applied.sections, vec!["S3".to_owned()]);
     let t6 = s.line().structure("T6").unwrap();
     assert_eq!(t6.position[0], p[0] + 5.0);
-    // Attachments moved with it.
+    // Its points moved with it.
     assert_eq!(
-        t6.attachments[0].insulator_point[0] - t6.position[0],
-        example().structure("T6").unwrap().attachments[0].insulator_point[0] - p[0]
+        t6.points[0].position[0] - t6.position[0],
+        example().structure("T6").unwrap().points[0].position[0] - p[0]
     );
     // Deleting a structure used by sections makes the line invalid: refused,
     // nothing changed.
@@ -606,20 +606,20 @@ fn deleting_a_string_takes_its_sections_and_jumpers() {
     let del = |confirm| Command::DeleteAttachment {
         structure: "T3".into(),
         set: 2,
-        phase: 1,
+        phase: None,
         confirm,
     };
     let Err(SessionError::NeedsConfirmation(i)) = s.apply("ben", del(false)) else {
         panic!("confirmation expected");
     };
-    assert_eq!(i.what(), "structure T3 string 2:1");
+    assert_eq!(i.what(), "structure T3 set 2");
     assert_eq!(i.sections, vec!["S3"]);
     assert_eq!(i.jumpers, vec!["J-T3-branch"]);
     let applied = s.apply("ben", del(true)).unwrap();
     let t3 = s.line().structure("T3").unwrap();
-    assert!(!t3.attachments.iter().any(|a| (a.set, a.phase) == (2, 1)));
+    assert!(t3.wire_at_set(2).is_none());
     assert!(
-        t3.omit.is_empty(),
+        t3.omit.is_empty() && t3.omit_sets.is_empty(),
         "an explicit string is removed, not omitted"
     );
     assert!(s.line().sections.iter().all(|x| x.id != "S3"));
@@ -632,7 +632,7 @@ fn deleting_a_string_takes_its_sections_and_jumpers() {
         .unwrap()
         .note
         .unwrap();
-    assert!(note.contains("string 2:1") && note.contains("S3"), "{note}");
+    assert!(note.contains("set 2") && note.contains("S3"), "{note}");
     s.undo("ben").unwrap();
     assert_eq!(s.export(), example());
     // A string nothing hangs on goes without a confirmation; one that is
@@ -656,13 +656,14 @@ fn a_typed_structure_leaves_out_a_string_of_its_type() {
         Command::DeleteAttachment {
             structure: "T3".into(),
             set: 2,
-            phase: 1,
+            // As projects written before give it.
+            phase: Some(1),
             confirm: true,
         },
     )
     .unwrap();
     let t3 = s.line().structure("T3").unwrap();
-    assert_eq!(t3.omit, vec![[2, 1]]);
+    assert_eq!(t3.omit_sets, vec![2]);
 }
 
 #[test]
@@ -726,14 +727,14 @@ fn renaming_keeps_the_place_and_what_refers_to_it_follows() {
         Command::RenameAttachment {
             structure: "T3".into(),
             set: 2,
-            phase: 1,
+            phase: None,
             new_set: 5,
-            new_phase: 1,
+            new_phase: None,
         },
     )
     .unwrap();
     let p = &s.line().sections[2].points[0];
-    assert_eq!((p.structure.as_str(), p.set, p.phase), ("T3", 5, 1));
+    assert_eq!((p.structure.as_str(), p.set), ("T3", 5));
     assert_eq!(s.line().jumpers[0].from.set, 5);
     let sys = s.line().systems[0].id.clone();
     s.apply(

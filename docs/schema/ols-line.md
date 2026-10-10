@@ -30,13 +30,13 @@ The names are those of the line file:
     <structure ref="T1"/> …
   </route>
   <structure id="T1" x="…" y="…" z="…" orientation_deg="-90" type="…" extension="…">
-    <attachment set="1" phase="1" label="…" insulator_weight="…" insulator="…"
-                insulator_wind_area="…" top_label="…" bottom_label="…" strain_member="true">
-      <insulator_point x="…" y="…" z="…"/>
-      <wire_point x="…" y="…" z="…"/>
-      <leg …/><leg …/>                          <!-- V-strings -->
-    </attachment>
-    <omit set="2" phase="1"/>
+    <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
+    <wire label="W1" x="…" y="…" z="…" set="1"/> <!-- set: a wire ends here -->
+    <string label="S1" top="A1" wire="W1" insulator="…" weight="…" wind_area="…"
+            stiffness="…" compression="…" strain="true"/>  <!-- top: a point or a wire -->
+    <omit label="…"/> <omit set="2"/>           <!-- typed: the type's left out -->
+    <!-- files of version 1: <attachment set phase …> with <insulator_point>,
+         <wire_point>, <leg>; <omit set phase>; section points with a phase -->
     <member>x y z x y z …</member>              <!-- stick drawing polyline -->
   </structure>
   <system id="…" name="…" kind="ac" voltage_kv="220" frequency_hz="50">
@@ -44,7 +44,7 @@ The names are those of the line file:
   </system>
   <section id="S1" cable="…" circuit="…" phase_label="L1" system="…" bundle="1"
            bundle_spacing="…" bundle_rotation_deg="…" color="#rrggbb" calculation="creep-rs">
-    <point structure="T1" set="1" phase="1"/> …
+    <point structure="T1" set="1"/> …
     <stringing kind="tension" horizontal_tension="25000" temperature="15"/>
     <!-- or kind="sag" sag="…" temperature="…" span="…" -->
     <!-- or kind="unstressed_lengths" temperature="…">
@@ -55,11 +55,11 @@ The names are those of the line file:
   <jumper id="…" cable="…" length="…" sag="…" temperature="15" bending_stiffness="…" stiffness_factor="…"
           angle_from_deg="…" angle_to_deg="…" color="…" bundle="…" bundle_spacing="…"
           bundle_rotation_deg="…">
-    <from structure="T3" set="2" phase="1"/>
-    <to structure="T3" set="1" phase="1"/>
+    <from structure="T3" set="2"/>
+    <to structure="T3" set="1"/>
     <support length="…" weight="…" fraction="0.5" x="…" y="…" z="…"/>
   </jumper>
-  <circuit_start structure="T7" set="1" phase="1"/>  <!-- a circuit's end that is a start -->
+  <circuit_start structure="T7" set="1"/>       <!-- a circuit's end that is a start -->
   <phase_color label="L1" color="#8b4513"/>     <!-- display colours -->
   <creep_stretch creep_case="…">
     <load_case name="…"/>

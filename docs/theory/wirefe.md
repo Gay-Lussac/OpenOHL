@@ -22,7 +22,7 @@ Insulator strings, links and V-string legs: axial force \\( N = \frac{EA}{L_0}(L
 Unknowns: positions of the free nodes. Each iteration assembles the stiffness of every element and solves \\( (\mathbf K + \mu\mathbf I)\Delta\mathbf x = \mathbf R \\):
 
 - **Levenberg–Marquardt damping** \\( \mu \\): negligible next to stiff string directions (a string picks up its load in one step) but keeps steps moderate where the structure is still soft — a string at zero force has no pendulum stiffness yet. \\( \mu \\) falls after good steps, so the end is plain Newton (quadratic convergence).
-- **Swing-arc projection**: a straight Newton step moves a swinging clamp along the tangent of its arc; with a nearly rigid string, the fake stretch \\( \delta^2/2L \\) creates huge forces. The step keeps Newton's intended string length but puts the clamp back on its arc.
+- **Swing-arc projection**: a straight Newton step moves a swinging clamp along the tangent of its arc; with a nearly rigid string, the fake stretch \\( \delta^2/2L \\) creates huge forces. The step keeps Newton's intended string length but puts the clamp back on its arc. A bar between two free nodes (a string hanging from a string) is projected the same way about its end nearer the supports (counted in bars), after that end, with the length change of the ends' relative move.
 - **Line search** on the largest unbalanced nodal force.
 - **Tolerance**: \\( 10^{-9} \\) of the loads, but not below the floating-point floor \\( 64\\,\varepsilon\\, k_{max} |x| \\) of stiff members.
 - **Exit clauses**: 100 iterations (the time limit, 120 s, only guards against a solve that never ends); the error names the node with the largest unbalanced force. `OLS_FE_TRACE=1` prints the iteration history.
@@ -46,7 +46,22 @@ On a bundle the forces are shared by its subconductors. These loads can matter: 
 
 ## Line sections: strain assemblies, bundles, jumpers
 
-In a line model the section's ends, and middle points whose wire point is not below the insulator point, are **strain assemblies**: a free clamp on a member from the fixed insulator point, lined up with the conductor by equilibrium, so it moves with every weather case. A strain string given without a weight (geometry only, e.g. imported) gets the weight that holds it where the data puts it in the stringing state. A point whose wire and insulator points coincide is fixed. A **bundle** is solved as one subconductor carrying its share of the strings' weight and wind area; the string forces and reactions reported are the whole bundle's. **Jumpers** are solved separately, between the solved clamps, as inextensible elastic rods with bending stiffness (see [Jumpers](jumpers.md)).
+In a line model the strings holding the wire at each point are built as the structure gives them ([line file](../user-guide/line-file.md#points-strings-and-wire-points)): its points are fixed nodes, its wire points free nodes, its strings bars. One string from the structure in the middle of the section, hanging below its top, is a **suspension string**; the section's ends, and middle points held by one string not below its top, are **strain assemblies**: a free clamp on a member from the fixed insulator point, lined up with the conductor by equilibrium, so it moves with every weather case. A strain string given without a weight (geometry only, e.g. imported) gets the weight that holds it where the data puts it in the stringing state. A point whose wire and insulator points coincide is fixed. A **bundle** is solved as one subconductor carrying its share of the strings' weight and wind area; the string forces and reactions reported are the whole bundle's. **Jumpers** are solved separately, between the solved clamps, as inextensible elastic rods with bending stiffness (see [Jumpers](jumpers.md)).
+
+## Strings hanging from strings
+
+Any assembly is strings between fixed points (on the structure) and free wire points: a V with a string below has a free tip and a free clamp, a TAK a free node with two strain strings to two sections' clamps. Each string is a bar of its given length (top to wire point as given), tension-only unless it **may take compression**: it then acts both ways — compressed, its stiffness is the axial one without a geometric part, so it holds as a strut — and its force beyond the given compression is **flagged** with the solution (the solve does not change it: a buckled member is the designer's to change). Its weight and wind area go half to each end (wind across the line at the section point).
+
+**Settling while sagging.** In the stringing reference and while a section in the blocks rolls, the clamps are moved back across the line after each solve: along the line equal tensions cancel at any position (a neutral direction the iteration would creep along), and the crew clamps in plumb along it. A suspension string swings back into the plane across the line keeping its radius; a V turns about the axis through its tops. Any other assembly is solved again on its own, from its solved shape, under its weights and the wires' pull on the clamp (what balances the strings and loads there) less its part along the line — exact for a V with a string below and every other shape.
+
+**Sections sharing an assembly** (a TAK: the end of one section and the start of the next hang on the same strings) are solved together, Dirichlet–Neumann:
+
+1. each section alone first, the other sections' clamps in its assemblies held where given;
+2. the first section through a shared assembly solves it with the other sections' wires pulling on their clamps (their last pull, as a load on those free nodes); the others hold their clamp where that solution puts it, which gives their pull for the next pass;
+3. the pulls are taken half way from the last ones (taken whole, the two sections' ends pull back and forth: a TAK damped by only 0.89 a pass, half way by about 0.06);
+4. until the pulls change less than 0.1 N (or 10⁻⁶ of themselves); not in 30 passes: an error for the sections of the group.
+
+The stringing reference of each section holds the other sections' clamps where given (the line as strung). The loads on the structure points of a shared assembly are reported once, by the section that solves it. Expected cost: a few solves of each section of the group (milliseconds); sections that share nothing are solved alone, as before.
 
 ## Non-linear stress-strain in the elements
 

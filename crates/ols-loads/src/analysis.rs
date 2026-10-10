@@ -18,9 +18,9 @@ use ols_weather::WeatherCase;
 use crate::LoadCase;
 use crate::capacity::{Check, Method};
 
-/// Factored loads at one attachment: set, phase, (transverse,
+/// Factored loads at one point of the structure: its label, (transverse,
 /// longitudinal, vertical down), N.
-pub(crate) type Factored = (u32, u32, [f64; 3]);
+pub(crate) type Factored = (String, [f64; 3]);
 
 /// The models and poles of the structure types, by type id (or why they
 /// could not be read).
@@ -78,15 +78,15 @@ impl Analyses {
             }
         };
         let mut nodal = Vec::new();
-        for (set, phase, [tr, lo, ve]) in loads {
-            match model.attachment_node(*set, *phase) {
+        for (label, [tr, lo, ve]) in loads {
+            match model.attachment_node(label) {
                 Some(node) => nodal.push(NodalLoad {
                     node,
                     force: [*tr, *lo, -ve],
                     moment: [0.0; 3],
                 }),
                 None => notes.push(format!(
-                    "model: no node for attachment {set}:{phase} (its load left out)"
+                    "model: no node for point {label} (its load left out)"
                 )),
             }
         }
@@ -141,18 +141,14 @@ impl Analyses {
             }
         };
         let mut on_pole = Vec::new();
-        for (set, phase, [tr, lo, ve]) in loads {
-            match t
-                .attachments
-                .iter()
-                .find(|a| a.set == *set && a.phase == *phase)
-            {
-                Some(a) => on_pole.push(PoleLoad {
-                    point: a.point.map(|x| x.si()),
+        for (label, [tr, lo, ve]) in loads {
+            match t.point_local(label, None) {
+                Some(point) => on_pole.push(PoleLoad {
+                    point,
                     force: [*tr, *lo, -ve],
                 }),
                 None => notes.push(format!(
-                    "pole: attachment {set}:{phase} not in the type (its load left out)"
+                    "pole: point {label} not in the type (its load left out)"
                 )),
             }
         }

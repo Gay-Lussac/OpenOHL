@@ -3,13 +3,16 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! The editor windows of the tools: a structure (new or existing: id,
-//! type, extension, orientation, position), a string (insulator and wire
-//! points in the structure's own axes, weight, insulator, strain), a
-//! section (cable, circuit, system, bundle, stringing, points). Applying
-//! one makes one session command ([`Form::command`]).
+//! type, extension, orientation, position), the strings holding a wire
+//! point (the structure's points, the strings between them and the wire
+//! points, in the structure's own axes), a section (cable, circuit,
+//! system, bundle, stringing, points). Applying one makes one session
+//! command ([`Form::command`]).
 
 use eframe::egui;
-use ols_line::{Attachment, Line, Section, SectionPoint, Stringing, Structure};
+use ols_line::{
+    InsulatorString, Line, Section, SectionPoint, Stringing, Structure, StructurePoint, WirePoint,
+};
 use ols_session::{Command, Kind};
 use ols_structures::structures::{to_global, to_local};
 
@@ -53,41 +56,101 @@ pub struct StructureForm {
     pub on_ground: bool,
 }
 
-/// A string being added or changed, its points in the structure's axes
-/// (across: to the right looking ahead, along: ahead, up from the base).
+/// A point of a structure in an editor, in the structure's axes (across:
+/// to the right looking ahead, along: ahead, up from the base).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointRow {
+    /// Label.
+    pub label: String,
+    /// Position, local.
+    pub at: [f64; 3],
+}
+
+/// A wire point in an editor, in the structure's axes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WireRow {
+    /// Label.
+    pub label: String,
+    /// Position in still air, local.
+    pub at: [f64; 3],
+    /// Set: a wire is clamped here.
+    pub set: Option<u32>,
+}
+
+/// A string in an editor.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StringRow {
+    /// Label.
+    pub label: String,
+    /// Its top: a point or a wire point.
+    pub top: String,
+    /// Its wire point.
+    pub wire: String,
+    /// Insulator assembly from the library.
+    pub insulator: Option<String>,
+    /// Weight, N.
+    pub weight: f64,
+    /// Compression it may take, N (none: tension only).
+    pub compression: Option<f64>,
+    /// A strain string, lined up with its conductor.
+    pub strain: bool,
+}
+
+/// Shapes of the strings of a new wire point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preset {
+    /// One string hanging from a point.
+    I,
+    /// Two strings from two points to the wire point.
+    V,
+    /// A V and a string hanging from its tip.
+    VAndString,
+    /// A string to a wire point, two strain strings from it to two sets
+    /// (back and ahead).
+    Tak,
+}
+
+impl Preset {
+    /// All, in menus' order.
+    pub const ALL: [Preset; 4] = [Preset::I, Preset::V, Preset::VAndString, Preset::Tak];
+
+    /// Name in menus.
+    pub fn name(self) -> &'static str {
+        match self {
+            Preset::I => "I-string",
+            Preset::V => "V-string",
+            Preset::VAndString => "V + string below",
+            Preset::Tak => "TAK (two strain strings on a string)",
+        }
+    }
+}
+
+/// The strings holding a wire point of a structure, being added or
+/// changed: the strings and wire points that move with it, and the
+/// structure's points they hang on (all of them, to hang on), in the
+/// structure's axes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StringForm {
     /// Not on the structure yet.
     pub new: bool,
     /// Structure.
     pub structure: String,
-    /// Set.
+    /// The set it was opened at (a new one: the set proposed).
     pub set: u32,
-    /// Phase.
-    pub phase: u32,
-    /// Label.
-    pub label: String,
-    /// Insulator (structure) point, local.
-    pub top: [f64; 3],
-    /// Wire (clamp) point, local.
-    pub bottom: [f64; 3],
-    /// V-string legs, local.
-    pub legs: Option<[[f64; 3]; 2]>,
-    /// Insulator weight, N.
-    pub weight: f64,
-    /// Insulator assembly from the library.
-    pub insulator: Option<String>,
-    /// Solved as a strain string.
-    pub strain: bool,
-    /// Labels of the top and the bottom (kept).
-    pub top_label: String,
-    /// Bottom label.
-    pub bottom_label: String,
-    /// The structure is typed and this string overrides its type's.
+    /// The structure's points.
+    pub points: Vec<PointRow>,
+    /// The wire points.
+    pub wires: Vec<WireRow>,
+    /// The strings.
+    pub strings: Vec<StringRow>,
+    /// The labels of the strings and wire points when opened (those taken
+    /// away are removed).
+    pub opened: (Vec<String>, Vec<String>),
+    /// The structure is typed and these are its own (over its type's).
     pub overrides_type: bool,
 }
 
-/// A section being added or changed.
+/// A section being added or changed./// A section being added or changed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SectionForm {
     /// Not in the line yet.
@@ -172,7 +235,7 @@ impl JumperForm {
 
 fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
     let j = &mut f.jumper;
-    let point = |p: &SectionPoint| format!("{} {}:{}", p.structure, p.set, p.phase);
+    let point = |p: &SectionPoint| format!("{} set {}", p.structure, p.set);
     egui::Grid::new("jumper-form")
         .num_columns(2)
         .show(ui, |ui| {
@@ -723,14 +786,10 @@ impl StructureForm {
                 return Err(format!("structure {id} exists already"));
             }
             Structure {
-                id: id.clone(),
-                position: self.position,
                 orientation_deg: self.orientation_deg,
                 structure_type: self.structure_type.clone(),
                 extension: self.extension.clone(),
-                attachments: Vec::new(),
-                omit: Vec::new(),
-                members: Vec::new(),
+                ..Structure::new(id.clone(), self.position)
             }
         } else {
             let old = stored
@@ -738,21 +797,18 @@ impl StructureForm {
                 .ok_or_else(|| format!("no structure {id}"))?;
             let mut s = old.moved_to(self.position);
             if s.orientation_deg != self.orientation_deg {
-                // Explicit strings turn with it about its base.
-                let turn = self.orientation_deg - s.orientation_deg;
-                for a in &mut s.attachments {
-                    let rot = |p: [f64; 3]| {
-                        to_global(
-                            s.position,
-                            self.orientation_deg,
-                            to_local(s.position, self.orientation_deg - turn, p),
-                        )
-                    };
-                    a.insulator_point = rot(a.insulator_point);
-                    a.wire_point = rot(a.wire_point);
-                    if let Some(l) = &mut a.legs {
-                        *l = l.map(rot);
-                    }
+                // Its own points and wire points turn with it about its base.
+                let (position, from) = (s.position, s.orientation_deg);
+                let rot = |p: [f64; 3]| {
+                    to_global(position, self.orientation_deg, to_local(position, from, p))
+                };
+                for p in s
+                    .points
+                    .iter_mut()
+                    .map(|p| &mut p.position)
+                    .chain(s.wires.iter_mut().map(|w| &mut w.position))
+                {
+                    *p = rot(*p);
                 }
                 s.orientation_deg = self.orientation_deg;
             }
@@ -760,6 +816,7 @@ impl StructureForm {
                 // The type's stick drawing comes with the new type.
                 s.members.clear();
                 s.omit.clear();
+                s.omit_sets.clear();
             }
             s.structure_type = self.structure_type.clone();
             s.extension = self.extension.clone();
@@ -783,124 +840,310 @@ impl StructureForm {
 }
 
 impl StringForm {
-    /// A new string on structure `id`: the next free set, hanging 3 m from
-    /// the top of the structure.
+    /// A new I-string on structure `id`: the next free set, hanging 3 m
+    /// from the top of the structure.
     pub fn new_on(model: &Model, id: &str) -> Option<Self> {
         let s = model.line.structure(id)?;
-        let set = s.attachments.iter().map(|a| a.set).max().unwrap_or(0) + 1;
+        let set = s.sets().max().unwrap_or(0) + 1;
         let top = s
-            .attachments
+            .points
             .iter()
-            .map(|a| a.insulator_point[2])
+            .map(|p| p.position[2])
             .fold(s.position[2] + 20.0, f64::max)
             - s.position[2];
-        Some(Self {
+        let mut form = Self {
             new: true,
             structure: id.to_owned(),
             set,
-            phase: 1,
-            label: String::new(),
-            top: [0.0, 0.0, top],
-            bottom: [0.0, 0.0, top - 3.0],
-            legs: None,
-            weight: 0.0,
-            insulator: None,
-            strain: false,
-            top_label: String::new(),
-            bottom_label: String::new(),
+            points: s
+                .points
+                .iter()
+                .map(|p| PointRow {
+                    label: p.label.clone(),
+                    at: to_local(s.position, s.orientation_deg, p.position),
+                })
+                .collect(),
+            wires: Vec::new(),
+            strings: Vec::new(),
+            opened: (Vec::new(), Vec::new()),
             overrides_type: false,
-        })
+        };
+        form.preset(Preset::I, [0.0, 0.0, top], model);
+        Some(form)
     }
 
-    /// String `set`:`phase` of structure `id` (as resolved).
-    pub fn of(model: &Model, id: &str, set: u32, phase: u32) -> Option<Self> {
+    /// The strings holding wire point `set` of structure `id` (as resolved).
+    pub fn of(model: &Model, id: &str, set: u32) -> Option<Self> {
         let s = model.line.structure(id)?;
-        let a = s
-            .attachments
-            .iter()
-            .find(|a| (a.set, a.phase) == (set, phase))?;
+        let wire = s.wire_at_set(set)?;
+        let c = s.component(&wire.label);
         let local = |p| to_local(s.position, s.orientation_deg, p);
+        let wires: Vec<WireRow> = c
+            .wires
+            .iter()
+            .map(|&i| {
+                let w = &s.wires[i];
+                WireRow {
+                    label: w.label.clone(),
+                    at: local(w.position),
+                    set: w.set,
+                }
+            })
+            .collect();
+        let strings: Vec<StringRow> = c
+            .strings
+            .iter()
+            .map(|&i| {
+                let x = &s.strings[i];
+                StringRow {
+                    label: x.label.clone(),
+                    top: x.top.clone(),
+                    wire: x.wire.clone(),
+                    insulator: x.insulator.clone(),
+                    weight: x.weight,
+                    compression: x.compression,
+                    strain: x.strain,
+                }
+            })
+            .collect();
         let overrides_type = s.structure_type.is_some()
             && model.stored_line().is_some_and(|l| {
                 l.structure(id).is_some_and(|x| {
-                    x.attachments
+                    x.wires
                         .iter()
-                        .any(|a| (a.set, a.phase) == (set, phase))
+                        .any(|w| wires.iter().any(|r| r.label == w.label))
                 })
             });
         Some(Self {
             new: false,
             structure: id.to_owned(),
             set,
-            phase,
-            label: a.label.clone(),
-            top: local(a.insulator_point),
-            bottom: local(a.wire_point),
-            legs: a.legs.map(|l| l.map(local)),
-            weight: a.insulator_weight,
-            insulator: a.insulator.clone(),
-            strain: a.strain_member,
-            top_label: a.top_label.clone(),
-            bottom_label: a.bottom_label.clone(),
+            points: s
+                .points
+                .iter()
+                .map(|p| PointRow {
+                    label: p.label.clone(),
+                    at: local(p.position),
+                })
+                .collect(),
+            opened: (
+                strings.iter().map(|x| x.label.clone()).collect(),
+                wires.iter().map(|w| w.label.clone()).collect(),
+            ),
+            wires,
+            strings,
             overrides_type,
         })
     }
 
-    /// String length, m.
-    pub fn length(&self) -> f64 {
-        let d = [0, 1, 2].map(|k| self.bottom[k] - self.top[k]);
-        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+    /// The strings holding the wire point of string `label` of structure
+    /// `id` (one with a set among them).
+    pub fn of_string(model: &Model, id: &str, label: &str) -> Option<Self> {
+        let s = model.line.structure(id)?;
+        let x = s.string(label)?;
+        let c = s.component(&x.wire);
+        let set = c.wires.iter().find_map(|&i| s.wires[i].set)?;
+        Self::of(model, id, set)
     }
 
-    /// This string put on structure `s` (as stored), replacing the one
-    /// with its set and phase (and no longer left out of its type).
-    pub fn apply_to(&self, s: &mut Structure) {
-        let key = (self.set, self.phase);
-        let global = |p| to_global(s.position, s.orientation_deg, p);
-        let a = Attachment {
-            set: self.set,
-            phase: self.phase,
-            label: self.label.clone(),
-            insulator_point: global(self.top),
-            wire_point: global(self.bottom),
-            insulator_weight: self.weight,
-            insulator: self.insulator.clone(),
-            // Set from the insulator library when the line is resolved.
-            insulator_wind_area: 0.0,
-            legs: self.legs.map(|l| l.map(global)),
-            top_label: self.top_label.clone(),
-            bottom_label: self.bottom_label.clone(),
-            strain_member: self.strain,
+    /// A label like `stem` not taken on the structure nor in the form.
+    fn free_label(&self, model: &Model, stem: &str) -> String {
+        let s = model.line.structure(&self.structure);
+        let taken = |l: &str| {
+            self.points.iter().any(|p| p.label == l)
+                || self.wires.iter().any(|w| w.label == l)
+                || self.strings.iter().any(|x| x.label == l)
+                || s.is_some_and(|s| s.node(l).is_some() || s.string(l).is_some())
         };
-        s.attachments.retain(|x| (x.set, x.phase) != key);
-        s.omit.retain(|k| *k != [self.set, self.phase]);
-        s.attachments.push(a);
-        s.attachments.sort_by_key(|a| (a.set, a.phase));
+        if !taken(stem) {
+            return stem.to_owned();
+        }
+        (2..)
+            .map(|n| format!("{stem}.{n}"))
+            .find(|l| !taken(l))
+            .expect("a free label")
     }
 
-    fn command(&self, stored: Option<&Line>, reset: bool) -> Result<(String, Command), String> {
+    /// Replaces the strings and wire points by a preset hanging from `top`
+    /// (local): new points, wire points and strings, the set(s) from the
+    /// form's.
+    pub fn preset(&mut self, preset: Preset, top: [f64; 3], model: &Model) {
+        let set = self.set;
+        // Points the earlier preset added (not on the structure) go.
+        let on_structure = model.line.structure(&self.structure);
+        self.points
+            .retain(|p| on_structure.is_some_and(|s| s.point(&p.label).is_some()));
+        self.wires.clear();
+        self.strings.clear();
+        let at = |d: [f64; 3]| [top[0] + d[0], top[1] + d[1], top[2] + d[2]];
+        let point = |form: &mut Self, stem: &str, d: [f64; 3]| {
+            let label = form.free_label(model, stem);
+            form.points.push(PointRow {
+                label: label.clone(),
+                at: at(d),
+            });
+            label
+        };
+        let wire = |form: &mut Self, stem: &str, d: [f64; 3], set: Option<u32>| {
+            let label = form.free_label(model, stem);
+            form.wires.push(WireRow {
+                label: label.clone(),
+                at: at(d),
+                set,
+            });
+            label
+        };
+        let string = |form: &mut Self, stem: &str, top: &str, wire: &str, strain: bool| {
+            let label = form.free_label(model, stem);
+            form.strings.push(StringRow {
+                label,
+                top: top.to_owned(),
+                wire: wire.to_owned(),
+                strain,
+                ..Default::default()
+            });
+        };
+        match preset {
+            Preset::I => {
+                let a = point(self, &format!("A{set}"), [0.0; 3]);
+                let w = wire(self, &format!("W{set}"), [0.0, 0.0, -3.0], Some(set));
+                string(self, &format!("S{set}"), &a, &w, false);
+            }
+            Preset::V | Preset::VAndString => {
+                let l = point(self, &format!("A{set}-L"), [-2.0, 0.0, 0.0]);
+                let r = point(self, &format!("A{set}-R"), [2.0, 0.0, 0.0]);
+                let tip = if preset == Preset::V {
+                    wire(self, &format!("W{set}"), [0.0, 0.0, -3.0], Some(set))
+                } else {
+                    wire(self, &format!("V{set}"), [0.0, 0.0, -3.0], None)
+                };
+                string(self, &format!("S{set}-L"), &l, &tip, false);
+                string(self, &format!("S{set}-R"), &r, &tip, false);
+                if preset == Preset::VAndString {
+                    let w = wire(self, &format!("W{set}"), [0.0, 0.0, -3.5], Some(set));
+                    string(self, &format!("S{set}"), &tip, &w, false);
+                }
+            }
+            Preset::Tak => {
+                let a = point(self, &format!("A{set}"), [0.0; 3]);
+                let n = wire(self, &format!("N{set}"), [0.0, 0.0, -3.0], None);
+                let b = wire(self, &format!("W{set}"), [0.0, -3.0, -3.0], Some(set));
+                let f = wire(
+                    self,
+                    &format!("W{}", set + 1),
+                    [0.0, 3.0, -3.0],
+                    Some(set + 1),
+                );
+                string(self, &format!("S{set}"), &a, &n, false);
+                string(self, &format!("S{set}-B"), &n, &b, true);
+                string(self, &format!("S{set}-F"), &n, &f, true);
+            }
+        }
+    }
+
+    /// A string's length, m (from its rows' positions).
+    pub fn length(&self, x: &StringRow) -> Option<f64> {
+        let at = |l: &str| {
+            self.points
+                .iter()
+                .find(|p| p.label == l)
+                .map(|p| p.at)
+                .or_else(|| self.wires.iter().find(|w| w.label == l).map(|w| w.at))
+        };
+        let (a, b) = (at(&x.top)?, at(&x.wire)?);
+        Some((0..3).map(|k| (b[k] - a[k]).powi(2)).sum::<f64>().sqrt())
+    }
+
+    /// The form put on structure `s` (as stored): its strings and wire
+    /// points as the structure's own (replacing those it was opened with;
+    /// for a typed structure, over the type's), its points where new or
+    /// moved from `resolved` (the structure as resolved).
+    pub fn apply_to(&self, s: &mut Structure, resolved: Option<&Structure>) {
+        let global = |p| to_global(s.position, s.orientation_deg, p);
+        for p in &self.points {
+            let position = global(p.at);
+            let same = resolved
+                .and_then(|r| r.point(&p.label))
+                .is_some_and(|q| (0..3).all(|k| (q.position[k] - position[k]).abs() < 1e-6));
+            if same && s.point(&p.label).is_none() {
+                continue;
+            }
+            s.points.retain(|q| q.label != p.label);
+            s.points.push(StructurePoint {
+                label: p.label.clone(),
+                position,
+            });
+        }
+        let (strings, wires) = &self.opened;
+        s.strings.retain(|x| !strings.contains(&x.label));
+        s.wires.retain(|w| !wires.contains(&w.label));
+        for w in &self.wires {
+            s.wires.retain(|v| v.label != w.label);
+            s.wires.push(WirePoint {
+                label: w.label.clone(),
+                position: global(w.at),
+                set: w.set,
+            });
+        }
+        for x in &self.strings {
+            s.strings.retain(|y| y.label != x.label);
+            s.strings.push(InsulatorString {
+                label: x.label.clone(),
+                top: x.top.clone(),
+                wire: x.wire.clone(),
+                insulator: x.insulator.clone(),
+                weight: x.weight,
+                compression: x.compression,
+                strain: x.strain,
+                ..Default::default()
+            });
+        }
+        if s.structure_type.is_some() {
+            let now: Vec<&str> = self
+                .strings
+                .iter()
+                .map(|x| x.label.as_str())
+                .chain(self.wires.iter().map(|w| w.label.as_str()))
+                .collect();
+            s.omit.retain(|l| !now.contains(&l.as_str()));
+            s.omit_sets
+                .retain(|set| !self.wires.iter().any(|w| w.set == Some(*set)));
+            // Those taken away from the type's stay out.
+            for l in strings.iter().chain(wires) {
+                if !now.contains(&l.as_str()) && !s.omit.contains(l) {
+                    s.omit.push(l.clone());
+                }
+            }
+        }
+    }
+
+    fn command(
+        &self,
+        stored: Option<&Line>,
+        resolved: &Line,
+        reset: bool,
+    ) -> Result<(String, Command), String> {
         let mut s = stored
             .and_then(|l| l.structure(&self.structure))
             .ok_or_else(|| format!("no structure {}", self.structure))?
             .clone();
         if reset {
-            s.attachments
-                .retain(|x| (x.set, x.phase) != (self.set, self.phase));
-            s.omit.retain(|k| *k != [self.set, self.phase]);
+            let (strings, wires) = &self.opened;
+            s.strings.retain(|x| !strings.contains(&x.label));
+            s.wires.retain(|w| !wires.contains(&w.label));
+            s.omit
+                .retain(|l| !strings.contains(l) && !wires.contains(l));
+            s.omit_sets.retain(|set| *set != self.set);
         } else {
-            self.apply_to(&mut s);
+            self.apply_to(&mut s, resolved.structure(&self.structure));
         }
         let what = if reset {
-            format!(
-                "string {}:{} of {} back to its type",
-                self.set, self.phase, self.structure
-            )
+            format!("set {} of {} back to its type", self.set, self.structure)
         } else {
             format!(
-                "{} string {}:{} of {}",
+                "{} the strings of set {} of {}",
                 if self.new { "added" } else { "changed" },
                 self.set,
-                self.phase,
                 self.structure
             )
         };
@@ -1216,8 +1459,8 @@ impl Form {
         match self {
             Form::Structure(f) if f.new => "Add structure".into(),
             Form::Structure(f) => format!("Structure {}", f.id),
-            Form::String(f) if f.new => format!("Add string to {}", f.structure),
-            Form::String(f) => format!("String {}:{} of {}", f.set, f.phase, f.structure),
+            Form::String(f) if f.new => format!("Add strings to {}", f.structure),
+            Form::String(f) => format!("Strings of set {} of {}", f.set, f.structure),
             Form::Section(f) if f.new => "String wire: new section".into(),
             Form::Section(f) => format!("Section {}", f.id),
             Form::Alignment(f) => format!("Alignment point {} of {}", f.index + 1, f.route),
@@ -1233,18 +1476,19 @@ impl Form {
             Form::Structure(f) => f.command(stored),
             Form::String(f) => {
                 if f.new
-                    && model.line.structure(&f.structure).is_some_and(|s| {
-                        s.attachments
-                            .iter()
-                            .any(|a| (a.set, a.phase) == (f.set, f.phase))
+                    && let Some(set) = f.wires.iter().filter_map(|w| w.set).find(|set| {
+                        model
+                            .line
+                            .structure(&f.structure)
+                            .is_some_and(|s| s.wire_at_set(*set).is_some())
                     })
                 {
                     return Err(format!(
-                        "{} has a string {}:{} already",
-                        f.structure, f.set, f.phase
+                        "{} has a wire point with set {set} already",
+                        f.structure
                     ));
                 }
-                f.command(stored, reset)
+                f.command(stored, &model.line, reset)
             }
             Form::Section(f) => {
                 // Its circuit's other sections take its name, phase and
@@ -1312,17 +1556,6 @@ fn value(ui: &mut egui::Ui, v: &mut f64, speed: f64, suffix: &str) -> egui::Resp
             .max_decimals(3)
             .suffix(suffix),
     )
-}
-
-fn xyz(ui: &mut egui::Ui, label: &str, p: &mut [f64; 3], names: [&str; 3]) {
-    ui.label(label);
-    ui.horizontal(|ui| {
-        for k in 0..3 {
-            ui.label(names[k]);
-            value(ui, &mut p[k], 0.05, " m");
-        }
-    });
-    ui.end_row();
 }
 
 fn structure_ui(ui: &mut egui::Ui, f: &mut StructureForm, model: &Model) {
@@ -1395,65 +1628,243 @@ fn structure_ui(ui: &mut egui::Ui, f: &mut StructureForm, model: &Model) {
 fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
     let mut reset = false;
     let axes = ["across", "along", "up"];
-    egui::Grid::new("string-form")
-        .num_columns(2)
-        .show(ui, |ui| {
-            ui.label("set : phase");
-            ui.add_enabled_ui(f.new, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut f.set).range(1..=999));
-                    ui.label(":");
-                    ui.add(egui::DragValue::new(&mut f.phase).range(1..=99));
+    if f.new {
+        ui.horizontal(|ui| {
+            ui.label("set");
+            ui.add(egui::DragValue::new(&mut f.set).range(1..=9999));
+            ui.label("shape");
+            let top = f
+                .strings
+                .first()
+                .and_then(|x| f.points.iter().find(|p| p.label == x.top))
+                .map_or([0.0, 0.0, 20.0], |p| p.at);
+            let mut chosen = None;
+            egui::ComboBox::from_id_salt("string-preset")
+                .selected_text("replace with…")
+                .show_ui(ui, |ui| {
+                    for p in Preset::ALL {
+                        if ui.selectable_label(false, p.name()).clicked() {
+                            chosen = Some(p);
+                        }
+                    }
                 });
-            });
-            ui.end_row();
-            ui.label("label");
-            ui.add(egui::TextEdit::singleline(&mut f.label).desired_width(140.0));
-            ui.end_row();
-            xyz(ui, "insulator point", &mut f.top, axes);
-            xyz(ui, "wire point", &mut f.bottom, axes);
-            if let Some(legs) = &mut f.legs {
-                xyz(ui, "V leg 1", &mut legs[0], axes);
-                xyz(ui, "V leg 2", &mut legs[1], axes);
+            if let Some(p) = chosen {
+                f.preset(p, top, model);
             }
-            ui.label("length");
-            let mut len = f.length();
-            if value(ui, &mut len, 0.01, " m")
-                .on_hover_text("Changes the wire point: straight below the insulator point")
-                .changed()
-            {
-                f.bottom = [f.top[0], f.top[1], f.top[2] - len.max(0.0)];
+        });
+    }
+    let used: Vec<String> = f
+        .strings
+        .iter()
+        .map(|x| x.top.clone())
+        .chain(
+            model
+                .line
+                .structure(&f.structure)
+                .into_iter()
+                .flat_map(|s| {
+                    s.strings
+                        .iter()
+                        .filter(|x| !f.opened.0.contains(&x.label))
+                        .map(|x| x.top.clone())
+                }),
+        )
+        .collect();
+    egui::ScrollArea::vertical()
+        .max_height(420.0)
+        .show(ui, |ui| {
+            ui.strong("Points on the structure");
+            let mut remove = None;
+            egui::Grid::new("string-points")
+                .num_columns(3)
+                .show(ui, |ui| {
+                    for (k, p) in f.points.iter_mut().enumerate() {
+                        ui.add(egui::TextEdit::singleline(&mut p.label).desired_width(90.0));
+                        ui.horizontal(|ui| {
+                            for (i, name) in axes.iter().enumerate() {
+                                ui.label(*name);
+                                value(ui, &mut p.at[i], 0.05, " m");
+                            }
+                        });
+                        if !used.contains(&p.label) && ui.small_button("×").clicked() {
+                            remove = Some(k);
+                        }
+                        ui.end_row();
+                    }
+                });
+            if let Some(k) = remove {
+                f.points.remove(k);
             }
-            ui.end_row();
-            ui.label("weight");
-            value(ui, &mut f.weight, 1.0, " N");
-            ui.end_row();
+            if ui.small_button("+ point").clicked() {
+                let label = f.free_label(model, "A");
+                let at = f.points.last().map_or([0.0, 0.0, 20.0], |p| p.at);
+                f.points.push(PointRow { label, at });
+            }
+            ui.separator();
+            ui.strong("Wire points");
+            let mut remove = None;
+            egui::Grid::new("string-wires")
+                .num_columns(4)
+                .show(ui, |ui| {
+                    for (k, w) in f.wires.iter_mut().enumerate() {
+                        ui.add(egui::TextEdit::singleline(&mut w.label).desired_width(90.0));
+                        ui.horizontal(|ui| {
+                            let mut has = w.set.is_some();
+                            if ui
+                                .checkbox(&mut has, "set")
+                                .on_hover_text(
+                                    "A wire is clamped here (sections and jumpers end on its set)",
+                                )
+                                .changed()
+                            {
+                                w.set = has.then_some(f.set);
+                            }
+                            if let Some(set) = &mut w.set {
+                                ui.add(egui::DragValue::new(set).range(1..=9999));
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            for (i, name) in axes.iter().enumerate() {
+                                ui.label(*name);
+                                value(ui, &mut w.at[i], 0.05, " m");
+                            }
+                        });
+                        if ui.small_button("×").clicked() {
+                            remove = Some(k);
+                        }
+                        ui.end_row();
+                    }
+                });
+            if let Some(k) = remove {
+                let label = f.wires.remove(k).label;
+                f.strings.retain(|x| x.wire != label && x.top != label);
+            }
+            if ui.small_button("+ wire point").clicked() {
+                let label = f.free_label(model, "W");
+                let at = f.wires.last().map_or([0.0, 0.0, 17.0], |w| w.at);
+                f.wires.push(WireRow {
+                    label,
+                    at: [at[0], at[1], at[2] - 1.0],
+                    set: None,
+                });
+            }
+            ui.separator();
+            ui.strong("Strings");
+            let tops: Vec<String> = f
+                .points
+                .iter()
+                .map(|p| p.label.clone())
+                .chain(f.wires.iter().map(|w| w.label.clone()))
+                .collect();
+            let wires: Vec<String> = f.wires.iter().map(|w| w.label.clone()).collect();
             let insulators: Vec<String> = model
                 .types
                 .as_ref()
                 .map(|(_, i)| i.iter().map(|a| a.id.clone()).collect())
                 .unwrap_or_default();
-            if !insulators.is_empty() || f.insulator.is_some() {
-                ui.label("insulator");
-                egui::ComboBox::from_id_salt("string-insulator")
-                    .selected_text(f.insulator.as_deref().unwrap_or("(none)"))
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut f.insulator, None, "(none)");
-                        for i in &insulators {
-                            ui.selectable_value(&mut f.insulator, Some(i.clone()), i);
-                        }
-                    });
-                ui.end_row();
+            let lengths: Vec<Option<f64>> = f.strings.iter().map(|x| f.length(x)).collect();
+            let mut remove = None;
+            egui::Grid::new("string-strings")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    for (k, x) in f.strings.iter_mut().enumerate() {
+                        ui.add(egui::TextEdit::singleline(&mut x.label).desired_width(90.0));
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("from");
+                                egui::ComboBox::from_id_salt(("string-top", k))
+                                    .selected_text(&x.top)
+                                    .show_ui(ui, |ui| {
+                                        for t in &tops {
+                                            ui.selectable_value(&mut x.top, t.clone(), t);
+                                        }
+                                    });
+                                ui.label("to");
+                                egui::ComboBox::from_id_salt(("string-wire", k))
+                                    .selected_text(&x.wire)
+                                    .show_ui(ui, |ui| {
+                                        for w in &wires {
+                                            ui.selectable_value(&mut x.wire, w.clone(), w);
+                                        }
+                                    });
+                                match lengths[k] {
+                                    Some(l) => ui.label(format!("{l:.3} m")),
+                                    None => ui.label("—"),
+                                };
+                                if ui.small_button("×").clicked() {
+                                    remove = Some(k);
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("weight");
+                                value(ui, &mut x.weight, 1.0, " N");
+                                if !insulators.is_empty() || x.insulator.is_some() {
+                                    egui::ComboBox::from_id_salt(("string-insulator", k))
+                                        .selected_text(
+                                            x.insulator.as_deref().unwrap_or("(no insulator)"),
+                                        )
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(
+                                                &mut x.insulator,
+                                                None,
+                                                "(no insulator)",
+                                            );
+                                            for i in &insulators {
+                                                ui.selectable_value(
+                                                    &mut x.insulator,
+                                                    Some(i.clone()),
+                                                    i,
+                                                );
+                                            }
+                                        });
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                let mut both = x.compression.is_some();
+                                if ui
+                                    .checkbox(&mut both, "takes compression up to")
+                                    .on_hover_text("It acts both ways; beyond this it is flagged")
+                                    .changed()
+                                {
+                                    x.compression = both.then_some(1000.0);
+                                }
+                                if let Some(c) = &mut x.compression {
+                                    value(ui, c, 10.0, " N");
+                                    *c = c.max(0.0);
+                                }
+                                ui.checkbox(&mut x.strain, "strain (along its conductor)");
+                            });
+                        });
+                        ui.end_row();
+                    }
+                });
+            if let Some(k) = remove {
+                f.strings.remove(k);
+            }
+            if ui.small_button("+ string").clicked()
+                && let (Some(top), Some(wire)) = (tops.first(), wires.first())
+            {
+                let label = f.free_label(model, "S");
+                f.strings.push(StringRow {
+                    label,
+                    top: top.clone(),
+                    wire: wire.clone(),
+                    ..Default::default()
+                });
             }
         });
-    ui.checkbox(&mut f.strain, "strain string (free along its conductor)");
     ui.label(
-        egui::RichText::new("In the structure's axes: across (to the right looking ahead), along (ahead), up from its base.")
-            .small(),
+        egui::RichText::new(
+            "In the structure's axes: across (to the right looking ahead), along (ahead), up from its base. \
+             A string's length is the distance from its top to its wire point.",
+        )
+        .small(),
     );
     if f.overrides_type {
-        ui.label(egui::RichText::new("This string overrides the structure type's.").small());
-        reset = ui.button("Back to the type's string").clicked();
+        ui.label(
+            egui::RichText::new("These strings are the structure's own, over its type's.").small(),
+        );
+        reset = ui.button("Back to the type's strings").clicked();
     }
     reset
 }
@@ -1681,7 +2092,7 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
     let text: Vec<String> = f
         .points
         .iter()
-        .map(|p| format!("{} {}:{}", p.structure, p.set, p.phase))
+        .map(|p| format!("{} set {}", p.structure, p.set))
         .collect();
     ui.label(egui::RichText::new(text.join(" → ")).small());
     ui.button("Pick points again")
@@ -1767,12 +2178,12 @@ pub fn new_jumper(
         return Err("a jumper joins two different strings".into());
     }
     let (a, b) = (
-        line.attachment(from)
-            .ok_or_else(|| format!("no string {} {}:{}", from.structure, from.set, from.phase))?,
-        line.attachment(to)
-            .ok_or_else(|| format!("no string {} {}:{}", to.structure, to.set, to.phase))?,
+        line.wire_point(from)
+            .ok_or_else(|| format!("no wire point {} set {}", from.structure, from.set))?,
+        line.wire_point(to)
+            .ok_or_else(|| format!("no wire point {} set {}", to.structure, to.set))?,
     );
-    let d = [0, 1, 2].map(|k| b.wire_point[k] - a.wire_point[k]);
+    let d = [0, 1, 2].map(|k| b.position[k] - a.position[k]);
     let chord = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
     let cable = line
         .sections

@@ -1,25 +1,43 @@
 # Derived from the geometry of an existing line — check and complete.
 format = "ols-structure"
-version = 1
+version = 2
 id = "type-04"
 name = "type-04 (1 structures, e.g. T5)"
 kind = "other"
 source = "derived from: T5"
 
-[[attachment]]
-set = 1
-phase = 1
-label = "dead-end"
+[[point]]
+label = "A1"
 point = ["6.000 m", "0.000 m", "30.000 m"]
-string = { length = "5.025 m", weight = "0.0 N", top = "A1-1", bottom = "W1-1" }
+
+[[wire]]
+label = "W1"
+set = 1
+
+[[string]]
+label = "S1"
+top = "A1"
+wire = "W1"
+length = "5.025 m"
+weight = "0.0 N"
+strain = true
 side = "back"
 
-[[attachment]]
-set = 1
-phase = 2
-label = "dead-end"
+[[point]]
+label = "A11"
 point = ["-6.000 m", "0.000 m", "30.000 m"]
-string = { length = "5.025 m", weight = "0.0 N", top = "A1-2", bottom = "W1-2" }
+
+[[wire]]
+label = "W11"
+set = 11
+
+[[string]]
+label = "S11"
+top = "A11"
+wire = "W11"
+length = "5.025 m"
+weight = "0.0 N"
+strain = true
 side = "back"
 
 # Capacity (invented values for the example): allowable spans by line
@@ -32,16 +50,14 @@ weight_span = "500 m"
 min_weight_span = "-50 m"
 
 [[capacity.attachment]]
-set = 1
-phase = 1
+point = "A1"
 vertical = "10 kN"
 uplift = "5 kN"
 transverse = "10 kN"
 longitudinal = "40 kN"
 
 [[capacity.attachment]]
-set = 1
-phase = 2
+point = "A11"
 vertical = "10 kN"
 uplift = "5 kN"
 transverse = "10 kN"

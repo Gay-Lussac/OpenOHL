@@ -125,26 +125,26 @@ pub fn ui(
                 });
             }
             ui.separator();
-            ui.label(egui::RichText::new("Attachments").strong());
+            ui.label(egui::RichText::new("Wire points").strong());
             egui::Grid::new("attachments").striped(true).show(ui, |ui| {
-                for h in ["set", "phase", "label", "string", "clamp z", "weight"] {
+                for h in ["set", "label", "strings", "z", "weight"] {
                     ui.label(egui::RichText::new(h).small());
                 }
                 ui.end_row();
-                for a in &s.attachments {
-                    ui.label(a.set.to_string());
-                    ui.label(a.phase.to_string());
-                    ui.label(&a.label);
-                    let kind = if a.legs.is_some() {
-                        "V-string"
-                    } else if a.strain_member {
-                        "strain"
-                    } else {
-                        "I / fixed"
-                    };
-                    ui.label(kind);
-                    ui.label(format!("{:.2}", a.wire_point[2]));
-                    ui.label(format!("{:.0} N", a.insulator_weight));
+                for w in &s.wires {
+                    ui.label(w.set.map_or(String::new(), |x| x.to_string()));
+                    ui.label(&w.label);
+                    let on: Vec<&ols_line::InsulatorString> = s.strings_to(&w.label).collect();
+                    ui.label(match on.len() {
+                        0 => "fixed".to_owned(),
+                        _ => on
+                            .iter()
+                            .map(|x| format!("{} from {}", x.label, x.top))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    });
+                    ui.label(format!("{:.2}", w.position[2]));
+                    ui.label(format!("{:.0} N", on.iter().map(|x| x.weight).sum::<f64>()));
                     ui.end_row();
                 }
             });
@@ -187,60 +187,54 @@ pub fn ui(
                 }
             }
         }
-        Selection::Attachment {
-            structure,
-            set,
-            phase,
-        } => {
-            let at = ols_line::SectionPoint {
-                structure: structure.clone(),
-                set,
-                phase,
-            };
-            let Some(a) = line.attachment(&at) else {
-                ui.label(format!(
-                    "{structure} set {set} phase {phase}: not in the line"
-                ));
+        Selection::Attachment { structure, set } => {
+            let at = ols_line::SectionPoint::new(structure.clone(), set);
+            let Some(st) = line.structure(&structure) else {
+                ui.label(format!("{structure}: not in the line"));
                 return;
             };
-            ui.heading(format!("{structure} set {set} phase {phase}"));
+            let Some(w) = st.wire_at_set(set) else {
+                ui.label(format!("{structure} set {set}: not in the line"));
+                return;
+            };
+            ui.heading(format!("{structure} set {set}"));
             if ui.link(format!("structure {structure}")).clicked() {
                 next = Some(Selection::Structure(structure.clone()));
             }
-            let d = [0, 1, 2].map(|k| a.wire_point[k] - a.insulator_point[k]);
             let p3 = |p: [f64; 3]| format!("{:.3}, {:.3}, {:.3}", p[0], p[1], p[2]);
-            grid(
-                ui,
-                "attachment",
-                &[
-                    ("label", a.label.clone()),
-                    (
-                        "string",
-                        if a.legs.is_some() {
-                            "V-string".into()
-                        } else if a.strain_member {
-                            "strain string".into()
-                        } else {
-                            "I-string / fixed".into()
-                        },
+            let c = st.component(&w.label);
+            let mut rows: Vec<(&str, String)> = vec![
+                ("wire point", format!("{} at {}", w.label, p3(w.position))),
+                (
+                    "held by",
+                    if c.strings.is_empty() {
+                        "fixed to the structure".into()
+                    } else {
+                        format!("{} strings", c.strings.len())
+                    },
+                ),
+            ];
+            for &i in &c.strings {
+                let x = &st.strings[i];
+                rows.push((
+                    "string",
+                    format!(
+                        "{}: {} → {}, {:.3} m, {:.0} N{}{}{}",
+                        x.label,
+                        x.top,
+                        x.wire,
+                        st.string_length(x).unwrap_or(0.0),
+                        x.weight,
+                        x.insulator
+                            .as_deref()
+                            .map_or(String::new(), |i| format!(", {i}")),
+                        x.compression
+                            .map_or(String::new(), |c| format!(", up to {c:.0} N compression")),
+                        if x.strain { ", strain" } else { "" }
                     ),
-                    ("insulator point", p3(a.insulator_point)),
-                    ("wire point", p3(a.wire_point)),
-                    (
-                        "string length",
-                        format!("{:.3} m", (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()),
-                    ),
-                    ("weight", format!("{:.0} N", a.insulator_weight)),
-                    (
-                        "insulator assembly",
-                        a.insulator.clone().unwrap_or_else(|| "—".into()),
-                    ),
-                    (
-                        "top / bottom labels",
-                        format!("{} / {}", a.top_label, a.bottom_label),
-                    ),
-                ],
-            );
+                ));
+            }
+            grid(ui, "attachment", &rows.iter().map(|(a, b)| (*a, b.clone())).collect::<Vec<_>>());
             ui.separator();
             ui.label(egui::RichText::new("Spans at this attachment").strong());
             for sec in &line.sections {
@@ -350,10 +344,7 @@ pub fn ui(
             ui.horizontal(|ui| {
                 for end in [&j.from, &j.to] {
                     if ui
-                        .link(format!(
-                            "{} set {} phase {}",
-                            end.structure, end.set, end.phase
-                        ))
+                        .link(format!("{} set {}", end.structure, end.set))
                         .clicked()
                     {
                         next = Some(Selection::Structure(end.structure.clone()));

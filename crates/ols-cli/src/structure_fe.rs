@@ -95,9 +95,10 @@ fn csv_fields(line: &str) -> Vec<String> {
     fields
 }
 
-/// Factored loads of one structure by case: (set, phase, [transverse,
-/// longitudinal, vertical down]) summed over the supports, in file order.
-type CaseLoads = Vec<(String, Vec<(u32, u32, [f64; 3])>)>;
+/// Factored loads of one structure by case: (point label, [transverse,
+/// longitudinal, vertical down]), in file order (the wind on the structure
+/// body, at no point, left out).
+type CaseLoads = Vec<(String, Vec<(String, [f64; 3])>)>;
 
 fn read_loads(path: &Path, structure: &str, cases: &[String]) -> Result<CaseLoads, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -109,8 +110,7 @@ fn read_loads(path: &Path, structure: &str, cases: &[String]) -> Result<CaseLoad
             .position(|h| h == name)
             .ok_or_else(|| format!("{}: no column {name}", path.display()))
     };
-    let (c_case, c_structure, c_set, c_phase) =
-        (col("case")?, col("structure")?, col("set")?, col("phase")?);
+    let (c_case, c_structure, c_point) = (col("case")?, col("structure")?, col("point")?);
     let forces = [
         col("factored_transverse")?,
         col("factored_longitudinal")?,
@@ -130,8 +130,10 @@ fn read_loads(path: &Path, structure: &str, cases: &[String]) -> Result<CaseLoad
         if !cases.is_empty() && !cases.iter().any(|c| ols_weather::name_matches(c, &case)) {
             continue;
         }
-        let set: u32 = get(c_set).parse().map_err(|_| bad("set"))?;
-        let phase: u32 = get(c_phase).parse().map_err(|_| bad("phase"))?;
+        let point = get(c_point).to_owned();
+        if point.is_empty() {
+            continue;
+        }
         let mut v = [0.0; 3];
         for (x, c) in v.iter_mut().zip(forces) {
             *x = get(c).parse().map_err(|_| bad("force"))?;
@@ -144,13 +146,13 @@ fn read_loads(path: &Path, structure: &str, cases: &[String]) -> Result<CaseLoad
             }
         };
         let list = &mut out[pos].1;
-        match list.iter_mut().find(|(s, p, _)| *s == set && *p == phase) {
-            Some((_, _, sum)) => {
+        match list.iter_mut().find(|(p, _)| *p == point) {
+            Some((_, sum)) => {
                 for (a, b) in sum.iter_mut().zip(v) {
                     *a += b;
                 }
             }
-            None => list.push((set, phase, v)),
+            None => list.push((point, v)),
         }
     }
     if out.is_empty() {
@@ -200,9 +202,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             .into_iter()
             .map(|(case, at)| {
                 let mut nodal = Vec::new();
-                for (set, phase, [t, l, v]) in at {
-                    let node = model.attachment_node(set, phase).ok_or_else(|| {
-                        format!("{case}: the model has no node for attachment {set}:{phase}")
+                for (point, [t, l, v]) in at {
+                    let node = model.attachment_node(&point).ok_or_else(|| {
+                        format!("{case}: the model has no node for point {point}")
                     })?;
                     nodal.push(NodalLoad {
                         node,
@@ -321,14 +323,12 @@ pub fn pole(args: &PoleArgs) -> Result<(), String> {
     let mut by_case: Vec<(String, Vec<PoleLoad>)> = Vec::new();
     for (case, at) in read_loads(&args.loads, &args.structure, &args.case)? {
         let mut loads = Vec::new();
-        for (set, phase, [tr, lo, ve]) in at {
-            let a = t
-                .attachments
-                .iter()
-                .find(|a| a.set == set && a.phase == phase)
-                .ok_or_else(|| format!("type {} has no attachment {set}:{phase}", t.id))?;
+        for (label, [tr, lo, ve]) in at {
+            let point = t
+                .point_local(&label, None)
+                .ok_or_else(|| format!("type {} has no point {label}", t.id))?;
             loads.push(PoleLoad {
-                point: a.point.map(|x| x.si()),
+                point,
                 force: [tr, lo, -ve],
             });
         }
@@ -365,19 +365,20 @@ mod tests {
         let path = dir.join("loads.csv");
         std::fs::write(
             &path,
-            "case,structure,set,phase,label,support,x,y,z,transverse,longitudinal,vertical,\
+            "case,structure,point,label,sets,x,y,z,transverse,longitudinal,vertical,\
              factored_transverse,factored_longitudinal,factored_vertical\n\
-             wind,T2,1,1,\"a, b\",0,0,0,0,1,2,3,10,20,30\n\
-             wind,T2,1,1,,1,0,0,0,1,2,3,1,2,3\n\
-             wind,T3,1,1,,0,0,0,0,1,2,3,5,5,5\n\
-             ice,T2,1,2,,0,0,0,0,1,2,3,4,5,6\n",
+             wind,T2,A1-1,\"a, b\",1,0,0,0,1,2,3,10,20,30\n\
+             wind,T2,A1-1,,1,0,0,0,1,2,3,1,2,3\n\
+             wind,T2,,wind on the structure,,0,0,0,1,2,3,7,7,7\n\
+             wind,T3,A1-1,,1,0,0,0,1,2,3,5,5,5\n\
+             ice,T2,A1-2,,3001,0,0,0,1,2,3,4,5,6\n",
         )
         .unwrap();
         let r = read_loads(&path, "T2", &[]).unwrap();
         assert_eq!(r.len(), 2);
         assert_eq!(r[0].0, "wind");
-        assert_eq!(r[0].1, vec![(1, 1, [11.0, 22.0, 33.0])]);
-        assert_eq!(r[1].1, vec![(1, 2, [4.0, 5.0, 6.0])]);
+        assert_eq!(r[0].1, vec![("A1-1".to_owned(), [11.0, 22.0, 33.0])]);
+        assert_eq!(r[1].1, vec![("A1-2".to_owned(), [4.0, 5.0, 6.0])]);
         assert_eq!(read_loads(&path, "T2", &["ice".into()]).unwrap().len(), 1);
         let e = read_loads(&path, "T9", &[]).unwrap_err();
         assert!(e.contains("T2, T3"), "{e}");

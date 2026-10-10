@@ -218,12 +218,12 @@ point = ["-0.800 m", "0.800 m", "30.000 m"]
 [[node]]
 id = "A1"
 point = ["6 m", "0 m", "30 m"]
-attachment = [1, 1]
+attachment = "A1"
 
 [[node]]
 id = "A2"
 point = ["-6 m", "0 m", "30 m"]
-attachment = [1, 2]
+attachment = "A11"
 
 [[member]]
 id = "m1"

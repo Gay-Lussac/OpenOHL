@@ -250,12 +250,12 @@ fn screenshot(
         .ok_or("nothing to show")?;
     let mut camera = ols_render::Camera::fit(&bounds);
     if let Some(id) = focus {
-        // Its first attachment's clamp (where the wires are).
+        // Its first wire point (where the wires are).
         let s = model
             .line
             .structure(id)
             .ok_or_else(|| format!("no structure {id}"))?;
-        camera.target = s.attachments.first().map_or(s.position, |a| a.wire_point);
+        camera.target = s.wires.first().map_or(s.position, |w| w.position);
         camera.distance = distance;
         camera.pitch = 20f64.to_radians();
     }

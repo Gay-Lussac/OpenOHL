@@ -140,7 +140,7 @@ pub fn structures(model: &ExportModel) -> Table {
             "orientation_deg",
             "type",
             "extension",
-            "attachments",
+            "sets",
             "routes",
         ],
     );
@@ -153,7 +153,7 @@ pub fn structures(model: &ExportModel) -> Table {
             s.orientation_deg.into(),
             s.structure_type.as_deref().into(),
             s.extension.as_deref().into(),
-            s.attachments.len().into(),
+            s.sets().count().into(),
             line.routes_of(&s.id).join(" ").into(),
         ]);
     }

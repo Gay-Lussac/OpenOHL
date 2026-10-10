@@ -19,13 +19,14 @@ use std::collections::BTreeMap;
 use ols_structures::derive::{Derived, SourceAttachment, SourceStructure, derive};
 use ols_structures::{AssemblyKind, InsulatorLibrary, StructureLibrary};
 
-use crate::{Attachment, Line, LineError};
+use crate::assembly::{AttachmentV1, from_v1};
+use crate::{InsulatorString, Line, LineError, Structure, StructurePoint, WirePoint};
 
-/// Result of comparing a line's attachments with a re-resolved version.
+/// Result of comparing a line's strings with a re-resolved version.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AttachmentCheck {
-    /// Largest deviation, m, of attachment points and insulator lengths
-    /// (clamp positions are equilibrium results and are not compared).
+    /// Largest deviation, m, of string tops and lengths (wire point
+    /// positions are equilibrium results and are not compared).
     pub worst: f64,
     /// Where the largest deviation is.
     pub at: String,
@@ -35,36 +36,51 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }
 
-/// Compares the attachments of `original` with those of `resolved`.
+/// The tops and lengths of the strings each set hangs on directly, in
+/// order.
+fn hanging(s: &Structure, wire: &WirePoint) -> Vec<([f64; 3], f64)> {
+    let mut out: Vec<([f64; 3], f64)> = s
+        .strings_to(&wire.label)
+        .filter_map(|st| Some((s.node(&st.top)?.position(), s.string_length(st)?)))
+        .collect();
+    out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    out
+}
+
+/// Compares the strings of `original` with those of `resolved`, set by
+/// set: the tops of the strings each wire point hangs on and their
+/// lengths.
 pub fn compare_attachments(original: &Line, resolved: &Line) -> AttachmentCheck {
     let mut check = AttachmentCheck {
         worst: 0.0,
         at: String::new(),
     };
     for (s, r) in original.structures.iter().zip(&resolved.structures) {
-        for a in &s.attachments {
-            let Some(b) = r
-                .attachments
-                .iter()
-                .find(|b| b.set == a.set && b.phase == a.phase)
-            else {
+        for w in &s.wires {
+            let Some(set) = w.set else { continue };
+            let Some(v) = r.wire_at_set(set) else {
                 continue;
             };
-            // Attachment points and assembly lengths define the library; clamp
-            // positions are equilibrium results (swung suspension strings at
-            // angles, strain strings along their conductor) and are not
-            // compared.
-            let deviations = [
-                distance(a.insulator_point, b.insulator_point),
-                (distance(a.wire_point, a.insulator_point)
-                    - distance(b.wire_point, b.insulator_point))
-                .abs(),
-            ];
+            // Tops and string lengths define the library; wire point
+            // positions are equilibrium results (swung strings at angles,
+            // strain strings along their conductor) and are not compared.
+            let (a, b) = (hanging(s, w), hanging(r, v));
+            let mut deviations: Vec<f64> = a
+                .iter()
+                .zip(&b)
+                .flat_map(|(x, y)| [distance(x.0, y.0), (x.1 - y.1).abs()])
+                .collect();
+            if a.is_empty() && b.is_empty() {
+                deviations.push(distance(w.position, v.position));
+            }
+            if a.len() != b.len() {
+                deviations.push(f64::INFINITY);
+            }
             for d in deviations {
                 if d > check.worst {
                     check = AttachmentCheck {
                         worst: d,
-                        at: format!("{} set {} phase {}", s.id, a.set, a.phase),
+                        at: format!("{} set {set}", s.id),
                     };
                 }
             }
@@ -79,10 +95,52 @@ fn horizontal_unit(from: [f64; 3], to: [f64; 3]) -> Option<(f64, f64)> {
     (n > 1e-9).then(|| (dx / n, dy / n))
 }
 
+/// The type's items without wire point `label` and what moves with it
+/// (the strings and set-less wire points joined to it).
+fn without_component(
+    strings: &mut Vec<InsulatorString>,
+    wires: &mut Vec<WirePoint>,
+    points: &[StructurePoint],
+    label: &str,
+) {
+    let probe = Structure {
+        id: String::new(),
+        position: [0.0; 3],
+        orientation_deg: 0.0,
+        structure_type: None,
+        extension: None,
+        points: points.to_vec(),
+        strings: strings.clone(),
+        wires: wires.clone(),
+        omit: Vec::new(),
+        omit_sets: Vec::new(),
+        members: Vec::new(),
+    };
+    let c = probe.component(label);
+    let gone: Vec<String> = c
+        .wires
+        .iter()
+        .map(|&k| &probe.wires[k])
+        .filter(|w| w.label == label || w.set.is_none())
+        .map(|w| w.label.clone())
+        .collect();
+    let gone_strings: Vec<String> = c
+        .strings
+        .iter()
+        .map(|&k| probe.strings[k].label.clone())
+        .collect();
+    wires.retain(|w| !gone.contains(&w.label));
+    strings.retain(|s| !gone_strings.contains(&s.label));
+}
+
 impl Line {
-    /// Returns a copy with every typed structure's attachments generated
-    /// from the libraries, explicit attachments kept as overrides, and
-    /// strain assemblies aimed along their conductor; then validates it.
+    /// Returns a copy with every typed structure's points, strings and wire
+    /// points generated from the libraries — the structure's own items
+    /// replacing the type's with the same label (a wire point with a set
+    /// replacing the type's with that set, with what moves with it), those
+    /// in `omit`/`omit_sets` left out — wind areas from the insulator
+    /// library, and strain strings aimed along their conductor; then
+    /// validates it.
     pub fn resolve(
         &self,
         structures: &StructureLibrary,
@@ -108,15 +166,9 @@ impl Line {
                     insulators,
                 )
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
-            let overrides: BTreeMap<(u32, u32), Attachment> = s
-                .attachments
-                .drain(..)
-                .map(|a| ((a.set, a.phase), a))
-                .collect();
-            let mut merged: Vec<Attachment> = placed
+            let attachments: Vec<AttachmentV1> = placed
                 .into_iter()
-                .filter(|p| !s.omit.contains(&[p.set, p.phase]))
-                .map(|p| Attachment {
+                .map(|p| AttachmentV1 {
                     set: p.set,
                     phase: p.phase,
                     label: p.label,
@@ -131,28 +183,94 @@ impl Line {
                     strain_member: p.strain,
                 })
                 .collect();
-            for (key, a) in overrides {
-                match merged.iter_mut().find(|m| (m.set, m.phase) == key) {
-                    Some(m) => *m = a,
-                    None => merged.push(a),
+            let (mut points, mut strings, mut wires) = from_v1(&attachments);
+            let placed = t
+                .place_strings(
+                    s.position,
+                    s.orientation_deg,
+                    s.extension.as_deref(),
+                    insulators,
+                )
+                .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
+            points.extend(placed.points.into_iter().map(|p| StructurePoint {
+                label: p.label,
+                position: p.position,
+            }));
+            wires.extend(placed.wires.into_iter().map(|w| WirePoint {
+                label: w.label,
+                position: w.position,
+                set: w.set,
+            }));
+            strings.extend(placed.strings.into_iter().map(|x| InsulatorString {
+                label: x.label,
+                top: x.top,
+                wire: x.wire,
+                insulator: x.insulator,
+                weight: x.weight,
+                compression: x.compression,
+                strain: x.strain,
+                ..Default::default()
+            }));
+            // Sets replaced by the structure's own wire points, or left out.
+            let replaced: Vec<u32> = s
+                .wires
+                .iter()
+                .filter_map(|w| w.set)
+                .chain(s.omit_sets.iter().copied())
+                .collect();
+            for set in replaced {
+                if let Some(label) = wires
+                    .iter()
+                    .find(|w| w.set == Some(set))
+                    .map(|w| w.label.clone())
+                {
+                    without_component(&mut strings, &mut wires, &points, &label);
                 }
             }
-            s.attachments = merged;
+            points.retain(|p| !s.omit.contains(&p.label));
+            strings.retain(|x| !s.omit.contains(&x.label));
+            wires.retain(|w| !s.omit.contains(&w.label));
+            // The structure's own items over the type's.
+            for p in s.points.drain(..) {
+                points.retain(|q| q.label != p.label);
+                points.push(p);
+            }
+            for x in s.strings.drain(..) {
+                strings.retain(|y| y.label != x.label);
+                strings.push(x);
+            }
+            for w in s.wires.drain(..) {
+                wires.retain(|v| v.label != w.label);
+                wires.push(w);
+            }
+            (s.points, s.strings, s.wires) = (points, strings, wires);
             s.members = t
                 .place_stick(s.position, s.orientation_deg, s.extension.as_deref())
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
         }
 
-        // Wind areas of library assemblies.
+        // Wind areas of library assemblies (a V's shared by its legs).
         for s in &mut line.structures {
-            for a in &mut s.attachments {
-                if let Some(i) = a.insulator.as_deref().and_then(|id| insulators.get(id)) {
-                    a.insulator_wind_area = i.wind_area.si();
+            let legs: BTreeMap<String, usize> = s
+                .strings
+                .iter()
+                .map(|x| (x.wire.clone(), s.strings_to(&x.wire).count()))
+                .collect();
+            for x in &mut s.strings {
+                if let Some(i) = x.insulator.as_deref().and_then(|id| insulators.get(id)) {
+                    let share = if i.kind == AssemblyKind::VString {
+                        1.0 / legs.get(&x.wire).copied().unwrap_or(1).max(1) as f64
+                    } else {
+                        1.0
+                    };
+                    x.wind_area = i.wind_area.si() * share;
                 }
             }
         }
 
-        // Aim strain assemblies of typed structures along their conductor.
+        // Aim the strain strings of typed structures along their conductor:
+        // a wire point hanging on one strain string (from the insulator
+        // library, or flagged), from a structure point.
         let typed: BTreeMap<String, bool> = line
             .structures
             .iter()
@@ -165,62 +283,70 @@ impl Line {
                 if !typed.get(&p.structure).copied().unwrap_or(false) {
                     continue;
                 }
-                let Some(a) = line.attachment(p) else {
+                let Some(s) = line.structure(&p.structure) else {
                     continue;
                 };
-                // Strain strings: from the insulator library, or given in the
-                // structure type (flagged as strain members).
-                let library = a.insulator.as_deref().and_then(|id| insulators.get(id));
+                let Some(wire) = s.wire_at_set(p.set) else {
+                    continue;
+                };
+                let on: Vec<&InsulatorString> = s.strings_to(&wire.label).collect();
+                let [string] = on.as_slice() else {
+                    continue;
+                };
+                let Some(top) = s.point(&string.top) else {
+                    continue;
+                };
+                let library = string
+                    .insulator
+                    .as_deref()
+                    .and_then(|id| insulators.get(id));
                 let strain =
-                    library.is_some_and(|i| i.kind == AssemblyKind::Strain) || a.strain_member;
+                    library.is_some_and(|i| i.kind == AssemblyKind::Strain) || string.strain;
                 if !strain {
                     continue;
                 }
-                let length = {
-                    let (i, w) = (a.insulator_point, a.wire_point);
-                    ((w[0] - i[0]).powi(2) + (w[1] - i[1]).powi(2) + (w[2] - i[2]).powi(2)).sqrt()
+                let Some(length) = s.string_length(string) else {
+                    continue;
                 };
                 // Neighbour: the next point for a section start, the previous
-                // one otherwise.
+                // one otherwise; towards the top of its single string, else
+                // its wire point.
                 let neighbour = if k + 1 < n {
                     &section.points[k + 1]
                 } else {
                     &section.points[k - 1]
                 };
-                let Some(target) = line.attachment(neighbour) else {
+                let Some(target) = line.structure(&neighbour.structure).and_then(|t| {
+                    let w = t.wire_at_set(neighbour.set)?;
+                    let mut on = t.strings_to(&w.label);
+                    match (on.next(), on.next()) {
+                        (Some(x), None) => t.point(&x.top).map(|q| q.position),
+                        _ => None,
+                    }
+                    .or(Some(w.position))
+                }) else {
                     continue;
                 };
                 // Starting position along the 3D chord to the neighbouring
-                // point (slope included); the solver then lets the assembly
+                // point (slope included); the solver then lets the string
                 // settle along its conductor.
-                let d = [
-                    target.insulator_point[0] - a.insulator_point[0],
-                    target.insulator_point[1] - a.insulator_point[1],
-                    target.insulator_point[2] - a.insulator_point[2],
-                ];
+                let i = top.position;
+                let d = [target[0] - i[0], target[1] - i[1], target[2] - i[2]];
                 let norm = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
                 if norm > 1e-9 {
-                    let wire = [
-                        a.insulator_point[0] + d[0] / norm * length,
-                        a.insulator_point[1] + d[1] / norm * length,
-                        a.insulator_point[2] + d[2] / norm * length,
-                    ];
-                    aims.push((p.clone(), wire));
+                    let at = [0, 1, 2].map(|c| i[c] + d[c] / norm * length);
+                    aims.push((p.structure.clone(), wire.label.clone(), at));
                 }
             }
         }
-        for (point, wire) in aims {
+        for (structure, label, at) in aims {
             let s = line
                 .structures
                 .iter_mut()
-                .find(|s| s.id == point.structure)
+                .find(|s| s.id == structure)
                 .expect("checked above");
-            if let Some(a) = s
-                .attachments
-                .iter_mut()
-                .find(|a| a.set == point.set && a.phase == point.phase)
-            {
-                a.wire_point = wire;
+            if let Some(w) = s.wires.iter_mut().find(|w| w.label == label) {
+                w.position = at;
             }
         }
         line.validate()?;
@@ -271,14 +397,16 @@ impl Line {
     /// and a line whose structures reference the derived types.
     pub fn derive_libraries(&self, inline: bool) -> (Derived, Line) {
         let rotations = self.route_rotations();
-        // Attachments where a section starts or ends: always strain points.
-        let ends: std::collections::BTreeSet<(String, u32, u32)> = self
+        // Wire points where a section starts or ends: always strain points.
+        let ends: std::collections::BTreeSet<(String, u32)> = self
             .sections
             .iter()
             .flat_map(|sec| [sec.points.first(), sec.points.last()])
             .flatten()
-            .map(|p| (p.structure.clone(), p.set, p.phase))
+            .map(|p| (p.structure.clone(), p.set))
             .collect();
+        // Each set as one string: from the structure point it hangs on
+        // (the middle of several), or fixed.
         let sources: Vec<SourceStructure> = self
             .structures
             .iter()
@@ -287,16 +415,30 @@ impl Line {
                 position: s.position,
                 rotation_deg: rotations.get(&s.id).copied().unwrap_or(s.orientation_deg),
                 attachments: s
-                    .attachments
+                    .wires
                     .iter()
-                    .map(|a| SourceAttachment {
-                        set: a.set,
-                        phase: a.phase,
-                        label: a.label.clone(),
-                        insulator_point: a.insulator_point,
-                        wire_point: a.wire_point,
-                        section_end: ends.contains(&(s.id.clone(), a.set, a.phase)),
-                        weight: a.insulator_weight,
+                    .filter_map(|w| {
+                        let set = w.set?;
+                        let on: Vec<&InsulatorString> = s.strings_to(&w.label).collect();
+                        let tops: Vec<[f64; 3]> = on
+                            .iter()
+                            .filter_map(|x| s.node(&x.top).map(|n| n.position()))
+                            .collect();
+                        let insulator_point = if tops.is_empty() {
+                            w.position
+                        } else {
+                            [0, 1, 2]
+                                .map(|c| tops.iter().map(|t| t[c]).sum::<f64>() / tops.len() as f64)
+                        };
+                        Some(SourceAttachment {
+                            set,
+                            phase: 1,
+                            label: w.label.clone(),
+                            insulator_point,
+                            wire_point: w.position,
+                            section_end: ends.contains(&(s.id.clone(), set)),
+                            weight: on.iter().map(|x| x.weight).sum(),
+                        })
                     })
                     .collect(),
             })
@@ -311,7 +453,9 @@ impl Line {
             s.structure_type = Some(type_id.clone());
             s.orientation_deg = source.rotation_deg;
             s.extension = None;
-            s.attachments.clear();
+            s.points.clear();
+            s.strings.clear();
+            s.wires.clear();
         }
         (derived, typed)
     }
@@ -357,8 +501,8 @@ mod tests {
             .resolve(&structures, &InsulatorLibrary::default())
             .unwrap();
         assert!(compare_attachments(&line, &resolved).worst < 0.01);
-        let t1 = &resolved.structures[0].attachments[0];
-        assert!(t1.strain_member && t1.insulator.is_none());
+        let t1 = &resolved.structures[0].strings[0];
+        assert!(t1.strain && t1.insulator.is_none());
     }
 
     /// Derive types from the example line, resolve the typed line again and
@@ -406,17 +550,25 @@ mod tests {
         let line = crate::tests::example();
         let (derived, mut typed) = line.derive_libraries(false);
         let (structures, insulators) = libraries(&derived);
-        let mut custom = line.structures[1].attachments[0].clone();
-        custom.insulator_point[2] += 1.0;
-        custom.wire_point[2] += 1.0;
-        typed.structures[1].attachments = vec![custom.clone()];
+        // T2's first string, its top and wire point 1 m higher.
+        let t2 = &line.structures[1];
+        let mut wire = t2.wires[0].clone();
+        let mut string = t2.strings_to(&wire.label).next().unwrap().clone();
+        let mut top = t2.point(&string.top).unwrap().clone();
+        wire.position[2] += 1.0;
+        top.position[2] += 1.0;
+        top.label = "custom top".into();
+        string.top = top.label.clone();
+        typed.structures[1].points = vec![top.clone()];
+        typed.structures[1].strings = vec![string.clone()];
+        typed.structures[1].wires = vec![wire.clone()];
         let resolved = typed.resolve(&structures, &insulators).unwrap();
-        let a = resolved.structures[1]
-            .attachments
-            .iter()
-            .find(|a| a.set == custom.set && a.phase == custom.phase)
-            .unwrap();
-        assert_eq!(a.insulator_point, custom.insulator_point);
+        let r = &resolved.structures[1];
+        let w = r.wire_at_set(wire.set.unwrap()).unwrap();
+        assert_eq!(w.label, wire.label);
+        let on: Vec<_> = r.strings_to(&w.label).collect();
+        assert_eq!(on.len(), 1);
+        assert_eq!(r.point(&on[0].top).unwrap().position, top.position);
     }
 
     /// The committed typed example resolves from its simple pylon files
@@ -433,9 +585,9 @@ mod tests {
         assert!(resolved.structures.iter().all(|s| !s.members.is_empty()));
         assert!(
             resolved.structures[1]
-                .attachments
+                .points
                 .iter()
-                .all(|a| a.top_label.starts_with('A'))
+                .all(|p| p.label.starts_with('A'))
         );
         // The same geometry as the explicit example line.
         let check = compare_attachments(&crate::tests::example(), &resolved);
@@ -456,17 +608,14 @@ mod tests {
         let mut line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
         line.sections.retain(|s| s.id != "S3");
         line.jumpers.clear();
-        line.structures[2].omit.push([2, 1]);
+        line.structures[2].omit_sets.push(2);
         let structures = StructureLibrary::load_dir(&root.join("Structures")).unwrap();
         let resolved = line
             .resolve(&structures, &InsulatorLibrary::default())
             .unwrap();
-        let keys: Vec<(u32, u32)> = resolved.structures[2]
-            .attachments
-            .iter()
-            .map(|a| (a.set, a.phase))
-            .collect();
-        assert_eq!(keys, vec![(1, 1), (1, 2)]);
+        let mut sets: Vec<u32> = resolved.structures[2].sets().collect();
+        sets.sort_unstable();
+        assert_eq!(sets, vec![1, 11]);
     }
 
     /// Free strain strings (from simple pylon files) with a marker ball
@@ -481,12 +630,7 @@ mod tests {
             .resolve(&structures, &InsulatorLibrary::default())
             .unwrap();
         // T1's dead-end strings are free members.
-        assert!(
-            resolved.structures[0]
-                .attachments
-                .iter()
-                .all(|a| a.strain_member)
-        );
+        assert!(resolved.structures[0].strings.iter().all(|s| s.strain));
         for fraction in [0.001, 0.999] {
             resolved.sections[0].loads.push(crate::SpanLoad {
                 span: 0,

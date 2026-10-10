@@ -398,18 +398,21 @@ pub enum Command {
         #[serde(default)]
         confirm: bool,
     },
-    /// Delete a structure's string (attachment `set`:`phase`): an
-    /// explicit one is removed, one of the structure type is left out
-    /// ([`ols_line::Structure::omit`]). The sections through it and the
-    /// jumpers at it (or at those sections) go with it, after a
+    /// Delete a structure's wire point with set `set` and what hangs only
+    /// for it (its strings, and the wire points without a set between
+    /// them): the structure's own are removed, the structure type's left
+    /// out ([`ols_line::Structure::omit_sets`]). The sections through it and
+    /// the jumpers at it (or at those sections) go with it, after a
     /// confirmation as for [`Command::Delete`].
     DeleteAttachment {
         /// Structure id.
         structure: String,
         /// Set.
         set: u32,
-        /// Phase.
-        phase: u32,
+        /// Projects written before: the phase (with `set`, the set number
+        /// [`ols_line::assembly::set_from_v1`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        phase: Option<u32>,
         /// Confirms the listed deletions.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         confirm: bool,
@@ -425,19 +428,21 @@ pub enum Command {
         /// New id.
         new_id: String,
     },
-    /// Renumber a structure's string (an explicit one); the sections and
-    /// jumpers through it follow.
+    /// Renumber a structure's wire point (one of its own) from set `set`
+    /// to `new_set`; the sections and jumpers there follow.
     RenameAttachment {
         /// Structure id.
         structure: String,
         /// Set.
         set: u32,
-        /// Phase.
-        phase: u32,
+        /// Projects written before: the phase.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        phase: Option<u32>,
         /// New set.
         new_set: u32,
-        /// New phase.
-        new_phase: u32,
+        /// Projects written before: the new phase.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        new_phase: Option<u32>,
     },
     /// Rename an electrical system; the sections given it follow.
     RenameSystem {
@@ -610,6 +615,36 @@ impl fmt::Debug for Session {
         f.debug_struct("Session")
             .field("objects", &self.objects.len())
             .finish_non_exhaustive()
+    }
+}
+
+/// Removes the structure's own wire point with set `set` and what hangs
+/// only for it: its strings and the wire points without a set between them
+/// (strings and points other wire points still need stay).
+fn remove_set(s: &mut ols_line::Structure, set: u32) {
+    let Some(label) = s.wire_at_set(set).map(|w| w.label.clone()) else {
+        return;
+    };
+    let c = s.component(&label);
+    let others: Vec<u32> = c
+        .wires
+        .iter()
+        .filter_map(|&i| s.wires[i].set)
+        .filter(|&x| x != set)
+        .collect();
+    if others.is_empty() {
+        let wires: Vec<String> = c.wires.iter().map(|&i| s.wires[i].label.clone()).collect();
+        let strings: Vec<String> = c
+            .strings
+            .iter()
+            .map(|&i| s.strings[i].label.clone())
+            .collect();
+        s.wires.retain(|w| !wires.contains(&w.label));
+        s.strings.retain(|x| !strings.contains(&x.label));
+    } else {
+        // Shared (a TAK): only its wire point and the strings to it.
+        s.wires.retain(|w| w.label != label);
+        s.strings.retain(|x| x.wire != label);
     }
 }
 
@@ -1302,7 +1337,8 @@ impl Session {
                 phase,
                 confirm,
             } => {
-                let impact = self.attachment_deletion(&structure, set, phase)?;
+                let set = phase.map_or(set, |p| ols_line::assembly::set_from_v1(set, p));
+                let impact = self.attachment_deletion(&structure, set)?;
                 if user && impact.has_dependents() && !confirm {
                     return Err(SessionError::NeedsConfirmation(Box::new(impact)));
                 }
@@ -1322,9 +1358,9 @@ impl Session {
                     .structure(&structure)
                     .expect("checked by the impact")
                     .clone();
-                s.attachments.retain(|a| (a.set, a.phase) != (set, phase));
-                if s.structure_type.is_some() && !s.omit.contains(&[set, phase]) {
-                    s.omit.push([set, phase]);
+                remove_set(&mut s, set);
+                if s.structure_type.is_some() && !s.omit_sets.contains(&set) {
+                    s.omit_sets.push(set);
                 }
                 out.push(Command::Put {
                     kind: Kind::Structure,
@@ -1446,37 +1482,35 @@ impl Session {
                 new_set,
                 new_phase,
             } => {
+                let set = phase.map_or(set, |p| ols_line::assembly::set_from_v1(set, p));
+                let new_set =
+                    new_phase.map_or(new_set, |p| ols_line::assembly::set_from_v1(new_set, p));
                 let mut s = self
                     .line
                     .structure(&structure)
                     .ok_or_else(|| refused(format!("no structure {structure}")))?
                     .clone();
-                if (set, phase) == (new_set, new_phase) {
-                    return Err(refused("give another set or phase"));
+                if set == new_set {
+                    return Err(refused("give another set"));
                 }
-                if s.attachments
-                    .iter()
-                    .any(|a| (a.set, a.phase) == (new_set, new_phase))
-                {
+                if s.wire_at_set(new_set).is_some() {
                     return Err(refused(format!(
-                        "{structure} has a string {new_set}:{new_phase} already"
+                        "{structure} has a wire point with set {new_set} already"
                     )));
                 }
-                let a = s
-                    .attachments
+                let w = s
+                    .wires
                     .iter_mut()
-                    .find(|a| (a.set, a.phase) == (set, phase))
+                    .find(|w| w.set == Some(set))
                     .ok_or_else(|| {
                         refused(format!(
-                            "{structure} {set}:{phase} is not a string of its own (one of its type: change it first, it then becomes its own)"
+                            "{structure} set {set} is not a wire point of its own (one of its type: change it first, it then becomes its own)"
                         ))
                     })?;
-                a.set = new_set;
-                a.phase = new_phase;
-                s.attachments.sort_by_key(|a| (a.set, a.phase));
-                if s.structure_type.is_some() && !s.omit.contains(&[set, phase]) {
-                    // The type's string of the old number stays out.
-                    s.omit.push([set, phase]);
+                w.set = Some(new_set);
+                if s.structure_type.is_some() && !s.omit_sets.contains(&set) {
+                    // The type's wire point of the old number stays out.
+                    s.omit_sets.push(set);
                 }
                 out.push(Command::Put {
                     kind: Kind::Structure,
@@ -1484,16 +1518,8 @@ impl Session {
                     value: json(&s),
                     ord: None,
                 });
-                let old = ols_line::SectionPoint {
-                    structure: structure.clone(),
-                    set,
-                    phase,
-                };
-                let new = ols_line::SectionPoint {
-                    structure: structure.clone(),
-                    set: new_set,
-                    phase: new_phase,
-                };
+                let old = ols_line::SectionPoint::new(structure.clone(), set);
+                let new = ols_line::SectionPoint::new(structure.clone(), new_set);
                 for sec in &self.line.sections {
                     if sec.points.contains(&old) {
                         let mut sec = sec.clone();
@@ -1527,7 +1553,7 @@ impl Session {
                     }
                 }
                 notes.push(format!(
-                    "renumber string {structure} {set}:{phase} to {new_set}:{new_phase}"
+                    "renumber wire point {structure} set {set} to {new_set}"
                 ));
             }
             Command::RenameSystem { id, new_id } => {
@@ -1769,32 +1795,19 @@ impl Session {
     /// What deleting string `set`:`phase` of structure `id` takes with it
     /// (nothing is changed): the sections through it, the jumpers at it
     /// and at those sections' points.
-    pub fn attachment_deletion(
-        &self,
-        id: &str,
-        set: u32,
-        phase: u32,
-    ) -> Result<Impact, SessionError> {
+    pub fn attachment_deletion(&self, id: &str, set: u32) -> Result<Impact, SessionError> {
         let s = self
             .line
             .structure(id)
             .ok_or_else(|| refused(format!("no structure {id}")))?;
-        let explicit = s
-            .attachments
-            .iter()
-            .any(|a| (a.set, a.phase) == (set, phase));
-        if !explicit && s.structure_type.is_none() {
+        if s.wire_at_set(set).is_none() && s.structure_type.is_none() {
             return Err(refused(format!(
-                "structure {id} has no string {set}:{phase}"
+                "structure {id} has no wire point with set {set}"
             )));
         }
         let mut impact = Impact::new(Kind::Structure, id);
-        impact.part = Some(format!("string {set}:{phase}"));
-        let point = ols_line::SectionPoint {
-            structure: id.to_owned(),
-            set,
-            phase,
-        };
+        impact.part = Some(format!("set {set}"));
+        let point = ols_line::SectionPoint::new(id, set);
         let sections: Vec<&ols_line::Section> = self
             .line
             .sections
@@ -1826,20 +1839,22 @@ impl Session {
             .ok_or_else(|| refused(format!("no structure {id}")))?;
         let mut impact = Impact::new(Kind::Structure, id);
         impact.attachments = s
-            .attachments
+            .wires
             .iter()
-            .map(|a| {
-                let mut t = format!("{}:{}", a.set, a.phase);
-                if !a.label.is_empty() {
-                    t.push_str(&format!(" {}", a.label));
-                }
-                if !a.top_label.is_empty() || !a.bottom_label.is_empty() {
-                    t.push_str(&format!(" [{} → {}]", a.top_label, a.bottom_label));
-                }
-                if let Some(i) = &a.insulator {
-                    t.push_str(&format!(" ({i})"));
-                } else if a.legs.is_some() {
-                    t.push_str(" (V-string)");
+            .map(|w| {
+                let mut t = match w.set {
+                    Some(set) => format!("set {set} {}", w.label),
+                    None => w.label.clone(),
+                };
+                let strings: Vec<String> = s
+                    .strings_to(&w.label)
+                    .map(|x| match &x.insulator {
+                        Some(i) => format!("{} from {} ({i})", x.label, x.top),
+                        None => format!("{} from {}", x.label, x.top),
+                    })
+                    .collect();
+                if !strings.is_empty() {
+                    t.push_str(&format!(" [{}]", strings.join(", ")));
                 }
                 t
             })

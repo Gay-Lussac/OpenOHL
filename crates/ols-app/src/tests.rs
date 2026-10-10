@@ -240,10 +240,10 @@ fn first_person_capture_aim_and_escape() {
         .unwrap()
         .yaw;
     assert!(yaw1 < yaw0, "{yaw0} → {yaw1}");
-    // Aim at T3's first insulator point and click anywhere: T3 selected.
+    // Aim at T3's first point and click anywhere: T3 selected.
     {
         let r = harness.state_mut().ready().unwrap();
-        let p = r.model.line.structure("T3").unwrap().attachments[0].insulator_point;
+        let p = r.model.line.structure("T3").unwrap().points[0].position;
         let cam = r.view3d.camera.as_mut().unwrap();
         cam.target = p;
         cam.distance = 80.0;
@@ -462,18 +462,17 @@ fn snaps_choose_what_can_be_clicked() {
     expected.remove(&Snap::LidarPoint);
     assert_eq!(kinds(&all), expected);
     assert!(candidates(&model, 0, &Snaps(Default::default())).is_empty());
-    // A plan projection (1 px per m): the clamp of T2's first attachment.
-    let a = model.line.structure("T2").unwrap().attachments[0].clone();
+    // A plan projection (1 px per m): T2's first wire point.
+    let a = model.line.structure("T2").unwrap().wires[0].clone();
     let project = |p: [f64; 3]| Some([p[0], -p[1]]);
-    let at = [a.wire_point[0], -a.wire_point[1]];
+    let at = [a.position[0], -a.position[1]];
     let with = |snaps: &Snaps| pick(&candidates(&model, 0, snaps), at, 5.0, project);
     assert_eq!(with(&Snaps::default()), Selection::Structure("T2".into()));
     assert_eq!(
         with(&all),
         Selection::Attachment {
             structure: "T2".into(),
-            set: a.set,
-            phase: a.phase
+            set: a.set.unwrap(),
         }
     );
     // Saved and restored.
@@ -494,11 +493,10 @@ fn attachment_and_alignment_point_properties() {
     harness.state_mut().ready().unwrap().selection = Selection::Attachment {
         structure: "T3".into(),
         set: 2,
-        phase: 1,
     };
     harness.run();
     // Top bar and properties.
-    assert_eq!(harness.query_all_by_label("T3 set 2 phase 1").count(), 2);
+    assert_eq!(harness.query_all_by_label("T3 set 2").count(), 2);
     assert!(
         harness
             .query_all_by_label_contains("jumper J-T3-branch")
@@ -950,7 +948,7 @@ fn tools_act_on_a_right_click_only() {
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.view3d.captured);
-        let p = r.model.line.structure("T3").unwrap().attachments[0].insulator_point;
+        let p = r.model.line.structure("T3").unwrap().points[0].position;
         let cam = r.view3d.camera.as_mut().unwrap();
         cam.target = p;
         cam.distance = 80.0;
@@ -1241,11 +1239,10 @@ fn use_tool(
     h.run();
 }
 
-fn string_at(structure: &str, set: u32, phase: u32) -> Selection {
+fn string_at(structure: &str, set: u32) -> Selection {
     Selection::Attachment {
         structure: structure.into(),
         set,
-        phase,
     }
 }
 
@@ -1291,10 +1288,18 @@ fn structures_strings_and_wires_are_added_edited_and_deleted() {
         assert_eq!(r.model.line.structure("T8").unwrap().position, at);
         assert_eq!(r.selection, Selection::Structure("T8".into()));
     }
-    // Add string: T5's 1:1 copied in its own axes.
+    // Add string: T5's set 1 copied in its own axes (an I-string: its top,
+    // its wire point, its weight).
     let t5_string =
-        crate::editors::StringForm::of(&harness.state_mut().ready().unwrap().model, "T5", 1, 1)
+        crate::editors::StringForm::of(&harness.state_mut().ready().unwrap().model, "T5", 1)
             .unwrap();
+    let t5_top = t5_string
+        .points
+        .iter()
+        .find(|p| p.label == t5_string.strings[0].top)
+        .unwrap()
+        .at;
+    let t5_wire = t5_string.wires[0].at;
     use_tool(
         &mut harness,
         Tool::AddString,
@@ -1306,10 +1311,11 @@ fn structures_strings_and_wires_are_added_edited_and_deleted() {
         let Some(Form::String(f)) = &mut r.editor else {
             panic!("{:?}", r.editor);
         };
-        assert_eq!((f.set, f.phase), (1, 1));
-        f.top = t5_string.top;
-        f.bottom = t5_string.bottom;
-        f.weight = t5_string.weight;
+        assert_eq!(f.set, 1);
+        let top = f.strings[0].top.clone();
+        f.points.iter_mut().find(|p| p.label == top).unwrap().at = t5_top;
+        f.wires[0].at = t5_wire;
+        f.strings[0].weight = t5_string.strings[0].weight;
     }
     enter(&mut harness);
     {
@@ -1318,13 +1324,9 @@ fn structures_strings_and_wires_are_added_edited_and_deleted() {
         let a = r
             .model
             .line
-            .attachment(&ols_line::SectionPoint {
-                structure: "T8".into(),
-                set: 1,
-                phase: 1,
-            })
+            .wire_point(&ols_line::SectionPoint::new("T8", 1))
             .unwrap();
-        assert!((a.wire_point[2] - (at[2] + t5_string.bottom[2])).abs() < 1e-9);
+        assert!((a.position[2] - (at[2] + t5_wire[2])).abs() < 1e-9);
     }
     // String wire: T5 1:1 → T8 1:1, Enter: the section window, like S1.
     harness
@@ -1335,8 +1337,8 @@ fn structures_strings_and_wires_are_added_edited_and_deleted() {
             section: "S1".into(),
             span: 0,
         });
-    use_tool(&mut harness, Tool::StringWire, string_at("T5", 1, 1), None);
-    use_tool(&mut harness, Tool::StringWire, string_at("T8", 1, 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T5", 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T8", 1), None);
     assert_eq!(harness.state_mut().ready().unwrap().view3d.draft.len(), 2);
     enter(&mut harness);
     {
@@ -1400,13 +1402,13 @@ fn structures_strings_and_wires_are_added_edited_and_deleted() {
     enter(&mut harness);
     assert!(sag(&mut harness) < before * 0.8);
     // Edit the string: 1 m shorter.
-    use_tool(&mut harness, Tool::Edit, string_at("T8", 1, 1), None);
+    use_tool(&mut harness, Tool::Edit, string_at("T8", 1), None);
     {
         let r = harness.state_mut().ready().unwrap();
         let Some(Form::String(f)) = &mut r.editor else {
             panic!("{:?}", r.editor);
         };
-        f.bottom[2] += 1.0;
+        f.wires[0].at[2] += 1.0;
     }
     enter(&mut harness);
     {
@@ -1414,17 +1416,13 @@ fn structures_strings_and_wires_are_added_edited_and_deleted() {
         let a = r
             .model
             .line
-            .attachment(&ols_line::SectionPoint {
-                structure: "T8".into(),
-                set: 1,
-                phase: 1,
-            })
+            .wire_point(&ols_line::SectionPoint::new("T8", 1))
             .unwrap();
-        assert!((a.wire_point[2] - (at[2] + t5_string.bottom[2] + 1.0)).abs() < 1e-9);
+        assert!((a.position[2] - (at[2] + t5_wire[2] + 1.0)).abs() < 1e-9);
         assert_solved_fully(&r.model);
     }
     // Delete the string: S4 goes with it, after the confirmation.
-    use_tool(&mut harness, Tool::Delete, string_at("T8", 1, 1), None);
+    use_tool(&mut harness, Tool::Delete, string_at("T8", 1), None);
     {
         let r = harness.state_mut().ready().unwrap();
         let (impact, _) = r.confirm.as_ref().unwrap();
@@ -1435,7 +1433,7 @@ fn structures_strings_and_wires_are_added_edited_and_deleted() {
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.confirm.is_none());
-        assert!(r.model.line.structure("T8").unwrap().attachments.is_empty());
+        assert!(r.model.line.structure("T8").unwrap().wires.is_empty());
         assert!(r.model.line.sections.iter().all(|s| s.id != "S4"));
     }
     // Undo brings both back.
@@ -1474,8 +1472,8 @@ fn a_section_is_strung_again_through_other_points() {
         assert_eq!(r.restring.as_deref(), Some("S3"));
         assert_eq!(r.hotbar.tool(), Tool::StringWire);
     }
-    use_tool(&mut harness, Tool::StringWire, string_at("T3", 2, 1), None);
-    use_tool(&mut harness, Tool::StringWire, string_at("T7", 1, 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T3", 2), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T7", 1), None);
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     {
         let r = harness.state_mut().ready().unwrap();
@@ -1765,8 +1763,8 @@ fn tables_edit_the_line_in_one_command_each() {
         );
         assert_solved_fully(&r.model);
     }
-    // Sections: condition by sag, with its value; a string renumbered with
-    // a new weight; a jumper's sag; a system's voltage and phases.
+    // Sections: condition by sag, with its value; a string's weight; a
+    // jumper's sag; a system's voltage and phases.
     set_cell(
         &mut harness,
         TableKind::Sections,
@@ -1784,29 +1782,19 @@ fn tables_edit_the_line_in_one_command_each() {
             span: Some(1)
         }
     );
-    set_cell(&mut harness, TableKind::Strings, "Y3\t2:1", "string", "5:1");
     set_cell(
         &mut harness,
         TableKind::Strings,
-        "Y3\t2:1",
+        "Y3\tS2",
         "weight N",
         "1234",
     );
     apply_table(&mut harness, TableKind::Strings, false).unwrap();
     {
         let r = harness.state_mut().ready().unwrap();
-        let a = r
-            .model
-            .line
-            .structure("Y3")
-            .unwrap()
-            .attachments
-            .iter()
-            .find(|a| (a.set, a.phase) == (5, 1))
-            .unwrap();
-        assert_eq!(a.insulator_weight, 1234.0);
-        assert_eq!(r.model.line.sections[2].points[0].set, 5);
-        assert_eq!(r.model.line.jumpers[0].from.set, 5);
+        let a = r.model.line.structure("Y3").unwrap().string("S2").unwrap();
+        assert_eq!(a.weight, 1234.0);
+        assert_eq!(r.model.line.sections[2].points[0].set, 2);
     }
     set_cell(
         &mut harness,
@@ -1877,17 +1865,15 @@ fn table_rows_are_added_and_deleted() {
         ],
     );
     apply_table(&mut harness, TableKind::Structures, false).unwrap();
-    add(
+    // A string on it (the strings table changes strings; points and wire
+    // points come with the string editor).
+    use_tool(
         &mut harness,
-        TableKind::Strings,
-        &[
-            ("structure", "T8"),
-            ("string", "1:1"),
-            ("top up", "30"),
-            ("length m", "3"),
-        ],
+        crate::tools::Tool::AddString,
+        Selection::Structure("T8".into()),
+        None,
     );
-    apply_table(&mut harness, TableKind::Strings, false).unwrap();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     add(
         &mut harness,
         TableKind::Sections,
@@ -2305,11 +2291,11 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
     let a = r
         .model
         .line
-        .attachment(&r.model.line.sections[0].points[1])
+        .wire_point(&r.model.line.sections[0].points[1])
         .unwrap()
         .clone();
     let c = s1.clamps[1];
-    assert!((c[0] - a.wire_point[0]).hypot(c[1] - a.wire_point[1]) > 0.3);
+    assert!((c[0] - a.position[0]).hypot(c[1] - a.position[1]) > 0.3);
     // Each section's own case (Sections table): S1 in its case only.
     r.model.cases_shown = crate::model::CasesShown::PerSection;
     assert_eq!(r.model.section_cases("S1", 0), vec![0]);
@@ -2334,7 +2320,7 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
     assert_eq!(mirror.case.wind_from, ols_weather::WindSide::Left);
     let side = |s: &crate::model::Solved| {
         let c = s.shapes[0].clamps[1];
-        (c[0] - a.wire_point[0], c[1] - a.wire_point[1])
+        (c[0] - a.position[0], c[1] - a.position[1])
     };
     let (r1, l1) = (side(solved), side(mirror));
     assert!(
@@ -2727,8 +2713,8 @@ fn jumpers_are_added_where_none_are() {
         n + 1
     );
     // Two strings.
-    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1, 1), None);
-    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1, 2), None);
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1), None);
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 11), None);
     let r = harness.state_mut().ready().unwrap();
     assert_eq!(r.model.line.jumpers.len(), n + 2, "{:?}", r.status);
     assert!(matches!(r.selection, Selection::Jumper(_)));
@@ -7068,7 +7054,7 @@ fn escape_twice_in_first_person() {
         .unwrap();
     harness.state_mut().show_tab(crate::app::Tab::View3d);
     harness.run();
-    use_tool(&mut harness, Tool::StringWire, string_at("T2", 1, 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T2", 1), None);
     harness.state_mut().ready().unwrap().view3d.captured = true;
     harness.run();
     assert!(
@@ -7114,15 +7100,15 @@ fn escape_cancels_the_operation_not_the_tool() {
         assert_eq!(r.hotbar.tool(), tool);
     };
     // Points picked, the mouse captured: one Escape cancels, the mouse stays.
-    use_tool(&mut harness, Tool::StringWire, string_at("T2", 1, 1), None);
-    use_tool(&mut harness, Tool::StringWire, string_at("T3", 1, 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T2", 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T3", 1), None);
     harness.state_mut().ready().unwrap().view3d.captured = true;
     escape(&mut harness);
     cancelled(&mut harness, Tool::StringWire);
     assert!(harness.state_mut().ready().unwrap().view3d.captured);
     // The section window, a field focused: closed, String wire held.
-    use_tool(&mut harness, Tool::StringWire, string_at("T2", 1, 1), None);
-    use_tool(&mut harness, Tool::StringWire, string_at("T3", 1, 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T2", 1), None);
+    use_tool(&mut harness, Tool::StringWire, string_at("T3", 1), None);
     harness.state_mut().ready().unwrap().view3d.captured = false;
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     {
@@ -7387,4 +7373,95 @@ fn local_jumper_failures() {
             println!("    {case}: {m}");
         }
     }
+}
+
+/// The string editor's presets put on a structure give a valid line: an
+/// I-string, a V, a V with a string below, a TAK (two sets); opened again
+/// at their set, the same strings come back; a V with a string below
+/// strung into a section solves.
+#[test]
+fn string_editor_presets_make_valid_assemblies() {
+    use crate::editors::{Preset, StringForm};
+    let mut model = synthetic();
+    for preset in Preset::ALL {
+        let mut form = StringForm::new_on(&model, "T2").unwrap();
+        let set = form.set;
+        form.preset(preset, [0.0, 0.0, 40.0], &model);
+        let mut line = model.line.clone();
+        let s = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
+        let resolved = model.line.structure("T2").cloned();
+        form.apply_to(s, resolved.as_ref());
+        line.validate()
+            .unwrap_or_else(|e| panic!("{preset:?}: {e}"));
+        let t2 = line.structure("T2").unwrap();
+        let w = t2.wire_at_set(set).unwrap();
+        let c = t2.component(&w.label);
+        let strings = match preset {
+            Preset::I => 1,
+            Preset::V => 2,
+            Preset::VAndString | Preset::Tak => 3,
+        };
+        assert_eq!(c.strings.len(), strings, "{preset:?}");
+        if preset == Preset::Tak {
+            assert!(t2.wire_at_set(set + 1).is_some());
+            assert_eq!(
+                c.wires
+                    .iter()
+                    .filter(|&&i| t2.wires[i].set.is_some())
+                    .count(),
+                2
+            );
+        }
+    }
+    // A V with a string below on a new structure, strung from T5's set 1.
+    let mut line = model.line.clone();
+    let t5 = line.structure("T5").unwrap().clone();
+    let mut t9 = ols_line::Structure::new(
+        "T9",
+        [t5.position[0] + 250.0, t5.position[1], t5.position[2]],
+    );
+    t9.orientation_deg = t5.orientation_deg;
+    line.structures.push(t9);
+    let t10 = ols_line::Structure {
+        wires: vec![ols_line::WirePoint {
+            label: "W1".into(),
+            position: [
+                t5.position[0] + 500.0,
+                t5.position[1],
+                t5.position[2] + 25.0,
+            ],
+            set: Some(1),
+        }],
+        ..ols_line::Structure::new(
+            "T10",
+            [t5.position[0] + 500.0, t5.position[1], t5.position[2]],
+        )
+    };
+    line.structures.push(t10);
+    model.line = line.clone();
+    let mut form = StringForm::new_on(&model, "T9").unwrap();
+    form.preset(Preset::VAndString, [0.0, 0.0, 30.0], &model);
+    let s = line.structures.iter_mut().find(|s| s.id == "T9").unwrap();
+    form.apply_to(s, None);
+    let mut section = line.sections[0].clone();
+    section.id = "S9".into();
+    section.points = vec![
+        ols_line::SectionPoint::new("T5", 1),
+        ols_line::SectionPoint::new("T9", 1),
+        ols_line::SectionPoint::new("T10", 1),
+    ];
+    section.loads.clear();
+    section.stringing = ols_line::Stringing::Tension {
+        horizontal_tension: 20_000.0,
+        temperature: 15.0,
+    };
+    line.sections.push(section);
+    line.validate().unwrap();
+    let case = model.cases[0].case.clone();
+    let shape = ols_line::solve::solve_line(&line, &model.library, &case)
+        .pop()
+        .unwrap()
+        .unwrap();
+    assert_eq!(shape.strings[1].len(), 3);
+    assert!(shape.strings[1].iter().all(|x| x.force > 0.0));
 }
