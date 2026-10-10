@@ -29,6 +29,8 @@ pub enum FileAction {
     Leave,
     /// A new project from another program's file.
     ImportProject,
+    /// The plugin manager (also before a project is open).
+    Plugins,
 }
 
 /// Files opened, most recent first (remembered).
@@ -238,6 +240,13 @@ pub fn start_page(ui: &mut egui::Ui, recent: &Recent, action: &mut Option<FileAc
         }
         if ui.button("New project from another program…").clicked() {
             *action = Some(FileAction::ImportProject);
+        }
+        if ui
+            .button("Plugins…")
+            .on_hover_text("The plugin manager: install, update, turn on or off the plugins (project formats among them)")
+            .clicked()
+        {
+            *action = Some(FileAction::Plugins);
         }
         if ui.button("Join a server…").clicked() {
             *action = Some(FileAction::Join);

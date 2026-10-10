@@ -7466,3 +7466,19 @@ fn string_editor_presets_make_valid_assemblies() {
     assert_eq!(shape.strings[1].len(), 3);
     assert!(shape.strings[1].iter().all(|x| x.force > 0.0));
 }
+
+/// The start screen (no project open) opens the plugin manager: a project
+/// plugin can be installed or updated before the project it creates.
+#[test]
+fn the_start_screen_opens_the_plugin_manager() {
+    let mut app = App::empty(Sources::default(), None);
+    app.plugins = crate::plugins::Plugins::load(None, None);
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .build_eframe(|_| app);
+    h.run();
+    h.get_by_label("Plugins…").click();
+    h.run();
+    assert!(h.state().plugins.open);
+    h.get_by_label("Plugin manager");
+}

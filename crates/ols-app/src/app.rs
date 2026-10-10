@@ -551,6 +551,10 @@ impl App {
             FileAction::ImportProject => {
                 self.import_project = Some(Default::default());
             }
+            FileAction::Plugins => {
+                self.plugins.open = true;
+                self.plugins.refresh();
+            }
             FileAction::Leave => {
                 let hosted = self.hosted_file.take();
                 self.stop_hosting();
@@ -4603,6 +4607,12 @@ impl eframe::App for App {
         // The File menu's windows and actions.
         self.share_windows(&ctx);
         self.import_project_windows(&ctx);
+        // The plugin manager without a project (the start screen's
+        // Plugins…): with one, it is drawn with the project's windows.
+        if !matches!(self.state, State::Ready(_)) && self.plugins.open {
+            let _ = self.plugins.poll(&ctx);
+            self.plugins.manager_ui(&ctx);
+        }
         if let Some(np) = &mut self.new_project {
             let mut open = true;
             if let Some(path) = np.ui(&ctx, &mut open) {
