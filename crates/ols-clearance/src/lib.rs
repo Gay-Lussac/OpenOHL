@@ -35,13 +35,17 @@ pub mod geometry;
 pub mod rules;
 pub mod vegetation;
 pub mod wirefit;
+pub mod zone;
 
 pub use case::{
     CaseTargets, Outcome, RuleCheck, Skipped, applies, check_case, lowest, voltages_of,
 };
 pub use checks::{Hit, PairMode, PairResult, PointCheck, Wire, WireResult, WireSet, wires_of};
 pub use envelope::{Envelope, EnvelopeEntry};
-pub use rules::{CircuitFilter, PairVoltage, Required, Requirement, Rule, RuleSet, Target};
+pub use rules::{
+    CircuitFilter, PairVoltage, Required, Requirement, Rule, RuleSet, Target, WindSides, WindSteps,
+};
+pub use zone::{Measure, Zone, ZoneFinding, ZoneReport, ZoneRule};
 
 #[cfg(test)]
 mod tests {
@@ -123,6 +127,52 @@ mod tests {
             );
             assert!(lowest <= expected + 1e-9);
         }
+    }
+
+    /// On ground sloping across the line, a band beside the wire finds
+    /// the higher ground on the uphill side: the clearance drops by the
+    /// slope times the band's width across.
+    #[test]
+    fn ground_within_a_band_beside_the_wire() {
+        let (line, _) = example();
+        let wires = wires_of(&line, &solved(15.0), &[]);
+        let p = |x: f64, y: f64| SurveyPoint {
+            x,
+            y,
+            z: 480.0 + 0.05 * y,
+            code: String::new(),
+            line: String::new(),
+        };
+        let terrain = Terrain::from_points(
+            &[
+                p(-100.0, -200.0),
+                p(1400.0, -200.0),
+                p(1400.0, 700.0),
+                p(-100.0, 700.0),
+            ],
+            None,
+        )
+        .unwrap();
+        let mut rule = RuleSet::ground(0.0).rules[0].clone();
+        assert_eq!(rule.vertical_band, 0.0);
+        let low = |rule: &Rule| {
+            checks::ground_check(rule, &wires[..1], &terrain)[0]
+                .vertical
+                .unwrap()
+                .distance
+        };
+        let straight = low(&rule);
+        rule.vertical_band = 2.0;
+        let banded = low(&rule);
+        let w = &wires[0].points;
+        let (a, b) = (w[0], w[w.len() - 1]);
+        let across_y = ((b[0] - a[0]) / (b[0] - a[0]).hypot(b[1] - a[1])).abs();
+        let drop = straight - banded;
+        assert!((drop - 0.05 * 2.0 * across_y).abs() < 2e-3, "{drop}");
+        // Slices along the line: never more than straight under the wire.
+        rule.vertical_band = 0.0;
+        rule.vertical_depth = 1.0;
+        assert!(low(&rule) <= straight);
     }
 
     #[test]

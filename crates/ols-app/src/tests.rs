@@ -1141,6 +1141,175 @@ fn the_checks_menu_opens_the_galloping_window() {
     );
 }
 
+/// Opens Sections › Clearances › `item`.
+fn open_clearance_window(harness: &mut Harness<'_, App>, item: &str) {
+    harness.get_by_label("Sections").click();
+    harness.run();
+    // The submenu (the tab of the same name is in the dock).
+    harness
+        .query_all_by_label_contains("Clearances")
+        .last()
+        .unwrap()
+        .hover();
+    harness.run();
+    harness.get_by_label(item).click();
+    harness.run();
+}
+
+/// Sections › Clearances › Vertical clearances: the project's rule file
+/// next to the model; a ground rule run with the wind stepped finds every
+/// span, the violations are drawn, a span link goes to it.
+#[test]
+fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    open_clearance_window(&mut harness, "Vertical clearances…");
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-zones-v", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let w = &mut r.vertical_clearances;
+        assert!(w.open && !r.radial_clearances.open);
+        assert!(
+            w.file
+                .as_ref()
+                .is_some_and(|f| f.ends_with("synthetic-line.vertical-clearances.olsr")),
+            "{:?}",
+            w.file
+        );
+        assert!(w.rules.is_empty());
+        // Kept in a scratch folder, not next to the example.
+        w.file = Some(dir.join("rules.olsr"));
+        w.wind = ols_clearance::WindSteps {
+            stepped: true,
+            step: 200.0,
+            sides: ols_clearance::WindSides::Both,
+        };
+        w.rules.push(ols_clearance::ZoneRule {
+            name: "High ground".into(),
+            voltage: Some(220.0),
+            cases: vec!["high wind".into()],
+            distance: 100.0,
+            classes: Vec::new(),
+            ground: true,
+        });
+    }
+    harness.run();
+    harness.get_by_label("Run").click();
+    let started = std::time::Instant::now();
+    let worst = loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let (Some(rep), false) = r.vertical_clearances.result() {
+            let rep = rep.as_ref().unwrap();
+            // 600 Pa in steps of 200 Pa, from both sides, and no wind.
+            assert_eq!(rep.states.len(), 1 + 3 * 2);
+            let spans: usize = r.model.cases[0].shapes.iter().map(|s| s.spans.len()).sum();
+            assert_eq!(rep.zone.findings.len(), spans);
+            assert!(rep.zone.findings.iter().all(|f| f.class.is_none()));
+            assert_eq!(r.view3d.marks.len(), spans);
+            let f = &rep.zone.findings[0];
+            break Selection::Span {
+                section: f.section.clone(),
+                span: f.span,
+            };
+        }
+        assert!(started.elapsed().as_secs() < 60, "no report in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    harness.run();
+    // The worst first: its link goes to it.
+    harness.get_by_label(&worst.describe()).click();
+    harness.run();
+    assert_eq!(harness.state_mut().ready().unwrap().selection, worst);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// Sections › Clearances › Radial clearances: a rule added is kept in the
+/// project's rule file; removing it asks first.
+#[test]
+fn the_radial_clearances_window_keeps_its_rules() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    open_clearance_window(&mut harness, "Radial clearances…");
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-zones-r", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("rules.olsr");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.radial_clearances.open && !r.vertical_clearances.open);
+        r.radial_clearances.file = Some(file.clone());
+    }
+    harness.run();
+    harness.get_by_label("Add rule").click();
+    harness.run();
+    harness.run();
+    let set = ols_clearance::RuleSet::load(&file).unwrap();
+    assert_eq!(set.rules.len(), 0, "a rule without targets has no rule");
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .radial_clearances
+            .rules
+            .len(),
+        1
+    );
+    {
+        let w = &mut harness.state_mut().ready().unwrap().radial_clearances;
+        w.rules[0].ground = true;
+    }
+    harness.get_by_label("Duplicate").click();
+    harness.run();
+    harness.run();
+    let set = ols_clearance::RuleSet::load(&file).unwrap();
+    assert_eq!(set.rules.len(), 2);
+    assert!(
+        set.rules
+            .iter()
+            .all(|r| r.radial.is_some() && r.vertical.is_none())
+    );
+    harness.query_all_by_label("Remove").next().unwrap().click();
+    harness.run();
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .radial_clearances
+            .rules
+            .len(),
+        2,
+        "asks first"
+    );
+    harness.get_by_label("Keep").click();
+    harness.run();
+    harness.query_all_by_label("Remove").next().unwrap().click();
+    harness.run();
+    harness.query_all_by_label("Remove").last().unwrap().click();
+    harness.run();
+    harness.run();
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .radial_clearances
+            .rules
+            .len(),
+        1
+    );
+    assert_eq!(ols_clearance::RuleSet::load(&file).unwrap().rules.len(), 1);
+    std::fs::remove_dir_all(dir).ok();
+}
+
 #[test]
 fn vegetation_and_as_built_wires_from_a_point_cloud() {
     // A scan at 35 °C: points along every span (wire class 14) and a tree
