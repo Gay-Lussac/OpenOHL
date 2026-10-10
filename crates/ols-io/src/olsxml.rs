@@ -149,6 +149,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         orientation_deg,
         structure_type,
         extension,
+        height_adjust,
         points,
         strings,
         wires,
@@ -162,6 +163,9 @@ fn write_structure(out: &mut String, s: &Structure) {
     attr(out, "orientation_deg", &num(*orientation_deg));
     opt_text(out, "type", structure_type.as_deref());
     opt_text(out, "extension", extension.as_deref());
+    if *height_adjust != 0.0 {
+        attr(out, "height_adjust", &num(*height_adjust));
+    }
     if points.is_empty()
         && strings.is_empty()
         && wires.is_empty()
@@ -632,7 +636,16 @@ fn read_stringing(e: &Element) -> Result<Stringing, String> {
 fn read_structure(e: &Element) -> Result<Structure, String> {
     check(
         e,
-        &["id", "x", "y", "z", "orientation_deg", "type", "extension"],
+        &[
+            "id",
+            "x",
+            "y",
+            "z",
+            "orientation_deg",
+            "type",
+            "extension",
+            "height_adjust",
+        ],
         &["point", "wire", "string", "attachment", "omit", "member"],
     )?;
     let id = text(e, "id")?.to_owned();
@@ -776,6 +789,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
         orientation_deg: optional(e, "orientation_deg")?.unwrap_or(0.0),
         structure_type: owned(e, "type"),
         extension: owned(e, "extension"),
+        height_adjust: optional(e, "height_adjust")?.unwrap_or(0.0),
         points,
         strings,
         wires,

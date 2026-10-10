@@ -29,7 +29,8 @@ The names are those of the line file:
     <alignment>…</alignment>
     <structure ref="T1"/> …
   </route>
-  <structure id="T1" x="…" y="…" z="…" orientation_deg="-90" type="…" extension="…">
+  <structure id="T1" x="…" y="…" z="…" orientation_deg="-90" type="…" extension="…"
+             height_adjust="0.5">                <!-- feet 0.5 m above the ground -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
     <string label="S1" top="A1" wire="W1" insulator="…" weight="…" wind_area="…"

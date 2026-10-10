@@ -109,6 +109,7 @@ fn without_component(
         orientation_deg: 0.0,
         structure_type: None,
         extension: None,
+        height_adjust: 0.0,
         points: points.to_vec(),
         strings: strings.clone(),
         wires: wires.clone(),
@@ -158,13 +159,15 @@ impl Line {
                     s.id
                 ))
             })?;
+            // The type's feet on the ground at the position, raised by the
+            // height adjustment.
+            let at = [
+                s.position[0],
+                s.position[1],
+                s.position[2] + s.height_adjust,
+            ];
             let placed = t
-                .place(
-                    s.position,
-                    s.orientation_deg,
-                    s.extension.as_deref(),
-                    insulators,
-                )
+                .place(at, s.orientation_deg, s.extension.as_deref(), insulators)
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
             let attachments: Vec<AttachmentV1> = placed
                 .into_iter()
@@ -185,12 +188,7 @@ impl Line {
                 .collect();
             let (mut points, mut strings, mut wires) = from_v1(&attachments);
             let placed = t
-                .place_strings(
-                    s.position,
-                    s.orientation_deg,
-                    s.extension.as_deref(),
-                    insulators,
-                )
+                .place_strings(at, s.orientation_deg, s.extension.as_deref(), insulators)
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
             points.extend(placed.points.into_iter().map(|p| StructurePoint {
                 label: p.label,
@@ -246,7 +244,7 @@ impl Line {
             }
             (s.points, s.strings, s.wires) = (points, strings, wires);
             s.members = t
-                .place_stick(s.position, s.orientation_deg, s.extension.as_deref())
+                .place_stick(at, s.orientation_deg, s.extension.as_deref())
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
         }
 
@@ -599,6 +597,35 @@ mod tests {
         for result in crate::solve::solve_line(&resolved, &cables, &case) {
             assert!(result.is_ok(), "{result:?}");
         }
+    }
+
+    /// The height adjustment raises a typed structure: its points, wire
+    /// points and sticks.
+    #[test]
+    fn the_height_adjustment_raises_the_type() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+        let mut line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
+        let structures = StructureLibrary::load_dir(&root.join("Structures")).unwrap();
+        let none = InsulatorLibrary::default();
+        let before = line.resolve(&structures, &none).unwrap();
+        line.structures[1].height_adjust = 0.5;
+        let after = line.resolve(&structures, &none).unwrap();
+        let (a, b) = (&before.structures[1], &after.structures[1]);
+        for (p, q) in a.points.iter().zip(&b.points) {
+            assert!((q.position[2] - p.position[2] - 0.5).abs() < 1e-9);
+        }
+        for (p, q) in a.wires.iter().zip(&b.wires) {
+            assert!((q.position[2] - p.position[2] - 0.5).abs() < 1e-9);
+        }
+        assert!((b.members[0][0][2] - a.members[0][0][2] - 0.5).abs() < 1e-9);
+        assert_eq!(a.position, b.position);
+        // Written only when not zero, and read back.
+        let json = after.to_json();
+        assert_eq!(json.matches("height_adjust").count(), 1);
+        assert_eq!(
+            Line::from_json(&json).unwrap().structures[1].height_adjust,
+            0.5
+        );
     }
 
     /// A typed structure leaves out the strings listed in `omit` (the

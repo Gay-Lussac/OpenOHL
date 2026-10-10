@@ -42,6 +42,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `orientation_deg` | no | Direction of the local x axis (right of the line), degrees CCW from east; used to place a structure type. |
 | `type` | no | Structure type id from the [structure library](structure-library.md); its points, strings and wire points are then generated. |
 | `extension` | no | Height extension of the type. |
+| `height_adjust` | no | With a `type`: height of the type's feet above the ground at `position` (foundations), metres; default 0. |
 | `points` | no | Points on the structure where strings hang: `{ "label", "position": [x, y, z] }` (below). |
 | `wires` | no | Wire points: `{ "label", "position": [x, y, z], "set": n }` (below). |
 | `strings` | no | Strings between them (below). |

@@ -9,7 +9,7 @@ Both are TOML with units on every quantity (`"12.5 m"`, `"1.4 kN"`), like [wire 
 
 ## Structure types (`.olss`)
 
-**Local axes**: origin at the ground centre of the structure, **x to the right** of the line looking ahead, **y ahead** along the line, **z up**.
+**Local axes**: origin at the centre of the structure, **x to the right** of the line looking ahead, **y ahead** along the line, **z up**. z = 0 is the ground, unless the type gives the level of its feet: a pylon drawn from a reference level under its lowest crossarm says `foot = "-32 m"`, and is placed with its feet on the ground (raised by the structure's `height_adjust` for foundations, see [Using types in a line](#using-types-in-a-line)).
 
 ```toml
 format = "ols-structure"          # optional header
@@ -65,9 +65,10 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below), optional `weight` (a counterweight hanging at it). |
 | `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `compression` (what it may take; none: tension only), `strain`, `side` (a strain string's span: ahead or back). |
 | `attachment` | no | Files of version 1: attachment points (`set`, `phase`, `point`, `insulator` or `string`, `side`), read as before (below). |
-| `extension` | no | Named height offsets added to every point. |
+| `extension` | no | Named body extensions: `dz` lengthens the body below z = 0, so everything above the feet rises by it. |
+| `foot` | no | Level of the feet in local z (default 0: z = 0 is the ground). |
 | `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest point) and a crossarm from the mast to every point. |
-| `height` | no | Mast top for the generated stick drawing. |
+| `height` | no | Mast top (local z) for the generated stick drawing. |
 | `capacity` | no | What the type can carry, for the structure checks (below). |
 | `model` | no | Structure model (`.olsfe`, path relative to this file) for the finite-element check — see [Structure analysis](structure-analysis.md). |
 | `pole` | no | Pole id (a `.olsp` file in the same folder) for the pole check — see [Structure analysis](structure-analysis.md). |
@@ -221,7 +222,7 @@ A structure in a [line file](line-file.md) references a type instead of listing 
   "orientation_deg": -31.5, "extension": "+3" }
 ```
 
-`orientation_deg` is the direction of the type's local x axis (right of the line), degrees counter-clockwise from east. When solving, OLS CAD places the type (`--structures`, `--insulators` library directories), keeps the structure's own points, strings and wire points as **overrides** (the same label; a wire point with a set replaces the type's with that set and what moves with it), leaves out those in `omit` / `omit_sets`, and aims every strain string at its neighbouring point along the section.
+`orientation_deg` is the direction of the type's local x axis (right of the line), degrees counter-clockwise from east. `position` is the centre on the ground: the type stands there with its feet on the ground, or `height_adjust` metres above it (e.g. `0.3` for foundations standing out of the ground; negative: sunk). When solving, OLS CAD places the type (`--structures`, `--insulators` library directories), keeps the structure's own points, strings and wire points as **overrides** (the same label; a wire point with a set replaces the type's with that set and what moves with it), leaves out those in `omit` / `omit_sets`, and aims every strain string at its neighbouring point along the section.
 
 **Strings given as geometry vs library assemblies**: a string with a library `insulator` is modelled as a free member (it needs its weight); a strain string given only as geometry (e.g. imported from another program) gets the weight that keeps its clamp where the data puts it — imported clamp positions already are the source's equilibrium.
 
