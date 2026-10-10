@@ -206,10 +206,10 @@ const STRINGS: &[Column] = &[
         "compression it may take (empty: tension only; beyond it: flagged)",
     ),
     (
-        "strain",
-        55.0,
+        "clamp",
+        80.0,
         Yes,
-        "yes: a strain string (lined up with its conductor)",
+        "suspension: the wire runs through, the string hangs; strain: a tension string at a dead end, lined up with its conductor. Shown dimmed: from where it is (a section ends at its set), not set on the string",
     ),
     (
         "wind area m²",
@@ -913,8 +913,10 @@ impl TableKind {
                             .iter()
                             .filter_map(|&i| s.wires[i].set)
                             .collect();
+                        let dead_end = line.is_dead_end(s, &x.wire);
                         Row {
-                            defaulted: Vec::new(),
+                            // Not flagged: from where it is.
+                            defaulted: (0..12).map(|c| c == 9 && !x.strain).collect(),
                             key: format!("{}\t{}", s.id, x.label),
                             select: match sets.first() {
                                 Some(&set) => Selection::Attachment {
@@ -936,7 +938,7 @@ impl TableKind {
                                 f(x.weight, 1),
                                 x.insulator.clone().unwrap_or_default(),
                                 x.compression.map_or(String::new(), |c| f(c, 0)),
-                                if x.strain { "yes" } else { "no" }.into(),
+                                if dead_end { "strain" } else { "suspension" }.into(),
                                 if x.wind_area > 0.0 {
                                     f(x.wind_area, 3)
                                 } else {
@@ -1115,7 +1117,7 @@ impl TableKind {
                 cells[10] = "15".into();
             }
             TableKind::Strings => {
-                cells[9] = "no".into();
+                cells[9] = "suspension".into();
             }
             TableKind::Jumpers => {
                 cells[0] = taken_after(
@@ -1665,7 +1667,7 @@ fn choices(
             ),
             false,
         ),
-        (TableKind::Strings, "strain") => (vec!["no".into(), "yes".into()], false),
+        (TableKind::Strings, "clamp") => (vec!["suspension".into(), "strain".into()], false),
         (TableKind::Jumpers, "rigid") => (vec!["no".into(), "yes".into()], false),
         (TableKind::Circuits, "starts") => (circuit_ends(cells), true),
         (TableKind::Circuits, "system") => (
@@ -2306,9 +2308,13 @@ fn string_cells(x: &mut ols_line::InsulatorString, c: &Cells, name: &str) -> Res
     x.insulator = opt(&c.get(7));
     x.compression = opt_num(&c.get(8), &format!("{name} compression"))?;
     x.strain = match c.get(9).trim().to_lowercase().as_str() {
-        "yes" | "true" | "1" => true,
-        "no" | "false" | "0" | "" => false,
-        other => return Err(format!("{name} strain: \"{other}\" is not yes or no")),
+        "strain" | "yes" | "true" | "1" => true,
+        "suspension" | "no" | "false" | "0" | "" => false,
+        other => {
+            return Err(format!(
+                "{name} clamp: \"{other}\" is not suspension or strain"
+            ));
+        }
     };
     x.wind_area = opt_num(&c.get(10), &format!("{name} wind area"))?.unwrap_or(0.0);
     if x.wind_area.is_nan() || x.wind_area < 0.0 {

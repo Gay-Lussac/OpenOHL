@@ -82,6 +82,10 @@ pub struct WireRow {
     /// With a set: a dead end (its strings are tension strings, lined up
     /// with their conductor), else a suspension point.
     pub dead_end: bool,
+    /// What it was when opened (written to its strings only when changed:
+    /// a string's `strain` flag also keeps its weight from being
+    /// estimated).
+    pub dead_end_was: bool,
 }
 
 /// Where `at` is seen from `top` (local axes): its angle from straight
@@ -112,6 +116,23 @@ pub fn from_polar(top: [f64; 3], down: f64, dir: f64, len: f64) -> [f64; 3] {
         top[1] + h * dir.cos(),
         top[2] - len * down.cos(),
     ]
+}
+
+/// What a string takes from an insulator assembly of the library.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LibraryString {
+    /// Assembly id.
+    pub id: String,
+    /// Length, m.
+    pub length: f64,
+    /// Weight, N (a V's: each leg's half).
+    pub weight: f64,
+    /// Wind area, m² (a V's: each leg's half).
+    pub wind_area: f64,
+    /// Axial stiffness EA, N.
+    pub stiffness: f64,
+    /// A tension (dead-end) assembly.
+    pub strain: bool,
 }
 
 /// A string in an editor.
@@ -1101,7 +1122,8 @@ impl StringForm {
                     at: local(w.position),
                     set: w.set,
                     weight: w.weight,
-                    dead_end: s.strings_to(&w.label).any(|x| x.strain),
+                    dead_end: model.line.is_dead_end(s, &w.label),
+                    dead_end_was: model.line.is_dead_end(s, &w.label),
                 }
             })
             .collect();
@@ -1206,6 +1228,7 @@ impl StringForm {
                 set,
                 weight: 0.0,
                 dead_end: false,
+                dead_end_was: false,
             });
             label
         };
@@ -1261,6 +1284,53 @@ impl StringForm {
         }
     }
 
+    /// String `k` takes an insulator assembly of the library: its values;
+    /// the wire point it makes moves to the assembly's length (same
+    /// angles), a strain clamp where the assembly is a tension one.
+    pub fn take_from_library(&mut self, k: usize, a: &LibraryString) {
+        let Some(x) = self.strings.get_mut(k) else {
+            return;
+        };
+        x.insulator = Some(a.id.clone());
+        (x.weight, x.wind_area, x.stiffness) = (a.weight, a.wind_area, Some(a.stiffness));
+        let (top, wire) = (x.top.clone(), x.wire.clone());
+        let owns = self.strings.iter().position(|y| y.wire == wire) == Some(k);
+        let at = self
+            .points
+            .iter()
+            .find(|p| p.label == top)
+            .map(|p| p.at)
+            .or_else(|| self.wires.iter().find(|w| w.label == top).map(|w| w.at));
+        if owns
+            && let Some(top) = at
+            && let Some(w) = self.wires.iter_mut().find(|w| w.label == wire)
+        {
+            let (down, dir, _) = polar(top, w.at);
+            w.at = from_polar(top, down, dir, a.length);
+            if w.set.is_some() {
+                w.dead_end = a.strain;
+            }
+        }
+    }
+
+    /// Takes away the wire points no string ends at any more, with the
+    /// strings hanging from them (and so on).
+    pub fn drop_unused_wires(&mut self) {
+        loop {
+            let unused: Vec<String> = self
+                .wires
+                .iter()
+                .filter(|w| !self.strings.iter().any(|x| x.wire == w.label))
+                .map(|w| w.label.clone())
+                .collect();
+            if unused.is_empty() {
+                return;
+            }
+            self.wires.retain(|w| !unused.contains(&w.label));
+            self.strings.retain(|x| !unused.contains(&x.top));
+        }
+    }
+
     /// A string's length, m (from its rows' positions).
     pub fn length(&self, x: &StringRow) -> Option<f64> {
         let at = |l: &str| {
@@ -1310,7 +1380,7 @@ impl StringForm {
             // A string to a set: a tension string where the set is a dead
             // end, else a suspension one.
             let strain = match self.wires.iter().find(|w| w.label == x.wire) {
-                Some(w) if w.set.is_some() => w.dead_end,
+                Some(w) if w.set.is_some() && w.dead_end != w.dead_end_was => w.dead_end,
                 _ => x.strain,
             };
             s.strings.retain(|y| y.label != x.label);
@@ -1911,11 +1981,6 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
         .cloned()
         .chain(new_points.iter().map(|&k| f.points[k].label.clone()))
         .collect();
-    let insulators: Vec<String> = model
-        .types
-        .as_ref()
-        .map(|(_, i)| i.iter().map(|a| a.id.clone()).collect())
-        .unwrap_or_default();
     egui::ScrollArea::vertical()
         .max_height(460.0)
         .show(ui, |ui| {
@@ -1923,12 +1988,64 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
             help(
                 ui,
                 "A string is an insulator chain: from the point it hangs from (on the structure, \
-                 or the bottom of another string) to its wire point.",
+                 or the bottom of another string) to its wire point, which it makes: placed from \
+                 its top by an angle from straight down, a direction and its length (where it is \
+                 before the wire is strung; once strung it is drawn where the calculation puts \
+                 it). With a set number a wire is clamped at the wire point (sections and jumpers \
+                 end on it); without one, other strings may hang from it. A second leg of a V \
+                 ends at another string's wire point.",
             );
-            let wires: Vec<String> = f.wires.iter().map(|w| w.label.clone()).collect();
+            // (name, a V's leg, what the string takes).
+            let library: Vec<(String, bool, LibraryString)> = model
+                .types
+                .as_ref()
+                .map(|(_, lib)| {
+                    lib.iter()
+                        .map(|a| {
+                            use ols_structures::AssemblyKind as K;
+                            let v = a.kind == K::VString;
+                            let share = if v { 0.5 } else { 1.0 };
+                            (
+                                a.name.clone(),
+                                v,
+                                LibraryString {
+                                    id: a.id.clone(),
+                                    length: a.length.si(),
+                                    weight: a.weight.si() * share,
+                                    wind_area: a.wind_area.si() * share,
+                                    stiffness: a.axial_stiffness.si(),
+                                    strain: a.kind == K::Strain,
+                                },
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let tops: Vec<Option<[f64; 3]>> = f
+                .strings
+                .iter()
+                .map(|x| {
+                    f.points
+                        .iter()
+                        .find(|p| p.label == x.top)
+                        .map(|p| p.at)
+                        .or_else(|| f.wires.iter().find(|w| w.label == x.top).map(|w| w.at))
+                })
+                .collect();
             let lengths: Vec<Option<f64>> = f.strings.iter().map(|x| f.length(x)).collect();
+            // The string that makes each wire point: the first to it.
+            let owner = |f: &StringForm, wire: &str| f.strings.iter().position(|x| x.wire == wire);
             let mut remove = None;
             for (k, length) in lengths.iter().enumerate() {
+                let owns = owner(f, &f.strings[k].wire) == Some(k);
+                let others: Vec<String> = f
+                    .wires
+                    .iter()
+                    .filter(|w| w.label != f.strings[k].wire)
+                    .map(|w| w.label.clone())
+                    .collect();
+                let mut ends_at: Option<Option<String>> = None;
+                let mut pick: Option<usize> = None;
                 egui::Frame::group(ui.style()).show(ui, |ui| {
                     let x = &mut f.strings[k];
                     ui.horizontal(|ui| {
@@ -1938,10 +2055,48 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                             Some(l) => ui.label(format!("{l:.3} m long")),
                             None => ui.label("—"),
                         };
-                        if ui.small_button("×").on_hover_text("Take this string away").clicked() {
+                        if ui
+                            .small_button("×")
+                            .on_hover_text("Take this string away, with the wire point it makes")
+                            .clicked()
+                        {
                             remove = Some(k);
                         }
                     });
+                    if !library.is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.label("from the library");
+                            egui::ComboBox::from_id_salt(("string-library", k))
+                                .selected_text(x.insulator.as_deref().unwrap_or("(given here)"))
+                                .height(300.0)
+                                .show_ui(ui, |ui| {
+                                    if ui.selectable_label(x.insulator.is_none(), "(given here)").clicked() {
+                                        x.insulator = None;
+                                    }
+                                    for (n, a) in library.iter().enumerate() {
+                                        let text = format!(
+                                            "{} — {}, {:.2} m, {:.0} N{}",
+                                            a.2.id,
+                                            a.0,
+                                            a.2.length,
+                                            a.2.weight,
+                                            if a.2.strain { ", tension" } else if a.1 { ", V leg" } else { "" }
+                                        );
+                                        if ui
+                                            .selectable_label(x.insulator.as_deref() == Some(a.2.id.as_str()), text)
+                                            .clicked()
+                                        {
+                                            pick = Some(n);
+                                        }
+                                    }
+                                })
+                                .response
+                                .on_hover_text(
+                                    "An insulator assembly of the library: its length, weight, wind \
+                                     area and stiffness are taken; a tension assembly makes a dead end",
+                                );
+                        });
+                    }
                     ui.horizontal(|ui| {
                         ui.label("hangs from")
                             .on_hover_text("The point of the structure it is attached to");
@@ -1957,18 +2112,28 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 ui.label(
                                     egui::RichText::new("the bottom of another string").small().weak(),
                                 );
-                                for w in wires.iter().filter(|w| **w != x.wire) {
+                                for w in &others {
                                     ui.selectable_value(&mut x.top, w.clone(), w);
                                 }
                             });
-                        ui.label("to wire point").on_hover_text(
-                            "Its bottom: where the wire is clamped, or where other strings meet",
+                        ui.label("ends at").on_hover_text(
+                            "Its own wire point (made by it), or another string's (a V's second leg)",
                         );
-                        egui::ComboBox::from_id_salt(("string-wire", k))
-                            .selected_text(&x.wire)
+                        let shown = if owns {
+                            format!("its own wire point ({})", x.wire)
+                        } else {
+                            format!("{}'s wire point", x.wire)
+                        };
+                        egui::ComboBox::from_id_salt(("string-ends", k))
+                            .selected_text(shown)
                             .show_ui(ui, |ui| {
-                                for w in &wires {
-                                    ui.selectable_value(&mut x.wire, w.clone(), w);
+                                if ui.selectable_label(owns, "its own wire point").clicked() && !owns {
+                                    ends_at = Some(None);
+                                }
+                                for w in &others {
+                                    if ui.selectable_label(false, format!("the wire point {w}")).clicked() {
+                                        ends_at = Some(Some(w.clone()));
+                                    }
                                 }
                             });
                     });
@@ -1980,20 +2145,6 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                         value(ui, &mut x.wind_area, 0.01, " m²").on_hover_text(
                             "Area the wind blows on (0: its insulator's, if any); half at each end",
                         );
-                        if !insulators.is_empty() || x.insulator.is_some() {
-                            egui::ComboBox::from_id_salt(("string-insulator", k))
-                                .selected_text(x.insulator.as_deref().unwrap_or("(no insulator)"))
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut x.insulator, None, "(no insulator)");
-                                    for i in &insulators {
-                                        ui.selectable_value(&mut x.insulator, Some(i.clone()), i);
-                                    }
-                                })
-                                .response
-                                .on_hover_text("An assembly of the insulator library (its weight and wind area)");
-                        }
-                    });
-                    ui.horizontal(|ui| {
                         let mut both = x.compression.is_some();
                         if ui
                             .checkbox(&mut both, "may push, up to")
@@ -2010,165 +2161,162 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                             *c = c.max(0.0);
                         }
                     });
+                    // The wire point it makes.
+                    if owns
+                        && let Some(top) = tops[k]
+                        && let Some(w) = f.wires.iter_mut().find(|w| w.label == f.strings[k].wire)
+                    {
+                        let (mut down, mut dir, mut len) = polar(top, w.at);
+                        let mut changed = false;
+                        ui.horizontal(|ui| {
+                            ui.label("down/up");
+                            changed |= ui
+                                .add(
+                                    egui::DragValue::new(&mut down)
+                                        .range(0.0..=180.0)
+                                        .speed(0.5)
+                                        .max_decimals(2)
+                                        .suffix("°"),
+                                )
+                                .on_hover_text("Angle from straight down: 0° down, 90° level, 180° straight up")
+                                .changed();
+                            ui.label("direction");
+                            changed |= ui
+                                .add(
+                                    egui::DragValue::new(&mut dir)
+                                        .range(0.0..=360.0)
+                                        .speed(0.5)
+                                        .max_decimals(2)
+                                        .suffix("°"),
+                                )
+                                .on_hover_text(
+                                    "Direction in plan, in the structure's axes: 0° ahead along the \
+                                     line, 90° to the right, 180° back, 270° to the left",
+                                )
+                                .changed();
+                            ui.label("length");
+                            changed |= ui
+                                .add(
+                                    egui::DragValue::new(&mut len)
+                                        .range(0.01..=50.0)
+                                        .speed(0.01)
+                                        .max_decimals(3)
+                                        .suffix(" m"),
+                                )
+                                .on_hover_text("Its length: from its top to its wire point")
+                                .changed();
+                        });
+                        if changed {
+                            w.at = from_polar(top, down, dir.rem_euclid(360.0), len.max(0.01));
+                        }
+                        ui.horizontal(|ui| {
+                            ui.label("wire point");
+                            ui.add(egui::TextEdit::singleline(&mut w.label).desired_width(90.0));
+                            let mut has = w.set.is_some();
+                            if ui
+                                .checkbox(&mut has, "set")
+                                .on_hover_text(
+                                    "A wire is clamped here: sections and jumpers end on its set number. \
+                                     Without: other strings may hang from it (a V's tip, a TAK's node)",
+                                )
+                                .changed()
+                            {
+                                w.set = has.then_some(f.set.max(1));
+                            }
+                            if let Some(set) = &mut w.set {
+                                ui.add(egui::DragValue::new(set).range(1..=9999));
+                                ui.label("clamp");
+                                egui::ComboBox::from_id_salt(("wire-dead-end", k))
+                                    .selected_text(if w.dead_end { "strain" } else { "suspension" })
+                                    .width(90.0)
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut w.dead_end, false, "suspension");
+                                        ui.selectable_value(&mut w.dead_end, true, "strain");
+                                    })
+                                    .response
+                                    .on_hover_text(
+                                        "Suspension: the wire runs through, its strings hang. Strain: \
+                                         a dead end, its strings are tension strings lined up with \
+                                         their conductor",
+                                    );
+                            }
+                            ui.label("counterweight");
+                            value(ui, &mut w.weight, 10.0, " N")
+                                .on_hover_text("A weight hanging at the clamp (0: none)");
+                            w.weight = w.weight.max(0.0);
+                        });
+                    }
                 });
+                // The library's values (and the wire point at its length).
+                if let Some(n) = pick {
+                    let a = library[n].2.clone();
+                    f.take_from_library(k, &a);
+                }
+                match ends_at {
+                    Some(Some(w)) => {
+                        f.strings[k].wire = w;
+                        f.drop_unused_wires();
+                    }
+                    Some(None) => {
+                        let label = f.free_label(model, "W");
+                        let top = tops[k].unwrap_or([0.0, 0.0, 20.0]);
+                        f.wires.push(WireRow {
+                            label: label.clone(),
+                            at: from_polar(top, 0.0, 0.0, lengths[k].unwrap_or(3.0)),
+                            set: None,
+                            weight: 0.0,
+                            dead_end: false,
+                            dead_end_was: false,
+                        });
+                        f.strings[k].wire = label;
+                    }
+                    None => {}
+                }
             }
             if let Some(k) = remove {
                 f.strings.remove(k);
+                f.drop_unused_wires();
+            }
+            // Wire points no string reaches: the wire clamped straight to
+            // the structure.
+            for w in f.wires.iter_mut() {
+                if f.strings.iter().any(|x| x.wire == w.label) {
+                    continue;
+                }
+                ui.horizontal(|ui| {
+                    ui.label(format!("wire point {} — clamped straight to the structure", w.label));
+                    for (i, name) in ["across", "along", "up"].iter().enumerate() {
+                        ui.label(*name);
+                        value(ui, &mut w.at[i], 0.05, " m");
+                    }
+                });
             }
             if ui
                 .small_button("+ string")
-                .on_hover_text("Another string, e.g. the second leg of a V")
+                .on_hover_text("Another string with its own wire point, 3 m straight down (to set)")
                 .clicked()
-                && let (Some(top), Some(wire)) = (point_names.first(), f.wires.first())
+                && let Some(top) = point_names.first().cloned()
             {
                 let label = f.free_label(model, "S");
-                let (top, wire) = (top.clone(), wire.label.clone());
+                let wire = f.free_label(model, "W");
+                let at = f
+                    .points
+                    .iter()
+                    .find(|p| p.label == top)
+                    .map_or([0.0, 0.0, 20.0], |p| p.at);
+                f.wires.push(WireRow {
+                    label: wire.clone(),
+                    at: from_polar(at, 0.0, 0.0, 3.0),
+                    set: None,
+                    weight: 0.0,
+                    dead_end: false,
+                    dead_end_was: false,
+                });
                 f.strings.push(StringRow {
                     label,
                     top,
                     wire,
                     ..Default::default()
-                });
-            }
-            ui.separator();
-            ui.strong("Wire points");
-            help(
-                ui,
-                "Where strings end. With a set number a wire is clamped there (sections and \
-                 jumpers end on it); without one, other strings hang from it (a V's tip) or a \
-                 jumper's helping string holds the jumper there. Placed from the top of the \
-                 first string to it: an angle from straight down, a direction and a length — \
-                 where it is before the wire is strung; once strung it is drawn where the \
-                 calculation puts it.",
-            );
-            let top_of = |f: &StringForm, wire: &str| -> Option<(String, [f64; 3])> {
-                let x = f.strings.iter().find(|x| x.wire == wire)?;
-                let at = f
-                    .points
-                    .iter()
-                    .find(|p| p.label == x.top)
-                    .map(|p| p.at)
-                    .or_else(|| f.wires.iter().find(|w| w.label == x.top).map(|w| w.at))?;
-                Some((x.top.clone(), at))
-            };
-            let mut remove = None;
-            for k in 0..f.wires.len() {
-                let top = top_of(f, &f.wires[k].label);
-                let default_set = f.set.max(1);
-                egui::Frame::group(ui.style()).show(ui, |ui| {
-                    let w = &mut f.wires[k];
-                    ui.horizontal(|ui| {
-                        ui.label("wire point");
-                        ui.add(egui::TextEdit::singleline(&mut w.label).desired_width(110.0));
-                        let mut has = w.set.is_some();
-                        if ui
-                            .checkbox(&mut has, "set")
-                            .on_hover_text("A wire is clamped here: sections and jumpers end on its set number")
-                            .changed()
-                        {
-                            w.set = has.then_some(default_set);
-                        }
-                        if let Some(set) = &mut w.set {
-                            ui.add(egui::DragValue::new(set).range(1..=9999));
-                            ui.label("dead end");
-                            egui::ComboBox::from_id_salt(("wire-dead-end", k))
-                                .selected_text(if w.dead_end { "yes" } else { "no" })
-                                .width(50.0)
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut w.dead_end, true, "yes");
-                                    ui.selectable_value(&mut w.dead_end, false, "no");
-                                })
-                                .response
-                                .on_hover_text(
-                                    "Yes: a dead end, its strings are tension strings lined up \
-                                     with their conductor. No: a suspension point, its strings hang",
-                                );
-                        }
-                        if ui.small_button("×").on_hover_text("Take this wire point away (and its strings)").clicked() {
-                            remove = Some(k);
-                        }
-                    });
-                    match &top {
-                        Some((label, at)) => {
-                            let (mut down, mut dir, mut len) = polar(*at, w.at);
-                            let mut changed = false;
-                            ui.horizontal(|ui| {
-                                ui.label(format!("from {label}:"));
-                                ui.label("down/up");
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut down)
-                                            .range(0.0..=180.0)
-                                            .speed(0.5)
-                                            .max_decimals(2)
-                                            .suffix("°"),
-                                    )
-                                    .on_hover_text("Angle from straight down: 0° down, 90° level, 180° straight up")
-                                    .changed();
-                                ui.label("direction");
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut dir)
-                                            .range(0.0..=360.0)
-                                            .speed(0.5)
-                                            .max_decimals(2)
-                                            .suffix("°"),
-                                    )
-                                    .on_hover_text(
-                                        "Direction in plan, in the structure's axes: 0° ahead along \
-                                         the line, 90° to the right, 180° back, 270° to the left",
-                                    )
-                                    .changed();
-                                ui.label("length");
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut len)
-                                            .range(0.01..=50.0)
-                                            .speed(0.01)
-                                            .max_decimals(3)
-                                            .suffix(" m"),
-                                    )
-                                    .on_hover_text("Distance from the top: the string's length")
-                                    .changed();
-                            });
-                            if changed {
-                                w.at = from_polar(*at, down, dir.rem_euclid(360.0), len.max(0.01));
-                            }
-                        }
-                        None => {
-                            ui.horizontal(|ui| {
-                                for (i, name) in ["across", "along", "up"].iter().enumerate() {
-                                    ui.label(*name);
-                                    value(ui, &mut w.at[i], 0.05, " m");
-                                }
-                            });
-                        }
-                    }
-                    ui.horizontal(|ui| {
-                        ui.label("counterweight");
-                        value(ui, &mut w.weight, 10.0, " N")
-                            .on_hover_text("A weight hanging at the clamp (0: none)");
-                        w.weight = w.weight.max(0.0);
-                    });
-                });
-            }
-            if let Some(k) = remove {
-                let label = f.wires.remove(k).label;
-                f.strings.retain(|x| x.wire != label && x.top != label);
-            }
-            if ui
-                .small_button("+ wire point")
-                .on_hover_text("A wire point for a string to end on (a V's tip, a TAK's node…)")
-                .clicked()
-            {
-                let label = f.free_label(model, "W");
-                let at = f.wires.last().map_or([0.0, 0.0, 17.0], |w| w.at);
-                f.wires.push(WireRow {
-                    label,
-                    at: [at[0], at[1], at[2] - 1.0],
-                    set: None,
-                    weight: 0.0,
-                    dead_end: false,
                 });
             }
             ui.separator();

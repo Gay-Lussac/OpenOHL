@@ -7806,9 +7806,55 @@ fn the_string_window_explains_itself() {
     }
     harness.run();
     harness.get_by_label("hangs from");
-    harness.get_by_label("dead end");
+    harness.get_by_label("clamp");
     harness.get_by_label("down/up");
-    harness.get_by_label("direction");
+    // A new string makes its own wire point, 3 m straight down from its
+    // top; taken away, its wire point goes with it.
+    let before = {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(crate::editors::Form::String(f)) = &r.editor else {
+            panic!()
+        };
+        (f.strings.len(), f.wires.len())
+    };
+    harness.get_by_label("+ string").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(crate::editors::Form::String(f)) = &mut r.editor else {
+            panic!()
+        };
+        assert_eq!(
+            (f.strings.len(), f.wires.len()),
+            (before.0 + 1, before.1 + 1)
+        );
+        let x = f.strings.last().unwrap().clone();
+        let top = f.points.iter().find(|p| p.label == x.top).unwrap().at;
+        let w = f.wires.iter().find(|w| w.label == x.wire).unwrap();
+        assert_eq!(crate::editors::polar(top, w.at), (0.0, 0.0, 3.0));
+        // From the library: a 4.2 m tension assembly, the wire point at it.
+        let k = f.strings.len() - 1;
+        f.wires.iter_mut().find(|w| w.label == x.wire).unwrap().set = Some(7);
+        f.take_from_library(
+            k,
+            &crate::editors::LibraryString {
+                id: "S-420".into(),
+                length: 4.2,
+                weight: 800.0,
+                wind_area: 0.3,
+                stiffness: 4e7,
+                strain: true,
+            },
+        );
+        let w = f.wires.iter().find(|w| w.label == x.wire).unwrap();
+        assert!((crate::editors::polar(top, w.at).2 - 4.2).abs() < 1e-9 && w.dead_end);
+        assert_eq!(f.strings[k].weight, 800.0);
+        f.strings.pop();
+        f.drop_unused_wires();
+        assert_eq!((f.strings.len(), f.wires.len()), before);
+    }
+    harness.run();
+    assert_eq!(harness.query_all_by_label("direction").count(), 1);
     if let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
         let image = harness.render().unwrap();
         let path = PathBuf::from(dir).join("ols-cad-string-window.png");
