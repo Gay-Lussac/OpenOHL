@@ -61,7 +61,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `id`, `name`, `kind` | yes | Identity and family. |
 | `point` | no | Points where strings hang: `label` and `point` (local), or `node` (at a joint), or `member` and `at` (along a member, 0–1 from its first joint) — then it moves with the pylon. Labels are unique among points and wire points. |
 | `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below), optional `weight` (a counterweight hanging at it). |
-| `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `compression` (what it may take; none: tension only), `strain`, `side` (a strain string's span: ahead or back). |
+| `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `wind_area` (default: its insulator's, else none), optional `compression` (what it may take; none: tension only), `strain`, `side` (a strain string's span: ahead or back). |
 | `attachment` | no | Files of version 1: attachment points (`set`, `phase`, `point`, `insulator` or `string`, `side`), read as before (below). |
 | `extension` | no | Named body extensions: `dz` lengthens the body below z = 0, so everything above the feet rises by it. |
 | `foot` | no | Level of the feet in local z (default 0: z = 0 is the ground). |

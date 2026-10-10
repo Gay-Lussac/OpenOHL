@@ -1367,7 +1367,15 @@ impl Workspace {
                 }
                 Sheet::Strings => {
                     egui::Grid::new("type-strings").striped(true).show(ui, |ui| {
-                        for h in ["string", "top", "wire point", "insulator / length", "weight", "compression"] {
+                        for h in [
+                            "string",
+                            "top",
+                            "wire point",
+                            "insulator / length",
+                            "weight",
+                            "wind area",
+                            "compression",
+                        ] {
                             ui.strong(h);
                         }
                         ui.end_row();
@@ -1381,6 +1389,7 @@ impl Workspace {
                                 _ => "—".into(),
                             });
                             ui.label(s.weight.map_or("—".into(), |w| format!("{:.0} N", w.si())));
+                            ui.label(s.wind_area.map_or("—".into(), |w| format!("{:.3} m²", w.si())));
                             ui.label(
                                 s.compression
                                     .map_or("tension only".into(), |c| format!("{:.0} N", c.si())),

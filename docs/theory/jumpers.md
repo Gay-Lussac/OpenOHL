@@ -50,7 +50,7 @@ The model is an **inextensible elastic rod**:
 
 ## Support clamps: a rod with rigid pieces
 
-A jumper can hang on **support clamps** between its ends (`supports`). Each clamp hangs on strings of a structure: one string (an I) or two strings to one wire point (a V). The clamp is free to swing and turn, so no angle is assumed for it. The cable runs straight through it: over the clamp's few centimetres it cannot bend, so the direction it leaves in is the direction it enters in.
+A jumper can hang on **helping strings** between its ends (`supports`): insulator strings of the structure holding it like suspension strings hold the conductor on the line. Each clamp hangs on strings of a structure: one string (an I) or two strings to one wire point (a V). The clamp is free to swing and turn, so no angle is assumed for it. The cable runs straight through it: over the clamp's few centimetres it cannot bend, so the direction it leaves in is the direction it enters in.
 
 A jumper with support clamps is always solved as the rod above, also with \\( EI = 0 \\) or hinged ends:
 
@@ -58,7 +58,7 @@ A jumper with support clamps is always solved as the rod above, also with \\( EI
 - **Bending.** \\( c_i = EI / \bar\ell \\) at the node between pieces \\( i \\) and \\( i+1 \\), with \\( \bar\ell \\) the mean of their lengths; \\( 2EI/\ell \\) at a clamped end, with that end piece's length. With equal pieces this is the rod above.
 - **Where the strings hold.** At the clamp's middle: \\( p = x_k + \tfrac12 \ell_k d_k \\) for the clamp's piece \\( k \\). The strings therefore turn the clamp too: it settles where the cable's pulls at its two ends and the strings balance.
 - **Strings.** Each string is a rigid, tension-only distance constraint from its fixed top (a structure point) to the clamp's middle: an I is a pendulum, a V two such constraints. A string is **slack** while the clamp is nearer its top than its length, or while its force would push. The solve keeps an **active set**: all strings are first left out; a string whose point then hangs beyond its length goes taut and is shortened to its length in steps (as a single support string is); a taut string whose force would push is let go; this repeats until no string changes. A V leg on the lee side of a strong wind goes slack this way.
-- **Loads on a clamp.** Half of each string's weight, and the wire point's own `weight` (a counterweight), shared by the subconductors. The wind on the strings is left out.
+- **Loads on a clamp.** Half of each string's weight, half of the wind on each string (the weather case's pressure × the string's `wind_area`, horizontal across the line from the case's wind side, as on the line's suspension strings), and the wire point's own `weight` (a counterweight), shared by the subconductors. The clamp itself takes no wind (it is small).
 - **Forces.** A string's tension is \\( T = -2 \mu L \\) from its multiplier \\( \mu \\) (constraint \\( |p - t|^2 = L^2 \\)); 0 when slack. The Jacobian of the system, with the strings' rows and columns, is checked against finite differences in the tests.
 - **Limits.** A clamp's strings hang from structure points: a string below another string (a V with a string below, a TAK) does not hold a clamp yet. The strings' pull on the structure goes into the structure loads, at their tops; the jumper's pull on the sections does not (sections are solved first).
 

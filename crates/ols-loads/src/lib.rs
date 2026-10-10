@@ -324,7 +324,7 @@ pub fn structure_loads(
             solved.push(shape);
         }
         // Jumpers' support clamps: their strings pull on their tops (the
-        // string's force towards the clamp, half its weight).
+        // string's force towards the clamp, half its weight and wind).
         for j in line.jumpers.iter().filter(|j| !j.supports.is_empty()) {
             let shape = match ols_line::jumper::solve_one_jumper(&line, library, w, &solved, j) {
                 Ok(shape) => shape,
@@ -345,6 +345,13 @@ pub fn structure_loads(
                     let d = towards.iter().map(|v| v * v).sum::<f64>().sqrt();
                     let mut f = towards.map(|v| if d > 0.0 { v / d * x.force } else { 0.0 });
                     f[2] -= string.weight / 2.0;
+                    // Half the wind on the string, across the line.
+                    if let Some(a) = line.direction_at([x.top[0], x.top[1]]) {
+                        let push =
+                            0.5 * w.wind_pressure.si() * string.wind_area * w.wind_from.to_left();
+                        f[0] -= a[1] * push;
+                        f[1] += a[0] * push;
+                    }
                     let place = Place {
                         structure: &support.structure,
                         label: &string.top,

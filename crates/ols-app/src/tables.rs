@@ -206,6 +206,12 @@ const STRINGS: &[Column] = &[
         "yes: a strain string (lined up with its conductor)",
     ),
     (
+        "wind area m²",
+        80.0,
+        Yes,
+        "area the wind blows on, half at each end (empty: its insulator's, if any)",
+    ),
+    (
         "sections",
         60.0,
         Derived,
@@ -264,10 +270,10 @@ const JUMPERS: &[Column] = &[
         "yes: a rigid jumper (tube or bar), straight between its clamps — no length or sag",
     ),
     (
-        "clamps",
+        "helping strings",
         200.0,
         Derived,
-        "support clamps, in order: structure, wire point, where along (share of the length), clamp length (edit them in the jumper's Edit form)",
+        "helping strings holding it, in order: structure, wire point, where along (share of the length), clamp length (edit them in the jumper's Edit form)",
     ),
 ];
 
@@ -906,6 +912,11 @@ impl TableKind {
                                 x.insulator.clone().unwrap_or_default(),
                                 x.compression.map_or(String::new(), |c| f(c, 0)),
                                 if x.strain { "yes" } else { "no" }.into(),
+                                if x.wind_area > 0.0 {
+                                    f(x.wind_area, 3)
+                                } else {
+                                    String::new()
+                                },
                                 sets.iter()
                                     .map(|set| {
                                         through.get(&(s.id.as_str(), *set)).copied().unwrap_or(0)
@@ -2169,6 +2180,10 @@ fn string_cells(x: &mut ols_line::InsulatorString, c: &Cells, name: &str) -> Res
         "no" | "false" | "0" | "" => false,
         other => return Err(format!("{name} strain: \"{other}\" is not yes or no")),
     };
+    x.wind_area = opt_num(&c.get(10), &format!("{name} wind area"))?.unwrap_or(0.0);
+    if x.wind_area.is_nan() || x.wind_area < 0.0 {
+        return Err(format!("{name} wind area: must be ≥ 0"));
+    }
     Ok(())
 }
 
