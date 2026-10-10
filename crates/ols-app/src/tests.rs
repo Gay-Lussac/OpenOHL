@@ -8339,3 +8339,44 @@ fn descriptions_are_typed_and_shown_as_labels() {
             || notes.iter().filter(|n| n.text.starts_with("S1 —")).count() > 1
     );
 }
+
+/// A structure type file opened on its own: its editor is the whole
+/// window (no line), the pylon in 3D with the compass, its level; the
+/// angle ahead is the user's for files opened alone. Image with
+/// OLS_RENDER_PNG.
+#[test]
+fn a_structure_type_opens_on_its_own() {
+    let gpu = ols_render::headless_device().is_ok();
+    let file = root().join("examples/synthetic-line/Structures/type-02.olss");
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 950.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let mut harness = builder.build_eframe(|cc| {
+        let mut app = App::empty(Sources::default(), cc.wgpu_render_state.clone());
+        app.ahead_alone = 270.0;
+        app.start(
+            Sources {
+                file: file.clone(),
+                ..Sources::default()
+            },
+            &cc.egui_ctx,
+        );
+        app
+    });
+    harness.run();
+    harness.run();
+    harness.get_by_label("Structure type, opened on its own");
+    harness.get_by_label("Level 3 — full design");
+    harness.get_by_label("opened alone (no line)");
+    assert_eq!(
+        harness.state_mut().library_ahead_for_tests(),
+        Some(270.0),
+        "the compass counts as the user does"
+    );
+    if gpu && let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ols-cad-structure-alone.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+}

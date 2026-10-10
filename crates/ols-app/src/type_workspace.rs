@@ -125,6 +125,9 @@ pub struct Workspace {
     pub string_length: f64,
     /// A deletion waiting for its confirmation.
     pub confirm: Option<Removal>,
+    /// The angle that means ahead (the compass), as the project or the
+    /// user counts angles.
+    pub ahead: f64,
     /// What the last action did (or why not: `true`).
     pub message: Option<(String, bool)>,
 }
@@ -147,6 +150,7 @@ impl Default for Workspace {
             string_length: 4.0,
             confirm: None,
             message: None,
+            ahead: 0.0,
         }
     }
 }
@@ -301,6 +305,11 @@ impl Workspace {
             self.shown = Some(t);
         }
         self.read_from = text;
+        self.dirty = true;
+    }
+
+    /// Draws its scene again on the next frame.
+    pub fn redraw(&mut self) {
         self.dirty = true;
     }
 
@@ -555,6 +564,8 @@ impl Workspace {
         s.polyline(&[[0.0; 3], [3.0, 0.0, 0.0]], [230, 80, 70, 255], 2.5);
         s.polyline(&[[0.0; 3], [0.0, 3.0, 0.0]], [90, 200, 90, 255], 2.5);
         s.polyline(&[[0.0; 3], [0.0, 0.0, 3.0]], [90, 140, 240, 255], 2.5);
+        // The compass on the ground at the feet: the angles as counted.
+        crate::editors::draw_compass(&mut s, compass_radius(g), self.ahead, None, foot);
         for l in &g.sticks {
             s.polyline(l, STICK, 1.5);
         }
@@ -665,7 +676,7 @@ impl Workspace {
         doc: &mut DocumentMut,
         rs: Option<&egui_wgpu::RenderState>,
         insulators: &InsulatorLibrary,
-        used_by: usize,
+        used_by: Option<usize>,
     ) -> bool {
         self.refresh(doc);
         let Some(t) = self.shown.clone() else {
@@ -695,9 +706,10 @@ impl Workspace {
             ));
             ui.separator();
             ui.label(match used_by {
-                0 => "used by no structure of the line".to_owned(),
-                1 => "used by 1 structure of the line (it follows when saved)".to_owned(),
-                n => format!("used by {n} structures of the line (they follow when saved)"),
+                None => "opened alone (no line)".to_owned(),
+                Some(0) => "used by no structure of the line".to_owned(),
+                Some(1) => "used by 1 structure of the line (it follows when saved)".to_owned(),
+                Some(n) => format!("used by {n} structures of the line (they follow when saved)"),
             });
         });
         changed |= self.tools(ui, doc, &t);
@@ -1101,6 +1113,19 @@ impl Workspace {
         };
         let font = egui::FontId::proportional(12.0);
         let rgb = |c: [u8; 4]| egui::Color32::from_rgb(c[0], c[1], c[2]);
+        for (p, text, color) in
+            crate::editors::compass_texts(compass_radius(g), self.ahead, None, foot)
+        {
+            if let Some((q, _)) = projector(p) {
+                painter.text(
+                    rect.min + egui::vec2(q[0] as f32, q[1] as f32),
+                    egui::Align2::CENTER_CENTER,
+                    text,
+                    egui::FontId::proportional(11.0),
+                    color,
+                );
+            }
+        }
         for (l, p) in &g.points {
             if let Some((q, align)) = screen(*p) {
                 painter.text(q, align, l, font.clone(), rgb(POINT));
@@ -1407,6 +1432,24 @@ impl Workspace {
             });
         changed
     }
+}
+
+/// The compass's radius: beyond the pylon's reach in plan, a third of its
+/// height at least.
+fn compass_radius(g: &Geometry) -> f64 {
+    let pts = || {
+        g.joints
+            .iter()
+            .map(|j| j.1)
+            .chain(g.points.iter().map(|p| p.1))
+            .chain(g.wires.iter().map(|w| w.1))
+            .chain(g.sticks.iter().flatten().copied())
+    };
+    let reach = pts().map(|p| p[0].hypot(p[1])).fold(3.0, f64::max);
+    let (lo, hi) = pts().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| {
+        (a.min(p[2]), b.max(p[2]))
+    });
+    (reach * 1.25).max(0.35 * (hi - lo).max(0.0))
 }
 
 /// The length written for a preset string: `length` for an I-string; for

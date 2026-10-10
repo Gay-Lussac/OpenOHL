@@ -2471,8 +2471,24 @@ fn compass_labels(
     model: &Model,
     g: &crate::type_workspace::Geometry,
 ) -> Vec<crate::preview3d::Label> {
-    let r = compass_radius(g) * 1.12;
-    let ahead = model.line.display.ahead_deg;
+    compass_texts(
+        compass_radius(g),
+        model.line.display.ahead_deg,
+        Some(f.orientation_deg),
+        0.0,
+    )
+}
+
+/// The compass's texts (radius `r`, at height `z`): the four angles as
+/// the project counts them (`ahead`), with ahead, right, back, left; and
+/// north when the structure's orientation is known.
+pub(crate) fn compass_texts(
+    r: f64,
+    ahead: f64,
+    orientation: Option<f64>,
+    z: f64,
+) -> Vec<crate::preview3d::Label> {
+    let r = r * 1.12;
     let mut out = Vec::new();
     let grey = egui::Color32::from_rgb(200, 200, 200);
     for a in [0.0, 90.0, 180.0, 270.0] {
@@ -2484,36 +2500,38 @@ fn compass_labels(
             270 => " left",
             _ => "",
         };
-        out.push(([d[0] * r, d[1] * r, 0.0], format!("{a:.0}°{word}"), grey));
+        out.push(([d[0] * r, d[1] * r, z], format!("{a:.0}°{word}"), grey));
     }
-    // North, from its orientation.
-    let o = f.orientation_deg.to_radians();
-    let n = [o.sin(), o.cos()];
-    out.push((
-        [n[0] * r * 0.8, n[1] * r * 0.8, 0.0],
-        "N".into(),
-        egui::Color32::from_rgb(120, 170, 255),
-    ));
+    if let Some(o) = orientation {
+        let o = o.to_radians();
+        out.push((
+            [o.sin() * r * 0.8, o.cos() * r * 0.8, z],
+            "N".into(),
+            egui::Color32::from_rgb(120, 170, 255),
+        ));
+    }
     out
 }
 
-/// The structure window's preview: the ground's compass, the structure's
-/// sticks, points, strings and wire points.
-fn structure_scene(f: &StructureForm, model: &Model) -> ols_render::Scene {
-    let g = structure_geometry(f, model);
-    let mut s = ols_render::Scene::new([0.0; 3]);
-    let r = compass_radius(&g);
-    let ahead = model.line.display.ahead_deg;
+/// The compass on the ground (radius `r`, at height `z`): a ring with
+/// ticks every 15° as the project counts them, ahead (green) and right
+/// (red) from the centre, north (blue) when the orientation is known.
+pub(crate) fn draw_compass(
+    s: &mut ols_render::Scene,
+    r: f64,
+    ahead: f64,
+    orientation: Option<f64>,
+    z: f64,
+) {
     let ring: Vec<[f64; 3]> = (0..=72)
         .map(|k| {
             let t = f64::from(k) * std::f64::consts::TAU / 72.0;
-            [r * t.cos(), r * t.sin(), 0.0]
+            [r * t.cos(), r * t.sin(), z]
         })
         .collect();
     s.polyline(&ring, [110, 115, 125, 255], 1.5);
     for k in 0..24 {
-        let a = f64::from(k) * 15.0;
-        let d = compass_direction(a, ahead);
+        let d = compass_direction(f64::from(k) * 15.0, ahead);
         let inner = if k % 6 == 0 {
             0.82
         } else if k % 2 == 0 {
@@ -2523,22 +2541,41 @@ fn structure_scene(f: &StructureForm, model: &Model) -> ols_render::Scene {
         };
         s.polyline(
             &[
-                [d[0] * r * inner, d[1] * r * inner, 0.0],
-                [d[0] * r, d[1] * r, 0.0],
+                [d[0] * r * inner, d[1] * r * inner, z],
+                [d[0] * r, d[1] * r, z],
             ],
             [150, 155, 165, 255],
             1.5,
         );
     }
-    // Ahead (green) and right (red) from the centre; north (blue).
-    s.polyline(&[[0.0; 3], [0.0, r * 0.75, 0.0]], [90, 200, 90, 255], 3.0);
-    s.polyline(&[[0.0; 3], [r * 0.75, 0.0, 0.0]], [230, 80, 70, 255], 3.0);
-    let o = f.orientation_deg.to_radians();
     s.polyline(
-        &[[0.0; 3], [o.sin() * r * 0.6, o.cos() * r * 0.6, 0.0]],
-        [120, 170, 255, 255],
-        2.0,
+        &[[0.0, 0.0, z], [0.0, r * 0.75, z]],
+        [90, 200, 90, 255],
+        3.0,
     );
+    s.polyline(
+        &[[0.0, 0.0, z], [r * 0.75, 0.0, z]],
+        [230, 80, 70, 255],
+        3.0,
+    );
+    if let Some(o) = orientation {
+        let o = o.to_radians();
+        s.polyline(
+            &[[0.0, 0.0, z], [o.sin() * r * 0.6, o.cos() * r * 0.6, z]],
+            [120, 170, 255, 255],
+            2.0,
+        );
+    }
+}
+
+/// The structure window's preview: the ground's compass, the structure's
+/// sticks, points, strings and wire points.
+fn structure_scene(f: &StructureForm, model: &Model) -> ols_render::Scene {
+    let g = structure_geometry(f, model);
+    let mut s = ols_render::Scene::new([0.0; 3]);
+    let r = compass_radius(&g);
+    let ahead = model.line.display.ahead_deg;
+    draw_compass(&mut s, r, ahead, Some(f.orientation_deg), 0.0);
     for l in &g.sticks {
         s.polyline(l, [215, 215, 220, 255], 2.0);
     }

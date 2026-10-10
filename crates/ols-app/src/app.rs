@@ -331,6 +331,8 @@ enum State {
     },
     Ready(Box<Ready>),
     Failed(String),
+    /// A structure type file opened on its own.
+    Structure(Box<crate::structure_desk::StructureDesk>),
 }
 
 /// The OLS CAD application.
@@ -348,6 +350,9 @@ pub struct App {
     pub lod: crate::lod::LodSettings,
     /// The colour tool's palette (this user's, remembered).
     pub palette: crate::color_tool::Palette,
+    /// The angle that means ahead for structure types opened on their own
+    /// (a project has its own), remembered on this computer.
+    pub ahead_alone: f64,
     /// Files opened recently.
     pub recent: crate::files::Recent,
     /// What this user shows of each project (remembered locally).
@@ -415,6 +420,7 @@ impl App {
             quickbar: Default::default(),
             lod: Default::default(),
             palette: Default::default(),
+            ahead_alone: 0.0,
             recent: Default::default(),
             view_prefs: Default::default(),
             default_class_scheme: None,
@@ -464,6 +470,20 @@ impl App {
         if !sources.file.as_os_str().is_empty() {
             self.recent.add(&sources.file);
         }
+        // A structure type: its editor, on its own.
+        if sources.file.extension().is_some_and(|e| e == "olss") {
+            self.state = match crate::structure_desk::StructureDesk::open(&sources.file) {
+                Ok(d) => State::Structure(Box::new(d)),
+                Err(e) => State::Failed(e),
+            };
+            let name = sources
+                .file
+                .file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("OLS CAD — {name}")));
+            self.sources = sources;
+            return;
+        }
         let (tx, rx) = channel();
         let s = sources.clone();
         let c = ctx.clone();
@@ -508,7 +528,24 @@ impl App {
 
     /// Whether the file open has changes not saved yet (library pages,
     /// table edits waiting for Apply).
+    /// Tests: the angle ahead the structure editor opened alone draws its
+    /// compass with.
+    #[cfg(test)]
+    pub fn library_ahead_for_tests(&mut self) -> Option<f64> {
+        match &self.state {
+            State::Structure(d) => Some(d.page.workspace.ahead),
+            _ => None,
+        }
+    }
+
     fn unsaved(&self) -> Vec<String> {
+        if let State::Structure(d) = &self.state {
+            return if d.dirty() {
+                vec![format!("{} (structure type)", d.path.display())]
+            } else {
+                Vec::new()
+            };
+        }
         let State::Ready(r) = &self.state else {
             return Vec::new();
         };
@@ -829,6 +866,7 @@ impl App {
             quickbar: Default::default(),
             lod: Default::default(),
             palette: Default::default(),
+            ahead_alone: 0.0,
             recent: Default::default(),
             view_prefs: Default::default(),
             default_class_scheme: None,
@@ -1069,7 +1107,9 @@ impl TabViewer for Viewer<'_> {
                     .or_insert_with(|| crate::library::LibraryPage::new(kind, &sources));
                 let cx = crate::library::PageContext {
                     rs: self.rs,
-                    model: &r.model,
+                    line: Some(&r.model.line),
+                    insulators: r.model.types.as_ref().map(|t| &t.1),
+                    ahead: r.model.line.display.ahead_deg,
                 };
                 if let Some(action) = page.ui(ui, &sources, cx) {
                     r.library_saved(kind, action);
@@ -4505,6 +4545,7 @@ impl eframe::App for App {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        storage.set_string("ahead-alone", self.ahead_alone.to_string());
         match &self.state {
             State::Ready(r) => {
                 r.view3d.controls.save(storage);
@@ -4605,6 +4646,9 @@ impl eframe::App for App {
                     ui.heading(format!("Could not load {file}"));
                     crate::menu::error_label(ui, e.as_str());
                 });
+            }
+            State::Structure(desk) => {
+                desk.ui(ui, self.render_state.as_ref(), &mut self.ahead_alone)
             }
             State::Ready(ready) => {
                 ready.remote_frame();

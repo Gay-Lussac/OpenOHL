@@ -192,12 +192,12 @@ impl Line {
                 .place_strings(at, s.orientation_deg, s.extension.as_deref(), insulators)
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
             points.extend(placed.points.into_iter().map(|p| StructurePoint {
-                description: Default::default(),
+                description: p.description,
                 label: p.label,
                 position: p.position,
             }));
             wires.extend(placed.wires.into_iter().map(|w| WirePoint {
-                description: Default::default(),
+                description: w.description,
                 label: w.label,
                 position: w.position,
                 set: w.set,
@@ -212,6 +212,7 @@ impl Line {
                 compression: x.compression,
                 wind_area: x.wind_area,
                 strain: x.strain,
+                description: x.description,
                 ..Default::default()
             }));
             // Sets replaced by the structure's own wire points, or left out.

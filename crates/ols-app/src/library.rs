@@ -595,6 +595,8 @@ pub struct LibraryPage {
     buffers: HashMap<String, String>,
     /// Structure types: the pylon workspace (instead of the fields).
     pub workspace: crate::type_workspace::Workspace,
+    /// A file opened on its own (no model: nothing to use it for).
+    pub standalone: bool,
 }
 
 /// What the pylon workspace of the structure types page needs from the
@@ -602,8 +604,12 @@ pub struct LibraryPage {
 pub struct PageContext<'a> {
     /// For its 3D view.
     pub rs: Option<&'a eframe::egui_wgpu::RenderState>,
-    /// The model (its insulators, the structures using a type).
-    pub model: &'a crate::model::Model,
+    /// The line its structures are in (none: a file opened alone).
+    pub line: Option<&'a ols_line::Line>,
+    /// The insulator assemblies strings may take.
+    pub insulators: Option<&'a ols_structures::InsulatorLibrary>,
+    /// The angle that means ahead (the compass).
+    pub ahead: f64,
 }
 
 /// What the page asks of the application.
@@ -638,6 +644,7 @@ impl LibraryPage {
             message: None,
             buffers: HashMap::new(),
             workspace: Default::default(),
+            standalone: false,
         };
         let first = match kind {
             LibraryKind::WeatherCases => sources.weather.clone(),
@@ -973,6 +980,7 @@ impl LibraryPage {
                 });
             }
             if let Some(f) = &self.file
+                && !self.standalone
                 && !kind.in_use(sources, f)
                 && !dirty
                 && ui
@@ -993,7 +1001,8 @@ impl LibraryPage {
         });
         ui.label(
             egui::RichText::new(format!(
-                "the model reads: {} — values with their units, e.g. \"28.1 mm\"; the file is checked as you type",
+                "{}: {} — values with their units, e.g. \"28.1 mm\"; the file is checked as you type",
+                if self.standalone { "the folder" } else { "the model reads" },
                 if in_project(sources, kind) {
                     "the project's own files (kept in the project; Export… to share one)".to_owned()
                 } else {
@@ -1035,16 +1044,19 @@ impl LibraryPage {
             });
             if self.workspace.on {
                 let id = self.workspace.shown().map(|t| t.id.clone());
-                let used_by = cx
-                    .model
-                    .line
-                    .structures
-                    .iter()
-                    .filter(|s| s.structure_type.is_some() && s.structure_type == id)
-                    .count();
+                let used_by = cx.line.map(|l| {
+                    l.structures
+                        .iter()
+                        .filter(|s| s.structure_type.is_some() && s.structure_type == id)
+                        .count()
+                });
                 let none = ols_structures::InsulatorLibrary::default();
-                let insulators = cx.model.types.as_ref().map_or(&none, |t| &t.1);
+                let insulators = cx.insulators.unwrap_or(&none);
                 let doc = self.doc.as_mut().expect("checked");
+                if self.workspace.ahead != cx.ahead {
+                    self.workspace.ahead = cx.ahead;
+                    self.workspace.redraw();
+                }
                 if self.workspace.ui(ui, doc, cx.rs, insulators, used_by) {
                     self.buffers.clear();
                     self.check();
