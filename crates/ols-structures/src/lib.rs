@@ -56,14 +56,21 @@ pub trait LibraryItem: Sized + for<'de> serde::Deserialize<'de> {
     /// Plausibility checks.
     fn check(&self) -> Result<(), String>;
 
+    /// Fills in what follows from the rest of the file, before the checks.
+    fn prepare(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Parses and checks one file's text.
     fn parse(path: &Path, text: &str) -> Result<Self, LibraryError> {
         let error = |message: String| LibraryError {
             path: path.to_owned(),
             message,
         };
-        let item: Self = toml::from_str(text).map_err(|e| error(e.to_string()))?;
-        let id = item.id();
+        let mut item: Self = toml::from_str(text).map_err(|e| error(e.to_string()))?;
+        let id = item.id().to_owned();
+        item.prepare()
+            .map_err(|m| error(format!("{} {id}: {m}", Self::KIND)))?;
         if id.is_empty()
             || !id
                 .chars()

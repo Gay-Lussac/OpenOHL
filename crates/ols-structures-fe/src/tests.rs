@@ -441,11 +441,12 @@ fn a_thousand_members_solve_quickly() {
     assert!(close(sum, -20e3, 1e-6), "{sum}");
 }
 
-/// The shipped example model parses; its attachments map to nodes.
+/// The shipped example pylon's members (in its structure type file)
+/// parse; its points on joints map to nodes.
 #[test]
 fn example_model_parses() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/synthetic-line/Structures/type-02.olsfe");
+        .join("../../examples/synthetic-line/Structures/type-02.olss");
     let m = Model::load(&path).unwrap();
     assert!(m.attachment_node("A1").is_some() && m.attachment_node("A11").is_some());
     let (sol, usage) = analyse(

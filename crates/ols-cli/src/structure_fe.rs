@@ -15,7 +15,8 @@ use ols_structures_fe::{Loads, Model, NodalLoad, Pole, PoleLoad};
 /// Arguments of `ols structures fe`.
 #[derive(clap::Args)]
 pub struct FeArgs {
-    /// Structure model (.olsfe).
+    /// Structure model: a structure type holding its members (.olss) or a
+    /// model file (.olsfe).
     model: PathBuf,
     /// Structure loads (CSV of `ols line --loads-csv`): the factored loads
     /// at the attachments, applied at the model's attachment nodes

@@ -462,7 +462,8 @@ enum StructuresCommand {
         #[arg(long)]
         inline_strings: bool,
     },
-    /// Finite-element analysis of a structure model (.olsfe): member
+    /// Finite-element analysis of a structure model (a full-design .olss,
+    /// or an .olsfe): member
     /// forces and usage under the loads of one structure (a CSV of `ols
     /// line --loads-csv`) or the model's own loads.
     Fe(structure_fe::FeArgs),

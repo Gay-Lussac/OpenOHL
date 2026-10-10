@@ -156,9 +156,9 @@ Guiding principles:
 in its own axes (x right of the line, y ahead, z up; 0;0 at the centre)
 and placed in the line by a position, an angle and a height adjustment.*
 
-- [ ] Placement: the type's z = 0 may be any reference level (usually under the lowest crossarm); `foot` gives the level of its feet, so the placed pylon stands with its feet on the ground, raised by the structure's `height_adjust` (foundations); extensions lengthen the body below the reference level
-- [ ] One file per pylon (`.olss`): joints and members in the type itself (sticks), level 3 adds sections, materials, supports and member kinds (truss / frame / cable) to the same members; `.olsfe` models still read. The level is **derived from the content** (1 stick figure → 2 lattice outline as soon as there are members → 3 as soon as every member has a section and material and there are supports); the marker follows
-- [ ] String points as joints or as a fraction along a member, so strings follow the members
+- [x] Placement: the type's z = 0 may be any reference level (usually under the lowest crossarm); `foot` gives the level of its feet, so the placed pylon stands with its feet on the ground, raised by the structure's `height_adjust` (foundations); extensions lengthen the body below the reference level
+- [x] One file per pylon (`.olss`): joints and members in the type itself (sticks), level 3 adds sections, materials, supports and member kinds (truss / frame / cable) to the same members; `.olsfe` models still read. The level is **derived from the content** (1 stick figure → 2 lattice outline as soon as there are members → 3 as soon as every member has a section and material and there are supports); the marker follows
+- [x] String points as joints or as a fraction along a member, so strings follow the members
 - [ ] Symmetry (optional): members and joints copied about x, y or both
 - [ ] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save
 - [ ] Level 2 and 3 drawn with their members in 3D and on plan & profile sheets

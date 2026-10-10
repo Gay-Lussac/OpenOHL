@@ -70,7 +70,7 @@ With the loads, OLS CAD checks how much of its capacity every structure uses, fr
 
 Two more checks come from an analysis, when the type names a structure model or a pole (see [Structure analysis](structure-analysis.md)):
 
-- **fe** — the type's finite-element model (`model = "….olsfe"`) solved with the factored loads at its points; usage: the member using most of its capacity.
+- **fe** — the type's finite-element model (its members when it is a full design, or `model = "….olsfe"`) solved with the factored loads at its points; usage: the member using most of its capacity.
 - **pole** — the type's pole (`pole = "id"`): bending moment along the pole from the factored loads and the wind on the pole, P-Delta amplified, against its moment capacity.
 
 A structure's usage is the largest of its checks. A structure without a type, or whose type gives nothing to check against, is listed as not checked. A load case with sections that did not solve misses their loads: it is said so.

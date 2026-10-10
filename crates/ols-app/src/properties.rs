@@ -76,7 +76,7 @@ pub fn ui(
                             .as_deref()
                             .and_then(|t| model.types.as_ref()?.0.get(t))
                             .map_or("—".into(), |t| {
-                                format!("{} — {}", t.detail.level(), t.detail.name())
+                                format!("{} — {}", t.detail().level(), t.detail().name())
                             }),
                     ),
                     (
