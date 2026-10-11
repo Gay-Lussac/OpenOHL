@@ -18,7 +18,7 @@ project (one working state, ADR-0005).
    Exact, but a merge must replay commands on another state, where they may
    no longer apply, and old logs must be replayed to read old states.
 2. **Snapshots of the whole line per revision** (the "project lines" of the
-   Lines menu). Simple, but every revision costs the whole line.
+   Versions menu). Simple, but every revision costs the whole line.
 3. **Content-addressed states, git style**: every object value, library
    file and tree stored once by its hash; a revision is a tree plus
    parents and a message. Merges compare states, not commands.

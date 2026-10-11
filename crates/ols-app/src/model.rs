@@ -86,7 +86,7 @@ pub struct ViewPrefs {
     /// Backgrounds hidden (`image:<layer>`, `drawing:<name>`).
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub hidden_backgrounds: std::collections::BTreeSet<String>,
-    /// The project line this user works on (Lines › Project lines).
+    /// The project line this user works on (Versions › Project lines).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<String>,
     /// The project lines shown next to it.
@@ -171,7 +171,7 @@ pub struct Solved {
 }
 
 /// Which side the wind of the weather cases comes from, looking ahead
-/// along the line: a display choice (Criteria › Display weather cases),
+/// along the line: a display choice (View › Display weather cases),
 /// not part of the weather case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -445,7 +445,7 @@ pub struct Model {
     /// The weather cases shown for the whole line (Display weather cases;
     /// empty: the case passed to the views).
     pub shown_cases: Vec<usize>,
-    /// Project lines shown next to the line worked on (Lines menu).
+    /// Project lines shown next to the line worked on (Versions menu).
     pub other_lines: Vec<OtherLine>,
     /// Project lines another user changed since the last frame (server
     /// mode): those shown are read again; `""`: the line worked on was

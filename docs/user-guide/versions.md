@@ -16,7 +16,7 @@ git (DESIGN_GOALS §7, [ADR-0010](../adr/0010-version-control.md)):
   conflicting changes are listed and settled one by one;
 - **revert** makes a revision undoing another's changes.
 
-The operation log (`ols project log`, Edit › History) still records every
+The operation log (`ols project log`, Versions › History) still records every
 command; revisions are the named states between them.
 
 ## The working state
@@ -28,7 +28,7 @@ logged, undoable per user and per line). A **commit** records it as a
 revision of that branch. **Check out** chooses the line you work on: nothing
 changes, uncommitted work stays on its line. A tag or revision is not worked
 on directly: make a line from it (`branch NAME --at TAG`). In the desktop
-app, the line you work on is chosen per user (Lines › Project lines); on
+app, the line you work on is chosen per user (Versions › Project lines); on
 the command line, `checkout` also sets the line the file opens on.
 
 In server mode every user works on their own line; a merge changes the line
@@ -182,7 +182,7 @@ copy reconnects.
 
 ## In the desktop app
 
-**Edit › Versions…** opens the version window:
+**Versions › Revisions and branches…** opens the version window:
 
 - **History**: the revisions newest first (◆ a merge), with their branches
   and tags; **Commit** with a message; branches with *Work on it* (the

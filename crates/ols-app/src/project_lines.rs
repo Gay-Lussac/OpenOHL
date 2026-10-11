@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The Lines menu: the project lines ([`ols_session::lines`]) — the main
+//! The Versions menu: the project lines ([`ols_session::lines`]) — the main
 //! line and the other designs of the project (e.g. its phases), each
 //! edited on its own. Each user works on one (their edits go to it) and
 //! shows others next to it; a line brings in the changes of another, and
@@ -16,7 +16,7 @@ use ols_session::versions::{Choices, Conflict, MAIN, Side};
 use crate::app::Ready;
 use crate::scene::Layer;
 
-/// A window of the Lines menu.
+/// A window of the Versions menu.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LinesWindow {
     /// Project lines: every line, which one is worked on, which are shown.
@@ -170,7 +170,7 @@ fn show(r: &mut Ready, name: &str, on: bool) {
     r.view3d.dirty.insert(Layer::OtherLines);
 }
 
-/// The Lines menu (it stays open while lines are ticked).
+/// The Versions menu (it stays open while lines are ticked).
 pub fn menu(ui: &mut egui::Ui, r: &mut Ready) {
     let Some(current) = r.model.session().map(|s| s.current_line().to_owned()) else {
         ui.label(
@@ -390,7 +390,7 @@ fn conflict_row(
     ui.end_row();
 }
 
-/// The windows of the Lines menu.
+/// The windows of the Versions menu.
 pub fn window(ctx: &egui::Context, r: &mut Ready) {
     let Some(mut w) = r.lines_window.clone() else {
         return;
@@ -588,7 +588,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                     "A new project line starts as a copy of another — as it is now, changes \
                      not yet committed included. From then on each is edited on its own: \
                      corrections made on the other line reach the new one only when you bring \
-                     them in (Lines › Bring in changes).",
+                     them in (Versions › Bring in changes).",
                 );
                 egui::Grid::new("new-line").num_columns(2).show(ui, |ui| {
                     ui.label("name");

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Lines › Project lines › Working tree: the history of the project lines
+//! Versions › Project lines › Working tree: the history of the project lines
 //! drawn from left (oldest) to right (newest) — a lane per line, a dot per
 //! revision, where each line started from another and where lines were
 //! merged; the lines that exist, those deleted (grey), uncommitted work
@@ -553,7 +553,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                 } else {
                     ui.label(
                         egui::RichText::new(
-                            "Committed by whoever works on the line (Lines › Project lines: \
+                            "Committed by whoever works on the line (Versions › Project lines: \
                              work on it, then commit here); bringing in changes and \
                              submitting a review record it too.",
                         )

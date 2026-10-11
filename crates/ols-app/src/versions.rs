@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Edit › Versions: the project's version control and collaboration
+//! Versions › Revisions and branches: the project's version control and collaboration
 //! (`ols_session::versions`, `ols_session::collab`).
 //!
 //! - **History**: the revisions, newest first, with their branches and
@@ -138,7 +138,7 @@ fn read(model: &Model, key: (u64, i64, u64)) -> Option<Snapshot> {
     })
 }
 
-/// Edit › Versions, when open.
+/// Versions › Revisions and branches, when open.
 pub fn window(ctx: &egui::Context, r: &mut Ready) {
     if !r.versions.open {
         return;
@@ -302,7 +302,7 @@ impl VersionsWindow {
                                     .small_button("Work on it")
                                     .on_hover_text(
                                         "Each branch is a project line: work on this one from \
-                                         now on (nothing changes; also Lines › Project lines)",
+                                         now on (nothing changes; also Versions › Project lines)",
                                     )
                                     .clicked()
                             {
@@ -496,7 +496,7 @@ impl VersionsWindow {
                                             .small_button("New line from it")
                                             .on_hover_text(
                                                 "A project line starting from this revision, to \
-                                                 work on (Lines › Project lines)",
+                                                 work on (Versions › Project lines)",
                                             )
                                             .clicked()
                                     {

@@ -819,7 +819,7 @@ pub fn people_ui(ui: &mut egui::Ui, model: &mut Model) -> Option<PeopleAction> {
     go
 }
 
-/// Edit › History: the operation log, newest first; admins roll back.
+/// Versions › History: the operation log, newest first; admins roll back.
 /// Returns an edit to make (rollback of one entry, or back to one).
 pub fn history_ui(ui: &mut egui::Ui, model: &Model) -> Option<(String, Op)> {
     let session = match (&model.editing, &model.viewer_session) {

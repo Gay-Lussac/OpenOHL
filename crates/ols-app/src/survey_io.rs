@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Terrain › Survey data › Import LAS/LAZ and Export LAS/LAZ: the windows
+//! File › Import › LiDAR points and File › Export › LiDAR points: the windows
 //! and the jobs they start in the background (a progress bar; the view
 //! stays usable). An import goes into the project's point cloud (or a new
 //! one) and the project is opened again to show it.

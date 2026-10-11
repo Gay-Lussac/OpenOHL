@@ -4,8 +4,8 @@ OLS XML is the whole line model — the content of a [line file](../user-guide/l
 
 - **Namespace:** `urn:ols-cad:ols-line:1`
 - **Schema:** [`docs/schema/ols-line.xsd`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/docs/schema/ols-line.xsd) (XML Schema 1.0)
-- **Write:** `ols line LINE --export line.xml` (format `ols-xml`, the default for `.xml`) or File › Export… in the application.
-- **Read:** `ols import line.xml --out line.ols.json`, `ols project import-file line.xml --into p.ols --user ann`, or File › Import into the line… in the application. The reader also recognises LandXML files (root `LandXML`, see [Import and export](../user-guide/import-export.md#landxml)).
+- **Write:** `ols line LINE --export line.xml` (format `ols-xml`, the default for `.xml`) or File › Export › The line… in the application.
+- **Read:** `ols import line.xml --out line.ols.json`, `ols project import-file line.xml --into p.ols --user ann`, or File › Import › Into the line… in the application. The reader also recognises LandXML files (root `LandXML`, see [Import and export](../user-guide/import-export.md#landxml)).
 
 ## Rules
 

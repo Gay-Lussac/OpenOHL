@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Tools › Spot structures: the least-cost structures along a route of the
+//! Structures › Spot structures: the least-cost structures along a route of the
 //! model ([`ols_spotting`]) on the model's ground, from its structure types
 //! and a cost file, computed in the background (cancellable). The proposal
 //! is listed and saved as a new line file; the model is not changed.
