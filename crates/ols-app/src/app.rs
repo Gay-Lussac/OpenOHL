@@ -222,9 +222,9 @@ pub struct Ready {
     pub vegetation: crate::vegetation::VegetationWindow,
     /// Checks › As-built wires.
     pub wirefit: crate::wirefit::WireFitWindow,
-    /// Sections › Clearances › Vertical clearances.
+    /// Checks › Vertical clearances.
     pub vertical_clearances: crate::clearance_zones::ZoneWindow,
-    /// Sections › Clearances › Radial clearances.
+    /// Checks › Radial clearances.
     pub radial_clearances: crate::clearance_zones::ZoneWindow,
     /// Terrain › Terrain surfaces (TIN).
     pub surfaces: crate::surfaces::SurfacesWindow,
@@ -4306,6 +4306,33 @@ fn menus(
         }
         ui.separator();
         ui.label(egui::RichText::new("Clearances").strong());
+        if ui
+            .button("Vertical clearances…")
+            .on_hover_text(
+                "Targets straight under the wires, within a width on each side; rules by \
+                 voltage, weather case, distance and LiDAR class; the wind stepped",
+            )
+            .clicked()
+        {
+            r.vertical_clearances.show(&r.model);
+            ui.close();
+        }
+        if ui
+            .button("Radial clearances…")
+            .on_hover_text(
+                "The direct distance from the wires to the targets; rules by voltage, \
+                 weather case, distance and LiDAR class; the wind stepped",
+            )
+            .clicked()
+        {
+            r.radial_clearances.show(&r.model);
+            ui.close();
+        }
+        ui.label(
+            egui::RichText::new("A rule file (wires to wires and other lines too):")
+                .small()
+                .weak(),
+        );
         item(ui, Command::RunChecks, out);
         let c = &mut r.clearances;
         ui.checkbox(&mut c.auto, "also after every edit");
@@ -4449,31 +4476,6 @@ fn menus(
         item(ui, Command::Table(TableKind::Jumpers), out);
         item(ui, Command::Table(TableKind::Systems), out);
         item(ui, Command::Table(TableKind::Circuits), out);
-        ui.separator();
-        ui.menu_button("Clearances", |ui| {
-            if ui
-                .button("Vertical clearances…")
-                .on_hover_text(
-                    "Targets straight under the wires, within a width on each side; rules by \
-                     voltage, weather case, distance and LiDAR class; the wind stepped",
-                )
-                .clicked()
-            {
-                r.vertical_clearances.show(&r.model);
-                ui.close();
-            }
-            if ui
-                .button("Radial clearances…")
-                .on_hover_text(
-                    "The direct distance from the wires to the targets; rules by voltage, \
-                     weather case, distance and LiDAR class; the wind stepped",
-                )
-                .clicked()
-            {
-                r.radial_clearances.show(&r.model);
-                ui.close();
-            }
-        });
         ui.separator();
         crate::menu::options_menu(ui, "Display options", |ui| {
             ui.label(
