@@ -1036,10 +1036,16 @@ impl TabViewer for Viewer<'_> {
             Tab::Plan => r
                 .plan
                 .ui(ui, &r.model, r.case, &mut r.selection, &snaps, &r.visible),
-            Tab::Profile => r
-                .profile
-                .ui(ui, &r.model, r.case, &mut r.selection, &snaps)
-                .map(|target| crate::selection::Use { target, at: None }),
+            Tab::Profile => {
+                let used = r
+                    .profile
+                    .ui(ui, &r.model, r.case, &mut r.selection, &snaps)
+                    .map(|target| crate::selection::Use { target, at: None });
+                if let Some(depth) = r.profile.new_corridor.take() {
+                    r.model.profile_corridor = depth;
+                }
+                used
+            }
             Tab::Properties => {
                 let editable = r.model.can_edit().is_ok();
                 let action = crate::properties::ui(
