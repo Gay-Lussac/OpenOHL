@@ -10,10 +10,13 @@
 //! - [`insulators`]: suspension, V-string and strain assemblies.
 //! - [`derive`](mod@derive): draft libraries derived from the attachment geometry of an
 //!   existing line.
+//! - [`templates`]: pylon templates (`*.olspt`), the face of a pylon as a
+//!   few dimensions, building structure types of level 1.
 
 pub mod derive;
 pub mod insulators;
 pub mod structures;
+pub mod templates;
 
 use std::collections::BTreeMap;
 use std::fmt;

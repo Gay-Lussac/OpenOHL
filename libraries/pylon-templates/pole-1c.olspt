@@ -1,0 +1,57 @@
+# Pylon template (see delta-1c.olspt for the conventions).
+format = "ols-pylon-template"
+version = 1
+id = "pole-1c"
+name = "Pole, one circuit, staggered"
+description = "A pole with three short arms at different heights, no earth wire."
+kind = "pole"
+height = "top"
+
+[strings]
+suspension_length = "1.2 m"
+suspension_weight = "0.3 kN"
+strain_length = "1.8 m"
+strain_weight = "0.5 kN"
+
+[[parameter]]
+name = "level_1"
+default = "15 m"
+description = "height of the top arm (to the right)"
+
+[[parameter]]
+name = "level_2"
+default = "13.5 m"
+description = "height of the middle arm (to the left)"
+
+[[parameter]]
+name = "level_3"
+default = "12 m"
+description = "height of the bottom arm (to the right)"
+
+[[parameter]]
+name = "arm"
+default = "1.5 m"
+description = "pole to each phase"
+
+[[parameter]]
+name = "top"
+default = "16 m"
+description = "height of the pole top"
+
+[[attachment]]
+slot = 1
+label = "L1"
+across = "arm"
+up = "level_1"
+
+[[attachment]]
+slot = 2
+label = "L2"
+across = "-arm"
+up = "level_2"
+
+[[attachment]]
+slot = 3
+label = "L3"
+across = "arm"
+up = "level_3"

@@ -1432,6 +1432,9 @@ impl TableKind {
                     let c = existing(key)?;
                     let mut form = StructureForm::of(model, key)
                         .ok_or_else(|| format!("no structure {key}"))?;
+                    // The table changes the structure only (its alignment
+                    // point stays tied as it is).
+                    form.on_alignment = None;
                     structure_cells(&mut form, &c, model, key)?;
                     let (what, cmd) = form.command(Some(stored))?;
                     let new_id = c.get(0).trim().to_owned();

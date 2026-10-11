@@ -1,0 +1,64 @@
+# Pylon template (see delta-1c.olspt for the conventions).
+format = "ols-pylon-template"
+version = 1
+id = "flat-1c"
+name = "Flat, one circuit, two earth wires"
+description = "Three phases side by side on one crossarm; two earth wires on peaks above the outer phases."
+kind = "lattice"
+height = "peak"
+
+[strings]
+suspension_length = "3.5 m"
+suspension_weight = "1.2 kN"
+strain_length = "4.5 m"
+strain_weight = "1.8 kN"
+
+[[parameter]]
+name = "arm_level"
+default = "20 m"
+description = "height of the crossarm"
+
+[[parameter]]
+name = "spacing"
+default = "7 m"
+description = "between neighbouring phases"
+
+[[parameter]]
+name = "peak"
+default = "27 m"
+description = "height of the earth wire peaks"
+
+[[parameter]]
+name = "earth_half"
+default = "5 m"
+description = "mast to each earth wire"
+
+[[attachment]]
+slot = 1
+label = "L1"
+across = "-spacing"
+up = "arm_level"
+
+[[attachment]]
+slot = 2
+label = "L2"
+across = "0"
+up = "arm_level"
+
+[[attachment]]
+slot = 3
+label = "L3"
+across = "spacing"
+up = "arm_level"
+
+[[earth]]
+slot = 19
+label = "E1"
+across = "-earth_half"
+up = "peak"
+
+[[earth]]
+slot = 20
+label = "E2"
+across = "earth_half"
+up = "peak"

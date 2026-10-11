@@ -7146,6 +7146,164 @@ fn the_edit_alignment_tool_reconnects_extends_and_branches() {
     assert_eq!(main(&mut harness), now, "main unchanged");
 }
 
+/// Structures › New pylon from a template…: a suspension and a strain
+/// type built from a template (sets: the slots, + 20 back, + 40 ahead);
+/// Place on alignment points…: one command puts them on every point,
+/// along the line; built again, the structures follow; Put it on the line
+/// again turns a structure back.
+#[test]
+fn pylons_are_built_from_templates_and_placed_on_the_alignment() {
+    use crate::pylon_builder::{Placement, PylonBuilder};
+    use ols_structures::templates::Role;
+    let model = synthetic_project_with("pylon-builder", |l| {
+        l.alignment_points.clear();
+        l.alignments = vec![ols_line::Alignment::new("main", "main", Vec::new())];
+        l.set_alignment_points(
+            "main",
+            [[0.0, -80.0], [300.0, -80.0], [600.0, -20.0], [900.0, -20.0]]
+                .map(|p| ([p[0], p[1], 500.0], None)),
+        );
+    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // The suspension type, then the strain one (the toggle).
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut b = PylonBuilder::new(&r.model);
+        let k = (0..10)
+            .find(|&k| {
+                b.choose(&r.model, k);
+                b.current().is_some_and(|t| t.id == "danube-2c")
+            })
+            .expect("the shipped template");
+        b.choose(&r.model, k);
+        assert_eq!(b.id, "danube-2c-susp");
+        r.pylon_builder = Some(b);
+    }
+    harness.run();
+    harness.get_by_label("Save the type").click();
+    harness.run();
+    harness.get_by_label("Strain").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let b = r.pylon_builder.as_mut().unwrap();
+        assert_eq!(b.role, Role::Strain);
+        b.rebuild = None;
+        b.id = "danube-2c-strain".into();
+    }
+    harness.run();
+    harness.get_by_label("Save the type").click();
+    harness.run();
+    let sets = |h: &mut Harness<'_, App>, id: &str| {
+        let r = h.state_mut().ready().unwrap();
+        let types = &r.model.types.as_ref().expect("types read").0;
+        types
+            .get(id)
+            .unwrap_or_else(|| panic!("{id}: {:?}", r.pylon_builder.as_ref().unwrap().message))
+            .sets()
+    };
+    assert_eq!(sets(&mut harness, "danube-2c-susp"), [1, 2, 3, 4, 5, 6, 19]);
+    assert_eq!(
+        sets(&mut harness, "danube-2c-strain"),
+        [21, 22, 23, 24, 25, 26, 39, 41, 42, 43, 44, 45, 46, 59]
+    );
+    // On every point: suspension, the angle point strain.
+    let before = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .structures
+        .len();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.pylon_builder = None;
+        let mut p = Placement::new(&r.model);
+        p.alignment = "main".into();
+        p.rows(&r.model);
+        p.structure_type = Some("danube-2c-susp".into());
+        p.rows[2].structure_type = Some("danube-2c-strain".into());
+        r.placement = Some(p);
+    }
+    harness.run();
+    harness.get_by_label("Place 4 structure(s)").click();
+    harness.run();
+    let placed: Vec<ols_line::Structure> = {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.placement.is_none(), "{:?}", r.status);
+        let l = &r.model.line;
+        assert_eq!(l.structures.len(), before + 4);
+        let pts = l.points_of(l.alignment_by_id("main").unwrap());
+        pts.iter()
+            .map(|p| {
+                l.structure(p.structure.as_deref().expect("tied"))
+                    .unwrap()
+                    .clone()
+            })
+            .collect()
+    };
+    assert_eq!(
+        placed[2].structure_type.as_deref(),
+        Some("danube-2c-strain")
+    );
+    assert_eq!(placed[1].structure_type.as_deref(), Some("danube-2c-susp"));
+    // Along the line: the first one's right is south (heading east).
+    assert!(
+        (placed[0].orientation_deg + 90.0).abs() < 1e-6,
+        "{}",
+        placed[0].orientation_deg
+    );
+    // One command: one undo takes all four.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.perform(crate::edit::Action::Undo);
+        assert_eq!(r.model.line.structures.len(), before);
+        r.perform(crate::edit::Action::Redo);
+        assert_eq!(r.model.line.structures.len(), before + 4);
+    }
+    // Built again with a higher lower crossarm: its structures follow.
+    let z = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let s = r.model.line.structure(&placed[1].id).unwrap().clone();
+        let ty = r
+            .model
+            .types
+            .as_ref()
+            .unwrap()
+            .0
+            .get("danube-2c-susp")
+            .unwrap();
+        ty.point_local("A-C1-L2", None).unwrap()[2] + s.position[2]
+    };
+    let low = z(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut b = PylonBuilder::new(&r.model);
+        b.rebuild(&r.model, "danube-2c-susp").unwrap();
+        *b.values.dimensions.get_mut("lower_level").unwrap() += 2.0;
+        r.pylon_builder = Some(b);
+    }
+    harness.run();
+    harness
+        .get_by_label("Build it again (replace the type)")
+        .click();
+    harness.run();
+    assert!((z(&mut harness) - (low + 2.0)).abs() < 1e-6);
+    // Turned by hand, then put on the line again.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut f = crate::editors::StructureForm::of(&r.model, &placed[0].id).unwrap();
+        assert!(f.on_alignment.is_some(), "it knows its point");
+        f.orientation_deg += 30.0;
+        assert!(f.put_on_line(&r.model));
+        assert!((f.orientation_deg - placed[0].orientation_deg).abs() < 1e-6);
+    }
+}
+
 /// The three tables: Routes, Alignments (each on one route, in order) and
 /// Alignment points (a row per point and alignment, with its place there).
 #[test]

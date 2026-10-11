@@ -232,6 +232,10 @@ pub struct Ready {
     pub bom: crate::bom::BomWindow,
     /// Structures › Spot structures.
     pub spot: crate::spot::SpotWindow,
+    /// Structures › New pylon from a template…, when open.
+    pub pylon_builder: Option<crate::pylon_builder::PylonBuilder>,
+    /// Structures › Place on alignment points…, when open.
+    pub placement: Option<crate::pylon_builder::Placement>,
     /// Checks › Galloping ellipses.
     pub galloping: crate::galloping::GallopingWindow,
     /// Checks › Vegetation.
@@ -327,6 +331,8 @@ impl Ready {
             thermal: Default::default(),
             bom: Default::default(),
             spot: Default::default(),
+            pylon_builder: None,
+            placement: None,
             galloping: Default::default(),
             vegetation: Default::default(),
             wirefit: Default::default(),
@@ -2314,6 +2320,44 @@ impl Ready {
         self.placed = Some(p);
     }
 
+    /// The folder of the project's own structure types: its folder, else a
+    /// Structures folder next to the line (never the shipped library).
+    fn project_types_dir(&self) -> std::path::PathBuf {
+        let sources = &self.model.sources;
+        match &sources.structures {
+            Some(_) => crate::library::LibraryKind::StructureTypes.new_file_dir(sources),
+            None => crate::model::model_dir(sources).join("Structures"),
+        }
+    }
+
+    /// Writes structure type `id` built from a pylon template (`replace`:
+    /// the file of the type it replaces); the library is read again.
+    pub fn save_built_type(
+        &mut self,
+        id: &str,
+        text: &str,
+        replace: Option<std::path::PathBuf>,
+    ) -> Result<std::path::PathBuf, String> {
+        let path = match replace {
+            Some(p) => p,
+            None => {
+                let dir = self.project_types_dir();
+                std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+                let p = dir.join(format!("{id}.olss"));
+                if p.exists() {
+                    return Err(format!("{} exists already", p.display()));
+                }
+                p
+            }
+        };
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        self.library_saved(
+            crate::library::LibraryKind::StructureTypes,
+            crate::library::PageAction::Saved(path.clone()),
+        );
+        Ok(path)
+    }
+
     /// Saves the editor's document as structure type `type_id` of the
     /// project and gives its structure that type (its own points, strings
     /// and sticks go: they come from the type).
@@ -2332,13 +2376,7 @@ impl Ready {
         {
             return Err(format!("there is a structure type {type_id} already"));
         }
-        // The project's own types: its folder, else a Structures folder
-        // next to the line (never the shipped library).
-        let sources = &self.model.sources;
-        let dir = match &sources.structures {
-            Some(_) => kind.new_file_dir(sources),
-            None => crate::model::model_dir(sources).join("Structures"),
-        };
+        let dir = self.project_types_dir();
         let path = dir.join(format!("{type_id}.olss"));
         if path.exists() {
             return Err(format!("{} exists already", path.display()));
@@ -2973,6 +3011,48 @@ fn alignment_windows(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
+/// The pylon builder and the placement on alignment points.
+fn pylon_windows(ctx: &egui::Context, r: &mut Ready) {
+    if let Some(mut b) = r.pylon_builder.take() {
+        let mut open = true;
+        if let Some(crate::pylon_builder::BuilderAction::Save { id, text, replace }) =
+            b.ui(ctx, &r.model, &mut open)
+        {
+            let again = replace.is_some();
+            b.message = Some(match r.save_built_type(&id, &text, replace) {
+                Ok(p) => {
+                    // Built again: the structures of that type follow.
+                    if again {
+                        r.refresh_views();
+                    }
+                    b.rebuild = Some(id.clone());
+                    (
+                        format!("structure type {id} written: {}", p.display()),
+                        false,
+                    )
+                }
+                Err(e) => (e, true),
+            });
+        }
+        if open {
+            r.pylon_builder = Some(b);
+        }
+    }
+    if let Some(mut p) = r.placement.take() {
+        let mut open = true;
+        if let Some((what, command)) = p.ui(ctx, &r.model, &mut open) {
+            if r.perform(crate::edit::Action::Command { what, command }) {
+                open = false;
+            } else {
+                p.message = r.status.as_ref().map(|s| s.0.clone());
+            }
+        }
+        if open {
+            r.placement = Some(p);
+        }
+    }
+}
+
 fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgpu::RenderState>) {
     // At the bottom of the 3D view, only while it is shown (and while the
     // inventory arranges it).
@@ -3009,6 +3089,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
     r.bom.show(ctx, &r.model);
     r.spot.show(ctx, &r.model);
+    pylon_windows(ctx, r);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
     };
@@ -4760,6 +4841,29 @@ fn menus(
             r.editor = Some(crate::editors::Form::Structure(
                 crate::editors::StructureForm::new_at(&r.model, at),
             ));
+            ui.close();
+        }
+        if ui
+            .button("New pylon from a template…")
+            .on_hover_text(
+                "A structure type of level 1 from a pylon template: the face's dimensions, \
+                 suspension or strain",
+            )
+            .clicked()
+        {
+            r.pylon_builder = Some(crate::pylon_builder::PylonBuilder::new(&r.model));
+            ui.close();
+        }
+        if ui
+            .add_enabled(
+                !r.model.line.alignments.is_empty(),
+                egui::Button::new("Place on alignment points…"),
+            )
+            .on_hover_text("A type on many points of an alignment at once, along the line")
+            .on_disabled_hover_text("No alignment yet (Terrain › Alignments)")
+            .clicked()
+        {
+            r.placement = Some(crate::pylon_builder::Placement::new(&r.model));
             ui.close();
         }
         if ui
