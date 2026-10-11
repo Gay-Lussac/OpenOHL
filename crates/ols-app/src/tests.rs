@@ -1053,6 +1053,8 @@ fn the_checks_menu_runs_the_clearance_check() {
     );
     harness.get_by_label("Checks").click();
     harness.run();
+    harness.get_by_label_contains("Wire clearances").hover();
+    harness.run();
     // The menu's (the quick bar has one too).
     harness
         .query_all_by_label("Run checks")
@@ -1141,9 +1143,11 @@ fn the_checks_menu_opens_the_galloping_window() {
     );
 }
 
-/// Opens Checks › `item`.
+/// Opens Checks › Ground clearances › `item`.
 fn open_clearance_window(harness: &mut Harness<'_, App>, item: &str) {
     harness.get_by_label("Checks").click();
+    harness.run();
+    harness.get_by_label_contains("Ground clearances").hover();
     harness.run();
     harness.get_by_label(item).click();
     harness.run();
@@ -8797,7 +8801,8 @@ fn the_structure_editor_opens_in_a_window() {
     assert!(!at.surface.is_main());
 }
 
-/// Clearances are in the Checks menu only (not under Sections).
+/// Clearances are in the Checks menu only (not under Sections): ground
+/// clearances (the two windows) and wire clearances (a rule file's checks).
 #[test]
 fn clearances_are_in_the_checks_menu() {
     let model = synthetic();
@@ -8811,6 +8816,12 @@ fn clearances_are_in_the_checks_menu() {
     press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
     open_clearance_window(&mut harness, "Radial clearances…");
     assert!(harness.state_mut().ready().unwrap().radial_clearances.open);
+    harness.get_by_label("Checks").click();
+    harness.run();
+    harness.get_by_label_contains("Wire clearances").hover();
+    harness.run();
+    harness.get_by_label("Show results");
+    harness.get_by_label("also after every edit");
 }
 
 /// Structures › Add structure…: one click opens the window, one Apply

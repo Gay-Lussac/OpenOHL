@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Checks › **Vertical clearances…** and **Radial
+//! Checks › Ground clearances › **Vertical clearances…** and **Radial
 //! clearances…**: a window each with the zone around the wires, a list of
 //! rules (voltage, weather cases, distance, LiDAR classes and the ground),
 //! and the wind — the final state of each case, or every wind pressure
