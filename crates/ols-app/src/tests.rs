@@ -1141,22 +1141,15 @@ fn the_checks_menu_opens_the_galloping_window() {
     );
 }
 
-/// Opens Sections › Clearances › `item`.
+/// Opens Checks › `item`.
 fn open_clearance_window(harness: &mut Harness<'_, App>, item: &str) {
-    harness.get_by_label("Sections").click();
-    harness.run();
-    // The submenu (the tab of the same name is in the dock).
-    harness
-        .query_all_by_label_contains("Clearances")
-        .last()
-        .unwrap()
-        .hover();
+    harness.get_by_label("Checks").click();
     harness.run();
     harness.get_by_label(item).click();
     harness.run();
 }
 
-/// Sections › Clearances › Vertical clearances: the project's rule file
+/// Checks › Vertical clearances: the project's rule file
 /// next to the model; a ground rule run with the wind stepped finds every
 /// span, the violations are drawn, a span link goes to it.
 #[test]
@@ -1229,7 +1222,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
     std::fs::remove_dir_all(dir).ok();
 }
 
-/// Sections › Clearances › Radial clearances: a rule added is kept in the
+/// Checks › Radial clearances: a rule added is kept in the
 /// project's rule file; removing it asks first.
 #[test]
 fn the_radial_clearances_window_keeps_its_rules() {
@@ -8802,6 +8795,22 @@ fn the_structure_editor_opens_in_a_window() {
     crate::app::open_page(&mut dock, crate::app::Tab::StructureEditor);
     let at = dock.find_tab(&crate::app::Tab::StructureEditor).unwrap();
     assert!(!at.surface.is_main());
+}
+
+/// Clearances are in the Checks menu only (not under Sections).
+#[test]
+fn clearances_are_in_the_checks_menu() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Sections").click();
+    harness.run();
+    assert!(harness.query_by_label("Vertical clearances…").is_none());
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    open_clearance_window(&mut harness, "Radial clearances…");
+    assert!(harness.state_mut().ready().unwrap().radial_clearances.open);
 }
 
 /// Structures › Add structure…: one click opens the window, one Apply
