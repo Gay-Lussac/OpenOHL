@@ -39,7 +39,9 @@ pub mod route;
 pub mod solve;
 
 pub use assembly::{AttachmentV1, InsulatorString, StructurePoint, WirePoint};
-pub use route::{Alignment, AlignmentPoint, AlignmentView, NEAR_ALIGNMENT, Route, Station};
+pub use route::{
+    Alignment, AlignmentPoint, AlignmentView, NEAR_ALIGNMENT, OldPoint, Route, Station,
+};
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -50,7 +52,7 @@ use serde::{Deserialize, Serialize};
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ols-line";
 /// Latest line file version.
-pub const LINE_FILE_VERSION: u32 = 3;
+pub const LINE_FILE_VERSION: u32 = 4;
 
 fn default_format() -> String {
     LINE_FILE_FORMAT.to_owned()
@@ -83,13 +85,18 @@ pub struct Line {
     /// it had no routes ([`Line::upgrade_routes`] makes it the route and
     /// alignment `main`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub alignment: Vec<AlignmentPoint>,
+    pub alignment: Vec<OldPoint>,
     /// Routes: paths of the line, each made of alignments; see [`route`].
     #[serde(default)]
     pub routes: Vec<Route>,
-    /// Alignments, in order; each belongs to one or more routes.
+    /// Alignments, in their order along their routes; each belongs to
+    /// one route and goes through alignment points, by id.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alignments: Vec<Alignment>,
+    /// Alignment points (PIs), each on any number of alignments (none:
+    /// placed, not used by an alignment yet).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alignment_points: Vec<AlignmentPoint>,
     /// Structures.
     pub structures: Vec<Structure>,
     /// Wire sections.
@@ -966,9 +973,7 @@ impl Line {
         for r in &self.routes {
             points.extend(r.legacy_alignment.iter().map(|a| a.position));
         }
-        for a in &self.alignments {
-            points.extend(a.points.iter().map(|a| a.position));
-        }
+        points.extend(self.alignment_points.iter().map(|a| a.position));
         points.extend(self.alignment.iter().map(|a| a.position));
         for j in &self.jumpers {
             points.extend(j.support.iter().map(|sp| sp.point));
@@ -991,10 +996,8 @@ impl Line {
                 a.position = next();
             }
         }
-        for al in &mut self.alignments {
-            for a in &mut al.points {
-                a.position = next();
-            }
+        for a in &mut self.alignment_points {
+            a.position = next();
         }
         for a in &mut self.alignment {
             a.position = next();
@@ -1091,18 +1094,20 @@ impl Line {
     }
 
     /// Tied alignment points must be under an existing structure.
-    fn check_alignment(&self, what: &str, alignment: &[AlignmentPoint]) -> Result<(), LineError> {
-        for (k, a) in alignment.iter().enumerate() {
+    fn check_alignment(&self, points: &[AlignmentPoint]) -> Result<(), LineError> {
+        for a in points {
             let Some(id) = &a.structure else { continue };
             let Some(s) = self.structure(id) else {
                 return Err(LineError::Invalid(format!(
-                    "{what}: alignment point {k} is tied to unknown structure {id}"
+                    "alignment point {} is tied to unknown structure {id}",
+                    a.id
                 )));
             };
             let d = (a.position[0] - s.position[0]).hypot(a.position[1] - s.position[1]);
             if d > 0.001 {
                 return Err(LineError::Invalid(format!(
-                    "{what}: alignment point {k} is tied to {id} but {d:.3} m away from it (detach it to move it)"
+                    "alignment point {} is tied to {id} but {d:.3} m away from it (detach it to move it)",
+                    a.id
                 )));
             }
         }
@@ -1249,32 +1254,45 @@ impl Line {
             }
         }
         let known = |r: &String| route_ids.contains_key(r.as_str());
+        let mut point_ids = BTreeMap::new();
+        for p in &self.alignment_points {
+            if p.id.trim().is_empty() || point_ids.insert(p.id.as_str(), ()).is_some() {
+                return invalid(format!(
+                    "alignment point id \"{}\": empty or given twice",
+                    p.id
+                ));
+            }
+            if !p.position.iter().all(|x| x.is_finite()) {
+                return invalid(format!("alignment point {}: not a number", p.id));
+            }
+        }
+        self.check_alignment(&self.alignment_points)?;
         let mut alignment_ids = BTreeMap::new();
         for a in &self.alignments {
             if a.id.trim().is_empty() || alignment_ids.insert(a.id.as_str(), ()).is_some() {
                 return invalid(format!("alignment id \"{}\": empty or given twice", a.id));
             }
-            if a.points.is_empty() {
-                return invalid(format!("alignment {}: needs a point", a.id));
+            if a.legacy.is_some() {
+                return invalid(format!(
+                    "alignment {}: of a version 3 file, not upgraded (Line::upgrade_routes)",
+                    a.id
+                ));
             }
-            if a.routes.is_empty() {
+            if a.route.trim().is_empty() {
                 return invalid(format!("alignment {}: belongs to no route", a.id));
             }
-            if let Some(r) = a
-                .routes
-                .iter()
-                .chain(a.points.iter().filter_map(|p| p.routes.as_ref()).flatten())
-                .find(|r| !known(r))
-            {
-                return invalid(format!("alignment {}: unknown route {r}", a.id));
+            if !known(&a.route) {
+                return invalid(format!("alignment {}: unknown route {}", a.id, a.route));
             }
-            if a.points
-                .iter()
-                .any(|p| !p.position.iter().all(|x| x.is_finite()))
-            {
-                return invalid(format!("alignment {}: a point is not a number", a.id));
+            let mut seen = BTreeMap::new();
+            for p in &a.points {
+                if !point_ids.contains_key(p.as_str()) {
+                    return invalid(format!("alignment {}: unknown alignment point {p}", a.id));
+                }
+                if seen.insert(p.as_str(), ()).is_some() {
+                    return invalid(format!("alignment {}: point {p} given twice", a.id));
+                }
             }
-            self.check_alignment(&format!("alignment {}", a.id), &a.points)?;
         }
         if let Some((s, r)) = self
             .structures
@@ -1663,7 +1681,7 @@ mod tests {
             };
             assert!((d(a) - d(b)).abs() < 1e-9);
         }
-        assert!((line.alignments[0].points[0].position[0] - 1000.0).abs() < 1e-9);
+        assert!((line.alignment_points[0].position[0] - 1000.0).abs() < 1e-9);
         // A failing transformation leaves an error.
         assert!(line.transform_coordinates(|_| Err("no".into())).is_err());
     }

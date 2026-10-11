@@ -84,6 +84,7 @@ impl LineInfo {
 pub fn empty_line() -> Line {
     Line {
         alignments: Default::default(),
+        alignment_points: Default::default(),
         format: ols_line::LINE_FILE_FORMAT.to_owned(),
         version: ols_line::LINE_FILE_VERSION,
         name: String::new(),

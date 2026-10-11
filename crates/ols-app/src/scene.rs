@@ -814,16 +814,14 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 s.polyline(&pts, [90, 200, 220, 200], 1.5);
-                // Its points, when it has its own (not just its structures).
-                if r.alignment.len() >= 2 {
-                    for p in &c {
-                        s.point(
-                            crate::selection::draped(model, *p),
-                            [90, 200, 220, 255],
-                            8.0,
-                        );
-                    }
-                }
+            }
+            // Every alignment point (those on no alignment too).
+            for p in &line.alignment_points {
+                s.point(
+                    crate::selection::draped(model, p.position),
+                    [90, 200, 220, 255],
+                    8.0,
+                );
             }
         }
         // Full detail (the chunks draw these by level: crate::chunks).
@@ -909,8 +907,8 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         s.point(b, hi, 9.0);
                     }
                 }
-                Selection::AlignmentPoint { route, index } => {
-                    if let Some(p) = crate::selection::alignment_point(model, route, *index) {
+                Selection::AlignmentPoint { id } => {
+                    if let Some(p) = crate::selection::alignment_point(model, id) {
                         s.point(p, hi, 12.0);
                         s.polyline(&[p, [p[0], p[1], p[2] + 30.0]], hi, 1.5);
                     }

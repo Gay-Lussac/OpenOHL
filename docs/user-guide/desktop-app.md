@@ -235,33 +235,36 @@ The palette is yours: remembered on this computer, not in the project. **OK** us
 
 ## Routes and alignments
 
-A **route** is a path of the line; it is made of one or more **alignments**, in their order. An alignment is a polyline of points (one is enough to start; a profile needs two) and belongs to one or more routes. Where alignments of different routes meet, the shared point — and a structure on it — belongs to all of them. Structures, sections, jumpers and what hangs on structures are put on routes **from the alignments**, nothing to keep by hand:
+A line is laid out in three steps, kept as three kinds of record in the project: a **route** (a path of the line), its **alignments** (each on exactly one route, in their order along it) and the **alignment points** (PIs) of each alignment, in order. An alignment cannot exist without its route. A point is an object of its own: it may be on no alignment yet, on one, or on several — with its own place (order number) in each. Where alignments of different routes meet they share the point, so the point — and a structure tied to it — is on all their routes. Structures, sections, jumpers and what hangs on structures are put on routes **from the alignments**, nothing to keep by hand:
 
-- a structure tied to an alignment point, or within 5 m of an alignment, is on that alignment's routes;
+- a structure tied to an alignment point, or within 5 m of an alignment, is on that alignment's route;
 - a structure away from every alignment (a crossing line) is on no route until you give its route(s) — in its window (Edit, or when placing it) or the Structures table's **routes** column; it is said in yellow after an edit, and in its properties;
 - a section is on the routes of its structures (one running from a route into another is on both), a jumper on those of its two ends.
 
-**A new project** starts with these two steps (its first window): 1. **the route** — its name and description; 2. **its alignment** — the New alignment tool is then held.
+**A new project** starts with these steps (its first window): 1. **the route** — its name and description; 2. **its alignment** — the New alignment tool is then held.
 
-The points are drawn in the 3D view (cyan, on the ground) and in the plan, and can be clicked (Edit › Snap, alignment points). The profile follows every change at once.
+The points are drawn in the 3D view (cyan, on the ground) and in the plan — those on no alignment too — and can be clicked (Edit › Snap, alignment points). The profile follows every change at once.
 
-- **Terrain › Routes**: one row per route — its id (renaming: its alignments and structures follow), name, description, its alignments in order, how many structures and sections are on it. **+ Add row** makes a route; deleting one asks first and lists its alignments on no other route (they go with it).
-- **Terrain › Alignment points** holds every point of every alignment, one row each: its **alignment**, its order **#**, E, N, z, the structure it is tied to, its **routes** and description.
-  - **Another alignment's name** moves the point there, at the place **#** gives; **a name not used yet** makes a new alignment (tick its routes).
-  - **routes**: a dropdown of tick boxes. On Apply you choose whether a change is for the **whole alignment** or **these points only** (a point of its own routes, e.g. where a crossing route touches it).
+- **Terrain › Routes**: one row per route — its id (renaming: its alignments and structures follow), name, description, its alignments in order, how many structures and sections are on it. **+ Add row** makes a route; deleting one asks first and lists its alignments (they go with it; their points stay).
+- **Terrain › Alignments**: one row per alignment — its id, name, **route** (a dropdown of the routes; required), its order **#** (3.5 goes between 3 and 4), how many points, description. **+ Add row** makes an alignment (without points yet); with no route yet, **+ New route… / Create the route** above the table makes one. Deleting an alignment keeps its points.
+- **Terrain › Alignment points**: a row per point and alignment it is on — its **alignment** (a dropdown), its place **#** there, the point's id, E, N, z, the structure it is tied to, the other alignments it is on with its place there (**also on**), description. A point on two alignments has two rows, each with its own #; a point on none has one row without alignment. **Alignment ▾** above shows one alignment (or the points on none).
+  - **#** orders the points of an alignment (3.5 goes between 3 and 4); another alignment moves the row's point there; none takes it off that alignment (it stays).
+  - **+ Add row** with an existing point's id puts that point on the alignment too (shared); a new id makes a new point.
+  - Deleting a row deletes the point: it comes off **every** alignment it is on (asked first when on several), the other points keep their order.
 - **New alignment** (tool, **E**) lays out an alignment point by point. Each right-click adds a point:
-  - **on an alignment point:** a junction (the same place in both alignments, tied to the same structure if it is tied);
-  - **on a structure:** a point tied under it;
-  - **on a survey point or LiDAR point shown** (within 12 pixels): its exact E, N and height;
+  - **on an alignment point:** that point, shared (a junction);
+  - **on a structure:** a new point tied under it;
+  - **on a survey point or LiDAR point shown** (within 12 pixels): a new point at its exact E, N and height;
   - **on nothing of these:** a window asks for the point's **E, N and height** (all required; where you clicked is offered).
 
-  **Enter** asks for the route(s) it belongs to — those of the alignments it meets are ticked, and **+ New route** makes one — then makes it (*alignment 1*, *alignment 2*…). **Backspace** takes the last point back, **Escape** gives it up (the tool stays held). It can leave an alignment at one of its points and come back to it at another, leave it and not come back, start elsewhere and end on one of its points, or stand alone.
-- **Add alignment point** (tool): a right-click inserts a point into the nearest segment of the nearest alignment — snapped as above.
-- **Edit** (tool) on a point opens its window: alignment, order (1 is the first point), E, N, z or *on the ground*, tied to a structure. **Junctions move together**: moving a point also moves the points of the other alignments at the same place.
-- **Delete** (tool) removes a point; an alignment keeps one point. Deleting its **last point** deletes the alignment — asked first.
+  **Enter** asks for its route (one: the route worked on, or that of the points it shares, is chosen; **+ New route** makes one — with no route yet, it offers to create one), then makes it (*alignment 1*, *alignment 2*…). **Backspace** takes the last point back, **Escape** gives it up (the tool stays held).
+- **New alignment point (free)** (tool): a right-click on a survey or LiDAR point, a structure or the ground places a point on no alignment yet — then New alignment picks such points one after another, like the String wire tool picks strings.
+- **Add alignment point** (tool): a right-click inserts a point into the nearest segment of the nearest alignment — snapped as above (an existing point is shared).
+- **Edit** (tool) on a point opens its window: E, N, z or *on the ground*, tied to a structure, and the alignments it is on with its place (#) in each — ✕ takes it off one, **+ on another alignment…** puts it where it fits along that one. A shared point is one point: moved, it moves on all its alignments.
+- **Delete** (tool) deletes a point: off every alignment it is on (asked first when on several); the other points keep their order. An alignment may be left without points.
 - **View › Work on route** (yours only): the profile shows that route, the checks (clearances) and the structure loads keep to it, and everything else is drawn faded in the 3D view and the plan.
 
-Files and projects from before routes and alignments are read into them once: each old route becomes a route with one alignment of the same name (a route that followed its structures gets points tied under them), the line's own alignment becomes *main*.
+Files and projects of older versions are read into this form once (see [line file](line-file.md)): each alignment's points become points of their own, shared where alignments met; an alignment on several routes becomes one per route.
 
 ## Library editors
 

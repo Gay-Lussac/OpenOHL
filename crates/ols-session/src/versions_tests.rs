@@ -65,7 +65,7 @@ fn commit_checkout_round_trip() {
     // T6 and the branch's point tied to it.
     let st = s.status().unwrap();
     let ids: Vec<&str> = st.changes.objects.iter().map(|o| o.id.as_str()).collect();
-    assert_eq!(ids, ["branch", "T6"]);
+    assert_eq!(ids, ["P4", "T6"]);
     // Each branch is a project line with its own working state: a
     // checkout only chooses the line worked on, uncommitted changes and
     // all, and changes nothing.
@@ -220,7 +220,7 @@ fn merge_with_a_conflict() {
     // Theirs for the whole structure.
     let choices = Choices::from([
         ("structure:T6".to_owned(), Side::Theirs),
-        ("alignment:branch".to_owned(), Side::Theirs),
+        ("alignment_point:P4".to_owned(), Side::Theirs),
     ]);
     s.merge("ana", "alt", Some("take alt's T6"), &choices)
         .unwrap();

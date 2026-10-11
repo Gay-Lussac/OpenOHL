@@ -60,7 +60,16 @@ pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS edit_grant (
         verdict TEXT NOT NULL, comment TEXT NOT NULL);";
 
 /// Kinds a grant may name.
-pub const GRANT_KINDS: [&str; 6] = ["meta", "route", "structure", "section", "jumper", "library"];
+pub const GRANT_KINDS: [&str; 8] = [
+    "meta",
+    "route",
+    "alignment",
+    "alignment_point",
+    "structure",
+    "section",
+    "jumper",
+    "library",
+];
 
 /// What a user (or a role) may edit.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -377,7 +386,7 @@ impl Session {
         }
         for key in changed {
             // Points tied to structures the user may move follow them.
-            if key.0 == Kind::Alignment
+            if key.0 == Kind::AlignmentPoint
                 && let Some((old, new)) = lines
                 && follows_structures(old, new, &key.1, changed)
             {
@@ -402,34 +411,22 @@ impl Session {
     }
 }
 
-/// Whether alignment `id` changed (from `old` to `new`) only by points tied
-/// to structures among `changed` following them: same points, same ties,
-/// only those points' positions differ.
+/// Whether alignment point `id` only moved with the structure it is
+/// tied to (one of the `changed` objects).
 fn follows_structures(
     old: &ols_line::Line,
     new: &ols_line::Line,
     id: &str,
     changed: &[(Kind, String)],
 ) -> bool {
-    let (Some(a), Some(b)) = (
-        old.alignments.iter().find(|a| a.id == id),
-        new.alignments.iter().find(|a| a.id == id),
-    ) else {
+    let (Some(p), Some(q)) = (old.alignment_point(id), new.alignment_point(id)) else {
         return false;
     };
-    if (&a.id, &a.name, &a.description, &a.routes, a.points.len())
-        != (&b.id, &b.name, &b.description, &b.routes, b.points.len())
-    {
-        return false;
-    }
-    a.points.iter().zip(&b.points).all(|(p, q)| {
-        let same =
-            (&p.structure, &p.description, &p.routes) == (&q.structure, &q.description, &q.routes);
-        same && (p.position == q.position
+    (&p.structure, &p.description) == (&q.structure, &q.description)
+        && (p.position == q.position
             || q.structure
                 .as_ref()
                 .is_some_and(|s| changed.contains(&(Kind::Structure, s.clone()))))
-    })
 }
 
 impl Session {

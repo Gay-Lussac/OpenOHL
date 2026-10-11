@@ -22,13 +22,14 @@ The names are those of the line file:
 
 ```xml
 <line xmlns="urn:ols-cad:ols-line:1" format="ols-line" version="1" name="…" crs="EPSG:2056">
-  <alignment>                                   <!-- implicit route only -->
-    <point x="…" y="…" z="…" structure="T1"/>   <!-- structure: tied point -->
+  <route id="main" name="Main route" description="…"/>
+  <alignment id="alignment 1" name="…" route="main">  <!-- one route -->
+    <point ref="P1"/> <point ref="P2"/> …       <!-- its points, in order -->
   </alignment>
-  <route id="main" name="Main route">
-    <alignment>…</alignment>
-    <structure ref="T1"/> …
-  </route>
+  <alignment_point id="P1" x="…" y="…" z="…" structure="T1"/> <!-- structure: tied -->
+  <!-- older files: version 3 <alignment> with <on_route id/> and <point x y z>
+       inside; version 2 <route> holding its <alignment> and <structure ref>,
+       and the line's own <alignment> without id: read and converted -->
   <structure id="T1" x="…" y="…" z="…" orientation_deg="-90" type="…" extension="…"
              height_adjust="0.5">                <!-- feet 0.5 m above the ground -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->

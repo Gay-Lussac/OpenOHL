@@ -279,17 +279,16 @@
     });
     const byId = {};
     for (const s of structures) byId[s.id] = s;
-    // The main route: its structures in order (else the line's order).
-    const route = line.routes && line.routes[0];
-    const order = route ? route.structures : line.structures.map((s) => s.id);
-    const path = order.map((id) => byId[id]).filter(Boolean).map((s) => s.base);
-    // Alignments: each route's points (a point is [x, y, z] or tied to a
-    // structure), else through its structures.
-    const point = (a) => local(Array.isArray(a) ? a : a.position);
-    const through = (ids) => ids.map((id) => byId[id]).filter(Boolean).map((s) => s.base);
-    const alignments = (line.routes && line.routes.length)
-      ? line.routes.map((r) => (r.alignment && r.alignment.length ? r.alignment.map(point) : through(r.structures)))
-      : [line.alignment && line.alignment.length ? line.alignment.map(point) : path];
+    // The structures in the line's order.
+    const path = line.structures.map((s) => byId[s.id]).filter(Boolean).map((s) => s.base);
+    // Alignments: each through its alignment points (by id), else the
+    // structures in order.
+    const at = {};
+    for (const p of line.alignment_points || []) at[p.id] = p.position;
+    const drawn = (line.alignments || [])
+      .map((a) => a.points.map((id) => at[id]).filter(Boolean).map(local))
+      .filter((pts) => pts.length >= 2);
+    const alignments = drawn.length ? drawn : [path];
     const alignment = [];
     for (const points of alignments) {
       for (let i = 0; i + 1 < points.length; i++) alignment.push([points[i], points[i + 1]]);

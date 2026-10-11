@@ -4,9 +4,9 @@
 
 //! The windows of the alignment tools: the coordinates of a point placed
 //! where no survey point, alignment point or structure is near (E, N and
-//! height required), the route(s) a new alignment belongs to (Enter), and
-//! the routes dropdown of tick boxes with "+ New route…" used wherever
-//! routes are chosen.
+//! height required), the route a new alignment belongs to (Enter; a route
+//! is offered to be made when there is none), and the routes dropdown of
+//! tick boxes with "+ New route…" used wherever routes are chosen.
 
 use eframe::egui;
 use ols_line::Line;
@@ -18,6 +18,8 @@ pub enum CoordFor {
     NewAlignment,
     /// A point inserted into the nearest alignment.
     AddAlignment,
+    /// A point on no alignment yet.
+    FreePoint,
 }
 
 /// The coordinate window: where nothing to snap to was right-clicked.
@@ -111,57 +113,58 @@ impl CoordDialog {
     }
 }
 
-/// Enter after laying out a new alignment: the route(s) it belongs to.
+/// Enter after laying out a new alignment: the route it belongs to (one;
+/// a new one made first when there is none, or when asked).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouteChoice {
-    /// Its points.
+    /// Its points: existing ones by id (shared), new ones with an empty id.
     pub points: Vec<ols_line::AlignmentPoint>,
-    /// The routes ticked.
-    pub routes: Vec<String>,
+    /// The route chosen (empty: none yet).
+    pub route: String,
     /// A new route's name being typed (empty: none).
     pub new_route: String,
 }
 
 /// What the route window asks for.
 pub enum RouteChoiceAction {
-    /// Make the alignment on these routes, a new route first when named.
+    /// Make the alignment on this route, made first when `new`.
     Make {
-        /// Routes ticked.
-        routes: Vec<String>,
-        /// A new route to make (and tick).
-        new_route: Option<String>,
+        /// The route.
+        route: String,
+        /// It is a new route to make.
+        new: bool,
     },
     /// Back to laying out the points.
     Back,
 }
 
 impl RouteChoice {
-    /// For `points`: the routes of the alignments they meet (junctions)
-    /// ticked, else the line's only route.
-    pub fn new(line: &Line, points: Vec<ols_line::AlignmentPoint>) -> Self {
-        let mut routes: Vec<String> = Vec::new();
-        for p in &points {
-            for a in &line.alignments {
-                if a.points.iter().any(|q| {
-                    (q.position[0] - p.position[0]).hypot(q.position[1] - p.position[1]) < 1e-3
-                }) {
-                    for r in &a.routes {
-                        if !routes.contains(r) {
-                            routes.push(r.clone());
-                        }
-                    }
-                }
-            }
-        }
-        if routes.is_empty()
-            && let [only] = &line.routes[..]
-        {
-            routes.push(only.id.clone());
-        }
+    /// For `points`: the route worked on, else the route of the
+    /// alignments its existing points are on (one route), else the
+    /// line's only route; with no route at all, a new one is proposed.
+    pub fn new(line: &Line, points: Vec<ols_line::AlignmentPoint>, work: Option<&str>) -> Self {
+        let mut routes: Vec<String> = points
+            .iter()
+            .filter(|p| !p.id.is_empty())
+            .flat_map(|p| line.point_routes(&p.id))
+            .collect();
+        routes.sort();
+        routes.dedup();
+        let route = match (work, &routes[..], &line.routes[..]) {
+            (Some(w), _, _) if line.routes.iter().any(|r| r.id == w) => w.to_owned(),
+            (_, [one], _) => one.clone(),
+            (_, _, [only]) => only.id.clone(),
+            _ => String::new(),
+        };
+        let new_route = if line.routes.is_empty() {
+            crate::editors::free_route_id(line)
+        } else {
+            String::new()
+        };
         Self {
             points,
-            routes,
-            new_route: String::new(),
+            route,
+            new_route,
         }
     }
 
@@ -169,24 +172,42 @@ impl RouteChoice {
     pub fn ui(&mut self, ctx: &egui::Context, line: &Line) -> Option<RouteChoiceAction> {
         let mut out = None;
         let mut open = true;
-        egui::Window::new("New alignment: its routes")
+        egui::Window::new("New alignment: its route")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.label(format!("{} point(s). It belongs to:", self.points.len()));
-                for r in &line.routes {
-                    let mut on = self.routes.contains(&r.id);
-                    let text = if r.name.is_empty() || r.name == r.id {
-                        r.id.clone()
+                let shared = self.points.iter().filter(|p| !p.id.is_empty()).count();
+                ui.label(format!(
+                    "{} point(s){}. An alignment belongs to one route.",
+                    self.points.len(),
+                    if shared > 0 {
+                        format!(", {shared} of them existing (shared)")
                     } else {
-                        format!("{} — {}", r.id, r.name)
-                    };
-                    if ui.checkbox(&mut on, text).changed() {
-                        if on {
-                            self.routes.push(r.id.clone());
+                        String::new()
+                    }
+                ));
+                if line.routes.is_empty() {
+                    ui.label(
+                        egui::RichText::new(
+                            "There is no route yet: a line is a route first, then its \
+                             alignments. Create one for this alignment:",
+                        )
+                        .small(),
+                    );
+                } else {
+                    for r in &line.routes {
+                        let text = if r.name.is_empty() || r.name == r.id {
+                            r.id.clone()
                         } else {
-                            self.routes.retain(|x| *x != r.id);
+                            format!("{} — {}", r.id, r.name)
+                        };
+                        if ui
+                            .radio(self.route == r.id && self.new_route.trim().is_empty(), text)
+                            .clicked()
+                        {
+                            self.route = r.id.clone();
+                            self.new_route.clear();
                         }
                     }
                 }
@@ -195,7 +216,7 @@ impl RouteChoice {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.new_route)
                             .desired_width(160.0)
-                            .hint_text("its name (optional)"),
+                            .hint_text("its name"),
                     );
                 });
                 let new = self.new_route.trim();
@@ -203,26 +224,36 @@ impl RouteChoice {
                 if taken {
                     crate::menu::error_label(
                         ui,
-                        egui::RichText::new(format!("there is a route {new} already: tick it"))
+                        egui::RichText::new(format!("there is a route {new} already: choose it"))
                             .small(),
                     );
                 }
-                let ok = !taken && (!self.routes.is_empty() || !new.is_empty());
+                let known = line.routes.iter().any(|r| r.id == self.route);
+                let ok = !taken && (!new.is_empty() || known);
                 if !ok && !taken {
                     ui.label(
-                        egui::RichText::new("Tick a route, or name a new one.")
+                        egui::RichText::new("Choose its route, or name a new one.")
                             .small()
                             .weak(),
                     );
                 }
                 ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(ok, egui::Button::new("Make the alignment"))
-                        .clicked()
-                    {
-                        out = Some(RouteChoiceAction::Make {
-                            routes: self.routes.clone(),
-                            new_route: (!new.is_empty()).then(|| new.to_owned()),
+                    let label = if new.is_empty() {
+                        "Make the alignment"
+                    } else {
+                        "Create the route and the alignment"
+                    };
+                    if ui.add_enabled(ok, egui::Button::new(label)).clicked() {
+                        out = Some(if new.is_empty() {
+                            RouteChoiceAction::Make {
+                                route: self.route.clone(),
+                                new: false,
+                            }
+                        } else {
+                            RouteChoiceAction::Make {
+                                route: new.to_owned(),
+                                new: true,
+                            }
                         });
                     }
                     if ui

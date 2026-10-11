@@ -42,12 +42,10 @@ pub enum Selection {
         /// The string's label.
         label: String,
     },
-    /// An alignment point of a route.
+    /// An alignment point (on any number of alignments).
     AlignmentPoint {
-        /// Route id.
-        route: String,
-        /// Index in the route's alignment.
-        index: usize,
+        /// Its id.
+        id: String,
     },
     /// A LiDAR point shown (index in the model's points).
     LidarPoint(usize),
@@ -197,8 +195,8 @@ impl Selection {
             Selection::Jumper(id) => format!("jumper {id}"),
             Selection::Attachment { structure, set } => format!("{structure} set {set}"),
             Selection::String { structure, label } => format!("{structure} string {label}"),
-            Selection::AlignmentPoint { route, index } => {
-                format!("alignment {route} point {}", index + 1)
+            Selection::AlignmentPoint { id } => {
+                format!("alignment point {id}")
             }
             Selection::LidarPoint(k) => format!("LiDAR point {k}"),
             Selection::SurveyPoint(k) => format!("survey point {}", k + 1),
@@ -244,7 +242,7 @@ impl Selection {
                     })?;
                 Some([0, 1, 2].map(|k| 0.5 * (a[k] + b[k])))
             }
-            Selection::AlignmentPoint { route, index } => alignment_point(model, route, *index),
+            Selection::AlignmentPoint { id } => alignment_point(model, id),
             Selection::LidarPoint(_) | Selection::SurveyPoint(_) => position(model, self),
         }
     }
@@ -259,17 +257,12 @@ pub fn position(model: &Model, s: &Selection) -> Option<[f64; 3]> {
     }
 }
 
-/// An alignment point's position, draped on the ground when the
-/// alignment has no height.
-pub fn alignment_point(model: &Model, route: &str, index: usize) -> Option<[f64; 3]> {
+/// An alignment point's position as drawn (on the ground).
+pub fn alignment_point(model: &Model, id: &str) -> Option<[f64; 3]> {
     model
         .line
-        .alignment_views()
-        .into_iter()
-        .find(|r| r.id == route)?
-        .centreline(&model.line)
-        .get(index)
-        .map(|p| draped(model, *p))
+        .alignment_point(id)
+        .map(|p| draped(model, p.position))
 }
 
 /// An alignment point as drawn: on the ground where there is ground.
@@ -445,18 +438,9 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
         }
     }
     if snaps.on(Snap::AlignmentPoint) {
-        for r in model.line.alignment_views() {
-            for (index, p) in r.centreline(&model.line).into_iter().enumerate() {
-                let p = draped(model, p);
-                out.push((
-                    Selection::AlignmentPoint {
-                        route: r.id.clone(),
-                        index,
-                    },
-                    p,
-                    p,
-                ));
-            }
+        for a in &model.line.alignment_points {
+            let p = draped(model, a.position);
+            out.push((Selection::AlignmentPoint { id: a.id.clone() }, p, p));
         }
     }
     out

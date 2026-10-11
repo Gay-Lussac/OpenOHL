@@ -17,7 +17,7 @@
 
 use std::fmt::Write as _;
 
-use ols_line::{AlignmentPoint, Line, Point};
+use ols_line::{Line, Point};
 
 use crate::neutral::{Neutral, NeutralPoint};
 use crate::xml::{Element, attribute as attr};
@@ -252,13 +252,13 @@ pub fn import(root: &Element, base: Option<&Line>, options: &Options) -> Result<
             return Err("LandXML: no CgPoints and no alignment".into());
         }
         let mut line = line.clone();
-        let points: Vec<AlignmentPoint> = route
+        let points: Vec<(ols_line::Point, Option<String>)> = route
             .into_iter()
             .map(|mut p| {
                 if !p[2].is_finite() {
                     p[2] = 0.0;
                 }
-                AlignmentPoint::free(p)
+                (p, None)
             })
             .collect();
         // The alignment named (default: the first), or a new route and
@@ -272,25 +272,19 @@ pub fn import(root: &Element, base: Option<&Line>, options: &Options) -> Result<
                 line.routes
                     .push(ols_line::Route::new(&id, &line.name.clone()));
             }
-            line.alignments.push(ols_line::Alignment {
-                id: id.clone(),
-                name: line.name.clone(),
-                description: String::new(),
-                routes: vec![id],
-                points,
-            });
+            let mut a = ols_line::Alignment::new(&id, &id, Vec::new());
+            a.name = line.name.clone();
+            line.alignments.push(a);
+            line.set_alignment_points(&id, points);
             return Ok(line);
         }
         let id = options
             .get("route")
             .cloned()
             .unwrap_or_else(|| line.alignments[0].id.clone());
-        let a = line
-            .alignments
-            .iter_mut()
-            .find(|a| a.id == id)
-            .ok_or_else(|| format!("no alignment {id} in the line"))?;
-        a.points = points;
+        if !line.set_alignment_points(&id, points) {
+            return Err(format!("no alignment {id} in the line"));
+        }
         return Ok(line);
     }
     let points = cg

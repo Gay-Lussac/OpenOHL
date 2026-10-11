@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 
 use ols_bom::CostData;
-use ols_line::route::{Alignment, AlignmentPoint, AlignmentView, Route, point_at};
+use ols_line::route::{Alignment, AlignmentView, Route, point_at};
 use ols_line::{Line, Point, Section, SectionPoint, Stringing, Structure};
 use ols_structures::{InsulatorLibrary, StructureLibrary};
 use ols_terrain::Terrain;
@@ -348,35 +348,25 @@ pub fn spotted_line(
     out.jumpers.clear();
     out.systems.clear();
     out.alignment.clear();
-    // The alignment spotted along, on its routes; the structures stand on
+    // The alignment spotted along, on its route; the structures stand on
     // it.
-    let routes = if rp.route.routes.is_empty() {
-        vec![rp.route.id.clone()]
+    let route = if rp.route.route.is_empty() {
+        rp.route.id.clone()
     } else {
-        rp.route.routes.clone()
+        rp.route.route.clone()
     };
-    out.routes = routes
-        .iter()
-        .map(|r| {
-            line.routes
-                .iter()
-                .find(|x| &x.id == r)
-                .cloned()
-                .unwrap_or_else(|| Route::new(r, &rp.route.name))
-        })
-        .collect();
-    out.alignments = vec![Alignment {
-        id: rp.route.id.clone(),
-        name: rp.route.name.clone(),
-        description: String::new(),
-        routes,
-        points: rp
-            .centreline
+    out.routes = vec![
+        line.routes
             .iter()
-            .copied()
-            .map(AlignmentPoint::free)
-            .collect(),
-    }];
+            .find(|x| x.id == route)
+            .cloned()
+            .unwrap_or_else(|| Route::new(&route, &rp.route.name)),
+    ];
+    out.alignment_points.clear();
+    let mut a = Alignment::new(&rp.route.id, &route, Vec::new());
+    a.name = rp.route.name.clone();
+    out.alignments = vec![a];
+    out.set_alignment_points(&rp.route.id, rp.centreline.iter().map(|p| (*p, None)));
     out
 }
 

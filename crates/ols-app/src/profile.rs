@@ -259,7 +259,7 @@ impl ProfileView {
             return None;
         }
         let line = &model.line;
-        let has = |r: &str| routes.iter().any(|a| a.routes.iter().any(|x| x == r));
+        let has = |r: &str| routes.iter().any(|a| a.route == r);
         let valid = |s: &Show| match s {
             Show::Route(r) => has(r),
             Show::Alignment(a) => routes.iter().any(|x| &x.id == a),
@@ -270,7 +270,7 @@ impl ProfileView {
             let count = |r: &str| {
                 let mut ids: Vec<&String> = routes
                     .iter()
-                    .filter(|a| a.routes.iter().any(|x| x == r))
+                    .filter(|a| a.route == *r)
                     .flat_map(|a| &a.structures)
                     .collect();
                 ids.sort();
@@ -314,7 +314,7 @@ impl ProfileView {
                             Show::Route(r.id.clone()),
                             format!("route {}{name}", r.id),
                         );
-                        for a in routes.iter().filter(|a| a.routes.contains(&r.id)) {
+                        for a in routes.iter().filter(|a| a.route == r.id) {
                             pick(
                                 ui,
                                 Show::Alignment(a.id.clone()),
@@ -367,7 +367,7 @@ impl ProfileView {
             };
             let wanted: Vec<usize> = (0..routes.len())
                 .filter(|&k| match &show {
-                    Show::Route(r) => routes[k].routes.contains(r),
+                    Show::Route(r) => &routes[k].route == r,
                     Show::Alignment(a) => &routes[k].id == a,
                     Show::All => true,
                 })
