@@ -16,10 +16,11 @@ use ols_line::Line;
 pub enum CoordFor {
     /// The next point of the alignment being laid out.
     NewAlignment,
-    /// A point inserted into the nearest alignment.
+    /// A new point (Add alignment point): on no alignment, or put
+    /// between the two closest points of the nearest alignment.
     AddAlignment,
-    /// A point on no alignment yet.
-    FreePoint,
+    /// A point of the Edit alignment tool's new stretch.
+    Reroute,
 }
 
 /// The coordinate window: where nothing to snap to was right-clicked.
@@ -29,6 +30,12 @@ pub struct CoordDialog {
     pub purpose: CoordFor,
     /// East, north, height, as typed.
     pub text: [String; 3],
+    /// Add alignment point: put between the two closest points of the
+    /// nearest alignment (unticked: on no alignment).
+    pub connect: bool,
+    /// Tied under this structure (snapped onto it); untied, the
+    /// coordinates can be typed.
+    pub structure: Option<String>,
 }
 
 impl CoordDialog {
@@ -42,6 +49,8 @@ impl CoordDialog {
                 Some(p) => [f(p[0]), f(p[1]), f(p[2])],
                 None => Default::default(),
             },
+            connect: false,
+            structure: None,
         }
     }
 
@@ -66,46 +75,69 @@ impl CoordDialog {
     pub fn ui(&mut self, ctx: &egui::Context) -> Option<Result<[f64; 3], ()>> {
         let mut out = None;
         let mut open = true;
-        egui::Window::new("Point coordinates")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "No survey point, alignment point or structure near where you clicked: \
-                         give the point's coordinates (all three required).",
-                    )
-                    .small(),
-                );
-                egui::Grid::new("coord-dialog")
-                    .num_columns(2)
-                    .show(ui, |ui| {
-                        for (k, name) in ["E (m)", "N (m)", "height (m)"].into_iter().enumerate() {
-                            ui.label(name);
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.text[k]).desired_width(140.0),
-                            );
-                            ui.end_row();
-                        }
-                    });
-                let point = self.point();
-                if let Err(e) = &point {
-                    crate::menu::error_label(ui, egui::RichText::new(e).small());
+        let add = self.purpose == CoordFor::AddAlignment;
+        egui::Window::new(if add {
+            "New alignment point"
+        } else {
+            "Point coordinates"
+        })
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.label(
+                egui::RichText::new(if add {
+                    "Its coordinates (all three required; a structure, survey or LiDAR \
+                         point right-clicked gives them)."
+                } else {
+                    "No survey point, alignment point or structure near where you clicked: \
+                         give the point's coordinates (all three required)."
+                })
+                .small(),
+            );
+            if let Some(st) = self.structure.clone() {
+                let mut tied = true;
+                ui.checkbox(&mut tied, format!("tied under {st} (it follows it)"));
+                if !tied {
+                    self.structure = None;
                 }
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(point.is_ok(), egui::Button::new("Add the point"))
-                        .clicked()
-                        && let Ok(p) = point
-                    {
-                        out = Some(Ok(p));
-                    }
-                    if ui.button("Cancel").clicked() {
-                        out = Some(Err(()));
+            }
+            let typed = self.structure.is_none();
+            egui::Grid::new("coord-dialog")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    for (k, name) in ["E (m)", "N (m)", "height (m)"].into_iter().enumerate() {
+                        ui.label(name);
+                        ui.add_enabled(
+                            typed,
+                            egui::TextEdit::singleline(&mut self.text[k]).desired_width(140.0),
+                        );
+                        ui.end_row();
                     }
                 });
+            if add {
+                ui.checkbox(
+                    &mut self.connect,
+                    "connect it to the nearest alignment (between its two closest points)",
+                );
+            }
+            let point = self.point();
+            if let Err(e) = &point {
+                crate::menu::error_label(ui, egui::RichText::new(e).small());
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(point.is_ok(), egui::Button::new("Add the point"))
+                    .clicked()
+                    && let Ok(p) = point
+                {
+                    out = Some(Ok(p));
+                }
+                if ui.button("Cancel").clicked() {
+                    out = Some(Err(()));
+                }
             });
+        });
         if !open {
             out = Some(Err(()));
         }

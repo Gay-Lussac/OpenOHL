@@ -258,8 +258,13 @@ The points are drawn in the 3D view (cyan, on the ground) and in the plan — th
   - **on nothing of these:** a window asks for the point's **E, N and height** (all required; where you clicked is offered).
 
   **Enter** asks for its route (one: the route worked on, or that of the points it shares, is chosen; **+ New route** makes one — with no route yet, it offers to create one), then makes it (*alignment 1*, *alignment 2*…). **Backspace** takes the last point back, **Escape** gives it up (the tool stays held).
-- **New alignment point (free)** (tool): a right-click on a survey or LiDAR point, a structure or the ground places a point on no alignment yet — then New alignment picks such points one after another, like the String wire tool picks strings.
-- **Add alignment point** (tool): a right-click inserts a point into the nearest segment of the nearest alignment — snapped as above (an existing point is shared).
+- **Add alignment point** (tool): a right-click on a survey or LiDAR point, a structure (tied under it) or the ground opens its window — its E, N and height (given by what was clicked), and **connect it to the nearest alignment**: ticked, it goes between the two closest points of the nearest alignment; unticked (the default), it is on no alignment yet — New alignment then picks such points one after another, like the String wire tool picks strings.
+- **Edit alignment** (tool) changes the course of an alignment. Right-click one of its points, then the new points (snapped as for New alignment; an existing point is shared), then:
+  - **another point of the same alignment:** the points between the two are replaced by the new ones (those taken off stay, on no alignment unless on another);
+  - **Enter, from its first or last point:** the new points are added there, before its first or after its last;
+  - **Enter, from a point in its middle:** an alignment has two ends only, so it branches — a new alignment from that point through the new ones is offered, its route asked as for New alignment.
+
+  **Backspace** takes the last point back, **Escape** gives it up.
 - **Edit** (tool) on a point opens its window: E, N, z or *on the ground*, tied to a structure, and the alignments it is on with its place (#) in each — ✕ takes it off one, **+ on another alignment…** puts it where it fits along that one. A shared point is one point: moved, it moves on all its alignments.
 - **Delete** (tool) deletes a point: off every alignment it is on (asked first when on several); the other points keep their order. An alignment may be left without points.
 - **View › Work on route** (yours only): the profile shows that route, the checks (clearances) and the structure loads keep to it, and everything else is drawn faded in the 3D view and the plan.
