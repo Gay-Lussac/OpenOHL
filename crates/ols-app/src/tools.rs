@@ -30,12 +30,14 @@ pub enum Tool {
     AddString,
     /// Right-click strings in line order, Enter: a new section.
     StringWire,
-    /// Right-click the ground: a new alignment point there, in the
-    /// nearest alignment.
-    AddAlignment,
     /// Right-click a survey or LiDAR point, a structure or the ground: a
-    /// new alignment point on no alignment yet.
-    AddPoint,
+    /// new alignment point there (its window: on no alignment, or put
+    /// between the two closest points of the nearest alignment).
+    AddAlignment,
+    /// Right-click a point of an alignment, the new points, then another
+    /// point of it: the stretch between them replaced; or from an end,
+    /// Enter: the alignment extended there.
+    EditAlignment,
     /// Right-click points in order (an alignment point: a junction; the
     /// ground: a free point), Enter: a new alignment through them.
     NewAlignment,
@@ -58,7 +60,7 @@ impl Tool {
         Tool::AddAlignment,
         Tool::AddJumper,
         Tool::NewAlignment,
-        Tool::AddPoint,
+        Tool::EditAlignment,
     ];
 
     /// Name.
@@ -74,7 +76,7 @@ impl Tool {
             Tool::StringWire => "String wire",
             Tool::AddAlignment => "Add alignment point",
             Tool::NewAlignment => "New alignment",
-            Tool::AddPoint => "New alignment point (free)",
+            Tool::EditAlignment => "Edit alignment",
             Tool::AddJumper => "Add jumper",
         }
     }
@@ -92,7 +94,7 @@ impl Tool {
             Tool::StringWire => "≈",
             Tool::AddAlignment => "⛶",
             Tool::NewAlignment => "⤳",
-            Tool::AddPoint => "⊙",
+            Tool::EditAlignment => "⤲",
             Tool::AddJumper => "Ψ",
         }
     }
@@ -120,13 +122,13 @@ impl Tool {
                 "right-click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"
             }
             Tool::AddAlignment => {
-                "right-click the ground: a new alignment point in the nearest segment (the profile follows)"
+                "right-click a survey or LiDAR point, a structure or the ground: a new alignment point — on no alignment, or (ticked in its window) between the two closest points of the nearest alignment"
             }
             Tool::NewAlignment => {
                 "right-click points in order — an alignment point: used as it is (shared: a junction); a structure, survey or LiDAR point, or the ground: a new point. Enter: its route, then create it (Backspace: undo a point, Escape: cancel)"
             }
-            Tool::AddPoint => {
-                "right-click a survey or LiDAR point, a structure or the ground: a new alignment point there, on no alignment yet (New alignment picks it later)"
+            Tool::EditAlignment => {
+                "right-click a point of an alignment, then the new points (existing points are shared), then another point of it: the points between are replaced (they stay). From its first or last point, Enter adds them there; from a point in its middle, Enter offers a new alignment (Backspace: undo a point, Escape: cancel)"
             }
             Tool::AddJumper => {
                 "right-click a structure: the jumpers missing there (section ends of the same circuit and phase); or two strings: a jumper between them"
@@ -152,7 +154,11 @@ impl Tool {
     pub fn picks_alignment(self) -> bool {
         matches!(
             self,
-            Tool::Delete | Tool::Edit | Tool::AddAlignment | Tool::NewAlignment | Tool::AddPoint
+            Tool::Delete
+                | Tool::Edit
+                | Tool::AddAlignment
+                | Tool::NewAlignment
+                | Tool::EditAlignment
         )
     }
 
@@ -169,7 +175,7 @@ impl Tool {
             Tool::StringWire => "string_wire",
             Tool::AddAlignment => "add_alignment",
             Tool::NewAlignment => "new_alignment",
-            Tool::AddPoint => "add_point",
+            Tool::EditAlignment => "edit_alignment",
             Tool::AddJumper => "add_jumper",
         }
     }

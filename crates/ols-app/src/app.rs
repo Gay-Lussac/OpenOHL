@@ -149,6 +149,9 @@ pub struct Ready {
     pub restring: Option<String>,
     /// New alignment: the points right-clicked so far.
     pub new_alignment: Vec<ols_line::AlignmentPoint>,
+    /// The points laid out are the Edit alignment tool's: the first is a
+    /// point of the alignment changed.
+    pub reroute: bool,
     /// The coordinates of a point placed where nothing was to snap to.
     pub coord_dialog: Option<crate::alignment_tools::CoordDialog>,
     /// New alignment (Enter): the route(s) it belongs to.
@@ -285,6 +288,7 @@ impl Ready {
             chain: Vec::new(),
             restring: None,
             new_alignment: Vec::new(),
+            reroute: false,
             circuit_warned: None,
             structure_preview: Default::default(),
             angles_window: None,
@@ -1187,7 +1191,7 @@ impl Ready {
             self.hotbar.tool(),
             crate::tools::Tool::NewAlignment
                 | crate::tools::Tool::AddAlignment
-                | crate::tools::Tool::AddPoint
+                | crate::tools::Tool::EditAlignment
         ) {
             s.0.insert(crate::selection::Snap::Structure);
             if self.visible.contains(&Layer::Ground) {
@@ -1343,7 +1347,7 @@ impl Ready {
                     },
                 }
             }
-            (Tool::NewAlignment | Tool::AddAlignment | Tool::AddPoint, _) => {
+            (Tool::NewAlignment | Tool::AddAlignment | Tool::EditAlignment, _) => {
                 use crate::alignment_tools::{CoordDialog, CoordFor};
                 let stored = model.stored_line().unwrap_or(&model.line);
                 // What was right-clicked gives the point: an alignment
@@ -1365,14 +1369,36 @@ impl Ready {
                     }
                     _ => None,
                 };
-                let purpose = match tool {
-                    Tool::NewAlignment => CoordFor::NewAlignment,
-                    Tool::AddAlignment => CoordFor::AddAlignment,
-                    _ => CoordFor::FreePoint,
-                };
-                match point {
-                    Some(p) => self.place_alignment_point(purpose, p),
-                    None => self.coord_dialog = Some(CoordDialog::new(purpose, u.at)),
+                match tool {
+                    // Always its window: the coordinates (from what was
+                    // clicked) and whether it joins the nearest alignment.
+                    Tool::AddAlignment => match point {
+                        Some(p) if !p.id.is_empty() => {
+                            self.status = Some((
+                                format!("there is an alignment point here already: {}", p.id),
+                                true,
+                            ));
+                        }
+                        Some(p) => {
+                            let mut d = CoordDialog::new(CoordFor::AddAlignment, Some(p.position));
+                            d.structure = p.structure;
+                            self.coord_dialog = Some(d);
+                        }
+                        None => {
+                            self.coord_dialog = Some(CoordDialog::new(CoordFor::AddAlignment, u.at))
+                        }
+                    },
+                    _ => {
+                        let purpose = if tool == Tool::NewAlignment {
+                            CoordFor::NewAlignment
+                        } else {
+                            CoordFor::Reroute
+                        };
+                        match point {
+                            Some(p) => self.place_alignment_point(purpose, p),
+                            None => self.coord_dialog = Some(CoordDialog::new(purpose, u.at)),
+                        }
+                    }
                 }
             }
             (Tool::Edit, Selection::Span { section, .. }) => {
@@ -1752,13 +1778,19 @@ impl Ready {
     /// status follow.
     fn alignment_drafted(&mut self) {
         self.update_draft();
-        self.status = Some((
+        let text = if self.reroute {
+            format!(
+                "Edit alignment: from {} through {} new point(s) — right-click the next, or another point of the alignment to join it there; Enter at an end: add them there; Backspace: undo a point, Escape: cancel",
+                self.new_alignment.first().map_or("", |p| p.id.as_str()),
+                self.new_alignment.len().saturating_sub(1)
+            )
+        } else {
             format!(
                 "New alignment: {} points — right-click the next (an alignment point: a junction), Enter: create, Backspace: undo a point, Escape: cancel",
                 self.new_alignment.len()
-            ),
-            false,
-        ));
+            )
+        };
+        self.status = Some((text, false));
     }
 
     /// A point for the alignment tools: the next point of the new
@@ -1773,9 +1805,53 @@ impl Ready {
         use crate::alignment_tools::CoordFor;
         match purpose {
             CoordFor::NewAlignment => {
+                if self.reroute {
+                    self.new_alignment.clear();
+                    self.reroute = false;
+                }
                 if !p.id.is_empty() && self.new_alignment.iter().any(|q| q.id == p.id) {
                     self.status = Some((
                         format!("New alignment: point {} is on it already", p.id),
+                        true,
+                    ));
+                    return;
+                }
+                self.new_alignment.push(p);
+                self.alignment_drafted();
+            }
+            CoordFor::Reroute => {
+                if !self.reroute {
+                    self.new_alignment.clear();
+                }
+                let stored = self.model.stored_line().unwrap_or(&self.model.line);
+                let Some(first) = self.new_alignment.first().map(|q| q.id.clone()) else {
+                    // It starts on a point of an alignment.
+                    if p.id.is_empty() || stored.point_alignments(&p.id).is_empty() {
+                        self.status = Some((
+                            "Edit alignment: right-click a point of an alignment first".into(),
+                            true,
+                        ));
+                        return;
+                    }
+                    self.reroute = true;
+                    self.new_alignment.push(p);
+                    self.alignment_drafted();
+                    return;
+                };
+                // Another point of the same alignment: done.
+                let together = !p.id.is_empty()
+                    && p.id != first
+                    && stored
+                        .alignments
+                        .iter()
+                        .any(|a| a.points.contains(&first) && a.points.contains(&p.id));
+                if together {
+                    self.finish_reroute(Some(p.id));
+                    return;
+                }
+                if !p.id.is_empty() && self.new_alignment.iter().any(|q| q.id == p.id) {
+                    self.status = Some((
+                        format!("Edit alignment: point {} is in it already", p.id),
                         true,
                     ));
                     return;
@@ -1793,33 +1869,68 @@ impl Ready {
                     Err(e) => self.status = Some((e, true)),
                 }
             }
-            CoordFor::FreePoint => {
-                if !p.id.is_empty() {
-                    self.status = Some((
-                        format!("there is an alignment point here already: {}", p.id),
-                        true,
-                    ));
-                    return;
-                }
-                let stored = self.model.stored_line().unwrap_or(&self.model.line);
-                let id = stored.new_point_id();
-                let point = ols_line::AlignmentPoint {
-                    id: id.clone(),
-                    ..p
-                };
-                let command = ols_session::Command::Put {
-                    kind: ols_session::Kind::AlignmentPoint,
-                    id: id.clone(),
-                    value: serde_json::to_value(&point).expect("a point"),
-                    ord: None,
-                };
-                if self.perform(crate::edit::Action::Command {
-                    what: format!("new alignment point {id} (on no alignment)"),
-                    command,
-                }) {
-                    self.select(Selection::AlignmentPoint { id });
+        }
+    }
+
+    /// Add alignment point: `p` (new) on no alignment yet.
+    pub fn add_free_point(&mut self, p: ols_line::AlignmentPoint) {
+        let stored = self.model.stored_line().unwrap_or(&self.model.line);
+        let id = stored.new_point_id();
+        let point = ols_line::AlignmentPoint {
+            id: id.clone(),
+            ..p
+        };
+        let command = ols_session::Command::Put {
+            kind: ols_session::Kind::AlignmentPoint,
+            id: id.clone(),
+            value: serde_json::to_value(&point).expect("a point"),
+            ord: None,
+        };
+        if self.perform(crate::edit::Action::Command {
+            what: format!("new alignment point {id} (on no alignment)"),
+            command,
+        }) {
+            self.select(Selection::AlignmentPoint { id });
+        }
+    }
+
+    /// Edit alignment: the points laid out from a point of an alignment
+    /// to `end` (another point of it), or — Enter, `None` — at its end. A
+    /// first point in the middle of its alignments: a new alignment is
+    /// offered (its route asked, as for New alignment).
+    pub fn finish_reroute(&mut self, end: Option<String>) {
+        let Some(first) = self.new_alignment.first().map(|p| p.id.clone()) else {
+            return;
+        };
+        let middle: Vec<ols_line::AlignmentPoint> = self.new_alignment[1..].to_vec();
+        let stored = self.model.stored_line().unwrap_or(&self.model.line).clone();
+        match crate::editors::reroute(&stored, &first, end.as_deref(), &middle) {
+            Ok(crate::editors::Reroute::Done(what, command)) => {
+                if self.perform(crate::edit::Action::Command { what, command }) {
+                    self.new_alignment.clear();
+                    self.reroute = false;
+                    self.update_draft();
                 }
             }
+            Ok(crate::editors::Reroute::Branch) => {
+                let on = stored.point_alignments(&first).join(", ");
+                let points = std::mem::take(&mut self.new_alignment);
+                self.reroute = false;
+                self.update_draft();
+                self.route_choice = Some(crate::alignment_tools::RouteChoice::new(
+                    &stored,
+                    points,
+                    self.model.work_route.as_deref(),
+                ));
+                self.status = Some((
+                    format!(
+                        "Point {first} is in the middle of {on}: an alignment has two ends only — \
+                         these points make a new alignment (choose its route)"
+                    ),
+                    false,
+                ));
+            }
+            Err(e) => self.status = Some((e, true)),
         }
     }
 
@@ -1908,6 +2019,7 @@ impl Ready {
     /// view keeps the mouse.
     pub fn cancel_new_alignment(&mut self) {
         self.new_alignment.clear();
+        self.reroute = false;
         self.update_draft();
         self.status = Some(("New alignment: cancelled".into(), false));
     }
@@ -2615,10 +2727,15 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
                     i.consume_key(Modifiers::NONE, Key::Backspace),
                 )
             });
-            if enter {
+            if enter && r.reroute {
+                r.finish_reroute(None);
+            } else if enter {
                 r.finish_new_alignment();
             } else if back {
                 r.new_alignment.pop();
+                if r.new_alignment.is_empty() {
+                    r.reroute = false;
+                }
                 r.alignment_drafted();
             }
         }
@@ -2819,10 +2936,18 @@ fn alignment_windows(ctx: &egui::Context, r: &mut Ready) {
     if let Some(d) = &mut r.coord_dialog
         && let Some(done) = d.ui(ctx)
     {
-        let purpose = d.purpose;
+        let (purpose, connect, structure) = (d.purpose, d.connect, d.structure.clone());
         r.coord_dialog = None;
         if let Ok(p) = done {
-            r.place_alignment_point(purpose, ols_line::AlignmentPoint::free("", p));
+            let point = ols_line::AlignmentPoint {
+                structure,
+                ..ols_line::AlignmentPoint::free("", p)
+            };
+            if purpose == crate::alignment_tools::CoordFor::AddAlignment && !connect {
+                r.add_free_point(point);
+            } else {
+                r.place_alignment_point(purpose, point);
+            }
         }
     }
     let stored = r.model.stored_line().unwrap_or(&r.model.line).clone();

@@ -1050,6 +1050,153 @@ pub fn insert_alignment_point(
     ))
 }
 
+/// What the Edit alignment tool does with its points.
+#[derive(Debug)]
+pub enum Reroute {
+    /// The alignment changed: what, the command.
+    Done(String, Command),
+    /// The first point is in the middle of its alignments: an alignment
+    /// has two ends only, so the points make a new alignment.
+    Branch,
+}
+
+/// The Edit alignment tool: from point `a` (on an alignment) through
+/// `middle` (new points without an id, or existing ones) to point `b` of
+/// the same alignment — the points between `a` and `b` are replaced by
+/// `middle` (they stay, on no alignment unless on another); without `b`,
+/// at an end of `a`'s alignment, `middle` extends it there (after its
+/// last point, or before its first). `a` in the middle of every
+/// alignment it is on, without `b`: [`Reroute::Branch`].
+pub fn reroute(
+    stored: &Line,
+    a: &str,
+    b: Option<&str>,
+    middle: &[ols_line::AlignmentPoint],
+) -> Result<Reroute, String> {
+    // The alignment: with both points, or with `a` at an end.
+    let (alignment, ia, ib) = match b {
+        Some(b) => {
+            let x = stored
+                .alignments
+                .iter()
+                .find(|x| x.points.iter().any(|p| p == a) && x.points.iter().any(|p| p == b))
+                .ok_or_else(|| format!("points {a} and {b} are on no alignment together"))?;
+            let pos = |id: &str| x.points.iter().position(|p| p == id).expect("on it");
+            (x, pos(a), Some(pos(b)))
+        }
+        None => {
+            if middle.is_empty() {
+                return Err("Edit alignment: right-click the new point(s) first".into());
+            }
+            let at_end = stored.alignments.iter().find_map(|x| {
+                let k = x.points.iter().position(|p| p == a)?;
+                (k == 0 || k + 1 == x.points.len()).then_some((x, k))
+            });
+            match at_end {
+                Some((x, k)) => (x, k, None),
+                None => return Ok(Reroute::Branch),
+            }
+        }
+    };
+    let mut commands = Vec::new();
+    let mut line = stored.clone();
+    let mut ids = Vec::new();
+    for p in middle {
+        if p.id.is_empty() {
+            let id = line.new_point_id();
+            let point = ols_line::AlignmentPoint {
+                id: id.clone(),
+                ..p.clone()
+            };
+            commands.push(Command::Put {
+                kind: Kind::AlignmentPoint,
+                id: id.clone(),
+                value: serde_json::to_value(&point).map_err(|e| e.to_string())?,
+                ord: None,
+            });
+            line.alignment_points.push(point);
+            ids.push(id);
+        } else {
+            ids.push(p.id.clone());
+        }
+    }
+    let old = &alignment.points;
+    let points: Vec<String> = match ib {
+        Some(ib) if ia < ib => old[..=ia]
+            .iter()
+            .chain(&ids)
+            .chain(&old[ib..])
+            .cloned()
+            .collect(),
+        Some(ib) => {
+            let back: Vec<String> = ids.iter().rev().cloned().collect();
+            old[..=ib]
+                .iter()
+                .chain(&back)
+                .chain(&old[ia..])
+                .cloned()
+                .collect()
+        }
+        // The last point (or the only one): after it.
+        None if ia + 1 == old.len() => old.iter().chain(&ids).cloned().collect(),
+        None => ids.iter().rev().chain(old).cloned().collect(),
+    };
+    if let Some(d) = points
+        .iter()
+        .enumerate()
+        .find(|(k, p)| points[..*k].contains(p))
+        .map(|x| x.1)
+    {
+        return Err(format!(
+            "alignment {}: point {d} would be on it twice",
+            alignment.id
+        ));
+    }
+    let off: Vec<&String> = old.iter().filter(|p| !points.contains(p)).collect();
+    let mut a2 = alignment.clone();
+    a2.points = points;
+    commands.push(Command::Put {
+        kind: Kind::Alignment,
+        id: a2.id.clone(),
+        value: serde_json::to_value(&a2).map_err(|e| e.to_string())?,
+        ord: None,
+    });
+    let what = match (ib, off.is_empty()) {
+        (None, _) => format!(
+            "alignment {}: {} point(s) added at its {}",
+            a2.id,
+            ids.len(),
+            if ia == 0 && old.len() > 1 {
+                "start"
+            } else {
+                "end"
+            }
+        ),
+        (Some(_), true) => format!(
+            "alignment {}: {} point(s) put between {a} and {}",
+            a2.id,
+            ids.len(),
+            b.unwrap_or_default()
+        ),
+        (Some(_), false) => format!(
+            "alignment {}: {} point(s) put between {a} and {}; {} taken off it (they stay)",
+            a2.id,
+            ids.len(),
+            b.unwrap_or_default(),
+            off.iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    let command = if commands.len() == 1 {
+        commands.remove(0)
+    } else {
+        Command::Batch { commands }
+    };
+    Ok(Reroute::Done(what, command))
+}
+
 /// What the window asks for.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Outcome {
