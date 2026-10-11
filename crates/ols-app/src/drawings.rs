@@ -14,7 +14,7 @@ use eframe::egui;
 use ols_drawing::export::{Export, Format};
 use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;
-use ols_line::{Line, Route};
+use ols_line::{AlignmentView, Line};
 use ols_terrain::Terrain;
 
 use crate::model::Model;
@@ -91,7 +91,7 @@ pub struct Input {
     /// The line.
     pub line: Line,
     /// Routes to draw.
-    pub routes: Vec<Route>,
+    pub routes: Vec<AlignmentView>,
     /// Solved cases: name, sections, jumpers; the first drawn solid.
     pub cases: Vec<(String, Vec<SectionShape>, Vec<JumperShape>)>,
     /// Ground surface.
@@ -113,7 +113,7 @@ impl Input {
         if w.formats.is_empty() {
             return Err("tick a format".into());
         }
-        let all = model.line.effective_routes();
+        let all = model.line.alignment_views();
         let routes = match w.route {
             Some(k) => vec![all.get(k).ok_or("no such route")?.clone()],
             None => all,
@@ -261,7 +261,7 @@ impl DrawingsWindow {
         open: &mut bool,
     ) -> Option<Job> {
         let mut job = None;
-        let routes = model.line.effective_routes();
+        let routes = model.line.alignment_views();
         egui::Window::new("Export drawings")
             .open(open)
             .collapsible(false)

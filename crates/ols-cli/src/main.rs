@@ -1413,7 +1413,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             }
         }
         if *stations {
-            for route in line.effective_routes() {
+            for route in line.alignment_views() {
                 println!("Route {} {}", route.id, route.name);
                 println!(
                     "  {:<12} {:>11} {:>9} {:>10} {:>10}  also on routes",
@@ -1689,7 +1689,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 page: page.clone(),
                 ..spec.export.clone()
             };
-            let routes = line.effective_routes();
+            let routes = line.alignment_views();
             for id in &spec.routes {
                 if !routes.iter().any(|r| &r.id == id) {
                     let ids: Vec<&str> = routes.iter().map(|r| r.id.as_str()).collect();

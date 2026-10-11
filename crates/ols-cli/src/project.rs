@@ -281,7 +281,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 file.display(),
                 line.structures.len(),
                 line.sections.len(),
-                line.effective_routes().len(),
+                line.alignment_views().len(),
                 into.display()
             );
             report(&a);

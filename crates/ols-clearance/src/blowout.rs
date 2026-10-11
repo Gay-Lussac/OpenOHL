@@ -44,7 +44,7 @@ pub struct Centreline {
 
 /// The centrelines of a line's routes.
 pub fn centrelines(line: &Line) -> Vec<Centreline> {
-    line.effective_routes()
+    line.alignment_views()
         .iter()
         .map(|r| Centreline {
             structures: r.structures.clone(),

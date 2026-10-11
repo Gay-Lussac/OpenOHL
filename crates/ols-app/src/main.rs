@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use eframe::egui;
 
+mod alignment_tools;
 mod annotations;
 mod app;
 mod backgrounds;

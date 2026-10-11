@@ -62,9 +62,10 @@ fn commit_checkout_round_trip() {
     s.checkout("ben", "alt").unwrap();
     assert_eq!(s.head().unwrap(), Head::Branch("alt".into()));
     shift(&mut s, "ben", "T6", 5.0).unwrap();
+    // T6 and the branch's point tied to it.
     let st = s.status().unwrap();
-    assert_eq!(st.changes.objects.len(), 1);
-    assert_eq!(st.changes.objects[0].id, "T6");
+    let ids: Vec<&str> = st.changes.objects.iter().map(|o| o.id.as_str()).collect();
+    assert_eq!(ids, ["branch", "T6"]);
     // Each branch is a project line with its own working state: a
     // checkout only chooses the line worked on, uncommitted changes and
     // all, and changes nothing.
@@ -217,7 +218,10 @@ fn merge_with_a_conflict() {
     // Nothing changed by the refusal.
     assert_eq!(position(&s, "T6")[0], t6[0] - 4.0);
     // Theirs for the whole structure.
-    let choices = Choices::from([("structure:T6".to_owned(), Side::Theirs)]);
+    let choices = Choices::from([
+        ("structure:T6".to_owned(), Side::Theirs),
+        ("alignment:branch".to_owned(), Side::Theirs),
+    ]);
     s.merge("ana", "alt", Some("take alt's T6"), &choices)
         .unwrap();
     assert_eq!(position(&s, "T6")[0], t6[0] + 4.0);
@@ -306,10 +310,7 @@ fn grants_limit_edits() {
     );
     shift(&mut s, "ben", "T2", 1.0).unwrap();
     let refused = shift(&mut s, "ben", "T6", 1.0).unwrap_err();
-    assert!(
-        refused.to_string().contains("structure T6 is outside"),
-        "{refused}"
-    );
+    assert!(refused.to_string().contains("is outside"), "{refused}");
     // Admins are not limited; libraries need a grant naming them.
     shift(&mut s, "ana", "T6", 1.0).unwrap();
     assert!(s.put_library_file("ben", "cables", "a.olsw", "").is_err());

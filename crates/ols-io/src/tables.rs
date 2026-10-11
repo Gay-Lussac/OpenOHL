@@ -272,7 +272,7 @@ pub fn stations(model: &ExportModel) -> Table {
             "ahead_span_m",
         ],
     );
-    for route in line.effective_routes() {
+    for route in line.alignment_views() {
         for s in route.stations(line).unwrap_or_default() {
             t.rows.push(vec![
                 route.id.as_str().into(),

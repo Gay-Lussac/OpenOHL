@@ -155,8 +155,8 @@ fn a_phase_brings_in_main_and_goes_back_through_a_review() {
     assert!(e.to_string().contains("conflict"), "{e}");
     // Refused: nothing recorded (a server and its replicas stay alike).
     assert_eq!(s.revisions().unwrap().len(), revisions);
-    // Moving T3 changed its position, points and wire points: three
-    // conflicts, settled at once for the whole structure.
+    // Moving T3 changed its position, points and wire points, and the
+    // branch's point tied to it: four conflicts.
     let keys: Vec<String> = s
         .bring_in_plan("main", &Choices::new())
         .unwrap()
@@ -167,6 +167,7 @@ fn a_phase_brings_in_main_and_goes_back_through_a_review() {
     assert_eq!(
         keys,
         [
+            "alignment:branch/points",
             "structure:T3/points",
             "structure:T3/position",
             "structure:T3/wires"
@@ -175,7 +176,10 @@ fn a_phase_brings_in_main_and_goes_back_through_a_review() {
     s.bring_in(
         "ben",
         "main",
-        &Choices::from([("structure:T3".to_owned(), Side::Ours)]),
+        &Choices::from([
+            ("structure:T3".to_owned(), Side::Ours),
+            ("alignment:branch".to_owned(), Side::Ours),
+        ]),
     )
     .unwrap();
     assert_eq!(x(&s, "phase 1", "T3"), t3 + 4.0, "the phase's choice");

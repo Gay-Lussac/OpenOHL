@@ -45,6 +45,8 @@ pub enum TableKind {
     Circuits,
     /// Alignment points of the routes (the profiles follow them).
     Alignments,
+    /// Routes: paths of the line, made of alignments.
+    Routes,
     /// Weather cases (of the model's weather case file).
     WeatherCases,
 }
@@ -105,6 +107,12 @@ const STRUCTURES: &[Column] = &[
         "attachment points (Strings table)",
     ),
     ("sections", 60.0, Derived, "sections through it"),
+    (
+        "routes",
+        140.0,
+        Yes,
+        "the routes it is on: from the alignments it stands on (dimmed), or ticked — needed when it stands on no alignment",
+    ),
     (
         "description",
         220.0,
@@ -352,7 +360,7 @@ const ALIGNMENTS: &[Column] = &[
         "alignment",
         110.0,
         Yes,
-        "the alignment the point belongs to (\"main\": the line's own); another name moves it there, a new name makes a new alignment",
+        "the alignment the point belongs to; another name moves it there, a new name makes a new alignment",
     ),
     (
         "#",
@@ -369,6 +377,36 @@ const ALIGNMENTS: &[Column] = &[
         Yes,
         "tied under this structure (it follows it); empty: free",
     ),
+    (
+        "routes",
+        160.0,
+        Yes,
+        "the routes the point is on (ticked): its alignment's, or its own — on Apply you choose whether a change is for the whole alignment or the point only",
+    ),
+    (
+        "description",
+        220.0,
+        Yes,
+        "what it is, in words (free text)",
+    ),
+];
+
+const ROUTES: &[Column] = &[
+    (
+        "route",
+        120.0,
+        Yes,
+        "unique id (renaming: its alignments and structures follow)",
+    ),
+    ("name", 160.0, Yes, "display name"),
+    (
+        "alignments",
+        200.0,
+        Derived,
+        "its alignments, in order (Alignment points table: their routes)",
+    ),
+    ("structures", 80.0, Derived, "structures on it"),
+    ("sections", 70.0, Derived, "sections on it"),
     (
         "description",
         220.0,
@@ -625,6 +663,9 @@ pub struct Changes {
     pub display: Vec<(String, Vec<usize>)>,
     /// What deletions take with them, to confirm.
     pub takes: Vec<String>,
+    /// Routes typed for alignment points: whether for the whole alignment
+    /// or the points only is asked first.
+    pub asks_scope: bool,
 }
 
 /// Shows the values used where an object leaves a value to its default
@@ -744,13 +785,14 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
 
 impl TableKind {
     /// Every table (the Tables menu).
-    pub const ALL: [TableKind; 8] = [
+    pub const ALL: [TableKind; 9] = [
         TableKind::Structures,
         TableKind::Sections,
         TableKind::Strings,
         TableKind::Jumpers,
         TableKind::Systems,
         TableKind::Circuits,
+        TableKind::Routes,
         TableKind::Alignments,
         TableKind::WeatherCases,
     ];
@@ -765,6 +807,7 @@ impl TableKind {
             TableKind::Systems => "Electrical systems",
             TableKind::Circuits => "Electrical circuits",
             TableKind::Alignments => "Alignment points",
+            TableKind::Routes => "Routes",
             TableKind::WeatherCases => "Weather cases",
         }
     }
@@ -779,6 +822,7 @@ impl TableKind {
             TableKind::Systems => "systems",
             TableKind::Circuits => "circuits",
             TableKind::Alignments => "alignments",
+            TableKind::Routes => "routes",
             TableKind::WeatherCases => "weather",
         }
     }
@@ -793,6 +837,7 @@ impl TableKind {
             TableKind::Systems => SYSTEMS,
             TableKind::Circuits => CIRCUITS,
             TableKind::Alignments => ALIGNMENTS,
+            TableKind::Routes => ROUTES,
             TableKind::WeatherCases => WEATHER,
         }
     }
@@ -808,8 +853,13 @@ impl TableKind {
     /// The rows of the model (weather case `case` shown).
     /// The "none" of its multiple choices, if it has one (display cases:
     /// the cases shown; a circuit's starts need one).
-    fn none_choice(self) -> Option<&'static str> {
-        (self != TableKind::Circuits).then_some("none (the cases shown)")
+    fn none_choice(self, column: usize) -> Option<&'static str> {
+        match (self, self.columns()[column].0) {
+            (TableKind::Circuits, _) => None,
+            (TableKind::Structures, "routes") => Some("none (from the alignments)"),
+            (_, "routes") => None,
+            _ => Some("none (the cases shown)"),
+        }
     }
 
     /// Its rows follow the model (the circuits, from the connections):
@@ -835,12 +885,20 @@ impl TableKind {
                 *at_structure.entry(id).or_default() += 1;
             }
         }
+        let on_routes = line.structure_routes();
         let mut rows: Vec<Row> = match self {
             TableKind::Structures => line
                 .structures
                 .iter()
                 .map(|s| Row {
-                    defaulted: Vec::new(),
+                    // Routes from the alignments: dimmed.
+                    defaulted: if s.routes.is_empty() {
+                        let mut d = vec![false; STRUCTURES.len()];
+                        d[TableKind::Structures.column("routes")] = true;
+                        d
+                    } else {
+                        Vec::new()
+                    },
                     key: s.id.clone(),
                     select: Selection::Structure(s.id.clone()),
                     cells: vec![
@@ -857,10 +915,50 @@ impl TableKind {
                             .copied()
                             .unwrap_or(0)
                             .to_string(),
+                        if s.routes.is_empty() {
+                            on_routes.get(&s.id).cloned().unwrap_or_default().join(", ")
+                        } else {
+                            s.routes.join(", ")
+                        },
                         s.description.clone(),
                     ],
                 })
                 .collect(),
+            TableKind::Routes => {
+                let views = line.alignment_views();
+                let (sections, _) = line.wire_routes();
+                line.routes
+                    .iter()
+                    .map(|r| {
+                        let on: Vec<&str> = views
+                            .iter()
+                            .filter(|a| a.routes.contains(&r.id))
+                            .map(|a| a.id.as_str())
+                            .collect();
+                        Row {
+                            defaulted: Vec::new(),
+                            key: r.id.clone(),
+                            select: Selection::None,
+                            cells: vec![
+                                r.id.clone(),
+                                r.name.clone(),
+                                on.join(", "),
+                                on_routes
+                                    .values()
+                                    .filter(|rs| rs.contains(&r.id))
+                                    .count()
+                                    .to_string(),
+                                sections
+                                    .values()
+                                    .filter(|rs| rs.contains(&r.id))
+                                    .count()
+                                    .to_string(),
+                                r.description.clone(),
+                            ],
+                        }
+                    })
+                    .collect()
+            }
             TableKind::Sections => line
                 .sections
                 .iter()
@@ -1067,7 +1165,7 @@ impl TableKind {
             TableKind::Circuits => circuit_rows(line),
             TableKind::Alignments => alignments(line)
                 .into_iter()
-                .flat_map(|(route, points)| {
+                .flat_map(|(route, points, routes)| {
                     points.into_iter().enumerate().map(move |(k, p)| Row {
                         defaulted: Vec::new(),
                         key: format!("{route}\t{k}"),
@@ -1082,6 +1180,10 @@ impl TableKind {
                             f(p.position[1], 3),
                             f(p.position[2], 3),
                             p.structure.clone().unwrap_or_default(),
+                            p.routes
+                                .clone()
+                                .unwrap_or_else(|| routes.clone())
+                                .join(", "),
                             p.description.clone(),
                         ],
                     })
@@ -1173,6 +1275,13 @@ impl TableKind {
             }
             // Circuits follow the connections: no rows of their own.
             TableKind::Circuits => {}
+            TableKind::Routes => {
+                let mut taken = line.clone();
+                for r in added {
+                    taken.routes.push(ols_line::Route::new(&r[0], ""));
+                }
+                cells[0] = crate::editors::free_route_id(&taken);
+            }
             TableKind::Systems => {
                 cells[0] = taken_after(
                     line.systems.iter().map(|s| s.id.as_str()).collect(),
@@ -1183,10 +1292,20 @@ impl TableKind {
                 cells[5] = "L1 L2 L3".into();
             }
             TableKind::Alignments => {
-                let routes = alignments(line);
-                let (route, points) = routes.first().cloned().unwrap_or(("main".into(), vec![]));
+                let all = alignments(line);
+                let (route, points, routes) = all.first().cloned().unwrap_or_else(|| {
+                    (
+                        crate::editors::free_alignment_id(line),
+                        vec![],
+                        line.routes
+                            .first()
+                            .map(|r| vec![r.id.clone()])
+                            .unwrap_or_default(),
+                    )
+                });
                 cells[0] = route;
                 cells[1] = (points.len() + 1).to_string();
+                cells[TableKind::Alignments.column("routes")] = routes.join(", ");
             }
             TableKind::WeatherCases => {
                 cells[W_ORDER] = (model.cases.len() + added.len() + 1).to_string();
@@ -1635,6 +1754,72 @@ impl TableKind {
                 alignment_commands(model, stored, rows, page, &mut out)?;
             }
             TableKind::Circuits => circuit_commands(stored, rows, page, &mut out)?,
+            TableKind::Routes => {
+                for key in &page.deleted {
+                    let i = session
+                        .deletion_impact(Kind::Route, key)
+                        .map_err(|e| e.to_string())?;
+                    if i.has_dependents() {
+                        out.takes.push(i.summary());
+                    }
+                    out.commands.push((
+                        format!("deleted route {key}"),
+                        Command::Delete {
+                            kind: Kind::Route,
+                            id: key.clone(),
+                            confirm: true,
+                        },
+                    ));
+                }
+                for key in page.edits.keys().filter(|k| !page.deleted.contains(*k)) {
+                    let c = existing(key)?;
+                    let mut r = stored
+                        .routes
+                        .iter()
+                        .find(|r| &r.id == key)
+                        .ok_or_else(|| format!("no route {key}"))?
+                        .clone();
+                    let new_id = c.get(0).trim().to_owned();
+                    if new_id.is_empty() {
+                        return Err(format!("route {key}: give it an id"));
+                    }
+                    r.name = c.get(1).trim().to_owned();
+                    r.description = c.get(5).trim().to_owned();
+                    if new_id != *key {
+                        out.commands.push((
+                            format!("renamed route {key} to {new_id}"),
+                            Command::Rename {
+                                kind: Kind::Route,
+                                id: key.clone(),
+                                new_id: new_id.clone(),
+                            },
+                        ));
+                        r.id = new_id.clone();
+                    }
+                    out.commands.push((
+                        format!("changed route {}", r.id),
+                        Command::Put {
+                            kind: Kind::Route,
+                            id: r.id.clone(),
+                            value: serde_json::to_value(&r).map_err(|e| e.to_string())?,
+                            ord: None,
+                        },
+                    ));
+                }
+                for cells in &page.added {
+                    let c = Cells {
+                        row: cells,
+                        typed: None,
+                        defaulted: &[],
+                    };
+                    let (what, cmd) = crate::editors::new_route(stored, &c.get(0), &c.get(1))?;
+                    let mut cmd = cmd;
+                    if let Command::Put { value, .. } = &mut cmd {
+                        value["description"] = c.get(5).trim().into();
+                    }
+                    out.commands.push((what, cmd));
+                }
+            }
             TableKind::WeatherCases => unreachable!("written to its file"),
         }
         Ok(out)
@@ -1724,6 +1909,10 @@ fn choices(
             with_none(model.line.structures.iter().map(|s| s.id.clone()).collect()),
             false,
         ),
+        (TableKind::Alignments | TableKind::Structures, "routes") => (
+            model.line.routes.iter().map(|r| r.id.clone()).collect(),
+            true,
+        ),
         _ => return None,
     })
 }
@@ -1807,13 +1996,24 @@ fn choice_cell(
     changed
 }
 
-/// The alignments: per route, its points (`"line"`: the line's own, when
-/// it has no routes).
-fn alignments(line: &ols_line::Line) -> Vec<(String, Vec<ols_line::AlignmentPoint>)> {
-    crate::editors::explicit_routes(line)
-        .into_iter()
-        .map(|r| (r.id, r.alignment))
+/// The alignments: id, points, routes.
+fn alignments(line: &ols_line::Line) -> Vec<(String, Vec<ols_line::AlignmentPoint>, Vec<String>)> {
+    line.alignments
+        .iter()
+        .map(|a| (a.id.clone(), a.points.clone(), a.routes.clone()))
         .collect()
+}
+
+/// Routes as a cell gives them: "a, b".
+fn route_list(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = text
+        .split(',')
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(str::to_owned)
+        .collect();
+    out.dedup();
+    out
 }
 
 /// The circuits (conductor paths), one row each: C1, C2… in the order of
@@ -2109,6 +2309,33 @@ fn structure_cells(
         .get(TableKind::Structures.column("description"))
         .trim()
         .to_owned();
+    // Routes typed: its own, unless they are those of the alignments it
+    // stands on (then left to them).
+    let col = TableKind::Structures.column("routes");
+    if c.changed(col) || c.typed.is_none() {
+        let list = route_list(&c.get(col));
+        if let Some(r) = list
+            .iter()
+            .find(|r| !model.line.routes.iter().any(|x| &x.id == *r))
+        {
+            return Err(format!(
+                "{name}: no route {r} (make it in the Routes table)"
+            ));
+        }
+        let mut found = model.line.routes_of(name);
+        let mut sorted = list.clone();
+        sorted.sort();
+        found.sort();
+        let own = model
+            .line
+            .structure(name)
+            .is_some_and(|s| !s.routes.is_empty());
+        form.routes = if sorted == found && !own {
+            Vec::new()
+        } else {
+            list
+        };
+    }
     Ok(())
 }
 
@@ -2515,8 +2742,12 @@ fn alignment_commands(
     page: &TablePage,
     out: &mut Changes,
 ) -> Result<(), String> {
+    let routes_col = TableKind::Alignments.column("routes");
+    let description_col = TableKind::Alignments.column("description");
     // Every alignment rebuilt from the rows: (order, point) by alignment.
     let mut points: BTreeMap<String, Vec<(f64, ols_line::AlignmentPoint)>> = BTreeMap::new();
+    // Routes typed for a point: (alignment, its routes typed).
+    let mut typed_routes: Vec<(String, usize, Vec<String>)> = Vec::new();
     let point_of = |c: &Cells, name: &str| -> Result<ols_line::AlignmentPoint, String> {
         let structure = opt(&c.get(5));
         let position = match &structure {
@@ -2541,12 +2772,10 @@ fn alignment_commands(
             }
         };
         Ok(ols_line::AlignmentPoint {
-            description: c
-                .get(TableKind::Alignments.column("description"))
-                .trim()
-                .to_owned(),
+            description: c.get(description_col).trim().to_owned(),
             position,
             structure,
+            routes: None,
         })
     };
     let route_of = |c: &Cells, name: &str| -> Result<String, String> {
@@ -2556,6 +2785,7 @@ fn alignment_commands(
         }
         Ok(r)
     };
+    let known = |r: &String| stored.routes.iter().any(|x| &x.id == r);
     for row in rows {
         if page.deleted.contains(&row.key) {
             continue;
@@ -2573,11 +2803,30 @@ fn alignment_commands(
         if route != row.cells[0] {
             order -= 1e-9;
         }
-        points
-            .entry(route)
-            .or_default()
-            .push((order, point_of(&c, &name)?));
+        let mut p = point_of(&c, &name)?;
+        // The point's own routes stay unless typed.
+        let (from, index) = row.key.split_once('\t').unwrap_or((&row.key, "0"));
+        let index: usize = index.parse().unwrap_or(0);
+        p.routes = stored
+            .alignments
+            .iter()
+            .find(|a| a.id == from)
+            .and_then(|a| a.points.get(index))
+            .and_then(|q| q.routes.clone());
+        if c.changed(routes_col) {
+            let list = route_list(&c.get(routes_col));
+            if let Some(r) = list.iter().find(|r| !known(r)) {
+                return Err(format!(
+                    "{name}: no route {r} (make it in the Routes table)"
+                ));
+            }
+            let n = points.get(&route).map_or(0, Vec::len);
+            typed_routes.push((route.clone(), n, list));
+        }
+        points.entry(route).or_default().push((order, p));
     }
+    // New rows: their routes give a new alignment's.
+    let mut new_routes: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (k, cells) in page.added.iter().enumerate() {
         let c = Cells {
             row: cells,
@@ -2587,6 +2836,13 @@ fn alignment_commands(
         let name = format!("new point {}", k + 1);
         let route = route_of(&c, &name)?;
         let order = opt_num(&c.get(1), &format!("{name} #"))?.unwrap_or(f64::MAX);
+        let list = route_list(&c.get(routes_col));
+        if let Some(r) = list.iter().find(|r| !known(r)) {
+            return Err(format!(
+                "{name}: no route {r} (make it in the Routes table)"
+            ));
+        }
+        new_routes.entry(route.clone()).or_insert(list);
         points
             .entry(route)
             .or_default()
@@ -2597,24 +2853,93 @@ fn alignment_commands(
         list.sort_by(|a, b| a.0.total_cmp(&b.0));
         list.into_iter().map(|x| x.1).collect()
     };
-    let mut routes = crate::editors::explicit_routes(stored);
-    for r in &mut routes {
-        r.alignment = sorted(points.remove(&r.id).unwrap_or_default());
+    let mut alignments = stored.alignments.clone();
+    for a in &mut alignments {
+        // The rows' order, before routes typed are placed by index.
+        let mut list = points.remove(&a.id).unwrap_or_default();
+        list.sort_by(|x, y| x.0.total_cmp(&y.0));
+        a.points = list.into_iter().map(|x| x.1).collect();
     }
-    // Names not known yet: new alignments (no structures yet).
+    // Names not known yet: new alignments, on the routes typed.
     for (id, list) in points {
-        let alignment = sorted(list);
-        routes.push(ols_line::Route {
+        let routes = new_routes.remove(&id).unwrap_or_default();
+        if routes.is_empty() {
+            return Err(format!("new alignment {id}: tick its route(s)"));
+        }
+        alignments.push(ols_line::Alignment {
             id: id.clone(),
-            name: id,
-            alignment,
-            structures: Vec::new(),
+            name: String::new(),
+            description: String::new(),
+            routes,
+            points: sorted(list),
         });
+    }
+    // Routes typed for points: for the whole alignment, or the point only
+    // (asked first).
+    let differs = typed_routes.iter().any(|(id, _, list)| {
+        alignments
+            .iter()
+            .find(|a| &a.id == id)
+            .is_some_and(|a| &a.routes != list)
+    });
+    if differs {
+        match page.route_scope {
+            None => out.asks_scope = true,
+            Some(whole) => {
+                for (id, _, list) in &typed_routes {
+                    let Some(a) = alignments.iter_mut().find(|a| &a.id == id) else {
+                        continue;
+                    };
+                    if whole {
+                        a.routes = list.clone();
+                    }
+                }
+                if !whole {
+                    // The point typed: its own routes (none when they are
+                    // its alignment's).
+                    for row in rows {
+                        let Some(edits) = page.edits.get(&row.key) else {
+                            continue;
+                        };
+                        let Some(text) = edits.get(&routes_col) else {
+                            continue;
+                        };
+                        let list = route_list(text);
+                        let (id, index) = row.key.split_once('\t').unwrap_or((&row.key, "0"));
+                        let index: usize = index.parse().unwrap_or(0);
+                        let Some(a) = alignments.iter_mut().find(|a| a.id == id) else {
+                            continue;
+                        };
+                        let own = (a.routes != list).then_some(list);
+                        // The same point (by its stored position).
+                        let at = stored
+                            .alignments
+                            .iter()
+                            .find(|x| x.id == id)
+                            .and_then(|x| x.points.get(index))
+                            .map(|q| q.position);
+                        if let Some(q) = a.points.iter_mut().find(|q| Some(q.position) == at) {
+                            q.routes = own;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some(a) = alignments.iter().find(|a| a.routes.is_empty()) {
+        return Err(format!("alignment {}: on no route", a.id));
     }
     out.commands.push((
         "changed the alignments".into(),
-        crate::editors::routes_command(stored, &routes)?,
+        crate::editors::alignments_command(stored, &alignments)?,
     ));
+    // An alignment left without points goes: listed first.
+    for a in &alignments {
+        if a.points.is_empty() && stored.alignments.iter().any(|x| x.id == a.id) {
+            out.takes
+                .push(format!("alignment {} (its last point deleted)", a.id));
+        }
+    }
     Ok(())
 }
 
@@ -2816,6 +3141,11 @@ pub struct TablePage {
     pub message: Option<(String, bool)>,
     /// What the deletions take with them, waiting for a second Apply.
     pub confirm: Option<Vec<String>>,
+    /// Routes typed for alignment points: for the whole alignment (true)
+    /// or the points only (false), once asked.
+    pub route_scope: Option<bool>,
+    /// That question is asked.
+    pub ask_scope: bool,
     /// The colour tool, open for a colour cell.
     pub color: Option<(ColorCell, crate::color_tool::ColorTool)>,
 }
@@ -2866,6 +3196,8 @@ impl TablePage {
         self.added.clear();
         self.deleted.clear();
         self.confirm = None;
+        self.route_scope = None;
+        self.ask_scope = false;
     }
 
     /// Opens the colour tool for `cell`, showing `text` (its colour, if
@@ -2929,6 +3261,10 @@ impl TablePage {
     ) -> Result<Option<Changes>, String> {
         let rows = kind.rows(model, case);
         let changes = kind.changes(model, case, &rows, self)?;
+        if changes.asks_scope && self.route_scope.is_none() {
+            self.ask_scope = true;
+            return Ok(None);
+        }
         if !changes.takes.is_empty() && !confirmed {
             self.confirm = Some(changes.takes.clone());
             return Ok(None);
@@ -2996,6 +3332,38 @@ impl TablePage {
                 ui.label(egui::RichText::new("read-only").small().weak());
             }
         });
+        if self.ask_scope {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                "Routes were ticked for alignment points: for their whole alignment, or only these points?",
+            );
+            ui.horizontal(|ui| {
+                if ui
+                    .button("Whole alignment")
+                    .on_hover_text("The alignment (all its points) is on the routes ticked")
+                    .clicked()
+                {
+                    self.route_scope = Some(true);
+                    self.ask_scope = false;
+                    apply = true;
+                }
+                if ui
+                    .button("These points only")
+                    .on_hover_text(
+                        "Only these points (and a structure on them) are on the routes ticked; \
+                         the rest of the alignment keeps its own",
+                    )
+                    .clicked()
+                {
+                    self.route_scope = Some(false);
+                    self.ask_scope = false;
+                    apply = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    self.ask_scope = false;
+                }
+            });
+        }
         if let Some(takes) = &self.confirm {
             ui.colored_label(
                 egui::Color32::YELLOW,
@@ -3188,7 +3556,7 @@ impl TablePage {
                                             &mut text,
                                             list,
                                             Some(egui::Color32::LIGHT_GREEN),
-                                            kind.none_choice(),
+                                            kind.none_choice(c),
                                         ) {
                                             self.added[k][c] = text;
                                         }
@@ -3354,7 +3722,7 @@ impl TablePage {
                                         &mut text,
                                         list,
                                         color,
-                                        kind.none_choice(),
+                                        kind.none_choice(c),
                                     ) {
                                         self.set(&row.key, c, &text, original);
                                     }

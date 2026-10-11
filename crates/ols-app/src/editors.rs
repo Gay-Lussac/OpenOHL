@@ -67,12 +67,19 @@ pub struct StructureForm {
     /// Its orientation follows the line: ahead along the alignment, its
     /// cross-arms (right to left) on the bisector of the line angle.
     pub along_line: bool,
+    /// The routes it gives itself (empty: those of the alignments it
+    /// stands on).
+    pub routes: Vec<String>,
+    /// A new route's name being typed.
+    pub new_route: String,
+    /// A new route to make with it.
+    pub make_route: Option<String>,
 }
 
 /// The alignment points a structure can be put on: (route as the views
 /// name it, index, position, the structure tied to it).
 pub fn alignment_points(line: &Line) -> Vec<(String, usize, [f64; 3], Option<String>)> {
-    line.effective_routes()
+    line.alignment_views()
         .into_iter()
         .filter(|r| !r.alignment.is_empty())
         .flat_map(|r| {
@@ -94,7 +101,7 @@ pub fn line_orientation(line: &Line, at: [f64; 3], on: Option<&(String, usize)>)
     let ahead = match on {
         Some((route, k)) => {
             let r = line
-                .effective_routes()
+                .alignment_views()
                 .into_iter()
                 .find(|r| &r.id == route)?;
             let pts: Vec<[f64; 3]> = r.alignment.iter().map(|a| a.position).collect();
@@ -703,11 +710,11 @@ fn clamps_ui(
 /// An alignment point being changed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AlignmentForm {
-    /// Route as the views name it (`main` for the line's own alignment).
+    /// Its alignment.
     pub route: String,
-    /// Index in the route's alignment.
+    /// Index in the alignment.
     pub index: usize,
-    /// The alignment it goes to (as the views name it; `route`: stays).
+    /// The alignment it goes to (`route`: stays).
     pub target: String,
     /// Its place in that alignment, from 1.
     pub order: usize,
@@ -719,59 +726,47 @@ pub struct AlignmentForm {
     pub on_ground: bool,
     /// What it is, in words.
     pub description: String,
+    /// Its routes of its own (none: its alignment's).
+    pub routes: Option<Vec<String>>,
 }
 
-/// The line's routes with their alignments, every one named: a line
-/// without routes gives its own alignment as route `main` (all its
-/// structures, as the views show it).
-pub fn explicit_routes(stored: &Line) -> Vec<ols_line::Route> {
-    if stored.routes.is_empty() {
-        let mut main = stored.effective_routes().remove(0);
-        main.id = "main".into();
-        vec![main]
-    } else {
-        stored.routes.clone()
-    }
-}
-
-/// The command writing `routes` (from [`explicit_routes`], edited) where
-/// they differ from the stored line: a line that had no routes keeps its
-/// own alignment while `main` is its only one; with another, its routes
-/// are written and its own alignment emptied. One command (a batch when
-/// several).
-pub fn routes_command(stored: &Line, routes: &[ols_line::Route]) -> Result<Command, String> {
-    let put = |r: &ols_line::Route, ord: Option<i64>| -> Result<Command, String> {
-        Ok(Command::Put {
-            kind: Kind::Route,
-            id: r.id.clone(),
-            value: serde_json::to_value(r).map_err(|e| e.to_string())?,
-            ord,
-        })
-    };
+/// The command writing `alignments` (the line's, edited) where they
+/// differ from the stored line; those gone are deleted. One command (a
+/// batch when several).
+pub fn alignments_command(
+    stored: &Line,
+    alignments: &[ols_line::Alignment],
+) -> Result<Command, String> {
     let mut commands = Vec::new();
-    if stored.routes.is_empty() {
-        if let [main] = routes
-            && main.id == "main"
-        {
-            return Ok(ols_session::line_settings_put(
-                stored,
-                Some(main.alignment.clone()),
-                None,
-            ));
+    for (k, a) in alignments.iter().enumerate() {
+        let same = stored.alignments.iter().find(|x| x.id == a.id);
+        if same == Some(a) {
+            continue;
         }
-        commands.push(ols_session::line_settings_put(
-            stored,
-            Some(Vec::new()),
-            None,
-        ));
-        for (k, r) in routes.iter().enumerate() {
-            commands.push(put(r, Some(k as i64))?);
-        }
-    } else {
-        for r in routes {
-            if stored.routes.iter().find(|x| x.id == r.id) != Some(r) {
-                commands.push(put(r, None)?);
+        if a.points.is_empty() {
+            if same.is_some() {
+                commands.push(Command::Delete {
+                    kind: Kind::Alignment,
+                    id: a.id.clone(),
+                    confirm: true,
+                });
             }
+            continue;
+        }
+        commands.push(Command::Put {
+            kind: Kind::Alignment,
+            id: a.id.clone(),
+            value: serde_json::to_value(a).map_err(|e| e.to_string())?,
+            ord: if same.is_none() { Some(k as i64) } else { None },
+        });
+    }
+    for a in &stored.alignments {
+        if !alignments.iter().any(|x| x.id == a.id) {
+            commands.push(Command::Delete {
+                kind: Kind::Alignment,
+                id: a.id.clone(),
+                confirm: true,
+            });
         }
     }
     Ok(match commands.len() {
@@ -781,15 +776,15 @@ pub fn routes_command(stored: &Line, routes: &[ols_line::Route]) -> Result<Comma
 }
 
 /// Points of the other alignments at `at` in plan (within 1 mm): the
-/// junctions that move with it. (route index, point index).
+/// junctions that move with it. (alignment index, point index).
 fn junctions(
-    routes: &[ols_line::Route],
+    alignments: &[ols_line::Alignment],
     at: [f64; 3],
     skip: (usize, usize),
 ) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
-    for (r, route) in routes.iter().enumerate() {
-        for (k, p) in route.alignment.iter().enumerate() {
+    for (r, a) in alignments.iter().enumerate() {
+        for (k, p) in a.points.iter().enumerate() {
             if (r, k) != skip
                 && r != skip.0
                 && (p.position[0] - at[0]).hypot(p.position[1] - at[1]) < 1e-3
@@ -801,113 +796,96 @@ fn junctions(
     out
 }
 
-/// A new alignment through `points`, in order: a point taken from another
-/// alignment is a junction (its position, its structure if tied). The
-/// command, what it does, and the new route's id.
-pub fn new_alignment(
-    model: &Model,
-    points: Vec<ols_line::AlignmentPoint>,
-) -> Result<(String, Command, String), String> {
-    let stored = model
-        .stored_line()
-        .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
-    if points.len() < 2 {
-        return Err("an alignment needs at least two points".into());
-    }
-    // A line with nothing yet (no routes, no structures, no alignment):
-    // the first alignment is its own.
-    if stored.routes.is_empty() && stored.structures.is_empty() && stored.alignment.len() < 2 {
-        return Ok((
-            "new alignment main".into(),
-            alignment_put(stored, "line", points)?,
-            "main".into(),
-        ));
-    }
-    let mut routes = explicit_routes(stored);
-    let id = (2..)
+/// The id a new alignment takes: `alignment 1`, `alignment 2`… (the
+/// first free).
+pub fn free_alignment_id(line: &Line) -> String {
+    (1..)
         .map(|n| format!("alignment {n}"))
-        .find(|id| !routes.iter().any(|r| &r.id == id))
-        .expect("a free name");
-    routes.push(ols_line::Route {
-        id: id.clone(),
-        name: id.clone(),
-        alignment: points,
-        structures: Vec::new(),
-    });
+        .find(|id| !line.alignments.iter().any(|a| &a.id == id))
+        .expect("a free name")
+}
+
+/// The id a new route takes: `route 1`, `route 2`… (the first free).
+pub fn free_route_id(line: &Line) -> String {
+    (1..)
+        .map(|n| format!("route {n}"))
+        .find(|id| !line.routes.iter().any(|r| &r.id == id))
+        .expect("a free name")
+}
+
+/// A new route `id` named `name`: the command, what it does.
+pub fn new_route(stored: &Line, id: &str, name: &str) -> Result<(String, Command), String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("a route needs a name".into());
+    }
+    if stored.routes.iter().any(|r| r.id == id) {
+        return Err(format!("there is a route {id} already"));
+    }
+    let r = ols_line::Route::new(id, name.trim());
     Ok((
-        format!("new alignment {id}"),
-        routes_command(stored, &routes)?,
-        id,
+        format!("new route {id}"),
+        Command::Put {
+            kind: Kind::Route,
+            id: id.to_owned(),
+            value: serde_json::to_value(&r).map_err(|e| e.to_string())?,
+            ord: Some(stored.routes.len() as i64),
+        },
     ))
 }
 
-/// The session's name of a route's alignment: `"line"` for the line's own
-/// (a line without routes; the views call it `main`).
-pub fn route_key(line: &Line, route: &str) -> String {
-    if line.routes.is_empty() {
-        "line".into()
-    } else {
-        route.to_owned()
-    }
+/// An alignment's stored points.
+pub fn stored_alignment(stored: &Line, id: &str) -> Option<Vec<ols_line::AlignmentPoint>> {
+    stored
+        .alignments
+        .iter()
+        .find(|a| a.id == id)
+        .map(|a| a.points.clone())
 }
 
-/// A route's stored alignment (by its session name).
-pub fn stored_alignment(stored: &Line, key: &str) -> Option<Vec<ols_line::AlignmentPoint>> {
-    if key == "line" {
-        Some(stored.alignment.clone())
-    } else {
-        stored
-            .routes
-            .iter()
-            .find(|r| r.id == key)
-            .map(|r| r.alignment.clone())
-    }
-}
-
-/// The put replacing a route's alignment (the line settings for `"line"`).
+/// The put replacing an alignment's points (its deletion without any).
 pub fn alignment_put(
     stored: &Line,
-    key: &str,
-    alignment: Vec<ols_line::AlignmentPoint>,
+    id: &str,
+    points: Vec<ols_line::AlignmentPoint>,
 ) -> Result<Command, String> {
-    if key == "line" {
-        return Ok(ols_session::line_settings_put(
-            stored,
-            Some(alignment),
-            None,
-        ));
-    }
-    let mut r = stored
-        .routes
+    let mut a = stored
+        .alignments
         .iter()
-        .find(|r| r.id == key)
-        .ok_or_else(|| format!("no route {key}"))?
+        .find(|a| a.id == id)
+        .ok_or_else(|| format!("no alignment {id}"))?
         .clone();
-    r.alignment = alignment;
+    if points.is_empty() {
+        return Ok(Command::Delete {
+            kind: Kind::Alignment,
+            id: id.to_owned(),
+            confirm: true,
+        });
+    }
+    a.points = points;
     Ok(Command::Put {
-        kind: Kind::Route,
-        id: key.to_owned(),
-        value: serde_json::to_value(&r).map_err(|e| e.to_string())?,
+        kind: Kind::Alignment,
+        id: id.to_owned(),
+        value: serde_json::to_value(&a).map_err(|e| e.to_string())?,
         ord: None,
     })
 }
 
 impl AlignmentForm {
-    /// Point `index` of route `route` (as the views name it).
-    pub fn of(model: &Model, route: &str, index: usize) -> Option<Self> {
+    /// Point `index` of alignment `id`.
+    pub fn of(model: &Model, id: &str, index: usize) -> Option<Self> {
         let stored = model.stored_line().unwrap_or(&model.line);
-        let p = stored_alignment(stored, &route_key(&model.line, route))?
-            .get(index)?
-            .clone();
+        let p = stored_alignment(stored, id)?.get(index)?.clone();
         Some(Self {
-            route: route.to_owned(),
+            route: id.to_owned(),
             index,
-            target: route.to_owned(),
+            target: id.to_owned(),
             order: index + 1,
             position: p.position,
             structure: p.structure,
             on_ground: false,
             description: p.description,
+            routes: p.routes,
         })
     }
 
@@ -915,17 +893,17 @@ impl AlignmentForm {
         let stored = model
             .stored_line()
             .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
-        let mut routes = explicit_routes(stored);
-        let from = routes
+        let mut alignments = stored.alignments.clone();
+        let from = alignments
             .iter()
             .position(|r| r.id == self.route)
             .ok_or_else(|| format!("no alignment {}", self.route))?;
-        let to = routes
+        let to = alignments
             .iter()
             .position(|r| r.id == self.target)
             .ok_or_else(|| format!("no alignment {}", self.target))?;
-        let old = routes[from]
-            .alignment
+        let old = alignments[from]
+            .points
             .get(self.index)
             .ok_or("no such point")?
             .clone();
@@ -944,43 +922,43 @@ impl AlignmentForm {
         let moved = (old.position[0] - position[0]).hypot(old.position[1] - position[1]) > 1e-9
             || (old.position[2] - position[2]).abs() > 1e-9;
         if moved {
-            for (r, k) in junctions(&routes, old.position, (from, self.index)) {
-                let p = &mut routes[r].alignment[k];
+            for (r, k) in junctions(&alignments, old.position, (from, self.index)) {
+                let p = &mut alignments[r].points[k];
                 p.position = position;
                 p.structure = self.structure.clone();
             }
         }
-        routes[from].alignment.remove(self.index);
+        alignments[from].points.remove(self.index);
         let point = ols_line::AlignmentPoint {
             description: self.description.trim().to_owned(),
             position,
             structure: self.structure.clone(),
+            routes: self.routes.clone(),
         };
         let at = self.order.max(1) - 1;
-        let list = &mut routes[to].alignment;
+        let list = &mut alignments[to].points;
         list.insert(at.min(list.len()), point);
         let what = if from == to && at == self.index {
             format!(
-                "changed alignment point {} of {}",
+                "changed point {} of alignment {}",
                 self.index + 1,
                 self.route
             )
         } else {
             format!(
-                "alignment point {} of {} now point {} of {}",
+                "point {} of alignment {} now point {} of {}",
                 self.index + 1,
                 self.route,
-                at.min(routes[to].alignment.len() - 1) + 1,
+                at.min(alignments[to].points.len() - 1) + 1,
                 self.target
             )
         };
-        Ok((what, routes_command(stored, &routes)?))
+        Ok((what, alignments_command(stored, &alignments)?))
     }
 }
 
 /// A new alignment point at `at`: in the nearest segment of the nearest
-/// alignment (a route following its structures first gets points under
-/// them). The command, and the point (route as the views name it, index).
+/// alignment. The command, and the point (alignment, index).
 pub fn insert_alignment_point(
     model: &Model,
     at: [f64; 3],
@@ -989,17 +967,15 @@ pub fn insert_alignment_point(
         .stored_line()
         .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
     let mut best: Option<(f64, String, Vec<ols_line::AlignmentPoint>, usize)> = None;
-    for r in model.line.effective_routes() {
-        let key = route_key(&model.line, &r.id);
-        let mut points = stored_alignment(stored, &key).unwrap_or_default();
-        if points.len() < 2 {
-            points = model.line.alignment_under_structures(&r);
-        }
-        if points.is_empty() {
-            continue;
-        }
-        // Distance in plan to each segment, and where it goes.
-        let mut here = (f64::INFINITY, points.len());
+    for a in &stored.alignments {
+        let points = a.points.clone();
+        // Distance in plan to each segment (one point: to it, after it),
+        // and where it goes.
+        let mut here = if let [p] = &points[..] {
+            ((p.position[0] - at[0]).hypot(p.position[1] - at[1]), 1)
+        } else {
+            (f64::INFINITY, points.len())
+        };
         for k in 0..points.len().saturating_sub(1) {
             let (a, b) = (points[k].position, points[k + 1].position);
             let d = [b[0] - a[0], b[1] - a[1]];
@@ -1023,23 +999,16 @@ pub fn insert_alignment_point(
             }
         }
         if best.as_ref().is_none_or(|b| here.0 < b.0) {
-            best = Some((here.0, r.id.clone(), points, here.1));
+            best = Some((here.0, a.id.clone(), points, here.1));
         }
     }
-    let (_, route, mut points, index) = best.ok_or("no route to add a point to")?;
-    let key = route_key(&model.line, &route);
-    points.insert(
-        index.min(points.len()),
-        ols_line::AlignmentPoint {
-            description: Default::default(),
-            position: at,
-            structure: None,
-        },
-    );
+    let (_, id, mut points, index) =
+        best.ok_or("no alignment to add a point to: draw one first (New alignment tool)")?;
+    points.insert(index.min(points.len()), ols_line::AlignmentPoint::free(at));
     Ok((
-        format!("added alignment point {} to {route}", index + 1),
-        alignment_put(stored, &key, points)?,
-        route,
+        format!("added point {} to alignment {id}", index + 1),
+        alignment_put(stored, &id, points)?,
+        id,
         index,
     ))
 }
@@ -1096,6 +1065,9 @@ impl StructureForm {
             points: Vec::new(),
             on_alignment: None,
             along_line: along.is_some(),
+            routes: Vec::new(),
+            new_route: String::new(),
+            make_route: None,
         };
         if let Some(on) = on_alignment {
             f.place_on(model, on);
@@ -1161,10 +1133,29 @@ impl StructureForm {
                 .unwrap_or_default(),
             on_alignment: None,
             along_line: false,
+            routes: s.routes.clone(),
+            new_route: String::new(),
+            make_route: None,
         })
     }
 
     pub(crate) fn command(&self, stored: Option<&Line>) -> Result<(String, Command), String> {
+        let (what, command) = self.structure_command(stored)?;
+        // A route made with it: first, in the same command.
+        let Some(name) = &self.make_route else {
+            return Ok((what, command));
+        };
+        let stored = stored.ok_or("read-only: open a project to edit")?;
+        let (_, route) = new_route(stored, name, name)?;
+        Ok((
+            format!("{what} on new route {name}"),
+            Command::Batch {
+                commands: vec![route, command],
+            },
+        ))
+    }
+
+    fn structure_command(&self, stored: Option<&Line>) -> Result<(String, Command), String> {
         let id = self.id.trim().to_owned();
         if id.is_empty() {
             return Err("the structure needs an id".into());
@@ -1180,6 +1171,7 @@ impl StructureForm {
                 height_adjust: self.height_adjust,
                 description: self.description.trim().to_owned(),
                 points: self.global_points(),
+                routes: self.routes.clone(),
                 ..Structure::new(id.clone(), self.position)
             }
         } else {
@@ -1213,6 +1205,7 @@ impl StructureForm {
             s.extension = self.extension.clone();
             s.height_adjust = self.height_adjust;
             s.description = self.description.trim().to_owned();
+            s.routes = self.routes.clone();
             // Its own points as in the window (in its axes, turned and
             // moved with it).
             let mut points = self.global_points();
@@ -1247,7 +1240,7 @@ impl StructureForm {
             return Ok((what, put));
         };
         let stored = stored.ok_or("read-only: open a project to edit")?;
-        let key = route_key(stored, route);
+        let key = route.clone();
         let mut alignment =
             stored_alignment(stored, &key).ok_or_else(|| format!("no alignment {route}"))?;
         let p = alignment
@@ -2173,6 +2166,60 @@ fn structure_ui(
                         .desired_width(200.0)
                         .hint_text("what it is (free text)"),
                 );
+                ui.end_row();
+                // Its routes: from the alignment it stands on, or its own.
+                ui.label("routes").on_hover_text(
+                    "The routes it is on. Standing on an alignment (a point, or within 5 m of \
+                     it): that alignment's routes, by itself. Away from every alignment (a \
+                     crossing line): tick its route(s) here",
+                );
+                ui.vertical(|ui| {
+                    let line = model.stored_line().unwrap_or(&model.line);
+                    let mut line_with = line.clone();
+                    if let Some(r) = &f.make_route {
+                        line_with.routes.push(ols_line::Route::new(r, r));
+                    }
+                    crate::alignment_tools::route_ticks(
+                        ui,
+                        "structure-routes",
+                        &line_with,
+                        &mut f.routes,
+                        &mut f.new_route,
+                        &mut f.make_route,
+                    );
+                    let found = if f.on_alignment.is_some() || !f.routes.is_empty() {
+                        Vec::new()
+                    } else {
+                        let mut probe = line.clone();
+                        let mut s = ols_line::Structure::new("(new)".to_owned(), f.position);
+                        s.routes.clear();
+                        probe.structures.push(s);
+                        probe.routes_of("(new)")
+                    };
+                    if !f.routes.is_empty() {
+                        ui.label(egui::RichText::new("its own (ticked)").small().weak());
+                    } else if f.on_alignment.is_some() {
+                        ui.label(
+                            egui::RichText::new("those of the alignment point it stands on")
+                                .small()
+                                .weak(),
+                        );
+                    } else if found.is_empty() {
+                        ui.colored_label(
+                            egui::Color32::YELLOW,
+                            egui::RichText::new(
+                                "on no alignment: tick its route(s) (or put it on an alignment point)",
+                            )
+                            .small(),
+                        );
+                    } else {
+                        ui.label(
+                            egui::RichText::new(format!("{} (from the alignment)", found.join(", ")))
+                                .small()
+                                .weak(),
+                        );
+                    }
+                });
                 ui.end_row();
             });
             ui.separator();
@@ -3356,7 +3403,8 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
 }
 
 fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
-    let routes = explicit_routes(model.stored_line().unwrap_or(&model.line));
+    let stored = model.stored_line().unwrap_or(&model.line);
+    let routes = &stored.alignments;
     egui::Grid::new("alignment-form")
         .num_columns(2)
         .show(ui, |ui| {
@@ -3364,7 +3412,7 @@ fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
             egui::ComboBox::from_id_salt("alignment-route")
                 .selected_text(f.target.as_str())
                 .show_ui(ui, |ui| {
-                    for r in &routes {
+                    for r in routes {
                         ui.selectable_value(&mut f.target, r.id.clone(), &r.id);
                     }
                 })
@@ -3383,7 +3431,7 @@ fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
             let n = routes
                 .iter()
                 .find(|r| r.id == f.target)
-                .map_or(1, |r| r.alignment.len() + usize::from(f.target != f.route));
+                .map_or(1, |r| r.points.len() + usize::from(f.target != f.route));
             ui.add(egui::DragValue::new(&mut f.order).range(1..=n.max(1)))
                 .on_hover_text("Its place along the alignment: 1 is the first point");
             ui.end_row();

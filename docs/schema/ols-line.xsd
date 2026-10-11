@@ -74,20 +74,39 @@
     <xs:attributeGroup ref="ols:xyz"/>
   </xs:complexType>
 
+  <xs:complexType name="onRoute">
+    <xs:annotation>
+      <xs:documentation>A route something is on (by id).</xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+  </xs:complexType>
+
   <xs:complexType name="alignment">
     <xs:annotation>
-      <xs:documentation>Alignment points (PIs) in order; a point with
-        "structure" is tied to (and lies under) that structure.</xs:documentation>
+      <xs:documentation>An alignment: the routes it belongs to (on_route,
+        one or more) and its points (PIs) in order, one or more. A point
+        with "structure" is tied to (and lies under) that structure; one
+        with own_routes="true" is on the routes listed inside it instead of
+        the alignment's (a structure tied to it too). Files of version 2: an
+        alignment without id inside a route, or the line's own.</xs:documentation>
     </xs:annotation>
     <xs:sequence>
+      <xs:element name="on_route" type="ols:onRoute" minOccurs="0" maxOccurs="unbounded"/>
       <xs:element name="point" minOccurs="0" maxOccurs="unbounded">
         <xs:complexType>
+          <xs:sequence>
+            <xs:element name="on_route" type="ols:onRoute" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
           <xs:attributeGroup ref="ols:xyz"/>
           <xs:attribute name="structure" type="xs:string"/>
           <xs:attribute name="description" type="xs:string"/>
+          <xs:attribute name="own_routes" type="xs:boolean" default="false"/>
         </xs:complexType>
       </xs:element>
     </xs:sequence>
+    <xs:attribute name="id" type="xs:string"/>
+    <xs:attribute name="name" type="xs:string"/>
+    <xs:attribute name="description" type="xs:string"/>
   </xs:complexType>
 
   <xs:complexType name="sectionPoint">
@@ -124,13 +143,13 @@
   <xs:element name="line">
     <xs:complexType>
       <xs:sequence>
-        <xs:element name="alignment" type="ols:alignment" minOccurs="0">
-          <xs:annotation>
-            <xs:documentation>The alignment of the implicit single route
-              (lines without routes).</xs:documentation>
-          </xs:annotation>
-        </xs:element>
         <xs:element name="route" minOccurs="0" maxOccurs="unbounded">
+          <xs:annotation>
+            <xs:documentation>A route: a path of the line, made of the
+              alignments on it. Files of version 2: the route was its own
+              alignment (inside it) and listed its structures; read into
+              routes and alignments.</xs:documentation>
+          </xs:annotation>
           <xs:complexType>
             <xs:sequence>
               <xs:element name="alignment" type="ols:alignment" minOccurs="0"/>
@@ -142,12 +161,21 @@
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
             <xs:attribute name="name" type="xs:string"/>
+            <xs:attribute name="description" type="xs:string"/>
           </xs:complexType>
         </xs:element>
+        <xs:element name="alignment" type="ols:alignment" minOccurs="0" maxOccurs="unbounded"/>
 
         <xs:element name="structure" minOccurs="0" maxOccurs="unbounded">
           <xs:complexType>
             <xs:sequence>
+              <xs:element name="on_route" type="ols:onRoute" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>The routes it gives itself: needed when
+                    it stands on no alignment (none: those of the alignments
+                    it stands on).</xs:documentation>
+                </xs:annotation>
+              </xs:element>
               <xs:element name="point" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
                   <xs:documentation>A point of the structure where strings

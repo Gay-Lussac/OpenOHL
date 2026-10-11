@@ -39,7 +39,7 @@ pub mod route;
 pub mod solve;
 
 pub use assembly::{AttachmentV1, InsulatorString, StructurePoint, WirePoint};
-pub use route::{AlignmentPoint, Route, Station};
+pub use route::{Alignment, AlignmentPoint, AlignmentView, NEAR_ALIGNMENT, Route, Station};
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -50,14 +50,15 @@ use serde::{Deserialize, Serialize};
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ols-line";
 /// Latest line file version.
-pub const LINE_FILE_VERSION: u32 = 2;
+pub const LINE_FILE_VERSION: u32 = 3;
 
 fn default_format() -> String {
     LINE_FILE_FORMAT.to_owned()
 }
 
+/// A file without a version is of the first one.
 fn default_version() -> u32 {
-    LINE_FILE_VERSION
+    1
 }
 
 /// A point in the line's coordinate system, metres.
@@ -78,13 +79,17 @@ pub struct Line {
     /// Coordinate reference system, e.g. `"EPSG:2056"` (informative).
     #[serde(default)]
     pub crs: String,
-    /// Alignment points (PIs) of the implicit single route, used when
-    /// `routes` is empty (files written before routes existed).
-    #[serde(default)]
+    /// Files of version 2 and before: the line's own alignment, used when
+    /// it had no routes ([`Line::upgrade_routes`] makes it the route and
+    /// alignment `main`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alignment: Vec<AlignmentPoint>,
-    /// Routes (alignments with their structures); see [`route`].
+    /// Routes: paths of the line, each made of alignments; see [`route`].
     #[serde(default)]
     pub routes: Vec<Route>,
+    /// Alignments, in order; each belongs to one or more routes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alignments: Vec<Alignment>,
     /// Structures.
     pub structures: Vec<Structure>,
     /// Wire sections.
@@ -408,6 +413,11 @@ pub struct Structure {
     /// is placed, or given; for views and drawings only.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<Vec<Point>>,
+    /// The routes it is on, given: needed for a structure away from every
+    /// alignment (a crossing line); empty: those of the alignments it
+    /// stands on ([`Line::structure_routes`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub routes: Vec<String>,
 }
 
 /// A structure as files give it: the current fields, or (version 1)
@@ -441,6 +451,8 @@ struct StructureFile {
     omit_sets: Vec<u32>,
     #[serde(default)]
     members: Vec<Vec<Point>>,
+    #[serde(default)]
+    routes: Vec<String>,
 }
 
 /// An `omit` entry: a label, or (version 1) `[set, phase]`.
@@ -484,6 +496,7 @@ impl From<StructureFile> for Structure {
             omit,
             omit_sets,
             members: f.members,
+            routes: f.routes,
         }
     }
 }
@@ -951,7 +964,10 @@ impl Line {
             points.extend(s.members.iter().flatten());
         }
         for r in &self.routes {
-            points.extend(r.alignment.iter().map(|a| a.position));
+            points.extend(r.legacy_alignment.iter().map(|a| a.position));
+        }
+        for a in &self.alignments {
+            points.extend(a.points.iter().map(|a| a.position));
         }
         points.extend(self.alignment.iter().map(|a| a.position));
         for j in &self.jumpers {
@@ -971,7 +987,12 @@ impl Line {
             }
         }
         for r in &mut self.routes {
-            for a in &mut r.alignment {
+            for a in &mut r.legacy_alignment {
+                a.position = next();
+            }
+        }
+        for al in &mut self.alignments {
+            for a in &mut al.points {
                 a.position = next();
             }
         }
@@ -1001,6 +1022,7 @@ impl Line {
     pub fn from_json(text: &str) -> Result<Self, LineError> {
         let mut line: Self =
             serde_json::from_str(text).map_err(|e| LineError::File(e.to_string()))?;
+        line.upgrade_routes();
         line.validate()?;
         line.version = LINE_FILE_VERSION;
         Ok(line)
@@ -1213,32 +1235,53 @@ impl Line {
             }
             s.check_strings().map_err(LineError::Invalid)?;
         }
-        self.check_alignment("line alignment", &self.alignment)?;
+        if self.routes.iter().any(Route::is_legacy) || !self.alignment.is_empty() {
+            return invalid(
+                "routes of a version 2 file not upgraded (Line::upgrade_routes)".to_owned(),
+            );
+        }
         // Systems, and one system phase per conductor path.
         self.section_phases()?;
         let mut route_ids = BTreeMap::new();
         for r in &self.routes {
-            if route_ids.insert(r.id.as_str(), ()).is_some() {
-                return invalid(format!("duplicate route id {}", r.id));
+            if r.id.trim().is_empty() || route_ids.insert(r.id.as_str(), ()).is_some() {
+                return invalid(format!("route id \"{}\": empty or given twice", r.id));
             }
-            // An alignment of its own may come before its structures (a
-            // branch being laid out).
-            if r.structures.len() < 2 && r.alignment.len() < 2 {
-                return invalid(format!(
-                    "route {}: needs two structures or an alignment of two points",
-                    r.id
-                ));
+        }
+        let known = |r: &String| route_ids.contains_key(r.as_str());
+        let mut alignment_ids = BTreeMap::new();
+        for a in &self.alignments {
+            if a.id.trim().is_empty() || alignment_ids.insert(a.id.as_str(), ()).is_some() {
+                return invalid(format!("alignment id \"{}\": empty or given twice", a.id));
             }
-            if r.alignment.len() == 1 {
-                return invalid(format!(
-                    "route {}: an alignment needs at least two points",
-                    r.id
-                ));
+            if a.points.is_empty() {
+                return invalid(format!("alignment {}: needs a point", a.id));
             }
-            self.check_alignment(&format!("route {}", r.id), &r.alignment)?;
-            if let Some(s) = r.structures.iter().find(|s| self.structure(s).is_none()) {
-                return invalid(format!("route {}: unknown structure {s}", r.id));
+            if a.routes.is_empty() {
+                return invalid(format!("alignment {}: belongs to no route", a.id));
             }
+            if let Some(r) = a
+                .routes
+                .iter()
+                .chain(a.points.iter().filter_map(|p| p.routes.as_ref()).flatten())
+                .find(|r| !known(r))
+            {
+                return invalid(format!("alignment {}: unknown route {r}", a.id));
+            }
+            if a.points
+                .iter()
+                .any(|p| !p.position.iter().all(|x| x.is_finite()))
+            {
+                return invalid(format!("alignment {}: a point is not a number", a.id));
+            }
+            self.check_alignment(&format!("alignment {}", a.id), &a.points)?;
+        }
+        if let Some((s, r)) = self
+            .structures
+            .iter()
+            .find_map(|s| s.routes.iter().find(|r| !known(r)).map(|r| (s, r)))
+        {
+            return invalid(format!("structure {}: unknown route {r}", s.id));
         }
         let mut section_ids = BTreeMap::new();
         for sec in &self.sections {
@@ -1620,7 +1663,7 @@ mod tests {
             };
             assert!((d(a) - d(b)).abs() < 1e-9);
         }
-        assert!((line.routes[0].alignment[0].position[0] - 1000.0).abs() < 1e-9);
+        assert!((line.alignments[0].points[0].position[0] - 1000.0).abs() < 1e-9);
         // A failing transformation leaves an error.
         assert!(line.transform_coordinates(|_| Err("no".into())).is_err());
     }

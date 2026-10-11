@@ -98,20 +98,23 @@ pub fn object_bounds(line: &Line) -> BTreeMap<(Kind, String), Bounds> {
         }));
         put(Kind::Jumper, &j.id, pts);
     }
-    for r in &line.routes {
-        let mut pts: Vec<Point> = r.alignment.iter().map(|a| a.position).collect();
-        pts.extend(
-            r.structures
-                .iter()
-                .filter_map(|id| line.structure(id).map(|s| s.position)),
-        );
-        put(Kind::Route, &r.id, pts);
-    }
-    if !line.alignment.is_empty() {
+    for a in &line.alignments {
         put(
-            Kind::Meta,
-            "line",
-            line.alignment.iter().map(|a| a.position).collect(),
+            Kind::Alignment,
+            &a.id,
+            a.points.iter().map(|p| p.position).collect(),
+        );
+    }
+    // A route: where its alignments are.
+    for r in &line.routes {
+        put(
+            Kind::Route,
+            &r.id,
+            line.alignments
+                .iter()
+                .filter(|a| a.routes.contains(&r.id))
+                .flat_map(|a| a.points.iter().map(|p| p.position))
+                .collect(),
         );
     }
     out

@@ -107,10 +107,15 @@ pub struct Impact {
     /// Jumpers deleted with it (at its attachments, or at the points of
     /// deleted sections).
     pub jumpers: Vec<String>,
-    /// Routes it is taken out of.
-    pub routes_changed: Vec<String>,
-    /// Routes deleted (fewer than two structures left).
-    pub routes_deleted: Vec<String>,
+    /// Alignments deleted with it (a route's alignments on no other
+    /// route; an alignment's last point).
+    pub alignments_deleted: Vec<String>,
+    /// Alignments taken out of a route deleted (they stay on others).
+    pub alignments_changed: Vec<String>,
+    /// Structures that gave this route themselves: it is taken out.
+    pub structures_changed: Vec<String>,
+    /// An alignment deleted: its points (`#1`, `#2`…).
+    pub points: Vec<String>,
     /// Alignment points tied to it, detached (they stay where they are):
     /// `route #index`.
     pub alignment_detached: Vec<String>,
@@ -125,8 +130,10 @@ impl Impact {
             attachments: vec![],
             sections: vec![],
             jumpers: vec![],
-            routes_changed: vec![],
-            routes_deleted: vec![],
+            alignments_deleted: vec![],
+            alignments_changed: vec![],
+            structures_changed: vec![],
+            points: vec![],
             alignment_detached: vec![],
         }
     }
@@ -137,8 +144,10 @@ impl Impact {
         !(self.attachments.is_empty()
             && self.sections.is_empty()
             && self.jumpers.is_empty()
-            && self.routes_changed.is_empty()
-            && self.routes_deleted.is_empty()
+            && self.alignments_deleted.is_empty()
+            && self.alignments_changed.is_empty()
+            && self.structures_changed.is_empty()
+            && self.points.is_empty()
             && self.alignment_detached.is_empty())
     }
 
@@ -148,11 +157,16 @@ impl Impact {
             ("attachments and insulators", &self.attachments[..]),
             ("sections", &self.sections[..]),
             ("jumpers", &self.jumpers[..]),
+            ("alignments deleted", &self.alignments_deleted[..]),
             (
-                "routes deleted (fewer than two structures left)",
-                &self.routes_deleted[..],
+                "alignments taken out of the route (kept on their other routes)",
+                &self.alignments_changed[..],
             ),
-            ("taken out of routes", &self.routes_changed[..]),
+            (
+                "structures taken out of the route",
+                &self.structures_changed[..],
+            ),
+            ("its points", &self.points[..]),
             (
                 "alignment points detached (they stay in place)",
                 &self.alignment_detached[..],
@@ -227,8 +241,10 @@ pub(crate) fn refused(m: impl Into<String>) -> SessionError {
 pub enum Kind {
     /// Line settings (name, CRS, alignment, display); id `"line"`.
     Meta,
-    /// A route.
+    /// A route (a path of the line, made of alignments).
     Route,
+    /// An alignment (its points and the routes it belongs to).
+    Alignment,
     /// A structure with its attachments.
     Structure,
     /// A wire section.
@@ -243,6 +259,7 @@ impl Kind {
         match self {
             Self::Meta => "meta",
             Self::Route => "route",
+            Self::Alignment => "alignment",
             Self::Structure => "structure",
             Self::Section => "section",
             Self::Jumper => "jumper",
@@ -253,6 +270,7 @@ impl Kind {
         Ok(match s {
             "meta" => Self::Meta,
             "route" => Self::Route,
+            "alignment" => Self::Alignment,
             "structure" => Self::Structure,
             "section" => Self::Section,
             "jumper" => Self::Jumper,
@@ -511,7 +529,9 @@ struct Meta {
     name: String,
     #[serde(default)]
     crs: String,
-    #[serde(default)]
+    /// Projects before routes and alignments: the line's own alignment
+    /// (made the alignment `main` when the project opens).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     alignment: Vec<ols_line::AlignmentPoint>,
     #[serde(default)]
     display: ols_line::Display,
@@ -661,6 +681,11 @@ fn objects_of(line: &Line) -> Vec<(Kind, String, Value)> {
             .map(|r| (Kind::Route, r.id.clone(), json(r))),
     );
     out.extend(
+        line.alignments
+            .iter()
+            .map(|a| (Kind::Alignment, a.id.clone(), json(a))),
+    );
+    out.extend(
         line.structures
             .iter()
             .map(|s| (Kind::Structure, s.id.clone(), json(s))),
@@ -678,8 +703,42 @@ fn objects_of(line: &Line) -> Vec<(Kind, String, Value)> {
     out
 }
 
-/// The line made of `objects`, validated.
+/// The line made of `objects`, validated. Routes in the form before
+/// alignments (a value put back by undoing an older command) are read
+/// into routes and alignments.
 fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionError> {
+    let mut line = raw_line_of(objects)?;
+    line.upgrade_routes();
+    line.validate().map_err(|e| refused(e.to_string()))?;
+    Ok(line)
+}
+
+/// Objects as written: kind, id, value.
+type ObjectList = Vec<(Kind, String, Value)>;
+
+/// Projects before routes and alignments: `objects` with the routes
+/// (each its own alignment, or following its structures) and the line's
+/// own alignment made routes and alignments ([`Line::upgrade_routes`]);
+/// `None` when nothing changes.
+fn upgraded_objects(
+    objects: &BTreeMap<(Kind, String), Object>,
+) -> Result<Option<ObjectList>, SessionError> {
+    if objects.is_empty() {
+        return Ok(None);
+    }
+    let mut line = raw_line_of(objects)?;
+    line.version = 2;
+    let before = line.clone();
+    line.upgrade_routes();
+    if line == before {
+        return Ok(None);
+    }
+    line.version = ols_line::LINE_FILE_VERSION;
+    Ok(Some(objects_of(&line)))
+}
+
+/// The line made of `objects`, not validated.
+fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionError> {
     let bad = |m: String| refused(m);
     let mut ordered: Vec<(&(Kind, String), &Object)> = objects.iter().collect();
     ordered.sort_by_key(|(k, o)| (k.0, o.ord));
@@ -689,6 +748,7 @@ fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionEr
     let meta: Meta = serde_json::from_value(meta.value.clone())
         .map_err(|e| bad(format!("line settings: {e}")))?;
     let mut line = Line {
+        alignments: Default::default(),
         format: ols_line::LINE_FILE_FORMAT.to_owned(),
         version: ols_line::LINE_FILE_VERSION,
         name: meta.name,
@@ -713,6 +773,9 @@ fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionEr
             Kind::Route => line
                 .routes
                 .push(serde_json::from_value::<Route>(v).map_err(parse_err)?),
+            Kind::Alignment => line
+                .alignments
+                .push(serde_json::from_value::<ols_line::Alignment>(v).map_err(parse_err)?),
             Kind::Structure => line
                 .structures
                 .push(serde_json::from_value::<Structure>(v).map_err(parse_err)?),
@@ -733,7 +796,6 @@ fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionEr
             )));
         }
     }
-    line.validate().map_err(|e| bad(e.to_string()))?;
     Ok(line)
 }
 
@@ -757,7 +819,7 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
                 }
                 // Jumpers hang on the solved clamps but do not change the
                 // sections: they are recalculated on their own.
-                Kind::Jumper | Kind::Meta | Kind::Route => {}
+                Kind::Jumper | Kind::Meta | Kind::Route | Kind::Alignment => {}
             }
         }
     }
@@ -887,6 +949,49 @@ impl Session {
                     },
                 );
             }
+        }
+        // Projects before routes and alignments: read into them once (the
+        // objects rewritten in place; not a logged edit).
+        let upgraded: Option<String> = conn
+            .query_row(
+                "SELECT value FROM ols_meta WHERE key = 'routes_alignments'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if upgraded.is_none() {
+            let tx = conn.unchecked_transaction()?;
+            for (name, objects) in &mut by_line {
+                let Some(new) = upgraded_objects(objects)? else {
+                    continue;
+                };
+                for (ord, (kind, id, value)) in new.into_iter().enumerate() {
+                    let key = (kind, id.clone());
+                    let (ord, version) = match objects.get(&key) {
+                        Some(o) if o.value == value => continue,
+                        Some(o) => (o.ord, o.version + 1),
+                        None => (ord as i64, 1),
+                    };
+                    tx.execute(
+                        "INSERT OR REPLACE INTO model_object (line, kind, id, ord, version, json)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        params![name, kind.as_str(), id, ord, version, value.to_string()],
+                    )?;
+                    objects.insert(
+                        key,
+                        Object {
+                            ord,
+                            version,
+                            value,
+                        },
+                    );
+                }
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('routes_alignments', '1')",
+                [],
+            )?;
+            tx.commit()?;
         }
         let mut session = Self {
             conn,
@@ -1151,17 +1256,16 @@ impl Session {
         self.apply_as(user, command, "do", None, false, true)
     }
 
-    /// The alignment of route `route` (`"line"`: the line's own).
-    fn alignment_of(&self, route: &str) -> Result<Vec<ols_line::AlignmentPoint>, SessionError> {
-        if route == "line" {
-            return Ok(self.line.alignment.clone());
-        }
+    /// The points of alignment `id` (`"line"`, the line's own alignment of
+    /// older commands: `main`).
+    fn alignment_of(&self, id: &str) -> Result<Vec<ols_line::AlignmentPoint>, SessionError> {
+        let id = if id == "line" { "main" } else { id };
         self.line
-            .routes
+            .alignments
             .iter()
-            .find(|r| r.id == route)
-            .map(|r| r.alignment.clone())
-            .ok_or_else(|| refused(format!("no route {route}")))
+            .find(|a| a.id == id)
+            .map(|a| a.points.clone())
+            .ok_or_else(|| refused(format!("no alignment {id}")))
     }
 
     /// The command setting the line's creep-stretch criteria (Criteria ›
@@ -1191,38 +1295,45 @@ impl Session {
         line_settings_put(&line, None, None)
     }
 
-    /// A put replacing the alignment of `route`.
+    /// A put replacing the points of alignment `id`; without points left,
+    /// its deletion.
     fn put_alignment(
         &self,
-        route: &str,
-        alignment: Vec<ols_line::AlignmentPoint>,
+        id: &str,
+        points: Vec<ols_line::AlignmentPoint>,
     ) -> Result<Command, SessionError> {
-        if route == "line" {
-            let meta = Meta {
-                alignment,
-                ..Meta::of(&self.line)
-            };
-            return Ok(Command::Put {
-                kind: Kind::Meta,
-                id: "line".into(),
-                value: json(&meta),
-                ord: None,
+        let id = if id == "line" { "main" } else { id };
+        let mut a = self
+            .line
+            .alignments
+            .iter()
+            .find(|a| a.id == id)
+            .ok_or_else(|| refused(format!("no alignment {id}")))?
+            .clone();
+        if points.is_empty() {
+            return Ok(Command::Delete {
+                kind: Kind::Alignment,
+                id: id.to_owned(),
+                confirm: false,
             });
         }
-        let mut r = self
-            .line
-            .routes
-            .iter()
-            .find(|r| r.id == route)
-            .ok_or_else(|| refused(format!("no route {route}")))?
-            .clone();
-        r.alignment = alignment;
+        a.points = points;
         Ok(Command::Put {
-            kind: Kind::Route,
-            id: route.to_owned(),
-            value: json(&r),
+            kind: Kind::Alignment,
+            id: id.to_owned(),
+            value: json(&a),
             ord: None,
         })
+    }
+
+    /// The alignments with a point tied to structure `id`.
+    fn alignments_tied_to(&self, id: &str) -> Vec<String> {
+        self.line
+            .alignments
+            .iter()
+            .filter(|a| a.points.iter().any(|p| p.structure.as_deref() == Some(id)))
+            .map(|a| a.id.clone())
+            .collect()
     }
 
     /// Expands commands into puts and deletes. `user`: a command given by
@@ -1271,48 +1382,53 @@ impl Session {
                 for sec in &impact.sections {
                     out.push(del(Kind::Section, sec));
                 }
-                for r in &impact.routes_deleted {
-                    out.push(del(Kind::Route, r));
+                for a in &impact.alignments_deleted {
+                    out.push(del(Kind::Alignment, a));
                 }
-                // Routes kept: without the structure, tied points detached.
-                let mut touched: Vec<String> = impact.routes_changed.clone();
+                // A route deleted: taken out of the alignments and
+                // structures that stay.
+                if kind == Kind::Route {
+                    for a in &self.line.alignments {
+                        if impact.alignments_changed.contains(&a.id) {
+                            let mut a = a.clone();
+                            a.routes.retain(|r| *r != id);
+                            for p in &mut a.points {
+                                if let Some(rs) = &mut p.routes {
+                                    rs.retain(|r| *r != id);
+                                }
+                            }
+                            out.push(Command::Put {
+                                kind: Kind::Alignment,
+                                id: a.id.clone(),
+                                value: json(&a),
+                                ord: None,
+                            });
+                        }
+                    }
+                    for s in &self.line.structures {
+                        if impact.structures_changed.contains(&s.id) {
+                            let mut s = s.clone();
+                            s.routes.retain(|r| *r != id);
+                            out.push(Command::Put {
+                                kind: Kind::Structure,
+                                id: s.id.clone(),
+                                value: json(&s),
+                                ord: None,
+                            });
+                        }
+                    }
+                }
+                // A structure deleted: the points tied to it detached.
                 if kind == Kind::Structure {
-                    for r in &self.line.routes {
-                        if !touched.contains(&r.id)
-                            && !impact.routes_deleted.contains(&r.id)
-                            && r.alignment
-                                .iter()
-                                .any(|a| a.structure.as_deref() == Some(&id))
-                        {
-                            touched.push(r.id.clone());
+                    for a in self.alignments_tied_to(&id) {
+                        let mut points = self.alignment_of(&a)?;
+                        for p in &mut points {
+                            if p.structure.as_deref() == Some(&id) {
+                                p.structure = None;
+                            }
                         }
+                        out.push(self.put_alignment(&a, points)?);
                     }
-                    if self
-                        .line
-                        .alignment
-                        .iter()
-                        .any(|a| a.structure.as_deref() == Some(&id))
-                    {
-                        touched.push("line".into());
-                    }
-                }
-                for r in &touched {
-                    let mut alignment = self.alignment_of(r)?;
-                    for a in &mut alignment {
-                        if a.structure.as_deref() == Some(&id) {
-                            a.structure = None;
-                        }
-                    }
-                    let mut put = self.put_alignment(r, alignment)?;
-                    if let Command::Put { value, .. } = &mut put
-                        && r != "line"
-                    {
-                        let mut route: Route =
-                            serde_json::from_value(value.clone()).expect("route serialises");
-                        route.structures.retain(|s| *s != id);
-                        *value = json(&route);
-                    }
-                    out.push(put);
                 }
                 out.push(del(kind, &id));
                 if impact.has_dependents() {
@@ -1446,29 +1562,59 @@ impl Session {
                             }
                             changed
                         };
-                        for r in &self.line.routes {
-                            let mut r = r.clone();
-                            let mut changed = tie(&mut r.alignment);
-                            for s in &mut r.structures {
-                                if *s == id {
-                                    *s = new_id.clone();
-                                    changed = true;
-                                }
-                            }
-                            if changed {
+                        for a in &self.line.alignments {
+                            let mut a = a.clone();
+                            if tie(&mut a.points) {
                                 out.push(Command::Put {
-                                    kind: Kind::Route,
-                                    id: r.id.clone(),
-                                    value: json(&r),
+                                    kind: Kind::Alignment,
+                                    id: a.id.clone(),
+                                    value: json(&a),
                                     ord: None,
                                 });
                             }
                         }
-                        let mut alignment = self.line.alignment.clone();
-                        if tie(&mut alignment) {
-                            out.push(self.put_alignment("line", alignment)?);
+                    }
+                    // A route renamed: its alignments, points and
+                    // structures follow.
+                    Kind::Route => {
+                        let rename = |rs: &mut Vec<String>| {
+                            let mut changed = false;
+                            for r in rs.iter_mut().filter(|r| **r == id) {
+                                *r = new_id.clone();
+                                changed = true;
+                            }
+                            changed
+                        };
+                        for a in &self.line.alignments {
+                            let mut a = a.clone();
+                            let mut changed = rename(&mut a.routes);
+                            for p in &mut a.points {
+                                if let Some(rs) = &mut p.routes {
+                                    changed |= rename(rs);
+                                }
+                            }
+                            if changed {
+                                out.push(Command::Put {
+                                    kind: Kind::Alignment,
+                                    id: a.id.clone(),
+                                    value: json(&a),
+                                    ord: None,
+                                });
+                            }
+                        }
+                        for st in &self.line.structures {
+                            let mut st = st.clone();
+                            if rename(&mut st.routes) {
+                                out.push(Command::Put {
+                                    kind: Kind::Structure,
+                                    id: st.id.clone(),
+                                    value: json(&st),
+                                    ord: None,
+                                });
+                            }
                         }
                     }
+                    Kind::Alignment => {}
                     Kind::Section | Kind::Jumper => {}
                     other => {
                         return Err(refused(format!(
@@ -1648,25 +1794,7 @@ impl Session {
                     ord: None,
                 });
                 // Alignment points tied to it follow.
-                let mut routes: Vec<String> = self
-                    .line
-                    .routes
-                    .iter()
-                    .filter(|r| {
-                        r.alignment
-                            .iter()
-                            .any(|a| a.structure.as_deref() == Some(&id))
-                    })
-                    .map(|r| r.id.clone())
-                    .collect();
-                if self
-                    .line
-                    .alignment
-                    .iter()
-                    .any(|a| a.structure.as_deref() == Some(&id))
-                {
-                    routes.push("line".into());
-                }
+                let routes = self.alignments_tied_to(&id);
                 for r in routes {
                     let mut alignment = self.alignment_of(&r)?;
                     for a in &mut alignment {
@@ -1739,12 +1867,9 @@ impl Session {
                     .line
                     .structure(&structure)
                     .ok_or_else(|| refused(format!("no structure {structure}")))?;
-                alignment[index] = ols_line::AlignmentPoint {
-                    // Its description stays.
-                    description: alignment[index].description.clone(),
-                    position: s.position,
-                    structure: Some(structure),
-                };
+                // Its description and routes stay.
+                alignment[index].position = s.position;
+                alignment[index].structure = Some(structure);
                 out.push(self.put_alignment(&route, alignment)?);
             }
             Command::DetachAlignmentPoint { route, index } => {
@@ -1756,11 +1881,14 @@ impl Session {
             Command::AlignUnderStructures { route } => {
                 let r = self
                     .line
-                    .routes
-                    .iter()
+                    .alignment_views()
+                    .into_iter()
                     .find(|r| r.id == route)
-                    .ok_or_else(|| refused(format!("no route {route}")))?;
-                let alignment = self.line.alignment_under_structures(r);
+                    .ok_or_else(|| refused(format!("no alignment {route}")))?;
+                let alignment = self.line.alignment_under_structures(&r);
+                if alignment.is_empty() {
+                    return Err(refused(format!("alignment {route}: no structure on it")));
+                }
                 out.push(self.put_alignment(&route, alignment)?);
             }
         }
@@ -1793,6 +1921,31 @@ impl Session {
                 if !self.line.routes.iter().any(|r| r.id == id) {
                     return Err(refused(format!("no route {id}")));
                 }
+                for a in &self.line.alignments {
+                    if a.routes.iter().any(|r| r == id) {
+                        if a.routes.len() == 1 {
+                            impact.alignments_deleted.push(a.id.clone());
+                        } else {
+                            impact.alignments_changed.push(a.id.clone());
+                        }
+                    }
+                }
+                impact.structures_changed = self
+                    .line
+                    .structures
+                    .iter()
+                    .filter(|s| s.routes.iter().any(|r| r == id))
+                    .map(|s| s.id.clone())
+                    .collect();
+            }
+            Kind::Alignment => {
+                let a = self
+                    .line
+                    .alignments
+                    .iter()
+                    .find(|a| a.id == id)
+                    .ok_or_else(|| refused(format!("no alignment {id}")))?;
+                impact.points = (1..=a.points.len()).map(|k| format!("#{k}")).collect();
             }
             Kind::Jumper => {
                 if !self.line.jumpers.iter().any(|j| j.id == id) {
@@ -1892,23 +2045,13 @@ impl Session {
             })
             .map(|j| j.id.clone())
             .collect();
-        for r in &self.line.routes {
-            if r.structures.iter().any(|x| x == id) {
-                if r.structures.iter().filter(|x| *x != id).count() < 2 && r.alignment.len() < 2 {
-                    impact.routes_deleted.push(r.id.clone());
-                    continue;
+        for a in &self.line.alignments {
+            for (k, p) in a.points.iter().enumerate() {
+                if p.structure.as_deref() == Some(id) {
+                    impact
+                        .alignment_detached
+                        .push(format!("{} #{}", a.id, k + 1));
                 }
-                impact.routes_changed.push(r.id.clone());
-            }
-            for (k, a) in r.alignment.iter().enumerate() {
-                if a.structure.as_deref() == Some(id) {
-                    impact.alignment_detached.push(format!("{} #{k}", r.id));
-                }
-            }
-        }
-        for (k, a) in self.line.alignment.iter().enumerate() {
-            if a.structure.as_deref() == Some(id) {
-                impact.alignment_detached.push(format!("line #{k}"));
             }
         }
         Ok(impact)
@@ -2022,7 +2165,13 @@ impl Session {
         let spatial = spatial::entries(&line, &self.grid);
         // Edit rights limited to kinds, objects or an area (admins: all).
         if !import {
-            self.check_edit(user, &changed, &self.spatial, &spatial)?;
+            self.check_edit(
+                user,
+                &changed,
+                &self.spatial,
+                &spatial,
+                Some((&self.line, &line)),
+            )?;
         }
 
         // Persist atomically: objects and log entry.

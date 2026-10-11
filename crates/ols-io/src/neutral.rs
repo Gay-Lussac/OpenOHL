@@ -30,7 +30,7 @@
 use std::path::Path;
 
 use ols_crs::{Crs, Heights, Transformation};
-use ols_line::{AlignmentPoint, Line, Point, Route, Structure};
+use ols_line::{Alignment, AlignmentPoint, Line, Point, Route, Structure};
 
 use crate::{Options, Registry};
 
@@ -43,6 +43,7 @@ pub fn empty_line(name: &str) -> Line {
         crs: String::new(),
         alignment: Vec::new(),
         routes: Vec::new(),
+        alignments: Vec::new(),
         structures: Vec::new(),
         sections: Vec::new(),
         jumpers: Vec::new(),
@@ -246,30 +247,57 @@ pub fn to_line(data: Neutral, base: Option<&Line>, options: &Options) -> Result<
     // or a route is named.
     let route_id = options.get("route").map_or("main", String::as_str);
     if (base.is_none() || polyline.len() >= 2 || options.contains_key("route")) && ids.len() >= 2 {
-        let alignment: Vec<AlignmentPoint> = if polyline.len() >= 2 {
+        let given: Vec<AlignmentPoint> = if polyline.len() >= 2 {
             polyline.into_iter().map(AlignmentPoint::free).collect()
         } else {
             Vec::new()
         };
-        if line.routes.is_empty() && base.is_some_and(|b| !b.structures.is_empty()) {
-            // Keep the implicit route of the line as it was.
-            line.routes = base.expect("checked").effective_routes();
-            line.routes[0].alignment = base.expect("checked").alignment.clone();
-            line.alignment.clear();
+        if !line.routes.iter().any(|r| r.id == route_id) {
+            line.routes
+                .push(Route::new(route_id, &name.clone().unwrap_or_default()));
         }
-        match line.routes.iter_mut().find(|r| r.id == route_id) {
-            Some(r) => {
-                r.structures = ids;
-                if !alignment.is_empty() {
-                    r.alignment = alignment;
+        match line.alignments.iter_mut().find(|a| a.id == route_id) {
+            // The file's polyline replaces the alignment's points.
+            Some(a) => {
+                if !given.is_empty() {
+                    a.points = given;
                 }
             }
-            None => line.routes.push(Route {
-                id: route_id.to_owned(),
-                name: name.unwrap_or_default(),
-                alignment,
-                structures: ids,
-            }),
+            // A new alignment: the file's polyline, else points under the
+            // structures (tied to them).
+            None => {
+                let points = if given.is_empty() {
+                    ids.iter()
+                        .filter_map(|id| line.structure(id))
+                        .map(|s| AlignmentPoint {
+                            structure: Some(s.id.clone()),
+                            ..AlignmentPoint::free(s.position)
+                        })
+                        .collect()
+                } else {
+                    given
+                };
+                line.alignments.push(Alignment {
+                    id: route_id.to_owned(),
+                    name: name.unwrap_or_default(),
+                    description: String::new(),
+                    routes: vec![route_id.to_owned()],
+                    points,
+                });
+            }
+        }
+        // The file's structures on the route: those not standing on its
+        // alignment say so themselves.
+        let found = line.structure_routes();
+        for s in &mut line.structures {
+            if ids.contains(&s.id)
+                && !found
+                    .get(&s.id)
+                    .is_some_and(|r| r.iter().any(|r| r == route_id))
+                && s.routes.is_empty()
+            {
+                s.routes = vec![route_id.to_owned()];
+            }
         }
     }
     Ok(line)
@@ -353,8 +381,8 @@ mod tests {
         // Heading east (towards P1, 1 m right): the x axis points south.
         let o = (-1.0f64).atan2(100.0).to_degrees() - 90.0;
         assert!((line.structures[0].orientation_deg - o).abs() < 1e-9);
-        assert_eq!(line.routes[0].structures, ["A", "P1", "P2"]);
-        assert_eq!(line.routes[0].alignment.len(), 2);
+        assert_eq!(line.alignment_views()[0].structures, ["A", "P1", "P2"]);
+        assert_eq!(line.alignments[0].points.len(), 2);
         line.validate().unwrap();
         // Into the line: A moves, a new point joins; the route is kept.
         let again = Neutral {

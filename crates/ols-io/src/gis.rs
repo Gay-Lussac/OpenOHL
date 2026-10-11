@@ -188,7 +188,7 @@ pub fn layers(
         columns: vec![("id", Text), ("name", Text), ("structures", Text)],
         features: Vec::new(),
     };
-    for r in line.effective_routes() {
+    for r in line.alignment_views() {
         let c = r.centreline(line);
         if c.len() >= 2 {
             routes.features.push((
