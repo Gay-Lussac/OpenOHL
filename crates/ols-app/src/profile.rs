@@ -22,7 +22,11 @@ pub struct ProfileView {
     pub route: usize,
     /// The route was chosen in the list (else: the one with most structures).
     pub(crate) chosen: bool,
-    drawing: Option<((usize, usize), RouteDrawing)>,
+    /// Every alignment, one after the other in their order.
+    pub(crate) all: bool,
+    /// The corridor's half width typed (the application keeps it).
+    pub(crate) new_corridor: Option<f64>,
+    pub(crate) drawing: Option<(Key, Built)>,
     /// Visible stations.
     range: Option<[f64; 2]>,
     /// At a fixed aspect ratio: the height at the middle of the view.
@@ -33,6 +37,196 @@ pub struct ProfileView {
     pub(crate) rect: Option<egui::Rect>,
     /// The wires' colours, line codes and directions.
     styles: crate::wire_style::StyleCache,
+}
+
+/// What the drawing was made for: the route (none: all), the weather
+/// case, the corridor's half width.
+type Key = (Option<usize>, usize, u64);
+
+/// The profile drawing and what is seen in the corridor around it.
+pub(crate) struct Built {
+    pub(crate) drawing: RouteDrawing,
+    /// Survey (ground surface) points in the corridor: station, z.
+    pub(crate) survey: Vec<[f64; 2]>,
+    /// 3D drawing lines in the corridor: drawing, colour, (station, z).
+    pub(crate) lines: Vec<(String, [u8; 3], Vec<[f64; 2]>)>,
+    /// 3D drawing points in the corridor: drawing, colour, (station, z).
+    pub(crate) points: Vec<(String, [u8; 3], [f64; 2])>,
+    /// All alignments: where each begins, and its name.
+    pub(crate) joints: Vec<(f64, String)>,
+}
+
+/// Most survey points drawn (more are thinned evenly).
+const MAX_SURVEY: usize = 200_000;
+
+/// What lies within `depth` of the centreline `centre` (`length` long):
+/// the ground surface's points, the 3D lines and points of the drawings.
+fn corridor(model: &Model, centre: &[[f64; 3]], length: f64, depth: f64) -> Built {
+    let mut out = Built {
+        drawing: RouteDrawing {
+            route: String::new(),
+            name: String::new(),
+            length,
+            centreline: Vec::new(),
+            stations: Vec::new(),
+            structures: Vec::new(),
+            ground: Vec::new(),
+            sides: Vec::new(),
+            wires: Vec::new(),
+            markers: Vec::new(),
+        },
+        survey: Vec::new(),
+        lines: Vec::new(),
+        points: Vec::new(),
+        joints: Vec::new(),
+    };
+    if depth <= 0.0 || centre.len() < 2 {
+        return out;
+    }
+    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for p in centre {
+        for k in 0..2 {
+            lo[k] = lo[k].min(p[k] - depth);
+            hi[k] = hi[k].max(p[k] + depth);
+        }
+    }
+    // Within the corridor: beside the centreline (not beyond its ends).
+    let inside = |p: [f64; 3]| -> Option<[f64; 2]> {
+        if p[0] < lo[0] || p[0] > hi[0] || p[1] < lo[1] || p[1] > hi[1] {
+            return None;
+        }
+        let (st, off) = ols_line::route::project(centre, p);
+        let back = ols_line::route::point_at(centre, st, off);
+        let beside = (back[0] - p[0]).hypot(back[1] - p[1]) < 0.01 * depth.max(1.0);
+        (off.abs() <= depth && beside).then_some([st, p[2]])
+    };
+    if let Some(g) = model.ground.as_deref() {
+        let pts = g.points();
+        let near: Vec<&[f64; 3]> = pts
+            .iter()
+            .filter(|p| p[0] >= lo[0] && p[0] <= hi[0] && p[1] >= lo[1] && p[1] <= hi[1])
+            .collect();
+        let stride = near.len().div_ceil(MAX_SURVEY).max(1);
+        out.survey = near
+            .into_iter()
+            .step_by(stride)
+            .filter_map(|p| inside(*p))
+            .collect();
+    }
+    for d in &model.backgrounds.drawings {
+        let name = &d.info.name;
+        for l in &d.drawing.lines {
+            // Flat (2D) drawings have no heights to show.
+            if l.points.iter().all(|p| p[2] == 0.0) {
+                continue;
+            }
+            let mut run: Vec<[f64; 2]> = Vec::new();
+            for p in &l.points {
+                match inside(*p) {
+                    Some(q) => run.push(q),
+                    None if run.len() > 1 => {
+                        out.lines
+                            .push((name.clone(), l.color, std::mem::take(&mut run)))
+                    }
+                    None => run.clear(),
+                }
+            }
+            if run.len() > 1 {
+                out.lines.push((name.clone(), l.color, run));
+            }
+        }
+        for m in &d.drawing.points {
+            if m.at[2] != 0.0
+                && let Some(q) = inside(m.at)
+            {
+                out.points.push((name.clone(), m.color, q));
+            }
+        }
+    }
+    out
+}
+
+/// `b` moved `ds` along the stations.
+fn shifted(mut b: Built, ds: f64) -> Built {
+    let d = &mut b.drawing;
+    for run in d
+        .ground
+        .iter_mut()
+        .chain(d.sides.iter_mut().flat_map(|s| &mut s.1))
+    {
+        for p in run {
+            p[0] += ds;
+        }
+    }
+    for w in &mut d.wires {
+        for p in &mut w.points {
+            p[0] += ds;
+        }
+    }
+    for m in &mut d.structures {
+        m.station += ds;
+        for p in m
+            .attachments
+            .iter_mut()
+            .chain(m.sticks.iter_mut().flatten())
+        {
+            p[0] += ds;
+        }
+    }
+    for s in &mut d.stations {
+        s.station += ds;
+    }
+    for m in &mut d.markers {
+        m.0[0] += ds;
+    }
+    for p in b
+        .survey
+        .iter_mut()
+        .chain(b.points.iter_mut().map(|x| &mut x.2))
+    {
+        p[0] += ds;
+    }
+    for l in &mut b.lines {
+        for p in &mut l.2 {
+            p[0] += ds;
+        }
+    }
+    b
+}
+
+/// The alignments one after the other: each begins where the one before
+/// ends (its first station after the last of the one before).
+fn joined(parts: Vec<(String, Built)>) -> Option<Built> {
+    let mut iter = parts.into_iter();
+    let (name, first) = iter.next()?;
+    let mut out = first;
+    out.joints.push((0.0, name));
+    let mut names = vec![out.drawing.name.clone()];
+    for (name, b) in iter {
+        let at = out.drawing.length;
+        let b = shifted(b, at);
+        out.joints.push((at, name));
+        names.push(b.drawing.name.clone());
+        let (d, e) = (&mut out.drawing, b.drawing);
+        d.length += e.length;
+        d.centreline.extend(e.centreline);
+        d.stations.extend(e.stations);
+        d.structures.extend(e.structures);
+        d.ground.extend(e.ground);
+        for (off, prof) in e.sides {
+            match d.sides.iter_mut().find(|s| s.0 == off) {
+                Some(s) => s.1.extend(prof),
+                None => d.sides.push((off, prof)),
+            }
+        }
+        d.wires.extend(e.wires);
+        d.markers.extend(e.markers);
+        out.survey.extend(b.survey);
+        out.lines.extend(b.lines);
+        out.points.extend(b.points);
+    }
+    out.drawing.name = format!("All alignments ({})", names.join(", "));
+    Some(out)
 }
 
 impl ProfileView {
@@ -66,44 +260,107 @@ impl ProfileView {
         ui.horizontal(|ui| {
             ui.label("Route");
             egui::ComboBox::from_id_salt("profile-route")
-                .selected_text(format!(
-                    "{} {}",
-                    routes[self.route].id, routes[self.route].name
-                ))
+                .selected_text(if self.all {
+                    "All alignments, in order".to_owned()
+                } else {
+                    format!("{} {}", routes[self.route].id, routes[self.route].name)
+                })
                 .show_ui(ui, |ui| {
                     for (k, r) in routes.iter().enumerate() {
                         if ui
-                            .selectable_value(&mut self.route, k, format!("{} {}", r.id, r.name))
-                            .changed()
+                            .selectable_label(
+                                !self.all && self.route == k,
+                                format!("{} {}", r.id, r.name),
+                            )
+                            .clicked()
                         {
+                            self.route = k;
+                            self.all = false;
                             self.range = None;
                             self.chosen = true;
                         }
                     }
+                    if routes.len() > 1
+                        && ui
+                            .selectable_label(self.all, "All alignments, in order")
+                            .on_hover_text(
+                                "Every alignment one after the other: the first, then the \
+                                 second…",
+                            )
+                            .clicked()
+                    {
+                        self.all = true;
+                        self.range = None;
+                        self.chosen = true;
+                    }
                 });
+            ui.separator();
+            ui.label("corridor ±");
+            let mut depth = model.profile_corridor;
+            if ui
+                .add(
+                    egui::DragValue::new(&mut depth)
+                        .range(0.0..=500.0)
+                        .speed(0.5)
+                        .max_decimals(1)
+                        .suffix(" m"),
+                )
+                .on_hover_text(
+                    "How far left and right of the alignment the ground, the survey points and \
+                     the 3D drawings (DXF) are shown: the ground at both edges (thin, darker), the \
+                     points and lines inside projected on the profile. 0: the centreline only",
+                )
+                .changed()
+            {
+                self.new_corridor = Some(depth.max(0.0));
+            }
         });
-        let key = (self.route, case);
+        self.all &= routes.len() > 1;
+        let depth = self.new_corridor.unwrap_or(model.profile_corridor).max(0.0);
+        let key = ((!self.all).then_some(self.route), case, depth.to_bits());
         if self.drawing.as_ref().is_none_or(|(k, _)| *k != key) {
             let solved = model.cases.get(case);
             let shapes = model.shapes_shown(case);
-            let d = ols_drawing::build(
-                &model.line,
-                &routes[self.route],
-                &shapes,
-                solved.map_or(&[][..], |s| &s.jumpers),
-                model.ground.as_deref(),
-                &[],
-                &ols_drawing::Options::default(),
-            );
-            match d {
-                Ok(d) => self.drawing = Some((key, d)),
-                Err(e) => {
-                    ui.label(format!("profile: {e}"));
-                    return None;
+            let options = ols_drawing::Options {
+                side_offsets: if depth > 0.0 {
+                    vec![-depth, depth]
+                } else {
+                    Vec::new()
+                },
+                ..ols_drawing::Options::default()
+            };
+            let wanted: Vec<usize> = if self.all {
+                (0..routes.len()).collect()
+            } else {
+                vec![self.route]
+            };
+            let mut parts = Vec::new();
+            for k in wanted {
+                let d = ols_drawing::build(
+                    &model.line,
+                    &routes[k],
+                    &shapes,
+                    solved.map_or(&[][..], |s| &s.jumpers),
+                    model.ground.as_deref(),
+                    &[],
+                    &options,
+                );
+                match d {
+                    Ok(d) => {
+                        let mut b = corridor(model, &d.centreline, d.length, depth);
+                        b.drawing = d;
+                        parts.push((format!("{} {}", routes[k].id, routes[k].name), b));
+                    }
+                    Err(e) => {
+                        ui.label(format!("profile of {}: {e}", routes[k].id));
+                        return None;
+                    }
                 }
             }
+            self.drawing = Some((key, joined(parts)?));
         }
-        let d = &self.drawing.as_ref().expect("built").1;
+        let built = &self.drawing.as_ref().expect("built").1;
+        let d = &built.drawing;
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         let range = self.range.get_or_insert([0.0, d.length.max(1.0)]);
@@ -155,7 +412,7 @@ impl ProfileView {
                 z1 = z1.max(z);
             }
         };
-        for run in &d.ground {
+        for run in d.ground.iter().chain(d.sides.iter().flat_map(|s| &s.1)) {
             for p in run {
                 see(p[0], p[1]);
             }
@@ -217,16 +474,83 @@ impl ProfileView {
             );
             z += step;
         }
+        let visible = |p: &[f64; 2]| p[0] >= s0 - (s1 - s0) && p[0] <= s1 + (s1 - s0);
+        // The corridor: survey points, the ground at its edges, the 3D
+        // drawings in it (those not hidden), under the centreline ground.
+        for p in built.survey.iter().filter(|p| p[0] >= s0 && p[0] <= s1) {
+            painter.circle_filled(
+                to_screen(p[0], p[1]),
+                1.2,
+                egui::Color32::from_rgb(120, 150, 110),
+            );
+        }
+        for (_, prof) in &d.sides {
+            for run in prof {
+                let pts: Vec<egui::Pos2> = run
+                    .iter()
+                    .filter(|p| visible(p))
+                    .map(|p| to_screen(p[0], p[1]))
+                    .collect();
+                painter.add(egui::Shape::line(
+                    pts,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(120, 100, 75)),
+                ));
+            }
+        }
+        let shown_drawing = |name: &str| {
+            !model
+                .hidden_backgrounds
+                .contains(&crate::backgrounds::drawing_key(name))
+        };
+        for (name, c, run) in &built.lines {
+            if !shown_drawing(name) || run.iter().all(|p| p[0] < s0 || p[0] > s1) {
+                continue;
+            }
+            let pts: Vec<egui::Pos2> = run.iter().map(|p| to_screen(p[0], p[1])).collect();
+            painter.add(egui::Shape::line(
+                pts,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(c[0], c[1], c[2])),
+            ));
+        }
+        for (name, c, p) in &built.points {
+            if shown_drawing(name) && p[0] >= s0 && p[0] <= s1 {
+                painter.circle_filled(
+                    to_screen(p[0], p[1]),
+                    2.0,
+                    egui::Color32::from_rgb(c[0], c[1], c[2]),
+                );
+            }
+        }
         for run in &d.ground {
             let pts: Vec<egui::Pos2> = run
                 .iter()
-                .filter(|p| p[0] >= s0 - (s1 - s0) && p[0] <= s1 + (s1 - s0))
+                .filter(|p| visible(p))
                 .map(|p| to_screen(p[0], p[1]))
                 .collect();
             painter.add(egui::Shape::line(
                 pts,
                 egui::Stroke::new(1.5, egui::Color32::from_rgb(170, 140, 100)),
             ));
+        }
+        // All alignments: where each begins.
+        if built.joints.len() > 1 {
+            for (at, name) in &built.joints {
+                if *at < s0 || *at > s1 {
+                    continue;
+                }
+                let x = to_screen(*at, z0).x;
+                painter.line_segment(
+                    [egui::pos2(x, rect.min.y + 22.0), egui::pos2(x, rect.max.y)],
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 120, 170)),
+                );
+                painter.text(
+                    egui::pos2(x + 4.0, rect.min.y + 24.0),
+                    egui::Align2::LEFT_TOP,
+                    name,
+                    egui::FontId::proportional(10.5),
+                    egui::Color32::from_rgb(140, 170, 220),
+                );
+            }
         }
         for m in &d.structures {
             let selected = matches!(selection, Selection::Structure(id) if *id == m.id);

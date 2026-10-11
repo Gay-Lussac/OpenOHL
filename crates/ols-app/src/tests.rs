@@ -8955,3 +8955,145 @@ fn the_profile_keeps_its_aspect_ratio_when_zooming() {
     let fitted = shown(&mut harness);
     assert!((ratio(fitted) - 10.0).abs() > 1e-3, "{fitted:?}");
 }
+
+/// The profile's corridor: at ±20 m the ground is drawn at both edges and
+/// the survey points within 20 m of the alignment are shown (none at 0);
+/// "All alignments, in order" draws the first, then the second, each
+/// starting where the one before ends.
+#[test]
+fn the_profile_shows_a_corridor_and_every_alignment_in_order() {
+    let model = synthetic();
+    let routes = model.line.effective_routes();
+    assert!(routes.len() > 1);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().show_tab(crate::app::Tab::Profile);
+    harness.run_steps(3);
+    let built = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let b = &r.profile.drawing.as_ref().unwrap().1;
+        (
+            b.drawing.sides.len(),
+            b.survey.len(),
+            b.drawing.length,
+            b.joints.clone(),
+            b.drawing
+                .structures
+                .iter()
+                .map(|m| (m.id.clone(), m.station))
+                .collect::<Vec<_>>(),
+        )
+    };
+    let (sides, survey, single, _, _) = built(&mut harness);
+    assert_eq!((sides, survey), (0, 0));
+    // ±20 m, typed in the profile's own field.
+    harness.state_mut().ready().unwrap().profile.new_corridor = Some(20.0);
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state_mut().ready().unwrap().model.profile_corridor,
+        20.0
+    );
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .view_prefs()
+            .profile_corridor,
+        20.0
+    );
+    let (sides, survey, _, _, _) = built(&mut harness);
+    assert_eq!(sides, 2);
+    assert!(survey > 10, "{survey}");
+    let in_corridor = {
+        let r = harness.state_mut().ready().unwrap();
+        let b = &r.profile.drawing.as_ref().unwrap().1;
+        let centre = b.drawing.centreline.clone();
+        let pts = r.model.ground.as_ref().unwrap().points().to_vec();
+        pts.iter()
+            .filter(|p| {
+                let (st, off) = ols_line::route::project(&centre, **p);
+                let back = ols_line::route::point_at(&centre, st, off);
+                off.abs() <= 20.0 && (back[0] - p[0]).hypot(back[1] - p[1]) < 0.2
+            })
+            .count()
+    };
+    assert_eq!(survey, in_corridor);
+    // A 3D drawing line across the line, 5 m above the ground, comes in;
+    // a flat (2D) one does not; hidden, it is not drawn (kept, filtered).
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let b = &r.profile.drawing.as_ref().unwrap().1;
+        let c = &b.drawing.centreline;
+        let mid = [0.5 * (c[0][0] + c[1][0]), 0.5 * (c[0][1] + c[1][1])];
+        let (dx, dy) = (c[1][0] - c[0][0], c[1][1] - c[0][1]);
+        let n = dx.hypot(dy);
+        let across = [-dy / n, dx / n];
+        let line = |z: f64| ols_background::dxf::Polyline {
+            layer: 0,
+            color: [255, 0, 255],
+            points: (-4..=4)
+                .map(|k| {
+                    let t = f64::from(k) * 10.0;
+                    [mid[0] + across[0] * t, mid[1] + across[1] * t, z]
+                })
+                .collect(),
+            closed: false,
+        };
+        let drawing = ols_background::dxf::Drawing {
+            layers: Vec::new(),
+            lines: vec![line(505.0), line(0.0)],
+            points: Vec::new(),
+            texts: Vec::new(),
+            skipped: Default::default(),
+        };
+        r.model
+            .backgrounds
+            .drawings
+            .push(crate::backgrounds::LoadedDrawing {
+                info: ols_background::DrawingInfo {
+                    name: "invented-3d".into(),
+                    source: String::new(),
+                    crs: String::new(),
+                    items: 2,
+                    bounds: None,
+                },
+                boxes: Vec::new(),
+                drawing: std::sync::Arc::new(drawing),
+            });
+        r.profile.invalidate();
+    }
+    harness.run_steps(3);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let b = &r.profile.drawing.as_ref().unwrap().1;
+        assert_eq!(b.lines.len(), 1, "the 3D line only");
+        // Its part within ±20 m: 5 points (−20 … 20 m).
+        assert_eq!(b.lines[0].2.len(), 5);
+        assert!(b.lines[0].2.iter().all(|p| p[1] == 505.0));
+    }
+    // Every alignment, in order.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.profile.all = true;
+        r.profile.chosen = true;
+    }
+    harness.run_steps(3);
+    let (_, _, total, joints, structures) = built(&mut harness);
+    assert_eq!(joints.len(), routes.len());
+    assert!(joints[0].1.starts_with(&routes[0].id) && joints[1].1.starts_with(&routes[1].id));
+    assert!(total > single);
+    // The second alignment's structures come after the first's.
+    let first_end = joints[1].0;
+    for id in &routes[1].structures {
+        assert!(
+            structures
+                .iter()
+                .any(|(s, at)| s == id && *at >= first_end - 1e-6),
+            "{id}: {structures:?}"
+        );
+    }
+}
