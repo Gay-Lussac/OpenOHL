@@ -104,6 +104,7 @@ fn without_component(
     label: &str,
 ) {
     let probe = Structure {
+        routes: Default::default(),
         id: String::new(),
         position: [0.0; 3],
         orientation_deg: 0.0,
@@ -363,7 +364,7 @@ impl Line {
     /// bisector of its back and ahead spans (the single span at route ends).
     pub fn route_rotations(&self) -> BTreeMap<String, f64> {
         let mut rotations = BTreeMap::new();
-        for route in self.effective_routes() {
+        for route in self.alignment_views() {
             let positions: Vec<[f64; 3]> = route
                 .structures
                 .iter()

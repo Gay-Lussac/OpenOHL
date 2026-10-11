@@ -241,7 +241,7 @@ impl PlanView {
             scale,
         );
         let line = &model.line;
-        for r in line.effective_routes() {
+        for r in line.alignment_views() {
             let pts: Vec<egui::Pos2> = r.centreline(line).into_iter().map(to_screen).collect();
             // Its points, when it has its own.
             if r.alignment.len() >= 2 {

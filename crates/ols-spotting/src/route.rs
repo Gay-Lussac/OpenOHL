@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 
 use ols_bom::CostData;
-use ols_line::route::{AlignmentPoint, Route, point_at};
+use ols_line::route::{Alignment, AlignmentPoint, AlignmentView, Route, point_at};
 use ols_line::{Line, Point, Section, SectionPoint, Stringing, Structure};
 use ols_structures::{InsulatorLibrary, StructureLibrary};
 use ols_terrain::Terrain;
@@ -52,8 +52,8 @@ pub struct RouteProblem {
     pub problem: Problem,
     /// The route's centreline (stations are along it).
     pub centreline: Vec<Point>,
-    /// The route.
-    pub route: Route,
+    /// The alignment spotted along.
+    pub route: AlignmentView,
     /// What was assumed or left out.
     pub notes: Vec<String>,
 }
@@ -173,7 +173,7 @@ pub fn route_problem(
     options: &RouteOptions,
 ) -> Result<RouteProblem, String> {
     let route = line
-        .effective_routes()
+        .alignment_views()
         .into_iter()
         .find(|r| r.id == options.route)
         .ok_or_else(|| format!("no route \"{}\" in the line", options.route))?;
@@ -348,16 +348,34 @@ pub fn spotted_line(
     out.jumpers.clear();
     out.systems.clear();
     out.alignment.clear();
-    out.routes = vec![Route {
+    // The alignment spotted along, on its routes; the structures stand on
+    // it.
+    let routes = if rp.route.routes.is_empty() {
+        vec![rp.route.id.clone()]
+    } else {
+        rp.route.routes.clone()
+    };
+    out.routes = routes
+        .iter()
+        .map(|r| {
+            line.routes
+                .iter()
+                .find(|x| &x.id == r)
+                .cloned()
+                .unwrap_or_else(|| Route::new(r, &rp.route.name))
+        })
+        .collect();
+    out.alignments = vec![Alignment {
         id: rp.route.id.clone(),
         name: rp.route.name.clone(),
-        alignment: rp
+        description: String::new(),
+        routes,
+        points: rp
             .centreline
             .iter()
             .copied()
             .map(AlignmentPoint::free)
             .collect(),
-        structures: out.structures.iter().map(|s| s.id.clone()).collect(),
     }];
     out
 }

@@ -268,9 +268,9 @@ fn deleting_a_structure_lists_what_goes_with_it_and_is_logged() {
     assert_eq!(impact.sections, vec!["S1", "S2", "S3"]);
     assert_eq!(impact.jumpers, vec!["J-T3-branch"]);
     assert_eq!(impact.attachments.len(), 3);
-    // T3 is the Y pylon: main keeps 4 structures, the branch keeps T6–T7.
-    assert_eq!(impact.routes_changed, vec!["main", "branch"]);
-    assert!(impact.routes_deleted.is_empty());
+    // T3 is the Y pylon: the branch's point tied to it is detached.
+    assert_eq!(impact.alignment_detached, vec!["branch #1"]);
+    assert!(impact.alignments_deleted.is_empty());
     assert!(err.to_string().contains("S3") && err.to_string().contains("J-T3-branch"));
     assert_eq!(s.export(), example());
     // A viewer gets the permission error, not the list.
@@ -285,9 +285,10 @@ fn deleting_a_structure_lists_what_goes_with_it_and_is_logged() {
     assert!(s.line().sections.is_empty() && s.line().jumpers.is_empty());
     assert!(
         s.line()
-            .routes
+            .alignments
             .iter()
-            .all(|r| !r.structures.contains(&"T3".to_owned()))
+            .flat_map(|a| &a.points)
+            .all(|p| p.structure.as_deref() != Some("T3"))
     );
     let entry = s
         .log()
@@ -320,28 +321,61 @@ fn deleting_a_structure_lists_what_goes_with_it_and_is_logged() {
 }
 
 #[test]
-fn deleting_the_last_structures_of_a_route_deletes_the_route() {
+fn deleting_a_route_lists_its_alignments_and_the_last_point_deletes_an_alignment() {
     let (_, mut s) = project("route");
-    // The branch is T3–T6–T7; without T7 and T6 it would have one structure.
+    // A route: its alignments on no other route go with it (asked).
+    let del = |confirm| Command::Delete {
+        kind: Kind::Route,
+        id: "branch".into(),
+        confirm,
+    };
+    let Err(SessionError::NeedsConfirmation(i)) = s.apply("ben", del(false)) else {
+        panic!("confirmation expected");
+    };
+    assert_eq!(i.alignments_deleted, vec!["branch"]);
+    s.apply("ben", del(true)).unwrap();
+    assert!(s.line().alignments.iter().all(|a| a.id != "branch"));
+    assert!(s.line().routes.iter().all(|r| r.id != "branch"));
+    s.undo("ben").unwrap();
+    assert_eq!(s.export(), example());
+    // An alignment may keep one point; removing the last deletes it.
+    let n = s
+        .line()
+        .alignments
+        .iter()
+        .find(|a| a.id == "branch")
+        .unwrap()
+        .points
+        .len();
+    for _ in 1..n {
+        s.apply(
+            "ben",
+            Command::RemoveAlignmentPoint {
+                route: "branch".into(),
+                index: 0,
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        s.line()
+            .alignments
+            .iter()
+            .find(|a| a.id == "branch")
+            .unwrap()
+            .points
+            .len(),
+        1
+    );
     s.apply(
         "ben",
-        Command::DeleteStructure {
-            id: "T7".into(),
-            confirm: true,
+        Command::RemoveAlignmentPoint {
+            route: "branch".into(),
+            index: 0,
         },
     )
     .unwrap();
-    let impact = s.structure_deletion("T6").unwrap();
-    assert_eq!(impact.routes_deleted, vec!["branch"]);
-    s.apply(
-        "ben",
-        Command::DeleteStructure {
-            id: "T6".into(),
-            confirm: true,
-        },
-    )
-    .unwrap();
-    assert_eq!(s.line().routes.len(), 1);
+    assert!(s.line().alignments.iter().all(|a| a.id != "branch"));
 }
 
 #[test]
@@ -396,14 +430,14 @@ fn alignment_points_follow_their_structure_until_detached() {
     .unwrap();
     let branch = |s: &Session| {
         s.line()
-            .routes
+            .alignments
             .iter()
             .find(|r| r.id == "branch")
             .unwrap()
             .clone()
     };
-    assert_eq!(branch(&s).alignment.len(), 3);
-    assert_eq!(branch(&s).alignment[1].structure.as_deref(), Some("T6"));
+    assert_eq!(branch(&s).points.len(), 3);
+    assert_eq!(branch(&s).points[1].structure.as_deref(), Some("T6"));
     // Moving T6 moves its point.
     let p = position(&s, "T6");
     let moved = [p[0] + 4.0, p[1], p[2]];
@@ -415,7 +449,7 @@ fn alignment_points_follow_their_structure_until_detached() {
         },
     )
     .unwrap();
-    assert_eq!(branch(&s).alignment[1].position, moved);
+    assert_eq!(branch(&s).points[1].position, moved);
     // Moving the point detaches it; then T6 moves alone.
     let a = s
         .apply(
@@ -427,7 +461,7 @@ fn alignment_points_follow_their_structure_until_detached() {
             },
         )
         .unwrap();
-    assert!(branch(&s).alignment[1].structure.is_none());
+    assert!(branch(&s).points[1].structure.is_none());
     let note = s
         .log()
         .unwrap()
@@ -445,7 +479,7 @@ fn alignment_points_follow_their_structure_until_detached() {
         },
     )
     .unwrap();
-    assert_eq!(branch(&s).alignment[1].position[0], moved[0] + 10.0);
+    assert_eq!(branch(&s).points[1].position[0], moved[0] + 10.0);
     // Tie it again: back under T6.
     s.apply(
         "ben",
@@ -456,15 +490,15 @@ fn alignment_points_follow_their_structure_until_detached() {
         },
     )
     .unwrap();
-    assert_eq!(branch(&s).alignment[1].position, p);
+    assert_eq!(branch(&s).points[1].position, p);
     // A tied point away from its structure is invalid.
     let mut r = branch(&s);
-    r.alignment[1].position[0] += 1.0;
+    r.points[1].position[0] += 1.0;
     let err = s
         .apply(
             "ben",
             Command::Put {
-                kind: Kind::Route,
+                kind: Kind::Alignment,
                 id: "branch".into(),
                 value: serde_json::to_value(&r).unwrap(),
                 ord: None,
@@ -474,7 +508,7 @@ fn alignment_points_follow_their_structure_until_detached() {
     assert!(err.to_string().contains("tied to T6"), "{err}");
     // Deleting T7: its point is detached (listed), the branch keeps T3–T6.
     let impact = s.structure_deletion("T7").unwrap();
-    assert_eq!(impact.alignment_detached, vec!["branch #2"]);
+    assert_eq!(impact.alignment_detached, vec!["branch #3"]);
     s.apply(
         "ben",
         Command::DeleteStructure {
@@ -484,11 +518,17 @@ fn alignment_points_follow_their_structure_until_detached() {
     )
     .unwrap();
     let b = branch(&s);
-    assert_eq!(b.structures, vec!["T3", "T6"]);
-    assert_eq!(b.alignment.len(), 3);
-    assert!(b.alignment[2].structure.is_none());
+    let view = s
+        .line()
+        .alignment_views()
+        .into_iter()
+        .find(|v| v.id == "branch")
+        .unwrap();
+    assert_eq!(view.structures, vec!["T3", "T6"]);
+    assert_eq!(b.points.len(), 3);
+    assert!(b.points[2].structure.is_none());
     // Files: free points as arrays, tied ones as objects.
-    let text = serde_json::to_string(&b.alignment).unwrap();
+    let text = serde_json::to_string(&b.points).unwrap();
     assert!(
         text.starts_with(r#"[{"position""#) && text.contains(r#""structure":"T3""#),
         "{text}"
@@ -538,6 +578,7 @@ fn spatial_index_follows_every_command() {
         queried(&s, &near_t6),
         [
             (Kind::Route, "branch".to_owned()),
+            (Kind::Alignment, "branch".to_owned()),
             (Kind::Structure, "T6".to_owned()),
             (Kind::Section, "S3".to_owned()),
         ]
@@ -565,6 +606,7 @@ fn spatial_index_follows_every_command() {
         queried(&s, &near_t6),
         [
             (Kind::Route, "branch".to_owned()),
+            (Kind::Alignment, "branch".to_owned()),
             (Kind::Section, "S3".to_owned()),
         ]
     );
@@ -692,11 +734,14 @@ fn renaming_keeps_the_place_and_what_refers_to_it_follows() {
     );
     assert!(l.sections[0].points.iter().any(|p| p.structure == "Y3"));
     assert_eq!(l.jumpers[0].from.structure, "Y3");
+    // The points tied to it follow the new name; it stays on its routes.
     assert!(
-        l.routes
+        l.alignments
             .iter()
-            .all(|r| !r.structures.contains(&"T3".to_owned()))
+            .flat_map(|a| &a.points)
+            .all(|p| p.structure.as_deref() != Some("T3"))
     );
+    assert_eq!(l.routes_of("Y3"), ["branch", "main"]);
     assert!(
         s.apply(
             "ben",
@@ -880,4 +925,72 @@ fn reprojecting_moves_line_saved_lines_and_surfaces() {
     let fail = |_: &mut [[f64; 3]]| -> Result<(), String> { Err("no image".into()) };
     assert!(s.reproject("ana", "EPSG:4326", &fail).is_err());
     assert_eq!(s.line(), &moved);
+}
+
+/// A project from before routes and alignments (its routes each their own
+/// alignment, a route following its structures, no record of the
+/// change) is read into routes and alignments once, when it opens; a
+/// project of the current form is left alone, even with structures on no
+/// alignment.
+#[test]
+fn old_projects_get_routes_and_alignments_when_they_open() {
+    let (path, s) = project("old-routes");
+    let now = s.line().clone();
+    drop(s);
+    // Back to the old form, as an older build wrote it.
+    {
+        let c = rusqlite::Connection::open(&path).unwrap();
+        c.execute("DELETE FROM model_object WHERE kind = 'alignment'", [])
+            .unwrap();
+        for v in now.alignment_views() {
+            let old = serde_json::json!({
+                "id": v.id,
+                "name": v.name,
+                // The branch followed its structures (no points).
+                "alignment": if v.id == "branch" { serde_json::json!([]) } else { serde_json::to_value(&v.alignment).unwrap() },
+                "structures": v.structures,
+            });
+            c.execute(
+                "UPDATE model_object SET json = ?1 WHERE kind = 'route' AND id = ?2",
+                rusqlite::params![old.to_string(), v.id],
+            )
+            .unwrap();
+        }
+        c.execute("DELETE FROM ols_meta WHERE key = 'routes_alignments'", [])
+            .unwrap();
+    }
+    let s = Session::open(&path).unwrap();
+    let l = s.line();
+    assert_eq!(l.alignments.len(), 2);
+    assert!(l.routes.iter().all(|r| !r.is_legacy()));
+    let branch = l.alignments.iter().find(|a| a.id == "branch").unwrap();
+    assert!(branch.points.iter().all(|p| p.structure.is_some()));
+    assert_eq!(l.routes_of("T3"), ["branch", "main"]);
+    assert_eq!(l.routes_of("T6"), ["branch"]);
+    drop(s);
+    // Rewritten in place: the next opening reads the new form as it is.
+    let c = rusqlite::Connection::open(&path).unwrap();
+    let alignments: i64 = c
+        .query_row(
+            "SELECT count(*) FROM model_object WHERE kind = 'alignment'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(alignments, 2);
+    drop(c);
+    // A project of the current form with structures and no alignment
+    // stays so (no route "main" made for it).
+    let dir = std::env::temp_dir().join(format!("ols-session-{}-no-alignment", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.ols");
+    std::fs::remove_file(&path).ok();
+    let mut line = example();
+    line.routes.clear();
+    line.alignments.clear();
+    let mut s = Session::open(&path).unwrap();
+    s.import(&line, "ana").unwrap();
+    drop(s);
+    let s = Session::open(&path).unwrap();
+    assert!(s.line().routes.is_empty() && s.line().alignments.is_empty());
 }

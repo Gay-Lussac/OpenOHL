@@ -188,7 +188,7 @@ pub fn spot(args: &SpotArgs) -> Result<(), String> {
     let route = match &args.route {
         Some(r) => r.clone(),
         None => line
-            .effective_routes()
+            .alignment_views()
             .first()
             .map(|r| r.id.clone())
             .ok_or("the line has no route")?,

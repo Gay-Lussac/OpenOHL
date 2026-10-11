@@ -774,7 +774,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
             }
         }
         Layer::Alignment => {
-            for r in line.effective_routes() {
+            for r in line.alignment_views() {
                 // Draped on the ground, sampled every 5 m.
                 let c = r.centreline(line);
                 let mut pts: Vec<[f64; 3]> = Vec::new();
@@ -897,9 +897,9 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         s.polyline(&[p, [p[0], p[1], p[2] + 30.0]], hi, 1.5);
                     }
                 }
-                Selection::LidarPoint(k) => {
-                    if let Some((q, _)) = model.points.get(*k) {
-                        s.point(crate::selection::lidar_xyz(model, q), hi, 10.0);
+                Selection::LidarPoint(_) | Selection::SurveyPoint(_) => {
+                    if let Some(p) = crate::selection::position(model, selection) {
+                        s.point(p, hi, 10.0);
                     }
                 }
                 Selection::None => {}

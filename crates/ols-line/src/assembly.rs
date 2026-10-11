@@ -142,6 +142,7 @@ impl Structure {
     /// towards east.
     pub fn new(id: impl Into<String>, position: Point) -> Self {
         Structure {
+            routes: Default::default(),
             id: id.into(),
             position,
             orientation_deg: 0.0,
@@ -545,6 +546,7 @@ mod tests {
     fn structure(attachments: &[AttachmentV1]) -> Structure {
         let (points, strings, wires) = from_v1(attachments);
         Structure {
+            routes: Default::default(),
             id: "T".into(),
             position: [0.0; 3],
             orientation_deg: 0.0,

@@ -366,6 +366,7 @@ impl Session {
         changed: &[(Kind, String)],
         before: &BTreeMap<(Kind, String), Entry>,
         after: &BTreeMap<(Kind, String), Entry>,
+        lines: Option<(&ols_line::Line, &ols_line::Line)>,
     ) -> Result<(), SessionError> {
         if self.role(user)? == Some(Role::Admin) {
             return Ok(());
@@ -375,6 +376,13 @@ impl Session {
             return Ok(());
         }
         for key in changed {
+            // Points tied to structures the user may move follow them.
+            if key.0 == Kind::Alignment
+                && let Some((old, new)) = lines
+                && follows_structures(old, new, &key.1, changed)
+            {
+                continue;
+            }
             let bounds: Vec<Bounds> = [before.get(key), after.get(key)]
                 .into_iter()
                 .flatten()
@@ -392,7 +400,39 @@ impl Session {
         }
         Ok(())
     }
+}
 
+/// Whether alignment `id` changed (from `old` to `new`) only by points tied
+/// to structures among `changed` following them: same points, same ties,
+/// only those points' positions differ.
+fn follows_structures(
+    old: &ols_line::Line,
+    new: &ols_line::Line,
+    id: &str,
+    changed: &[(Kind, String)],
+) -> bool {
+    let (Some(a), Some(b)) = (
+        old.alignments.iter().find(|a| a.id == id),
+        new.alignments.iter().find(|a| a.id == id),
+    ) else {
+        return false;
+    };
+    if (&a.id, &a.name, &a.description, &a.routes, a.points.len())
+        != (&b.id, &b.name, &b.description, &b.routes, b.points.len())
+    {
+        return false;
+    }
+    a.points.iter().zip(&b.points).all(|(p, q)| {
+        let same =
+            (&p.structure, &p.description, &p.routes) == (&q.structure, &q.description, &q.routes);
+        same && (p.position == q.position
+            || q.structure
+                .as_ref()
+                .is_some_and(|s| changed.contains(&(Kind::Structure, s.clone()))))
+    })
+}
+
+impl Session {
     /// Refuses a library change by a user whose grants do not name
     /// `library`.
     pub(crate) fn check_library_edit(&self, user: &str) -> Result<(), SessionError> {

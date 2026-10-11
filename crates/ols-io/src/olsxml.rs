@@ -16,12 +16,12 @@ use std::fmt::Write as _;
 use ols_line::condition::{Calculation, CreepStretch};
 use ols_line::electrical::{System, SystemKind, SystemPhase};
 use ols_line::{
-    AlignmentPoint, AttachmentV1, Display, InsulatorString, Jumper, JumperClamp, JumperSupport,
-    Line, Point, Route, Section, SectionPoint, SpanLoad, Stringing, Structure, StructurePoint,
-    WirePoint,
+    Alignment, AlignmentPoint, AttachmentV1, Display, InsulatorString, Jumper, JumperClamp,
+    JumperSupport, Line, Point, Route, Section, SectionPoint, SpanLoad, Stringing, Structure,
+    StructurePoint, WirePoint,
 };
 
-use crate::xml::{Element, attribute as attr, escape};
+use crate::xml::{Element, attribute as attr};
 use crate::{ExportModel, Exporter, Importer, Options};
 
 /// The XML namespace of OLS XML line documents.
@@ -68,24 +68,61 @@ fn enum_name<T: serde::Serialize>(v: &T) -> String {
         .unwrap_or_default()
 }
 
-fn write_alignment(out: &mut String, points: &[AlignmentPoint], indent: &str) {
-    if points.is_empty() {
-        return;
+/// `<on_route id="…"/>` children: the routes something is on.
+fn write_on_routes(out: &mut String, routes: &[String], indent: &str) {
+    for r in routes {
+        let _ = write!(out, "{indent}<on_route");
+        attr(out, "id", r);
+        out.push_str("/>\n");
     }
-    let _ = writeln!(out, "{indent}<alignment>");
+}
+
+/// The routes of `<on_route>` children.
+fn read_on_routes(e: &Element) -> Result<Vec<String>, String> {
+    e.children_named("on_route")
+        .map(|r| {
+            check(r, &["id"], &[])?;
+            Ok(text(r, "id")?.to_owned())
+        })
+        .collect()
+}
+
+fn write_alignment(out: &mut String, a: &Alignment) {
+    let Alignment {
+        id,
+        name,
+        description,
+        routes,
+        points,
+    } = a;
+    out.push_str("  <alignment");
+    attr(out, "id", id);
+    nonempty(out, "name", name);
+    nonempty(out, "description", description);
+    out.push_str(">\n");
+    write_on_routes(out, routes, "    ");
     for p in points {
         let AlignmentPoint {
             description,
             position,
             structure,
+            routes,
         } = p;
-        let _ = write!(out, "{indent}  <point");
+        out.push_str("    <point");
         nonempty(out, "description", description);
         point_attrs(out, *position);
         opt_text(out, "structure", structure.as_deref());
-        out.push_str("/>\n");
+        match routes {
+            None => out.push_str("/>\n"),
+            Some(rs) => {
+                // Its own routes (none listed: on no route).
+                out.push_str(" own_routes=\"true\">\n");
+                write_on_routes(out, rs, "      ");
+                out.push_str("    </point>\n");
+            }
+        }
     }
-    let _ = writeln!(out, "{indent}</alignment>");
+    out.push_str("  </alignment>\n");
 }
 
 fn section_point(out: &mut String, tag: &str, p: &SectionPoint, indent: &str) {
@@ -160,6 +197,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         omit,
         omit_sets,
         members,
+        routes,
     } = s;
     out.push_str("  <structure");
     attr(out, "id", id);
@@ -177,11 +215,13 @@ fn write_structure(out: &mut String, s: &Structure) {
         && omit.is_empty()
         && omit_sets.is_empty()
         && members.is_empty()
+        && routes.is_empty()
     {
         out.push_str("/>\n");
         return;
     }
     out.push_str(">\n");
+    write_on_routes(out, routes, "    ");
     for p in points {
         let StructurePoint {
             description,
@@ -465,6 +505,7 @@ pub fn to_xml(line: &Line) -> String {
         crs,
         alignment,
         routes,
+        alignments,
         structures,
         sections,
         jumpers,
@@ -485,23 +526,36 @@ pub fn to_xml(line: &Line) -> String {
         attr(&mut out, "ahead_deg", &num(display.ahead_deg));
     }
     out.push_str(">\n");
-    write_alignment(&mut out, alignment, "  ");
+    // A line read from an older file and not upgraded: its own alignment
+    // as before (no id).
+    if !alignment.is_empty() {
+        write_alignment(
+            &mut out,
+            &Alignment {
+                id: String::new(),
+                name: String::new(),
+                description: String::new(),
+                routes: Vec::new(),
+                points: alignment.clone(),
+            },
+        );
+    }
     for r in routes {
         let Route {
             id,
             name,
-            alignment,
-            structures,
+            description,
+            legacy_alignment: _,
+            legacy_structures: _,
         } = r;
         out.push_str("  <route");
         attr(&mut out, "id", id);
         nonempty(&mut out, "name", name);
-        out.push_str(">\n");
-        write_alignment(&mut out, alignment, "    ");
-        for s in structures {
-            let _ = writeln!(out, "    <structure ref=\"{}\"/>", escape(s));
-        }
-        out.push_str("  </route>\n");
+        nonempty(&mut out, "description", description);
+        out.push_str("/>\n");
+    }
+    for a in alignments {
+        write_alignment(&mut out, a);
     }
     for s in structures {
         write_structure(&mut out, s);
@@ -623,15 +677,19 @@ fn read_alignment(e: Option<&Element>) -> Result<Vec<AlignmentPoint>, String> {
     let Some(e) = e else {
         return Ok(Vec::new());
     };
-    check(e, &[], &["point"])?;
-    e.children
-        .iter()
+    e.children_named("point")
         .map(|p| {
-            check(p, &["x", "y", "z", "structure", "description"], &[])?;
+            check(
+                p,
+                &["x", "y", "z", "structure", "description", "own_routes"],
+                &["on_route"],
+            )?;
+            let own = matches!(p.attr("own_routes"), Some("true") | Some("1"));
             Ok(AlignmentPoint {
                 description: owned(p, "description").unwrap_or_default(),
                 position: point(p)?,
                 structure: owned(p, "structure"),
+                routes: own.then(|| read_on_routes(p)).transpose()?,
             })
         })
         .collect()
@@ -697,7 +755,15 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             "height_adjust",
             "description",
         ],
-        &["point", "wire", "string", "attachment", "omit", "member"],
+        &[
+            "point",
+            "wire",
+            "string",
+            "attachment",
+            "omit",
+            "member",
+            "on_route",
+        ],
     )?;
     let id = text(e, "id")?.to_owned();
     let flag = |a: &Element, name: &str| -> Result<bool, String> {
@@ -856,6 +922,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
         omit,
         omit_sets,
         members,
+        routes: read_on_routes(e)?,
         id,
     })
 }
@@ -1078,24 +1145,49 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             "circuit_start",
         ],
     )?;
+    // A route; files of version 2: its own alignment and structures
+    // inside it (read into alignments with the line).
     let routes = root
         .children_named("route")
         .map(|r| {
-            check(r, &["id", "name"], &["alignment", "structure"])?;
+            check(
+                r,
+                &["id", "name", "description"],
+                &["alignment", "structure"],
+            )?;
+            let structures: Vec<String> = r
+                .children_named("structure")
+                .map(|s| {
+                    check(s, &["ref"], &[])?;
+                    Ok(text(s, "ref")?.to_owned())
+                })
+                .collect::<Result<_, String>>()?;
+            let legacy = r.child("alignment").is_some() || !structures.is_empty();
             Ok(Route {
                 id: text(r, "id")?.to_owned(),
                 name: owned(r, "name").unwrap_or_default(),
-                alignment: read_alignment(r.child("alignment"))?,
-                structures: r
-                    .children_named("structure")
-                    .map(|s| {
-                        check(s, &["ref"], &[])?;
-                        Ok(text(s, "ref")?.to_owned())
-                    })
-                    .collect::<Result<_, String>>()?,
+                description: owned(r, "description").unwrap_or_default(),
+                legacy_alignment: read_alignment(r.child("alignment"))?,
+                legacy_structures: legacy.then_some(structures),
             })
         })
         .collect::<Result<_, String>>()?;
+    // Alignments (with an id); one without: the line's own (version 2).
+    let mut own = Vec::new();
+    let mut alignments = Vec::new();
+    for a in root.children_named("alignment") {
+        check(a, &["id", "name", "description"], &["point", "on_route"])?;
+        match owned(a, "id").filter(|id| !id.is_empty()) {
+            None => own = read_alignment(Some(a))?,
+            Some(id) => alignments.push(Alignment {
+                id,
+                name: owned(a, "name").unwrap_or_default(),
+                description: owned(a, "description").unwrap_or_default(),
+                routes: read_on_routes(a)?,
+                points: read_alignment(Some(a))?,
+            }),
+        }
+    }
     let mut display = Display {
         ahead_deg: optional(root, "ahead_deg")?.unwrap_or(0.0),
         ..Display::default()
@@ -1143,21 +1235,23 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         }
     };
     // Older versions are read into the current one; newer ones refused.
-    let version: u32 = optional(root, "version")?.unwrap_or(ols_line::LINE_FILE_VERSION);
+    // A document without a version is of the first one.
+    let version: u32 = optional(root, "version")?.unwrap_or(1);
     if version > ols_line::LINE_FILE_VERSION {
         return Err(format!(
             "version {version} is newer than supported ({})",
             ols_line::LINE_FILE_VERSION
         ));
     }
-    Ok(Line {
+    let mut line = Line {
         format: owned(root, "format").unwrap_or_else(|| ols_line::LINE_FILE_FORMAT.into()),
-        version: ols_line::LINE_FILE_VERSION,
+        version,
         bimetallic,
         name: text(root, "name")?.to_owned(),
         crs: owned(root, "crs").unwrap_or_default(),
-        alignment: read_alignment(root.child("alignment"))?,
+        alignment: own,
         routes,
+        alignments,
         structures: root
             .children_named("structure")
             .map(read_structure)
@@ -1181,7 +1275,11 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         display,
         creep_stretch,
         condition_cases: Default::default(),
-    })
+    };
+    // Older documents: their routes become routes and alignments.
+    line.upgrade_routes();
+    line.version = ols_line::LINE_FILE_VERSION;
+    Ok(line)
 }
 
 /// The OLS XML format (export and import; an import replaces the line).

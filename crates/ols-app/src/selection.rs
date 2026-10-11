@@ -51,6 +51,8 @@ pub enum Selection {
     },
     /// A LiDAR point shown (index in the model's points).
     LidarPoint(usize),
+    /// A point of the ground surface (survey; index in its points).
+    SurveyPoint(usize),
 }
 
 /// A right-click in a view: what is there, and the point on the ground
@@ -78,17 +80,20 @@ pub enum Snap {
     AlignmentPoint,
     /// LiDAR points shown.
     LidarPoint,
+    /// Points of the ground surface (survey) shown.
+    SurveyPoint,
 }
 
 impl Snap {
     /// Every kind, in the order of the Snap menu.
-    pub const ALL: [Snap; 6] = [
+    pub const ALL: [Snap; 7] = [
         Snap::Structure,
         Snap::Span,
         Snap::Jumper,
         Snap::Attachment,
         Snap::AlignmentPoint,
         Snap::LidarPoint,
+        Snap::SurveyPoint,
     ];
 
     /// Name in the Snap menu (Edit).
@@ -100,6 +105,7 @@ impl Snap {
             Snap::Attachment => "Strings and attachment points",
             Snap::AlignmentPoint => "Alignment points",
             Snap::LidarPoint => "LiDAR points",
+            Snap::SurveyPoint => "Survey points (ground surface)",
         }
     }
 
@@ -112,6 +118,7 @@ impl Snap {
             Snap::Attachment => "attachment",
             Snap::AlignmentPoint => "alignment_point",
             Snap::LidarPoint => "lidar_point",
+            Snap::SurveyPoint => "survey_point",
         }
     }
 
@@ -120,7 +127,7 @@ impl Snap {
     fn priority(self) -> f64 {
         match self {
             Snap::Attachment | Snap::AlignmentPoint => 6.0,
-            Snap::LidarPoint => 4.0,
+            Snap::LidarPoint | Snap::SurveyPoint => 4.0,
             Snap::Structure => 3.0,
             Snap::Jumper => 1.0,
             Snap::Span => 0.0,
@@ -177,6 +184,7 @@ impl Selection {
             Selection::Attachment { .. } | Selection::String { .. } => Snap::Attachment,
             Selection::AlignmentPoint { .. } => Snap::AlignmentPoint,
             Selection::LidarPoint(_) => Snap::LidarPoint,
+            Selection::SurveyPoint(_) => Snap::SurveyPoint,
         })
     }
 
@@ -190,9 +198,10 @@ impl Selection {
             Selection::Attachment { structure, set } => format!("{structure} set {set}"),
             Selection::String { structure, label } => format!("{structure} string {label}"),
             Selection::AlignmentPoint { route, index } => {
-                format!("route {route} alignment point {}", index + 1)
+                format!("alignment {route} point {}", index + 1)
             }
             Selection::LidarPoint(k) => format!("LiDAR point {k}"),
+            Selection::SurveyPoint(k) => format!("survey point {}", k + 1),
         }
     }
 
@@ -236,8 +245,17 @@ impl Selection {
                 Some([0, 1, 2].map(|k| 0.5 * (a[k] + b[k])))
             }
             Selection::AlignmentPoint { route, index } => alignment_point(model, route, *index),
-            Selection::LidarPoint(k) => model.points.get(*k).map(|(q, _)| lidar_xyz(model, q)),
+            Selection::LidarPoint(_) | Selection::SurveyPoint(_) => position(model, self),
         }
+    }
+}
+
+/// The exact coordinates of a LiDAR or survey point.
+pub fn position(model: &Model, s: &Selection) -> Option<[f64; 3]> {
+    match s {
+        Selection::LidarPoint(k) => model.points.get(*k).map(|(q, _)| lidar_xyz(model, q)),
+        Selection::SurveyPoint(k) => model.ground.as_ref()?.points().get(*k).copied(),
+        _ => None,
     }
 }
 
@@ -246,7 +264,7 @@ impl Selection {
 pub fn alignment_point(model: &Model, route: &str, index: usize) -> Option<[f64; 3]> {
     model
         .line
-        .effective_routes()
+        .alignment_views()
         .into_iter()
         .find(|r| r.id == route)?
         .centreline(&model.line)
@@ -427,7 +445,7 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
         }
     }
     if snaps.on(Snap::AlignmentPoint) {
-        for r in model.line.effective_routes() {
+        for r in model.line.alignment_views() {
             for (index, p) in r.centreline(&model.line).into_iter().enumerate() {
                 let p = draped(model, p);
                 out.push((
@@ -456,6 +474,20 @@ pub fn pick_in_model(
     project: impl Fn([f64; 3]) -> Option<[f64; 2]>,
 ) -> Selection {
     let mut best = pick_scored(&candidates(model, case, snaps), at, radius, &project);
+    if snaps.on(Snap::SurveyPoint)
+        && let Some(g) = model.ground.as_ref()
+    {
+        let bonus = Snap::SurveyPoint.priority();
+        for (k, p) in g.points().iter().enumerate() {
+            let Some(s) = project(*p) else {
+                continue;
+            };
+            let d = (s[0] - at[0]).hypot(s[1] - at[1]);
+            if d <= radius && best.as_ref().is_none_or(|b| d - bonus < b.0) {
+                best = Some((d - bonus, Selection::SurveyPoint(k)));
+            }
+        }
+    }
     if snaps.on(Snap::LidarPoint) {
         let bonus = Snap::LidarPoint.priority();
         for (k, (q, class)) in model.points.iter().enumerate() {

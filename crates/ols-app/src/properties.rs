@@ -388,7 +388,7 @@ pub fn ui(
         }
         Selection::AlignmentPoint { route, index } => {
             ui.heading(format!("Route {route}, alignment point {}", index + 1));
-            let routes = line.effective_routes();
+            let routes = line.alignment_views();
             if let Some(a) = routes
                 .iter()
                 .find(|r| r.id == route)
@@ -432,6 +432,20 @@ pub fn ui(
                 None => {
                     ui.label("free (not tied to a structure)");
                 }
+            }
+        }
+        Selection::SurveyPoint(k) => {
+            ui.heading(format!("Survey point {}", k + 1));
+            if let Some(p) = crate::selection::position(model, &Selection::SurveyPoint(k)) {
+                grid(
+                    ui,
+                    "survey",
+                    &[
+                        ("easting", format!("{:.3} m", p[0])),
+                        ("northing", format!("{:.3} m", p[1])),
+                        ("height", format!("{:.3} m", p[2])),
+                    ],
+                );
             }
         }
         Selection::LidarPoint(k) => {

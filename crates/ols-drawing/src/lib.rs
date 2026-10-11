@@ -33,7 +33,7 @@
 use ols_line::jumper::JumperShape;
 use ols_line::route::project;
 use ols_line::solve::SectionShape;
-use ols_line::{Line, Point, Route, Station};
+use ols_line::{AlignmentView, Line, Point, Station};
 use ols_terrain::Terrain;
 
 pub mod dxf;
@@ -218,7 +218,7 @@ fn ground_profile(centre: &[Point], offset: f64, terrain: &Terrain) -> Profile {
 /// `terrain`, and `markers` (3D points with labels) near the route.
 pub fn build(
     line: &Line,
-    route: &Route,
+    route: &AlignmentView,
     shapes: &[SectionShape],
     jumpers: &[JumperShape],
     terrain: Option<&Terrain>,
@@ -508,7 +508,7 @@ pub(crate) mod tests {
     /// The main route of the synthetic line, drawn with `options`.
     pub(crate) fn main_route(options: &Options) -> RouteDrawing {
         let (line, shapes, jumpers, terrain) = solved();
-        let routes = line.effective_routes();
+        let routes = line.alignment_views();
         build(
             &line,
             &routes[0],
@@ -547,7 +547,7 @@ pub(crate) mod tests {
             clearance: Some(7.0),
             ..Options::default()
         };
-        let routes = line.effective_routes();
+        let routes = line.alignment_views();
         let main = build(
             &line,
             &routes[0],

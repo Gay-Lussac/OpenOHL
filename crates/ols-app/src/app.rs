@@ -149,6 +149,10 @@ pub struct Ready {
     pub restring: Option<String>,
     /// New alignment: the points right-clicked so far.
     pub new_alignment: Vec<ols_line::AlignmentPoint>,
+    /// The coordinates of a point placed where nothing was to snap to.
+    pub coord_dialog: Option<crate::alignment_tools::CoordDialog>,
+    /// New alignment (Enter): the route(s) it belongs to.
+    pub route_choice: Option<crate::alignment_tools::RouteChoice>,
     /// Section editor: the other sections of its circuit the change also
     /// sets, shown on Apply; a second Apply with the same list applies.
     pub circuit_warned: Option<Vec<crate::editors::CircuitMate>>,
@@ -331,6 +335,8 @@ impl Ready {
             jumper_from: None,
             open_page: None,
             placed: None,
+            coord_dialog: None,
+            route_choice: None,
             menu_open: false,
             clearances: crate::clearance::Clearances::new(
                 &model.sources.file,
@@ -1167,6 +1173,20 @@ impl Ready {
         if self.hotbar.tool().picks_alignment() {
             s.0.insert(crate::selection::Snap::AlignmentPoint);
         }
+        // New alignment points snap onto the survey and LiDAR points shown,
+        // and onto structures.
+        if matches!(
+            self.hotbar.tool(),
+            crate::tools::Tool::NewAlignment | crate::tools::Tool::AddAlignment
+        ) {
+            s.0.insert(crate::selection::Snap::Structure);
+            if self.visible.contains(&Layer::Ground) {
+                s.0.insert(crate::selection::Snap::SurveyPoint);
+            }
+            if self.visible.contains(&Layer::Points) {
+                s.0.insert(crate::selection::Snap::LidarPoint);
+            }
+        }
         s
     }
 
@@ -1320,54 +1340,45 @@ impl Ready {
                     },
                 }
             }
-            (Tool::NewAlignment, Selection::AlignmentPoint { route, index }) => {
+            (Tool::NewAlignment | Tool::AddAlignment, _) => {
+                use crate::alignment_tools::{CoordDialog, CoordFor};
                 let stored = model.stored_line().unwrap_or(&model.line);
-                match crate::editors::explicit_routes(stored)
-                    .iter()
-                    .find(|r| &r.id == route)
-                    .and_then(|r| r.alignment.get(*index))
-                {
-                    Some(p) => {
-                        let p = p.clone();
-                        self.new_alignment.push(p);
-                        self.alignment_drafted();
+                // What was right-clicked gives the point: an alignment
+                // point (a junction), a structure (tied under it), a survey
+                // or LiDAR point shown (its coordinates); else the
+                // coordinates are asked for.
+                let point = match &target {
+                    Selection::AlignmentPoint { route, index } => stored
+                        .alignments
+                        .iter()
+                        .find(|a| &a.id == route)
+                        .and_then(|a| a.points.get(*index))
+                        .map(|p| ols_line::AlignmentPoint {
+                            routes: None,
+                            ..p.clone()
+                        }),
+                    Selection::Structure(id) => {
+                        model.line.structure(id).map(|s| ols_line::AlignmentPoint {
+                            structure: Some(s.id.clone()),
+                            ..ols_line::AlignmentPoint::free(s.position)
+                        })
                     }
-                    None => {
-                        self.status = Some((
-                            "New alignment: this route follows its structures — right-click the ground, or give it points first".into(),
-                            true,
-                        ));
+                    Selection::SurveyPoint(_) | Selection::LidarPoint(_) => {
+                        crate::selection::position(model, &target)
+                            .map(ols_line::AlignmentPoint::free)
                     }
+                    _ => None,
+                };
+                let purpose = if tool == Tool::NewAlignment {
+                    CoordFor::NewAlignment
+                } else {
+                    CoordFor::AddAlignment
+                };
+                match point {
+                    Some(p) => self.place_alignment_point(purpose, p),
+                    None => self.coord_dialog = Some(CoordDialog::new(purpose, u.at)),
                 }
             }
-            (Tool::NewAlignment, _) => match u.at {
-                Some(at) => {
-                    self.new_alignment.push(ols_line::AlignmentPoint::free(at));
-                    self.alignment_drafted();
-                }
-                None => {
-                    self.status = Some((
-                        "New alignment: right-click an alignment point or the ground".into(),
-                        true,
-                    ));
-                }
-            },
-            (Tool::AddAlignment, _) => match u.at {
-                Some(at) => match crate::editors::insert_alignment_point(model, at) {
-                    Ok((what, command, route, index)) => {
-                        if self.perform(crate::edit::Action::Command { what, command }) {
-                            self.select(Selection::AlignmentPoint { route, index });
-                        }
-                    }
-                    Err(e) => self.status = Some((e, true)),
-                },
-                None => {
-                    self.status = Some((
-                        "Add alignment point: right-click the ground (3D or plan view)".into(),
-                        true,
-                    ));
-                }
-            },
             (Tool::Edit, Selection::Span { section, .. }) => {
                 self.editor = SectionForm::of(model, section).map(Form::Section);
                 self.select(target);
@@ -1754,25 +1765,106 @@ impl Ready {
         ));
     }
 
-    /// New alignment: Enter — the alignment through the points.
-    pub fn finish_new_alignment(&mut self) {
-        let points = std::mem::take(&mut self.new_alignment);
-        match crate::editors::new_alignment(&self.model, points.clone()) {
-            Ok((what, command, id)) => {
-                if self.perform(crate::edit::Action::Command { what, command }) {
-                    self.update_draft();
-                    self.select(Selection::AlignmentPoint {
-                        route: id,
-                        index: 0,
-                    });
-                } else {
-                    self.new_alignment = points;
+    /// A point for the alignment tools: the next point of the new
+    /// alignment, or one inserted into the nearest alignment.
+    pub fn place_alignment_point(
+        &mut self,
+        purpose: crate::alignment_tools::CoordFor,
+        p: ols_line::AlignmentPoint,
+    ) {
+        use crate::alignment_tools::CoordFor;
+        match purpose {
+            CoordFor::NewAlignment => {
+                self.new_alignment.push(p);
+                self.alignment_drafted();
+            }
+            CoordFor::AddAlignment => {
+                match crate::editors::insert_alignment_point(&self.model, p.position) {
+                    Ok((what, mut command, route, index)) => {
+                        // Tied under the structure clicked.
+                        if p.structure.is_some()
+                            && let ols_session::Command::Put { value, .. } = &mut command
+                            && let Some(q) = value["points"].get_mut(index)
+                        {
+                            *q = serde_json::to_value(&p).expect("a point");
+                        }
+                        if self.perform(crate::edit::Action::Command { what, command }) {
+                            self.select(Selection::AlignmentPoint { route, index });
+                        }
+                    }
+                    Err(e) => self.status = Some((e, true)),
                 }
             }
-            Err(e) => {
-                self.new_alignment = points;
-                self.status = Some((format!("New alignment: {e}"), true));
+        }
+    }
+
+    /// New alignment: Enter — the route(s) it belongs to are asked for.
+    pub fn finish_new_alignment(&mut self) {
+        if self.new_alignment.is_empty() {
+            self.status = Some(("New alignment: right-click its first point".into(), true));
+            return;
+        }
+        let points = std::mem::take(&mut self.new_alignment);
+        let stored = self.model.stored_line().unwrap_or(&self.model.line);
+        self.route_choice = Some(crate::alignment_tools::RouteChoice::new(stored, points));
+    }
+
+    /// The new alignment on `routes` (a new route made first when named).
+    pub fn make_new_alignment(&mut self, routes: Vec<String>, new_route: Option<String>) {
+        let Some(choice) = self.route_choice.take() else {
+            return;
+        };
+        let stored = self.model.stored_line().unwrap_or(&self.model.line).clone();
+        let mut commands = Vec::new();
+        let mut routes = routes;
+        if let Some(name) = &new_route {
+            match crate::editors::new_route(&stored, name, name) {
+                Ok((_, c)) => commands.push(c),
+                Err(e) => {
+                    self.status = Some((e, true));
+                    self.route_choice = Some(choice);
+                    return;
+                }
             }
+            if !routes.contains(name) {
+                routes.push(name.clone());
+            }
+        }
+        // The new route is checked with the line made after it.
+        let mut line = stored.clone();
+        if let Some(name) = &new_route {
+            line.routes.push(ols_line::Route::new(name, name));
+        }
+        let points = choice.points.clone();
+        let id = crate::editors::free_alignment_id(&line);
+        let a = ols_line::Alignment {
+            id: id.clone(),
+            name: String::new(),
+            description: String::new(),
+            routes,
+            points,
+        };
+        commands.push(ols_session::Command::Put {
+            kind: ols_session::Kind::Alignment,
+            id: id.clone(),
+            value: serde_json::to_value(&a).expect("an alignment"),
+            ord: Some(line.alignments.len() as i64),
+        });
+        let command = match commands.len() {
+            1 => commands.remove(0),
+            _ => ols_session::Command::Batch { commands },
+        };
+        if self.perform(crate::edit::Action::Command {
+            what: format!("new alignment {id}"),
+            command,
+        }) {
+            self.update_draft();
+            self.select(Selection::AlignmentPoint {
+                route: id,
+                index: 0,
+            });
+        } else {
+            self.route_choice = Some(choice);
         }
     }
 
@@ -2225,7 +2317,7 @@ impl Ready {
     fn selection_exists(&self) -> bool {
         let line = &self.model.line;
         match &self.selection {
-            Selection::None | Selection::LidarPoint(_) => true,
+            Selection::None | Selection::LidarPoint(_) | Selection::SurveyPoint(_) => true,
             Selection::Structure(id) => line.structure(id).is_some(),
             Selection::Jumper(id) => line.jumpers.iter().any(|j| &j.id == id),
             Selection::Span { section, span } => line
@@ -2323,10 +2415,24 @@ fn delete_action(line: &ols_line::Line, target: &Selection) -> Option<crate::edi
                 confirm: false,
             }
         }
+        // Its last point: the alignment goes (asked first).
+        Selection::AlignmentPoint { route, .. }
+            if line
+                .alignments
+                .iter()
+                .find(|a| &a.id == route)
+                .is_some_and(|a| a.points.len() <= 1) =>
+        {
+            Action::Delete {
+                kind: ols_session::Kind::Alignment,
+                id: route.clone(),
+                confirm: false,
+            }
+        }
         Selection::AlignmentPoint { route, index } => Action::Command {
-            what: format!("deleted alignment point {} of {route}", index + 1),
+            what: format!("deleted point {} of alignment {route}", index + 1),
             command: ols_session::Command::RemoveAlignmentPoint {
-                route: crate::editors::route_key(line, route),
+                route: route.clone(),
                 index: *index,
             },
         },
@@ -2367,6 +2473,8 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
     }
     r.menu_open = menu;
     let open = r.goto.is_some()
+        || r.coord_dialog.is_some()
+        || r.route_choice.is_some()
         || r.move_dialog.is_some()
         || r.confirm.is_some()
         || r.editor.is_some()
@@ -2585,6 +2693,37 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
 
 /// The tool windows: hotbar, inventory, Go to, Move structure, the
 /// editor, the confirmation of a deletion.
+/// The alignment tools' windows: a point's coordinates, a new alignment's
+/// routes.
+fn alignment_windows(ctx: &egui::Context, r: &mut Ready) {
+    if let Some(d) = &mut r.coord_dialog
+        && let Some(done) = d.ui(ctx)
+    {
+        let purpose = d.purpose;
+        r.coord_dialog = None;
+        if let Ok(p) = done {
+            r.place_alignment_point(purpose, ols_line::AlignmentPoint::free(p));
+        }
+    }
+    let stored = r.model.stored_line().unwrap_or(&r.model.line).clone();
+    if let Some(c) = &mut r.route_choice
+        && let Some(action) = c.ui(ctx, &stored)
+    {
+        use crate::alignment_tools::RouteChoiceAction;
+        match action {
+            RouteChoiceAction::Make { routes, new_route } => {
+                r.make_new_alignment(routes, new_route)
+            }
+            RouteChoiceAction::Back => {
+                if let Some(c) = r.route_choice.take() {
+                    r.new_alignment = c.points;
+                    r.alignment_drafted();
+                }
+            }
+        }
+    }
+}
+
 fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgpu::RenderState>) {
     // At the bottom of the 3D view, only while it is shown (and while the
     // inventory arranges it).
@@ -2601,6 +2740,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
     move_window(ctx, r);
+    alignment_windows(ctx, r);
     editor_window(ctx, r, rs);
     display_window(ctx, r);
     angles_window(ctx, r);
@@ -2673,10 +2813,15 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
             }
         }
     };
-    ui.label(egui::RichText::new("Alignments").small().weak());
-    let alignments = crate::menu::Command::Table(crate::tables::TableKind::Alignments);
-    if alignments.menu_item(ui) {
-        out.push(alignments);
+    ui.label(egui::RichText::new("Routes and alignments").small().weak());
+    for kind in [
+        crate::tables::TableKind::Routes,
+        crate::tables::TableKind::Alignments,
+    ] {
+        let c = crate::menu::Command::Table(kind);
+        if c.menu_item(ui) {
+            out.push(c);
+        }
     }
     ui.separator();
     ui.label(egui::RichText::new("Ground surface").small().weak());

@@ -18,12 +18,8 @@ use crate::selection::Selection;
 /// State of the profile view.
 #[derive(Default)]
 pub struct ProfileView {
-    /// Route shown (index in the line's routes).
-    pub route: usize,
-    /// The route was chosen in the list (else: the one with most structures).
-    pub(crate) chosen: bool,
-    /// Every alignment, one after the other in their order.
-    pub(crate) all: bool,
+    /// What it shows (none yet: the route with most structures).
+    pub(crate) show: Option<Show>,
     /// The corridor's half width typed (the application keeps it).
     pub(crate) new_corridor: Option<f64>,
     pub(crate) drawing: Option<(Key, Built)>,
@@ -41,7 +37,18 @@ pub struct ProfileView {
 
 /// What the drawing was made for: the route (none: all), the weather
 /// case, the corridor's half width.
-type Key = (Option<usize>, usize, u64);
+type Key = (Show, usize, u64);
+
+/// What the profile shows.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Show {
+    /// A route: its alignments one after the other, in their order.
+    Route(String),
+    /// One alignment alone.
+    Alignment(String),
+    /// Every alignment, one after the other, in their order.
+    All,
+}
 
 /// The profile drawing and what is seen in the corridor around it.
 pub(crate) struct Built {
@@ -244,56 +251,86 @@ impl ProfileView {
         selection: &mut Selection,
         snaps: &crate::selection::Snaps,
     ) -> Option<Selection> {
-        let routes = model.line.effective_routes();
+        let routes = model.line.alignment_views();
         if routes.is_empty() {
-            ui.label("No route.");
+            ui.label(
+                "No alignment yet: define the route, then draw its alignment (New alignment tool).",
+            );
             return None;
         }
-        if !self.chosen {
-            // The main run first, not a short spur listed before it.
-            self.route = (0..routes.len())
-                .rev()
-                .max_by_key(|&k| routes[k].structures.len())
-                .unwrap_or(0);
+        let line = &model.line;
+        let has = |r: &str| routes.iter().any(|a| a.routes.iter().any(|x| x == r));
+        let valid = |s: &Show| match s {
+            Show::Route(r) => has(r),
+            Show::Alignment(a) => routes.iter().any(|x| &x.id == a),
+            Show::All => true,
+        };
+        if !self.show.as_ref().is_some_and(valid) {
+            // The route with most structures (a main run, not a short spur).
+            let count = |r: &str| {
+                let mut ids: Vec<&String> = routes
+                    .iter()
+                    .filter(|a| a.routes.iter().any(|x| x == r))
+                    .flat_map(|a| &a.structures)
+                    .collect();
+                ids.sort();
+                ids.dedup();
+                ids.len()
+            };
+            self.show = Some(
+                line.routes
+                    .iter()
+                    .filter(|r| has(&r.id))
+                    .rev()
+                    .max_by_key(|r| count(&r.id))
+                    .map_or(Show::All, |r| Show::Route(r.id.clone())),
+            );
         }
-        self.route = self.route.min(routes.len() - 1);
+        let show = self.show.clone().expect("chosen above");
         ui.horizontal(|ui| {
-            ui.label("Route");
+            ui.label("Profile of");
+            let label = |s: &Show| match s {
+                Show::Route(r) => format!("route {r}"),
+                Show::Alignment(a) => format!("alignment {a}"),
+                Show::All => "all alignments, in order".to_owned(),
+            };
             egui::ComboBox::from_id_salt("profile-route")
-                .selected_text(if self.all {
-                    "All alignments, in order".to_owned()
-                } else {
-                    format!("{} {}", routes[self.route].id, routes[self.route].name)
-                })
+                .selected_text(label(&show))
                 .show_ui(ui, |ui| {
-                    for (k, r) in routes.iter().enumerate() {
-                        if ui
-                            .selectable_label(
-                                !self.all && self.route == k,
-                                format!("{} {}", r.id, r.name),
-                            )
-                            .clicked()
-                        {
-                            self.route = k;
-                            self.all = false;
+                    let mut pick = |ui: &mut egui::Ui, s: Show, text: String| {
+                        if ui.selectable_label(show == s, text).clicked() {
+                            self.show = Some(s);
                             self.range = None;
-                            self.chosen = true;
+                        }
+                    };
+                    for r in line.routes.iter().filter(|r| has(&r.id)) {
+                        let name = if r.name.is_empty() || r.name == r.id {
+                            String::new()
+                        } else {
+                            format!(" — {}", r.name)
+                        };
+                        pick(
+                            ui,
+                            Show::Route(r.id.clone()),
+                            format!("route {}{name}", r.id),
+                        );
+                        for a in routes.iter().filter(|a| a.routes.contains(&r.id)) {
+                            pick(
+                                ui,
+                                Show::Alignment(a.id.clone()),
+                                format!("    alignment {}", a.id),
+                            );
                         }
                     }
-                    if routes.len() > 1
-                        && ui
-                            .selectable_label(self.all, "All alignments, in order")
-                            .on_hover_text(
-                                "Every alignment one after the other: the first, then the \
-                                 second…",
-                            )
-                            .clicked()
-                    {
-                        self.all = true;
-                        self.range = None;
-                        self.chosen = true;
+                    if routes.len() > 1 {
+                        pick(ui, Show::All, "all alignments, in order".into());
                     }
-                });
+                })
+                .response
+                .on_hover_text(
+                    "A route: its alignments one after the other, in their order; or one \
+                     alignment alone",
+                );
             ui.separator();
             ui.label("corridor ±");
             let mut depth = model.profile_corridor;
@@ -315,9 +352,8 @@ impl ProfileView {
                 self.new_corridor = Some(depth.max(0.0));
             }
         });
-        self.all &= routes.len() > 1;
         let depth = self.new_corridor.unwrap_or(model.profile_corridor).max(0.0);
-        let key = ((!self.all).then_some(self.route), case, depth.to_bits());
+        let key = (show.clone(), case, depth.to_bits());
         if self.drawing.as_ref().is_none_or(|(k, _)| *k != key) {
             let solved = model.cases.get(case);
             let shapes = model.shapes_shown(case);
@@ -329,11 +365,13 @@ impl ProfileView {
                 },
                 ..ols_drawing::Options::default()
             };
-            let wanted: Vec<usize> = if self.all {
-                (0..routes.len()).collect()
-            } else {
-                vec![self.route]
-            };
+            let wanted: Vec<usize> = (0..routes.len())
+                .filter(|&k| match &show {
+                    Show::Route(r) => routes[k].routes.contains(r),
+                    Show::Alignment(a) => &routes[k].id == a,
+                    Show::All => true,
+                })
+                .collect();
             let mut parts = Vec::new();
             for k in wanted {
                 let d = ols_drawing::build(
@@ -349,7 +387,7 @@ impl ProfileView {
                     Ok(d) => {
                         let mut b = corridor(model, &d.centreline, d.length, depth);
                         b.drawing = d;
-                        parts.push((format!("{} {}", routes[k].id, routes[k].name), b));
+                        parts.push((format!("alignment {}", routes[k].id), b));
                     }
                     Err(e) => {
                         ui.label(format!("profile of {}: {e}", routes[k].id));

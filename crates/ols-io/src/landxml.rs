@@ -85,7 +85,7 @@ pub fn document(line: &Line) -> String {
         let _ = writeln!(out, ">{:.4} {:.4} {:.4}</CgPoint>", p[1], p[0], p[2]);
     }
     out.push_str("</CgPoints>\n<Alignments name=\"routes\">\n");
-    for r in line.effective_routes() {
+    for r in line.alignment_views() {
         let c = r.centreline(line);
         if c.len() < 2 {
             continue;
@@ -252,20 +252,7 @@ pub fn import(root: &Element, base: Option<&Line>, options: &Options) -> Result<
             return Err("LandXML: no CgPoints and no alignment".into());
         }
         let mut line = line.clone();
-        if line.routes.is_empty() {
-            line.routes = line.effective_routes();
-            line.alignment.clear();
-        }
-        let id = options
-            .get("route")
-            .cloned()
-            .unwrap_or_else(|| line.routes[0].id.clone());
-        let r = line
-            .routes
-            .iter_mut()
-            .find(|r| r.id == id)
-            .ok_or_else(|| format!("no route {id} in the line"))?;
-        r.alignment = route
+        let points: Vec<AlignmentPoint> = route
             .into_iter()
             .map(|mut p| {
                 if !p[2].is_finite() {
@@ -274,6 +261,36 @@ pub fn import(root: &Element, base: Option<&Line>, options: &Options) -> Result<
                 AlignmentPoint::free(p)
             })
             .collect();
+        // The alignment named (default: the first), or a new route and
+        // alignment "main" for a line without any.
+        if line.alignments.is_empty() {
+            let id = options
+                .get("route")
+                .cloned()
+                .unwrap_or_else(|| "main".into());
+            if !line.routes.iter().any(|r| r.id == id) {
+                line.routes
+                    .push(ols_line::Route::new(&id, &line.name.clone()));
+            }
+            line.alignments.push(ols_line::Alignment {
+                id: id.clone(),
+                name: line.name.clone(),
+                description: String::new(),
+                routes: vec![id],
+                points,
+            });
+            return Ok(line);
+        }
+        let id = options
+            .get("route")
+            .cloned()
+            .unwrap_or_else(|| line.alignments[0].id.clone());
+        let a = line
+            .alignments
+            .iter_mut()
+            .find(|a| a.id == id)
+            .ok_or_else(|| format!("no alignment {id} in the line"))?;
+        a.points = points;
         return Ok(line);
     }
     let points = cg

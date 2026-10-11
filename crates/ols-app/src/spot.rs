@@ -62,7 +62,7 @@ impl SpotWindow {
     /// Opens the window with the model's first route and cable.
     pub fn open(&mut self, model: &Model) {
         self.open = true;
-        let routes = model.line.effective_routes();
+        let routes = model.line.alignment_views();
         if !routes.iter().any(|r| r.id == self.route) {
             self.route = routes.first().map(|r| r.id.clone()).unwrap_or_default();
         }
@@ -195,7 +195,7 @@ impl SpotWindow {
                 egui::ComboBox::from_id_salt("spot-route")
                     .selected_text(&self.route)
                     .show_ui(ui, |ui| {
-                        for r in model.line.effective_routes() {
+                        for r in model.line.alignment_views() {
                             ui.selectable_value(&mut self.route, r.id.clone(), &r.id);
                         }
                     });

@@ -236,7 +236,7 @@ pub(crate) fn positions(line: &Line) -> BTreeMap<Key, Key> {
 /// degrees.
 fn line_angles(line: &Line) -> BTreeMap<String, f64> {
     let mut out: BTreeMap<String, f64> = BTreeMap::new();
-    for r in line.effective_routes() {
+    for r in line.alignment_views() {
         for s in r.stations(line).unwrap_or_default() {
             let a = out.entry(s.structure).or_default();
             *a = a.max(s.line_angle_deg.abs());

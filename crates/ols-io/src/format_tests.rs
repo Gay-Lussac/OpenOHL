@@ -115,11 +115,12 @@ fn rich_line() -> Line {
     line.jumpers[0].description = "loop at the dead end".into();
     line.sections[0].description = "phase L1 of circuit 1".into();
     line.systems[0].description = "the 220 kV system".into();
-    let first = match line.routes.first_mut() {
-        Some(r) => r.alignment.first_mut(),
-        None => line.alignment.first_mut(),
-    };
-    first.expect("an alignment point").description = "start at the substation".into();
+    line.alignments[0].points[0].description = "start at the substation".into();
+    // A point on routes of its own, a structure giving its route, a
+    // route's description.
+    line.alignments[0].points[1].routes = Some(vec![line.routes[0].id.clone()]);
+    line.structures[0].routes = vec![line.routes[0].id.clone()];
+    line.routes[0].description = "the main route".into();
     line.jumpers[0].angle_from_deg = Some(-10.0);
     line.systems[0].kind = ols_line::electrical::SystemKind::Dc;
     line.systems[0].phases[0].polarity = Some(-1);
@@ -132,15 +133,21 @@ fn rich_line() -> Line {
         behavior: ols_cables::BimetallicBehavior::Compression,
         max_virtual_compression: Some(ols_core::units::Stress::from_megapascals(50.0)),
     };
-    line.alignment = vec![ols_line::AlignmentPoint::free([0.0, 0.0, 1.0])];
-    line.routes[1].alignment = vec![
+    line.alignments[1].points = vec![
         ols_line::AlignmentPoint {
-            description: Default::default(),
-            position: line.structures[2].position,
             structure: Some(line.structures[2].id.clone()),
+            ..ols_line::AlignmentPoint::free(line.structures[2].position)
         },
         ols_line::AlignmentPoint::free([9.0, 9.0, 9.0]),
     ];
+    // An alignment of one point, on two routes.
+    line.alignments.push(ols_line::Alignment {
+        id: "alone".into(),
+        name: "one point".into(),
+        description: "for later".into(),
+        routes: line.routes.iter().map(|r| r.id.clone()).collect(),
+        points: vec![ols_line::AlignmentPoint::free([0.0, 0.0, 1.0])],
+    });
     // A circuit's chosen start, a rigid jumper and a jumper's EI factor.
     line.circuit_starts = vec![line.sections[0].points[0].clone()];
     if let Some(j) = line.jumpers.first_mut() {
@@ -285,10 +292,10 @@ fn landxml_has_alignments_and_points_and_reads_back() {
     );
     let mut alignments = Vec::new();
     doc.descendants("Alignment", &mut alignments);
-    assert_eq!(alignments.len(), m.line.routes.len());
+    assert_eq!(alignments.len(), m.line.alignments.len());
     let mut lines = Vec::new();
     alignments[0].descendants("Line", &mut lines);
-    assert_eq!(lines.len(), m.line.routes[0].alignment.len() - 1);
+    assert_eq!(lines.len(), m.line.alignments[0].points.len() - 1);
     let total: f64 = lines
         .iter()
         .map(|l| l.attr("length").unwrap().parse::<f64>().unwrap())
@@ -309,17 +316,14 @@ fn landxml_has_alignments_and_points_and_reads_back() {
         let o = m.line.structure(&s.id).unwrap();
         assert!((0..3).all(|k| (s.position[k] - o.position[k]).abs() < 1e-4));
     }
-    let main: Vec<&str> = line.routes[0]
-        .structures
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let views = line.alignment_views();
+    let main: Vec<&str> = views[0].structures.iter().map(String::as_str).collect();
     assert_eq!(&main[..2], ["T1", "T2"]);
-    assert_eq!(line.routes[0].alignment.len(), 3);
+    assert_eq!(line.alignments[0].points.len(), 3);
 
     // An alignment alone updates the route of a line.
     let mut moved = m.clone();
-    moved.line.routes[0].alignment[1].position[1] += 10.0;
+    moved.line.alignments[0].points[1].position[1] += 10.0;
     let full = landxml::document(&moved.line);
     let (head, rest) = full.split_once("<CgPoints").unwrap();
     let (_, tail) = rest.split_once("</CgPoints>").unwrap();
@@ -330,8 +334,8 @@ fn landxml_has_alignments_and_points_and_reads_back() {
         .import(only.as_bytes(), Some(&m.line), &Options::new())
         .unwrap();
     assert_eq!(updated.structures, m.line.structures);
-    let a = &updated.routes[0].alignment[1].position;
-    assert!((a[1] - (m.line.routes[0].alignment[1].position[1] + 10.0)).abs() < 1e-4);
+    let a = &updated.alignments[0].points[1].position;
+    assert!((a[1] - (m.line.alignments[0].points[1].position[1] + 10.0)).abs() < 1e-4);
 }
 
 #[test]
@@ -455,7 +459,7 @@ fn shapefiles_read_back() {
     line.validate().unwrap();
     assert_eq!(line.structures.len(), m.line.structures.len());
     assert_eq!(line.structures[0].id, "T1");
-    assert_eq!(line.routes[0].alignment.len(), 3);
+    assert_eq!(line.alignments[0].points.len(), 3);
     // A bare .shp: points only, ids made up.
     let bare = Registry::with_builtin()
         .importer("structures-shp")
@@ -735,7 +739,7 @@ fn neutral_files_go_into_a_project_as_one_command() {
     let o = opts(&[("type", "tangent")]);
     let (applied, line) =
         neutral::import_into_project(&mut r, &points, None, &o, &project, "ann").unwrap();
-    assert_eq!(line.routes[0].structures, ["A", "B"]);
+    assert_eq!(line.alignment_views()[0].structures, ["A", "B"]);
     assert_eq!(line.crs, "EPSG:2056");
     assert!(applied.seq > 0);
     // Moved 5 m east: the project's line is updated.
@@ -772,7 +776,7 @@ fn csv_points_with_mapped_columns() {
     line.validate().unwrap();
     let ids: Vec<&str> = line.structures.iter().map(|s| s.id.as_str()).collect();
     assert_eq!(ids, ["M1", "M2", "M3"]);
-    assert_eq!(line.routes[0].structures, ids);
+    assert_eq!(line.alignment_views()[0].structures, ids);
     assert_eq!(line.structures[2].position, [200.0, 100.0, 502.0]);
     assert!(
         line.structures
