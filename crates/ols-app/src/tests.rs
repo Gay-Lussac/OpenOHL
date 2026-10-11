@@ -8886,3 +8886,72 @@ fn opening_a_menu_escapes_what_was_going_on() {
     assert!(r.new_alignment.is_empty());
     harness.get_by_label("Add structure…");
 }
+
+/// View › Profile aspect ratio: at 1:10 the heights are drawn ten times
+/// larger than the stations, and stay so when zooming (the height under
+/// the pointer stays under it); fitted, they follow what is shown.
+#[test]
+fn the_profile_keeps_its_aspect_ratio_when_zooming() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().show_tab(crate::app::Tab::Profile);
+    harness.run_steps(3);
+    // Chosen in the menu.
+    harness.get_by_label("View").click();
+    harness.run();
+    harness
+        .get_by_label_contains("Profile aspect ratio")
+        .hover();
+    harness.run();
+    harness.get_by_label("1:10 (heights ×10)").click();
+    harness.run();
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    assert_eq!(
+        harness.state_mut().ready().unwrap().model.profile_ratio,
+        Some(10.0)
+    );
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .view_prefs()
+            .profile_ratio,
+        Some(10.0)
+    );
+    harness.run_steps(2);
+    let shown = |h: &mut Harness<'_, App>| h.state_mut().ready().unwrap().profile.shown.unwrap();
+    // Heights per point = 10 × stations per point.
+    let ratio = |(s, z, size): ([f64; 2], [f64; 2], [f64; 2])| {
+        ((s[1] - s[0]) / size[0]) / ((z[1] - z[0]) / size[1])
+    };
+    let before = shown(&mut harness);
+    assert!((ratio(before) - 10.0).abs() < 1e-6, "{before:?}");
+    // Zoom in at a point of the profile.
+    let rect = harness.state_mut().ready().unwrap().profile.rect.unwrap();
+    let pos = rect.center() + egui::vec2(100.0, 40.0);
+    harness.hover_at(pos);
+    harness.run();
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, 200.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+    });
+    harness.run_steps(10);
+    let after = shown(&mut harness);
+    assert!(
+        after.0[1] - after.0[0] < before.0[1] - before.0[0],
+        "zoomed in: {after:?}"
+    );
+    assert!((ratio(after) - 10.0).abs() < 1e-6, "{after:?}");
+    // Fitted again: the heights follow what is shown.
+    harness.state_mut().ready().unwrap().model.profile_ratio = None;
+    harness.run_steps(2);
+    let fitted = shown(&mut harness);
+    assert!((ratio(fitted) - 10.0).abs() > 1e-3, "{fitted:?}");
+}
