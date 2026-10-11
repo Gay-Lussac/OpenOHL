@@ -222,9 +222,9 @@ pub struct Ready {
     pub vegetation: crate::vegetation::VegetationWindow,
     /// Checks › As-built wires.
     pub wirefit: crate::wirefit::WireFitWindow,
-    /// Checks › Vertical clearances.
+    /// Checks › Ground clearances › Vertical clearances.
     pub vertical_clearances: crate::clearance_zones::ZoneWindow,
-    /// Checks › Radial clearances.
+    /// Checks › Ground clearances › Radial clearances.
     pub radial_clearances: crate::clearance_zones::ZoneWindow,
     /// Terrain › Terrain surfaces (TIN).
     pub surfaces: crate::surfaces::SurfacesWindow,
@@ -4306,56 +4306,69 @@ fn menus(
         }
         ui.separator();
         ui.label(egui::RichText::new("Clearances").strong());
-        if ui
-            .button("Vertical clearances…")
-            .on_hover_text(
-                "Targets straight under the wires, within a width on each side; rules by \
-                 voltage, weather case, distance and LiDAR class; the wind stepped",
-            )
-            .clicked()
-        {
-            r.vertical_clearances.show(&r.model);
-            ui.close();
-        }
-        if ui
-            .button("Radial clearances…")
-            .on_hover_text(
-                "The direct distance from the wires to the targets; rules by voltage, \
-                 weather case, distance and LiDAR class; the wind stepped",
-            )
-            .clicked()
-        {
-            r.radial_clearances.show(&r.model);
-            ui.close();
-        }
-        ui.label(
-            egui::RichText::new("A rule file (wires to wires and other lines too):")
+        ui.menu_button("Ground clearances", |ui| {
+            ui.label(
+                egui::RichText::new("From the wires to the ground and the LiDAR points")
+                    .small()
+                    .weak(),
+            );
+            if ui
+                .button("Vertical clearances…")
+                .on_hover_text(
+                    "Targets straight under the wires, within a width on each side; rules by \
+                     voltage, weather case, distance and LiDAR class; the wind stepped",
+                )
+                .clicked()
+            {
+                r.vertical_clearances.show(&r.model);
+                ui.close();
+            }
+            if ui
+                .button("Radial clearances…")
+                .on_hover_text(
+                    "The direct distance from the wires to the targets; rules by voltage, \
+                     weather case, distance and LiDAR class; the wind stepped",
+                )
+                .clicked()
+            {
+                r.radial_clearances.show(&r.model);
+                ui.close();
+            }
+        });
+        // Ticks keep it open.
+        crate::menu::options_menu(ui, "Wire clearances", |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "Between wires, to other project lines, with exclusion zones: the rules \
+                     of a rule file",
+                )
                 .small()
                 .weak(),
-        );
-        item(ui, Command::RunChecks, out);
-        let c = &mut r.clearances;
-        ui.checkbox(&mut c.auto, "also after every edit");
-        if !c.files.is_empty() {
-            ui.menu_button("Rule file", |ui| {
-                let mut chosen = None;
-                for (k, p) in c.files.iter().enumerate() {
-                    let name = p
-                        .file_name()
-                        .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-                    if ui.radio(c.chosen == Some(k), name).clicked() {
-                        chosen = Some(k);
+            );
+            item(ui, Command::RunChecks, out);
+            let c = &mut r.clearances;
+            ui.checkbox(&mut c.auto, "also after every edit");
+            if !c.files.is_empty() {
+                ui.menu_button("Rule file", |ui| {
+                    let mut chosen = None;
+                    for (k, p) in c.files.iter().enumerate() {
+                        let name = p
+                            .file_name()
+                            .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+                        if ui.radio(c.chosen == Some(k), name).clicked() {
+                            chosen = Some(k);
+                        }
                     }
-                }
-                if let Some(k) = chosen {
-                    c.choose(k);
-                }
-            });
-        }
-        if ui.button("Show results").clicked() {
-            open_page(dock, Tab::Clearances);
-            ui.close();
-        }
+                    if let Some(k) = chosen {
+                        c.choose(k);
+                    }
+                });
+            }
+            if ui.button("Show results").clicked() {
+                open_page(dock, Tab::Clearances);
+                ui.close();
+            }
+        });
         ui.separator();
         ui.label(egui::RichText::new("Thermal rating").strong());
         if ui
