@@ -506,18 +506,20 @@ fn attachment_and_alignment_point_properties() {
             .next()
             .is_some()
     );
-    harness.state_mut().ready().unwrap().selection = Selection::AlignmentPoint {
-        route: "main".into(),
-        index: 1,
-    };
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let id = r.model.line.alignment_by_id("main").unwrap().points[1].clone();
+        r.selection = Selection::AlignmentPoint { id };
+    }
     harness.run();
     assert_eq!(
         harness
-            .query_all_by_label("Route main, alignment point 2")
+            .query_all_by_label_contains("Alignment point P")
             .count(),
         1
     );
-    harness.get_by_label("free (not tied to a structure)");
+    harness.get_by_label_contains("main #2");
+    harness.get_by_label("tied to structure T3");
     // Edit › Snap lists every kind.
     harness.get_by_label("Edit").click();
     harness.run();
@@ -2145,8 +2147,8 @@ fn sections_get_a_target_sag_in_their_display_case() {
     );
 }
 
-/// Alignment points: moved, tied to a structure, added between two,
-/// deleted — one put of the route; the profile follows.
+/// Alignment points: moved, detached, added between two, deleted — one
+/// command; the profile follows.
 #[test]
 fn alignment_points_are_edited_in_their_table() {
     use crate::tables::TableKind;
@@ -2155,51 +2157,58 @@ fn alignment_points_are_edited_in_their_table() {
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    let (route, n, p0) = {
+    let (n, p0, key0, key1) = {
         let r = harness.state_mut().ready().unwrap();
-        let rows = TableKind::Alignments.rows(&r.model, 0);
-        let (route, _) = rows[0].key.split_once('\t').unwrap();
-        let n = rows
-            .iter()
-            .filter(|x| x.key.starts_with(&format!("{route}\t")))
-            .count();
-        (route.to_owned(), n, rows[0].cells.clone())
+        let rows = TableKind::AlignmentPoints.rows(&r.model, 0);
+        let mine: Vec<&crate::tables::Row> = rows.iter().filter(|x| x.cells[0] == "main").collect();
+        (
+            mine.len(),
+            mine[0].cells.clone(),
+            mine[0].key.clone(),
+            mine[1].key.clone(),
+        )
     };
     assert!(n >= 2, "{n}");
-    let key0 = format!("{route}\t0");
-    let key1 = format!("{route}\t1");
-    let e = p0[2].parse::<f64>().unwrap() + 3.0;
+    let e = p0[3].parse::<f64>().unwrap() + 3.0;
     set_cell(
         &mut harness,
-        TableKind::Alignments,
+        TableKind::AlignmentPoints,
         &key0,
         "E",
         &format!("{e}"),
     );
-    set_cell(&mut harness, TableKind::Alignments, &key0, "structure", "");
+    set_cell(
+        &mut harness,
+        TableKind::AlignmentPoints,
+        &key0,
+        "structure",
+        "",
+    );
     {
         let r = harness.state_mut().ready().unwrap();
-        let mut row = TableKind::Alignments.new_row(&r.model, 0, &[]);
-        row[0] = route.clone();
+        let mut row = TableKind::AlignmentPoints.new_row(&r.model, 0, &[]);
+        row[0] = "main".into();
         row[1] = "1.5".into();
-        row[2] = format!("{e}");
-        row[3] = p0[3].clone();
-        let page = r.tables.entry(TableKind::Alignments).or_default();
+        row[3] = format!("{e}");
+        row[4] = p0[4].clone();
+        let page = r.tables.entry(TableKind::AlignmentPoints).or_default();
         page.added.push(row);
         page.deleted.insert(key1);
     }
-    apply_table(&mut harness, TableKind::Alignments, false).unwrap();
+    // The point deleted is the Y pylon's, on the branch too: asked.
+    assert_eq!(
+        apply_table(&mut harness, TableKind::AlignmentPoints, false).unwrap_err(),
+        "needs a confirmation"
+    );
+    apply_table(&mut harness, TableKind::AlignmentPoints, true).unwrap();
     let r = harness.state_mut().ready().unwrap();
-    let rows = TableKind::Alignments.rows(&r.model, 0);
-    let mine: Vec<&crate::tables::Row> = rows
-        .iter()
-        .filter(|x| x.key.starts_with(&format!("{route}\t")))
-        .collect();
+    let rows = TableKind::AlignmentPoints.rows(&r.model, 0);
+    let mine: Vec<&crate::tables::Row> = rows.iter().filter(|x| x.cells[0] == "main").collect();
     assert_eq!(mine.len(), n, "one added, one deleted");
-    assert_eq!(mine[0].cells[5], "", "detached");
-    assert!((mine[0].cells[2].parse::<f64>().unwrap() - e).abs() < 1e-6);
+    assert_eq!(mine[0].cells[6], "", "detached");
+    assert!((mine[0].cells[3].parse::<f64>().unwrap() - e).abs() < 1e-6);
     assert!(
-        (mine[1].cells[2].parse::<f64>().unwrap() - e).abs() < 1e-6,
+        (mine[1].cells[3].parse::<f64>().unwrap() - e).abs() < 1e-6,
         "the new one second"
     );
 }
@@ -2338,37 +2347,31 @@ fn alignment_points_are_added_edited_and_deleted_with_the_tools() {
         let r = harness.state_mut().ready().unwrap();
         let d = r.coord_dialog.take().expect("asked");
         assert_eq!(d.purpose, crate::alignment_tools::CoordFor::AddAlignment);
-        r.place_alignment_point(d.purpose, ols_line::AlignmentPoint::free(at));
+        r.place_alignment_point(d.purpose, ols_line::AlignmentPoint::free("", at));
     }
-    let (route, index) = {
+    let id = {
         let r = harness.state_mut().ready().unwrap();
-        let Selection::AlignmentPoint { route, index } = r.selection.clone() else {
+        let Selection::AlignmentPoint { id } = r.selection.clone() else {
             panic!("{:?} {:?}", r.selection, r.status);
         };
-        assert_eq!(index, 1, "between the first two");
-        (route, index)
+        id
     };
+    let route = "main".to_owned();
     let points = |h: &mut Harness<'_, App>| {
         let r = h.state_mut().ready().unwrap();
-        r.model
-            .line
-            .alignment_views()
-            .into_iter()
-            .find(|x| x.id == route)
-            .unwrap()
-            .alignment
+        r.model.line.alignment_by_id("main").unwrap().points.clone()
     };
     let before = points(&mut harness);
-    assert_eq!(before[index].position, at);
-    assert!(before.len() >= 3);
+    assert_eq!(before[1], id, "between the first two");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.line.alignment_point(&id).unwrap().position, at);
+    }
     // Moved 2 m east in its window.
     use_tool(
         &mut harness,
         Tool::Edit,
-        Selection::AlignmentPoint {
-            route: route.clone(),
-            index,
-        },
+        Selection::AlignmentPoint { id: id.clone() },
         None,
     );
     {
@@ -2376,58 +2379,51 @@ fn alignment_points_are_added_edited_and_deleted_with_the_tools() {
         let Some(Form::Alignment(f)) = &mut r.editor else {
             panic!("{:?}", r.editor);
         };
+        assert_eq!(f.orders, [(route.clone(), 2)]);
         f.position[0] += 2.0;
     }
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
-    assert_eq!(points(&mut harness)[index].position[0], at[0] + 2.0);
-    // Deleted.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(
+            r.model.line.alignment_point(&id).unwrap().position[0],
+            at[0] + 2.0
+        );
+    }
+    // Deleted: off the alignment, the others in order.
     use_tool(
         &mut harness,
         Tool::Delete,
-        Selection::AlignmentPoint {
-            route: route.clone(),
-            index,
-        },
+        Selection::AlignmentPoint { id: id.clone() },
         None,
     );
-    assert_eq!(points(&mut harness).len(), before.len() - 1);
-    // Down to one point (kept); the last point deletes the alignment,
-    // asked first.
-    loop {
-        let n = points(&mut harness).len();
-        if n == 1 {
-            break;
-        }
+    let mut kept = before.clone();
+    kept.remove(1);
+    assert_eq!(points(&mut harness), kept);
+    // Down to none: the alignment stays (a shared point asks first: it
+    // comes off the branch too).
+    while let Some(first) = points(&mut harness).first().cloned() {
         use_tool(
             &mut harness,
             Tool::Delete,
-            Selection::AlignmentPoint {
-                route: route.clone(),
-                index: 0,
-            },
+            Selection::AlignmentPoint { id: first.clone() },
             None,
         );
-        assert_eq!(points(&mut harness).len(), n - 1);
-    }
-    use_tool(
-        &mut harness,
-        Tool::Delete,
-        Selection::AlignmentPoint {
-            route: route.clone(),
-            index: 0,
-        },
-        None,
-    );
-    {
+        let asked = harness.state_mut().ready().unwrap().confirm.is_some();
+        if asked {
+            {
+                let r = harness.state_mut().ready().unwrap();
+                let (impact, _) = r.confirm.as_ref().unwrap();
+                assert!(impact.alignments_changed.contains(&"branch".to_owned()));
+            }
+            harness.get_by_label("Delete all").click();
+            harness.run();
+        }
         let r = harness.state_mut().ready().unwrap();
-        let (impact, _) = r.confirm.as_ref().expect("asked first");
-        assert_eq!(impact.points, ["#1"]);
-        assert!(r.model.line.alignments.iter().any(|a| a.id == route));
+        assert!(r.model.line.alignment_point(&first).is_none());
     }
-    harness.get_by_label("Delete all").click();
-    harness.run();
     let r = harness.state_mut().ready().unwrap();
-    assert!(r.model.line.alignments.iter().all(|a| a.id != route));
+    assert!(r.model.line.alignment_by_id(&route).is_some());
 }
 
 /// Criteria › Display weather cases: two cases ticked for every section
@@ -6837,25 +6833,18 @@ fn alignments_are_laid_out_joined_and_edited() {
     harness.run();
     let main = |h: &mut Harness<'_, App>| {
         let r = h.state_mut().ready().unwrap();
-        r.model
-            .line
-            .alignments
-            .iter()
-            .find(|x| x.id == "main")
-            .unwrap()
-            .points
-            .clone()
+        r.model.line.alignment_by_id("main").unwrap().points.clone()
+    };
+    let position = |h: &mut Harness<'_, App>, id: &str| {
+        let r = h.state_mut().ready().unwrap();
+        r.model.line.alignment_point(id).unwrap().position
     };
     let before = main(&mut harness);
     assert!(before.len() >= 3);
-    let p0 = before[0].position;
-    let p2 = before[2].position;
+    let p0 = position(&mut harness, &before[0]);
     let free = [p0[0] + 40.0, p0[1] + 60.0, p0[2]];
-    let at = |route: &str, index| Selection::AlignmentPoint {
-        route: route.into(),
-        index,
-    };
-    use_tool(&mut harness, Tool::NewAlignment, at("main", 0), None);
+    let at = |id: &String| Selection::AlignmentPoint { id: id.clone() };
+    use_tool(&mut harness, Tool::NewAlignment, at(&before[0]), None);
     // Nothing to snap to: the coordinates are asked (E, N, height).
     use_tool(
         &mut harness,
@@ -6874,18 +6863,18 @@ fn alignments_are_laid_out_joined_and_edited() {
         r.coord_dialog = None;
         r.place_alignment_point(
             crate::alignment_tools::CoordFor::NewAlignment,
-            ols_line::AlignmentPoint::free(p),
+            ols_line::AlignmentPoint::free("", p),
         );
     }
-    use_tool(&mut harness, Tool::NewAlignment, at("main", 2), None);
+    use_tool(&mut harness, Tool::NewAlignment, at(&before[2]), None);
     assert_eq!(harness.state_mut().ready().unwrap().view3d.draft.len(), 3);
-    // Enter: its routes are asked (main ticked: its junctions are main's).
+    // Enter: its route is asked (main: its existing points are main's).
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     {
         let r = harness.state_mut().ready().unwrap();
-        let c = r.route_choice.as_ref().expect("the routes asked");
-        assert_eq!(c.routes, ["main"]);
-        r.make_new_alignment(vec!["main".into()], None);
+        let c = r.route_choice.as_ref().expect("the route asked");
+        assert_eq!(c.route, "main");
+        r.make_new_alignment("main".into(), false);
     }
     harness.run();
     let new = {
@@ -6898,25 +6887,28 @@ fn alignments_are_laid_out_joined_and_edited() {
         let n = r
             .model
             .line
-            .alignments
-            .iter()
-            .find(|x| x.id == "alignment 1")
+            .alignment_by_id("alignment 1")
             .unwrap_or_else(|| panic!("{:?}", r.status))
             .clone();
-        assert_eq!(n.routes, ["main"]);
+        assert_eq!(n.route, "main");
         n.points
     };
+    // The existing points shared (junctions), one new point.
     assert_eq!(new.len(), 3);
-    assert_eq!(new[0].position, p0);
-    assert_eq!(new[1].position, free);
-    assert_eq!(new[2].position, p2);
-    // The junction moved with the Edit tool: both alignments.
-    use_tool(&mut harness, Tool::Edit, at("main", 0), None);
+    assert_eq!(new[0], before[0]);
+    assert_eq!(position(&mut harness, &new[1]), free);
+    assert_eq!(new[2], before[2]);
+    // The junction moved with the Edit tool: one point, on both.
+    use_tool(&mut harness, Tool::Edit, at(&before[0]), None);
     {
         let r = harness.state_mut().ready().unwrap();
         let Some(Form::Alignment(f)) = &mut r.editor else {
             panic!("{:?}", r.editor);
         };
+        assert_eq!(
+            f.orders,
+            [("main".to_owned(), 1), ("alignment 1".to_owned(), 1)]
+        );
         f.structure = None;
         f.position[0] += 2.0;
     }
@@ -6924,38 +6916,27 @@ fn alignments_are_laid_out_joined_and_edited() {
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.editor.is_none(), "{:?}", r.status);
-        let line = &r.model.line;
-        let get =
-            |id: &str| line.alignments.iter().find(|x| x.id == id).unwrap().points[0].position;
-        assert!((get("main")[0] - (p0[0] + 2.0)).abs() < 1e-9);
-        assert_eq!(get("main"), get("alignment 1"));
     }
-    // Point 2 of main to alignment 2, as its second point.
-    let moved = main(&mut harness)[1].position;
-    use_tool(&mut harness, Tool::Edit, at("main", 1), None);
+    assert!((position(&mut harness, &before[0])[0] - (p0[0] + 2.0)).abs() < 1e-9);
+    // Point 2 of main also on alignment 1, as its second point: it keeps
+    // its place on main.
+    use_tool(&mut harness, Tool::Edit, at(&before[1]), None);
     {
         let r = harness.state_mut().ready().unwrap();
         let Some(Form::Alignment(f)) = &mut r.editor else {
             panic!("{:?}", r.editor);
         };
-        f.target = "alignment 1".into();
-        f.order = 2;
+        f.orders.push(("alignment 1".into(), 2));
     }
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.editor.is_none(), "{:?}", r.status);
-        let line = &r.model.line;
-        let a2 = &line
-            .alignments
-            .iter()
-            .find(|x| x.id == "alignment 1")
-            .unwrap()
-            .points;
-        assert_eq!(a2.len(), 4);
-        assert_eq!(a2[1].position, moved);
-        assert_eq!(main(&mut harness).len(), before.len() - 1);
+        let a1 = &r.model.line.alignment_by_id("alignment 1").unwrap().points;
+        assert_eq!(a1.len(), 4);
+        assert_eq!(a1[1], before[1]);
     }
+    assert_eq!(main(&mut harness), before);
     // An alignment without structures: its profile is drawn.
     {
         let r = harness.state_mut().ready().unwrap();
@@ -6964,93 +6945,223 @@ fn alignments_are_laid_out_joined_and_edited() {
     harness.state_mut().show_tab(crate::app::Tab::Profile);
     harness.run_steps(3);
     // Escape gives a new alignment up; the tool stays held.
-    use_tool(&mut harness, Tool::NewAlignment, at("main", 0), None);
+    use_tool(&mut harness, Tool::NewAlignment, at(&before[0]), None);
     press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
     let r = harness.state_mut().ready().unwrap();
     assert!(r.new_alignment.is_empty() && r.view3d.draft.is_empty());
     assert_eq!(r.hotbar.tool(), Tool::NewAlignment);
 }
 
-/// The Alignment points table: a point given another alignment name, with
-/// a new row, makes that alignment, on the route(s) ticked; routes ticked
-/// for a point ask whether for its whole alignment or the point only.
+/// Points placed on no alignment (New alignment point tool), then picked
+/// one after another into a new alignment; with no route yet, one is
+/// offered first.
 #[test]
-fn a_new_alignment_name_in_the_table_makes_the_alignment() {
+fn free_points_are_picked_into_an_alignment_and_a_route_is_offered() {
+    use crate::alignment_tools::{CoordFor, RouteChoice};
+    use crate::tools::Tool;
+    let model = synthetic_project_with("free-points", |line| {
+        line.routes.clear();
+        line.alignments.clear();
+        line.alignment_points.clear();
+        for s in &mut line.structures {
+            s.routes.clear();
+        }
+    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // Two free points: one under T1 (tied), one typed.
+    use_tool(
+        &mut harness,
+        Tool::AddPoint,
+        Selection::Structure("T1".into()),
+        None,
+    );
+    use_tool(
+        &mut harness,
+        Tool::AddPoint,
+        Selection::None,
+        Some([10.0, 20.0, 0.0]),
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let d = r.coord_dialog.take().expect("asked");
+        assert_eq!(d.purpose, CoordFor::FreePoint);
+        r.place_alignment_point(
+            d.purpose,
+            ols_line::AlignmentPoint::free("", [10.0, 20.0, 500.0]),
+        );
+    }
+    let ids: Vec<String> = {
+        let r = harness.state_mut().ready().unwrap();
+        let l = &r.model.line;
+        assert_eq!(l.alignment_points.len(), 2, "{:?}", r.status);
+        assert!(l.alignments.is_empty());
+        assert_eq!(l.alignment_points[0].structure.as_deref(), Some("T1"));
+        l.alignment_points.iter().map(|p| p.id.clone()).collect()
+    };
+    // Picked one after another, Enter: no route yet — one is offered.
+    for id in &ids {
+        use_tool(
+            &mut harness,
+            Tool::NewAlignment,
+            Selection::AlignmentPoint { id: id.clone() },
+            None,
+        );
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let c: &RouteChoice = r.route_choice.as_ref().expect("asked");
+        assert!(c.route.is_empty());
+        assert_eq!(c.new_route, "route 1", "a new route proposed");
+    }
+    harness.run();
+    harness
+        .get_by_label("Create the route and the alignment")
+        .click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let l = &r.model.line;
+    assert_eq!(l.routes.len(), 1, "{:?}", r.status);
+    let a = &l.alignments[0];
+    assert_eq!(a.route, "route 1");
+    assert_eq!(a.points, ids);
+    assert_eq!(l.routes_of("T1"), ["route 1"]);
+}
+
+/// The three tables: Routes, Alignments (each on one route, in order) and
+/// Alignment points (a row per point and alignment, with its place there).
+#[test]
+fn routes_alignments_and_points_are_edited_in_their_tables() {
     use crate::tables::TableKind;
     let model = synthetic_project("table-new-alignment");
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    let n = {
-        let r = harness.state_mut().ready().unwrap();
-        let rows = TableKind::Alignments.rows(&r.model, 0);
-        rows.iter().filter(|x| x.cells[0] == "main").count()
-    };
-    assert!(n >= 3);
-    set_cell(
-        &mut harness,
-        TableKind::Alignments,
-        "main\t2",
-        "alignment",
-        "spur",
-    );
+    // A new alignment needs its route.
     {
         let r = harness.state_mut().ready().unwrap();
         let mut row = TableKind::Alignments.new_row(&r.model, 0, &[]);
-        let rows = TableKind::Alignments.rows(&r.model, 0);
+        assert_eq!(row[0], "alignment 1");
         row[0] = "spur".into();
-        row[1] = "2".into();
-        row[2] = format!("{}", rows[2].cells[2].parse::<f64>().unwrap() + 50.0);
-        row[3] = rows[2].cells[3].clone();
-        row[TableKind::Alignments.column("routes")] = "branch".into();
+        row[2] = String::new();
         r.tables
             .entry(TableKind::Alignments)
             .or_default()
             .added
             .push(row);
     }
-    apply_table(&mut harness, TableKind::Alignments, false).unwrap();
-    {
-        let r = harness.state_mut().ready().unwrap();
-        let line = &r.model.line;
-        let spur = line.alignments.iter().find(|a| a.id == "spur").unwrap();
-        assert_eq!(spur.points.len(), 2);
-        assert_eq!(spur.routes, ["branch"]);
-        let main = line.alignments.iter().find(|a| a.id == "main").unwrap();
-        assert_eq!(main.points.len(), n - 1);
-    }
-    // A point of main ticked on the branch too: asked; the point only.
-    set_cell(
-        &mut harness,
-        TableKind::Alignments,
-        "main\t0",
-        "routes",
-        "main, branch",
-    );
-    assert_eq!(
-        apply_table(&mut harness, TableKind::Alignments, false).unwrap_err(),
-        "needs a confirmation"
-    );
+    let e = apply_table(&mut harness, TableKind::Alignments, false).unwrap_err();
+    assert!(e.contains("choose its route"), "{e}");
     {
         let r = harness.state_mut().ready().unwrap();
         let page = r.tables.get_mut(&TableKind::Alignments).unwrap();
-        assert!(page.ask_scope);
-        page.route_scope = Some(false);
+        page.added[0][2] = "branch".into();
+        // Between main and the branch.
+        page.added[0][3] = "1.5".into();
     }
     apply_table(&mut harness, TableKind::Alignments, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let ids: Vec<&str> = r
+            .model
+            .line
+            .alignments
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect();
+        assert_eq!(ids, ["main", "spur", "branch"]);
+        assert_eq!(
+            r.model.line.alignment_by_id("spur").unwrap().route,
+            "branch"
+        );
+    }
+    // Reordered: the branch first.
+    set_cell(&mut harness, TableKind::Alignments, "branch", "#", "0.5");
+    apply_table(&mut harness, TableKind::Alignments, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let ids: Vec<&str> = r
+            .model
+            .line
+            .alignments
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect();
+        assert_eq!(ids, ["branch", "main", "spur"]);
+    }
+    // Points: main's third point on the spur too (shared), and a new one.
+    let (third, rows_before) = {
+        let r = harness.state_mut().ready().unwrap();
+        let third = r.model.line.alignment_by_id("main").unwrap().points[2].clone();
+        let mut a = TableKind::AlignmentPoints.new_row(&r.model, 0, &[]);
+        a[0] = "spur".into();
+        a[1] = "1".into();
+        a[2] = third.clone();
+        let mut b = TableKind::AlignmentPoints.new_row(&r.model, 0, &[a.clone()]);
+        b[0] = "spur".into();
+        b[1] = "2".into();
+        b[3] = "1300".into();
+        b[4] = "150".into();
+        b[5] = "505".into();
+        let n = TableKind::AlignmentPoints.rows(&r.model, 0).len();
+        let page = r.tables.entry(TableKind::AlignmentPoints).or_default();
+        page.added.push(a);
+        page.added.push(b);
+        (third, n)
+    };
+    apply_table(&mut harness, TableKind::AlignmentPoints, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let l = &r.model.line;
+        let spur = &l.alignment_by_id("spur").unwrap().points;
+        assert_eq!(spur.len(), 2);
+        assert_eq!(spur[0], third);
+        assert_eq!(
+            l.alignment_point(&spur[1]).unwrap().position,
+            [1300.0, 150.0, 505.0]
+        );
+        // The shared point: a row on each alignment, each with its place.
+        let rows = TableKind::AlignmentPoints.rows(&r.model, 0);
+        assert_eq!(rows.len(), rows_before + 2);
+        let on_spur = rows
+            .iter()
+            .find(|x| x.key == format!("spur\t{third}"))
+            .unwrap();
+        assert_eq!(on_spur.cells[1], "1");
+        assert_eq!(on_spur.cells[7], "main #3");
+    }
+    // Taken off main (its alignment emptied): it stays on the spur.
+    set_cell(
+        &mut harness,
+        TableKind::AlignmentPoints,
+        &format!("main\t{third}"),
+        "alignment",
+        "",
+    );
+    apply_table(&mut harness, TableKind::AlignmentPoints, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.line.point_alignments(&third), ["spur"]);
+    }
+    // A row deleted: the point off every alignment (asked when shared).
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.tables
+            .entry(TableKind::AlignmentPoints)
+            .or_default()
+            .deleted
+            .insert(format!("spur\t{third}"));
+    }
+    apply_table(&mut harness, TableKind::AlignmentPoints, false).unwrap();
     let r = harness.state_mut().ready().unwrap();
-    let main = r
-        .model
-        .line
-        .alignments
-        .iter()
-        .find(|a| a.id == "main")
-        .unwrap();
-    assert_eq!(main.routes, ["main"]);
+    assert!(r.model.line.alignment_point(&third).is_none());
     assert_eq!(
-        main.points[0].routes.as_deref(),
-        Some(&["main".to_owned(), "branch".to_owned()][..])
+        r.model.line.alignment_by_id("spur").unwrap().points.len(),
+        1
     );
 }
 
@@ -8350,6 +8461,7 @@ fn an_empty_project_gets_its_first_alignment_and_a_view() {
     line.jumpers.clear();
     line.routes.clear();
     line.alignments.clear();
+    line.alignment_points.clear();
     line.systems.clear();
     ols_session::Session::open(&path)
         .unwrap()
@@ -8403,19 +8515,19 @@ fn an_empty_project_gets_its_first_alignment_and_a_view() {
         let point = r.coord_dialog.take().expect("asked").point().unwrap();
         r.place_alignment_point(
             crate::alignment_tools::CoordFor::NewAlignment,
-            ols_line::AlignmentPoint::free(point),
+            ols_line::AlignmentPoint::free("", point),
         );
     }
-    // Enter: its route, the only one, ticked.
+    // Enter: its route, the only one, chosen.
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     {
         let r = harness.state_mut().ready().unwrap();
-        assert_eq!(r.route_choice.as_ref().unwrap().routes, ["route 1"]);
-        r.make_new_alignment(vec!["route 1".into()], None);
+        assert_eq!(r.route_choice.as_ref().unwrap().route, "route 1");
+        r.make_new_alignment("route 1".into(), false);
         let line = &r.model.line;
         assert_eq!(line.alignments.len(), 1, "{:?}", r.status);
         assert_eq!(line.alignments[0].points.len(), 3);
-        assert_eq!(line.alignments[0].routes, ["route 1"]);
+        assert_eq!(line.alignments[0].route, "route 1");
         assert_eq!(line.routes[0].id, "route 1");
     }
     let p = ground(&mut harness, 310.0, 0.0);
@@ -8445,20 +8557,17 @@ fn a_structure_is_put_on_an_alignment_point_along_the_line() {
         // An alignment of its own: 0;0 → 300;0 → 300;300 (a right angle
         // at its middle point).
         l.routes = vec![ols_line::Route::new("main", "main")];
-        l.alignments = vec![ols_line::Alignment {
-            id: "main".into(),
-            name: String::new(),
-            description: String::new(),
-            routes: vec!["main".into()],
-            points: [
+        l.alignment_points.clear();
+        l.alignments = vec![ols_line::Alignment::new("main", "main", Vec::new())];
+        l.set_alignment_points(
+            "main",
+            [
                 [0.0, 0.0, 500.0],
                 [300.0, 0.0, 500.0],
                 [300.0, 300.0, 500.0],
             ]
-            .into_iter()
-            .map(ols_line::AlignmentPoint::free)
-            .collect(),
-        }];
+            .map(|p| (p, None)),
+        );
     });
     // The bisector at the corner: ahead to the north-east, the right to
     // the south-east (−45° from east); at the ends, across their stretch.
@@ -8538,8 +8647,9 @@ fn a_structure_is_put_on_an_alignment_point_along_the_line() {
     assert!((s.orientation_deg - -45.0).abs() < 1e-9);
     assert_eq!(s.description, "angle tower, invented");
     assert_eq!(s.points.len(), 2);
+    let line = &r.model.line;
     assert_eq!(
-        r.model.line.alignments[0].points[1].structure.as_deref(),
+        line.points_of(&line.alignments[0])[1].structure.as_deref(),
         Some(id.as_str())
     );
     // On the alignment's route, by itself.
@@ -8999,7 +9109,7 @@ fn opening_a_menu_escapes_what_was_going_on() {
     {
         let r = harness.state_mut().ready().unwrap();
         r.view3d.captured = true;
-        r.new_alignment = vec![ols_line::AlignmentPoint::free([0.0, 0.0, 500.0])];
+        r.new_alignment = vec![ols_line::AlignmentPoint::free("", [0.0, 0.0, 500.0])];
     }
     harness.run();
     harness
@@ -9263,7 +9373,7 @@ fn routes_are_made_renamed_and_deleted_and_structures_take_them() {
                 .any(|x| x.id == "north" && x.name == "North route")
         );
         let branch = line.alignments.iter().find(|a| a.id == "branch").unwrap();
-        assert_eq!(branch.routes, ["west"]);
+        assert_eq!(branch.route, "west");
         assert_eq!(line.routes_of("T6"), ["west"]);
     }
     // T6 on north too, ticked in the Structures table.

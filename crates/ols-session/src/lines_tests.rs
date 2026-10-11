@@ -167,7 +167,7 @@ fn a_phase_brings_in_main_and_goes_back_through_a_review() {
     assert_eq!(
         keys,
         [
-            "alignment:branch/points",
+            "alignment_point:P2/position",
             "structure:T3/points",
             "structure:T3/position",
             "structure:T3/wires"
@@ -178,7 +178,7 @@ fn a_phase_brings_in_main_and_goes_back_through_a_review() {
         "main",
         &Choices::from([
             ("structure:T3".to_owned(), Side::Ours),
-            ("alignment:branch".to_owned(), Side::Ours),
+            ("alignment_point:P2".to_owned(), Side::Ours),
         ]),
     )
     .unwrap();

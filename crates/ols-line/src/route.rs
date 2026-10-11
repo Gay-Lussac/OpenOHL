@@ -2,18 +2,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Routes, alignments, stationing, offsets and line angles.
+//! Routes, alignments, alignment points, stationing, offsets and line
+//! angles.
 //!
-//! A [`Route`] is a path of the line made of one or more [`Alignment`]s,
-//! in their order in the line. An alignment is a polyline of points
-//! ([`AlignmentPoint`], PIs) and belongs to one or more routes; where
-//! alignments of different routes meet, the shared point (and a structure
-//! on it) belongs to all of them.
+//! A line is laid out in three steps: a [`Route`] (a path of the line),
+//! its [`Alignment`]s (each on exactly one route, in their order along
+//! it), and the [`AlignmentPoint`]s (PIs) of each alignment, in order. A
+//! point is an object of its own: it may be on no alignment yet (placed,
+//! then picked one after another to make an alignment), on one, or on
+//! several, with its own place in each; where alignments of different
+//! routes meet they share the point, so the point (and a structure tied
+//! to it) is on all their routes.
 //!
 //! Everything else is put on routes from the alignments
 //! ([`Line::structure_routes`]): a structure tied to an alignment point,
 //! or within [`NEAR_ALIGNMENT`] of an alignment, is on it (and on its
-//! routes); a structure away from every alignment gives its routes itself
+//! route); a structure away from every alignment gives its routes itself
 //! ([`crate::Structure::routes`]). Sections, jumpers and what hangs on a
 //! structure follow their structures.
 //!
@@ -22,10 +26,11 @@
 //! positive to the right looking ahead. [`Line::alignment_views`] gives
 //! each alignment with its structures in station order.
 //!
-//! Files of version 2 and before held routes that were their own
-//! alignment, listing their structures (or following them, without
-//! points), and the line's own alignment: [`Line::upgrade_routes`] turns
-//! them into routes and alignments, keeping every structure on its routes.
+//! Older files are read into this form by [`Line::upgrade_routes`]:
+//! version 2 and before held routes that were their own alignment
+//! (listing their structures, or following them, without points) and the
+//! line's own alignment; version 3 held alignments on one or more routes
+//! with their points inside them.
 
 use serde::{Deserialize, Serialize};
 
@@ -35,26 +40,58 @@ use crate::{Line, LineError, Point};
 /// beyond its ends) is on it, m.
 pub const NEAR_ALIGNMENT: f64 = 5.0;
 
-/// A point of an alignment (PI).
+/// Points of older alignments this close in plan are one point, m.
+const SAME_POINT: f64 = 1e-3;
+
+/// An alignment point (PI): an object of its own, on any number of
+/// alignments (each gives it its place in its own order).
 ///
-/// In files a free point is `[x, y, z]`; otherwise `{"position": [x, y,
-/// z], "structure": "T12", "routes": [...], "description": ...}`. A point
-/// tied to a structure must lie under it (in plan, within 1 mm).
+/// A point tied to a structure must lie under it (in plan, within 1 mm)
+/// and follows it when it moves.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(from = "AlignmentRepr", into = "AlignmentRepr")]
+#[serde(deny_unknown_fields)]
 pub struct AlignmentPoint {
+    /// Unique id, e.g. `"P12"`.
+    pub id: String,
     /// Position.
     pub position: Point,
     /// Structure it is tied to (it follows the structure when it moves).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structure: Option<String>,
     /// What it is, in words (free text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
-    /// The routes of this point alone (and of a structure tied to it);
-    /// none: its alignment's.
-    pub routes: Option<Vec<String>>,
 }
 
 impl AlignmentPoint {
+    /// A free point `id` at `position`.
+    pub fn free(id: &str, position: Point) -> Self {
+        Self {
+            id: id.to_owned(),
+            position,
+            structure: None,
+            description: String::new(),
+        }
+    }
+}
+
+/// A point of an older file (version 3 and before), inside its alignment
+/// or route, without an id: `[x, y, z]`, or `{"position": [x, y, z],
+/// "structure": "T12", "routes": [...], "description": ...}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "OldPointRepr", into = "OldPointRepr")]
+pub struct OldPoint {
+    /// Position.
+    pub position: Point,
+    /// Structure it was tied to.
+    pub structure: Option<String>,
+    /// What it is, in words.
+    pub description: String,
+    /// Its own routes (version 3; given to a structure tied to it).
+    pub routes: Option<Vec<String>>,
+}
+
+impl OldPoint {
     /// A free point.
     pub fn free(position: Point) -> Self {
         Self {
@@ -68,7 +105,7 @@ impl AlignmentPoint {
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
-enum AlignmentRepr {
+enum OldPointRepr {
     Free(Point),
     Tied {
         position: Point,
@@ -81,11 +118,11 @@ enum AlignmentRepr {
     },
 }
 
-impl From<AlignmentRepr> for AlignmentPoint {
-    fn from(r: AlignmentRepr) -> Self {
+impl From<OldPointRepr> for OldPoint {
+    fn from(r: OldPointRepr) -> Self {
         match r {
-            AlignmentRepr::Free(position) => Self::free(position),
-            AlignmentRepr::Tied {
+            OldPointRepr::Free(position) => Self::free(position),
+            OldPointRepr::Tied {
                 position,
                 structure,
                 description,
@@ -100,8 +137,8 @@ impl From<AlignmentRepr> for AlignmentPoint {
     }
 }
 
-impl From<AlignmentPoint> for AlignmentRepr {
-    fn from(a: AlignmentPoint) -> Self {
+impl From<OldPoint> for OldPointRepr {
+    fn from(a: OldPoint) -> Self {
         if a.structure.is_none() && a.description.is_empty() && a.routes.is_none() {
             return Self::Free(a.position);
         }
@@ -133,7 +170,7 @@ pub struct Route {
     pub description: String,
     /// Files of version 2: the route was its own alignment (these points)…
     #[serde(default, rename = "alignment", skip_serializing)]
-    pub legacy_alignment: Vec<AlignmentPoint>,
+    pub legacy_alignment: Vec<OldPoint>,
     /// …with its structures in order ([`Line::upgrade_routes`]).
     #[serde(default, rename = "structures", skip_serializing)]
     pub legacy_structures: Option<Vec<String>>,
@@ -157,9 +194,9 @@ impl Route {
     }
 }
 
-/// An alignment: a polyline of points, on one or more routes.
+/// An alignment: a polyline through alignment points, on one route.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "AlignmentRepr")]
 pub struct Alignment {
     /// Unique id, e.g. `"alignment 2"`.
     pub id: String,
@@ -169,10 +206,74 @@ pub struct Alignment {
     /// What it is, in words (free text).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
-    /// The routes it belongs to (one or more).
-    pub routes: Vec<String>,
-    /// Its points, in order (one or more; a profile needs two).
-    pub points: Vec<AlignmentPoint>,
+    /// The route it belongs to.
+    pub route: String,
+    /// The ids of its points, in order (a profile needs two; none while
+    /// it is being laid out).
+    pub points: Vec<String>,
+    /// Read from a file of version 3 (not upgraded yet): its routes and
+    /// its own points ([`Line::upgrade_routes`]).
+    #[serde(skip)]
+    pub legacy: Option<(Vec<String>, Vec<OldPoint>)>,
+}
+
+impl Alignment {
+    /// Alignment `id` on `route`, through the points `points`.
+    pub fn new(id: &str, route: &str, points: Vec<String>) -> Self {
+        Self {
+            id: id.to_owned(),
+            name: String::new(),
+            description: String::new(),
+            route: route.to_owned(),
+            points,
+            legacy: None,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AlignmentRepr {
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    route: Option<String>,
+    /// Version 3.
+    #[serde(default)]
+    routes: Option<Vec<String>>,
+    points: Vec<PointRef>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum PointRef {
+    Id(String),
+    Old(OldPoint),
+}
+
+impl From<AlignmentRepr> for Alignment {
+    fn from(r: AlignmentRepr) -> Self {
+        let (mut ids, mut old) = (Vec::new(), Vec::new());
+        for p in r.points {
+            match p {
+                PointRef::Id(id) => ids.push(id),
+                PointRef::Old(p) => old.push(p),
+            }
+        }
+        let legacy =
+            (r.routes.is_some() || !old.is_empty()).then(|| (r.routes.unwrap_or_default(), old));
+        Self {
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            route: r.route.unwrap_or_default(),
+            points: ids,
+            legacy,
+        }
+    }
 }
 
 /// An alignment with the structures on it, in station order: what the
@@ -183,9 +284,9 @@ pub struct AlignmentView {
     pub id: String,
     /// Its name.
     pub name: String,
-    /// The routes it belongs to.
-    pub routes: Vec<String>,
-    /// Its points.
+    /// The route it belongs to.
+    pub route: String,
+    /// Its points, in order.
     pub alignment: Vec<AlignmentPoint>,
     /// The structures on it, in station order.
     pub structures: Vec<String>,
@@ -314,6 +415,116 @@ impl AlignmentView {
 type OnRoute = (usize, f64, [f64; 2]);
 
 impl Line {
+    /// Alignment point `id`.
+    pub fn alignment_point(&self, id: &str) -> Option<&AlignmentPoint> {
+        self.alignment_points.iter().find(|p| p.id == id)
+    }
+
+    /// Alignment `id`.
+    pub fn alignment_by_id(&self, id: &str) -> Option<&Alignment> {
+        self.alignments.iter().find(|a| a.id == id)
+    }
+
+    /// The points of `alignment`, in order (unknown ids left out).
+    pub fn points_of(&self, alignment: &Alignment) -> Vec<AlignmentPoint> {
+        alignment
+            .points
+            .iter()
+            .filter_map(|id| self.alignment_point(id).cloned())
+            .collect()
+    }
+
+    /// The alignments point `id` is on, in the line's order.
+    pub fn point_alignments(&self, id: &str) -> Vec<String> {
+        self.alignments
+            .iter()
+            .filter(|a| a.points.iter().any(|p| p == id))
+            .map(|a| a.id.clone())
+            .collect()
+    }
+
+    /// The routes of point `id`: those of its alignments.
+    pub fn point_routes(&self, id: &str) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .alignments
+            .iter()
+            .filter(|a| a.points.iter().any(|p| p == id))
+            .map(|a| a.route.clone())
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// A free id for a new alignment point: `P1`, `P2`… past the highest.
+    pub fn new_point_id(&self) -> String {
+        let n = self
+            .alignment_points
+            .iter()
+            .filter_map(|p| p.id.strip_prefix('P')?.parse::<u64>().ok())
+            .max()
+            .unwrap_or(0);
+        format!("P{}", n + 1)
+    }
+
+    /// New alignment points at `points` (position, structure tied to),
+    /// with fresh ids: their ids, in order.
+    pub fn add_points(
+        &mut self,
+        points: impl IntoIterator<Item = (Point, Option<String>)>,
+    ) -> Vec<String> {
+        let first = self
+            .new_point_id()
+            .trim_start_matches('P')
+            .parse::<u64>()
+            .unwrap_or(1);
+        let mut out = Vec::new();
+        for (n, (position, structure)) in (first..).zip(points) {
+            let id = format!("P{n}");
+            self.alignment_points.push(AlignmentPoint {
+                structure,
+                ..AlignmentPoint::free(&id, position)
+            });
+            out.push(id);
+        }
+        out
+    }
+
+    /// Alignment `id` made to go through new points at `points` (position,
+    /// structure tied to); its old points on no other alignment deleted
+    /// (replaced). Whether there is such an alignment.
+    pub fn set_alignment_points(
+        &mut self,
+        id: &str,
+        points: impl IntoIterator<Item = (Point, Option<String>)>,
+    ) -> bool {
+        if self.alignment_by_id(id).is_none() {
+            return false;
+        }
+        let ids = self.add_points(points);
+        let old = match self.alignments.iter_mut().find(|a| a.id == id) {
+            Some(a) => std::mem::replace(&mut a.points, ids),
+            None => Vec::new(),
+        };
+        for p in old {
+            if self.point_alignments(&p).is_empty() {
+                self.alignment_points.retain(|q| q.id != p);
+            }
+        }
+        true
+    }
+
+    /// Deletes alignment point `id`: off every alignment it is on (the
+    /// others keep their order) and out of the line. Whether it was there.
+    pub fn delete_alignment_point(&mut self, id: &str) -> bool {
+        let before = self.alignment_points.len();
+        self.alignment_points.retain(|p| p.id != id);
+        for a in &mut self.alignments {
+            a.points.retain(|p| p != id);
+        }
+        self.alignment_points.len() != before
+    }
+
     /// Every alignment with the structures on it, in the line's order.
     pub fn alignment_views(&self) -> Vec<AlignmentView> {
         let near = self.near_alignments();
@@ -321,7 +532,8 @@ impl Line {
             .iter()
             .enumerate()
             .map(|(k, a)| {
-                let pts = positions(&a.points);
+                let points = self.points_of(a);
+                let pts = positions(&points);
                 let mut on: Vec<(f64, String)> = self
                     .structures
                     .iter()
@@ -332,8 +544,8 @@ impl Line {
                 AlignmentView {
                     id: a.id.clone(),
                     name: a.name.clone(),
-                    routes: a.routes.clone(),
-                    alignment: a.points.clone(),
+                    route: a.route.clone(),
+                    alignment: points,
                     structures: on.into_iter().map(|x| x.1).collect(),
                 }
             })
@@ -346,10 +558,15 @@ impl Line {
     /// [`NEAR_ALIGNMENT`] of.
     fn near_alignments(&self) -> std::collections::BTreeMap<String, Vec<usize>> {
         let mut out = std::collections::BTreeMap::new();
+        let tied: std::collections::BTreeMap<&str, &str> = self
+            .alignment_points
+            .iter()
+            .filter_map(|p| Some((p.id.as_str(), p.structure.as_deref()?)))
+            .collect();
         let lines: Vec<Vec<Point>> = self
             .alignments
             .iter()
-            .map(|a| positions(&a.points))
+            .map(|a| positions(&self.points_of(a)))
             .collect();
         for s in &self.structures {
             let mut ks: Vec<usize> = (0..self.alignments.len())
@@ -357,13 +574,13 @@ impl Line {
                     self.alignments[k]
                         .points
                         .iter()
-                        .any(|p| p.structure.as_deref() == Some(s.id.as_str()))
+                        .any(|p| tied.get(p.as_str()) == Some(&s.id.as_str()))
                 })
                 .collect();
             if !s.routes.is_empty() {
                 for r in &s.routes {
                     let nearest = (0..self.alignments.len())
-                        .filter(|&k| self.alignments[k].routes.contains(r))
+                        .filter(|&k| self.alignments[k].route == *r)
                         .min_by(|&a, &b| {
                             distance_to(&lines[a], s.position)
                                 .total_cmp(&distance_to(&lines[b], s.position))
@@ -390,8 +607,7 @@ impl Line {
     }
 
     /// The routes of every structure: those it gives itself, else those of
-    /// the alignments it is on (of the point it is tied to, when that point
-    /// has routes of its own). A structure on no alignment has none.
+    /// the alignments it is on. A structure on no alignment has none.
     pub fn structure_routes(&self) -> std::collections::BTreeMap<String, Vec<String>> {
         let near = self.near_alignments();
         let mut out = std::collections::BTreeMap::new();
@@ -402,14 +618,7 @@ impl Line {
                 near.get(&s.id)
                     .into_iter()
                     .flatten()
-                    .flat_map(|&k| {
-                        let a = &self.alignments[k];
-                        a.points
-                            .iter()
-                            .find(|p| p.structure.as_deref() == Some(s.id.as_str()))
-                            .and_then(|p| p.routes.clone())
-                            .unwrap_or_else(|| a.routes.clone())
-                    })
+                    .map(|&k| self.alignments[k].route.clone())
                     .collect()
             };
             routes.sort();
@@ -468,85 +677,140 @@ impl Line {
     pub fn route_alignments(&self, id: &str) -> Vec<AlignmentView> {
         self.alignment_views()
             .into_iter()
-            .filter(|a| a.routes.iter().any(|r| r == id))
+            .filter(|a| a.route == id)
             .collect()
     }
 
-    /// Files of version 2 and before: their routes (each its own alignment,
-    /// with its structures, or following them) and the line's own
-    /// alignment become routes and alignments of the same ids. A route
-    /// without points gets points tied to its structures; a structure not
-    /// found on its routes from the alignments keeps them as its own
-    /// [`crate::Structure::routes`]. Routes already of the current form are
-    /// kept. A line of version 2 or before with no routes (`version` < 3)
-    /// gets the route and alignment `main` through its own alignment, or
-    /// all its structures; a line of the current version never does.
+    /// Reads older files into the current form.
+    ///
+    /// Version 2 and before: their routes (each its own alignment, with
+    /// its structures, or following them) and the line's own alignment
+    /// become routes and alignments of the same ids. A route without
+    /// points gets points tied to its structures. A line of version 2 or
+    /// before with no routes (`version` < 3) gets the route and alignment
+    /// `main` through its own alignment, or all its structures; a line of
+    /// a later version never does.
+    ///
+    /// Version 3 (alignments holding their points, on one or more
+    /// routes): the points become alignment points of their own; points
+    /// of different alignments at the same place (within 1 mm, tied to
+    /// the same structure or one of them free) become one point, shared;
+    /// an alignment on several routes becomes one alignment per route
+    /// (`"a"`, `"a (route)"`…) through the same points. A point's own
+    /// routes go to the structure tied to it.
+    ///
+    /// Every structure keeps the routes it was on: one no longer found on
+    /// them from the alignments gets them as its own
+    /// [`crate::Structure::routes`].
     pub fn upgrade_routes(&mut self) {
         let legacy = self.routes.iter().any(Route::is_legacy);
         let own = self.version < 3
             && self.routes.is_empty()
             && self.alignments.is_empty()
             && (!self.alignment.is_empty() || !self.structures.is_empty());
-        if !legacy && !own {
+        let old_alignments = self.alignments.iter().any(|a| a.legacy.is_some());
+        if !legacy && !own && !old_alignments {
             self.alignment.clear();
             return;
         }
-        let old: Vec<(String, String, Vec<AlignmentPoint>, Vec<String>)> = if legacy {
-            let (old, keep): (Vec<Route>, Vec<Route>) = std::mem::take(&mut self.routes)
-                .into_iter()
-                .partition(Route::is_legacy);
-            self.routes = keep;
-            old.into_iter()
-                .map(|r| {
-                    let name = r.name.clone();
-                    (
-                        r.id,
-                        name,
-                        r.legacy_alignment,
-                        r.legacy_structures.unwrap_or_default(),
-                    )
-                })
-                .collect()
-        } else {
-            vec![(
-                "main".to_owned(),
-                self.name.clone(),
-                std::mem::take(&mut self.alignment),
-                self.structures.iter().map(|s| s.id.clone()).collect(),
-            )]
-        };
-        self.alignment.clear();
+        // Before: each structure's routes (version 3 meaning).
         let mut wanted: std::collections::BTreeMap<String, Vec<String>> = Default::default();
-        for (id, name, points, structures) in old {
-            let points = if points.len() >= 2 {
-                points
-            } else {
-                structures
-                    .iter()
-                    .filter_map(|s| self.structure(s))
-                    .map(|s| AlignmentPoint {
-                        structure: Some(s.id.clone()),
-                        ..AlignmentPoint::free(s.position)
+        // Version 2 and before, into version-3 alignments.
+        if legacy || own {
+            let old: Vec<(String, String, Vec<OldPoint>, Vec<String>)> = if legacy {
+                let (old, keep): (Vec<Route>, Vec<Route>) = std::mem::take(&mut self.routes)
+                    .into_iter()
+                    .partition(Route::is_legacy);
+                self.routes = keep;
+                old.into_iter()
+                    .map(|r| {
+                        let name = r.name.clone();
+                        (
+                            r.id,
+                            name,
+                            r.legacy_alignment,
+                            r.legacy_structures.unwrap_or_default(),
+                        )
                     })
                     .collect()
+            } else {
+                vec![(
+                    "main".to_owned(),
+                    self.name.clone(),
+                    std::mem::take(&mut self.alignment),
+                    self.structures.iter().map(|s| s.id.clone()).collect(),
+                )]
             };
-            for s in &structures {
-                wanted.entry(s.clone()).or_default().push(id.clone());
+            for (id, name, points, structures) in old {
+                let points = if points.len() >= 2 {
+                    points
+                } else {
+                    structures
+                        .iter()
+                        .filter_map(|s| self.structure(s))
+                        .map(|s| OldPoint {
+                            structure: Some(s.id.clone()),
+                            ..OldPoint::free(s.position)
+                        })
+                        .collect()
+                };
+                for s in &structures {
+                    wanted.entry(s.clone()).or_default().push(id.clone());
+                }
+                if !self.routes.iter().any(|r| r.id == id) {
+                    self.routes.push(Route::new(&id, &name));
+                }
+                if !points.is_empty() && !self.alignments.iter().any(|a| a.id == id) {
+                    let mut a = Alignment::new(&id, "", Vec::new());
+                    a.name = name;
+                    a.legacy = Some((vec![id], points));
+                    self.alignments.push(a);
+                }
             }
-            if !self.routes.iter().any(|r| r.id == id) {
-                self.routes.push(Route::new(&id, &name));
-            }
-            if !points.is_empty() && !self.alignments.iter().any(|a| a.id == id) {
-                self.alignments.push(Alignment {
-                    id: id.clone(),
-                    name,
-                    description: String::new(),
-                    routes: vec![id],
-                    points,
-                });
+        } else {
+            // Version 3: the routes structures were on then.
+            for (s, r) in self.structure_routes_v3() {
+                wanted.insert(s, r);
             }
         }
-        // Each structure stays on the routes it was listed on.
+        self.alignment.clear();
+        // Version 3 alignments: points of their own, one alignment per route.
+        let mut out: Vec<Alignment> = Vec::new();
+        for a in std::mem::take(&mut self.alignments) {
+            let Some((routes, points)) = a.legacy.clone() else {
+                out.push(a);
+                continue;
+            };
+            let mut ids: Vec<String> = Vec::new();
+            for p in points {
+                let id = self.old_point_id(&p, &ids);
+                if let (Some(s), Some(own)) = (&p.structure, &p.routes) {
+                    let w = wanted.entry(s.clone()).or_default();
+                    w.extend(own.iter().cloned());
+                }
+                ids.push(id);
+            }
+            let routes = if routes.is_empty() {
+                vec![a.route.clone()]
+            } else {
+                routes
+            };
+            for (k, r) in routes.iter().enumerate() {
+                let mut b = a.clone();
+                b.legacy = None;
+                b.route = r.clone();
+                b.points = ids.clone();
+                if k > 0 {
+                    b.id = format!("{} ({r})", a.id);
+                    if !b.name.is_empty() {
+                        b.name = format!("{} ({r})", a.name);
+                    }
+                }
+                out.push(b);
+            }
+        }
+        self.alignments = out;
+        // Each structure stays on the routes it was on.
         let found = self.structure_routes();
         for s in &mut self.structures {
             let Some(mut want) = wanted.remove(&s.id) else {
@@ -554,12 +818,82 @@ impl Line {
             };
             want.sort();
             want.dedup();
+            if !s.routes.is_empty() {
+                continue;
+            }
             if found.get(&s.id) != Some(&want) {
                 s.routes = want;
             }
         }
     }
 
+    /// The id of the alignment point for old point `p`: a point already
+    /// made at the same place (not one of `own`, the alignment's points so
+    /// far) and compatible structure, its structure filled in; else a new
+    /// point.
+    fn old_point_id(&mut self, p: &OldPoint, own: &[String]) -> String {
+        let same = self.alignment_points.iter_mut().find(|q| {
+            !own.contains(&q.id)
+                && (q.position[0] - p.position[0]).hypot(q.position[1] - p.position[1])
+                    <= SAME_POINT
+                && (q.structure.is_none() || p.structure.is_none() || q.structure == p.structure)
+        });
+        if let Some(q) = same {
+            if q.structure.is_none() {
+                q.structure = p.structure.clone();
+            }
+            if q.description.is_empty() {
+                q.description = p.description.clone();
+            }
+            return q.id.clone();
+        }
+        let id = self.new_point_id();
+        self.alignment_points.push(AlignmentPoint {
+            id: id.clone(),
+            position: p.position,
+            structure: p.structure.clone(),
+            description: p.description.clone(),
+        });
+        id
+    }
+
+    /// Version 3: the routes of each structure, from the alignments as
+    /// read (several routes each, points with routes of their own).
+    fn structure_routes_v3(&self) -> std::collections::BTreeMap<String, Vec<String>> {
+        let mut out = std::collections::BTreeMap::new();
+        let lines: Vec<(Vec<String>, Vec<OldPoint>)> = self
+            .alignments
+            .iter()
+            .map(|a| {
+                a.legacy
+                    .clone()
+                    .unwrap_or_else(|| (vec![a.route.clone()], Vec::new()))
+            })
+            .collect();
+        for s in &self.structures {
+            if !s.routes.is_empty() {
+                continue;
+            }
+            let mut routes: Vec<String> = Vec::new();
+            for (rs, pts) in &lines {
+                let polyline: Vec<Point> = pts.iter().map(|p| p.position).collect();
+                if let Some(p) = pts
+                    .iter()
+                    .find(|p| p.structure.as_deref() == Some(s.id.as_str()))
+                {
+                    routes.extend(p.routes.clone().unwrap_or_else(|| rs.clone()));
+                } else if beside(&polyline, s.position) <= NEAR_ALIGNMENT {
+                    routes.extend(rs.iter().cloned());
+                }
+            }
+            routes.sort();
+            routes.dedup();
+            if !routes.is_empty() {
+                out.insert(s.id.clone(), routes);
+            }
+        }
+        out
+    }
     /// The line's direction near `at` (plan): the unit direction, ahead
     /// along its route, of the nearest segment of its routes' centrelines;
     /// `None` for a line without two distinct points. What the wind's
@@ -599,16 +933,38 @@ impl Line {
         best.map(|b| b.1)
     }
 
-    /// Alignment points tied to each structure of `view`, under it.
+    /// Points tied under each structure of `view`, in order: the point
+    /// already tied to it when there is one, else a new point (a free id,
+    /// not in the line yet).
     pub fn alignment_under_structures(&self, view: &AlignmentView) -> Vec<AlignmentPoint> {
-        view.structures
-            .iter()
-            .filter_map(|id| self.structure(id))
-            .map(|s| AlignmentPoint {
-                structure: Some(s.id.clone()),
-                ..AlignmentPoint::free(s.position)
-            })
-            .collect()
+        let mut out: Vec<AlignmentPoint> = Vec::new();
+        let mut n = self
+            .new_point_id()
+            .trim_start_matches('P')
+            .parse::<u64>()
+            .unwrap_or(1);
+        for s in view.structures.iter().filter_map(|id| self.structure(id)) {
+            let p = match self
+                .alignment_points
+                .iter()
+                .find(|p| p.structure.as_deref() == Some(s.id.as_str()))
+            {
+                Some(p) => AlignmentPoint {
+                    position: s.position,
+                    ..p.clone()
+                },
+                None => {
+                    let id = format!("P{n}");
+                    n += 1;
+                    AlignmentPoint {
+                        structure: Some(s.id.clone()),
+                        ..AlignmentPoint::free(&id, s.position)
+                    }
+                }
+            };
+            out.push(p);
+        }
+        out
     }
 }
 
@@ -755,13 +1111,8 @@ mod tests {
         let mut line = crate::tests::example();
         // A structure 4 m beside main's alignment is on it; 6 m away it is
         // on no route, until it gives one.
-        let main = line
-            .alignments
-            .iter()
-            .find(|a| a.id == "main")
-            .unwrap()
-            .clone();
-        let [a, b] = [main.points[0].position, main.points[1].position];
+        let main = line.points_of(line.alignment_by_id("main").unwrap());
+        let [a, b] = [main[0].position, main[1].position];
         let n = (b[0] - a[0]).hypot(b[1] - a[1]);
         let side = [-(b[1] - a[1]) / n, (b[0] - a[0]) / n];
         let at = |d: f64| {
@@ -793,44 +1144,93 @@ mod tests {
     }
 
     #[test]
-    fn a_point_of_its_own_routes_puts_its_structure_there() {
+    fn a_line_of_version_3_gets_points_of_their_own() {
+        // Two alignments meeting at T3 (each with its own copy of the
+        // point), the second on two routes; a point with its own route.
         let mut line = crate::tests::example();
+        let t3 = line.structure("T3").unwrap().position;
+        let t7 = line.structure("T7").unwrap().position;
+        let old = |p: Point, s: Option<&str>| OldPoint {
+            structure: s.map(str::to_owned),
+            ..OldPoint::free(p)
+        };
+        let main_pts = line.points_of(line.alignment_by_id("main").unwrap());
         line.routes.push(Route::new("other", "Other"));
-        // The branch (version 2: it followed its structures) has points
-        // tied to them.
-        let branch = line
-            .alignments
-            .iter_mut()
-            .find(|a| a.id == "branch")
-            .unwrap();
-        let p = branch.points.last_mut().unwrap();
-        let id = p.structure.clone().unwrap();
-        assert_eq!(line.routes_of(&id), ["branch"]);
-        let branch = line
-            .alignments
-            .iter_mut()
-            .find(|a| a.id == "branch")
-            .unwrap();
-        branch.points.last_mut().unwrap().routes = Some(vec!["branch".into(), "other".into()]);
+        line.routes.push(Route::new("third", "Third"));
+        line.alignment_points.clear();
+        let mut main = Alignment::new("main", "", Vec::new());
+        main.legacy = Some((
+            vec!["main".into()],
+            main_pts.iter().map(|p| old(p.position, None)).collect(),
+        ));
+        let mut branch = Alignment::new("branch", "", Vec::new());
+        let mut end = old(t7, Some("T7"));
+        end.routes = Some(vec!["branch".into(), "third".into()]);
+        branch.legacy = Some((
+            vec!["branch".into(), "other".into()],
+            vec![old(t3, Some("T3")), end],
+        ));
+        line.alignments = vec![main, branch];
+        line.version = 3;
+        line.upgrade_routes();
         line.validate().unwrap();
-        assert_eq!(line.routes_of(&id), ["branch", "other"]);
+        let ids: Vec<&str> = line.alignments.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["main", "branch", "branch (other)"]);
+        assert_eq!(line.alignments[2].route, "other");
+        // T3's point is shared: one point, on all three alignments.
+        let p3 = line
+            .alignment_points
+            .iter()
+            .find(|p| p.structure.as_deref() == Some("T3"))
+            .unwrap();
+        assert_eq!(line.point_alignments(&p3.id).len(), 3);
+        assert_eq!(line.point_routes(&p3.id), ["branch", "main", "other"]);
+        assert_eq!(line.routes_of("T3"), ["branch", "main", "other"]);
+        // T7's own routes went to the structure.
+        assert_eq!(line.routes_of("T7"), ["branch", "third"]);
     }
 
     #[test]
-    fn an_alignment_of_one_point_is_kept() {
+    fn deleting_a_point_takes_it_off_every_alignment() {
         let mut line = crate::tests::example();
-        line.alignments.push(Alignment {
-            id: "alone".into(),
-            name: String::new(),
-            description: String::new(),
-            routes: vec!["main".into()],
-            points: vec![AlignmentPoint::free([0.0, 0.0, 0.0])],
-        });
+        let shared = line
+            .alignment_points
+            .iter()
+            .find(|p| line.point_alignments(&p.id).len() > 1)
+            .unwrap()
+            .id
+            .clone();
+        let before: Vec<Vec<String>> = line.alignments.iter().map(|a| a.points.clone()).collect();
+        assert!(line.delete_alignment_point(&shared));
+        for (a, b) in line.alignments.iter().zip(&before) {
+            let kept: Vec<String> = b.iter().filter(|p| **p != shared).cloned().collect();
+            assert_eq!(a.points, kept);
+        }
+        assert!(line.alignment_point(&shared).is_none());
+        line.validate().unwrap();
+    }
+
+    #[test]
+    fn an_alignment_needs_its_route_and_a_point_may_wait_alone() {
+        let mut line = crate::tests::example();
+        line.alignments
+            .push(Alignment::new("alone", "main", Vec::new()));
+        line.validate().unwrap();
+        // A point may wait on no alignment.
+        line.alignment_points
+            .push(AlignmentPoint::free("Q", [0.0, 0.0, 0.0]));
+        line.validate().unwrap();
+        line.alignments.last_mut().unwrap().points.push("Q".into());
         line.validate().unwrap();
         let v = line.alignment_views();
         let alone = v.iter().find(|a| a.id == "alone").unwrap();
         assert_eq!(alone.centreline(&line).len(), 1);
-        line.alignments.last_mut().unwrap().points.clear();
-        assert!(line.validate().is_err());
+        line.alignments.last_mut().unwrap().route = "nowhere".into();
+        assert!(
+            line.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("unknown route")
+        );
     }
 }

@@ -98,11 +98,14 @@ pub fn object_bounds(line: &Line) -> BTreeMap<(Kind, String), Bounds> {
         }));
         put(Kind::Jumper, &j.id, pts);
     }
+    for p in &line.alignment_points {
+        put(Kind::AlignmentPoint, &p.id, vec![p.position]);
+    }
     for a in &line.alignments {
         put(
             Kind::Alignment,
             &a.id,
-            a.points.iter().map(|p| p.position).collect(),
+            line.points_of(a).iter().map(|p| p.position).collect(),
         );
     }
     // A route: where its alignments are.
@@ -112,8 +115,8 @@ pub fn object_bounds(line: &Line) -> BTreeMap<(Kind, String), Bounds> {
             &r.id,
             line.alignments
                 .iter()
-                .filter(|a| a.routes.contains(&r.id))
-                .flat_map(|a| a.points.iter().map(|p| p.position))
+                .filter(|a| a.route == r.id)
+                .flat_map(|a| line.points_of(a).into_iter().map(|p| p.position))
                 .collect(),
         );
     }

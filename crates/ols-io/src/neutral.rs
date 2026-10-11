@@ -30,7 +30,7 @@
 use std::path::Path;
 
 use ols_crs::{Crs, Heights, Transformation};
-use ols_line::{Alignment, AlignmentPoint, Line, Point, Route, Structure};
+use ols_line::{Alignment, Line, Point, Route, Structure};
 
 use crate::{Options, Registry};
 
@@ -44,6 +44,7 @@ pub fn empty_line(name: &str) -> Line {
         alignment: Vec::new(),
         routes: Vec::new(),
         alignments: Vec::new(),
+        alignment_points: Vec::new(),
         structures: Vec::new(),
         sections: Vec::new(),
         jumpers: Vec::new(),
@@ -247,8 +248,8 @@ pub fn to_line(data: Neutral, base: Option<&Line>, options: &Options) -> Result<
     // or a route is named.
     let route_id = options.get("route").map_or("main", String::as_str);
     if (base.is_none() || polyline.len() >= 2 || options.contains_key("route")) && ids.len() >= 2 {
-        let given: Vec<AlignmentPoint> = if polyline.len() >= 2 {
-            polyline.into_iter().map(AlignmentPoint::free).collect()
+        let given: Vec<(Point, Option<String>)> = if polyline.len() >= 2 {
+            polyline.into_iter().map(|p| (p, None)).collect()
         } else {
             Vec::new()
         };
@@ -256,35 +257,26 @@ pub fn to_line(data: Neutral, base: Option<&Line>, options: &Options) -> Result<
             line.routes
                 .push(Route::new(route_id, &name.clone().unwrap_or_default()));
         }
-        match line.alignments.iter_mut().find(|a| a.id == route_id) {
+        if line.alignment_by_id(route_id).is_some() {
             // The file's polyline replaces the alignment's points.
-            Some(a) => {
-                if !given.is_empty() {
-                    a.points = given;
-                }
+            if !given.is_empty() {
+                line.set_alignment_points(route_id, given);
             }
+        } else {
             // A new alignment: the file's polyline, else points under the
             // structures (tied to them).
-            None => {
-                let points = if given.is_empty() {
-                    ids.iter()
-                        .filter_map(|id| line.structure(id))
-                        .map(|s| AlignmentPoint {
-                            structure: Some(s.id.clone()),
-                            ..AlignmentPoint::free(s.position)
-                        })
-                        .collect()
-                } else {
-                    given
-                };
-                line.alignments.push(Alignment {
-                    id: route_id.to_owned(),
-                    name: name.unwrap_or_default(),
-                    description: String::new(),
-                    routes: vec![route_id.to_owned()],
-                    points,
-                });
-            }
+            let points: Vec<(Point, Option<String>)> = if given.is_empty() {
+                ids.iter()
+                    .filter_map(|id| line.structure(id))
+                    .map(|s| (s.position, Some(s.id.clone())))
+                    .collect()
+            } else {
+                given
+            };
+            let mut a = Alignment::new(route_id, route_id, Vec::new());
+            a.name = name.unwrap_or_default();
+            line.alignments.push(a);
+            line.set_alignment_points(route_id, points);
         }
         // The file's structures on the route: those not standing on its
         // alignment say so themselves.

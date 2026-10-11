@@ -400,44 +400,43 @@ pub fn ui(
                     .weak(),
             );
         }
-        Selection::AlignmentPoint { route, index } => {
-            ui.heading(format!("Route {route}, alignment point {}", index + 1));
-            let routes = line.alignment_views();
-            if let Some(a) = routes
-                .iter()
-                .find(|r| r.id == route)
-                .and_then(|r| r.alignment.get(index))
-            {
-                description(ui, &a.description);
-            }
-            let r = routes.iter().find(|r| r.id == route);
-            let tied = r.and_then(|r| {
-                if r.alignment.is_empty() {
-                    // No alignment: the points are the route's structures.
-                    r.structures.get(index).cloned()
-                } else {
-                    r.alignment.get(index).and_then(|a| a.structure.clone())
-                }
-            });
-            match crate::selection::alignment_point(model, &route, index) {
-                Some(p) => grid(
-                    ui,
-                    "alignment",
-                    &[
-                        ("easting", format!("{:.3} m", p[0])),
-                        ("northing", format!("{:.3} m", p[1])),
-                        ("height", format!("{:.3} m", p[2])),
-                        (
-                            "points in the route",
-                            r.map_or(0, |r| r.centreline(line).len()).to_string(),
-                        ),
-                    ],
-                ),
-                None => {
-                    ui.label("not in the line");
-                }
-            }
-            match tied {
+        Selection::AlignmentPoint { id } => {
+            ui.heading(format!("Alignment point {id}"));
+            let Some(a) = line.alignment_point(&id).cloned() else {
+                ui.label("not in the line");
+                return;
+            };
+            description(ui, &a.description);
+            let orders = crate::editors::point_orders(line, &id);
+            let on = if orders.is_empty() {
+                "none (waiting to be used)".to_owned()
+            } else {
+                orders
+                    .iter()
+                    .map(|(a, k)| format!("{a} #{k}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let routes = line.point_routes(&id);
+            grid(
+                ui,
+                "alignment",
+                &[
+                    ("easting", format!("{:.3} m", a.position[0])),
+                    ("northing", format!("{:.3} m", a.position[1])),
+                    ("height", format!("{:.3} m", a.position[2])),
+                    ("on alignments (place)", on),
+                    (
+                        "routes",
+                        if routes.is_empty() {
+                            "none".to_owned()
+                        } else {
+                            routes.join(", ")
+                        },
+                    ),
+                ],
+            );
+            match a.structure {
                 Some(st) => {
                     if ui.link(format!("tied to structure {st}")).clicked() {
                         next = Some(Selection::Structure(st));

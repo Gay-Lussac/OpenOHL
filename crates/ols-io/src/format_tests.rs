@@ -115,10 +115,13 @@ fn rich_line() -> Line {
     line.jumpers[0].description = "loop at the dead end".into();
     line.sections[0].description = "phase L1 of circuit 1".into();
     line.systems[0].description = "the 220 kV system".into();
-    line.alignments[0].points[0].description = "start at the substation".into();
-    // A point on routes of its own, a structure giving its route, a
-    // route's description.
-    line.alignments[0].points[1].routes = Some(vec![line.routes[0].id.clone()]);
+    let first = line.alignments[0].points[0].clone();
+    line.alignment_points
+        .iter_mut()
+        .find(|p| p.id == first)
+        .unwrap()
+        .description = "start at the substation".into();
+    // A structure giving its route, a route's description.
     line.structures[0].routes = vec![line.routes[0].id.clone()];
     line.routes[0].description = "the main route".into();
     line.jumpers[0].angle_from_deg = Some(-10.0);
@@ -133,20 +136,26 @@ fn rich_line() -> Line {
         behavior: ols_cables::BimetallicBehavior::Compression,
         max_virtual_compression: Some(ols_core::units::Stress::from_megapascals(50.0)),
     };
-    line.alignments[1].points = vec![
-        ols_line::AlignmentPoint {
-            structure: Some(line.structures[2].id.clone()),
-            ..ols_line::AlignmentPoint::free(line.structures[2].position)
-        },
-        ols_line::AlignmentPoint::free([9.0, 9.0, 9.0]),
-    ];
-    // An alignment of one point, on two routes.
-    line.alignments.push(ols_line::Alignment {
-        id: "alone".into(),
-        name: "one point".into(),
-        description: "for later".into(),
-        routes: line.routes.iter().map(|r| r.id.clone()).collect(),
-        points: vec![ols_line::AlignmentPoint::free([0.0, 0.0, 1.0])],
+    let second = line.alignments[1].id.clone();
+    let s2 = (
+        line.structures[2].position,
+        Some(line.structures[2].id.clone()),
+    );
+    line.set_alignment_points(&second, [s2, ([9.0, 9.0, 9.0], None)]);
+    // An alignment of one point (shared with the first), one without.
+    let mut alone = ols_line::Alignment::new("alone", &line.routes[1].id, vec![first]);
+    alone.name = "one point".into();
+    alone.description = "for later".into();
+    line.alignments.push(alone);
+    line.alignments.push(ols_line::Alignment::new(
+        "empty",
+        &line.routes[0].id,
+        Vec::new(),
+    ));
+    // A point on no alignment yet.
+    line.alignment_points.push(ols_line::AlignmentPoint {
+        description: "waiting".into(),
+        ..ols_line::AlignmentPoint::free("loose", [5.0, 6.0, 7.0])
     });
     // A circuit's chosen start, a rigid jumper and a jumper's EI factor.
     line.circuit_starts = vec![line.sections[0].points[0].clone()];
@@ -323,7 +332,14 @@ fn landxml_has_alignments_and_points_and_reads_back() {
 
     // An alignment alone updates the route of a line.
     let mut moved = m.clone();
-    moved.line.alignments[0].points[1].position[1] += 10.0;
+    let p1 = moved.line.alignments[0].points[1].clone();
+    let p1 = moved
+        .line
+        .alignment_points
+        .iter_mut()
+        .find(|p| p.id == p1)
+        .unwrap();
+    p1.position[1] += 10.0;
     let full = landxml::document(&moved.line);
     let (head, rest) = full.split_once("<CgPoints").unwrap();
     let (_, tail) = rest.split_once("</CgPoints>").unwrap();
@@ -334,8 +350,9 @@ fn landxml_has_alignments_and_points_and_reads_back() {
         .import(only.as_bytes(), Some(&m.line), &Options::new())
         .unwrap();
     assert_eq!(updated.structures, m.line.structures);
-    let a = &updated.alignments[0].points[1].position;
-    assert!((a[1] - (m.line.alignments[0].points[1].position[1] + 10.0)).abs() < 1e-4);
+    let a = updated.points_of(&updated.alignments[0])[1].position;
+    let b = m.line.points_of(&m.line.alignments[0])[1].position;
+    assert!((a[1] - (b[1] + 10.0)).abs() < 1e-4);
 }
 
 #[test]

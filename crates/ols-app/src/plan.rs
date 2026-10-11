@@ -243,26 +243,23 @@ impl PlanView {
         let line = &model.line;
         for r in line.alignment_views() {
             let pts: Vec<egui::Pos2> = r.centreline(line).into_iter().map(to_screen).collect();
-            // Its points, when it has its own.
-            if r.alignment.len() >= 2 {
-                for (k, p) in pts.iter().enumerate() {
-                    let selected = matches!(selection, Selection::AlignmentPoint { route, index }
-                        if *route == r.id && *index == k);
-                    painter.circle_filled(
-                        *p,
-                        if selected { 5.0 } else { 3.0 },
-                        if selected {
-                            egui::Color32::WHITE
-                        } else {
-                            egui::Color32::from_rgb(90, 200, 220)
-                        },
-                    );
-                }
-            }
             painter.add(egui::Shape::line(
                 pts,
                 egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 200, 220)),
             ));
+        }
+        // Every alignment point (those on no alignment too).
+        for a in &line.alignment_points {
+            let selected = matches!(selection, Selection::AlignmentPoint { id } if *id == a.id);
+            painter.circle_filled(
+                to_screen(a.position),
+                if selected { 5.0 } else { 3.0 },
+                if selected {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::from_rgb(90, 200, 220)
+                },
+            );
         }
         // Off the route worked on: faded.
         let scope = model.scope();

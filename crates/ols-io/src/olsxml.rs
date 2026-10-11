@@ -17,8 +17,8 @@ use ols_line::condition::{Calculation, CreepStretch};
 use ols_line::electrical::{System, SystemKind, SystemPhase};
 use ols_line::{
     Alignment, AlignmentPoint, AttachmentV1, Display, InsulatorString, Jumper, JumperClamp,
-    JumperSupport, Line, Point, Route, Section, SectionPoint, SpanLoad, Stringing, Structure,
-    StructurePoint, WirePoint,
+    JumperSupport, Line, OldPoint, Point, Route, Section, SectionPoint, SpanLoad, Stringing,
+    Structure, StructurePoint, WirePoint,
 };
 
 use crate::xml::{Element, attribute as attr};
@@ -92,35 +92,52 @@ fn write_alignment(out: &mut String, a: &Alignment) {
         id,
         name,
         description,
-        routes,
+        route,
         points,
+        legacy: _,
     } = a;
     out.push_str("  <alignment");
     attr(out, "id", id);
     nonempty(out, "name", name);
     nonempty(out, "description", description);
+    attr(out, "route", route);
+    if points.is_empty() {
+        out.push_str("/>\n");
+        return;
+    }
     out.push_str(">\n");
-    write_on_routes(out, routes, "    ");
     for p in points {
-        let AlignmentPoint {
-            description,
-            position,
-            structure,
-            routes,
-        } = p;
         out.push_str("    <point");
-        nonempty(out, "description", description);
-        point_attrs(out, *position);
-        opt_text(out, "structure", structure.as_deref());
-        match routes {
-            None => out.push_str("/>\n"),
-            Some(rs) => {
-                // Its own routes (none listed: on no route).
-                out.push_str(" own_routes=\"true\">\n");
-                write_on_routes(out, rs, "      ");
-                out.push_str("    </point>\n");
-            }
-        }
+        attr(out, "ref", p);
+        out.push_str("/>\n");
+    }
+    out.push_str("  </alignment>\n");
+}
+
+fn write_alignment_point(out: &mut String, p: &AlignmentPoint) {
+    let AlignmentPoint {
+        id,
+        position,
+        structure,
+        description,
+    } = p;
+    out.push_str("  <alignment_point");
+    attr(out, "id", id);
+    point_attrs(out, *position);
+    opt_text(out, "structure", structure.as_deref());
+    nonempty(out, "description", description);
+    out.push_str("/>\n");
+}
+
+/// A line's own alignment of an older file, not upgraded (no id).
+fn write_old_alignment(out: &mut String, points: &[OldPoint]) {
+    out.push_str("  <alignment>\n");
+    for p in points {
+        out.push_str("    <point");
+        nonempty(out, "description", &p.description);
+        point_attrs(out, p.position);
+        opt_text(out, "structure", p.structure.as_deref());
+        out.push_str("/>\n");
     }
     out.push_str("  </alignment>\n");
 }
@@ -506,6 +523,7 @@ pub fn to_xml(line: &Line) -> String {
         alignment,
         routes,
         alignments,
+        alignment_points,
         structures,
         sections,
         jumpers,
@@ -529,16 +547,7 @@ pub fn to_xml(line: &Line) -> String {
     // A line read from an older file and not upgraded: its own alignment
     // as before (no id).
     if !alignment.is_empty() {
-        write_alignment(
-            &mut out,
-            &Alignment {
-                id: String::new(),
-                name: String::new(),
-                description: String::new(),
-                routes: Vec::new(),
-                points: alignment.clone(),
-            },
-        );
+        write_old_alignment(&mut out, alignment);
     }
     for r in routes {
         let Route {
@@ -556,6 +565,9 @@ pub fn to_xml(line: &Line) -> String {
     }
     for a in alignments {
         write_alignment(&mut out, a);
+    }
+    for p in alignment_points {
+        write_alignment_point(&mut out, p);
     }
     for s in structures {
         write_structure(&mut out, s);
@@ -673,7 +685,8 @@ fn one<'a>(e: &'a Element, name: &str) -> Result<&'a Element, String> {
         .ok_or_else(|| format!("<{}>: element <{name}> missing", e.name))
 }
 
-fn read_alignment(e: Option<&Element>) -> Result<Vec<AlignmentPoint>, String> {
+/// The points of an older file's alignment (version 3 and before), in it.
+fn read_alignment(e: Option<&Element>) -> Result<Vec<OldPoint>, String> {
     let Some(e) = e else {
         return Ok(Vec::new());
     };
@@ -685,7 +698,7 @@ fn read_alignment(e: Option<&Element>) -> Result<Vec<AlignmentPoint>, String> {
                 &["on_route"],
             )?;
             let own = matches!(p.attr("own_routes"), Some("true") | Some("1"));
-            Ok(AlignmentPoint {
+            Ok(OldPoint {
                 description: owned(p, "description").unwrap_or_default(),
                 position: point(p)?,
                 structure: owned(p, "structure"),
@@ -693,6 +706,42 @@ fn read_alignment(e: Option<&Element>) -> Result<Vec<AlignmentPoint>, String> {
             })
         })
         .collect()
+}
+
+/// An `<alignment>` with an id: its route and points by `ref`; of version
+/// 3, its `<on_route>`s and points with their coordinates.
+fn read_alignment_of(a: &Element, id: String) -> Result<Alignment, String> {
+    check(
+        a,
+        &["id", "name", "description", "route"],
+        &["point", "on_route"],
+    )?;
+    let mut out = Alignment::new(&id, &owned(a, "route").unwrap_or_default(), Vec::new());
+    out.name = owned(a, "name").unwrap_or_default();
+    out.description = owned(a, "description").unwrap_or_default();
+    let refs: Vec<&Element> = a
+        .children_named("point")
+        .filter(|p| p.attr("ref").is_some())
+        .collect();
+    if refs.is_empty() && (a.child("point").is_some() || a.child("on_route").is_some()) {
+        out.legacy = Some((read_on_routes(a)?, read_alignment(Some(a))?));
+        return Ok(out);
+    }
+    for p in a.children_named("point") {
+        check(p, &["ref"], &[])?;
+        out.points.push(text(p, "ref")?.to_owned());
+    }
+    Ok(out)
+}
+
+fn read_alignment_point(e: &Element) -> Result<AlignmentPoint, String> {
+    check(e, &["id", "x", "y", "z", "structure", "description"], &[])?;
+    Ok(AlignmentPoint {
+        id: text(e, "id")?.to_owned(),
+        position: point(e)?,
+        structure: owned(e, "structure"),
+        description: owned(e, "description").unwrap_or_default(),
+    })
 }
 
 fn read_section_point(e: &Element) -> Result<SectionPoint, String> {
@@ -1134,6 +1183,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         &["format", "version", "name", "crs", "ahead_deg"],
         &[
             "alignment",
+            "alignment_point",
             "route",
             "structure",
             "system",
@@ -1176,16 +1226,12 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     let mut own = Vec::new();
     let mut alignments = Vec::new();
     for a in root.children_named("alignment") {
-        check(a, &["id", "name", "description"], &["point", "on_route"])?;
         match owned(a, "id").filter(|id| !id.is_empty()) {
-            None => own = read_alignment(Some(a))?,
-            Some(id) => alignments.push(Alignment {
-                id,
-                name: owned(a, "name").unwrap_or_default(),
-                description: owned(a, "description").unwrap_or_default(),
-                routes: read_on_routes(a)?,
-                points: read_alignment(Some(a))?,
-            }),
+            None => {
+                check(a, &[], &["point"])?;
+                own = read_alignment(Some(a))?;
+            }
+            Some(id) => alignments.push(read_alignment_of(a, id)?),
         }
     }
     let mut display = Display {
@@ -1252,6 +1298,10 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         alignment: own,
         routes,
         alignments,
+        alignment_points: root
+            .children_named("alignment_point")
+            .map(read_alignment_point)
+            .collect::<Result<_, _>>()?,
         structures: root
             .children_named("structure")
             .map(read_structure)
@@ -1276,7 +1326,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         creep_stretch,
         condition_cases: Default::default(),
     };
-    // Older documents: their routes become routes and alignments.
+    // Older documents: read into routes, alignments and alignment points.
     line.upgrade_routes();
     line.version = ols_line::LINE_FILE_VERSION;
     Ok(line)

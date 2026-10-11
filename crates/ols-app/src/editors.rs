@@ -710,14 +710,10 @@ fn clamps_ui(
 /// An alignment point being changed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AlignmentForm {
-    /// Its alignment.
-    pub route: String,
-    /// Index in the alignment.
-    pub index: usize,
-    /// The alignment it goes to (`route`: stays).
-    pub target: String,
-    /// Its place in that alignment, from 1.
-    pub order: usize,
+    /// Its id.
+    pub id: String,
+    /// The alignments it is on, each with its place there (from 1).
+    pub orders: Vec<(String, usize)>,
     /// Position.
     pub position: [f64; 3],
     /// Tied under this structure (it follows it).
@@ -726,38 +722,44 @@ pub struct AlignmentForm {
     pub on_ground: bool,
     /// What it is, in words.
     pub description: String,
-    /// Its routes of its own (none: its alignment's).
-    pub routes: Option<Vec<String>>,
 }
 
 /// The command writing `alignments` (the line's, edited) where they
-/// differ from the stored line; those gone are deleted. One command (a
-/// batch when several).
+/// differ from the stored line; those gone are deleted (their points
+/// stay). One command (a batch when several).
 pub fn alignments_command(
     stored: &Line,
     alignments: &[ols_line::Alignment],
 ) -> Result<Command, String> {
     let mut commands = Vec::new();
+    // Reordered: every alignment put at its place.
+    let kept: Vec<&str> = alignments
+        .iter()
+        .map(|a| a.id.as_str())
+        .filter(|id| stored.alignment_by_id(id).is_some())
+        .collect();
+    let before: Vec<&str> = stored
+        .alignments
+        .iter()
+        .map(|a| a.id.as_str())
+        .filter(|id| kept.contains(id))
+        .collect();
+    // …or a new one put before an existing one.
+    let inserted = alignments
+        .iter()
+        .position(|a| stored.alignment_by_id(&a.id).is_none())
+        .is_some_and(|k| k < kept.len());
+    let reordered = kept != before || inserted;
     for (k, a) in alignments.iter().enumerate() {
         let same = stored.alignments.iter().find(|x| x.id == a.id);
-        if same == Some(a) {
-            continue;
-        }
-        if a.points.is_empty() {
-            if same.is_some() {
-                commands.push(Command::Delete {
-                    kind: Kind::Alignment,
-                    id: a.id.clone(),
-                    confirm: true,
-                });
-            }
+        if same == Some(a) && !reordered {
             continue;
         }
         commands.push(Command::Put {
             kind: Kind::Alignment,
             id: a.id.clone(),
             value: serde_json::to_value(a).map_err(|e| e.to_string())?,
-            ord: if same.is_none() { Some(k as i64) } else { None },
+            ord: (same.is_none() || reordered).then_some(k as i64),
         });
     }
     for a in &stored.alignments {
@@ -775,25 +777,72 @@ pub fn alignments_command(
     })
 }
 
-/// Points of the other alignments at `at` in plan (within 1 mm): the
-/// junctions that move with it. (alignment index, point index).
-fn junctions(
-    alignments: &[ols_line::Alignment],
-    at: [f64; 3],
-    skip: (usize, usize),
-) -> Vec<(usize, usize)> {
-    let mut out = Vec::new();
-    for (r, a) in alignments.iter().enumerate() {
-        for (k, p) in a.points.iter().enumerate() {
-            if (r, k) != skip
-                && r != skip.0
-                && (p.position[0] - at[0]).hypot(p.position[1] - at[1]) < 1e-3
-            {
-                out.push((r, k));
-            }
+/// The alignments of `stored` with point `id` on exactly those of
+/// `orders`, each at its place there (from 1; past the end: last); the
+/// other points keep their order.
+pub fn alignments_with_point(
+    stored: &Line,
+    id: &str,
+    orders: &[(String, usize)],
+) -> Vec<ols_line::Alignment> {
+    let mut alignments = stored.alignments.clone();
+    for a in &mut alignments {
+        a.points.retain(|p| p != id);
+        if let Some((_, order)) = orders.iter().find(|(x, _)| *x == a.id) {
+            let at = order.max(&1) - 1;
+            a.points.insert(at.min(a.points.len()), id.to_owned());
         }
     }
-    out
+    alignments
+}
+
+/// The place (index) along `points` where a point at `at` fits best: the
+/// one adding the least length (the ends included).
+pub fn best_place(points: &[[f64; 3]], at: [f64; 3]) -> usize {
+    let d = |a: [f64; 3], b: [f64; 3]| (a[0] - b[0]).hypot(a[1] - b[1]);
+    if points.is_empty() {
+        return 0;
+    }
+    let mut best = (d(at, points[0]), 0);
+    let n = points.len();
+    let end = d(points[n - 1], at);
+    if end < best.0 {
+        best = (end, n);
+    }
+    for k in 0..n - 1 {
+        let added = d(points[k], at) + d(at, points[k + 1]) - d(points[k], points[k + 1]);
+        if added < best.0 {
+            best = (added, k + 1);
+        }
+    }
+    best.1
+}
+
+/// The command writing point `point` (new or changed) and the alignments
+/// it is on (`orders`: alignment, place from 1). One command.
+pub fn point_command(
+    stored: &Line,
+    point: &ols_line::AlignmentPoint,
+    orders: &[(String, usize)],
+) -> Result<Command, String> {
+    let mut commands = Vec::new();
+    if stored.alignment_point(&point.id) != Some(point) {
+        commands.push(Command::Put {
+            kind: Kind::AlignmentPoint,
+            id: point.id.clone(),
+            value: serde_json::to_value(point).map_err(|e| e.to_string())?,
+            ord: None,
+        });
+    }
+    let alignments = alignments_with_point(stored, &point.id, orders);
+    match alignments_command(stored, &alignments)? {
+        Command::Batch { commands: c } => commands.extend(c),
+        c => commands.push(c),
+    }
+    Ok(match commands.len() {
+        1 => commands.remove(0),
+        _ => Command::Batch { commands },
+    })
 }
 
 /// The id a new alignment takes: `alignment 1`, `alignment 2`… (the
@@ -834,58 +883,34 @@ pub fn new_route(stored: &Line, id: &str, name: &str) -> Result<(String, Command
     ))
 }
 
-/// An alignment's stored points.
+/// An alignment's stored points, in order.
 pub fn stored_alignment(stored: &Line, id: &str) -> Option<Vec<ols_line::AlignmentPoint>> {
-    stored
-        .alignments
-        .iter()
-        .find(|a| a.id == id)
-        .map(|a| a.points.clone())
+    stored.alignment_by_id(id).map(|a| stored.points_of(a))
 }
 
-/// The put replacing an alignment's points (its deletion without any).
-pub fn alignment_put(
-    stored: &Line,
-    id: &str,
-    points: Vec<ols_line::AlignmentPoint>,
-) -> Result<Command, String> {
-    let mut a = stored
-        .alignments
+/// The places (from 1) point `id` has on each alignment of `line`.
+pub fn point_orders(line: &Line, id: &str) -> Vec<(String, usize)> {
+    line.alignments
         .iter()
-        .find(|a| a.id == id)
-        .ok_or_else(|| format!("no alignment {id}"))?
-        .clone();
-    if points.is_empty() {
-        return Ok(Command::Delete {
-            kind: Kind::Alignment,
-            id: id.to_owned(),
-            confirm: true,
-        });
-    }
-    a.points = points;
-    Ok(Command::Put {
-        kind: Kind::Alignment,
-        id: id.to_owned(),
-        value: serde_json::to_value(&a).map_err(|e| e.to_string())?,
-        ord: None,
-    })
+        .filter_map(|a| {
+            let k = a.points.iter().position(|p| p == id)?;
+            Some((a.id.clone(), k + 1))
+        })
+        .collect()
 }
 
 impl AlignmentForm {
-    /// Point `index` of alignment `id`.
-    pub fn of(model: &Model, id: &str, index: usize) -> Option<Self> {
+    /// Alignment point `id`.
+    pub fn of(model: &Model, id: &str) -> Option<Self> {
         let stored = model.stored_line().unwrap_or(&model.line);
-        let p = stored_alignment(stored, id)?.get(index)?.clone();
+        let p = stored.alignment_point(id)?.clone();
         Some(Self {
-            route: id.to_owned(),
-            index,
-            target: id.to_owned(),
-            order: index + 1,
+            id: p.id.clone(),
+            orders: point_orders(stored, id),
             position: p.position,
             structure: p.structure,
             on_ground: false,
             description: p.description,
-            routes: p.routes,
         })
     }
 
@@ -893,20 +918,9 @@ impl AlignmentForm {
         let stored = model
             .stored_line()
             .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
-        let mut alignments = stored.alignments.clone();
-        let from = alignments
-            .iter()
-            .position(|r| r.id == self.route)
-            .ok_or_else(|| format!("no alignment {}", self.route))?;
-        let to = alignments
-            .iter()
-            .position(|r| r.id == self.target)
-            .ok_or_else(|| format!("no alignment {}", self.target))?;
-        let old = alignments[from]
-            .points
-            .get(self.index)
-            .ok_or("no such point")?
-            .clone();
+        let old = stored
+            .alignment_point(&self.id)
+            .ok_or_else(|| format!("no alignment point {}", self.id))?;
         let position = match &self.structure {
             Some(s) => {
                 model
@@ -917,67 +931,57 @@ impl AlignmentForm {
             }
             None => self.position,
         };
-        // A junction (other alignments' points at the same place) moves
-        // with it.
-        let moved = (old.position[0] - position[0]).hypot(old.position[1] - position[1]) > 1e-9
-            || (old.position[2] - position[2]).abs() > 1e-9;
-        if moved {
-            for (r, k) in junctions(&alignments, old.position, (from, self.index)) {
-                let p = &mut alignments[r].points[k];
-                p.position = position;
-                p.structure = self.structure.clone();
-            }
-        }
-        alignments[from].points.remove(self.index);
         let point = ols_line::AlignmentPoint {
+            id: old.id.clone(),
             description: self.description.trim().to_owned(),
             position,
             structure: self.structure.clone(),
-            routes: self.routes.clone(),
         };
-        let at = self.order.max(1) - 1;
-        let list = &mut alignments[to].points;
-        list.insert(at.min(list.len()), point);
-        let what = if from == to && at == self.index {
-            format!(
-                "changed point {} of alignment {}",
-                self.index + 1,
-                self.route
-            )
+        let what = if point_orders(stored, &self.id) == self.orders {
+            format!("changed alignment point {}", self.id)
         } else {
-            format!(
-                "point {} of alignment {} now point {} of {}",
-                self.index + 1,
-                self.route,
-                at.min(alignments[to].points.len() - 1) + 1,
-                self.target
-            )
+            let on: Vec<String> = self
+                .orders
+                .iter()
+                .map(|(a, k)| format!("{a} #{k}"))
+                .collect();
+            if on.is_empty() {
+                format!("alignment point {} now on no alignment", self.id)
+            } else {
+                format!("alignment point {} now on {}", self.id, on.join(", "))
+            }
         };
-        Ok((what, alignments_command(stored, &alignments)?))
+        Ok((what, point_command(stored, &point, &self.orders)?))
     }
 }
 
-/// A new alignment point at `at`: in the nearest segment of the nearest
-/// alignment. The command, and the point (alignment, index).
+/// Alignment point `p` (new without an id, else existing: shared) put in
+/// the nearest segment of the nearest alignment. The command, and the
+/// point's id.
 pub fn insert_alignment_point(
     model: &Model,
-    at: [f64; 3],
-) -> Result<(String, Command, String, usize), String> {
+    p: ols_line::AlignmentPoint,
+) -> Result<(String, Command, String), String> {
+    let at = p.position;
     let stored = model
         .stored_line()
         .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
-    let mut best: Option<(f64, String, Vec<ols_line::AlignmentPoint>, usize)> = None;
-    for a in &stored.alignments {
-        let points = a.points.clone();
+    let mut best: Option<(f64, String, usize)> = None;
+    for a in stored
+        .alignments
+        .iter()
+        .filter(|a| !a.points.contains(&p.id))
+    {
+        let points: Vec<[f64; 3]> = stored.points_of(a).iter().map(|p| p.position).collect();
         // Distance in plan to each segment (one point: to it, after it),
         // and where it goes.
         let mut here = if let [p] = &points[..] {
-            ((p.position[0] - at[0]).hypot(p.position[1] - at[1]), 1)
+            ((p[0] - at[0]).hypot(p[1] - at[1]), 1)
         } else {
             (f64::INFINITY, points.len())
         };
         for k in 0..points.len().saturating_sub(1) {
-            let (a, b) = (points[k].position, points[k + 1].position);
+            let (a, b) = (points[k], points[k + 1]);
             let d = [b[0] - a[0], b[1] - a[1]];
             let len2 = d[0] * d[0] + d[1] * d[1];
             let t = if len2 > 0.0 {
@@ -999,17 +1003,50 @@ pub fn insert_alignment_point(
             }
         }
         if best.as_ref().is_none_or(|b| here.0 < b.0) {
-            best = Some((here.0, a.id.clone(), points, here.1));
+            best = Some((here.0, a.id.clone(), here.1));
         }
     }
-    let (_, id, mut points, index) =
+    let (_, alignment, index) =
         best.ok_or("no alignment to add a point to: draw one first (New alignment tool)")?;
-    points.insert(index.min(points.len()), ols_line::AlignmentPoint::free(at));
+    let mut commands = Vec::new();
+    let id = if p.id.is_empty() {
+        let id = stored.new_point_id();
+        let point = ols_line::AlignmentPoint {
+            id: id.clone(),
+            ..p
+        };
+        commands.push(Command::Put {
+            kind: Kind::AlignmentPoint,
+            id: id.clone(),
+            value: serde_json::to_value(&point).map_err(|e| e.to_string())?,
+            ord: None,
+        });
+        id
+    } else {
+        p.id
+    };
+    let mut a = stored
+        .alignment_by_id(&alignment)
+        .ok_or("no such alignment")?
+        .clone();
+    a.points.insert(index.min(a.points.len()), id.clone());
+    commands.push(Command::Put {
+        kind: Kind::Alignment,
+        id: alignment.clone(),
+        value: serde_json::to_value(&a).map_err(|e| e.to_string())?,
+        ord: None,
+    });
+    let command = match commands.len() {
+        1 => commands.remove(0),
+        _ => Command::Batch { commands },
+    };
     Ok((
-        format!("added point {} to alignment {id}", index + 1),
-        alignment_put(stored, &id, points)?,
+        format!(
+            "point {id} now point {} of alignment {alignment}",
+            index + 1
+        ),
+        command,
         id,
-        index,
     ))
 }
 
@@ -1240,24 +1277,26 @@ impl StructureForm {
             return Ok((what, put));
         };
         let stored = stored.ok_or("read-only: open a project to edit")?;
-        let key = route.clone();
-        let mut alignment =
-            stored_alignment(stored, &key).ok_or_else(|| format!("no alignment {route}"))?;
-        let p = alignment
-            .get_mut(*index)
+        let mut p = stored_alignment(stored, route)
+            .and_then(|a| a.get(*index).cloned())
             .ok_or_else(|| format!("alignment {route} has no point {}", index + 1))?;
         if let Some(other) = p.structure.as_ref().filter(|o| **o != id) {
-            return Err(format!(
-                "alignment point {} of {route} is under {other} already",
-                index + 1
-            ));
+            return Err(format!("alignment point {} is under {other} already", p.id));
         }
         p.structure = Some(id.clone());
         p.position = [s.position[0], s.position[1], p.position[2]];
         Ok((
-            format!("{what} on alignment point {} of {route}", index + 1),
+            format!("{what} on alignment point {}", p.id),
             Command::Batch {
-                commands: vec![put, alignment_put(stored, &key, alignment)?],
+                commands: vec![
+                    put,
+                    Command::Put {
+                        kind: Kind::AlignmentPoint,
+                        id: p.id.clone(),
+                        value: serde_json::to_value(&p).map_err(|e| e.to_string())?,
+                        ord: None,
+                    },
+                ],
             },
         ))
     }
@@ -1995,7 +2034,7 @@ impl Form {
             Form::String(f) => format!("Strings of set {} of {}", f.set, f.structure),
             Form::Section(f) if f.new => "String wire: new section".into(),
             Form::Section(f) => format!("Section {}", f.id),
-            Form::Alignment(f) => format!("Alignment point {} of {}", f.index + 1, f.route),
+            Form::Alignment(f) => format!("Alignment point {}", f.id),
             Form::Jumper(f) => format!("Jumper {}", f.jumper.id),
         }
     }
@@ -3404,20 +3443,11 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
 
 fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
     let stored = model.stored_line().unwrap_or(&model.line);
-    let routes = &stored.alignments;
     egui::Grid::new("alignment-form")
         .num_columns(2)
         .show(ui, |ui| {
-            ui.label("alignment");
-            egui::ComboBox::from_id_salt("alignment-route")
-                .selected_text(f.target.as_str())
-                .show_ui(ui, |ui| {
-                    for r in routes {
-                        ui.selectable_value(&mut f.target, r.id.clone(), &r.id);
-                    }
-                })
-                .response
-                .on_hover_text("The alignment this point belongs to");
+            ui.label("id");
+            ui.label(&f.id);
             ui.end_row();
             ui.label("description");
             ui.add(
@@ -3425,15 +3455,6 @@ fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
                     .desired_width(240.0)
                     .hint_text("what it is (free text)"),
             );
-            ui.end_row();
-
-            ui.label("order");
-            let n = routes
-                .iter()
-                .find(|r| r.id == f.target)
-                .map_or(1, |r| r.points.len() + usize::from(f.target != f.route));
-            ui.add(egui::DragValue::new(&mut f.order).range(1..=n.max(1)))
-                .on_hover_text("Its place along the alignment: 1 is the first point");
             ui.end_row();
             ui.label("tied to");
             egui::ComboBox::from_id_salt("alignment-structure")
@@ -3467,10 +3488,70 @@ fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
             egui::RichText::new("A tied point sits under its structure and follows it.").small(),
         );
     }
+    ui.separator();
+    ui.label("On the alignments, at its place in each (1: the first point):");
+    let mut drop = None;
+    egui::Grid::new("alignment-orders")
+        .num_columns(3)
+        .show(ui, |ui| {
+            for (k, (a, order)) in f.orders.iter_mut().enumerate() {
+                let n = stored.alignment_by_id(a).map_or(1, |x| {
+                    x.points.len() + usize::from(!x.points.contains(&f.id))
+                });
+                let route = stored
+                    .alignment_by_id(a)
+                    .map(|x| format!(" (route {})", x.route))
+                    .unwrap_or_default();
+                ui.label(format!("{a}{route}"));
+                ui.add(egui::DragValue::new(order).range(1..=n.max(1)).prefix("#"))
+                    .on_hover_text("Its place along this alignment");
+                if ui
+                    .small_button("✕")
+                    .on_hover_text("Take it off this alignment (it stays)")
+                    .clicked()
+                {
+                    drop = Some(k);
+                }
+                ui.end_row();
+            }
+        });
+    if let Some(k) = drop {
+        f.orders.remove(k);
+    }
+    let others: Vec<&ols_line::Alignment> = stored
+        .alignments
+        .iter()
+        .filter(|a| !f.orders.iter().any(|(x, _)| *x == a.id))
+        .collect();
+    if !others.is_empty() {
+        egui::ComboBox::from_id_salt("alignment-add")
+            .selected_text("+ on another alignment…")
+            .show_ui(ui, |ui| {
+                for a in others {
+                    if ui
+                        .selectable_label(false, format!("{} (route {})", a.id, a.route))
+                        .clicked()
+                    {
+                        // Where it fits along it.
+                        let pts: Vec<[f64; 3]> =
+                            stored.points_of(a).iter().map(|p| p.position).collect();
+                        let at = best_place(&pts, f.position);
+                        f.orders.push((a.id.clone(), at + 1));
+                    }
+                }
+            });
+    }
+    if f.orders.is_empty() {
+        ui.label(
+            egui::RichText::new("On no alignment: it waits to be used by one.")
+                .small()
+                .weak(),
+        );
+    }
     ui.label(
         egui::RichText::new(
-            "The profile view follows the alignment points. Moved, a point shared with \
-             another alignment (a junction, at the same place) moves with it.",
+            "The profile view follows the alignment points. A point shared by several \
+             alignments (a junction) is one point: moved, it moves on all of them.",
         )
         .small(),
     );
