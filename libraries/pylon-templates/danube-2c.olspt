@@ -1,0 +1,87 @@
+# Pylon template (see delta-1c.olspt for the conventions).
+# Circuit 1 on the left (slots 1-3), circuit 2 on the right (4-6).
+format = "ols-pylon-template"
+version = 1
+id = "danube-2c"
+name = "Danube, two circuits, one earth wire"
+description = "Each side: one phase on the upper crossarm, two on the lower; an earth wire at the peak."
+kind = "lattice"
+height = "peak"
+
+[strings]
+suspension_length = "4 m"
+suspension_weight = "1.5 kN"
+strain_length = "5 m"
+strain_weight = "2 kN"
+
+[[parameter]]
+name = "lower_level"
+default = "30 m"
+description = "height of the lower crossarm"
+
+[[parameter]]
+name = "lower_inner"
+default = "6 m"
+description = "lower crossarm: mast to the inner phase"
+
+[[parameter]]
+name = "lower_outer"
+default = "13 m"
+description = "lower crossarm: mast to the outer phase"
+
+[[parameter]]
+name = "upper_level"
+default = "39 m"
+description = "height of the upper crossarm"
+
+[[parameter]]
+name = "upper_half"
+default = "8 m"
+description = "upper crossarm: mast to each phase"
+
+[[parameter]]
+name = "peak"
+default = "47 m"
+description = "height of the peak (earth wire)"
+
+[[attachment]]
+slot = 1
+label = "C1-L1"
+across = "-upper_half"
+up = "upper_level"
+
+[[attachment]]
+slot = 2
+label = "C1-L2"
+across = "-lower_inner"
+up = "lower_level"
+
+[[attachment]]
+slot = 3
+label = "C1-L3"
+across = "-lower_outer"
+up = "lower_level"
+
+[[attachment]]
+slot = 4
+label = "C2-L1"
+across = "upper_half"
+up = "upper_level"
+
+[[attachment]]
+slot = 5
+label = "C2-L2"
+across = "lower_inner"
+up = "lower_level"
+
+[[attachment]]
+slot = 6
+label = "C2-L3"
+across = "lower_outer"
+up = "lower_level"
+
+[[earth]]
+slot = 19
+label = "E1"
+across = "0"
+up = "peak"

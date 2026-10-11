@@ -212,6 +212,88 @@ side = "ahead"
 
 A string hangs down (suspension) or, with a `side`, is a strain string along the line — solved as a free member that lines up with its conductor, like a library strain assembly. A wire point no string reaches is clamped where it is. The stick drawing appears in the 3D viewer and in the plan and profile sheets.
 
+## Pylon templates (`.olspt`)
+
+A **pylon template** is the face of a pylon — across the line and up, in
+its own axes, no outside sizes — given by a few named dimensions. From it
+**Structures › New pylon from a template…** builds a structure type of
+level 1 (its points, strings and wire points with their sets), for
+**suspension** or for **strain**: two separate types, built one after the
+other with the toggle. The type records the template, the role and the
+values (`[template]`), so a type built before is built again from them
+(the structures of that type follow).
+
+The library grows with files: the templates shipped with OLS CAD in
+`libraries/pylon-templates`, and a project's own in its
+`Pylon templates` folder next to the line (one of the same id is used
+instead of the shipped one).
+
+```toml
+format = "ols-pylon-template"
+version = 1
+id = "delta-1c"
+name = "Delta, one circuit, one earth wire"
+description = "Two phases on the lower crossarm, one on the upper."
+kind = "lattice"                # the family of the types built
+height = "peak"                 # mast top for the stick drawing (expression)
+# back_offset = 20              # strain: back sets = slot + 20 (default)
+# ahead_offset = 40             # strain: ahead sets = slot + 40 (default)
+
+[strings]                       # offered; changed in the builder
+suspension_length = "3 m"
+suspension_weight = "1 kN"
+strain_length = "4 m"
+strain_weight = "1.5 kN"
+
+[[parameter]]
+name = "lower_level"
+default = "22 m"
+description = "height of the lower crossarm"
+
+[[parameter]]
+name = "lower_half"
+default = "5 m"
+description = "lower crossarm: mast to each phase"
+
+[[parameter]]
+name = "peak"
+default = "34 m"
+
+[[attachment]]                  # where a phase hangs
+slot = 1
+label = "L1"
+across = "-lower_half"          # expression of the parameters, m (right +)
+up = "lower_level"
+
+[[earth]]                       # an earth wire, clamped directly
+slot = 19
+across = "0"
+up = "peak"
+```
+
+- **Expressions**: numbers (metres), the parameters' names, `+ - * /` and
+  parentheses (`"-(inner + 2 * step)"`).
+- **Sets** follow the slots. A suspension type: a string hangs at each
+  attachment, its wire point has the slot as set; an earth wire is clamped
+  at its point with its slot. A strain type: two strain strings at each
+  attachment, back and ahead along the line, with the sets slot + 20
+  (back) and slot + 40 (ahead); an earth wire gets both sets at its point.
+  So slots 1–20 give suspension sets 1–20, strain back 21–40 and ahead
+  41–60 — a numbering that keeps every phase's set the same through
+  suspension and strain structures, also for crowded multi-circuit
+  pylons: e.g. circuits in slots 1–3, 4–6, 7–9, a two-phase circuit of
+  four conductors in 10–13, another circuit in 16–18, earth wires in 19
+  and 20 (the shipped `multi-5c`).
+- Labels: the points `A-<label>`, the wire points `W-<label>` (strain:
+  `W-<label>-back`, `-ahead`), the strings `S-<label>`.
+- Checked when read: unique names, slots and labels; every expression
+  reads; built with its defaults it makes a valid type both ways; no
+  string reaches the ground; the mast top is not below an attachment.
+
+Shipped: `delta-1c`, `flat-1c` (two earth wires), `danube-2c`,
+`barrel-2c`, `multi-5c`, `pole-1c` — synthetic dimensions, to be changed
+in the builder.
+
 ## Insulator assemblies (`.olsi`)
 
 ```toml

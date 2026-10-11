@@ -74,6 +74,8 @@ pub struct StructureForm {
     pub new_route: String,
     /// A new route to make with it.
     pub make_route: Option<String>,
+    /// A note of the window (Put it on the line again found no point).
+    pub message: Option<String>,
 }
 
 /// The alignment points a structure can be put on: (route as the views
@@ -1252,6 +1254,7 @@ impl StructureForm {
             routes: Vec::new(),
             new_route: String::new(),
             make_route: None,
+            message: None,
         };
         if let Some(on) = on_alignment {
             f.place_on(model, on);
@@ -1275,6 +1278,35 @@ impl StructureForm {
         }
         self.on_alignment = Some(on);
         self.follow_line(model);
+    }
+
+    /// Put it on the line again: on its alignment point (the one it is
+    /// tied to, else the nearest free one within 5 m), turned along the
+    /// line there. Whether there was one.
+    pub fn put_on_line(&mut self, model: &Model) -> bool {
+        let on = self.on_alignment.clone().or_else(|| {
+            alignment_points(&model.line)
+                .into_iter()
+                .filter(|p| p.3.is_none() || p.3.as_deref() == Some(self.id.as_str()))
+                .map(|p| {
+                    (
+                        (p.2[0] - self.position[0]).hypot(p.2[1] - self.position[1]),
+                        p,
+                    )
+                })
+                .filter(|(d, _)| *d < 5.0)
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(_, p)| (p.0, p.1))
+        });
+        let Some(on) = on else {
+            return false;
+        };
+        self.along_line = true;
+        self.on_ground = model
+            .ground_at(self.position[0], self.position[1])
+            .is_some();
+        self.place_on(model, on);
+        true
     }
 
     /// Its orientation from the line, when it follows it.
@@ -1315,11 +1347,17 @@ impl StructureForm {
                         .collect()
                 })
                 .unwrap_or_default(),
-            on_alignment: None,
+            // The alignment point it stands on (tied), if any; it stays as
+            // placed until put on the line again.
+            on_alignment: alignment_points(&model.line)
+                .into_iter()
+                .find(|p| p.3.as_deref() == Some(id))
+                .map(|p| (p.0, p.1)),
             along_line: false,
             routes: s.routes.clone(),
             new_route: String::new(),
             make_route: None,
+            message: None,
         })
     }
 
@@ -2409,7 +2447,25 @@ fn structure_ui(
                 ui.end_row();
             });
             ui.separator();
-            ui.strong("Where it stands");
+            ui.horizontal(|ui| {
+                ui.strong("Where it stands");
+                if !f.new
+                    && ui
+                        .button("Put it on the line again")
+                        .on_hover_text(
+                            "On its alignment point (or the nearest free one within 5 m), turned \
+                             along the line there (the bisector at an angle). Placed, a structure \
+                             stays as it is when the alignment changes",
+                        )
+                        .clicked()
+                    && !f.put_on_line(model)
+                {
+                    f.message = Some("no alignment point within 5 m of it".into());
+                }
+            });
+            if let Some(m) = &f.message {
+                ui.colored_label(egui::Color32::YELLOW, egui::RichText::new(m).small());
+            }
             let points = alignment_points(&model.line);
             let mut on = f.on_alignment.is_some();
             ui.horizontal(|ui| {

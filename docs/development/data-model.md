@@ -52,7 +52,9 @@ All examples on this page are invented (structures `T1`, `T2`, sections
                                                         TypeString.insulator ─► .olsi id
    .olss StructureType: point[], wire[], string[], extension[], node[], member[],
                         section[], material[], load[], capacity, wind, model ─► .olsfe,
-                        pole ─► .olsp
+                        pole ─► .olsp, template (built from ─► .olspt)
+   .olspt PylonTemplate: parameter[], attachment[] (slot, across, up),
+                        earth[], strings ─► builds a level-1 .olss
 ```
 
 Arrows point from the referring field to what it names. Everything inside
@@ -198,7 +200,7 @@ open (`ols_meta` keys `routes_alignments`, `alignment_points`).
 | `omit_sets` | `[u32]` | — | typed: the type's wire points with these sets left out, with what hangs only for them | sets in the type |
 | `members` | `[[x,y,z]]` | m | stick drawing polylines (views and drawings only) | — |
 
-A structure without a type holds its own `points`, `wires`, `strings` and `members`; the desktop app edits them as a structure type in local axes (`to_local`/`to_global`) and writes them back with one `Put`. *Make it a type* writes that document as a `.olss`, sets `type` and empties the structure's own lists.
+A structure without a type holds its own `points`, `wires`, `strings` and `members`; the desktop app edits them as a structure type in local axes (`to_local`/`to_global`) and writes them back with one `Put`. *Make it a type* writes that document as a `.olss`, sets `type` and empties the structure's own lists. A type built from a pylon template records it in `[template]` (`id`, `role` suspension/strain, `string_length`, `string_weight`, `values` by parameter) and has sets from the template's slots: suspension = slot, strain back = slot + `back_offset` (20), ahead = slot + `ahead_offset` (40).
 
 | Entity.field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
@@ -418,6 +420,7 @@ One directory per kind; TOML with units in the values. Each item has an
 | `Cables` | `.olsw` | `ols-wire` | several (`[[cable]]`) | `ols_cables::Cable` | [Wire library](../user-guide/wire-library.md) |
 | `Insulators` | `.olsi` | `ols-insulator` | one | `ols_structures::InsulatorAssembly` | [Structure library](../user-guide/structure-library.md#insulator-assemblies-olsi) |
 | `StructureTypes` | `.olss` | `ols-structure` | one | `ols_structures::StructureType` | [Structure library](../user-guide/structure-library.md) |
+| (pylon templates: shipped `libraries/pylon-templates`, the project's `Pylon templates` folder; not kept in the project file) | `.olspt` | `ols-pylon-template` | one | `ols_structures::templates::PylonTemplate` | [Pylon templates](../user-guide/structure-library.md#pylon-templates-olspt) |
 | `WeatherCases` | `.olswc` | `ols-weather-cases` | several (`[[case]]`) | `ols_weather::WeatherCase` | [Weather cases](../user-guide/weather.md) |
 | `LoadCases` | `.olslc` | `ols-load-cases` | several (`[[case]]`) | `ols_loads::LoadCase` | [Load cases](../user-guide/loads.md) |
 

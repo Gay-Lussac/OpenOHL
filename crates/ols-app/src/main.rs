@@ -47,6 +47,7 @@ mod preview3d;
 mod profile;
 mod project_lines;
 mod properties;
+mod pylon_builder;
 mod python;
 mod remote;
 mod scene;

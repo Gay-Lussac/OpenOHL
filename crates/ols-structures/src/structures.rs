@@ -743,6 +743,10 @@ pub struct StructureType {
     /// folder).
     #[serde(default)]
     pub pole: Option<String>,
+    /// Built from a pylon template: its id, the role and the values
+    /// ([`crate::templates::recorded`]), to build it again.
+    #[serde(default)]
+    pub template: Option<toml::Table>,
 }
 
 /// An attachment of a placed structure, in global coordinates.
