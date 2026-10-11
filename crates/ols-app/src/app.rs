@@ -4572,6 +4572,11 @@ fn menus(
     });
     ui.menu_button("Help", |ui| {
         ui.label(format!("OLS CAD {}", env!("CARGO_PKG_VERSION")));
+        ui.label(
+            egui::RichText::new("Open Line System Computer Assisted Design")
+                .small()
+                .weak(),
+        );
         if ui
             .button("Keys and mouse")
             .on_hover_text("Parameters › Controls › 3D: the navigation scheme and every key")

@@ -1,6 +1,6 @@
 [package]
 name = "ols-cli"
-description = "OLS CAD command-line interface"
+description = "OLS CAD (Open Line System Computer Assisted Design) command-line interface"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

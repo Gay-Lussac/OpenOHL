@@ -68,7 +68,8 @@ mod working_tree;
 #[cfg(test)]
 mod tests;
 
-/// OLS CAD — view a line model in 3D, plan and profile.
+/// OLS CAD (Open Line System Computer Assisted Design) — view and edit a
+/// line model in 3D, plan and profile.
 #[derive(Parser)]
 #[command(name = "ols-cad", version)]
 struct Args {
