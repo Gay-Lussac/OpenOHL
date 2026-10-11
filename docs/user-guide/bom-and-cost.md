@@ -69,7 +69,7 @@ Prices are numbers ≥ 0; the same type, insulator or cable may be priced once. 
 
 ## In the application
 
-Checks › **Bill of materials…** opens a window with the table, the total and the items without a price. The first `.olscost` file next to the line or project is used; **Choose…** picks another, **No prices** shows quantities only. It is computed in the background from the line as it is (the model is not changed); **Compute again** after edits. **Export CSV…** writes the table.
+File › **Bill of materials › Cables…** opens a window with the table, the total and the items without a price. The first `.olscost` file next to the line or project is used; **Choose…** picks another, **No prices** shows quantities only. It is computed in the background from the line as it is (the model is not changed); **Compute again** after edits. **Export CSV…** writes the table.
 
 ## From the command line
 

@@ -636,7 +636,7 @@ impl View3d {
                 );
                 painter.line_segment([c + a, c + b], egui::Stroke::new(2.0, egui::Color32::WHITE));
             }
-            // Only how to get out; every key: Parameters › Controls › 3D.
+            // Only how to get out; every key: Help › Controls › 3D.
             painter.text(
                 rect.center_top() + egui::vec2(0.0, 8.0),
                 egui::Align2::CENTER_TOP,

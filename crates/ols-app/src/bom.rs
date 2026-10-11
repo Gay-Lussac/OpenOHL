@@ -2,10 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Checks › Bill of materials: what the line is built from (structures by
-//! type, insulator assemblies, wire lengths, hardware) priced with a cost
-//! file (`.olscost`), computed in the background from the model as it is;
-//! the model is not changed. CSV export.
+//! File › Bill of materials › Cables: the wire lengths of each cable and
+//! their stringing, priced with a cost file (`.olscost`), computed in the
+//! background from the model as it is; the model is not changed. CSV
+//! export. (The bill also counts structures, insulators and hardware;
+//! those parts are not offered yet.)
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
@@ -15,7 +16,21 @@ use ols_bom::{CostData, CostEstimate};
 
 use crate::model::Model;
 
-/// The Bill of materials window.
+/// The categories of the bill shown: the cables'.
+pub const CABLES: [&str; 2] = ["wire", "stringing"];
+
+/// `e` with only the lines of `categories` (its total and the items
+/// without a price of those only).
+fn only(mut e: CostEstimate, categories: &[&str]) -> CostEstimate {
+    e.lines
+        .retain(|l| categories.contains(&l.category.as_str()));
+    e.total = e.lines.iter().filter_map(|l| l.amount).sum();
+    e.missing
+        .retain(|m| categories.iter().any(|c| m.starts_with(&format!("{c}:"))));
+    e
+}
+
+/// The Bill of materials window (the cables).
 #[derive(Default)]
 pub struct BomWindow {
     /// Shown.
@@ -67,7 +82,7 @@ impl BomWindow {
                     .map(|c| c.hardware.clone())
                     .unwrap_or_default();
                 let bom = ols_bom::bill_of_materials(&line, &library, &hardware);
-                CostEstimate::new(bom, cost.as_ref())
+                only(CostEstimate::new(bom, cost.as_ref()), &CABLES)
             });
             let _ = tx.send(r);
             c.request_repaint();
@@ -97,7 +112,7 @@ impl BomWindow {
         }
         self.poll();
         let mut open = true;
-        egui::Window::new("Bill of materials")
+        egui::Window::new("Bill of materials: cables")
             .open(&mut open)
             .default_width(760.0)
             .default_height(520.0)
@@ -149,7 +164,7 @@ impl BomWindow {
                 && let Some(e) = estimate
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("CSV", &["csv"])
-                    .set_file_name("bill-of-materials.csv")
+                    .set_file_name("bill-of-materials-cables.csv")
                     .save_file()
             {
                 self.status = match std::fs::write(&path, e.csv()) {

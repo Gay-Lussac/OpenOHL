@@ -26,7 +26,7 @@ pub enum Layer {
     Wires,
     /// Wires of the other weather cases (faded).
     OtherCases,
-    /// Saved project lines shown for comparison (Lines menu), each in its
+    /// Saved project lines shown for comparison (Versions menu), each in its
     /// colour.
     OtherLines,
     /// Clearance violations: wire to target, red

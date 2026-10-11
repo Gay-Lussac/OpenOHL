@@ -131,10 +131,10 @@ ols line project.ols --pointcloud project.ols --rules rules.olsr
 ols line project.ols --pointcloud survey.copc.laz --rules rules.olsr
 ```
 
-The desktop app does the same from **Terrain › Survey data › Import
-LAS/LAZ…** (files or a folder, into the project's point cloud or a new one,
-in the background; the project is opened again to show them) and **Export
-LAS/LAZ…** (every class or the classes shown, the whole survey or around the
+The desktop app does the same from **File › Import › LiDAR points
+(LAS/LAZ)…** (files or a folder, into the project's point cloud or a new one,
+in the background; the project is opened again to show them) and **File › Export ›
+LiDAR points (LAS/LAZ)…** (every class or the classes shown, the whole survey or around the
 line).
 
 **Export** writes LAS 1.4, point format 6 (classes 0–255: schemes with codes

@@ -1,4 +1,4 @@
-# Project lines and phases (the Lines menu)
+# Project lines and phases (the Versions menu)
 
 A project (`.ols`) can hold several designs of the line side by side:
 **project lines**. The first is the **main line**. Others are made from it,
@@ -37,7 +37,7 @@ project settings. What each line has of its own: the line itself
 (structures, sections, jumpers, routes, line settings) and its history of
 edits.
 
-## The Lines menu
+## The Versions menu
 
 The menu stays open while you tick lines to show.
 
@@ -72,14 +72,14 @@ Below the list: **New line from *name*…**, **Bring in changes…** and
 - **Rename** a line: its history, reviews, and whoever works on it follow the
   new name.
 - **Delete** a line: it goes with its uncommitted changes. Its committed
-  revisions stay in the file: *Edit › Versions › New line from it* brings
+  revisions stay in the file: *Versions › Revisions and branches › New line from it* brings
   it back. Its open reviews are closed. Whoever was working on it is moved
   to another line. The line you work on and the project's only line cannot
   be deleted. Deleting is not undone with ⌘Z.
 
 ## The working tree
 
-**Lines › Project lines › Working tree…** (also in the Project lines
+**Versions › Project lines › Working tree…** (also in the Project lines
 window) draws the history of the project lines. The oldest is on the left
 and time runs to the right: one column per revision, with the date under
 the first of each day.
@@ -123,7 +123,7 @@ on the upper lane.
 Every line has a **description**: free text such as its scope, the
 assumptions behind it, or its status. It may be long (up to 20 000
 characters). It is edited in a box of fixed height that scrolls, from the
-Project lines window (**Description…** on its row) or from the Lines menu
+Project lines window (**Description…** on its row) or from the Versions menu
 (**Description of *name*…** for the line you work on). The working tree
 shows it below the tree (see there). Who may edit it is who may rename the
 line: its creator or an admin; the main line, an admin. The others read it.
@@ -143,18 +143,18 @@ It is kept in the project and follows a rename.
 | Approve and merge a review | — | if named reviewer | yes |
 | Roll a line back (working tree) | — | — | yes |
 
-Admins can also **protect** a line (Edit › Versions): it then changes only
+Admins can also **protect** a line (Versions › Revisions and branches): it then changes only
 through admins or approved reviews.
 
 ## A phase, step by step
 
-1. On the main line, **Lines › New line from main…**, name it *phase 1*,
+1. On the main line, **Versions › New line from main…**, name it *phase 1*,
    **Create**.
-2. **Lines › Project lines…**, click *phase 1* under **work on**. Edit it:
+2. **Versions › Project lines…**, click *phase 1* under **work on**. Edit it:
    replace towers, restring sections… The main line does not change. Tick
    *main* under **show** to see it next to your phase.
 3. Meanwhile, a colleague corrects tower T3 on the main line. Your phase does
-   not change. When you want the correction, choose **Lines › Bring in
+   not change. When you want the correction, choose **Versions › Bring in
    changes from another line…**, *changes of: main*.
    - If you did not change T3 yourself, it simply comes in: the window says
      **No conflict**. Press **Bring in**.
@@ -163,15 +163,15 @@ through admins or approved reviews.
      then **Bring in**.
 
    It is refused, changing nothing, while an object is not settled.
-4. When the phase is ready, choose **Lines › Submit this line for review
+4. When the phase is ready, choose **Versions › Submit this line for review
    into the main line…**, with a note. Uncommitted work is committed first.
-5. A reviewer or an admin opens **Edit › Versions › Reviews**, checks the
+5. A reviewer or an admin opens **Versions › Revisions and branches › Reviews**, checks the
    changes (**Changes**, with the engineering impact), **approves**, and
    **merges**. Only then does the main line change. If the phase changes
    after approval, it must be submitted again.
 
 Starting a line, bringing in changes and submitting a review record the
-lines' state as **revisions** (Edit › Versions shows them): they are the
+lines' state as **revisions** (Versions › Revisions and branches shows them): they are the
 common ground the next bring-in or merge compares against. Under the hood, project lines are the
 branches of the project's version history; see
 [Versions, branches and reviews](versions.md).

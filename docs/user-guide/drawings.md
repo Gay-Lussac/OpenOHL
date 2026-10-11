@@ -131,7 +131,7 @@ A simple, open format for the same numbers (version 1):
 
 ## In the desktop app
 
-**File › Export drawings…** opens a window: route (or every route),
+**File › Export › Drawings…** opens a window: route (or every route),
 formats, sheets (one continuous drawing, or A0–A4 split at structures),
 horizontal and vertical scale, station range, clearance line, PNG
 resolution, the profile alone, the other solved weather cases (dashed),

@@ -2431,7 +2431,7 @@ fn alignment_points_are_added_edited_and_deleted_with_the_tools() {
     assert!(r.model.line.alignment_by_id(&route).is_some());
 }
 
-/// Criteria › Display weather cases: two cases ticked for every section
+/// View › Display weather cases: two cases ticked for every section
 /// (the Sections table's display cases kept, not used); the strings are
 /// drawn to their clamp in each; the wind from both sides draws each case
 /// with wind twice.
@@ -2456,10 +2456,10 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
         .0
     };
     let one = strings(&mut harness);
-    // No weather button on the quick bar any more: the Criteria menu.
+    // No weather button on the quick bar any more: the View menu.
     assert!(harness.query_by_label_contains("Weather: ").is_none());
-    // Only in the Criteria menu.
-    for menu in ["Sections", "View"] {
+    // Only in the View menu.
+    for menu in ["Sections", "Criteria"] {
         harness.get_by_label(menu).click();
         harness.run();
         assert!(
@@ -2467,7 +2467,7 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
             "{menu}"
         );
     }
-    harness.get_by_label("Criteria").click();
+    harness.get_by_label("View").click();
     harness.run();
     harness
         .query_all_by_label("Display weather cases…")
@@ -2656,7 +2656,7 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
     }
     // Two phases from the main line, through the menu.
     for phase in ["phase 1", "phase 2"] {
-        harness.get_by_label("Lines").click();
+        harness.get_by_label("Versions").click();
         harness.run();
         harness.get_by_label("New line from main…").click();
         harness.run();
@@ -2689,7 +2689,7 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
         assert_eq!(names, ["main", "phase 1", "phase 2"]);
     }
     // Both shown, ticked in a row: the menu stays open.
-    harness.get_by_label("Lines").click();
+    harness.get_by_label("Versions").click();
     harness.run();
     harness.get_by_label("phase 1").click();
     harness.run();
@@ -2825,7 +2825,7 @@ fn the_project_lines_window_lists_the_lines() {
             },
         );
     }
-    harness.get_by_label("Lines").click();
+    harness.get_by_label("Versions").click();
     harness.run();
     harness.get_by_label_contains("Project lines").hover();
     harness.run();
@@ -2987,7 +2987,7 @@ fn parameters_show_the_controls_of_each_view() {
         ("Plan", "zoom at the pointer"),
         ("Profile", "move along the route"),
     ] {
-        harness.get_by_label("Parameters").click();
+        harness.get_by_label("Help").click();
         harness.run();
         harness.get_by_label_contains("Controls").click();
         harness.run();
@@ -3400,7 +3400,6 @@ fn the_survey_window_stays_open_for_several_classes() {
     harness.run();
     harness.get_by_label("Terrain").click();
     harness.run();
-    harness.get_by_label("Ground (active surface) shown");
     harness.get_by_label_contains("Survey data").click();
     harness.run();
     harness.get_by_label("Survey data display options…").click();
@@ -3989,7 +3988,7 @@ fn write_survey(path: &std::path::Path, x0: f64, w: usize) {
     wr.close().unwrap();
 }
 
-/// Survey data › Import LAS/LAZ and Export LAS/LAZ: tiles imported into
+/// File › Import / Export › LiDAR points (LAS/LAZ): tiles imported into
 /// the project's point cloud; exported again, every class or one, the
 /// whole survey or around the line, with the class scheme next to it.
 #[test]
@@ -4071,17 +4070,19 @@ fn the_survey_menu_opens_import_and_export() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Terrain").click();
+    harness.get_by_label("File").click();
     harness.run();
-    harness.get_by_label_contains("Survey data").click();
+    harness.get_by_label_contains("Export").hover();
     harness.run();
     assert!(
         harness
-            .get_by_label("Export LAS/LAZ…")
+            .get_by_label("LiDAR points (LAS/LAZ)…")
             .accesskit_node()
             .is_disabled()
     );
-    harness.get_by_label("Import LAS/LAZ…").click();
+    harness.get_by_label_contains("Import").hover();
+    harness.run();
+    harness.get_by_label("LiDAR points (LAS/LAZ)…").click();
     harness.run();
     harness.get_by_label("Choose files…");
     harness.get_by_label("Choose a folder…");
@@ -5263,9 +5264,11 @@ fn bill_of_materials_and_spotting_windows() {
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Checks").click();
+    harness.get_by_label("File").click();
     harness.run();
-    harness.get_by_label("Bill of materials…").click();
+    harness.get_by_label_contains("Bill of materials").hover();
+    harness.run();
+    harness.get_by_label("Cables…").click();
     run_until(&mut harness, |a| {
         let r = a.ready().unwrap();
         r.bom.result.is_some() && !r.bom.running()
@@ -5282,6 +5285,13 @@ fn bill_of_materials_and_spotting_windows() {
         let e = r.bom.result.as_ref().unwrap().as_ref().unwrap();
         assert!(e.priced && e.missing.is_empty(), "{:?}", e.missing);
         assert_eq!(e.bom.structures.iter().map(|s| s.count).sum::<usize>(), 7);
+        // Only the cables are offered yet.
+        assert!(!e.lines.is_empty());
+        assert!(
+            e.lines
+                .iter()
+                .all(|l| crate::bom::CABLES.contains(&l.category.as_str()))
+        );
     }
     assert!(
         harness
@@ -5290,7 +5300,12 @@ fn bill_of_materials_and_spotting_windows() {
             .is_some()
     );
 
-    harness.get_by_label("Tools").click();
+    // The menu (the first "Structures"; the bill's window says it too).
+    harness
+        .query_all_by_label("Structures")
+        .next()
+        .unwrap()
+        .click();
     harness.run();
     harness.get_by_label("Spot structures…").click();
     harness.run();
@@ -6059,7 +6074,7 @@ fn lines_images() {
         });
     }
     harness.run();
-    harness.get_by_label("Lines").click();
+    harness.get_by_label("Versions").click();
     harness.run();
     harness.get_by_label_contains("Project lines").hover();
     harness.run();
@@ -6233,7 +6248,7 @@ fn the_working_tree_shows_the_lines_through_time() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(m, None));
     harness.run();
-    harness.get_by_label("Lines").click();
+    harness.get_by_label("Versions").click();
     harness.run();
     harness.get_by_label_contains("Project lines").hover();
     harness.run();
@@ -6542,7 +6557,7 @@ fn lines_are_described() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(m, None));
     harness.run();
-    harness.get_by_label("Lines").click();
+    harness.get_by_label("Versions").click();
     harness.run();
     harness.get_by_label("Description of main…").click();
     harness.run();
