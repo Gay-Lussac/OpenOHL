@@ -92,6 +92,10 @@ pub struct ViewPrefs {
     /// The project lines shown next to it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shown_lines: Vec<String>,
+    /// The profile view's heights against its stations (View › Profile
+    /// aspect ratio): drawn this many times larger; none: fitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_ratio: Option<f64>,
 }
 
 /// The [`ViewPrefs`] of every project opened, by file (remembered).
@@ -391,6 +395,10 @@ pub struct Model {
     pub backgrounds: crate::backgrounds::Loaded,
     /// Backgrounds this user hides (`image:<layer>`, `drawing:<name>`).
     pub hidden_backgrounds: std::collections::BTreeSet<String>,
+    /// The profile view's vertical exaggeration (heights drawn this many
+    /// times larger than stations, kept when zooming); none: heights
+    /// fitted to the stretch shown.
+    pub profile_ratio: Option<f64>,
     /// LiDAR points shown (thinned to the budget).
     pub points: Vec<LidarPoint>,
     /// Origin of the points (and of the views), project coordinates.
@@ -1011,6 +1019,7 @@ impl Model {
             wind: self.wind,
             cases_shown: self.cases_shown,
             hidden_backgrounds: self.hidden_backgrounds.clone(),
+            profile_ratio: self.profile_ratio,
             line: self.session().map(|s| s.current_line().to_owned()),
             shown_lines: self.other_lines.iter().map(|o| o.name.clone()).collect(),
         }
@@ -1731,6 +1740,11 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .map(|v| v.hidden_backgrounds.clone())
         .unwrap_or_default();
+    let profile_ratio = sources
+        .view
+        .as_ref()
+        .and_then(|v| v.profile_ratio)
+        .filter(|k| k.is_finite() && *k > 0.0);
     let shown_lines = sources
         .view
         .as_ref()
@@ -1749,6 +1763,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         cloud,
         backgrounds,
         hidden_backgrounds,
+        profile_ratio,
         points,
         origin,
         scheme,

@@ -4240,6 +4240,10 @@ fn menus(
             }
         }
         ui.separator();
+        crate::menu::options_menu(ui, "Profile aspect ratio", |ui| {
+            // Remembered with the other display choices when the app saves.
+            crate::profile::ratio_menu(ui, &mut r.model.profile_ratio);
+        });
         crate::menu::options_menu(ui, "Layers", |ui| {
             for layer in Layer::ALL {
                 let mut on = r.visible.contains(&layer);

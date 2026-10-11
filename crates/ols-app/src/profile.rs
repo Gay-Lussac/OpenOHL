@@ -3,9 +3,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! The profile view of a route: ground along the centreline, wires and
-//! structures by station, heights fitted to the visible stretch. Scroll:
-//! zoom along the route at the pointer, drag: move along it, click:
-//! select, double-click: show the whole route.
+//! structures by station; heights fitted to the visible stretch, or drawn
+//! at a fixed ratio to the stations (View › Profile aspect ratio), kept
+//! when zooming. Scroll: zoom at the pointer, drag: move (up and down too
+//! at a fixed ratio), click: select, double-click: show the whole route.
 
 use eframe::egui;
 use ols_drawing::RouteDrawing;
@@ -24,6 +25,12 @@ pub struct ProfileView {
     drawing: Option<((usize, usize), RouteDrawing)>,
     /// Visible stations.
     range: Option<[f64; 2]>,
+    /// At a fixed aspect ratio: the height at the middle of the view.
+    z_centre: Option<f64>,
+    /// What the last frame showed: stations, heights, its size in points.
+    pub(crate) shown: Option<([f64; 2], [f64; 2], [f64; 2])>,
+    /// Where the last frame drew it.
+    pub(crate) rect: Option<egui::Rect>,
     /// The wires' colours, line codes and directions.
     styles: crate::wire_style::StyleCache,
 }
@@ -101,10 +108,18 @@ impl ProfileView {
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         let range = self.range.get_or_insert([0.0, d.length.max(1.0)]);
         let width = f64::from(rect.width()).max(1.0);
+        let height = f64::from(rect.height()).max(1.0);
+        // A fixed ratio: pixels per metre of height, from the stations'.
+        let ratio = model.profile_ratio.filter(|k| *k > 0.0);
+        let vscale = |r: &[f64; 2]| ratio.map(|k| k * width / (r[1] - r[0]).max(1e-9));
+        let before = *range;
         if response.dragged() {
             let ds = -f64::from(response.drag_delta().x) / width * (range[1] - range[0]);
             range[0] += ds;
             range[1] += ds;
+            if let (Some(v), Some(z)) = (vscale(range), self.z_centre.as_mut()) {
+                *z += f64::from(response.drag_delta().y) / v;
+            }
         }
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
@@ -117,10 +132,19 @@ impl ProfileView {
                 let t = (at - range[0]) / (range[1] - range[0]);
                 range[0] = at - t * span;
                 range[1] = range[0] + span;
+                // The height under the pointer stays under it.
+                if let (Some(v0), Some(v1), Some(z)) =
+                    (vscale(&before), vscale(range), self.z_centre.as_mut())
+                {
+                    let dy = f64::from(rect.center().y - pos.y);
+                    let z_at = *z + dy / v0;
+                    *z = z_at - dy / v1;
+                }
             }
         }
         if response.double_clicked() {
             *range = [0.0, d.length.max(1.0)];
+            self.z_centre = None;
         }
         let [s0, s1] = *range;
         // Heights of what is visible.
@@ -149,7 +173,21 @@ impl ProfileView {
             (z0, z1) = (0.0, 100.0);
         }
         let pad = (z1 - z0).max(10.0) * 0.08;
-        let (z0, z1) = (z0 - pad, z1 + pad);
+        let (z0, z1) = match vscale(range) {
+            // Fixed ratio: the heights the view's height holds, around
+            // its centre (first: the middle of what is seen).
+            Some(v) => {
+                let c = *self.z_centre.get_or_insert(0.5 * (z0 + z1));
+                let half = 0.5 * height / v;
+                (c - half, c + half)
+            }
+            None => {
+                self.z_centre = None;
+                (z0 - pad, z1 + pad)
+            }
+        };
+        self.shown = Some(([s0, s1], [z0, z1], [width, height]));
+        self.rect = Some(rect);
         let to_screen = move |s: f64, z: f64| {
             egui::pos2(
                 rect.min.x + ((s - s0) / (s1 - s0) * width) as f32,
@@ -294,10 +332,14 @@ impl ProfileView {
             rect.left_top() + egui::vec2(8.0, 6.0),
             egui::Align2::LEFT_TOP,
             format!(
-                "{} — stations {} to {}, heights not to scale",
+                "{} — stations {} to {}, {}",
                 d.name,
                 ols_drawing::format_station(s0.max(0.0)),
-                ols_drawing::format_station(s1.min(d.length))
+                ols_drawing::format_station(s1.min(d.length)),
+                match ratio {
+                    Some(k) => format!("aspect 1:{} (heights ×{})", ratio_text(k), ratio_text(k)),
+                    None => "heights not to scale".into(),
+                }
             ),
             egui::FontId::proportional(11.0),
             egui::Color32::from_gray(150),
@@ -345,6 +387,65 @@ impl ProfileView {
         }
         None
     }
+}
+
+/// The aspect ratios offered (heights drawn this many times larger than
+/// stations).
+pub const RATIOS: [f64; 6] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0];
+
+/// A ratio as written (`10`, `2.5`).
+pub fn ratio_text(k: f64) -> String {
+    let t = format!("{k:.2}");
+    t.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+/// View › Profile aspect ratio: fitted heights, a ratio of the list or
+/// one typed; whether it changed. The menu stays open (radio choices).
+pub fn ratio_menu(ui: &mut egui::Ui, ratio: &mut Option<f64>) -> bool {
+    let before = *ratio;
+    ui.label(
+        egui::RichText::new("Stations : heights in the profile view (yours only)")
+            .small()
+            .weak(),
+    );
+    if ui
+        .radio(ratio.is_none(), "Fit the heights (changes when zooming)")
+        .clicked()
+    {
+        *ratio = None;
+    }
+    for k in RATIOS {
+        let text = if k == 1.0 {
+            "1:1 (true scale)".to_owned()
+        } else {
+            format!("1:{} (heights ×{})", ratio_text(k), ratio_text(k))
+        };
+        if ui.radio(*ratio == Some(k), text).clicked() {
+            *ratio = Some(k);
+        }
+    }
+    ui.horizontal(|ui| {
+        let mut other = ratio.filter(|k| !RATIOS.contains(k)).is_some();
+        let mut k = ratio.unwrap_or(10.0);
+        if ui.radio(other, "1:").clicked() {
+            other = true;
+            *ratio = Some(k);
+        }
+        if ui
+            .add_enabled(
+                other,
+                egui::DragValue::new(&mut k)
+                    .range(0.1..=500.0)
+                    .speed(0.1)
+                    .max_decimals(2),
+            )
+            .on_hover_text("Heights drawn this many times larger than stations")
+            .changed()
+        {
+            *ratio = Some(k);
+        }
+    });
+    *ratio != before
 }
 
 /// What a trace is, from its label: `S1 span 0 (circuit phase)` or
