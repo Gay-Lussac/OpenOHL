@@ -1,6 +1,6 @@
 [package]
 name = "ols-app"
-description = "OLS CAD desktop application: 3D, plan and profile views of a line model"
+description = "OLS CAD (Open Line System Computer Assisted Design) desktop application: 3D, plan and profile views of a line model"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
