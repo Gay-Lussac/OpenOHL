@@ -76,6 +76,8 @@ impl LoadsPage {
             .map(|(t, _)| t.clone())
             .unwrap_or_default();
         let weather: Vec<_> = model.cases.iter().map(|c| c.case.clone()).collect();
+        // The route worked on only (View › Work on route).
+        let scope = model.scope().map(|s| s.structures);
         let (tx, rx) = channel();
         let c = ctx.clone();
         std::thread::spawn(move || {
@@ -91,6 +93,11 @@ impl LoadsPage {
             let mut r = r;
             if let Ok(loads) = &mut r {
                 ols_loads::add_structure_wind(loads, &line, &types, &weather);
+                if let Some(on) = &scope {
+                    for c in loads.iter_mut() {
+                        c.loads.retain(|l| on.contains(&l.structure));
+                    }
+                }
             }
             let usage = r.as_ref().map_or_else(
                 |_| Vec::new(),

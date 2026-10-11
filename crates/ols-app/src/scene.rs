@@ -192,6 +192,9 @@ pub fn role_color(scheme: &ols_lidar::ClassScheme, code: u8) -> Option<[u8; 3]> 
     })
 }
 
+/// Off the route worked on (View › Work on route): grey and faint.
+const FADED: [u8; 4] = [130, 134, 140, 70];
+
 fn rgba(c: [u8; 3], a: u8) -> [u8; 4] {
     [c[0], c[1], c[2], a]
 }
@@ -297,9 +300,15 @@ pub fn structures(
             }
         }
     }
-    let steel = tint.map_or([215, 215, 220, 255], |c| rgba(c, 230));
-    let blue = tint.map_or([120, 180, 255, 255], |c| rgba(c, 230));
+    let scope = model.scope();
     for st in &line.structures {
+        // Off the route worked on: faded.
+        let faded = scope
+            .as_ref()
+            .is_some_and(|s| !s.structures.contains(&st.id));
+        let pick = |c: [u8; 4]| if faded { FADED } else { c };
+        let steel = pick(tint.map_or([215, 215, 220, 255], |c| rgba(c, 230)));
+        let blue = pick(tint.map_or([120, 180, 255, 255], |c| rgba(c, 230)));
         let at = st.position;
         let lattice = !st.members.is_empty();
         for (part, pts) in structure_lines(st) {
@@ -324,7 +333,7 @@ pub fn structures(
         }
         // The strings, as solved in the cases shown (else as given);
         // flagged ones (beyond the compression they may take) in red.
-        let red = tint.map_or([235, 60, 50, 255], |c| rgba(c, 230));
+        let red = pick(tint.map_or([235, 60, 50, 255], |c| rgba(c, 230)));
         for x in &st.strings {
             match solved.get(&(st.id.as_str(), x.label.clone())) {
                 Some(drawn) => {
@@ -413,6 +422,9 @@ pub fn wires(
                 }
             }
         };
+    // Off the route worked on: faded.
+    let scope = model.scope();
+    let fade = |faded: bool, c: [u8; 4]| if faded { FADED } else { c };
     // Both wind sides shown: each case's mirror drawn with it.
     for (k, solved) in cases
         .iter()
@@ -426,6 +438,9 @@ pub fn wires(
             }
             let style = styles.section(&shape.section);
             let col = tint.unwrap_or(style.color);
+            let faded = scope
+                .as_ref()
+                .is_some_and(|s| !s.sections.contains(&shape.section));
             let forward = styles.directions.sections.get(&shape.section).copied();
             for (n, span) in shape.spans.iter().enumerate() {
                 // Bundles: each subconductor (one section, solved and
@@ -438,7 +453,7 @@ pub fn wires(
                     out,
                     &span.points,
                     lines,
-                    rgba(col, alpha),
+                    fade(faded, rgba(col, alpha)),
                     &style.pattern,
                     [1.5, 2.0],
                 );
@@ -446,7 +461,7 @@ pub fn wires(
                     && this_case
                     && let Some(f) = forward
                 {
-                    arrow(out, &span.points, f, 6.0, rgba(col, alpha));
+                    arrow(out, &span.points, f, 6.0, fade(faded, rgba(col, alpha)));
                 }
             }
             // Marker balls and other bodies with a size, on the wire
@@ -480,16 +495,19 @@ pub fn wires(
             let (_, lines) = jumper_lines(line, j, &solved.bundles);
             let style = styles.jumper(&j.jumper);
             let col = tint.unwrap_or(style.color);
+            let faded = scope
+                .as_ref()
+                .is_some_and(|s| !s.jumpers.contains(&j.jumper));
             wire(
                 out,
                 &j.points,
                 lines,
-                rgba(col, alpha),
+                fade(faded, rgba(col, alpha)),
                 &style.pattern,
                 [1.2, 1.5],
             );
             if arrows && let Some(f) = styles.directions.jumpers.get(&j.jumper) {
-                arrow(out, &j.points, *f, 1.5, rgba(col, alpha));
+                arrow(out, &j.points, *f, 1.5, fade(faded, rgba(col, alpha)));
             }
             // Its support clamps: a short bar along it.
             let steel = tint.unwrap_or([205, 205, 210]);

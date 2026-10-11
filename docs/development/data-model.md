@@ -21,11 +21,13 @@ All examples on this page are invented (structures `T1`, `T2`, sections
 ```text
                                   LINE  (.ols.json / OLS XML / project rows)
  ┌──────────────────────────────────────────────────────────────────────────────────┐
- │ meta: name, crs, alignment[], display, systems[], creep_stretch, bimetallic,     │
+ │ meta: name, crs, display, systems[], creep_stretch, bimetallic,                  │
  │       circuit_starts[]                                                           │
  │                                                                                  │
- │  Route ──structures[]──────────────► Structure ◄──structure── AlignmentPoint     │
- │   └─ alignment[] : AlignmentPoint      │  id, position, orientation_deg          │
+ │  Route {id, name} ◄──routes[]── Alignment ──points[]──► AlignmentPoint           │
+ │     ▲                                 (routes?[] of its own) structure? ─┐       │
+ │     └────────── routes[] (given) ── Structure ◄──────────────────────────┘       │
+ │                                        │  id, position, orientation_deg          │
  │                                        │  type ─────────────────────────────┐    │
  │                                        ├─ points[]  StructurePoint (label)  │    │
  │                                        ├─ wires[]   WirePoint (label, set?) │    │
@@ -108,11 +110,11 @@ files](../user-guide/line-file.md).
 | Field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `format` | string | — | `"ols-line"` | — |
-| `version` | u32 | — | file version (now 2; version 1 is read and upgraded) | — |
+| `version` | u32 | — | file version (now 3; versions 1 and 2 are read and upgraded) | — |
 | `name` | string | — | line name | — |
 | `crs` | string | — | coordinate reference system, e.g. an EPSG code (informative) | — |
-| `alignment` | `[AlignmentPoint]` | m | PIs of the implicit route (used when `routes` is empty) | may tie to structures |
-| `routes` | `[Route]` | — | alignments with their structures | structure ids |
+| `routes` | `[Route]` | — | routes: paths of the line, made of alignments | — |
+| `alignments` | `[Alignment]` | — | alignments, in order; each on one or more routes | route ids, structure ids |
 | `structures` | `[Structure]` | — | towers and poles | — |
 | `sections` | `[Section]` | — | wire sections | structures + sets |
 | `jumpers` | `[Jumper]` | — | jumpers between wire points | structures + sets |
@@ -123,24 +125,50 @@ files](../user-guide/line-file.md).
 | `circuit_starts` | `[SectionPoint]` | — | circuit ends that are starts (power flows in) | structures + sets |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
-### Route and AlignmentPoint (`route.rs`)
+### Route, Alignment and AlignmentPoint (`route.rs`)
 
 | Entity.field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
-| `Route.id` | string | — | unique id (`"main"`, `"branch-a"`) | — |
+| `Route.id` | string | — | unique id (`"route 1"`, `"north"`) | — |
 | `Route.name` | string | — | display name | — |
-| `Route.alignment` | `[AlignmentPoint]` | — | PIs in order; empty: the polyline through its structures | — |
-| `Route.structures` | `[string]` | — | structures in order along the route | `Structure.id` |
+| `Route.description` | string | — | free text | — |
+| `Alignment.id` | string | — | unique id (`"alignment 1"`) | — |
+| `Alignment.name`, `.description` | string | — | display name, free text | — |
+| `Alignment.routes` | `[string]` | — | the routes it belongs to (one or more) | `Route.id` |
+| `Alignment.points` | `[AlignmentPoint]` | — | PIs in order, one or more (a profile needs two) | — |
 | `AlignmentPoint.position` | `[x,y,z]` | m | the PI | — |
 | `AlignmentPoint.structure` | string? | — | tied: follows that structure, must lie under it within 1 mm in plan | `Structure.id` |
+| `AlignmentPoint.routes` | `[string]`? | — | its own routes (and a structure tied to it); none: its alignment's | `Route.id` |
 | `AlignmentPoint.description` | string | — | free text | — |
 
-In files a free alignment point is `[x, y, z]`, a tied one
-`{"position": [...], "structure": "T1"}`. Without `routes`, one implicit
-route `"main"` runs through all structures in file order
-(`Line::effective_routes`). A structure may belong to several routes;
-each gives it its own station (`Station`: station, offset, line angle,
+In files a free alignment point is `[x, y, z]`, otherwise
+`{"position": [...], "structure": "T1", "routes": [...]}`.
+
+**What is on a route** is worked out, not stored (`Line::structure_routes`,
+`Line::wire_routes`, `Line::alignment_views`):
+
+- a **structure** tied to an alignment point, or within 5 m of an
+  alignment (`NEAR_ALIGNMENT`, beside it or within 5 m of an end), is on
+  that alignment and its routes (a point's own routes for a structure tied
+  to it); a structure giving its own `routes` is on those (stationed on
+  the nearest alignment of each); at a junction it is on every route
+  meeting there;
+- a **section** is on the routes of its structures (one running from a
+  route into another is on both); a **jumper** on those of its two ends;
+  strings, wire points and counterweights on those of their structure.
+
+`AlignmentView` (id, routes, points, structures in station order) is what
+the profile, drawings, stationing and spotting work on; each structure on
+an alignment gets a station there (`Station`: station, offset, line angle,
 ahead span — computed, not stored).
+
+**Files of version 2** held `routes` that were their own alignment
+(`alignment`, `structures`) or followed their structures, and the line's
+own `alignment` without routes: `Line::upgrade_routes` (on reading) makes
+each a route and an alignment of the same id — points tied under the
+structures for one that followed them, the line's own named `main` — and
+gives a structure its routes itself where the alignments would not find it
+on them. Projects are converted once when they open.
 
 ### Structure (`lib.rs`, `assembly.rs`)
 
@@ -342,7 +370,7 @@ labels may come from its type: references to them are checked after
 ### Ownership and deletion
 
 A structure **owns** its points, wire points, strings and stick drawing;
-a section owns its stringing and span loads; a route owns its alignment.
+a section owns its stringing and span loads; an alignment owns its points.
 Everything else is a reference. Deletion goes through the session
 (`crates/ols-session/src/lib.rs`, `Command::Delete`): when an object takes
 others with it, the command is refused with the list
@@ -351,14 +379,17 @@ of it is one log entry, undone together.
 
 | Deleting | Also deletes or changes |
 |---|---|
-| Structure | its own items; every **section** through it; every **jumper** at it, held by its strings (`supports`), or at a point of those sections; **routes** left with fewer than two structures and no alignment of two points; other routes drop it; alignment points tied to it are **detached** (they stay in place) |
+| Structure | its own items; every **section** through it; every **jumper** at it, held by its strings (`supports`), or at a point of those sections; alignment points tied to it are **detached** (they stay in place) |
 | Wire point with a set (`delete_attachment`) | its strings and the set-less wire points only it uses (own items removed; a type's items added to `omit_sets`); the sections through it; the jumpers at it or at those sections |
 | Section | the jumpers at any of its points |
-| Jumper, route | nothing else |
+| Route | its alignments on no other route; it is taken out of the alignments, points and structures that stay |
+| Alignment (also: its last point) | its points (asked first) |
+| Jumper | nothing else |
 | Meta (line settings) | cannot be deleted |
 
 Renames follow references: `rename` of a structure updates section
-points, jumper ends, routes and tied alignment points;
+points, jumper ends and tied alignment points; of a route, the alignments,
+points and structures on it;
 `rename_attachment` (set renumbering) updates the sections and jumpers
 there; `rename_system` updates the sections given it. Library items are
 not renamed through the session: a changed library id leaves dangling
@@ -484,7 +515,7 @@ case name), `condition` (initial, creep, load, max sag), factors
 |---|---|
 | `ols_meta(key, value)` | settings: `session_schema` (3), `grid_size`, the weather file used, … |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
-| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `structure`, `section`, `jumper` (`ols_session::Kind`); `json` as in the line file; `meta` (id `line`) holds `name`, `crs`, `alignment`, `display`, `systems`, `creep_stretch`, `bimetallic`, `circuit_starts` |
+| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `structure`, `section`, `jumper` (`ols_session::Kind`); `json` as in the line file; `meta` (id `line`) holds `name`, `crs`, `display`, `systems`, `creep_stretch`, `bimetallic`, `circuit_starts` (projects before routes and alignments also an `alignment`, converted once when they open) |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
 | `line_snapshot` | named saved lines |
 | `library_file(kind, name, user, text)` | the project's library files; `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`; not logged, not undone |

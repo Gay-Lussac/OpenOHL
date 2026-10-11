@@ -153,6 +153,9 @@ pub struct Ready {
     pub coord_dialog: Option<crate::alignment_tools::CoordDialog>,
     /// New alignment (Enter): the route(s) it belongs to.
     pub route_choice: Option<crate::alignment_tools::RouteChoice>,
+    /// A project with no route yet: its first steps (the route's name and
+    /// description typed), then its first alignment.
+    pub first_steps: Option<(String, String)>,
     /// Section editor: the other sections of its circuit the change also
     /// sets, shown on Apply; a second Apply with the same list applies.
     pub circuit_warned: Option<Vec<crate::editors::CircuitMate>>,
@@ -337,6 +340,11 @@ impl Ready {
             placed: None,
             coord_dialog: None,
             route_choice: None,
+            // Step 1 of a new project: its route (then its alignment).
+            first_steps: (model.line.routes.is_empty()
+                && model.line.alignments.is_empty()
+                && model.can_edit().is_ok())
+            .then(|| ("route 1".to_owned(), String::new())),
             menu_open: false,
             clearances: crate::clearance::Clearances::new(
                 &model.sources.file,
@@ -2275,6 +2283,27 @@ impl Ready {
         let done = match result {
             Ok(report) => {
                 log::info!("{report}");
+                // Structures on no route (a line with routes): said, not
+                // refused.
+                let line = &self.model.line;
+                let lost: Vec<String> = if line.routes.is_empty() {
+                    Vec::new()
+                } else {
+                    line.structure_routes()
+                        .into_iter()
+                        .filter(|(_, r)| r.is_empty())
+                        .map(|(id, _)| id)
+                        .collect()
+                };
+                let report = match lost.len() {
+                    0 => report,
+                    n => format!(
+                        "{report}; warning: {n} structure(s) on no route ({}{}) — put them on an \
+                         alignment or give their route",
+                        lost.iter().take(5).cloned().collect::<Vec<_>>().join(", "),
+                        if n > 5 { "…" } else { "" }
+                    ),
+                };
                 self.status = Some((report, false));
                 self.confirm = None;
                 self.clearances.stale = true;
@@ -2693,6 +2722,86 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
 
 /// The tool windows: hotbar, inventory, Go to, Move structure, the
 /// editor, the confirmation of a deletion.
+/// A new project's first steps: 1. its route, 2. its alignment (the New
+/// alignment tool held, with a hint).
+fn first_steps_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some((name, description)) = &mut r.first_steps else {
+        return;
+    };
+    let mut create = false;
+    let mut later = false;
+    egui::Window::new("New project: first steps")
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.label(egui::RichText::new("1. The route").strong());
+            ui.label(
+                egui::RichText::new(
+                    "A route is the path of the line: it is made of alignments, and the \
+                     structures, wires and checks belong to it. Name it:",
+                )
+                .small(),
+            );
+            egui::Grid::new("first-route")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    ui.label("name");
+                    ui.add(egui::TextEdit::singleline(name).desired_width(200.0));
+                    ui.end_row();
+                    ui.label("description");
+                    ui.add(
+                        egui::TextEdit::singleline(description)
+                            .desired_width(200.0)
+                            .hint_text("what it is (free text)"),
+                    );
+                    ui.end_row();
+                });
+            ui.label(egui::RichText::new("2. Its alignment").strong());
+            ui.label(
+                egui::RichText::new(
+                    "Then draw its alignment: the New alignment tool is held — right-click its \
+                     points in order (a survey point, or coordinates typed), Enter to make it.",
+                )
+                .small(),
+            );
+            ui.horizontal(|ui| {
+                create = ui
+                    .add_enabled(
+                        !name.trim().is_empty(),
+                        egui::Button::new("Create the route"),
+                    )
+                    .clicked();
+                later = ui.button("Later").clicked();
+            });
+        });
+    if later {
+        r.first_steps = None;
+    }
+    if create && let Some((name, description)) = r.first_steps.clone() {
+        let stored = r.model.stored_line().unwrap_or(&r.model.line).clone();
+        match crate::editors::new_route(&stored, &name, &name) {
+            Ok((what, mut command)) => {
+                if let ols_session::Command::Put { value, .. } = &mut command {
+                    value["description"] = description.trim().into();
+                }
+                if r.perform(crate::edit::Action::Command { what, command }) {
+                    r.first_steps = None;
+                    r.hotbar.hold(crate::tools::Tool::NewAlignment);
+                    r.status = Some((
+                        format!(
+                            "Route {} made. Step 2, its alignment: right-click its points in \
+                             order, Enter to make it",
+                            name.trim()
+                        ),
+                        false,
+                    ));
+                }
+            }
+            Err(e) => r.status = Some((e, true)),
+        }
+    }
+}
+
 /// The alignment tools' windows: a point's coordinates, a new alignment's
 /// routes.
 fn alignment_windows(ctx: &egui::Context, r: &mut Ready) {
@@ -2740,6 +2849,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
     move_window(ctx, r);
+    first_steps_window(ctx, r);
     alignment_windows(ctx, r);
     editor_window(ctx, r, rs);
     display_window(ctx, r);
@@ -4076,11 +4186,29 @@ fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
     let Some(solved) = m.cases.get(r.case) else {
         return;
     };
+    let scope = m.scope();
     r.clearances.start(ctx, |rules| crate::clearance::Input {
         line: m.line.clone(),
         case: solved.case.name.clone(),
-        shapes: solved.shapes.clone(),
-        jumpers: solved.jumpers.clone(),
+        // The route worked on only (View › Work on route).
+        shapes: match &scope {
+            Some(on) => solved
+                .shapes
+                .iter()
+                .filter(|s| on.sections.contains(&s.section))
+                .cloned()
+                .collect(),
+            None => solved.shapes.clone(),
+        },
+        jumpers: match &scope {
+            Some(on) => solved
+                .jumpers
+                .iter()
+                .filter(|j| on.jumpers.contains(&j.jumper))
+                .cloned()
+                .collect(),
+            None => solved.jumpers.clone(),
+        },
         rules,
         scheme: m.scheme.clone(),
         cloud: m.cloud.clone(),
@@ -4391,6 +4519,30 @@ fn menus(
             }
         }
         ui.separator();
+        // Ticks keep it open.
+        crate::menu::options_menu(ui, "Work on route", |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "The profile, the checks and the structure loads keep to it; the rest is \
+                     drawn faded (yours only)",
+                )
+                .small()
+                .weak(),
+            );
+            let mut chosen = r.model.work_route.clone();
+            ui.radio_value(&mut chosen, None, "All routes");
+            for route in &r.model.line.routes {
+                ui.radio_value(&mut chosen, Some(route.id.clone()), &route.id);
+            }
+            if chosen != r.model.work_route {
+                r.model.work_route = chosen.clone();
+                if let Some(id) = chosen {
+                    r.profile.show = Some(crate::profile::Show::Route(id));
+                }
+                r.clearances.stale = true;
+                r.refresh_views();
+            }
+        });
         crate::menu::options_menu(ui, "Profile aspect ratio", |ui| {
             // Remembered with the other display choices when the app saves.
             crate::profile::ratio_menu(ui, &mut r.model.profile_ratio);

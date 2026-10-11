@@ -24,8 +24,8 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `version` | no (`1`) | Format version; newer versions are rejected. |
 | `name` | yes | Line name. |
 | `crs` | no | Coordinate system, e.g. `"EPSG:2056"` (see [coordinate systems](coordinates.md)); used by `ols crs line` and exports. |
-| `routes` | no | Routes: `{ "id", "name", "alignment": [points…], "structures": [ids…] }`. A structure may belong to several routes (Y pylons, parallel routes rejoining). Without routes, one implicit route runs through all structures in file order along `alignment`. A route needs two structures or an alignment of two points (an alignment laid out before its structures). Alignment points are `[x, y, z]` (free) or `{ "position": [x, y, z], "structure": "T12" }` (tied under a structure: it follows the structure; it must lie under it in plan, within 1 mm). |
-| `alignment` | no | Alignment points (PIs) of the implicit route (files without `routes`). |
+| `routes` | no | Routes, the paths of the line: `{ "id", "name", "description" }`. A route is made of the alignments on it. |
+| `alignments` | no | Alignments, in order: `{ "id", "name", "description", "routes": [route ids…], "points": [points…] }` — one or more routes, one or more points (a profile needs two). Points are `[x, y, z]` (free) or `{ "position": [x, y, z], "structure": "T12", "routes": [...] }` (tied under a structure: it follows the structure, and must lie under it in plan within 1 mm; `routes`: the point's own, for it and a structure tied to it). Structures are on the routes of the alignments they stand on (tied, or within 5 m); a structure on none gives its `routes` itself (see Structures). |
 | `structures` | yes | List of structures. |
 | `sections` | yes | List of wire sections. |
 | `jumpers` | no | Jumpers between wire points (below). |
@@ -43,6 +43,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 | `type` | no | Structure type id from the [structure library](structure-library.md); its points, strings and wire points are then generated. |
 | `extension` | no | Height extension of the type. |
 | `description` | no | What it is, in words (free text). |
+| `routes` | no | The routes it is on, given: needed when it stands on no alignment (a crossing line); empty: those of the alignments it stands on. |
 | `height_adjust` | no | With a `type`: height of the type's feet above the ground at `position` (foundations), metres; default 0. |
 | `points` | no | Points on the structure where strings hang: `{ "label", "position": [x, y, z] }` (below). |
 | `wires` | no | Wire points: `{ "label", "position": [x, y, z], "set": n }` (below). |
@@ -96,7 +97,9 @@ How the wire is held at each point of a section follows from these. The usual ca
                { "label": "S", "top": "V1", "wire": "W1", "weight": 50 } ] }
 ```
 
-**Files written before** (line file version 1) gave each string as an `attachment` (`set`, `phase`, `insulator_point`, `wire_point`, optional `legs`, …) and section points with a phase. They are read as points, strings and wire points: an attachment's point labelled by its `top_label`, else `A<set>-<phase>`; its wire point by its `bottom_label`, else its `label`, else `W<set>-<phase>`; V legs as two strings; a wire point within 1 cm of its insulator point fixed. A (set, phase) becomes the set itself for phase 1 — the usual case, one wire per set — and `set + 1000 · (phase + 1)` for other phases, everywhere (structures, sections, jumpers, project history). They are written as version 2.
+**Files written before** (line file version 1) gave each string as an `attachment` (`set`, `phase`, `insulator_point`, `wire_point`, optional `legs`, …) and section points with a phase. They are read as points, strings and wire points: an attachment's point labelled by its `top_label`, else `A<set>-<phase>`; its wire point by its `bottom_label`, else its `label`, else `W<set>-<phase>`; V legs as two strings; a wire point within 1 cm of its insulator point fixed. A (set, phase) becomes the set itself for phase 1 — the usual case, one wire per set — and `set + 1000 · (phase + 1)` for other phases, everywhere (structures, sections, jumpers, project history). They are written as the current version.
+
+**Files of version 2** had `routes` that were their own alignment (`alignment` points, `structures` listed) or followed their structures, and the line's own `alignment` without routes. They are read as routes and alignments of the same ids: a route that followed its structures gets points tied under them; the line's own alignment becomes the route and alignment `main`; a structure the alignments would not put on its routes gives them itself. They are written as version 3.
 
 `cargo run -p ols-cli -- line FILE --stations` prints the stationing, offsets and line angles of every route.
 

@@ -12,6 +12,18 @@ cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.jso
 
 See [Desktop application](desktop-app.md).
 
+### A new line, step by step
+
+1. **The route** — File › New project, then name its route (the first window of a new project asks for it). A route is the path of the line; everything else is put on it.
+2. **Its alignment** — the New alignment tool is held: right-click its points in order (a survey point, an existing alignment point or structure snaps; elsewhere you type E, N and height), Enter, tick its route.
+3. **The ground and survey** — Terrain › Terrain surfaces, LiDAR point clouds (they can come before step 2, to snap the alignment to them).
+4. **The structures** — Structures › Add structure… on an alignment point (it stands there, turned along the line) or the Add structure tool; they go on the route of the alignment they stand on.
+5. **Their strings** — the Add string tool, or the structure's type.
+6. **The wires** — the String wire tool, section by section, then the jumpers.
+7. **The electrical systems**, then **the checks** (clearances, loads, …).
+
+See [Routes and alignments](desktop-app.md#routes-and-alignments).
+
 ## Command-line tool
 
 `ols` runs every calculation without a window. `ols --help` lists the commands, `ols <command> --help` their options.

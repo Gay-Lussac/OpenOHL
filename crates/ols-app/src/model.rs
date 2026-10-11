@@ -100,6 +100,9 @@ pub struct ViewPrefs {
     /// alignment the ground, survey and drawings are shown, m.
     #[serde(default)]
     pub profile_corridor: f64,
+    /// The route worked on (View › Work on route); none: all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_route: Option<String>,
 }
 
 /// The [`ViewPrefs`] of every project opened, by file (remembered).
@@ -405,6 +408,9 @@ pub struct Model {
     pub profile_ratio: Option<f64>,
     /// The profile view's corridor half width, m (0: the centreline only).
     pub profile_corridor: f64,
+    /// The route worked on (View › Work on route): the profile, the
+    /// checks and the loads keep to it, the rest is dimmed; none: all.
+    pub work_route: Option<String>,
     /// LiDAR points shown (thinned to the budget).
     pub points: Vec<LidarPoint>,
     /// Origin of the points (and of the views), project coordinates.
@@ -876,7 +882,44 @@ fn project_libraries(
     Ok(work)
 }
 
+/// What the route worked on holds (View › Work on route).
+#[derive(Debug, Clone, Default)]
+pub struct Scope {
+    /// Structures on it.
+    pub structures: std::collections::BTreeSet<String>,
+    /// Sections on it.
+    pub sections: std::collections::BTreeSet<String>,
+    /// Jumpers on it.
+    pub jumpers: std::collections::BTreeSet<String>,
+}
+
 impl Model {
+    /// What the route worked on holds; none: all the line is worked on.
+    pub fn scope(&self) -> Option<Scope> {
+        let r = self.work_route.as_ref()?;
+        let on = |rs: &Vec<String>| rs.contains(r);
+        let (sections, jumpers) = self.line.wire_routes();
+        Some(Scope {
+            structures: self
+                .line
+                .structure_routes()
+                .into_iter()
+                .filter(|(_, rs)| on(rs))
+                .map(|(id, _)| id)
+                .collect(),
+            sections: sections
+                .into_iter()
+                .filter(|(_, rs)| on(rs))
+                .map(|(id, _)| id)
+                .collect(),
+            jumpers: jumpers
+                .into_iter()
+                .filter(|(_, rs)| on(rs))
+                .map(|(id, _)| id)
+                .collect(),
+        })
+    }
+
     /// Keeps the working copies of the project's libraries in the project
     /// (after a library page or the weather case table saved one): every
     /// file of the working folder put, files no longer there removed.
@@ -1027,6 +1070,7 @@ impl Model {
             hidden_backgrounds: self.hidden_backgrounds.clone(),
             profile_ratio: self.profile_ratio,
             profile_corridor: self.profile_corridor,
+            work_route: self.work_route.clone(),
             line: self.session().map(|s| s.current_line().to_owned()),
             shown_lines: self.other_lines.iter().map(|o| o.name.clone()).collect(),
         }
@@ -1757,6 +1801,11 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .map_or(0.0, |v| v.profile_corridor)
         .clamp(0.0, 500.0);
+    let work_route = sources
+        .view
+        .as_ref()
+        .and_then(|v| v.work_route.clone())
+        .filter(|r| line.routes.iter().any(|x| &x.id == r));
     let shown_lines = sources
         .view
         .as_ref()
@@ -1777,6 +1826,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         hidden_backgrounds,
         profile_ratio,
         profile_corridor,
+        work_route,
         points,
         origin,
         scheme,

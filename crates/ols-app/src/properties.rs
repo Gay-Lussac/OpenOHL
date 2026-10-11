@@ -89,9 +89,23 @@ pub fn ui(
                     ("northing", format!("{:.3} m", s.position[1])),
                     ("ground", format!("{:.3} m", s.position[2])),
                     ("orientation", format!("{:.2}°", s.orientation_deg)),
-                    ("routes", line.routes_of(&id).join(", ")),
+                    (
+                        "routes",
+                        match (line.routes_of(&id), s.routes.is_empty()) {
+                            (r, _) if r.is_empty() => "—".into(),
+                            (r, true) => format!("{} (from the alignments)", r.join(", ")),
+                            (r, false) => format!("{} (its own)", r.join(", ")),
+                        },
+                    ),
                 ],
             );
+            if line.routes_of(&id).is_empty() {
+                ui.colored_label(
+                    egui::Color32::YELLOW,
+                    "On no route: it stands on no alignment. Give its route(s) in its window \
+                     (Edit) or the Structures table.",
+                );
+            }
             if let Some(position) = position {
                 // Typed position: applied as one move.
                 let buffer = match position {
@@ -723,6 +737,10 @@ pub fn ui(
                         },
                     ),
                     ("spans in section", (sec.points.len() - 1).to_string()),
+                    (
+                        "routes",
+                        line.wire_routes().0.remove(&section).unwrap_or_default().join(", "),
+                    ),
                 ],
             );
             ui.separator();

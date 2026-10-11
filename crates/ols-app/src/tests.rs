@@ -8384,6 +8384,17 @@ fn an_empty_project_gets_its_first_alignment_and_a_view() {
         let r = h.state_mut().ready().unwrap();
         [x, y, r.model.ground_at(x, y).unwrap()]
     };
+    // Step 1: the route (the window of the first steps).
+    assert!(harness.state_mut().ready().unwrap().first_steps.is_some());
+    harness.get_by_label("Create the route").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.first_steps.is_none(), "{:?}", r.status);
+        assert_eq!(r.model.line.routes[0].id, "route 1");
+        // Step 2: the New alignment tool held.
+        assert_eq!(r.hotbar.tool(), Tool::NewAlignment);
+    }
     for (x, y) in [(0.0, 0.0), (310.0, 0.0), (640.0, 560.0)] {
         let p = ground(&mut harness, x, y);
         // Nothing to snap to: the coordinates window, confirmed.
@@ -8395,12 +8406,12 @@ fn an_empty_project_gets_its_first_alignment_and_a_view() {
             ols_line::AlignmentPoint::free(point),
         );
     }
-    // Enter: no route yet — a new one.
+    // Enter: its route, the only one, ticked.
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     {
         let r = harness.state_mut().ready().unwrap();
-        assert!(r.route_choice.as_ref().unwrap().routes.is_empty());
-        r.make_new_alignment(Vec::new(), Some("route 1".into()));
+        assert_eq!(r.route_choice.as_ref().unwrap().routes, ["route 1"]);
+        r.make_new_alignment(vec!["route 1".into()], None);
         let line = &r.model.line;
         assert_eq!(line.alignments.len(), 1, "{:?}", r.status);
         assert_eq!(line.alignments[0].points.len(), 3);
@@ -9299,4 +9310,48 @@ fn routes_are_made_renamed_and_deleted_and_structures_take_them() {
     assert!(line.routes.iter().all(|x| x.id != "west"));
     assert!(line.alignments.iter().all(|a| a.id != "branch"));
     assert_eq!(line.structure("T6").unwrap().routes, ["north"]);
+}
+
+/// View › Work on route: the branch chosen, its structures, sections and
+/// jumpers are what the checks and loads keep to; the profile shows it;
+/// remembered with the display choices.
+#[test]
+fn work_on_one_route() {
+    let model = synthetic_project("work-on-route");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("View").click();
+    harness.run();
+    harness.get_by_label_contains("Work on route").hover();
+    harness.run();
+    harness.get_by_label("branch").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.work_route.as_deref(), Some("branch"));
+    assert_eq!(r.model.view_prefs().work_route.as_deref(), Some("branch"));
+    assert_eq!(
+        r.profile.show,
+        Some(crate::profile::Show::Route("branch".into()))
+    );
+    let scope = r.model.scope().unwrap();
+    assert_eq!(
+        scope
+            .structures
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["T3", "T6", "T7"]
+    );
+    // The branch's sections, and the jumper from main into it (at T3).
+    let (sections, _) = r.model.line.wire_routes();
+    for (id, routes) in sections {
+        assert_eq!(
+            scope.sections.contains(&id),
+            routes.contains(&"branch".to_owned()),
+            "{id}"
+        );
+    }
+    assert!(!scope.jumpers.is_empty());
 }
