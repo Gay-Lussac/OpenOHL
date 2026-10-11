@@ -201,6 +201,8 @@ impl ZoneWindow {
         let cloud = model.cloud.clone();
         let ground = model.ground_for_checks();
         let zone = self.zone;
+        // The route worked on only (View › Work on route).
+        let scope = model.scope().map(|s| s.sections);
         let done = Arc::new(AtomicUsize::new(0));
         let cancel = CancelToken::new();
         let total = states.len();
@@ -208,7 +210,9 @@ impl ZoneWindow {
         let ctx = ctx.clone();
         let (d, c) = (done.clone(), cancel.clone());
         std::thread::spawn(move || {
-            let r = run(&line, &library, zone, rules, states, cloud, ground, &d, &c);
+            let r = run(
+                &line, &library, zone, rules, states, cloud, ground, scope, &d, &c,
+            );
             let _ = tx.send(r);
             ctx.request_repaint();
         });
@@ -718,9 +722,17 @@ fn run(
     states: Vec<WindState>,
     cloud: Option<String>,
     ground: Option<Arc<ols_terrain::Terrain>>,
+    scope: Option<std::collections::BTreeSet<String>>,
     done: &AtomicUsize,
     cancel: &CancelToken,
 ) -> Result<Report, String> {
+    let mut sections = zone::sections_needed(line, &rules);
+    if let Some(on) = &scope {
+        sections.retain(|s| on.contains(s));
+        if sections.is_empty() {
+            return Err("no section of the rules' voltages on the route worked on".into());
+        }
+    }
     let budget = Budget::new()
         .time_limit(TIME_BUDGET)
         .cancel_token(cancel.clone());
@@ -729,7 +741,7 @@ fn run(
         line,
         library,
         &states,
-        &zone::sections_needed(line, &rules),
+        &sections,
         zone::jumpers_needed(&rules),
         &budget,
         done,

@@ -264,6 +264,9 @@ impl PlanView {
                 egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 200, 220)),
             ));
         }
+        // Off the route worked on: faded.
+        let scope = model.scope();
+        let faded = egui::Color32::from_rgba_unmultiplied(130, 134, 140, 70);
         {
             // Each section in each of its display cases, coloured and
             // coded as Sections › Display options say.
@@ -278,8 +281,13 @@ impl PlanView {
                     let selected = matches!(selection, Selection::Span { section, span: n }
                         if *section == shape.section && *n == k);
                     let pts: Vec<egui::Pos2> = span.points.iter().map(|p| to_screen(*p)).collect();
+                    let off = scope
+                        .as_ref()
+                        .is_some_and(|s| !s.sections.contains(&shape.section));
                     let (w, col) = if selected {
                         (4.0, egui::Color32::WHITE)
+                    } else if off {
+                        (1.0, faded)
                     } else {
                         (1.5, color(style.color))
                     };
@@ -308,8 +316,13 @@ impl PlanView {
                         model.section_display.direction[crate::annotations::View::Plan as usize]
                     });
                 let pts: Vec<egui::Pos2> = j.points.iter().map(|p| to_screen(*p)).collect();
+                let off = scope
+                    .as_ref()
+                    .is_some_and(|s| !s.jumpers.contains(&j.jumper));
                 let (w, col) = if selected {
                     (4.0, egui::Color32::WHITE)
+                } else if off {
+                    (1.0, faded)
                 } else {
                     (1.0, color(style.color))
                 };
@@ -370,11 +383,16 @@ impl PlanView {
                 continue;
             }
             let selected = matches!(selection, Selection::Structure(id) if *id == s.id);
+            let off = scope
+                .as_ref()
+                .is_some_and(|x| !x.structures.contains(&s.id));
             painter.circle_filled(
                 p,
                 if selected { 6.0 } else { 3.5 },
                 if selected {
                     egui::Color32::WHITE
+                } else if off {
+                    faded
                 } else {
                     egui::Color32::from_gray(215)
                 },
