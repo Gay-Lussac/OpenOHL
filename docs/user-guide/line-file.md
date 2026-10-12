@@ -109,7 +109,7 @@ How the wire is held at each point of a section follows from these. The usual ca
 
 **Files of version 3** had alignments holding their points (`[x, y, z]` or `{ "position", "structure", "routes" }`) on one or more `routes`. Their points become alignment points of their own (`P1`, `P2`…); points of different alignments at the same place (within 1 mm, tied to the same structure or one of them free) become one shared point; an alignment on several routes becomes one alignment per route through the same points (`a`, `a (route)`…); a point's own routes go to the structure tied to it (a free point's are dropped). Projects are converted the same way when they open. Files are written as version 4.
 
-`cargo run -p ols-cli -- line FILE --stations` prints the stationing, offsets and line angles of every route.
+`cargo run -p ols-cli -- line FILE --stations` prints the stationing, offsets and line angles along every alignment (with its route), and for each structure the other routes it is also on.
 
 ## Sections
 

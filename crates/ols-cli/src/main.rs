@@ -1413,19 +1413,23 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             }
         }
         if *stations {
-            for route in line.alignment_views() {
-                println!("Route {} {}", route.id, route.name);
+            for alignment in line.alignment_views() {
+                println!(
+                    "Alignment {} {} (route {})",
+                    alignment.id, alignment.name, alignment.route
+                );
                 println!(
                     "  {:<12} {:>11} {:>9} {:>10} {:>10}  also on routes",
                     "structure", "station m", "offset m", "angle °", "ahead m"
                 );
                 // Print tiny rounding values as 0.00, not -0.00.
                 let clean = |x: f64| if x.abs() < 0.005 { 0.0 } else { x };
-                for st in route.stations(&line).map_err(|e| e.to_string())? {
+                for st in alignment.stations(&line).map_err(|e| e.to_string())? {
+                    // The structure's routes other than this alignment's.
                     let others: Vec<String> = line
                         .routes_of(&st.structure)
                         .into_iter()
-                        .filter(|r| *r != route.id)
+                        .filter(|r| *r != alignment.route)
                         .collect();
                     println!(
                         "  {:<12} {:>11.2} {:>9.2} {:>10.2} {:>10.2}  {}",
