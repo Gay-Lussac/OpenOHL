@@ -837,8 +837,13 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
             match selection {
                 Selection::Structure(id) => {
                     if let Some(st) = line.structure(id) {
+                        // Its wire points where the strings hold them in
+                        // the case shown (as solved), else as given.
+                        let pieces = crate::selection::string_pieces(model, case);
                         for w in &st.wires {
-                            s.point(w.position, hi, 9.0);
+                            for p in wire_drawn(st, w, &pieces) {
+                                s.point(p, hi, 9.0);
+                            }
                         }
                         s.point(st.position, hi, 12.0);
                     }
@@ -875,18 +880,34 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 Selection::Attachment { structure, set } => {
-                    // The strings holding it, as given.
+                    // The strings holding it where they are drawn in the
+                    // case shown (as solved), else as given.
                     if let Some(st) = line.structure(structure)
                         && let Some(w) = st.wire_at_set(*set)
                     {
+                        let pieces = crate::selection::string_pieces(model, case);
                         for &i in &st.component(&w.label).strings {
                             let x = &st.strings[i];
-                            if let (Some(top), Some(bottom)) = (st.node(&x.top), st.wire(&x.wire)) {
-                                s.polyline(&[top.position(), bottom.position], hi, 3.0);
-                                s.point(top.position(), hi, 9.0);
+                            match pieces.get(&(st.id.clone(), x.label.clone())) {
+                                Some(drawn) => {
+                                    for (top, bottom) in drawn {
+                                        s.polyline(&[*top, *bottom], hi, 3.0);
+                                        s.point(*top, hi, 9.0);
+                                    }
+                                }
+                                None => {
+                                    if let (Some(top), Some(bottom)) =
+                                        (st.node(&x.top), st.wire(&x.wire))
+                                    {
+                                        s.polyline(&[top.position(), bottom.position], hi, 3.0);
+                                        s.point(top.position(), hi, 9.0);
+                                    }
+                                }
                             }
                         }
-                        s.point(w.position, hi, 11.0);
+                        for p in wire_drawn(st, w, &pieces) {
+                            s.point(p, hi, 11.0);
+                        }
                     }
                 }
                 Selection::String { structure, label } => {
@@ -947,4 +968,27 @@ pub fn draft(origin: [f64; 3], points: &[[f64; 3]]) -> Scene {
         s.point(*p, [255, 220, 60, 255], 11.0);
     }
     s
+}
+
+/// Where wire point `w` of `st` is drawn: the ends of the strings to it as
+/// solved (`pieces`: the case shown and its mirror), else where it is
+/// given (a wire point without a string, or a case not solved yet).
+pub(crate) fn wire_drawn(
+    st: &ols_line::Structure,
+    w: &ols_line::WirePoint,
+    pieces: &crate::selection::StringPieces,
+) -> Vec<[f64; 3]> {
+    let mut out: Vec<[f64; 3]> = st
+        .strings
+        .iter()
+        .filter(|x| x.wire == w.label)
+        .filter_map(|x| pieces.get(&(st.id.clone(), x.label.clone())))
+        .flatten()
+        .map(|(_, bottom)| *bottom)
+        .collect();
+    out.dedup();
+    if out.is_empty() {
+        out.push(w.position);
+    }
+    out
 }
