@@ -1843,6 +1843,8 @@ impl StringForm {
                 wind_area: x.wind_area,
                 stiffness: x.stiffness,
                 strain,
+                // From its wire point as placed here.
+                ..Default::default()
             });
         }
         if s.structure_type.is_some() {

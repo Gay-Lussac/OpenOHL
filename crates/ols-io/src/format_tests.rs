@@ -205,6 +205,9 @@ fn rich_line() -> Line {
         ols_line::JumperClamp::new("JW", 0.75),
     ];
     line.jumpers.push(held);
+    // The strings added here: their lengths and directions from where
+    // their wire points are.
+    line.place_strings().unwrap();
     line
 }
 

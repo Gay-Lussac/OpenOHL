@@ -11,9 +11,10 @@
 //!
 //! Where a phase hangs is an **attachment** with a **slot** number: its
 //! wire's set on a suspension type. On a strain type each phase has two
-//! strain strings along the line, the back one with set `slot +
-//! back_offset` and the ahead one `slot + ahead_offset` (default 20 and
-//! 40: slots 1–20, back 21–40, ahead 41–60). Earth wires have the same:
+//! level strain strings along the line, their directions given by their
+//! angles only: the first at 180° with set `slot + first_offset`, the
+//! second at 0° with set `slot + second_offset` (default 20 and 40:
+//! slots 1–20, then 21–40 and 41–60). Earth wires have the same:
 //! a point on the pylon and a short string of their own (hanging on a
 //! suspension type, two strain strings on a strain type).
 //!
@@ -196,12 +197,14 @@ pub struct PylonTemplate {
     /// highest attachment).
     #[serde(default)]
     pub height: Option<String>,
-    /// Strain types: the back strings' sets are the slot plus this.
-    #[serde(default = "default_back")]
-    pub back_offset: u32,
-    /// Strain types: the ahead strings' sets are the slot plus this.
-    #[serde(default = "default_ahead")]
-    pub ahead_offset: u32,
+    /// Strain types: the first string's set (direction 180°) is the slot
+    /// plus this (files written before: `back_offset`).
+    #[serde(default = "default_back", alias = "back_offset")]
+    pub first_offset: u32,
+    /// Strain types: the second string's set (direction 0°) is the slot
+    /// plus this (files written before: `ahead_offset`).
+    #[serde(default = "default_ahead", alias = "ahead_offset")]
+    pub second_offset: u32,
     /// The strings' lengths and weights offered.
     #[serde(default)]
     pub strings: Strings,
@@ -311,8 +314,8 @@ impl LibraryItem for PylonTemplate {
         if self.attachments.is_empty() {
             return Err("no attachment: where do the phases hang?".into());
         }
-        if self.back_offset == self.ahead_offset {
-            return Err("back_offset and ahead_offset must differ".into());
+        if self.first_offset == self.second_offset {
+            return Err("first_offset and second_offset must differ".into());
         }
         // Built with the defaults, it must make a valid type both ways.
         let defaults = self.defaults(Role::Suspension);
@@ -372,9 +375,9 @@ impl PylonTemplate {
                 // Back and ahead sets must not meet: slots up to the gap
                 // between the offsets (and the smaller offset).
                 let max = self
-                    .back_offset
-                    .abs_diff(self.ahead_offset)
-                    .min(self.back_offset.min(self.ahead_offset));
+                    .first_offset
+                    .abs_diff(self.second_offset)
+                    .min(self.first_offset.min(self.second_offset));
                 if a.slot == 0 || a.slot > max {
                     return Err(format!("slot {}: from 1 to {max}", a.slot));
                 }
@@ -501,24 +504,29 @@ impl PylonTemplate {
             let _ = writeln!(t, "label = {}", quote(label));
             let _ = writeln!(t, "set = {set}");
         };
-        let string =
-            |t: &mut String, label: &str, top: &str, w: &str, side: Option<&str>, earth: bool| {
-                let (l, wt) = if earth {
-                    (values.earth_length, values.earth_weight)
-                } else {
-                    (values.string_length, values.string_weight)
-                };
-                let _ = writeln!(t, "\n[[string]]");
-                let _ = writeln!(t, "label = {}", quote(label));
-                let _ = writeln!(t, "top = {}", quote(top));
-                let _ = writeln!(t, "wire = {}", quote(w));
-                let _ = writeln!(t, "length = {}", n(l));
-                let _ = writeln!(t, "weight = \"{} N\"", round(wt));
-                if let Some(s) = side {
-                    let _ = writeln!(t, "strain = true");
-                    let _ = writeln!(t, "side = \"{s}\"");
-                }
+        let string = |t: &mut String,
+                      label: &str,
+                      top: &str,
+                      w: &str,
+                      direction: Option<f64>,
+                      earth: bool| {
+            let (l, wt) = if earth {
+                (values.earth_length, values.earth_weight)
+            } else {
+                (values.string_length, values.string_weight)
             };
+            let _ = writeln!(t, "\n[[string]]");
+            let _ = writeln!(t, "label = {}", quote(label));
+            let _ = writeln!(t, "top = {}", quote(top));
+            let _ = writeln!(t, "wire = {}", quote(w));
+            let _ = writeln!(t, "length = {}", n(l));
+            let _ = writeln!(t, "weight = \"{} N\"", round(wt));
+            if let Some(d) = direction {
+                let _ = writeln!(t, "strain = true");
+                let _ = writeln!(t, "angle = \"90 deg\"");
+                let _ = writeln!(t, "direction = \"{d} deg\"");
+            }
+        };
         // Phases and earth wires alike: a point on the pylon, a string
         // (the earth wires' short) to a wire point with the set.
         for p in &face {
@@ -531,12 +539,12 @@ impl PylonTemplate {
                     string(&mut t, &format!("S-{}", p.label), &a, &w, None, p.earth);
                 }
                 Role::Strain => {
-                    for (side, offset) in [("back", self.back_offset), ("ahead", self.ahead_offset)]
-                    {
-                        let w = format!("W-{}-{side}", p.label);
+                    let pairs = [(1, 180.0, self.first_offset), (2, 0.0, self.second_offset)];
+                    for (n, direction, offset) in pairs {
+                        let w = format!("W-{}-{n}", p.label);
                         wire(&mut t, &w, p.slot + offset);
-                        let label = format!("S-{}-{side}", p.label);
-                        string(&mut t, &label, &a, &w, Some(side), p.earth);
+                        let label = format!("S-{}-{n}", p.label);
+                        string(&mut t, &label, &a, &w, Some(direction), p.earth);
                     }
                 }
             }
@@ -805,7 +813,11 @@ mod tests {
             .build(&t.defaults(Role::Strain), Role::Strain, "x", "x")
             .unwrap();
         let ty = StructureType::parse(std::path::Path::new("x"), &text).unwrap();
-        assert!(ty.strings.iter().all(|s| s.strain && s.side.is_some()));
+        assert!(
+            ty.strings
+                .iter()
+                .all(|s| s.strain && s.side.is_none() && s.angles().0 == 90.0)
+        );
     }
 
     #[test]

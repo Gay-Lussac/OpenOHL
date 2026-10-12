@@ -484,9 +484,12 @@ fn dead_end_spans_take_both_sides() {
             s.wind_span
         );
         assert!((s.wind_span - span).abs() < 0.01, "{id}: {}", s.wind_span);
-        // Level: the low points mid-span (the weight span within a metre).
+        // Level: the low points mid-span (the weight span within a metre;
+        // at T3 the jumper's weight on the dead-end clamps lowers them, the
+        // low points come a little towards it: within 2.5 m).
+        let within = if id == "T3" { 2.5 } else { 1.0 };
         assert!(
-            (lo - span).abs() < 1.0 && (hi - span).abs() < 1.0,
+            (lo - span).abs() < within && (hi - span).abs() < within,
             "{id}: {lo} {hi}"
         );
         // One conductor position: one weight span.

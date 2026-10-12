@@ -208,25 +208,34 @@ A structure without a type holds its own `points`, `wires`, `strings` and `membe
 | `StructurePoint.position` | `[x,y,z]` | m (global) | where strings hang | — |
 | `StructurePoint.description` | string | — | free text | — |
 | `WirePoint.label` | string | — | unique among points and wire points | — |
-| `WirePoint.position` | `[x,y,z]` | m (global) | position in still air as given (string lengths are the distances) | — |
+| `WirePoint.position` | `[x,y,z]` | m (global) | position in still air: **placed from its strings** (`Structure::place_wires`); given only for one no string reaches (fixed) | — |
 | `WirePoint.set` | u32? | — | set number, unique on the structure: sections and jumpers end here. None: strings only meet here | — |
 | `WirePoint.weight` | f64 | N | counterweight hanging at it (whole bundle) | — |
 | `WirePoint.description` | string | — | free text | — |
 | `InsulatorString.label` | string | — | unique among the structure's strings | — |
 | `InsulatorString.top` | string | — | its top: a structure point or another string's wire point | `StructurePoint.label` / `WirePoint.label` |
 | `InsulatorString.wire` | string | — | its bottom | `WirePoint.label` |
+| `InsulatorString.length` | f64 | m | top to wire point (0 in files written before: taken from the geometry when read) | — |
+| `InsulatorString.angle_deg` | f64 | ° | from straight down (0 hanging, 90 level) | — |
+| `InsulatorString.direction_deg` | f64 | ° | in plan, structure axes (0 ahead, 90 right) | — |
 | `InsulatorString.insulator` | string? | — | insulator assembly | `.olsi` `id` |
 | `InsulatorString.weight` | f64 | N | half at each end | — |
 | `InsulatorString.wind_area` | f64 | m² | half at each end | — |
 | `InsulatorString.stiffness` | f64? | N (EA) | default `solve::DEFAULT_INSULATOR_STIFFNESS` | — |
 | `InsulatorString.compression` | f64? | N | compression it may take (then two-way, flagged beyond); none: tension only | — |
-| `InsulatorString.strain` | bool | — | a strain (dead-end) string, aimed along its conductor | — |
+| `InsulatorString.strain` | bool | — | a strain (dead-end) string, else suspension: its set is a strain point | — |
 | `InsulatorString.description` | string | — | free text | — |
 
 The string graph: a V-string is two strings to one wire point; strings
 hang from strings (a V with a string below, a TAK). A wire point no string
-reaches is fixed to the structure. A string's length is the distance
-between its ends **as given**. Version 1 files gave one `attachments`
+reaches is fixed to the structure. A string's **length and direction**
+place its wire point (`Line::place_strings`, when a line is read or
+resolved): top + length × direction; a V's wire point where its first
+two legs' lengths meet, the point of that circle nearest where the first
+leg's direction points (their directions follow).
+Strings without a length (files written before) take it and their
+angles from where their wire point is, so nothing moves. There is no
+"ahead"/"back" for a string: its angles alone give its direction. Version 1 files gave one `attachments`
 entry per set and phase; they are read through `AttachmentV1` and
 `set_from_v1(set, phase)` (`set` for phase 1, else
 `set + 1000·(phase + 1)`).
@@ -236,9 +245,13 @@ entry per set and phase; they are read through `AttachmentV1` and
 (`to_global` with `orientation_deg`, the extension, `height_adjust`),
 then the structure's own items replace the type's **by label**, a wire
 point with a set replaces the type's wire point **with that set** (and
-what moves with it), `omit`/`omit_sets` leave items out, wind areas come
-from the insulator library, and strain strings are aimed along their
-conductor. The resolved line is what solvers and exports use; the stored
+what moves with it), `omit`/`omit_sets` leave items out, weights,
+stiffnesses and wind areas come from the insulator library where a
+string has none (a V-string assembly's shared by its legs), and the
+wire points are placed from the strings. In a weather case the jumpers'
+weight hangs on the clamps of the sections at their ends
+(`jumper::end_weights`: half of the jumper between an end and its first
+support; with ice) — not at stringing. The resolved line is what solvers and exports use; the stored
 line and the project rows are not resolved.
 
 ### Section (`lib.rs`, `condition.rs`)
@@ -465,7 +478,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `source` | string? | — | where the data comes from |
 | `[[point]]` | `TypePoint` | m | `label`, `description`, and `point` **or** `node` (joint id) **or** `member` + `at` (0–1) |
 | `[[wire]]` | `TypeWire` | m, N | `label`, `description`, `set?`, `point?` (else it hangs below its strings), `weight?` |
-| `[[string]]` | `TypeString` | m, N, m² | `label`, `description`, `top`, `wire`, `insulator?` **or** `length` + `weight`, `compression?`, `wind_area?`, `strain`, `side` (`ahead`/`back`) |
+| `[[string]]` | `TypeString` | m, N, m² | `label`, `description`, `top`, `wire`, `insulator?` **or** `length` + `weight`, `compression?`, `wind_area?`, `strain`, `angle?` (from straight down), `direction?` (in plan, 0 ahead); `side` (`ahead`/`back`) in files written before: level, 0° or 180° |
 | `[[attachment]]` | `TypeAttachment` | — | version 1: `set`, `phase`, `point`, `insulator` or inline `string`, `side` |
 | `[[extension]]` | `name`, `dz` | m | height extensions |
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |

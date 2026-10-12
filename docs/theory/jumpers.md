@@ -2,6 +2,8 @@
 
 Implemented in `crates/ols-line` (`jumper.rs`, `rod.rs`). A jumper is a short slack cable joining two attachment points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire. The line file fields are described in [Line files](../user-guide/line-file.md#jumpers).
 
+**Its weight on the clamps.** The jumper's **weight** (and ice) does reach the sections: in each weather case, the clamps at its ends carry the part of it between each end and its first support — half of it without supports — as a load hanging at the clamp (`jumper::end_weights`). Its length for that is its cut length, else the length giving its sag between the wire points in still air. It is not there at stringing (jumpers are hung after the wires are strung), so a section with jumpers solved at its stringing temperature carries a little more tension than it was strung to. A section is solved again when the jumpers on it change.
+
 A jumper's pull, tens to a few hundred newtons, is negligible next to a section's tension, so **sections are solved first** and each jumper is then solved on its own between the sections' solved clamps. The steps, in every weather case:
 
 1. **Ends.** Each end is the solved clamp of the section through that attachment, so the jumper follows strain assemblies as they settle and suspension clamps as they swing. If no section uses the attachment, the end is the attachment's wire point.

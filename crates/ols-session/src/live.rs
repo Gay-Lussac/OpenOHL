@@ -168,7 +168,8 @@ mod tests {
             .unwrap();
         assert_eq!((u.solved, u.kept), (3, 0));
         check(&live);
-        // A jumper change re-solves no section.
+        // A jumper change re-solves the two sections it hangs its weight
+        // on, not the third.
         let mut j = live.session().line().jumpers[0].clone();
         j.sag = Some(2.0);
         let (_, u) = live
@@ -182,7 +183,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!((u.solved, u.kept), (0, 3));
+        assert_eq!((u.solved, u.kept), (2, 1));
         check(&live);
         // Delete S3 (with its jumper), undo, rollback everything.
         let (_, u) = live
@@ -195,10 +196,12 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!((u.solved, u.dropped, u.jumpers), (0, 1, 0));
+        // (S1 solved again: the jumper gone, its clamp carries less.)
+        assert_eq!((u.solved, u.dropped, u.jumpers), (1, 1, 0));
         check(&live);
         let (_, u) = live.undo("ben").unwrap();
-        assert_eq!(u.solved, 1);
+        // S3 back, and S1 (its jumper back on its clamp).
+        assert_eq!(u.solved, 2);
         check(&live);
         live.rollback_after("ana", start).unwrap();
         check(&live);

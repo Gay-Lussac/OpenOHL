@@ -73,12 +73,17 @@ What hangs on a structure is given explicitly (each point, wire point and string
 | `description` | no | What it is, in words (free text). |
 | `top` | yes | A point's or a wire point's label. |
 | `wire` | yes | A wire point's label. |
-| `insulator` | no | Insulator assembly id from the [insulator library](structure-library.md) (its wind area when resolved). |
+| `length` | yes (files written before: no) | From its top to its wire point, m. Without it (files written before), the distance to its wire point as given — taken when read, so nothing moves. |
+| `angle_deg` | no (0) | Its angle from straight down, degrees: 0 hanging, 90 level, 180 up. |
+| `direction_deg` | no (0) | Its direction in plan, in the structure's axes, degrees: 0 ahead along the line, 90 to the right, 180 back, 270 to the left. |
+| `insulator` | no | Insulator assembly id from the [insulator library](structure-library.md) (its weight, stiffness and wind area when resolved, where the string gives none). |
 | `weight` | no (0) | Weight, N, half at each end. |
 | `wind_area` | no (0) | Area the wind blows on, m², half at each end (0: its insulator's, if it has one). Every string takes it: suspension, V legs, strain strings and a jumper's helping strings. |
 | `stiffness` | no | Axial stiffness EA, N (default 5·10⁷ N). |
 | `compression` | no | Compression it may take, N: it then acts both ways (a post, a V leg designed to push), and the solve **flags** it beyond that. Without it: tension only, slack when pushed. |
-| `strain` | no (false) | A strain (dead-end) string: placed along its conductor when its structure type is placed, lined up with it when solved. |
+| `strain` | no (false) | A strain (dead-end) string, else a suspension string: a set on its wire point is a strain point (the conductor ends there). Solved, it lines up with its conductor by equilibrium. |
+
+**A wire point's position follows from its strings**: its top, plus its length in its direction. Where two strings end at one wire point (a V), it is where their lengths meet — of the circle both reach, the point nearest where the first string's own direction points (a hanging V: the lowest) — and their directions follow. A wire point no string reaches is fixed to the structure, where it is given. So a structure point moved (in structure editing) takes its strings' wire points along, and a string made longer moves its wire point down; the `position` written for a wire point on strings is the result, not an input. There is no "ahead" or "back" for a string: its angles alone give where it points.
 
 How the wire is held at each point of a section follows from these. The usual cases keep the behaviour they have always had:
 
