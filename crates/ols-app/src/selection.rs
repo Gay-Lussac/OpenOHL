@@ -42,6 +42,14 @@ pub enum Selection {
         /// The string's label.
         label: String,
     },
+    /// A point of a structure strings hang from: a structure point or a
+    /// wire point, by its label (picked while Add string is held).
+    Point {
+        /// Structure id.
+        structure: String,
+        /// The point's label.
+        label: String,
+    },
     /// An alignment point (on any number of alignments).
     AlignmentPoint {
         /// Its id.
@@ -80,6 +88,9 @@ pub enum Snap {
     LidarPoint,
     /// Points of the ground surface (survey) shown.
     SurveyPoint,
+    /// Structure points and wire points, by label (only while a tool
+    /// that hangs strings from them is held; not in the Snap menu).
+    Point,
 }
 
 impl Snap {
@@ -104,6 +115,7 @@ impl Snap {
             Snap::AlignmentPoint => "Alignment points",
             Snap::LidarPoint => "LiDAR points",
             Snap::SurveyPoint => "Survey points (ground surface)",
+            Snap::Point => "Structure and wire points",
         }
     }
 
@@ -117,6 +129,7 @@ impl Snap {
             Snap::AlignmentPoint => "alignment_point",
             Snap::LidarPoint => "lidar_point",
             Snap::SurveyPoint => "survey_point",
+            Snap::Point => "point",
         }
     }
 
@@ -124,6 +137,7 @@ impl Snap {
     /// points over the lines they sit on, structures over wires.
     fn priority(self) -> f64 {
         match self {
+            Snap::Point => 7.0,
             Snap::Attachment | Snap::AlignmentPoint => 6.0,
             Snap::LidarPoint | Snap::SurveyPoint => 4.0,
             Snap::Structure => 3.0,
@@ -180,6 +194,7 @@ impl Selection {
             Selection::Jumper(_) => Snap::Jumper,
             Selection::Span { .. } => Snap::Span,
             Selection::Attachment { .. } | Selection::String { .. } => Snap::Attachment,
+            Selection::Point { .. } => Snap::Point,
             Selection::AlignmentPoint { .. } => Snap::AlignmentPoint,
             Selection::LidarPoint(_) => Snap::LidarPoint,
             Selection::SurveyPoint(_) => Snap::SurveyPoint,
@@ -195,6 +210,7 @@ impl Selection {
             Selection::Jumper(id) => format!("jumper {id}"),
             Selection::Attachment { structure, set } => format!("{structure} set {set}"),
             Selection::String { structure, label } => format!("{structure} string {label}"),
+            Selection::Point { structure, label } => format!("{structure} point {label}"),
             Selection::AlignmentPoint { id } => {
                 format!("alignment point {id}")
             }
@@ -242,6 +258,11 @@ impl Selection {
                     })?;
                 Some([0, 1, 2].map(|k| 0.5 * (a[k] + b[k])))
             }
+            Selection::Point { structure, label } => model
+                .line
+                .structure(structure)?
+                .node(label)
+                .map(|n| n.position()),
             Selection::AlignmentPoint { id } => alignment_point(model, id),
             Selection::LidarPoint(_) | Selection::SurveyPoint(_) => position(model, self),
         }
@@ -329,7 +350,7 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
     use crate::scene::Part;
     let mut out = Vec::new();
     // Strings are clicked with the structures or the attachment points.
-    let strings = snaps.on(Snap::Attachment) || snaps.on(Snap::Structure);
+    let strings = snaps.on(Snap::Attachment) || snaps.on(Snap::Structure) || snaps.on(Snap::Point);
     let pieces = if strings {
         string_pieces(model, case)
     } else {
@@ -406,6 +427,29 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
                         }
                     }
                 }
+            }
+        }
+    }
+    if snaps.on(Snap::Point) {
+        // Every structure point, and every wire point where it is drawn.
+        for s in &model.line.structures {
+            let sel = |label: &str| Selection::Point {
+                structure: s.id.clone(),
+                label: label.to_owned(),
+            };
+            for p in &s.points {
+                out.push((sel(&p.label), p.position, p.position));
+            }
+            for w in &s.wires {
+                let at = s
+                    .strings_to(&w.label)
+                    .find_map(|x| {
+                        pieces
+                            .get(&(s.id.clone(), x.label.clone()))
+                            .and_then(|v| v.last().map(|(_, b)| *b))
+                    })
+                    .unwrap_or(w.position);
+                out.push((sel(&w.label), at, at));
             }
         }
     }

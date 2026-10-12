@@ -303,6 +303,36 @@ pub fn ui(
                 }
             }
         }
+        Selection::Point { structure, label } => {
+            let Some(st) = line.structure(&structure) else {
+                ui.label(format!("{structure}: not in the line"));
+                return;
+            };
+            ui.heading(format!("{structure} point {label}"));
+            if ui.link(format!("structure {structure}")).clicked() {
+                next = Some(Selection::Structure(structure.clone()));
+            }
+            let what = match (st.point(&label), st.wire(&label)) {
+                (Some(_), _) => "a point of the structure".to_owned(),
+                (None, Some(w)) => match w.set {
+                    Some(set) => format!("a wire point, set {set}"),
+                    None => "a wire point (no set)".to_owned(),
+                },
+                (None, None) => "not on the structure any more".to_owned(),
+            };
+            ui.label(what);
+            let hanging: Vec<&str> = st
+                .strings
+                .iter()
+                .filter(|x| x.top == label)
+                .map(|x| x.label.as_str())
+                .collect();
+            ui.label(if hanging.is_empty() {
+                "No string hangs from it.".to_owned()
+            } else {
+                format!("Strings hanging from it: {}", hanging.join(", "))
+            });
+        }
         Selection::String { structure, label } => {
             let Some(st) = line.structure(&structure) else {
                 ui.label(format!("{structure}: not in the line"));
