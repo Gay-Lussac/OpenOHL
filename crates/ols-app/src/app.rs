@@ -1417,17 +1417,12 @@ impl Ready {
                 self.editor = SectionForm::of(model, section).map(Form::Section);
                 self.select(target);
             }
-            (Tool::AddStructure, _) => match u.at {
-                Some(at) => {
-                    self.editor = Some(Form::Structure(StructureForm::new_at(model, at)));
-                }
-                None => {
-                    self.status = Some((
-                        "Add structure: right-click the ground (3D or plan view)".into(),
-                        true,
-                    ));
-                }
-            },
+            // Where it was clicked; with no ground there, the first free
+            // alignment point (the window gives its place).
+            (Tool::AddStructure, _) => {
+                let at = u.at.unwrap_or_else(|| structure_spot(model));
+                self.editor = Some(Form::Structure(StructureForm::new_at(model, at)));
+            }
             (
                 Tool::AddString,
                 Selection::Structure(id) | Selection::Attachment { structure: id, .. },
@@ -4140,6 +4135,17 @@ fn display_window(ctx: &egui::Context, r: &mut Ready) {
 /// The editor window (structure, string, section): Apply (Enter) makes one
 /// command and closes it — unless the session refuses it (the reason is
 /// shown, the window stays); Cancel (Escape) closes it.
+/// Where a new structure goes when no place is given: the first free
+/// alignment point, else by the last structure, else the model's origin.
+fn structure_spot(model: &crate::model::Model) -> [f64; 3] {
+    crate::editors::alignment_points(&model.line)
+        .into_iter()
+        .find(|p| p.3.is_none())
+        .map(|p| p.2)
+        .or_else(|| model.line.structures.last().map(|s| s.position))
+        .unwrap_or(model.origin)
+}
+
 fn editor_window(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgpu::RenderState>) {
     use crate::editors::{Form, Outcome};
     let Some(mut form) = r.editor.clone() else {
@@ -4234,6 +4240,10 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wg
                 "String wire: right-click the strings in line order, then Enter".into(),
                 false,
             ));
+        }
+        Some(Outcome::NewPylon) => {
+            r.pylon_builder = Some(crate::pylon_builder::PylonBuilder::new(&r.model));
+            r.editor = Some(form);
         }
         Some(Outcome::Cancel) => {
             r.editor = None;
@@ -4832,12 +4842,7 @@ fn menus(
             )
             .clicked()
         {
-            let at = crate::editors::alignment_points(&r.model.line)
-                .into_iter()
-                .find(|p| p.3.is_none())
-                .map(|p| p.2)
-                .or_else(|| r.model.line.structures.last().map(|s| s.position))
-                .unwrap_or(r.model.origin);
+            let at = structure_spot(&r.model);
             r.editor = Some(crate::editors::Form::Structure(
                 crate::editors::StructureForm::new_at(&r.model, at),
             ));

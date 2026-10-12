@@ -7304,6 +7304,39 @@ fn pylons_are_built_from_templates_and_placed_on_the_alignment() {
     }
 }
 
+/// Add structure with no structure type in the library: the window opens
+/// (also with no ground under the click), says so and offers New pylon
+/// from a template.
+#[test]
+fn add_structure_without_types_offers_a_new_pylon() {
+    use crate::tools::Tool;
+    let model = synthetic_project_with("no-types", |l| {
+        l.structures.clear();
+        l.sections.clear();
+        l.jumpers.clear();
+        for p in &mut l.alignment_points {
+            p.structure = None;
+        }
+    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // No ground under the click: it opens anyway.
+    use_tool(&mut harness, Tool::AddStructure, Selection::None, None);
+    assert!(harness.state_mut().ready().unwrap().editor.is_some());
+    harness.run();
+    harness.get_by_label_contains("No structure type in the library yet");
+    harness
+        .query_all_by_label("New pylon from a template…")
+        .last()
+        .unwrap()
+        .click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.pylon_builder.is_some() && r.editor.is_some(), "both open");
+}
+
 /// The three tables: Routes, Alignments (each on one route, in order) and
 /// Alignment points (a row per point and alignment, with its place there).
 #[test]

@@ -13,9 +13,9 @@
 //! wire's set on a suspension type. On a strain type each phase has two
 //! strain strings along the line, the back one with set `slot +
 //! back_offset` and the ahead one `slot + ahead_offset` (default 20 and
-//! 40: slots 1–20, back 21–40, ahead 41–60). Earth wires are clamped
-//! directly (no string): their slot on a suspension type, both offsets on
-//! a strain type.
+//! 40: slots 1–20, back 21–40, ahead 41–60). Earth wires have the same:
+//! a point on the pylon and a short string of their own (hanging on a
+//! suspension type, two strain strings on a strain type).
 //!
 //! Positions are expressions of the parameters (metres): numbers, the
 //! parameters' names, `+ - * /` and parentheses.
@@ -33,6 +33,10 @@
 //! suspension_weight = "1 kN"
 //! strain_length = "4 m"
 //! strain_weight = "1.5 kN"
+//! earth_suspension_length = "0.3 m"
+//! earth_suspension_weight = "0.1 kN"
+//! earth_strain_length = "0.5 m"
+//! earth_strain_weight = "0.2 kN"
 //!
 //! [[parameter]]
 //! name = "arm_level"
@@ -108,6 +112,18 @@ pub struct Strings {
     /// Strain string weight.
     #[serde(default = "default_strain_weight")]
     pub strain_weight: Force,
+    /// Earth wires: suspension string (clamp) length.
+    #[serde(default = "default_earth_suspension_length")]
+    pub earth_suspension_length: Length,
+    /// Earth wires: suspension string weight.
+    #[serde(default = "default_earth_suspension_weight")]
+    pub earth_suspension_weight: Force,
+    /// Earth wires: strain string length.
+    #[serde(default = "default_earth_strain_length")]
+    pub earth_strain_length: Length,
+    /// Earth wires: strain string weight.
+    #[serde(default = "default_earth_strain_weight")]
+    pub earth_strain_weight: Force,
 }
 
 fn default_suspension_length() -> Length {
@@ -122,6 +138,18 @@ fn default_strain_length() -> Length {
 fn default_strain_weight() -> Force {
     Force::from_si(1500.0)
 }
+fn default_earth_suspension_length() -> Length {
+    Length::from_si(0.3)
+}
+fn default_earth_suspension_weight() -> Force {
+    Force::from_si(100.0)
+}
+fn default_earth_strain_length() -> Length {
+    Length::from_si(0.5)
+}
+fn default_earth_strain_weight() -> Force {
+    Force::from_si(200.0)
+}
 
 impl Default for Strings {
     fn default() -> Self {
@@ -130,6 +158,10 @@ impl Default for Strings {
             suspension_weight: default_suspension_weight(),
             strain_length: default_strain_length(),
             strain_weight: default_strain_weight(),
+            earth_suspension_length: default_earth_suspension_length(),
+            earth_suspension_weight: default_earth_suspension_weight(),
+            earth_strain_length: default_earth_strain_length(),
+            earth_strain_weight: default_earth_strain_weight(),
         }
     }
 }
@@ -221,6 +253,10 @@ pub struct Values {
     pub string_length: f64,
     /// String weight, N.
     pub string_weight: f64,
+    /// Earth wires' string length, m.
+    pub earth_length: f64,
+    /// Earth wires' string weight, N.
+    pub earth_weight: f64,
 }
 
 /// A point of the face, worked out: label, slot, (across, up), earth wire.
@@ -299,6 +335,7 @@ impl PylonTemplate {
             ),
             Role::Strain => (self.strings.strain_length, self.strings.strain_weight),
         };
+        let (el, ew) = self.earth_strings(role);
         Values {
             dimensions: self
                 .parameters
@@ -307,6 +344,22 @@ impl PylonTemplate {
                 .collect(),
             string_length: l.si(),
             string_weight: w.si(),
+            earth_length: el,
+            earth_weight: ew,
+        }
+    }
+
+    /// The earth wires' string length and weight offered for `role` (m, N).
+    pub fn earth_strings(&self, role: Role) -> (f64, f64) {
+        match role {
+            Role::Suspension => (
+                self.strings.earth_suspension_length.si(),
+                self.strings.earth_suspension_weight.si(),
+            ),
+            Role::Strain => (
+                self.strings.earth_strain_length.si(),
+                self.strings.earth_strain_weight.si(),
+            ),
         }
     }
 
@@ -389,12 +442,20 @@ impl PylonTemplate {
         if values.string_length.is_nan() || values.string_length <= 0.0 {
             return Err("the string length must be above 0".into());
         }
+        if !self.earths.is_empty() && (values.earth_length.is_nan() || values.earth_length <= 0.0) {
+            return Err("the earth wires' string length must be above 0".into());
+        }
         if role == Role::Suspension {
-            for p in face.iter().filter(|p| !p.earth) {
-                if p.up - values.string_length <= 0.0 {
+            for p in &face {
+                let l = if p.earth {
+                    values.earth_length
+                } else {
+                    values.string_length
+                };
+                if p.up - l <= 0.0 {
                     return Err(format!(
-                        "{}: its string ({:.2} m) reaches the ground",
-                        p.label, values.string_length
+                        "{}: its string ({l:.2} m) reaches the ground",
+                        p.label
                     ));
                 }
             }
@@ -418,6 +479,14 @@ impl PylonTemplate {
         let _ = writeln!(t, "role = \"{}\"", role.as_str());
         let _ = writeln!(t, "string_length = {}", n(values.string_length));
         let _ = writeln!(t, "string_weight = \"{} N\"", round(values.string_weight));
+        if !self.earths.is_empty() {
+            let _ = writeln!(t, "earth_string_length = {}", n(values.earth_length));
+            let _ = writeln!(
+                t,
+                "earth_string_weight = \"{} N\"",
+                round(values.earth_weight)
+            );
+        }
         let _ = writeln!(t, "[template.values]");
         for (k, v) in &values.dimensions {
             let _ = writeln!(t, "{k} = {}", n(*v));
@@ -427,60 +496,47 @@ impl PylonTemplate {
             let _ = writeln!(t, "label = {}", quote(label));
             let _ = writeln!(t, "point = [{}, \"0 m\", {}]", n(p.across), n(p.up));
         };
-        let wire = |t: &mut String, label: &str, set: u32, at: Option<&FacePoint>| {
+        let wire = |t: &mut String, label: &str, set: u32| {
             let _ = writeln!(t, "\n[[wire]]");
             let _ = writeln!(t, "label = {}", quote(label));
             let _ = writeln!(t, "set = {set}");
-            if let Some(p) = at {
-                let _ = writeln!(t, "point = [{}, \"0 m\", {}]", n(p.across), n(p.up));
-            }
         };
-        let string = |t: &mut String, label: &str, top: &str, w: &str, side: Option<&str>| {
-            let _ = writeln!(t, "\n[[string]]");
-            let _ = writeln!(t, "label = {}", quote(label));
-            let _ = writeln!(t, "top = {}", quote(top));
-            let _ = writeln!(t, "wire = {}", quote(w));
-            let _ = writeln!(t, "length = {}", n(values.string_length));
-            let _ = writeln!(t, "weight = \"{} N\"", round(values.string_weight));
-            if let Some(s) = side {
-                let _ = writeln!(t, "strain = true");
-                let _ = writeln!(t, "side = \"{s}\"");
-            }
-        };
+        let string =
+            |t: &mut String, label: &str, top: &str, w: &str, side: Option<&str>, earth: bool| {
+                let (l, wt) = if earth {
+                    (values.earth_length, values.earth_weight)
+                } else {
+                    (values.string_length, values.string_weight)
+                };
+                let _ = writeln!(t, "\n[[string]]");
+                let _ = writeln!(t, "label = {}", quote(label));
+                let _ = writeln!(t, "top = {}", quote(top));
+                let _ = writeln!(t, "wire = {}", quote(w));
+                let _ = writeln!(t, "length = {}", n(l));
+                let _ = writeln!(t, "weight = \"{} N\"", round(wt));
+                if let Some(s) = side {
+                    let _ = writeln!(t, "strain = true");
+                    let _ = writeln!(t, "side = \"{s}\"");
+                }
+            };
+        // Phases and earth wires alike: a point on the pylon, a string
+        // (the earth wires' short) to a wire point with the set.
         for p in &face {
             let a = format!("A-{}", p.label);
-            match (p.earth, role) {
-                // Clamped at the point itself.
-                (true, Role::Suspension) => {
-                    wire(&mut t, &format!("W-{}", p.label), p.slot, Some(p))
-                }
-                (true, Role::Strain) => {
-                    wire(
-                        &mut t,
-                        &format!("W-{}-back", p.label),
-                        p.slot + self.back_offset,
-                        Some(p),
-                    );
-                    wire(
-                        &mut t,
-                        &format!("W-{}-ahead", p.label),
-                        p.slot + self.ahead_offset,
-                        Some(p),
-                    );
-                }
-                (false, Role::Suspension) => {
-                    point(&mut t, &a, p);
+            point(&mut t, &a, p);
+            match role {
+                Role::Suspension => {
                     let w = format!("W-{}", p.label);
-                    wire(&mut t, &w, p.slot, None);
-                    string(&mut t, &format!("S-{}", p.label), &a, &w, None);
+                    wire(&mut t, &w, p.slot);
+                    string(&mut t, &format!("S-{}", p.label), &a, &w, None, p.earth);
                 }
-                (false, Role::Strain) => {
-                    point(&mut t, &a, p);
+                Role::Strain => {
                     for (side, offset) in [("back", self.back_offset), ("ahead", self.ahead_offset)]
                     {
                         let w = format!("W-{}-{side}", p.label);
-                        wire(&mut t, &w, p.slot + offset, None);
-                        string(&mut t, &format!("S-{}-{side}", p.label), &a, &w, Some(side));
+                        wire(&mut t, &w, p.slot + offset);
+                        let label = format!("S-{}-{side}", p.label);
+                        string(&mut t, &label, &a, &w, Some(side), p.earth);
                     }
                 }
             }
@@ -514,6 +570,16 @@ pub fn recorded(template: &toml::Table) -> Option<(String, Role, Values)> {
             dimensions,
             string_length: length(template.get("string_length")?)?,
             string_weight: force(template.get("string_weight")?)?,
+            // Built before earth wires had strings: none recorded (NaN:
+            // the template's are used).
+            earth_length: template
+                .get("earth_string_length")
+                .and_then(length)
+                .unwrap_or(f64::NAN),
+            earth_weight: template
+                .get("earth_string_weight")
+                .and_then(force)
+                .unwrap_or(f64::NAN),
         },
     ))
 }
@@ -702,7 +768,7 @@ mod tests {
                 let ty = StructureType::parse(std::path::Path::new("x"), &text).unwrap();
                 assert_eq!(ty.detail(), crate::Detail::Stick, "{}", t.id);
                 // Every phase gets its strings: one, or two along the line.
-                let phases = t.attachments.len();
+                let phases = t.attachments.len() + t.earths.len();
                 let per = if role == Role::Suspension { 1 } else { 2 };
                 assert_eq!(ty.strings.len(), phases * per, "{}", t.id);
                 // The face is flat: every point at y = 0.
@@ -726,6 +792,14 @@ mod tests {
             sets(Role::Strain),
             [21, 22, 23, 24, 25, 26, 39, 41, 42, 43, 44, 45, 46, 59]
         );
+        // The earth wire hangs on a short string from its own point.
+        let text = t
+            .build(&t.defaults(Role::Suspension), Role::Suspension, "x", "x")
+            .unwrap();
+        let ty = StructureType::parse(std::path::Path::new("x"), &text).unwrap();
+        let e = ty.strings.iter().find(|s| s.label == "S-E1").unwrap();
+        assert_eq!(e.top, "A-E1");
+        assert!((e.length.unwrap().si() - 0.3).abs() < 1e-9);
         // Strain strings point back and ahead along the line.
         let text = t
             .build(&t.defaults(Role::Strain), Role::Strain, "x", "x")

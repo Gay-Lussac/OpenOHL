@@ -100,6 +100,8 @@ impl PylonBuilder {
                 dimensions: Default::default(),
                 string_length: 0.0,
                 string_weight: 0.0,
+                earth_length: 0.0,
+                earth_weight: 0.0,
             },
             id: String::new(),
             name: String::new(),
@@ -190,6 +192,13 @@ impl PylonBuilder {
         }
         v.string_length = values.string_length;
         v.string_weight = values.string_weight;
+        // Earth wires' strings: recorded, else the template's.
+        if values.earth_length.is_finite() {
+            v.earth_length = values.earth_length;
+        }
+        if values.earth_weight.is_finite() {
+            v.earth_weight = values.earth_weight;
+        }
         self.values = v;
         self.id = id.to_owned();
         self.name = ty.name.clone();
@@ -304,6 +313,8 @@ impl PylonBuilder {
                         let d = t.defaults(self.role);
                         self.values.string_length = d.string_length;
                         self.values.string_weight = d.string_weight;
+                        self.values.earth_length = d.earth_length;
+                        self.values.earth_weight = d.earth_weight;
                         if self.rebuild.is_none() {
                             self.name_after(model);
                         }
@@ -347,6 +358,36 @@ impl PylonBuilder {
                         }
                         ui.label(egui::RichText::new("each string").small().weak());
                         ui.end_row();
+                        if !t.earths.is_empty() {
+                            ui.label("earth wire string length");
+                            ui.add(
+                                egui::DragValue::new(&mut self.values.earth_length)
+                                    .speed(0.01)
+                                    .max_decimals(3)
+                                    .suffix(" m"),
+                            );
+                            ui.label(
+                                egui::RichText::new("the earth wire's short string (clamp)")
+                                    .small()
+                                    .weak(),
+                            );
+                            ui.end_row();
+                            ui.label("earth wire string weight");
+                            let mut kn = self.values.earth_weight / 1000.0;
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut kn)
+                                        .speed(0.01)
+                                        .max_decimals(3)
+                                        .suffix(" kN"),
+                                )
+                                .changed()
+                            {
+                                self.values.earth_weight = kn * 1000.0;
+                            }
+                            ui.label(egui::RichText::new("each").small().weak());
+                            ui.end_row();
+                        }
                     });
                 ui.separator();
                 egui::Grid::new("pylon-id").num_columns(2).show(ui, |ui| {
@@ -475,20 +516,24 @@ fn face(ui: &mut egui::Ui, t: &PylonTemplate, values: &Values, role: Role) {
         } else {
             egui::Color32::from_rgb(90, 200, 220)
         };
-        if !p.earth && role == Role::Suspension {
+        let length = if p.earth {
+            values.earth_length
+        } else {
+            values.string_length
+        };
+        // Its point on the pylon; a suspension string hangs below it.
+        painter.circle_stroke(at(p.across, p.up), 3.0, egui::Stroke::new(1.5, fg));
+        if role == Role::Suspension {
             painter.line_segment(
-                [
-                    at(p.across, p.up),
-                    at(p.across, p.up - values.string_length),
-                ],
+                [at(p.across, p.up), at(p.across, p.up - length)],
                 egui::Stroke::new(2.0, egui::Color32::from_rgb(220, 180, 90)),
             );
-            painter.circle_filled(at(p.across, p.up - values.string_length), 3.5, colour);
+            painter.circle_filled(at(p.across, p.up - length), 3.5, colour);
         } else {
             painter.circle_filled(at(p.across, p.up), 4.0, colour);
         }
-        let below = if !p.earth && role == Role::Suspension {
-            values.string_length
+        let below = if role == Role::Suspension {
+            length
         } else {
             0.0
         };
