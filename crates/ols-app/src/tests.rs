@@ -9905,3 +9905,181 @@ fn work_on_one_route() {
     }
     assert!(!scope.jumpers.is_empty());
 }
+
+/// Add string on a point: a structure point gets a new string straight
+/// down from it (a new set), a wire point a string below it (a TAK); a
+/// window opened or changed by a right-click opens at the mouse; a
+/// right-click on nothing says so.
+#[test]
+fn add_string_hangs_from_the_point_clicked() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project("add-string-point");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (top, sets) = {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r.model.line.structure("T2").unwrap();
+        (s.points[0].clone(), s.sets().max().unwrap())
+    };
+    let point = |label: &str| Selection::Point {
+        structure: "T2".into(),
+        label: label.into(),
+    };
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(300.0, 300.0)));
+    harness.run();
+    use_tool(&mut harness, Tool::AddString, point(&top.label), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::String(f)) = &r.editor else {
+            panic!("{:?} {:?}", r.editor, r.status);
+        };
+        assert_eq!(r.popup_at, egui::pos2(300.0, 300.0));
+        assert_eq!(f.strings.len(), 1);
+        assert_eq!(f.strings[0].top, top.label);
+        let w = &f.wires[0];
+        assert_eq!(w.set, Some(sets + 1));
+        let at = f.points.iter().find(|p| p.label == top.label).unwrap().at;
+        assert!((at[2] - w.at[2] - 3.0).abs() < 1e-9 && (at[0] - w.at[0]).abs() < 1e-9);
+    }
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let wire = {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let s = r.model.line.structure("T2").unwrap();
+        let w = s.wire_at_set(sets + 1).expect("the new set");
+        let x = s.strings_to(&w.label).next().unwrap();
+        assert_eq!(x.top, top.label);
+        w.label.clone()
+    };
+    // From the new wire point: a string below it, the next set.
+    use_tool(&mut harness, Tool::AddString, point(&wire), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::String(f)) = &r.editor else {
+            panic!("{:?} {:?}", r.editor, r.status);
+        };
+        let x = f
+            .strings
+            .iter()
+            .find(|x| x.top == wire)
+            .expect("hangs from it");
+        let w = f.wires.iter().find(|w| w.label == x.wire).unwrap();
+        assert_eq!(w.set, Some(sets + 2));
+    }
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    // On the structure itself: from one of its points (no new point).
+    use_tool(
+        &mut harness,
+        Tool::AddString,
+        Selection::Structure("T2".into()),
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::String(f)) = &r.editor else {
+            panic!("{:?} {:?}", r.editor, r.status);
+        };
+        let s = r.model.line.structure("T2").unwrap();
+        assert!(s.point(&f.strings[0].top).is_some(), "{:?}", f.strings[0]);
+        assert!(f.points.iter().all(|p| s.point(&p.label).is_some()));
+    }
+    // Another object right-clicked while it is open: the window follows
+    // the mouse.
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(700.0, 500.0)));
+    harness.run();
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::Structure("T3".into()),
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(matches!(r.editor, Some(Form::Structure(_))));
+        assert_eq!(r.popup_at, egui::pos2(700.0, 500.0));
+    }
+    use_tool(&mut harness, Tool::Edit, Selection::None, None);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(
+        r.status
+            .as_ref()
+            .is_some_and(|(t, _)| t.contains("nothing here")),
+        "{:?}",
+        r.status
+    );
+}
+
+/// A string hung from another point keeps its length: its wire point (and
+/// what hangs below) moves with it; a V's leg keeps both legs' lengths,
+/// refused where they cannot meet; a string cannot hang below itself.
+#[test]
+fn a_string_hung_elsewhere_keeps_its_length() {
+    use crate::editors::{PointRow, Preset, StringForm};
+    let model = synthetic();
+    let dist = |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f64>().sqrt();
+    let at = |f: &StringForm, l: &str| {
+        f.points
+            .iter()
+            .find(|p| p.label == l)
+            .map(|p| p.at)
+            .or_else(|| f.wires.iter().find(|w| w.label == l).map(|w| w.at))
+            .unwrap()
+    };
+    let point = |f: &mut StringForm, label: &str, p: [f64; 3]| {
+        f.points.push(PointRow {
+            label: label.into(),
+            at: p,
+            description: String::new(),
+        });
+    };
+    // An I-string with a string below it (V + string): moved, all move.
+    let mut f = StringForm::new_on(&model, "T2").unwrap();
+    f.preset(Preset::VAndString, [0.0, 0.0, 20.0], &model);
+    point(&mut f, "X", [1.0, 0.5, 25.0]);
+    let below = f
+        .strings
+        .iter()
+        .position(|x| f.wires.iter().any(|w| w.label == x.top))
+        .unwrap();
+    let (tip, low) = (f.strings[below].top.clone(), f.strings[below].wire.clone());
+    let (l0, low0) = (dist(at(&f, &tip), at(&f, &low)), at(&f, &low));
+    f.move_top(below, "X").unwrap();
+    assert_eq!(f.strings[below].top, "X");
+    assert!((dist(at(&f, "X"), at(&f, &low)) - l0).abs() < 1e-9);
+    assert!(dist(at(&f, &low), low0) > 1.0, "it moved with its top");
+    // A V's leg: both lengths kept, the tip where they meet.
+    let legs: Vec<usize> = (0..f.strings.len())
+        .filter(|&i| f.strings[i].wire == tip)
+        .collect();
+    let lens: Vec<f64> = legs
+        .iter()
+        .map(|&i| dist(at(&f, &f.strings[i].top), at(&f, &tip)))
+        .collect();
+    let a = at(&f, &f.strings[legs[0]].top);
+    point(&mut f, "Y", [a[0] - 0.5, a[1], a[2]]);
+    f.move_top(legs[0], "Y").unwrap();
+    for (n, &i) in legs.iter().enumerate() {
+        let l = dist(at(&f, &f.strings[i].top), at(&f, &tip));
+        assert!((l - lens[n]).abs() < 1e-9, "{l} {}", lens[n]);
+    }
+    // Too far for the two legs: refused, nothing changes.
+    point(&mut f, "FAR", [40.0, 0.0, 20.0]);
+    let before = f.clone();
+    let why = f.move_top(legs[0], "FAR").unwrap_err();
+    assert!(why.contains("cannot meet"), "{why}");
+    assert_eq!(f, before);
+    // Not from its own wire point, nor from below it.
+    assert!(f.move_top(legs[0], &tip).is_err());
+    let s = f.strings.iter().position(|x| x.wire == low).unwrap();
+    f.move_top(s, &tip).unwrap();
+    assert!(f.move_top(legs[0], &low).is_err());
+}

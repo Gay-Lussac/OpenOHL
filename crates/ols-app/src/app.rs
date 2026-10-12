@@ -1199,6 +1199,9 @@ impl Ready {
         if self.hotbar.tool().picks_strings() {
             s.0.insert(crate::selection::Snap::Attachment);
         }
+        if self.hotbar.tool().picks_points() {
+            s.0.insert(crate::selection::Snap::Point);
+        }
         if self.hotbar.tool().picks_alignment() {
             s.0.insert(crate::selection::Snap::AlignmentPoint);
         }
@@ -1225,6 +1228,26 @@ impl Ready {
     /// selects, Go to opens its window, the editing tools act on the object
     /// (or, Add structure, on the ground point).
     pub fn use_tool(&mut self, u: crate::selection::Use) {
+        // A window the click opens, or one it changes to another object,
+        // opens next to the click (not where an earlier one was, maybe
+        // off screen).
+        let before = (
+            self.editor.clone(),
+            self.goto.clone(),
+            self.coord_dialog.clone(),
+            self.move_dialog.clone(),
+        );
+        self.use_tool_at(u);
+        if (self.editor.is_some() && self.editor != before.0)
+            || (self.goto.is_some() && self.goto != before.1)
+            || (self.coord_dialog.is_some() && self.coord_dialog != before.2)
+            || (self.move_dialog.is_some() && self.move_dialog != before.3)
+        {
+            self.popup_open = false;
+        }
+    }
+
+    fn use_tool_at(&mut self, u: crate::selection::Use) {
         use crate::tools::Tool;
         let tool = self.hotbar.tool();
         let target = u.target;
@@ -1435,6 +1458,10 @@ impl Ready {
                 self.editor = StringForm::new_on(model, id).map(Form::String);
                 self.select(Selection::Structure(id.clone()));
             }
+            (Tool::AddString, Selection::Point { structure, label }) => {
+                self.editor = StringForm::hanging_from(model, structure, label).map(Form::String);
+                self.select(target);
+            }
             (Tool::StringWire, Selection::Attachment { structure, set }) => {
                 let p = ols_line::SectionPoint::new(structure.clone(), *set);
                 if self.chain.last() == Some(&p) {
@@ -1455,6 +1482,12 @@ impl Ready {
                         self.chain.len()
                     ),
                     false,
+                ));
+            }
+            (_, Selection::None) => {
+                self.status = Some((
+                    format!("{}: nothing here — {}", tool.name(), tool.help()),
+                    true,
                 ));
             }
             _ => self.hint(tool),
@@ -2591,6 +2624,9 @@ impl Ready {
             Selection::String { structure, label } => line
                 .structure(structure)
                 .is_some_and(|s| s.string(label).is_some()),
+            Selection::Point { structure, label } => line
+                .structure(structure)
+                .is_some_and(|s| s.node(label).is_some()),
             Selection::AlignmentPoint { id } => line.alignment_point(id).is_some(),
         }
     }

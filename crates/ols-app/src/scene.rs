@@ -928,6 +928,11 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         s.point(b, hi, 9.0);
                     }
                 }
+                Selection::Point { .. } => {
+                    if let Some(p) = selection.focus(model, case) {
+                        s.point(p, hi, 12.0);
+                    }
+                }
                 Selection::AlignmentPoint { id } => {
                     if let Some(p) = crate::selection::alignment_point(model, id) {
                         s.point(p, hi, 12.0);

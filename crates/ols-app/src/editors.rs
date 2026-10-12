@@ -289,6 +289,8 @@ pub struct StringForm {
     pub opened: (Vec<String>, Vec<String>),
     /// The structure is typed and these are its own (over its type's).
     pub overrides_type: bool,
+    /// Why the last change asked for was not made (shown in the window).
+    pub note: Option<String>,
 }
 
 /// A section being added or changed./// A section being added or changed.
@@ -1503,16 +1505,18 @@ impl StructureForm {
 
 impl StringForm {
     /// A new I-string on structure `id`: the next free set, hanging 3 m
-    /// from the top of the structure.
+    /// from a point of the structure (the first no string hangs from, else
+    /// the first; a new point only on a structure without points, 20 m up).
     pub fn new_on(model: &Model, id: &str) -> Option<Self> {
         let s = model.line.structure(id)?;
         let set = s.sets().max().unwrap_or(0) + 1;
+        let local = |p| to_local(s.position, s.orientation_deg, p);
         let top = s
             .points
             .iter()
-            .map(|p| p.position[2])
-            .fold(s.position[2] + 20.0, f64::max)
-            - s.position[2];
+            .find(|p| !s.strings.iter().any(|x| x.top == p.label))
+            .or(s.points.first())
+            .map_or([0.0, 0.0, 20.0], |p| local(p.position));
         let mut form = Self {
             new: true,
             structure: id.to_owned(),
@@ -1530,8 +1534,60 @@ impl StringForm {
             strings: Vec::new(),
             opened: (Vec::new(), Vec::new()),
             overrides_type: false,
+            note: None,
         };
-        form.preset(Preset::I, [0.0, 0.0, top], model);
+        form.preset(Preset::I, top, model);
+        Some(form)
+    }
+
+    /// A new string hanging from point `label` of structure `id`: a
+    /// structure point (a new set, its wire point 3 m straight down), or a
+    /// wire point (its strings' window, the new string added below it with
+    /// the next free set: a TAK).
+    pub fn hanging_from(model: &Model, id: &str, label: &str) -> Option<Self> {
+        let s = model.line.structure(id)?;
+        let next_set = s.sets().max().unwrap_or(0) + 1;
+        let mut form = if s.wire(label).is_some() {
+            Self::of_wire(model, id, label)?
+        } else {
+            s.point(label)?;
+            let mut form = Self::new_on(model, id)?;
+            form.wires.clear();
+            form.strings.clear();
+            form.points.retain(|p| s.point(&p.label).is_some());
+            form
+        };
+        let top = form
+            .points
+            .iter()
+            .find(|p| p.label == label)
+            .map(|p| p.at)
+            .or_else(|| form.wires.iter().find(|w| w.label == label).map(|w| w.at))?;
+        let set = form
+            .wires
+            .iter()
+            .filter_map(|w| w.set)
+            .fold(next_set, |a, b| a.max(b + 1));
+        if form.new {
+            form.set = set;
+        }
+        let wire = form.free_label(model, &format!("W{set}"));
+        form.wires.push(WireRow {
+            description: Default::default(),
+            label: wire.clone(),
+            at: from_polar(top, 0.0, 0.0, 3.0),
+            set: Some(set),
+            weight: 0.0,
+            dead_end: false,
+            dead_end_was: false,
+        });
+        let string = form.free_label(model, &format!("S{set}"));
+        form.strings.push(StringRow {
+            label: string,
+            top: label.to_owned(),
+            wire,
+            ..Default::default()
+        });
         Some(form)
     }
 
@@ -1616,6 +1672,7 @@ impl StringForm {
             wires,
             strings,
             overrides_type,
+            note: None,
         })
     }
 
@@ -1656,7 +1713,17 @@ impl StringForm {
         self.wires.clear();
         self.strings.clear();
         let at = |d: [f64; 3]| [top[0] + d[0], top[1] + d[1], top[2] + d[2]];
+        // A point of the structure already there (within 5 cm) is used;
+        // a new one only where there is none.
         let point = |form: &mut Self, stem: &str, d: [f64; 3]| {
+            let p = at(d);
+            if let Some(q) = form
+                .points
+                .iter()
+                .find(|q| (0..3).all(|k| (q.at[k] - p[k]).abs() < 0.05))
+            {
+                return q.label.clone();
+            }
             let label = form.free_label(model, stem);
             form.points.push(PointRow {
                 description: Default::default(),
@@ -1757,6 +1824,97 @@ impl StringForm {
                 w.dead_end = a.strain;
             }
         }
+    }
+
+    /// The wire points hanging under wire point `wire` (itself, the wire
+    /// points of the strings hanging from it, and so on).
+    fn chain_below(&self, wire: &str) -> Vec<String> {
+        let mut out = vec![wire.to_owned()];
+        let mut k = 0;
+        while k < out.len() {
+            for x in &self.strings {
+                if x.top == out[k] && !out.contains(&x.wire) {
+                    out.push(x.wire.clone());
+                }
+            }
+            k += 1;
+        }
+        out
+    }
+
+    /// String `k` hangs from `top` instead, keeping its length: its wire
+    /// point moves with it (and what hangs below, unchanged). A V's leg
+    /// keeps its length and the other leg's: its wire point goes where
+    /// both meet; where they cannot, nothing changes and the reason is
+    /// returned.
+    pub fn move_top(&mut self, k: usize, top: &str) -> Result<(), String> {
+        let at = |f: &Self, l: &str| {
+            f.points
+                .iter()
+                .find(|p| p.label == l)
+                .map(|p| p.at)
+                .or_else(|| f.wires.iter().find(|w| w.label == l).map(|w| w.at))
+        };
+        let dist =
+            |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f64>().sqrt();
+        let Some(x) = self.strings.get(k).cloned() else {
+            return Ok(());
+        };
+        let below = self.chain_below(&x.wire);
+        if below.iter().any(|w| w == top) {
+            return Err(format!(
+                "{} cannot hang from {top}: {top} hangs below it",
+                x.label
+            ));
+        }
+        let (Some(old), Some(new), Some(w)) = (at(self, &x.top), at(self, top), at(self, &x.wire))
+        else {
+            self.strings[k].top = top.to_owned();
+            return Ok(());
+        };
+        let length = dist(old, w);
+        let legs: Vec<usize> = (0..self.strings.len())
+            .filter(|&i| i != k && self.strings[i].wire == x.wire)
+            .collect();
+        let target = match legs.first() {
+            None => [0, 1, 2].map(|i| w[i] + new[i] - old[i]),
+            Some(&o) => {
+                let other = &self.strings[o];
+                let ot = at(self, &other.top).unwrap_or(w);
+                let lo = dist(ot, w);
+                let p = ols_structures::structures::v_meeting(new, length, ot, lo, w).ok_or_else(
+                    || {
+                        format!(
+                            "{} cannot hang from {top}: it is {length:.2} m long and {} {lo:.2} m, \
+                         but {top} is {:.2} m from {} — the two legs of the V cannot meet",
+                            x.label,
+                            other.label,
+                            dist(new, ot),
+                            other.top
+                        )
+                    },
+                )?;
+                // A third leg (or more) must keep its length too.
+                for &i in &legs[1..] {
+                    let y = &self.strings[i];
+                    if let Some(yt) = at(self, &y.top)
+                        && (dist(yt, p) - dist(yt, w)).abs() > 1e-3
+                    {
+                        return Err(format!(
+                            "{} cannot hang from {top}: {} would change its length",
+                            x.label, y.label
+                        ));
+                    }
+                }
+                p
+            }
+        };
+        let d = [0, 1, 2].map(|i| target[i] - w[i]);
+        for r in self.wires.iter_mut().filter(|r| below.contains(&r.label)) {
+            r.at = [0, 1, 2].map(|i| r.at[i] + d[i]);
+        }
+        self.strings[k].top = top.to_owned();
+        Ok(())
     }
 
     /// Takes away the wire points no string ends at any more, with the
@@ -3018,6 +3176,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                     .map(|w| w.label.clone())
                     .collect();
                 let mut ends_at: Option<Option<String>> = None;
+                let mut retop: Option<String> = None;
                 let mut pick: Option<usize> = None;
                 // A wire point renamed: (old, new) for its strings.
                 let mut rename: Option<(String, String)> = None;
@@ -3109,14 +3268,18 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                             .show_ui(ui, |ui| {
                                 ui.label(egui::RichText::new("points of the structure").small().weak());
                                 for t in &point_names {
-                                    ui.selectable_value(&mut x.top, t.clone(), t);
+                                    if ui.selectable_label(x.top == *t, t).clicked() && x.top != *t {
+                                        retop = Some(t.clone());
+                                    }
                                 }
                                 ui.separator();
                                 ui.label(
                                     egui::RichText::new("the bottom of another string").small().weak(),
                                 );
                                 for w in &others {
-                                    ui.selectable_value(&mut x.top, w.clone(), w);
+                                    if ui.selectable_label(x.top == *w, w).clicked() && x.top != *w {
+                                        retop = Some(w.clone());
+                                    }
                                 }
                             });
                         ui.label("ends at").on_hover_text(
@@ -3315,6 +3478,10 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                     let a = library[n].2.clone();
                     f.take_from_library(k, &a);
                 }
+                // Hung from another point: its length kept.
+                if let Some(top) = retop {
+                    f.note = f.move_top(k, &top).err();
+                }
                 match ends_at {
                     Some(Some(w)) => {
                         f.strings[k].wire = w;
@@ -3339,6 +3506,13 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
             if let Some(k) = remove {
                 f.strings.remove(k);
                 f.drop_unused_wires();
+            }
+            if let Some(note) = &f.note {
+                crate::menu::message(
+                    ui,
+                    egui::RichText::new(note).small(),
+                    Some(egui::Color32::YELLOW),
+                );
             }
             // Wire points no string reaches: the wire clamped straight to
             // the structure.

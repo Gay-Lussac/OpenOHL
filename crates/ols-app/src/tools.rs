@@ -26,7 +26,8 @@ pub enum Tool {
     Edit,
     /// Right-click the ground: a new structure there.
     AddStructure,
-    /// Right-click a structure: a new string on it.
+    /// Right-click a structure point or a wire point: a new string
+    /// hanging from it (a structure elsewhere: from its top).
     AddString,
     /// Right-click strings in line order, Enter: a new section.
     StringWire,
@@ -117,7 +118,9 @@ impl Tool {
             Tool::GoTo => "right-click to open the Go to window",
             Tool::Edit => "right-click a structure, string or span to edit it",
             Tool::AddStructure => "right-click the ground to add a structure there",
-            Tool::AddString => "right-click a structure to add a string to it",
+            Tool::AddString => {
+                "right-click a structure point or a wire point to hang a new string from it"
+            }
             Tool::StringWire => {
                 "right-click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"
             }
@@ -148,6 +151,12 @@ impl Tool {
             self,
             Tool::Delete | Tool::Edit | Tool::AddString | Tool::StringWire | Tool::AddJumper
         )
+    }
+
+    /// Structure points and wire points can be right-clicked while it is
+    /// held.
+    pub fn picks_points(self) -> bool {
+        self == Tool::AddString
     }
 
     /// Alignment points can be right-clicked while it is held.
