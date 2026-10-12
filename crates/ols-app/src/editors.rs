@@ -1210,6 +1210,8 @@ pub enum Outcome {
     ResetString,
     /// Pick the section's points again with the String wire tool.
     PickPoints,
+    /// Open Structures › New pylon from a template… (the window stays).
+    NewPylon,
 }
 
 impl StructureForm {
@@ -2284,7 +2286,11 @@ impl Form {
     ) -> Option<Outcome> {
         let mut out = None;
         match self {
-            Form::Structure(f) => structure_ui(ui, f, model, extra),
+            Form::Structure(f) => {
+                if structure_ui(ui, f, model, extra) {
+                    out = Some(Outcome::NewPylon);
+                }
+            }
             Form::String(f) => {
                 if string_ui(ui, f, model) {
                     out = Some(Outcome::ResetString);
@@ -2320,17 +2326,32 @@ fn value(ui: &mut egui::Ui, v: &mut f64, speed: f64, suffix: &str) -> egui::Resp
     )
 }
 
+/// The structure window; whether New pylon from a template was asked for.
 fn structure_ui(
     ui: &mut egui::Ui,
     f: &mut StructureForm,
     model: &Model,
     extra: &mut FormExtra<'_>,
-) {
+) -> bool {
     let types: Vec<&ols_structures::StructureType> = model
         .types
         .as_ref()
         .map(|(s, _)| s.iter().collect())
         .unwrap_or_default();
+    let mut new_pylon = false;
+    if types.is_empty() && f.new {
+        ui.colored_label(
+            egui::Color32::YELLOW,
+            "No structure type in the library yet: without a type the structure has no \
+             strings, so no wire can hang on it (only strings added by hand). Make a pylon \
+             type first.",
+        );
+        new_pylon = ui
+            .button("New pylon from a template…")
+            .on_hover_text("Structures › New pylon from a template…: this window stays open")
+            .clicked();
+        ui.separator();
+    }
     let help = |ui: &mut egui::Ui, text: &str| {
         ui.label(egui::RichText::new(text).small().weak());
     };
@@ -2637,6 +2658,7 @@ fn structure_ui(
             });
         }
     }
+    new_pylon
 }
 
 /// What the structure window's preview shows, as a key (built again when

@@ -244,6 +244,10 @@ suspension_length = "3 m"
 suspension_weight = "1 kN"
 strain_length = "4 m"
 strain_weight = "1.5 kN"
+earth_suspension_length = "0.3 m"   # the earth wires' short strings (clamps)
+earth_suspension_weight = "0.1 kN"
+earth_strain_length = "0.5 m"
+earth_strain_weight = "0.2 kN"
 
 [[parameter]]
 name = "lower_level"
@@ -265,7 +269,7 @@ label = "L1"
 across = "-lower_half"          # expression of the parameters, m (right +)
 up = "lower_level"
 
-[[earth]]                       # an earth wire, clamped directly
+[[earth]]                       # an earth wire: its point and a short string
 slot = 19
 across = "0"
 up = "peak"
@@ -274,10 +278,11 @@ up = "peak"
 - **Expressions**: numbers (metres), the parameters' names, `+ - * /` and
   parentheses (`"-(inner + 2 * step)"`).
 - **Sets** follow the slots. A suspension type: a string hangs at each
-  attachment, its wire point has the slot as set; an earth wire is clamped
-  at its point with its slot. A strain type: two strain strings at each
-  attachment, back and ahead along the line, with the sets slot + 20
-  (back) and slot + 40 (ahead); an earth wire gets both sets at its point.
+  attachment, its wire point has the slot as set. A strain type: two
+  strain strings at each attachment, back and ahead along the line, with
+  the sets slot + 20 (back) and slot + 40 (ahead). Earth wires the same,
+  with their own short strings (lengths and weights of their own): a
+  point on the pylon, a string to the wire point.
   So slots 1–20 give suspension sets 1–20, strain back 21–40 and ahead
   41–60 — a numbering that keeps every phase's set the same through
   suspension and strain structures, also for crowded multi-circuit
