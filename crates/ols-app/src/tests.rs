@@ -7337,6 +7337,63 @@ fn add_structure_without_types_offers_a_new_pylon() {
     assert!(r.pylon_builder.is_some() && r.editor.is_some(), "both open");
 }
 
+/// A selected structure's wire points are drawn where its strings hold
+/// them in the case shown (a suspension string swung by the wind); one no
+/// wire is strung to stays where the structure gives it, in still air.
+#[test]
+fn selected_wire_points_follow_their_strings() {
+    let model = solved_all(synthetic());
+    let line = &model.line;
+    // A case with wind: the suspension strings swing.
+    let windy = model
+        .cases
+        .iter()
+        .position(|c| c.case.wind_pressure.si() > 0.0)
+        .expect("a case with wind");
+    let pieces = crate::selection::string_pieces(&model, windy);
+    let strung: std::collections::BTreeSet<(String, u32)> = line
+        .sections
+        .iter()
+        .flat_map(|s| s.points.iter().map(|p| (p.structure.clone(), p.set)))
+        .collect();
+    let mut moved = 0;
+    for st in &line.structures {
+        for w in st.wires.iter().filter(|w| w.set.is_some()) {
+            let drawn = crate::scene::wire_drawn(st, w, &pieces);
+            let held = st.strings.iter().any(|x| x.wire == w.label);
+            if !held || !strung.contains(&(st.id.clone(), w.set.unwrap())) {
+                assert_eq!(drawn, [w.position], "{} {}", st.id, w.label);
+            } else if drawn.iter().any(|p| {
+                (0..3)
+                    .map(|k| (p[k] - w.position[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt()
+                    > 0.05
+            }) {
+                moved += 1;
+            }
+        }
+    }
+    assert!(
+        moved > 0,
+        "some wire point drawn where its string swings to"
+    );
+    // A wire point no string reaches, not strung: as given.
+    let mut st = line.structures[0].clone();
+    st.wires.push(ols_line::WirePoint {
+        description: String::new(),
+        label: "spare".into(),
+        position: [1.0, 2.0, 3.0],
+        set: Some(77),
+        weight: 0.0,
+    });
+    let w = st.wires.last().unwrap().clone();
+    assert_eq!(
+        crate::scene::wire_drawn(&st, &w, &pieces),
+        [[1.0, 2.0, 3.0]]
+    );
+}
+
 /// The three tables: Routes, Alignments (each on one route, in order) and
 /// Alignment points (a row per point and alignment, with its place there).
 #[test]
