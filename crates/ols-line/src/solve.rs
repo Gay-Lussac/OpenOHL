@@ -544,6 +544,10 @@ pub struct Coupling {
     /// Where this section's clamps are held, by section point: on the
     /// assemblies another section solves.
     pub held: std::collections::BTreeMap<crate::SectionPoint, Point>,
+    /// The jumpers' weight on clamps in the weather case, by section point
+    /// (the whole bundle's, N; [`crate::jumper::end_weights`]). None: from
+    /// the jumpers, each taken as of this section's cable.
+    pub jumpers: Option<std::collections::BTreeMap<crate::SectionPoint, f64>>,
 }
 
 /// The clamp's position to start from: plumb below a suspension string's
@@ -1743,7 +1747,20 @@ fn solve_fe(
     let mut reference = reference(section, &layout, cable, budget)?;
     // In the weather case, other sections' clamps in the assemblies pulled
     // as given (held in the stringing state).
-    let loaded = pulled(&layout, section, coupling);
+    let mut loaded = pulled(&layout, section, coupling);
+    // The jumpers hanging on its clamps, in the weather case.
+    let jumpers = match &coupling.jumpers {
+        Some(j) => std::borrow::Cow::Borrowed(j),
+        None => std::borrow::Cow::Owned(crate::jumper::end_weights(line, case, |id| {
+            (id == section.cable).then_some(cable)
+        })),
+    };
+    let bundle = f64::from(section.bundle.max(1));
+    for (h, point) in loaded.iter_mut().zip(&section.points) {
+        if let (Some(w), At::Free(i)) = (jumpers.get(point), h.clamp) {
+            h.free[i].2.z -= w / bundle;
+        }
+    }
     let curves = curves_of(cable);
     // Curves: each span's tension in the stringing state (still air at the
     // reference temperature), where the reference lengths are cut.
@@ -2050,12 +2067,16 @@ pub fn solve_line_with(
     case: &WeatherCase,
     budget: &Budget,
 ) -> Vec<Result<SectionShape, LineError>> {
+    let coupling = Coupling {
+        jumpers: Some(crate::jumper::end_weights(line, case, |id| library.get(id))),
+        ..Coupling::default()
+    };
     let mut results: Vec<Result<SectionShape, LineError>> = line
         .sections
         .iter()
         .map(|section| {
             let cable = cable_of(library, section)?;
-            solve_section(line, section, cable, case, budget)
+            solve_section_coupled(line, section, cable, case, budget, &coupling)
         })
         .collect();
     for group in coupled_groups(line) {
@@ -2182,12 +2203,14 @@ pub fn solve_coupled(
     let Some(mut pulls) = pulls_of(results) else {
         return;
     };
+    let jumpers = crate::jumper::end_weights(line, case, |id| library.get(id));
     for _ in 0..COUPLING_PASSES {
         for &k in group {
             let section = &line.sections[k];
             let coupling = Coupling {
                 pulls: pulls.clone(),
                 held: held_of(results),
+                jumpers: Some(jumpers.clone()),
             };
             results[k] = cable_of(library, section).and_then(|cable| {
                 solve_section_coupled(line, section, cable, case, budget, &coupling)
@@ -2306,7 +2329,9 @@ mod tests {
         let lib = library();
         let mut windy = WeatherCase::still("wind", Temperature::from_celsius(15.0));
         windy.wind_pressure = Stress::from_pascals(400.0);
-        let single = crate::tests::example();
+        let mut single = crate::tests::example();
+        // Jumpers hang their weight on the clamps after stringing.
+        single.jumpers.clear();
         let mut bundled = single.clone();
         bundled.sections[0].bundle = 3;
         bundled.sections[0].bundle_spacing = Some(0.4);
@@ -2338,7 +2363,9 @@ mod tests {
         let still = WeatherCase::still("still", Temperature::from_celsius(15.0));
         let mut windy = still.clone();
         windy.wind_pressure = Stress::from_pascals(400.0);
-        let line = crate::tests::example();
+        let mut line = crate::tests::example();
+        // Jumpers hang their weight on the clamps after stringing.
+        line.jumpers.clear();
         assert!(!line.sections[0].loads.is_empty());
         // Wind on the strings swings the clamps further.
         let mut catching = line.clone();
@@ -2413,6 +2440,8 @@ mod tests {
     /// across the line (`VL`, `VR`), 500 N each.
     fn with_v_string() -> Line {
         let mut line = crate::tests::example();
+        // Jumpers hang their weight on the clamps after stringing.
+        line.jumpers.clear();
         let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
         let wire = t2.wire_at_set(1).unwrap().label.clone();
         let i = t2.strings.iter().position(|s| s.wire == wire).unwrap();
@@ -2481,6 +2510,8 @@ mod tests {
             forces(&blown, 1)
         );
         let mut i_line = crate::tests::example();
+        // Jumpers hang their weight on the clamps after stringing.
+        i_line.jumpers.clear();
         i_line.sections[0].loads.clear();
         let i_across = across(&solve(&i_line, 400.0), &solve(&i_line, 0.0));
         let v_across = across(&blown, &calm);
@@ -2782,6 +2813,8 @@ mod tests {
     #[test]
     fn tension_stringing_reproduces_its_tension() {
         let mut line = crate::tests::example();
+        // Jumpers hang their weight on the clamps after stringing.
+        line.jumpers.clear();
         // Strung at 25 kN at 15 °C: solving at 15 °C gives 25 kN in every span,
         // within 0.1 %: sagging holds the clamps plumb along the line, the
         // solved state lets them settle longitudinally (6 N observed).
@@ -2806,6 +2839,8 @@ mod tests {
     #[test]
     fn sag_stringing_reproduces_its_sag() {
         let mut line = crate::tests::example();
+        // Jumpers hang their weight on the clamps after stringing.
+        line.jumpers.clear();
         line.sections[0].stringing = Stringing::Sag {
             sag: 8.0,
             temperature: 15.0,

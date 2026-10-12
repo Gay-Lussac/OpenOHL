@@ -22,7 +22,7 @@ use ols_weather::WeatherCase;
 use ols_wirefe::default_fe_budget;
 
 use crate::jumper::{JumperShape, in_parallel, solve_one_jumper};
-use crate::solve::{SectionShape, solve_section};
+use crate::solve::SectionShape;
 use crate::{Jumper, Line, LineError, Section, Structure};
 
 /// What an update did.
@@ -46,6 +46,9 @@ pub struct SolvedLine {
     jumpers: BTreeMap<String, Result<JumperShape, LineError>>,
     /// What each jumper was solved from: kept while unchanged.
     jumper_inputs: BTreeMap<String, JumperInputs>,
+    /// The jumpers' weight on the clamps the sections were solved with: a
+    /// section whose jumpers weigh otherwise now is solved again.
+    jumper_weights: BTreeMap<crate::SectionPoint, f64>,
 }
 
 /// What a jumper's solution depends on: itself, the sections at its ends,
@@ -99,6 +102,7 @@ fn solve_one(
     library: &ols_cables::Library,
     case: &WeatherCase,
     id: &str,
+    jumpers: &BTreeMap<crate::SectionPoint, f64>,
 ) -> Result<SectionShape, LineError> {
     let section = line
         .sections
@@ -111,7 +115,12 @@ fn solve_one(
             section.id, section.cable
         ))
     })?;
-    solve_section(line, section, cable, case, &default_fe_budget())
+    // The jumpers hanging on its clamps, with their own cables.
+    let coupling = crate::solve::Coupling {
+        jumpers: Some(jumpers.clone()),
+        ..Default::default()
+    };
+    crate::solve::solve_section_coupled(line, section, cable, case, &default_fe_budget(), &coupling)
 }
 
 impl SolvedLine {
@@ -122,6 +131,7 @@ impl SolvedLine {
             sections: BTreeMap::new(),
             jumpers: BTreeMap::new(),
             jumper_inputs: BTreeMap::new(),
+            jumper_weights: BTreeMap::new(),
         }
     }
 
@@ -132,6 +142,7 @@ impl SolvedLine {
             sections: BTreeMap::new(),
             jumpers: BTreeMap::new(),
             jumper_inputs: BTreeMap::new(),
+            jumper_weights: BTreeMap::new(),
         };
         let all: Vec<String> = line.sections.iter().map(|s| s.id.clone()).collect();
         solved.update(line, library, &all);
@@ -164,9 +175,26 @@ impl SolvedLine {
             .retain(|id, _| line.sections.iter().any(|s| &s.id == id));
         update.dropped = before - self.sections.len();
         let mut resolved: HashSet<&str> = HashSet::new();
+        // The jumpers' weight on the clamps now: a section whose jumpers
+        // weigh otherwise than when it was solved is solved again.
+        let weights = crate::jumper::end_weights(line, &self.case, |id| library.get(id));
+        let reweighed: HashSet<&str> = line
+            .sections
+            .iter()
+            .filter(|section| {
+                section
+                    .points
+                    .iter()
+                    .any(|p| weights.get(p) != self.jumper_weights.get(p))
+            })
+            .map(|s| s.id.as_str())
+            .collect();
         for section in &line.sections {
-            if dirty.contains(&section.id) || !self.sections.contains_key(&section.id) {
-                let result = solve_one(line, library, &self.case, &section.id);
+            if dirty.contains(&section.id)
+                || !self.sections.contains_key(&section.id)
+                || reweighed.contains(section.id.as_str())
+            {
+                let result = solve_one(line, library, &self.case, &section.id, &weights);
                 self.sections.insert(section.id.clone(), result);
                 resolved.insert(&section.id);
                 update.solved += 1;
@@ -207,6 +235,7 @@ impl SolvedLine {
                 resolved.insert(id);
             }
         }
+        self.jumper_weights = weights;
         let shapes = self.shapes(line);
         let mut jumpers = BTreeMap::new();
         let mut inputs = BTreeMap::new();
@@ -338,10 +367,11 @@ mod tests {
         let u = solved.update(&line, &lib, &["S2".to_owned()]);
         assert_eq!((u.solved, u.jumpers), (1, 0));
         assert_same_as_full(&line, &solved);
-        // Itself changed: solved again, alone.
+        // Itself changed: solved again, and the two sections it hangs its
+        // weight on (no section said dirty).
         line.jumpers[0].sag = Some(2.0);
         let u = solved.update(&line, &lib, &[]);
-        assert_eq!((u.solved, u.jumpers), (0, 1));
+        assert_eq!((u.solved, u.jumpers), (2, 1));
         assert_same_as_full(&line, &solved);
         // Its structure changed (a string at T3 heavier), no section said
         // dirty: solved again.

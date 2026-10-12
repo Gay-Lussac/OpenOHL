@@ -304,9 +304,9 @@ impl PylonBuilder {
                         .on_hover_text("A string hanging down at each phase; sets: the slots");
                     ui.selectable_value(&mut self.role, Role::Strain, "Strain")
                         .on_hover_text(format!(
-                            "Two strain strings at each phase, back and ahead along the line; \
-                             sets: the slots + {} (back) and + {} (ahead)",
-                            t.back_offset, t.ahead_offset
+                            "Two level strain strings at each phase along the line (directions \
+                             180° and 0°); sets: the slots + {} and + {}",
+                            t.first_offset, t.second_offset
                         ));
                     if self.role != before {
                         // The other role's strings; the dimensions stay.
@@ -508,7 +508,7 @@ fn face(ui: &mut egui::Ui, t: &PylonTemplate, values: &Values, role: Role) {
         let sets = match (role, p.earth) {
             (Role::Suspension, _) => format!("{}", p.slot),
             (Role::Strain, _) => {
-                format!("{}/{}", p.slot + t.back_offset, p.slot + t.ahead_offset)
+                format!("{}/{}", p.slot + t.first_offset, p.slot + t.second_offset)
             }
         };
         let colour = if p.earth {

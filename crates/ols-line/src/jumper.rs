@@ -51,6 +51,71 @@ use crate::rod::{Rod, RodHold, RodShape, RodString};
 use crate::solve::{DEFAULT_INSULATOR_STIFFNESS, SectionShape, p, v, wire_load_in_line_wind};
 use crate::{Jumper, Line, LineError, Point, SectionPoint};
 
+/// The weight each jumper hangs on its ends in weather case `case` (the
+/// whole bundle's, N, weight and ice), by section point: half of the
+/// jumper between that end and its first support (half the jumper
+/// without supports). The jumper's length is its cut length, else its
+/// chord between the wire points in still air lengthened by its sag
+/// (`L ≈ c + 8 s² / 3c`). `cable` gives a jumper's cable (none: the
+/// jumper is left out). The sections ending there carry it at their
+/// clamps in that case ([`crate::solve::Coupling::jumpers`]).
+pub fn end_weights<'a>(
+    line: &Line,
+    case: &WeatherCase,
+    cable: impl Fn(&str) -> Option<&'a Cable>,
+) -> std::collections::BTreeMap<SectionPoint, f64> {
+    let mut out = std::collections::BTreeMap::new();
+    for j in &line.jumpers {
+        let Some(c) = cable(&j.cable) else {
+            continue;
+        };
+        let (Some(a), Some(b)) = (line.wire_point(&j.from), line.wire_point(&j.to)) else {
+            continue;
+        };
+        let chord = (0..3)
+            .map(|k| (a.position[k] - b.position[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        // Given by its sag: the length giving it between the wire points in
+        // still air (as the jumper is cut).
+        let from_sag = |sag: f64| {
+            let props = CableProperties {
+                unstressed_length: 1.0,
+                axial_stiffness: c.axial_stiffness().si(),
+                load: Vector3::new(0.0, 0.0, -c.weight().si()),
+            };
+            let budget = Budget::new().max_iterations(200);
+            length_for_sag(props, v(a.position), v(b.position), sag, &budget).ok()
+        };
+        let length = match (j.length, j.sag) {
+            _ if j.rigid => chord,
+            (Some(l), _) => l,
+            (None, Some(s)) if chord > 1e-6 => {
+                from_sag(s).unwrap_or(chord + 8.0 * s * s / (3.0 * chord))
+            }
+            _ => chord,
+        };
+        let q = case.wire_load(c.diameter, c.weight()).vertical.si();
+        let bundle = f64::from(line.jumper_bundle(j).count.max(1));
+        // The supports' places along it, from `from`.
+        let mut at: Vec<f64> = j.supports.iter().map(|c| c.at).collect();
+        if let Some(sp) = &j.support {
+            at.push(sp.fraction);
+        }
+        let first = at.iter().copied().fold(1.0_f64, f64::min).clamp(0.0, 1.0);
+        let last = at.iter().copied().fold(0.0_f64, f64::max).clamp(0.0, 1.0);
+        let (from, to) = if at.is_empty() {
+            (0.5, 0.5)
+        } else {
+            (first / 2.0, (1.0 - last) / 2.0)
+        };
+        for (p, share) in [(&j.from, from), (&j.to, to)] {
+            *out.entry(p.clone()).or_insert(0.0) += q * length * share * bundle;
+        }
+    }
+    out
+}
+
 /// Solved geometry of a jumper.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JumperShape {
@@ -1241,17 +1306,26 @@ mod tests {
         let first = solve_jumpers(&line, &lib, &still(t0), &shapes(&line, t0))
             .remove(0)
             .unwrap();
-        let (a, b) = (v(first.points[0]), v(*first.points.last().unwrap()));
+        let (mut a, mut b) = (v(first.points[0]), v(*first.points.last().unwrap()));
         line.jumpers[0].sag = None;
-        line.jumpers[0].length = Some((b - a).norm() * (1.0 + 5e-5));
         line.jumpers[0].bending_stiffness = Some(0.0);
+        // Its weight on the clamps moves them a little with its length:
+        // the clamps where they settle for a nearly straight jumper.
+        for _ in 0..4 {
+            line.jumpers[0].length = Some((b - a).norm() * (1.0 + 5e-5));
+            let shapes = shapes(&line, t0);
+            let ends = |p: &crate::SectionPoint| super::end_position(&line, &shapes, p).unwrap();
+            (a, b) = (ends(&line.jumpers[0].from), ends(&line.jumpers[0].to));
+        }
+        line.jumpers[0].length = Some((b - a).norm() * (1.0 + 5e-5));
         let j = solve_jumpers(&line, &lib, &still(t0), &shapes(&line, t0))
             .remove(0)
             .unwrap();
         assert!(j.sag > 0.0 && j.sag < 0.1, "{}", j.sag);
-        // Under the floor (5·10⁻⁶ longer): taut.
+        // Under the floor (5·10⁻⁶ longer): taut (between the same clamps).
+        let between = shapes(&line, t0);
         line.jumpers[0].length = Some((b - a).norm() * (1.0 + 5e-6));
-        let err = solve_jumpers(&line, &lib, &still(t0), &shapes(&line, t0))
+        let err = solve_jumpers(&line, &lib, &still(t0), &between)
             .remove(0)
             .unwrap_err();
         assert!(err.to_string().contains("taut"), "{err}");
@@ -1451,7 +1525,9 @@ mod tests {
         line.jumpers[0].sag = None;
         line.jumpers[0].length = Some(jumpers[0].unstressed_length);
         let (_, again) = solve_all(&line, &still(15.0));
-        assert!((again[0].sag - 1.5).abs() < 1e-6, "{}", again[0].sag);
+        // (Its weight on the clamps takes its length from still air when
+        // it is given by its sag: the clamps settle a few mm otherwise.)
+        assert!((again[0].sag - 1.5).abs() < 0.02, "{}", again[0].sag);
         line.validate().unwrap();
     }
 
@@ -1486,6 +1562,56 @@ mod tests {
         assert!(held[0].sag < free[0].sag);
     }
 
+    /// A jumper's weight hangs on the clamps of the sections at its ends,
+    /// in the weather case: heavier with ice; half of it at each end
+    /// without supports, the share between an end and its support with
+    /// one; the clamps it hangs on sit lower than without it.
+    #[test]
+    fn a_jumper_weighs_on_the_clamps_it_hangs_on() {
+        let mut line = crate::tests::example();
+        let lib = library();
+        let j = line.jumpers[0].clone();
+        let calm = still(15.0);
+        let w = end_weights(&line, &calm, |id| lib.get(id));
+        let (a, b) = (w[&j.from], w[&j.to]);
+        assert!(a > 0.0 && (a - b).abs() < 1e-9, "{a} {b}");
+        let mut iced = calm.clone();
+        iced.ice_thickness = ols_core::units::Length::from_si(0.02);
+        assert!(end_weights(&line, &iced, |id| lib.get(id))[&j.from] > 2.0 * a);
+        // A support a quarter along: the first end carries an eighth.
+        line.jumpers[0].support = Some(JumperSupport {
+            point: [0.0, 0.0, 0.0],
+            length: 1.0,
+            weight: 0.0,
+            fraction: 0.25,
+        });
+        let w = end_weights(&line, &calm, |id| lib.get(id));
+        assert!((w[&j.from] / (2.0 * a) - 0.125).abs() < 1e-9);
+        assert!((w[&j.to] / (2.0 * a) - 0.375).abs() < 1e-9);
+        // The clamp it hangs on, lower than without it.
+        line.jumpers[0].support = None;
+        let (with, _) = solve_all(&line, &calm);
+        let mut without = line.clone();
+        without.jumpers.clear();
+        let (alone, _) = solve_all(&without, &calm);
+        let at = |shapes: &[SectionShape]| {
+            let (k, sec) = line
+                .sections
+                .iter()
+                .enumerate()
+                .find(|(_, s)| s.points.contains(&j.from))
+                .unwrap();
+            let i = sec.points.iter().position(|p| *p == j.from).unwrap();
+            shapes[k].clamps[i]
+        };
+        assert!(
+            at(&with)[2] < at(&alone)[2] - 1e-4,
+            "{:?} {:?}",
+            at(&with),
+            at(&alone)
+        );
+    }
+
     #[test]
     fn a_bundled_jumper_shares_its_support_weight() {
         // As above, then the jumper as a 3-bundle under a string 3 × as
@@ -1501,12 +1627,17 @@ mod tests {
             weight: 100.0,
             fraction: 0.5,
         });
-        let (_, one) = solve_all(&line, &still(15.0));
+        let (shapes, one) = solve_all(&line, &still(15.0));
         line.jumpers[0].bundle = Some(3);
         line.jumpers[0].bundle_spacing = Some(0.4);
         line.jumpers[0].support.as_mut().unwrap().weight = 300.0;
         line.validate().unwrap();
-        let (_, three) = solve_all(&line, &still(15.0));
+        // Between the same clamps (three times the jumper weighs more on
+        // them, which moves them a little).
+        let three: Vec<JumperShape> = solve_jumpers(&line, &library(), &still(15.0), &shapes)
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
         for (p, q) in one[0].points.iter().zip(&three[0].points) {
             assert!((v(*p) - v(*q)).norm() < 1e-9);
         }

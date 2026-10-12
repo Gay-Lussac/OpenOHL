@@ -726,6 +726,7 @@ fn objects_of(line: &Line) -> Vec<(Kind, String, Value)> {
 fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionError> {
     let mut line = raw_line_of(objects)?;
     line.upgrade_routes();
+    line.place_strings().map_err(|e| refused(e.to_string()))?;
     line.validate().map_err(|e| refused(e.to_string()))?;
     Ok(line)
 }
@@ -844,13 +845,18 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
                         }
                     }
                 }
-                // Jumpers hang on the solved clamps but do not change the
-                // sections: they are recalculated on their own.
-                Kind::Jumper
-                | Kind::Meta
-                | Kind::Route
-                | Kind::Alignment
-                | Kind::AlignmentPoint => {}
+                // A jumper's weight hangs on the clamps of the sections at
+                // its ends.
+                Kind::Jumper => {
+                    if let Some(j) = line.jumpers.iter().find(|j| &j.id == id) {
+                        for sec in &line.sections {
+                            if sec.points.contains(&j.from) || sec.points.contains(&j.to) {
+                                out.insert(sec.id.clone());
+                            }
+                        }
+                    }
+                }
+                Kind::Meta | Kind::Route | Kind::Alignment | Kind::AlignmentPoint => {}
             }
         }
     }

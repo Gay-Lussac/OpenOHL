@@ -223,15 +223,24 @@
               </xs:element>
               <xs:element name="string" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
-                  <xs:documentation>A string from its top (a point, or
-                    another string's wire point) to a wire point; its
-                    length is the distance between them.</xs:documentation>
+                  <xs:documentation>A string (insulator) from its top (a
+                    structure point, or another string's wire point) to a
+                    wire point, of a length (m) and a direction: angle_deg
+                    from straight down (0 hanging, 90 level), direction_deg
+                    in plan in the structure's axes (0 ahead, 90 right).
+                    Its wire point is placed from them (where two strings
+                    meet at one: where their lengths meet, below their
+                    tops). Without a length (files written before): the
+                    distance to its wire point as given.</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="label" type="xs:string" use="required"/>
                   <xs:attribute name="description" type="xs:string"/>
                   <xs:attribute name="top" type="xs:string" use="required"/>
                   <xs:attribute name="wire" type="xs:string" use="required"/>
+                  <xs:attribute name="length" type="xs:double"/>
+                  <xs:attribute name="angle_deg" type="xs:double" default="0"/>
+                  <xs:attribute name="direction_deg" type="xs:double" default="0"/>
                   <xs:attribute name="insulator" type="xs:string"/>
                   <xs:attribute name="weight" type="xs:double" default="0"/>
                   <xs:attribute name="wind_area" type="xs:double" default="0"/>

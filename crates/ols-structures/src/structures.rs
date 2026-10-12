@@ -403,12 +403,64 @@ pub struct TypeString {
     /// Area the wind blows on (default: its insulator's, else none).
     #[serde(default)]
     pub wind_area: Option<ols_core::units::Area>,
-    /// A strain (dead-end) string, lined up with its conductor.
+    /// A strain (dead-end) string, else a suspension string.
     #[serde(default)]
     pub strain: bool,
-    /// Strain strings: which span it points to (placing its wire point).
+    /// Its angle from straight down (0 hanging, 90 level; default 0).
+    #[serde(default)]
+    pub angle: Option<ols_core::units::Angle>,
+    /// Its direction in plan in the type's axes (0 ahead along the line,
+    /// 90 to the right, 180 back; default 0).
+    #[serde(default)]
+    pub direction: Option<ols_core::units::Angle>,
+    /// Files written before: a strain string along the line, ahead or back
+    /// (read as level, direction 0° or 180°).
     #[serde(default)]
     pub side: Option<Side>,
+}
+
+impl TypeString {
+    /// Its angle from straight down and direction in plan, degrees (a
+    /// `side` of files written before: level, ahead 0° or back 180°).
+    pub fn angles(&self) -> (f64, f64) {
+        let deg = |a: Option<ols_core::units::Angle>| a.map_or(0.0, |a| a.si().to_degrees());
+        match (self.angle, self.direction, self.side) {
+            (None, None, Some(Side::Ahead)) => (90.0, 0.0),
+            (None, None, Some(Side::Back)) => (90.0, 180.0),
+            (a, d, _) => (deg(a), deg(d)),
+        }
+    }
+}
+
+/// The unit vector, local axes (x right, y ahead, z up), of a string at
+/// `angle` from straight down and `direction` in plan (0 ahead, 90 right),
+/// degrees.
+pub fn local_direction(angle: f64, direction: f64) -> [f64; 3] {
+    let (a, d) = (angle.to_radians(), direction.to_radians());
+    [a.sin() * d.sin(), a.sin() * d.cos(), -a.cos()]
+}
+
+/// Where strings of lengths `la` from `a` and `lb` from `b` meet: of the
+/// circle both lengths reach, the point nearest `toward` (where the first
+/// string's own direction points; a hanging V: the lowest).
+pub fn v_meeting(a: [f64; 3], la: f64, b: [f64; 3], lb: f64, toward: [f64; 3]) -> Option<[f64; 3]> {
+    let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let d = (ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2]).sqrt();
+    if d < 1e-9 || d > la + lb + 1e-9 || d < (la - lb).abs() - 1e-9 {
+        return None;
+    }
+    let u = ab.map(|x| x / d);
+    let along = (la * la - lb * lb + d * d) / (2.0 * d);
+    let h = (la * la - along * along).max(0.0).sqrt();
+    let c = [0, 1, 2].map(|k| a[k] + along * u[k]);
+    let across = |d: [f64; 3]| {
+        let dot = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
+        let v = [0, 1, 2].map(|k| d[k] - dot * u[k]);
+        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        (n > 1e-9).then(|| v.map(|x| x / n))
+    };
+    let v = across([0, 1, 2].map(|k| toward[k] - c[k])).or_else(|| across([0.0, 0.0, -1.0]))?;
+    Some([0, 1, 2].map(|k| c[k] + h * v[k]))
 }
 
 /// A wire point of a structure type (version 2).
@@ -1070,6 +1122,8 @@ pub struct PlacedString {
     pub compression: Option<f64>,
     /// Area the wind blows on, m² (0: its insulator's, if any).
     pub wind_area: f64,
+    /// Axial stiffness EA, N (its insulator's).
+    pub stiffness: Option<f64>,
     /// A strain string.
     pub strain: bool,
 }
@@ -1303,24 +1357,31 @@ impl StructureType {
                         })
                     })
                     .collect::<Result<Vec<f64>, String>>()?;
-                let at = match (on.as_slice(), tops.as_slice()) {
-                    ([s], [t]) => match s.side {
-                        Some(Side::Ahead) => [t[0], t[1] + lengths[0], t[2]],
-                        Some(Side::Back) => [t[0], t[1] - lengths[0], t[2]],
-                        None => [t[0], t[1], t[2] - lengths[0]],
-                    },
-                    _ => {
-                        let n = tops.len() as f64;
-                        let c = [0, 1, 2].map(|k| tops.iter().map(|t| t[k]).sum::<f64>() / n);
-                        let r = ((tops[0][0] - c[0]).powi(2) + (tops[0][1] - c[1]).powi(2)).sqrt();
-                        let l = lengths.iter().sum::<f64>() / n;
-                        if l <= r {
-                            return Err(err(format!(
-                                "wire point {}: its strings are too short to meet",
+                // One string: at its length in its direction; two or more
+                // from other tops (a V): where the first two's lengths meet,
+                // the point nearest where the first one's direction points.
+                let far = (1..tops.len()).find(|&k| {
+                    (0..3)
+                        .map(|c| (tops[k][c] - tops[0][c]).powi(2))
+                        .sum::<f64>()
+                        > 1e-12
+                });
+                let at = match far {
+                    None => {
+                        let (angle, direction) = on[0].angles();
+                        let d = local_direction(angle, direction);
+                        [0, 1, 2].map(|k| tops[0][k] + lengths[0] * d[k])
+                    }
+                    Some(k) => {
+                        let (angle, direction) = on[0].angles();
+                        let d = local_direction(angle, direction);
+                        let toward = [0, 1, 2].map(|c| tops[0][c] + lengths[0] * d[c]);
+                        v_meeting(tops[0], lengths[0], tops[k], lengths[k], toward).ok_or_else(|| {
+                            err(format!(
+                                "wire point {}: its strings cannot meet (too short, or too long)",
                                 w.label
-                            )));
-                        }
-                        [c[0], c[1], c[2] - (l * l - r * r).sqrt()]
+                            ))
+                        })?
                     }
                 };
                 local.insert(w.label.as_str(), at);
@@ -1341,6 +1402,14 @@ impl StructureType {
             )));
         }
         let global = |label: &str| to_global(position, rotation_deg, local[label]);
+        // A V-string assembly's weight is shared by its legs.
+        let legs = |wire: &str| {
+            self.strings
+                .iter()
+                .filter(|s| s.wire == wire)
+                .count()
+                .max(1)
+        };
         Ok(PlacedStrings {
             points: self
                 .points
@@ -1367,6 +1436,10 @@ impl StructureType {
                 .iter()
                 .map(|s| {
                     let a = assembly(s)?;
+                    let share = match a {
+                        Some(a) if a.kind == AssemblyKind::VString => 1.0 / legs(&s.wire) as f64,
+                        _ => 1.0,
+                    };
                     Ok(PlacedString {
                         description: s.description.clone(),
                         label: s.label.clone(),
@@ -1375,9 +1448,10 @@ impl StructureType {
                         insulator: s.insulator.clone(),
                         weight: match (a, s.weight) {
                             (_, Some(w)) => w.si(),
-                            (Some(a), None) => a.weight.si(),
+                            (Some(a), None) => a.weight.si() * share,
                             (None, None) => 0.0,
                         },
+                        stiffness: a.map(|a| a.axial_stiffness.si()),
                         compression: s.compression.map(|c| c.si()),
                         wind_area: s.wind_area.map_or(0.0, |w| w.si()),
                         strain: s.strain || a.is_some_and(|a| a.kind == AssemblyKind::Strain),

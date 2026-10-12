@@ -277,6 +277,9 @@ fn write_structure(out: &mut String, s: &Structure) {
             label,
             top,
             wire,
+            length,
+            angle_deg,
+            direction_deg,
             insulator,
             weight,
             wind_area,
@@ -290,7 +293,13 @@ fn write_structure(out: &mut String, s: &Structure) {
         attr(out, "top", top);
         attr(out, "wire", wire);
         opt_text(out, "insulator", insulator.as_deref());
-        for (name, v) in [("weight", weight), ("wind_area", wind_area)] {
+        for (name, v) in [
+            ("length", length),
+            ("angle_deg", angle_deg),
+            ("direction_deg", direction_deg),
+            ("weight", weight),
+            ("wind_area", wind_area),
+        ] {
             if *v != 0.0 {
                 attr(out, name, &num(*v));
             }
@@ -859,6 +868,9 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                     "label",
                     "top",
                     "wire",
+                    "length",
+                    "angle_deg",
+                    "direction_deg",
                     "insulator",
                     "weight",
                     "wind_area",
@@ -874,6 +886,9 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 label: text(x, "label")?.to_owned(),
                 top: text(x, "top")?.to_owned(),
                 wire: text(x, "wire")?.to_owned(),
+                length: optional(x, "length")?.unwrap_or(0.0),
+                angle_deg: optional(x, "angle_deg")?.unwrap_or(0.0),
+                direction_deg: optional(x, "direction_deg")?.unwrap_or(0.0),
                 insulator: owned(x, "insulator"),
                 weight: optional(x, "weight")?.unwrap_or(0.0),
                 wind_area: optional(x, "wind_area")?.unwrap_or(0.0),
@@ -1328,6 +1343,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     };
     // Older documents: read into routes, alignments and alignment points.
     line.upgrade_routes();
+    line.place_strings().map_err(|e| e.to_string())?;
     line.version = ols_line::LINE_FILE_VERSION;
     Ok(line)
 }

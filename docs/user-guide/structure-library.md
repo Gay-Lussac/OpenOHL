@@ -46,7 +46,8 @@ label = "S2"
 top = "A2"
 wire = "W2"
 insulator = "S-380-double"
-side = "ahead"                       # ahead (+y) | back (−y): which span it serves
+angle = "90 deg"                     # from straight down: 0 hanging, 90 level
+direction = "0 deg"                  # in plan: 0 ahead (+y), 90 right, 180 back
 
 [[extension]]                        # one type, several heights
 name = "+3"
@@ -61,7 +62,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `id`, `name`, `kind` | yes | Identity and family. |
 | `point` | no | Points where strings hang (each, like wire points and strings, may have a `description`, free text, carried into the line): `label` and `point` (local), or `node` (at a joint), or `member` and `at` (along a member, 0–1 from its first joint) — then it moves with the pylon. Labels are unique among points and wire points. |
 | `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below), optional `weight` (a counterweight hanging at it). |
-| `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `wind_area` (default: its insulator's, else none), optional `compression` (what it may take; none: tension only), `strain`, `side` (a strain string's span: ahead or back). |
+| `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `wind_area` (default: its insulator's, else none), optional `compression` (what it may take; none: tension only), `strain` (a strain string, else suspension), `angle` (from straight down, default 0: hanging) and `direction` (in plan, default 0: ahead). Files written before gave a strain string a `side` (`ahead`/`back`): read as level, direction 0° or 180°. |
 | `attachment` | no | Files of version 1: attachment points (`set`, `phase`, `point`, `insulator` or `string`, `side`), read as before (below). |
 | `extension` | no | Named body extensions: `dz` lengthens the body below z = 0, so everything above the feet rises by it. |
 | `foot` | no | Level of the feet in local z (default 0: z = 0 is the ground). |
@@ -77,7 +78,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 
 A string hangs from its top — a point of the structure, or another string's wire point — to a wire point, so any assembly is built from strings ([line file](line-file.md#points-strings-and-wire-points)): two strings to one wire point make a V; a third from that wire point down to a wire point with a set, a V with a string below; a string down to a wire point and two strain strings from it to two sets, a TAK.
 
-A wire point without a `point` is placed from its strings (their tops placed first): below its one string by the string's length (a library assembly: its vertical drop), or along the line with a `side`; with several strings, below the middle of their tops where their lengths meet. A string's weight is its own, else its assembly's.
+A wire point is placed from its strings (their tops placed first): at its one string's length (a library assembly: its length) in the string's direction (`angle`, `direction`); with two or more strings from other tops (a V), where the first two's lengths meet: of the circle both reach, the point nearest where the first string's direction points (hanging: the lowest). A wire point no string reaches is clamped where its `point` says. A string's weight, stiffness and wind area are its own, else its assembly's (a V-string assembly's weight and wind area shared by its legs).
 
 **Version 1 files** gave each string as an `[[attachment]]` with a set and phase; they are read as before: an attachment's point is labelled by its string's `top` label, else `A<set>-<phase>`, and its set is the set itself for phase 1, else `set + 1000 · (phase + 1)` ([line file](line-file.md#points-strings-and-wire-points)).
 
@@ -193,7 +194,7 @@ label = "E"
 set = 9
 point = ["0 m", "0 m", "62 m"]
 
-[[point]]                           # a strain string on a dead-end: with a side
+[[point]]                           # a strain string on a dead-end: level, ahead
 label = "A2"
 point = ["-12 m", "1.5 m", "36 m"]
 
@@ -207,10 +208,11 @@ top = "A2"
 wire = "L2"
 length = "5.0 m"
 strain = true
-side = "ahead"
+angle = "90 deg"
+direction = "0 deg"
 ```
 
-A string hangs down (suspension) or, with a `side`, is a strain string along the line — solved as a free member that lines up with its conductor, like a library strain assembly. A wire point no string reaches is clamped where it is. The stick drawing appears in the 3D viewer and in the plan and profile sheets.
+A string hangs down by default; its `angle` and `direction` point it anywhere — a strain string level along the line, at 0° or 180° — and it is solved as a free member that lines up with its conductor, like a library strain assembly. A wire point no string reaches is clamped where it is. The stick drawing appears in the 3D viewer and in the plan and profile sheets.
 
 ## Pylon templates (`.olspt`)
 
@@ -236,8 +238,8 @@ name = "Delta, one circuit, one earth wire"
 description = "Two phases on the lower crossarm, one on the upper."
 kind = "lattice"                # the family of the types built
 height = "peak"                 # mast top for the stick drawing (expression)
-# back_offset = 20              # strain: back sets = slot + 20 (default)
-# ahead_offset = 40             # strain: ahead sets = slot + 40 (default)
+# first_offset = 20             # strain: the string at 180°: slot + 20 (default)
+# second_offset = 40            # strain: the string at 0°: slot + 40 (default)
 
 [strings]                       # offered; changed in the builder
 suspension_length = "3 m"
@@ -278,19 +280,19 @@ up = "peak"
 - **Expressions**: numbers (metres), the parameters' names, `+ - * /` and
   parentheses (`"-(inner + 2 * step)"`).
 - **Sets** follow the slots. A suspension type: a string hangs at each
-  attachment, its wire point has the slot as set. A strain type: two
-  strain strings at each attachment, back and ahead along the line, with
-  the sets slot + 20 (back) and slot + 40 (ahead). Earth wires the same,
-  with their own short strings (lengths and weights of their own): a
-  point on the pylon, a string to the wire point.
-  So slots 1–20 give suspension sets 1–20, strain back 21–40 and ahead
-  41–60 — a numbering that keeps every phase's set the same through
+  attachment, its wire point has the slot as set. A strain type: two level
+  strain strings at each attachment along the line, given by their angles
+  only — the first at 180° with the set slot + 20, the second at 0° with
+  slot + 40. Earth wires the same, with their own short strings (lengths
+  and weights of their own): a point on the pylon, a string to the wire
+  point. So slots 1–20 give suspension sets 1–20, and strain sets 21–40
+  and 41–60 — a numbering that keeps every phase's set the same through
   suspension and strain structures, also for crowded multi-circuit
   pylons: e.g. circuits in slots 1–3, 4–6, 7–9, a two-phase circuit of
   four conductors in 10–13, another circuit in 16–18, earth wires in 19
   and 20 (the shipped `multi-5c`).
 - Labels: the points `A-<label>`, the wire points `W-<label>` (strain:
-  `W-<label>-back`, `-ahead`), the strings `S-<label>`.
+  `W-<label>-1`, `-2`), the strings `S-<label>` (`-1`, `-2`).
 - Checked when read: unique names, slots and labels; every expression
   reads; built with its defaults it makes a valid type both ways; no
   string reaches the ground; the mast top is not below an attachment.

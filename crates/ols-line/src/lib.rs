@@ -1020,12 +1020,25 @@ impl Line {
         })
     }
 
+    /// Every structure's strings: their length and direction (taken from
+    /// where their wire points are, for strings without a length: files
+    /// written before), their wire points placed from them
+    /// ([`Structure::place_wires`]).
+    pub fn place_strings(&mut self) -> Result<(), LineError> {
+        for s in &mut self.structures {
+            s.take_string_geometry();
+            s.place_wires().map_err(LineError::Invalid)?;
+        }
+        Ok(())
+    }
+
     /// Parses and validates JSON text. Files of an older version are read
     /// into the current one (and say so).
     pub fn from_json(text: &str) -> Result<Self, LineError> {
         let mut line: Self =
             serde_json::from_str(text).map_err(|e| LineError::File(e.to_string()))?;
         line.upgrade_routes();
+        line.place_strings()?;
         line.validate()?;
         line.version = LINE_FILE_VERSION;
         Ok(line)

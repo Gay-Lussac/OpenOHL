@@ -243,6 +243,8 @@ impl PlacedEditor {
                 compression: x.compression,
                 strain: x.strain,
                 description: x.description,
+                // From its wire point as placed here.
+                ..Default::default()
             })
             .collect();
         s.members = if t.members.is_empty() && t.body.is_empty() {
@@ -260,14 +262,79 @@ impl PlacedEditor {
         insulators: &InsulatorLibrary,
     ) -> Result<(String, Command), String> {
         let s = self.structure(stored, insulators)?;
+        let put = Command::Put {
+            kind: Kind::Structure,
+            id: self.id.clone(),
+            value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
+            ord: None,
+        };
+        // Sets renumbered (on the same wire point): the sections and jumpers
+        // strung there follow, in the same command (swaps too).
+        let before = stored.structure(&self.id);
+        let renumbered: std::collections::BTreeMap<u32, u32> = before
+            .map(|b| {
+                b.wires
+                    .iter()
+                    .filter_map(|w| {
+                        let old = w.set?;
+                        let new = s.wire(&w.label)?.set?;
+                        (old != new).then_some((old, new))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if renumbered.is_empty() {
+            return Ok((
+                format!("changed the strings and points of {}", self.id),
+                put,
+            ));
+        }
+        let remap = |p: &mut ols_line::SectionPoint| -> bool {
+            match renumbered.get(&p.set) {
+                Some(&new) if p.structure == self.id => {
+                    p.set = new;
+                    true
+                }
+                _ => false,
+            }
+        };
+        let mut commands = vec![put];
+        for sec in &stored.sections {
+            let mut sec = sec.clone();
+            let mut moved = false;
+            for p in &mut sec.points {
+                moved |= remap(p);
+            }
+            if moved {
+                commands.push(Command::Put {
+                    kind: Kind::Section,
+                    id: sec.id.clone(),
+                    value: serde_json::to_value(&sec).map_err(|e| e.to_string())?,
+                    ord: None,
+                });
+            }
+        }
+        for j in &stored.jumpers {
+            let mut j = j.clone();
+            let a = remap(&mut j.from);
+            let b = remap(&mut j.to);
+            if a || b {
+                commands.push(Command::Put {
+                    kind: Kind::Jumper,
+                    id: j.id.clone(),
+                    value: serde_json::to_value(&j).map_err(|e| e.to_string())?,
+                    ord: None,
+                });
+            }
+        }
+        let list: Vec<String> = renumbered.iter().map(|(a, b)| format!("{a}→{b}")).collect();
         Ok((
-            format!("changed the strings and points of {}", self.id),
-            Command::Put {
-                kind: Kind::Structure,
-                id: self.id.clone(),
-                value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
-                ord: None,
-            },
+            format!(
+                "changed the strings and points of {}; sets {} (their wires follow)",
+                self.id,
+                list.join(", ")
+            ),
+            Command::Batch { commands },
         ))
     }
 

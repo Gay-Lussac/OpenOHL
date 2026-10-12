@@ -1170,8 +1170,13 @@ impl TabViewer for Viewer<'_> {
                     insulators: r.model.types.as_ref().map(|t| &t.1),
                     ahead: r.model.line.display.ahead_deg,
                 };
-                if let Some(action) = page.ui(ui, &sources, cx) {
+                let action = page.ui(ui, &sources, cx);
+                let request = page.workspace.request.take();
+                if let Some(action) = action {
                     r.library_saved(kind, action);
+                }
+                if let Some(req) = request {
+                    r.workspace_request(req);
                 }
                 None
             }
@@ -2290,6 +2295,7 @@ impl Ready {
         let insulators = self.model.types.as_ref().map_or(&empty, |(_, i)| i);
         let line = self.model.line.clone();
         let action = p.ui(ui, rs, insulators, &line);
+        let request = p.workspace.request.take();
         let stored = self.model.stored_line().unwrap_or(&self.model.line).clone();
         match action {
             Some(PlacedAction::Apply) => match p.command(&stored, insulators) {
@@ -2312,7 +2318,54 @@ impl Ready {
             },
             None => {}
         }
+        if let Some(req) = request {
+            self.workspace_request(req);
+        }
         self.placed = Some(p);
+    }
+
+    /// What the pylon editor asks: an insulator saved into the insulator
+    /// library (refused when its id is taken), the insulator library
+    /// opened.
+    pub fn workspace_request(&mut self, req: crate::type_workspace::Request) {
+        use crate::library::{LibraryKind, PageAction};
+        use crate::type_workspace::Request;
+        match req {
+            Request::OpenInsulators => {
+                self.open_page = Some((Tab::Library(LibraryKind::Insulators), None));
+            }
+            Request::SaveInsulator { id, text } => {
+                let taken = self
+                    .model
+                    .types
+                    .as_ref()
+                    .is_some_and(|(_, i)| i.get(&id).is_some());
+                let dir = LibraryKind::Insulators.new_file_dir(&self.model.sources);
+                let path = dir.join(format!(
+                    "{id}.{}",
+                    ols_structures::insulators::INSULATOR_FILE_EXTENSION
+                ));
+                let result = if taken || path.exists() {
+                    Err(format!(
+                        "there is an insulator {id} already (rename it in the library)"
+                    ))
+                } else {
+                    std::fs::create_dir_all(&dir)
+                        .and_then(|()| std::fs::write(&path, &text))
+                        .map_err(|e| format!("{}: {e}", path.display()))
+                };
+                match result {
+                    Ok(()) => {
+                        self.library_saved(
+                            LibraryKind::Insulators,
+                            PageAction::Saved(path.clone()),
+                        );
+                        self.status = Some((format!("insulator {id} saved to the library"), false));
+                    }
+                    Err(e) => self.status = Some((e, true)),
+                }
+            }
+        }
     }
 
     /// The folder of the project's own structure types: its folder, else a

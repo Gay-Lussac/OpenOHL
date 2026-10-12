@@ -9165,12 +9165,20 @@ fn a_structure_without_a_type_is_edited_in_the_pylon_editor() {
     harness.run();
     harness.run();
     harness.get_by_label("its own points, wire points and strings, in its axes");
-    // The strings, editable: top, clamp, insulator, angles…
-    harness.get_by_label("Strings").click();
+    // The four tables: attachment points, insulators (top, kind,
+    // assembly, length, angles…), wire points, set points.
+    harness.get_by_label("Insulators").click();
     harness.run();
     harness.get_by_label("hangs from");
-    harness.get_by_label("down/up");
-    harness.get_by_label("clamp");
+    harness.get_by_label("angle");
+    harness.get_by_label("kind");
+    harness.get_by_label("+ New insulator");
+    for sheet in ["Attachment points", "Wire points", "Set points"] {
+        // (The sheet's tab: the first of that name.)
+        harness.query_all_by_label(sheet).next().unwrap().click();
+        harness.run();
+    }
+    harness.get_by_label("on wire point");
     let near = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-3);
     {
         let r = harness.state_mut().ready().unwrap();
@@ -9233,6 +9241,15 @@ fn a_structure_without_a_type_is_edited_in_the_pylon_editor() {
             near(after, [before[0], before[1], before[2] + 1.0]),
             "{after:?}"
         );
+        // Its insulators' wire points came along (their lengths hold).
+        for x in s.strings.iter().filter(|x| x.top == label) {
+            let w = s.wire(&x.wire).unwrap().position;
+            let d = (0..3)
+                .map(|k| (w[k] - after[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            assert!((d - x.length).abs() < 1e-6, "{} {d}", x.label);
+        }
         assert!(!r.placed.as_ref().unwrap().dirty());
         r.placed.as_mut().unwrap().type_id = Some("my-pylon".into());
     }
@@ -9259,6 +9276,66 @@ fn a_structure_without_a_type_is_edited_in_the_pylon_editor() {
     assert_eq!(s.strings.len(), 3);
     let stored = r.model.stored_line().unwrap().structure("T3").unwrap();
     assert!(stored.points.is_empty() && stored.strings.is_empty());
+}
+
+/// Two sets of a structure swapped in its editor (Set points): on Apply
+/// the sections and jumpers strung there follow, in one command.
+#[test]
+fn swapped_sets_take_their_wires_along() {
+    let model = synthetic_project("set-swap");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (before, a, b) = {
+        let r = harness.state_mut().ready().unwrap();
+        let line = r.model.stored_line().unwrap().clone();
+        let s = line.structure("T3").unwrap();
+        let sets: Vec<u32> = s.sets().collect();
+        let (a, b) = (sets[0], sets[1]);
+        let mut p = crate::placed_editor::PlacedEditor::open(&line, "T3").unwrap();
+        // Swap the two sets on their wire points.
+        let wires = p.doc["wire"].as_array_of_tables_mut().unwrap();
+        for w in wires.iter_mut() {
+            let set = w.get("set").and_then(toml_edit::Item::as_integer);
+            if set == Some(i64::from(a)) {
+                w["set"] = toml_edit::value(i64::from(b));
+            } else if set == Some(i64::from(b)) {
+                w["set"] = toml_edit::value(i64::from(a));
+            }
+        }
+        let insulators = ols_structures::InsulatorLibrary::default();
+        let (what, command) = p.command(&line, &insulators).unwrap();
+        assert!(what.contains(&format!("{a}→{b}")), "{what}");
+        assert!(
+            r.perform(crate::edit::Action::Command { what, command }),
+            "{:?}",
+            r.status
+        );
+        (line, a, b)
+    };
+    let r = harness.state_mut().ready().unwrap();
+    let after = r.model.stored_line().unwrap();
+    let swap = |p: &ols_line::SectionPoint| {
+        let mut p = p.clone();
+        if p.structure == "T3" {
+            p.set = if p.set == a {
+                b
+            } else if p.set == b {
+                a
+            } else {
+                p.set
+            };
+        }
+        p
+    };
+    for (x, y) in before.sections.iter().zip(&after.sections) {
+        let want: Vec<ols_line::SectionPoint> = x.points.iter().map(swap).collect();
+        assert_eq!(y.points, want, "{}", x.id);
+    }
+    for (x, y) in before.jumpers.iter().zip(&after.jumpers) {
+        assert_eq!((swap(&x.from), swap(&x.to)), (y.from.clone(), y.to.clone()));
+    }
 }
 
 /// A string's own wire point renamed in the string window: its string

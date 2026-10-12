@@ -212,6 +212,7 @@ impl Line {
                 weight: x.weight,
                 compression: x.compression,
                 wind_area: x.wind_area,
+                stiffness: x.stiffness,
                 strain: x.strain,
                 description: x.description,
                 ..Default::default()
@@ -262,6 +263,24 @@ impl Line {
                 .iter()
                 .map(|x| (x.wire.clone(), s.strings_to(&x.wire).count()))
                 .collect();
+            // Weight and stiffness of library assemblies too, for strings
+            // without their own (a V's weight shared by its legs).
+            for x in s.strings.iter_mut() {
+                let Some(i) = x.insulator.as_deref().and_then(|id| insulators.get(id)) else {
+                    continue;
+                };
+                let share = if i.kind == AssemblyKind::VString {
+                    1.0 / legs.get(&x.wire).copied().unwrap_or(1).max(1) as f64
+                } else {
+                    1.0
+                };
+                if x.weight == 0.0 {
+                    x.weight = i.weight.si() * share;
+                }
+                if x.stiffness.is_none() {
+                    x.stiffness = Some(i.axial_stiffness.si());
+                }
+            }
             for x in s.strings.iter_mut().filter(|x| x.wind_area == 0.0) {
                 if let Some(i) = x.insulator.as_deref().and_then(|id| insulators.get(id)) {
                     let share = if i.kind == AssemblyKind::VString {
@@ -274,87 +293,9 @@ impl Line {
             }
         }
 
-        // Aim the strain strings of typed structures along their conductor:
-        // a wire point hanging on one strain string (from the insulator
-        // library, or flagged), from a structure point.
-        let typed: BTreeMap<String, bool> = line
-            .structures
-            .iter()
-            .map(|s| (s.id.clone(), s.structure_type.is_some()))
-            .collect();
-        let mut aims = Vec::new();
-        for section in &line.sections {
-            let n = section.points.len();
-            for (k, p) in section.points.iter().enumerate() {
-                if !typed.get(&p.structure).copied().unwrap_or(false) {
-                    continue;
-                }
-                let Some(s) = line.structure(&p.structure) else {
-                    continue;
-                };
-                let Some(wire) = s.wire_at_set(p.set) else {
-                    continue;
-                };
-                let on: Vec<&InsulatorString> = s.strings_to(&wire.label).collect();
-                let [string] = on.as_slice() else {
-                    continue;
-                };
-                let Some(top) = s.point(&string.top) else {
-                    continue;
-                };
-                let library = string
-                    .insulator
-                    .as_deref()
-                    .and_then(|id| insulators.get(id));
-                let strain =
-                    library.is_some_and(|i| i.kind == AssemblyKind::Strain) || string.strain;
-                if !strain {
-                    continue;
-                }
-                let Some(length) = s.string_length(string) else {
-                    continue;
-                };
-                // Neighbour: the next point for a section start, the previous
-                // one otherwise; towards the top of its single string, else
-                // its wire point.
-                let neighbour = if k + 1 < n {
-                    &section.points[k + 1]
-                } else {
-                    &section.points[k - 1]
-                };
-                let Some(target) = line.structure(&neighbour.structure).and_then(|t| {
-                    let w = t.wire_at_set(neighbour.set)?;
-                    let mut on = t.strings_to(&w.label);
-                    match (on.next(), on.next()) {
-                        (Some(x), None) => t.point(&x.top).map(|q| q.position),
-                        _ => None,
-                    }
-                    .or(Some(w.position))
-                }) else {
-                    continue;
-                };
-                // Starting position along the 3D chord to the neighbouring
-                // point (slope included); the solver then lets the string
-                // settle along its conductor.
-                let i = top.position;
-                let d = [target[0] - i[0], target[1] - i[1], target[2] - i[2]];
-                let norm = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-                if norm > 1e-9 {
-                    let at = [0, 1, 2].map(|c| i[c] + d[c] / norm * length);
-                    aims.push((p.structure.clone(), wire.label.clone(), at));
-                }
-            }
-        }
-        for (structure, label, at) in aims {
-            let s = line
-                .structures
-                .iter_mut()
-                .find(|s| s.id == structure)
-                .expect("checked above");
-            if let Some(w) = s.wires.iter_mut().find(|w| w.label == label) {
-                w.position = at;
-            }
-        }
+        // The strings' lengths and directions (the type's as placed), their
+        // wire points from them.
+        line.place_strings()?;
         line.validate()?;
         Ok(line)
     }
