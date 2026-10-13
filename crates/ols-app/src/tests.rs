@@ -10208,17 +10208,28 @@ fn a_string_length_typed_keeps_the_others() {
         .position(|x| f.wires.iter().any(|w| w.label == x.top))
         .unwrap();
     let tip = f.strings[below].top.clone();
-    let legs: Vec<usize> = (0..f.strings.len()).filter(|&i| f.strings[i].wire == tip).collect();
+    let legs: Vec<usize> = (0..f.strings.len())
+        .filter(|&i| f.strings[i].wire == tip)
+        .collect();
     let (l0, l1, lb) = (len(&f, legs[0]), len(&f, legs[1]), len(&f, below));
     let tip0 = at(&f, &tip);
     f.set_length(legs[0], l0 + 0.5).unwrap();
     assert!((len(&f, legs[0]) - (l0 + 0.5)).abs() < 1e-9);
-    assert!((len(&f, legs[1]) - l1).abs() < 1e-9, "the other leg keeps its length");
-    assert!((len(&f, below) - lb).abs() < 1e-9, "the string below keeps its length");
+    assert!(
+        (len(&f, legs[1]) - l1).abs() < 1e-9,
+        "the other leg keeps its length"
+    );
+    assert!(
+        (len(&f, below) - lb).abs() < 1e-9,
+        "the string below keeps its length"
+    );
     assert!(dist(at(&f, &tip), tip0) > 0.1, "where they meet moved");
     // Too short to reach the other leg: refused, nothing changes.
     let before = f.clone();
-    let apart = dist(at(&f, &f.strings[legs[0]].top), at(&f, &f.strings[legs[1]].top));
+    let apart = dist(
+        at(&f, &f.strings[legs[0]].top),
+        at(&f, &f.strings[legs[1]].top),
+    );
     let why = f.set_length(legs[0], (apart - l1) * 0.5).unwrap_err();
     assert!(why.contains("cannot meet"), "{why}");
     assert_eq!(f, before);
@@ -10226,4 +10237,179 @@ fn a_string_length_typed_keeps_the_others() {
     f.set_length(below, lb + 1.0).unwrap();
     assert!((len(&f, below) - (lb + 1.0)).abs() < 1e-9);
     assert!((len(&f, legs[0]) - (l0 + 0.5)).abs() < 1e-9);
+}
+
+/// Ends at: any other wire point of the structure (strings chain: a V
+/// under a V), keeping its length — a second leg makes a V where both
+/// lengths meet; a third leg, a loop or the wire point of another set
+/// pulled in.
+#[test]
+fn a_string_ends_at_any_other_wire_point() {
+    use crate::editors::{Preset, StringForm, StringRow, WireRow};
+    let model = synthetic();
+    let dist = |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f64>().sqrt();
+    let at = |f: &StringForm, l: &str| {
+        f.points
+            .iter()
+            .find(|p| p.label == l)
+            .map(|p| p.at)
+            .or_else(|| f.wires.iter().find(|w| w.label == l).map(|w| w.at))
+            .unwrap()
+    };
+    let len = |f: &StringForm, l: &str| {
+        let x = f.strings.iter().find(|x| x.label == l).unwrap();
+        dist(at(f, &x.top), at(f, &x.wire))
+    };
+    let k = |f: &StringForm, l: &str| f.strings.iter().position(|x| x.label == l).unwrap();
+    // An upper V (legs to its tip, no set yet).
+    let mut f = StringForm::new_on(&model, "T2").unwrap();
+    f.preset(Preset::V, [0.0, 0.0, 20.0], &model);
+    let tip = f.strings[0].wire.clone();
+    let side = f.strings[1].top.clone();
+    // Two more strings, each with its own wire point: one from the tip,
+    // one from a top of the upper V.
+    let add = |f: &mut StringForm, label: &str, top: &str, d: [f64; 3]| {
+        let t = at(f, top);
+        let wire = format!("{label}-W");
+        f.wires.push(WireRow {
+            description: String::new(),
+            label: wire.clone(),
+            at: [t[0] + d[0], t[1] + d[1], t[2] + d[2]],
+            set: None,
+            weight: 0.0,
+            dead_end: false,
+            dead_end_was: false,
+        });
+        f.strings.push(StringRow {
+            label: label.into(),
+            top: top.into(),
+            wire,
+            ..Default::default()
+        });
+    };
+    add(&mut f, "X1", &tip, [0.0, 0.0, -2.0]);
+    add(&mut f, "X2", &side, [-1.0, 0.0, -4.0]);
+    let (l1, l2) = (len(&f, "X1"), len(&f, "X2"));
+    // X2 ends at X1's wire point: a lower V, both keeping their lengths.
+    let low = "X1-W".to_owned();
+    assert!(f.end_choices(&model, k(&f, "X2")).contains(&low));
+    f.end_at(&model, k(&f, "X2"), &low).unwrap();
+    assert_eq!(f.strings[k(&f, "X2")].wire, low);
+    assert!((len(&f, "X1") - l1).abs() < 1e-9 && (len(&f, "X2") - l2).abs() < 1e-9);
+    assert!(
+        f.wires.iter().all(|w| w.label != "X2-W"),
+        "its own wire point went"
+    );
+    // A third leg there: refused, nothing changes.
+    add(&mut f, "X3", &side, [1.0, 0.0, -3.0]);
+    let before = f.clone();
+    let why = f.end_at(&model, k(&f, "X3"), &low).unwrap_err();
+    assert!(why.contains("two strings meet there"), "{why}");
+    assert_eq!(f, before);
+    // A leg of the upper V cannot end below itself (a loop).
+    let leg = f.strings[0].label.clone();
+    assert!(!f.end_choices(&model, k(&f, &leg)).contains(&low));
+    assert!(f.end_at(&model, k(&f, &leg), &low).is_err());
+    // A wire point of another set of the structure: taken into the window.
+    let s = model.line.structure("T2").unwrap();
+    let other = s
+        .wires
+        .iter()
+        .find(|w| w.set.is_some())
+        .unwrap()
+        .label
+        .clone();
+    assert!(f.end_choices(&model, k(&f, "X3")).contains(&other));
+    let r = f.end_at(&model, k(&f, "X3"), &other);
+    assert!(
+        f.wires.iter().any(|w| w.label == other) || r.is_err(),
+        "{r:?}"
+    );
+    if r.is_ok() {
+        assert!(f.opened.1.contains(&other));
+    }
+}
+
+/// A V under a V built in the string window is applied and solved.
+#[test]
+fn a_v_under_a_v_is_applied() {
+    use crate::editors::{Form, PointRow, StringForm, StringRow, WireRow};
+    let model = synthetic_project("v-under-v");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut f = StringForm::of(&r.model, "T2", 1).unwrap();
+        let x0 = f.strings[0].clone();
+        let tip = x0.wire.clone();
+        // Two new points on the structure, either side of the first top.
+        let top0 = f.points.iter().find(|p| p.label == x0.top).unwrap().at;
+        let tops = ["PA".to_owned(), "PB".to_owned()];
+        for (label, dx) in [("PA", 2.5), ("PB", -2.5)] {
+            f.points.push(PointRow {
+                label: label.into(),
+                at: [top0[0] + dx, top0[1], top0[2]],
+                description: String::new(),
+            });
+        }
+        let at = |f: &StringForm, l: &str| {
+            f.points
+                .iter()
+                .find(|p| p.label == l)
+                .map(|p| p.at)
+                .or_else(|| f.wires.iter().find(|w| w.label == l).map(|w| w.at))
+                .unwrap()
+        };
+        let add = |f: &mut StringForm, label: &str, top: &str, end: [f64; 3]| {
+            let wire = format!("{label}-W");
+            f.wires.push(WireRow {
+                description: String::new(),
+                label: wire.clone(),
+                at: end,
+                set: None,
+                weight: 0.0,
+                dead_end: false,
+                dead_end_was: false,
+            });
+            f.strings.push(StringRow {
+                label: label.into(),
+                top: top.into(),
+                wire,
+                weight: 300.0,
+                ..Default::default()
+            });
+        };
+        // Upper V: a second leg to the set's wire point, from another
+        // point (its length: to where the first ends).
+        let w = at(&f, &tip);
+        add(&mut f, "UV", &tops[0], w);
+        let n = f.strings.len() - 1;
+        f.end_at(&r.model, n, &tip).unwrap();
+        // Lower V: from the upper tip and from another point, meeting
+        // below; the set moved down to it.
+        let t = at(&f, &tip);
+        add(&mut f, "L1", &tip, [t[0], t[1], t[2] - 2.0]);
+        add(&mut f, "L2", &tops[1], [t[0], t[1], t[2] - 2.0]);
+        let k2 = f.strings.len() - 1;
+        f.end_at(&r.model, k2, "L1-W").unwrap();
+        for w in &mut f.wires {
+            w.set = if w.label == "L1-W" {
+                Some(1)
+            } else if w.label == tip {
+                None
+            } else {
+                w.set
+            };
+        }
+        r.editor = Some(Form::String(f));
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_none(), "{:?}", r.status);
+    let s = r.model.line.structure("T2").unwrap();
+    assert_eq!(s.strings_to("L1-W").count(), 2);
+    assert!(r.model.shape(&r.model.line.sections[0].id, 0).is_some());
 }

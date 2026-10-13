@@ -1842,6 +1842,183 @@ impl StringForm {
         out
     }
 
+    /// The wire points string `k` may end at (besides a new one of its
+    /// own): the form's and the structure's other wire points, but the one
+    /// it ends at, the one it hangs from and those hanging below it (a
+    /// loop).
+    pub fn end_choices(&self, model: &Model, k: usize) -> Vec<String> {
+        let Some(x) = self.strings.get(k) else {
+            return Vec::new();
+        };
+        let below = self.chain_below(&x.wire);
+        let mut out: Vec<String> = self.wires.iter().map(|w| w.label.clone()).collect();
+        if let Some(s) = model.line.structure(&self.structure) {
+            for w in &s.wires {
+                if !out.contains(&w.label) {
+                    out.push(w.label.clone());
+                }
+            }
+        }
+        out.retain(|w| {
+            *w != x.wire
+                && *w != x.top
+                && !below.contains(w)
+                && !(self.wires.iter().any(|r| r.label == *w)
+                    && self.chain_below(w).contains(&x.top))
+        });
+        out
+    }
+
+    /// Takes wire point `wire` of the structure (as resolved) into the
+    /// form with the strings and wire points joined to it, to be edited
+    /// and applied with the rest.
+    fn absorb(&mut self, model: &Model, wire: &str) {
+        let Some(s) = model.line.structure(&self.structure) else {
+            return;
+        };
+        let c = s.component(wire);
+        let local = |p| to_local(s.position, s.orientation_deg, p);
+        for &i in &c.wires {
+            let w = &s.wires[i];
+            if self.wires.iter().any(|r| r.label == w.label) {
+                continue;
+            }
+            let dead_end = model.line.is_dead_end(s, &w.label);
+            self.wires.push(WireRow {
+                description: w.description.clone(),
+                label: w.label.clone(),
+                at: local(w.position),
+                set: w.set,
+                weight: w.weight,
+                dead_end,
+                dead_end_was: dead_end,
+            });
+            self.opened.1.push(w.label.clone());
+        }
+        for &i in &c.strings {
+            let x = &s.strings[i];
+            if self.strings.iter().any(|y| y.label == x.label) {
+                continue;
+            }
+            self.strings.push(StringRow {
+                description: x.description.clone(),
+                label: x.label.clone(),
+                top: x.top.clone(),
+                wire: x.wire.clone(),
+                insulator: x.insulator.clone(),
+                weight: x.weight,
+                compression: x.compression,
+                wind_area: x.wind_area,
+                stiffness: x.stiffness,
+                strain: x.strain,
+            });
+            self.opened.0.push(x.label.clone());
+        }
+    }
+
+    /// String `k` ends at wire point `wire` (of the form or the structure)
+    /// instead, keeping its length: where one string ends there already,
+    /// the two make a V and the point goes where both lengths meet; where
+    /// none does, it goes to the string's end; what hangs below moves
+    /// along. Refused (nothing changes) where the legs cannot meet, where
+    /// two strings end there already, where it would hang below itself,
+    /// or where strings hang from the wire point it alone holds now.
+    pub fn end_at(&mut self, model: &Model, k: usize, wire: &str) -> Result<(), String> {
+        let at = |f: &Self, l: &str| {
+            f.points
+                .iter()
+                .find(|p| p.label == l)
+                .map(|p| p.at)
+                .or_else(|| f.wires.iter().find(|w| w.label == l).map(|w| w.at))
+        };
+        let dist =
+            |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f64>().sqrt();
+        let Some(x) = self.strings.get(k).cloned() else {
+            return Ok(());
+        };
+        if !self.end_choices(model, k).iter().any(|w| w == wire) {
+            return Err(format!(
+                "{} cannot end at {wire}: it hangs from it, ends there already or {wire} hangs below it",
+                x.label
+            ));
+        }
+        let before = self.clone();
+        let result = (|| {
+            if !self.wires.iter().any(|w| w.label == wire) {
+                self.absorb(model, wire);
+            }
+            // Its wire point now: held by it alone, with strings hanging
+            // from it, it would go with them.
+            let alone = !self
+                .strings
+                .iter()
+                .enumerate()
+                .any(|(i, y)| i != k && y.wire == x.wire);
+            let hanging: Vec<String> = self
+                .strings
+                .iter()
+                .filter(|y| y.top == x.wire)
+                .map(|y| y.label.clone())
+                .collect();
+            if alone && !hanging.is_empty() {
+                return Err(format!(
+                    "{} holds {} alone and {} hang from it: hang them elsewhere first",
+                    x.label,
+                    x.wire,
+                    hanging.join(", ")
+                ));
+            }
+            let (Some(top), Some(old), Some(w)) =
+                (at(self, &x.top), at(self, &x.wire), at(self, wire))
+            else {
+                self.strings[k].wire = wire.to_owned();
+                return Ok(());
+            };
+            let length = dist(top, old);
+            let legs: Vec<usize> = (0..self.strings.len())
+                .filter(|&i| i != k && self.strings[i].wire == wire)
+                .collect();
+            let target = match legs[..] {
+                [] => {
+                    let l = dist(top, w);
+                    let u = if l > 1e-9 {
+                        [0, 1, 2].map(|i| (w[i] - top[i]) / l)
+                    } else {
+                        [0.0, 0.0, -1.0]
+                    };
+                    [0, 1, 2].map(|i| top[i] + length * u[i])
+                }
+                [o] => {
+                    let other = &self.strings[o];
+                    let ot = at(self, &other.top).unwrap_or(w);
+                    let lo = dist(ot, w);
+                    let apart = dist(top, ot);
+                    ols_structures::structures::v_meeting(top, length, ot, lo, w).ok_or_else(|| {
+                        format!(
+                            "{} cannot end at {wire}: it is {length:.3} m long and {} {lo:.3} m, but \
+                             their tops ({} and {}) are {apart:.3} m apart — the two legs cannot meet",
+                            x.label, other.label, x.top, other.top
+                        )
+                    })?
+                }
+                _ => {
+                    return Err(format!(
+                        "{} cannot end at {wire}: two strings meet there already (a V's tip)",
+                        x.label
+                    ));
+                }
+            };
+            self.strings[k].wire = wire.to_owned();
+            self.place_wire(wire, target);
+            self.drop_unused_wires();
+            Ok(())
+        })();
+        if result.is_err() {
+            *self = before;
+        }
+        result
+    }
+
     /// Moves wire point `wire` to `at`, and what hangs below it along
     /// with it (their strings keep their lengths).
     pub fn place_wire(&mut self, wire: &str, at: [f64; 3]) {
@@ -3252,6 +3429,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                     .filter(|w| w.label != f.strings[k].wire)
                     .map(|w| w.label.clone())
                     .collect();
+                let ends = f.end_choices(model, k);
                 let mut ends_at: Option<Option<String>> = None;
                 let mut retop: Option<String> = None;
                 // A length typed (kept: what it moves follows) or, for a
@@ -3365,7 +3543,9 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 }
                             });
                         ui.label("ends at").on_hover_text(
-                            "Its own wire point (made by it), or another string's (a V's second leg)",
+                            "Its own wire point (made by it), or another wire point of the structure: \
+                             where a string ends already the two make a V (both keep their lengths); \
+                             strings chain (a V under a V)",
                         );
                         let shown = if owns {
                             format!("its own wire point ({})", x.wire)
@@ -3378,7 +3558,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 if ui.selectable_label(owns, "its own wire point").clicked() && !owns {
                                     ends_at = Some(None);
                                 }
-                                for w in &others {
+                                for w in &ends {
                                     if ui.selectable_label(false, format!("the wire point {w}")).clicked() {
                                         ends_at = Some(Some(w.clone()));
                                     }
@@ -3616,8 +3796,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                 }
                 match ends_at {
                     Some(Some(w)) => {
-                        f.strings[k].wire = w;
-                        f.drop_unused_wires();
+                        f.note = f.end_at(model, k, &w).err();
                     }
                     Some(None) => {
                         let label = f.free_label(model, "W");
