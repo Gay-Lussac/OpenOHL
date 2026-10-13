@@ -218,7 +218,7 @@ A structure without a type holds its own `points`, `wires`, `strings` and `membe
 | `InsulatorString.length` | f64 | m | top to wire point (0 in files written before: taken from the geometry when read) | — |
 | `InsulatorString.angle_deg` | f64 | ° | from straight down (0 hanging, 90 level) | — |
 | `InsulatorString.direction_deg` | f64 | ° | in plan, structure axes (0 ahead, 90 right) | — |
-| `InsulatorString.insulator` | string? | — | insulator assembly | `.olsi` `id` |
+| `InsulatorString.insulator` | string? | — | its **library label**: the insulator assembly it takes weight, wind area and stiffness from (in a project every own string gets one: `Line::catalogue_strings`, the app labelling on opening and with each edit) | `.olsi` `id` |
 | `InsulatorString.weight` | f64 | N | half at each end | — |
 | `InsulatorString.wind_area` | f64 | m² | half at each end | — |
 | `InsulatorString.stiffness` | f64? | N (EA) | default `solve::DEFAULT_INSULATOR_STIFFNESS` | — |

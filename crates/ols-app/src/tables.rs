@@ -37,6 +37,9 @@ pub enum TableKind {
     Sections,
     /// Strings (attachment points).
     Strings,
+    /// The string library: the insulator assemblies strings are labelled
+    /// with, how many strings use each.
+    Insulators,
     /// Jumpers.
     Jumpers,
     /// Electrical systems.
@@ -200,6 +203,49 @@ const SECTIONS: &[Column] = &[
     ),
 ];
 
+const INSULATORS: &[Column] = &[
+    (
+        "label",
+        150.0,
+        New,
+        "the library label: strings carry it (their weight, wind area and stiffness come from here)",
+    ),
+    ("name", 180.0, Yes, "what it is, in words"),
+    (
+        "kind",
+        90.0,
+        Yes,
+        "suspension (an I-string), strain (a dead end) or v_string (one leg of two)",
+    ),
+    (
+        "length",
+        70.0,
+        Yes,
+        "m, top to wire point: the strings with this label take it (their wire points move; a V's tip where both legs meet)",
+    ),
+    (
+        "weight",
+        70.0,
+        Yes,
+        "N, the whole assembly (a V: shared by its legs)",
+    ),
+    ("wind area", 70.0, Yes, "m², the area the wind blows on"),
+    ("stiffness", 90.0, Yes, "N, axial stiffness EA"),
+    (
+        "half width",
+        70.0,
+        Yes,
+        "m, a V's: across from the centre to each leg's top",
+    ),
+    ("source", 160.0, Yes, "where its values come from"),
+    (
+        "used",
+        50.0,
+        Derived,
+        "strings with this label in the model (the structures' own and their types')",
+    ),
+];
+
 const STRINGS: &[Column] = &[
     ("structure", 110.0, New, "the structure it hangs on"),
     ("string", 90.0, Yes, "its label on the structure"),
@@ -219,10 +265,10 @@ const STRINGS: &[Column] = &[
     ("length m", 65.0, Derived, "from its top to its wire point"),
     ("weight N", 75.0, Yes, "its weight"),
     (
-        "insulator",
+        "library label",
         110.0,
         Yes,
-        "insulator assembly id (empty: none)",
+        "its entry in the string library (Structures › String library: its weight, wind area and stiffness come from there); empty: its own values — a label is given when applied",
     ),
     (
         "compression N",
@@ -702,6 +748,9 @@ pub struct Changes {
     pub commands: Vec<(String, Command)>,
     /// A file to write (weather cases): path, text.
     pub file: Option<(PathBuf, String)>,
+    /// Insulator library files to write (path, text) or delete (path,
+    /// None), before the commands.
+    pub library: Vec<(PathBuf, Option<String>)>,
     /// Sections' display weather cases (none: the case shown).
     pub display: Vec<(String, Vec<usize>)>,
     /// What deletions take with them, to confirm.
@@ -825,10 +874,11 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
 
 impl TableKind {
     /// Every table (the Tables menu).
-    pub const ALL: [TableKind; 10] = [
+    pub const ALL: [TableKind; 11] = [
         TableKind::Structures,
         TableKind::Sections,
         TableKind::Strings,
+        TableKind::Insulators,
         TableKind::Jumpers,
         TableKind::Systems,
         TableKind::Circuits,
@@ -844,6 +894,7 @@ impl TableKind {
             TableKind::Structures => "Structures",
             TableKind::Sections => "Sections",
             TableKind::Strings => "Strings",
+            TableKind::Insulators => "String library",
             TableKind::Jumpers => "Jumpers",
             TableKind::Systems => "Electrical systems",
             TableKind::Circuits => "Electrical circuits",
@@ -860,6 +911,7 @@ impl TableKind {
             TableKind::Structures => "structures",
             TableKind::Sections => "sections",
             TableKind::Strings => "strings",
+            TableKind::Insulators => "insulators",
             TableKind::Jumpers => "jumpers",
             TableKind::Systems => "systems",
             TableKind::Circuits => "circuits",
@@ -876,6 +928,7 @@ impl TableKind {
             TableKind::Structures => STRUCTURES,
             TableKind::Sections => SECTIONS,
             TableKind::Strings => STRINGS,
+            TableKind::Insulators => INSULATORS,
             TableKind::Jumpers => JUMPERS,
             TableKind::Systems => SYSTEMS,
             TableKind::Circuits => CIRCUITS,
@@ -1228,6 +1281,7 @@ impl TableKind {
                 })
                 .collect(),
             TableKind::AlignmentPoints => point_rows(line),
+            TableKind::Insulators => insulator_rows(model),
             TableKind::WeatherCases => model
                 .cases
                 .iter()
@@ -1365,6 +1419,20 @@ impl TableKind {
                 }
                 cells[2] = taken.new_point_id();
             }
+            TableKind::Insulators => {
+                let ids: Vec<&str> = model
+                    .types
+                    .as_ref()
+                    .map(|(_, i)| i.iter().map(|a| a.id.as_str()).collect())
+                    .unwrap_or_default();
+                cells[0] = taken_after(ids, "string-1");
+                cells[1] = "I-string".into();
+                cells[2] = "suspension".into();
+                cells[3] = "3".into();
+                cells[4] = "0".into();
+                cells[5] = "0".into();
+                cells[6] = "50000000".into();
+            }
             TableKind::WeatherCases => {
                 cells[W_ORDER] = (model.cases.len() + added.len() + 1).to_string();
                 cells[W_NAME] = format!("new case {}", added.len() + 1);
@@ -1389,6 +1457,9 @@ impl TableKind {
                 file: Some(file),
                 ..Changes::default()
             });
+        }
+        if self == TableKind::Insulators {
+            return insulator_changes(model, rows, page);
         }
         let stored = model
             .stored_line()
@@ -1882,7 +1953,9 @@ impl TableKind {
                     out.commands.push((what, cmd));
                 }
             }
-            TableKind::WeatherCases => unreachable!("written to its file"),
+            TableKind::WeatherCases | TableKind::Insulators => {
+                unreachable!("written to its files")
+            }
         }
         Ok(out)
     }
@@ -1948,7 +2021,13 @@ fn choices(
             model.cases.iter().map(|c| c.case.name.clone()).collect(),
             true,
         ),
-        (TableKind::Strings, "insulator") => (
+        (TableKind::Insulators, "kind") => (
+            ["suspension", "strain", "v_string"]
+                .map(str::to_owned)
+                .to_vec(),
+            false,
+        ),
+        (TableKind::Strings, "library label") => (
             with_none(
                 model
                     .types
@@ -3125,6 +3204,222 @@ fn point_commands(
         ));
     }
     Ok(())
+}
+
+/// The strings of the model (resolved: the structures' own and their
+/// types') labelled `id`, as "structure string".
+fn labelled(model: &Model, id: &str) -> Vec<String> {
+    model
+        .line
+        .structures
+        .iter()
+        .flat_map(|s| {
+            s.strings
+                .iter()
+                .filter(|x| x.insulator.as_deref() == Some(id))
+                .map(|x| format!("{} {}", s.id, x.label))
+        })
+        .collect()
+}
+
+/// The string library's rows: one per insulator assembly.
+fn insulator_rows(model: &Model) -> Vec<Row> {
+    let Some((_, library)) = model.types.as_ref() else {
+        return Vec::new();
+    };
+    library
+        .iter()
+        .map(|a| Row {
+            key: a.id.clone(),
+            select: Selection::None,
+            cells: vec![
+                a.id.clone(),
+                a.name.clone(),
+                match a.kind {
+                    ols_structures::AssemblyKind::Suspension => "suspension",
+                    ols_structures::AssemblyKind::Strain => "strain",
+                    ols_structures::AssemblyKind::VString => "v_string",
+                }
+                .into(),
+                f(a.length.si(), 3),
+                f(a.weight.si(), 1),
+                f(a.wind_area.si(), 4),
+                f(a.axial_stiffness.si(), 0),
+                a.half_width.map_or(String::new(), |h| f(h.si(), 3)),
+                a.source.clone().unwrap_or_default(),
+                labelled(model, &a.id).len().to_string(),
+            ],
+            defaulted: Vec::new(),
+        })
+        .collect()
+}
+
+/// The string library's changes: its files written or deleted; strings
+/// whose label's length changed take it (their wire points move); strings
+/// whose label is deleted get its values as their own (and a matching or
+/// new label when applied).
+fn insulator_changes(model: &Model, rows: &[Row], page: &TablePage) -> Result<Changes, String> {
+    use ols_core::units::{Area, Force, Length};
+    use ols_structures::{AssemblyKind, InsulatorAssembly};
+    let stored = model
+        .stored_line()
+        .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
+    let empty = ols_structures::InsulatorLibrary::default();
+    let library = model.types.as_ref().map_or(&empty, |(_, i)| i);
+    let dir = crate::library::LibraryKind::Insulators.new_file_dir(&model.sources);
+    let file = |id: &str| {
+        dir.join(format!(
+            "{id}.{}",
+            ols_structures::insulators::INSULATOR_FILE_EXTENSION
+        ))
+    };
+    let read = |a: &mut InsulatorAssembly, c: &Cells| -> Result<(), String> {
+        let what = |name: &str| format!("{}: {name}", a.id);
+        a.name = c.get(1).trim().to_owned();
+        a.kind = match c.get(2).trim() {
+            "suspension" => AssemblyKind::Suspension,
+            "strain" => AssemblyKind::Strain,
+            "v_string" => AssemblyKind::VString,
+            other => {
+                return Err(format!(
+                    "{}: kind \"{other}\": suspension, strain or v_string",
+                    a.id
+                ));
+            }
+        };
+        a.length = Length::from_meters(num(&c.get(3), &what("length"))?);
+        a.weight = Force::from_newtons(num(&c.get(4), &what("weight"))?);
+        a.wind_area = Area::from_square_meters(num(&c.get(5), &what("wind area"))?);
+        a.axial_stiffness = Force::from_newtons(num(&c.get(6), &what("stiffness"))?);
+        a.half_width = opt_num(&c.get(7), &what("half width"))?.map(Length::from_meters);
+        a.source = opt(&c.get(8));
+        a.validate().map_err(|e| format!("{}: {e}", a.id))
+    };
+    let mut out = Changes::default();
+    let mut lengths: BTreeMap<String, f64> = BTreeMap::new();
+    let mut unlabel: BTreeSet<String> = BTreeSet::new();
+    for row in rows {
+        let id = row.key.as_str();
+        let Some(was) = library.get(id) else {
+            continue;
+        };
+        let path = library
+            .path(id)
+            .map_or_else(|| file(id), std::path::Path::to_path_buf);
+        if page.deleted.contains(id) {
+            let users = labelled(model, id);
+            let own: usize = stored
+                .structures
+                .iter()
+                .flat_map(|s| &s.strings)
+                .filter(|x| x.insulator.as_deref() == Some(id))
+                .count();
+            if users.len() > own {
+                return Err(format!(
+                    "{id} is used by structure types (their strings): change them first (Structures › libraries)"
+                ));
+            }
+            if !users.is_empty() {
+                out.takes.push(format!(
+                    "{id}: {} string(s) ({}{}) keep its values as their own and get a matching or new label",
+                    users.len(),
+                    users.iter().take(6).cloned().collect::<Vec<_>>().join(", "),
+                    if users.len() > 6 { ", …" } else { "" }
+                ));
+            }
+            out.library.push((path, None));
+            unlabel.insert(id.to_owned());
+            continue;
+        }
+        let Some(typed) = page.edits.get(id) else {
+            continue;
+        };
+        let c = Cells {
+            row: &row.cells,
+            typed: Some(typed),
+            defaulted: &row.defaulted,
+        };
+        let mut a = was.clone();
+        read(&mut a, &c)?;
+        if (a.length.si() - was.length.si()).abs() > 1e-9 {
+            lengths.insert(id.to_owned(), a.length.si());
+        }
+        out.library.push((path, Some(a.to_toml())));
+    }
+    let mut new_ids: Vec<String> = Vec::new();
+    for added in &page.added {
+        let c = Cells {
+            row: added,
+            typed: None,
+            defaulted: &[],
+        };
+        let id = c.get(0).trim().to_owned();
+        if id.is_empty() {
+            return Err("a new library entry needs a label".into());
+        }
+        if library.get(&id).is_some() || new_ids.contains(&id) {
+            return Err(format!("label {id} is taken"));
+        }
+        let mut a = InsulatorAssembly {
+            format: None,
+            version: None,
+            id: id.clone(),
+            name: id.clone(),
+            kind: AssemblyKind::Suspension,
+            source: None,
+            length: Length::from_meters(3.0),
+            weight: Force::from_newtons(0.0),
+            axial_stiffness: Force::from_newtons(5e7),
+            wind_area: Area::from_square_meters(0.0),
+            half_width: None,
+        };
+        read(&mut a, &c)?;
+        out.library.push((file(&id), Some(a.to_toml())));
+        new_ids.push(id);
+    }
+    // The structures' own strings: a label's new length (from where each
+    // points now), a deleted label's values as their own.
+    for s in &stored.structures {
+        if !s.strings.iter().any(|x| {
+            x.insulator
+                .as_ref()
+                .is_some_and(|i| lengths.contains_key(i) || unlabel.contains(i))
+        }) {
+            continue;
+        }
+        let mut s = s.clone();
+        s.take_string_geometry();
+        for x in &mut s.strings {
+            let Some(id) = x.insulator.clone() else {
+                continue;
+            };
+            if let Some(l) = lengths.get(&id) {
+                x.length = *l;
+            }
+            if unlabel.contains(&id)
+                && let Some(a) = library.get(&id)
+            {
+                x.insulator = None;
+                if x.weight == 0.0 {
+                    x.weight = a.weight.si();
+                }
+                if x.wind_area == 0.0 {
+                    x.wind_area = a.wind_area.si();
+                }
+                x.stiffness.get_or_insert(a.axial_stiffness.si());
+            }
+        }
+        out.commands.push((
+            format!("strings of {} from the string library", s.id),
+            Command::Put {
+                kind: Kind::Structure,
+                id: s.id.clone(),
+                value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
+                ord: None,
+            },
+        ));
+    }
+    Ok(out)
 }
 
 /// Weather cases: the model's case file with the changes written in

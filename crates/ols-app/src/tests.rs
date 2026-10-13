@@ -9120,6 +9120,20 @@ fn descriptions_are_typed_and_shown_as_labels() {
         .find(|m| m.text.starts_with(top.as_str()))
         .unwrap();
     assert!((0..3).any(|k| (n.at[k] - p.at[k]).abs() > 1e-6));
+    // The library labels on their own tick.
+    assert!(!notes.iter().any(|n| n.text.starts_with('[')));
+    let labelled = r
+        .model
+        .line
+        .structures
+        .iter()
+        .flat_map(|s| &s.strings)
+        .find_map(|x| x.insulator.clone());
+    r.model.section_display.library_label[View::Plan as usize] = true;
+    let notes = object_notes(&r.model, 0, View::Plan);
+    if let Some(id) = labelled {
+        assert!(notes.iter().any(|n| n.text == format!("[{id}]")));
+    }
 }
 
 /// A structure type file opened on its own: its editor is the whole
@@ -10510,6 +10524,217 @@ fn chains_of_strings_end_in_a_v() {
             r.model.cases[c].failed.is_empty(),
             "case {c}: {:?}",
             r.model.cases[c].failed
+        );
+    }
+}
+
+/// A string added gets a library label in the same command: its entry
+/// written into the project's library (same values: the same entry for
+/// the next one), one undo taking both back.
+#[test]
+fn a_new_string_is_labelled_from_the_library() {
+    use crate::tools::Tool;
+    let model = synthetic_project("string-library");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let top = {
+        let r = harness.state_mut().ready().unwrap();
+        r.model.line.structure("T2").unwrap().points[0]
+            .label
+            .clone()
+    };
+    let point = Selection::Point {
+        structure: "T2".into(),
+        label: top.clone(),
+    };
+    use_tool(&mut harness, Tool::AddString, point.clone(), None);
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let (label, entries) = {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let s = r
+            .model
+            .stored_line()
+            .unwrap()
+            .structure("T2")
+            .unwrap()
+            .clone();
+        let x = s
+            .strings
+            .iter()
+            .rfind(|x| x.top == top)
+            .expect("the new string")
+            .clone();
+        let label = x.insulator.clone().expect("a library label");
+        let lib = &r.model.types.as_ref().expect("libraries").1;
+        assert!(lib.get(&label).is_some(), "{label} in the library");
+        // Every own string of T2 is labelled.
+        assert!(s.strings.iter().all(|x| x.insulator.is_some()));
+        (label, lib.iter().count())
+    };
+    // The same again: the same entry.
+    use_tool(&mut harness, Tool::AddString, point, None);
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let lib = &r.model.types.as_ref().unwrap().1;
+        assert_eq!(lib.iter().count(), entries);
+        let s = r.model.stored_line().unwrap().structure("T2").unwrap();
+        assert_eq!(
+            s.strings
+                .iter()
+                .filter(|x| x.insulator.as_deref() == Some(&label))
+                .count(),
+            2
+        );
+    }
+    // One undo: the second string goes, with its label.
+    let n = {
+        let r = harness.state_mut().ready().unwrap();
+        r.model
+            .stored_line()
+            .unwrap()
+            .structure("T2")
+            .unwrap()
+            .strings
+            .len()
+    };
+    let r = harness.state_mut().ready().unwrap();
+    r.perform(crate::edit::Action::Undo);
+    let s = r.model.stored_line().unwrap().structure("T2").unwrap();
+    assert_eq!(s.strings.len(), n - 1);
+}
+
+/// The string library as a table: on opening, every own string is
+/// labelled; a row's "used" counts its strings; a weight or length typed
+/// goes to all of them (their wire points moved); a row added; a used row
+/// deleted (confirmed) leaves its strings their values under a matching
+/// or new label.
+#[test]
+fn the_string_library_is_a_table() {
+    use crate::tables::TableKind;
+    let k = TableKind::Insulators;
+    let model = synthetic_project("string-library-table");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().catalogue_strings();
+    let used = |h: &mut Harness<'_, App>, id: &str| -> Vec<(String, String)> {
+        let r = h.state_mut().ready().unwrap();
+        r.model
+            .line
+            .structures
+            .iter()
+            .flat_map(|s| {
+                s.strings
+                    .iter()
+                    .filter(|x| x.insulator.as_deref() == Some(id))
+                    .map(|x| (s.id.clone(), x.label.clone()))
+            })
+            .collect()
+    };
+    let (id, rows) = {
+        let r = harness.state_mut().ready().unwrap();
+        let stored = r.model.stored_line().unwrap();
+        assert!(
+            stored
+                .structures
+                .iter()
+                .flat_map(|s| &s.strings)
+                .all(|x| x.insulator.is_some()),
+            "every own string labelled"
+        );
+        let rows = k.rows(&r.model, r.case);
+        let total: usize = rows
+            .iter()
+            .map(|x| x.cells[k.column("used")].parse::<usize>().unwrap())
+            .sum();
+        let strings: usize = r
+            .model
+            .line
+            .structures
+            .iter()
+            .map(|s| s.strings.iter().filter(|x| x.insulator.is_some()).count())
+            .sum();
+        assert_eq!(total, strings);
+        // A suspension entry in use.
+        let row = rows
+            .iter()
+            .find(|x| x.cells[k.column("kind")] == "suspension" && x.cells[k.column("used")] != "0")
+            .expect("a suspension entry in use");
+        (row.key.clone(), rows.len())
+    };
+    let users = used(&mut harness, &id);
+    assert_eq!(
+        k.rows(&harness.state_mut().ready().unwrap().model, 0)
+            .iter()
+            .find(|x| x.key == id)
+            .unwrap()
+            .cells[k.column("used")],
+        users.len().to_string()
+    );
+    // Weight and length typed: every string with the label takes them.
+    let old_len = {
+        let r = harness.state_mut().ready().unwrap();
+        let (s, l) = &users[0];
+        let st = r.model.line.structure(s).unwrap();
+        st.string_length(st.string(l).unwrap()).unwrap()
+    };
+    set_cell(&mut harness, k, &id, "weight", "1234");
+    set_cell(
+        &mut harness,
+        k,
+        &id,
+        "length",
+        &format!("{:.3}", old_len + 0.5),
+    );
+    apply_table(&mut harness, k, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        for (s, l) in &users {
+            let st = r.model.line.structure(s).unwrap();
+            let x = st.string(l).unwrap();
+            assert!((x.weight - 1234.0).abs() < 1e-6, "{s} {l}: {}", x.weight);
+            let len = st.string_length(x).unwrap();
+            assert!((len - (old_len + 0.5)).abs() < 2e-3, "{s} {l}: {len}");
+        }
+    }
+    // A row added.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut row = k.new_row(&r.model, r.case, &[]);
+        row[0] = "glass-I-380".into();
+        r.tables.entry(k).or_default().added.push(row);
+    }
+    apply_table(&mut harness, k, false).unwrap();
+    assert_eq!(
+        k.rows(&harness.state_mut().ready().unwrap().model, 0).len(),
+        rows + 1
+    );
+    // The used row deleted: asked first; its strings keep their values.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .entry(k)
+        .or_default()
+        .deleted
+        .insert(id.clone());
+    assert!(apply_table(&mut harness, k, false).is_err(), "asks first");
+    apply_table(&mut harness, k, true).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.types.as_ref().unwrap().1.get(&id).is_none());
+    for (s, l) in &users {
+        let x = r.model.line.structure(s).unwrap().string(l).unwrap();
+        assert!((x.weight - 1234.0).abs() < 1e-6);
+        assert!(
+            x.insulator.as_deref().is_some_and(|i| i != id),
+            "{:?}",
+            x.insulator
         );
     }
 }

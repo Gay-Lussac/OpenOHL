@@ -65,6 +65,10 @@ pub struct SectionDisplay {
     /// down the string from the point it hangs from.
     #[serde(default)]
     pub insulator_label: [bool; 3],
+    /// Their strings' library labels (their entry in the string library),
+    /// a little below the middle of each string.
+    #[serde(default)]
+    pub library_label: [bool; 3],
     /// Their wire points: the label and set.
     #[serde(default)]
     pub wire_label: [bool; 3],
@@ -93,6 +97,7 @@ impl SectionDisplay {
                     "Insulator tops (string, hangs from)",
                     &mut self.insulator_label,
                 ),
+                ("Library labels (strings)", &mut self.library_label),
                 ("Strings (label)", &mut self.string_label),
                 ("Wire points (label, set)", &mut self.wire_label),
                 ("With descriptions", &mut self.descriptions),
@@ -279,18 +284,19 @@ fn with_description(text: String, description: &str, show: bool) -> String {
 pub fn object_notes(model: &Model, case: usize, view: View) -> Vec<Note> {
     let d = &model.section_display;
     let v = view as usize;
-    let (structures, points, strings, wires, tops) = (
+    let (structures, points, strings, wires, tops, library) = (
         d.structure_label[v],
         d.point_label[v],
         d.string_label[v],
         d.wire_label[v],
         d.insulator_label[v],
+        d.library_label[v],
     );
-    if !(structures || points || strings || wires || tops) {
+    if !(structures || points || strings || wires || tops || library) {
         return Vec::new();
     }
     let show = d.descriptions[v];
-    let pieces = if strings || wires || tops {
+    let pieces = if strings || wires || tops || library {
         crate::selection::string_pieces(model, case)
     } else {
         Default::default()
@@ -343,6 +349,15 @@ pub fn object_notes(model: &Model, case: usize, view: View) -> Vec<Note> {
                     [0, 1, 2].map(|k| 0.5 * (a[k] + b[k])),
                     with_description(x.label.clone(), &x.description, show),
                     [120, 180, 255],
+                ));
+            }
+            // Its library label: below its middle (the string's own label
+            // is at the middle).
+            if library && let Some(id) = &x.insulator {
+                out.push(note(
+                    [0, 1, 2].map(|k| a[k] + 0.7 * (b[k] - a[k])),
+                    format!("[{id}]"),
+                    [235, 205, 120],
                 ));
             }
             // Its top: a separate thing from the point it hangs from (the
