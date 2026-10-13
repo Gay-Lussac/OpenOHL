@@ -151,6 +151,16 @@ pub fn ui(
             {
                 action = Some(crate::edit::Action::EditType { id: t.clone() });
             }
+            if ui
+                .button("Placement…")
+                .on_hover_text(
+                    "Where it stands (coordinates or an alignment point), its orientation, \
+                     type, extension and description; Put it on the line again",
+                )
+                .clicked()
+            {
+                action = Some(crate::edit::Action::EditPlacement { id: id.clone() });
+            }
             if s.structure_type.is_none()
                 && ui
                     .button("Edit pylon…")

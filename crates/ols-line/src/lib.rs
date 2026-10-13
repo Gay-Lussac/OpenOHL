@@ -1251,7 +1251,7 @@ impl Line {
                     s.id
                 ));
             }
-            s.check_strings().map_err(LineError::Invalid)?;
+            s.check_strings_as_stored().map_err(LineError::Invalid)?;
         }
         if self.routes.iter().any(Route::is_legacy) || !self.alignment.is_empty() {
             return invalid(

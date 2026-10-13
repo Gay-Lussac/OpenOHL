@@ -297,6 +297,10 @@ impl Line {
         // wire points from them.
         line.place_strings()?;
         line.validate()?;
+        // Merged with their types: every string's top is there.
+        for s in &line.structures {
+            s.check_strings().map_err(LineError::Invalid)?;
+        }
         Ok(line)
     }
 
