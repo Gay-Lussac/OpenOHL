@@ -1842,6 +1842,86 @@ impl StringForm {
         out
     }
 
+    /// Moves wire point `wire` to `at`, and what hangs below it along
+    /// with it (their strings keep their lengths).
+    pub fn place_wire(&mut self, wire: &str, at: [f64; 3]) {
+        let Some(w) = self.wires.iter().find(|w| w.label == wire).map(|w| w.at) else {
+            return;
+        };
+        let d = [0, 1, 2].map(|i| at[i] - w[i]);
+        let below = self.chain_below(wire);
+        for r in self.wires.iter_mut().filter(|r| below.contains(&r.label)) {
+            r.at = [0, 1, 2].map(|i| r.at[i] + d[i]);
+        }
+    }
+
+    /// String `k` takes length `length`, the other strings keeping theirs:
+    /// its wire point moves along it (an I), or where it and the other leg
+    /// meet (a V); what hangs below moves along. Where no such point
+    /// exists, nothing changes and the reason is returned.
+    pub fn set_length(&mut self, k: usize, length: f64) -> Result<(), String> {
+        let at = |f: &Self, l: &str| {
+            f.points
+                .iter()
+                .find(|p| p.label == l)
+                .map(|p| p.at)
+                .or_else(|| f.wires.iter().find(|w| w.label == l).map(|w| w.at))
+        };
+        let dist =
+            |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f64>().sqrt();
+        let Some(x) = self.strings.get(k).cloned() else {
+            return Ok(());
+        };
+        if !(length.is_finite() && length > 0.0) {
+            return Err(format!("{}: a length must be more than 0", x.label));
+        }
+        let (Some(top), Some(w)) = (at(self, &x.top), at(self, &x.wire)) else {
+            return Ok(());
+        };
+        let legs: Vec<usize> = (0..self.strings.len())
+            .filter(|&i| i != k && self.strings[i].wire == x.wire)
+            .collect();
+        let target = match legs.first() {
+            None => {
+                let l = dist(top, w);
+                let u = if l > 1e-9 {
+                    [0, 1, 2].map(|i| (w[i] - top[i]) / l)
+                } else {
+                    [0.0, 0.0, -1.0]
+                };
+                [0, 1, 2].map(|i| top[i] + length * u[i])
+            }
+            Some(&o) => {
+                let other = &self.strings[o];
+                let ot = at(self, &other.top).unwrap_or(w);
+                let lo = dist(ot, w);
+                let apart = dist(top, ot);
+                let p = ols_structures::structures::v_meeting(top, length, ot, lo, w).ok_or_else(|| {
+                    format!(
+                        "{} cannot be {length:.3} m long: with {} at {lo:.3} m the two legs of the V \
+                         cannot meet — their tops ({} and {}) are {apart:.3} m apart, so the legs \
+                         must be at least {apart:.3} m together and differ by at most {apart:.3} m",
+                        x.label, other.label, x.top, other.top
+                    )
+                })?;
+                for &i in &legs[1..] {
+                    let y = &self.strings[i];
+                    if let Some(yt) = at(self, &y.top)
+                        && (dist(yt, p) - dist(yt, w)).abs() > 1e-3
+                    {
+                        return Err(format!(
+                            "{} cannot be {length:.3} m long: {} would change its length",
+                            x.label, y.label
+                        ));
+                    }
+                }
+                p
+            }
+        };
+        self.place_wire(&x.wire, target);
+        Ok(())
+    }
+
     /// String `k` hangs from `top` instead, keeping its length: its wire
     /// point moves with it (and what hangs below, unchanged). A V's leg
     /// keeps its length and the other leg's: its wire point goes where
@@ -1909,10 +1989,7 @@ impl StringForm {
                 p
             }
         };
-        let d = [0, 1, 2].map(|i| target[i] - w[i]);
-        for r in self.wires.iter_mut().filter(|r| below.contains(&r.label)) {
-            r.at = [0, 1, 2].map(|i| r.at[i] + d[i]);
-        }
+        self.place_wire(&x.wire, target);
         self.strings[k].top = top.to_owned();
         Ok(())
     }
@@ -3177,6 +3254,11 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                     .collect();
                 let mut ends_at: Option<Option<String>> = None;
                 let mut retop: Option<String> = None;
+                // A length typed (kept: what it moves follows) or, for a
+                // string making its wire point alone, angles typed (its
+                // wire point there, what hangs below along).
+                let mut want_len: Option<f64> = None;
+                let mut want_at: Option<[f64; 3]> = None;
                 let mut pick: Option<usize> = None;
                 // A wire point renamed: (old, new) for its strings.
                 let mut rename: Option<(String, String)> = None;
@@ -3327,6 +3409,44 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                             *c = c.max(0.0);
                         }
                     });
+                    // A V's leg (strings meeting at one wire point): its
+                    // length only; where the legs meet follows from both.
+                    let legs = f.strings.iter().filter(|y| y.wire == f.strings[k].wire).count();
+                    if legs > 1
+                        && let (Some(top), Some(length)) = (tops[k], *length)
+                    {
+                        let mut len = length;
+                        ui.horizontal(|ui| {
+                            ui.label("length");
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut len)
+                                        .range(0.01..=50.0)
+                                        .speed(0.01)
+                                        .max_decimals(3)
+                                        .suffix(" m"),
+                                )
+                                .on_hover_text(
+                                    "Its length: the other leg keeps its own; the point where they meet \
+                                     moves (and what hangs below it along)",
+                                )
+                                .changed()
+                            {
+                                want_len = Some(len);
+                            }
+                            if let Some(w) = f.wires.iter().find(|w| w.label == f.strings[k].wire) {
+                                let (down, dir, _) = polar(top, w.at);
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "down/up {down:.1}°, direction {:.1}° (from where the legs meet)",
+                                        (dir + ahead).rem_euclid(360.0)
+                                    ))
+                                    .small()
+                                    .weak(),
+                                );
+                            }
+                        });
+                    }
                     // The wire point it makes.
                     if owns
                         && let Some(top) = tops[k]
@@ -3337,6 +3457,8 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                         let (mut down, dir, mut len) = polar(top, w.at);
                         let mut dir = (dir + ahead).rem_euclid(360.0);
                         let mut changed = false;
+                        // A V's tip: from its legs' lengths (above).
+                        if legs == 1 {
                         ui.horizontal(|ui| {
                             ui.label("down/up");
                             changed |= ui
@@ -3382,8 +3504,10 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 .on_hover_text("Its length: from its top to its wire point")
                                 .changed();
                         });
+                        }
                         if changed {
-                            w.at = from_polar(top, down, (dir - ahead).rem_euclid(360.0), len.max(0.01));
+                            want_at =
+                                Some(from_polar(top, down, (dir - ahead).rem_euclid(360.0), len.max(0.01)));
                         }
                         ui.horizontal(|ui| {
                             ui.label("wire point");
@@ -3482,6 +3606,14 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                 if let Some(top) = retop {
                     f.note = f.move_top(k, &top).err();
                 }
+                if let Some(len) = want_len {
+                    f.note = f.set_length(k, len).err();
+                }
+                if let Some(at) = want_at {
+                    let wire = f.strings[k].wire.clone();
+                    f.place_wire(&wire, at);
+                    f.note = None;
+                }
                 match ends_at {
                     Some(Some(w)) => {
                         f.strings[k].wire = w;
@@ -3508,11 +3640,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                 f.drop_unused_wires();
             }
             if let Some(note) = &f.note {
-                crate::menu::message(
-                    ui,
-                    egui::RichText::new(note).small(),
-                    Some(egui::Color32::YELLOW),
-                );
+                crate::menu::error_label(ui, egui::RichText::new(note).small());
             }
             // Wire points no string reaches: the wire clamped straight to
             // the structure.

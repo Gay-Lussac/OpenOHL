@@ -10182,3 +10182,48 @@ fn a_tool_window_opens_at_the_click_not_where_it_was_before() {
     let at = state.pivot_pos.unwrap();
     assert!((at - egui::pos2(516.0, 416.0)).length() < 1.0, "{at:?}");
 }
+
+/// A string's length typed: kept, with every other string's — a V's leg
+/// moves the point where the legs meet, the string below keeps its length
+/// and moves along; a length the legs cannot meet with is refused.
+#[test]
+fn a_string_length_typed_keeps_the_others() {
+    use crate::editors::{Preset, StringForm};
+    let model = synthetic();
+    let dist = |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f64>().sqrt();
+    let at = |f: &StringForm, l: &str| {
+        f.points
+            .iter()
+            .find(|p| p.label == l)
+            .map(|p| p.at)
+            .or_else(|| f.wires.iter().find(|w| w.label == l).map(|w| w.at))
+            .unwrap()
+    };
+    let len = |f: &StringForm, k: usize| dist(at(f, &f.strings[k].top), at(f, &f.strings[k].wire));
+    let mut f = StringForm::new_on(&model, "T2").unwrap();
+    f.preset(Preset::VAndString, [0.0, 0.0, 20.0], &model);
+    let below = f
+        .strings
+        .iter()
+        .position(|x| f.wires.iter().any(|w| w.label == x.top))
+        .unwrap();
+    let tip = f.strings[below].top.clone();
+    let legs: Vec<usize> = (0..f.strings.len()).filter(|&i| f.strings[i].wire == tip).collect();
+    let (l0, l1, lb) = (len(&f, legs[0]), len(&f, legs[1]), len(&f, below));
+    let tip0 = at(&f, &tip);
+    f.set_length(legs[0], l0 + 0.5).unwrap();
+    assert!((len(&f, legs[0]) - (l0 + 0.5)).abs() < 1e-9);
+    assert!((len(&f, legs[1]) - l1).abs() < 1e-9, "the other leg keeps its length");
+    assert!((len(&f, below) - lb).abs() < 1e-9, "the string below keeps its length");
+    assert!(dist(at(&f, &tip), tip0) > 0.1, "where they meet moved");
+    // Too short to reach the other leg: refused, nothing changes.
+    let before = f.clone();
+    let apart = dist(at(&f, &f.strings[legs[0]].top), at(&f, &f.strings[legs[1]].top));
+    let why = f.set_length(legs[0], (apart - l1) * 0.5).unwrap_err();
+    assert!(why.contains("cannot meet"), "{why}");
+    assert_eq!(f, before);
+    // The string below (an I): its wire point along it.
+    f.set_length(below, lb + 1.0).unwrap();
+    assert!((len(&f, below) - (lb + 1.0)).abs() < 1e-9);
+    assert!((len(&f, legs[0]) - (l0 + 0.5)).abs() < 1e-9);
+}
