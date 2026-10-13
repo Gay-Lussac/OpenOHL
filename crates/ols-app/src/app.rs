@@ -187,6 +187,12 @@ pub struct Ready {
     popup_serial: u64,
     /// A tool window is open.
     popup_open: bool,
+    /// The frame a tool window opened in (every pass of it: egui may
+    /// discard a first one) ...
+    popup_opened: Option<u64>,
+    /// ... and this pass is in it: the window is put at `popup_at` (not
+    /// where a window of the same id was in an earlier run).
+    popup_fresh: bool,
 
     /// A position being typed in the properties: (structure, position).
     pub edit_position: Option<(String, [f64; 3])>,
@@ -309,6 +315,8 @@ impl Ready {
             popup_at: egui::pos2(400.0, 200.0),
             popup_serial: 0,
             popup_open: false,
+            popup_opened: None,
+            popup_fresh: false,
 
             edit_position: None,
             libraries: Default::default(),
@@ -1238,6 +1246,16 @@ impl Ready {
             self.move_dialog.clone(),
         );
         self.use_tool_at(u);
+        log::info!(
+            "{}: window {}{}",
+            self.hotbar.tool().name(),
+            self.editor
+                .as_ref()
+                .map_or("none".to_owned(), |f| format!("\"{}\"", f.title())),
+            self.status
+                .as_ref()
+                .map_or(String::new(), |(s, _)| format!("; status: {s}"))
+        );
         if (self.editor.is_some() && self.editor != before.0)
             || (self.goto.is_some() && self.goto != before.1)
             || (self.coord_dialog.is_some() && self.coord_dialog != before.2)
@@ -2761,6 +2779,7 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
     // given up — so the menu's command works on the first click.
     let menu = egui::Popup::is_any_open(ctx);
     if menu && !r.menu_open {
+        log::info!("a menu opened; mouse captured: {}", r.view3d.captured);
         if r.view3d.captured {
             crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
         }
@@ -2772,6 +2791,7 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         }
     }
     r.menu_open = menu;
+    r.popup_fresh = r.popup_opened == Some(ctx.cumulative_frame_nr());
     let open = r.goto.is_some()
         || r.coord_dialog.is_some()
         || r.route_choice.is_some()
@@ -2787,8 +2807,17 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         } else {
             ctx.pointer_latest_pos().or(crosshair)
         };
-        r.popup_at = at.unwrap_or(egui::pos2(400.0, 200.0));
+        // Kept on the screen (at least its top-left part).
+        let screen = ctx.content_rect();
+        let at = at.unwrap_or(egui::pos2(400.0, 200.0));
+        r.popup_at = egui::pos2(
+            at.x.clamp(screen.min.x, (screen.max.x - 320.0).max(screen.min.x)),
+            at.y.clamp(screen.min.y, (screen.max.y - 240.0).max(screen.min.y)),
+        );
         r.popup_serial += 1;
+        r.popup_opened = Some(ctx.cumulative_frame_nr());
+        r.popup_fresh = true;
+        log::info!("a window opens at {:?}", r.popup_at);
         if r.view3d.captured {
             crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
         }
@@ -2797,14 +2826,20 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
 }
 
 /// A tool window: opens next to [`Ready::popup_at`] (again each time it
-/// opens), can be dragged anywhere, also partly off the screen.
+/// opens, whatever a window of its id was in an earlier run: window
+/// places are remembered between runs), can be dragged anywhere, also
+/// partly off the screen.
 fn tool_window(r: &Ready, key: &str, title: impl Into<egui::WidgetText>) -> egui::Window<'static> {
-    egui::Window::new(title)
-        .id(egui::Id::new((key.to_owned(), r.popup_serial)))
-        .default_pos(r.popup_at + egui::vec2(16.0, 16.0))
-        .collapsible(false)
-        .resizable(false)
-        .constrain(false)
+    let at = r.popup_at + egui::vec2(16.0, 16.0);
+    let w = egui::Window::new(title).id(egui::Id::new((key.to_owned(), r.popup_serial)));
+    // Fixed in the frame it opens: egui (0.36) puts a movable window back
+    // where it was remembered, over `current_pos`.
+    let w = if r.popup_fresh {
+        w.fixed_pos(at)
+    } else {
+        w.default_pos(at)
+    };
+    w.collapsible(false).resizable(false).constrain(false)
 }
 
 /// The Go to window: Enter goes, Escape closes.
@@ -4288,6 +4323,9 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wg
                 None
             }
         });
+    }
+    if let Some(o) = &outcome {
+        log::info!("window \"{}\": {o:?}", form.title());
     }
     let apply = |r: &mut Ready, form: Form, reset: bool| match form.command(&r.model, reset) {
         Ok((what, command)) => {

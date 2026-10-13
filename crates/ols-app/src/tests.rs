@@ -10124,3 +10124,46 @@ fn edit_on_a_structure_opens_its_pylon() {
     r.perform(crate::edit::Action::EditPlacement { id: id.clone() });
     assert!(matches!(&r.editor, Some(Form::Structure(f)) if f.id == id));
 }
+
+/// A tool window opens next to the click even where a window of its id
+/// was left elsewhere in an earlier run (window places are remembered
+/// between runs): here far off the screen.
+#[test]
+fn a_tool_window_opens_at_the_click_not_where_it_was_before() {
+    let model = synthetic_project("window-place");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    // An earlier run left the first editor window far off the screen.
+    let ctx = harness.ctx.clone();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        egui::Window::new("stale")
+            .id(egui::Id::new(("editor".to_owned(), 1_u64)))
+            .constrain(false)
+            .current_pos(egui::pos2(3000.0, 2000.0))
+            .show(ui.ctx(), |ui| ui.label("stale"));
+    });
+    out.textures_delta.clear();
+    harness.run();
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(500.0, 400.0)));
+    harness.run();
+    use_tool(
+        &mut harness,
+        crate::tools::Tool::Edit,
+        Selection::Span {
+            section: "S1".into(),
+            span: 0,
+        },
+        None,
+    );
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_some());
+    let state = egui::AreaState::load(&harness.ctx, egui::Id::new(("editor".to_owned(), 1_u64)))
+        .expect("the window");
+    let at = state.pivot_pos.unwrap();
+    assert!((at - egui::pos2(516.0, 416.0)).length() < 1.0, "{at:?}");
+}
