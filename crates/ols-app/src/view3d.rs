@@ -395,6 +395,11 @@ impl View3d {
             let ground = camera
                 .ray(at, size)
                 .and_then(|(a, d)| model.ground_hit(a, d, camera.target[2]));
+            log::info!(
+                "3D view: right-click (mouse captured: {}) on {}",
+                self.captured,
+                target.describe()
+            );
             selection::Use { target, at: ground }
         });
         if let Some((at, double)) = pick_at {

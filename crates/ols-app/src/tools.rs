@@ -415,7 +415,8 @@ pub fn inventory_ui(ctx: &egui::Context, open: &mut bool, hotbar: &mut Hotbar) {
         .open(&mut keep)
         .collapsible(false)
         .resizable(false)
-        .constrain(false)
+        // Kept on the screen: its place is remembered between runs (a
+        // larger screen before would leave it out of sight).
         .default_pos(screen.center_bottom() + egui::vec2(-200.0, -300.0))
         .show(ctx, |ui| {
             ui.label("Drag a tool onto a hotbar slot; drag a slot here to empty it.");
