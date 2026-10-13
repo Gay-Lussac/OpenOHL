@@ -176,6 +176,42 @@ pub fn default_fe_budget() -> Budget {
         .time_limit(Duration::from_secs(120))
 }
 
+/// Where spheres of radii `ra` about `a` and `rb` about `b` meet nearest
+/// to `near` (None: they do not meet).
+fn meeting(
+    a: Vector3<f64>,
+    ra: f64,
+    b: Vector3<f64>,
+    rb: f64,
+    near: Vector3<f64>,
+) -> Option<Vector3<f64>> {
+    let ab = b - a;
+    let d = ab.norm();
+    if d < 1e-12 || d > ra + rb || d < (ra - rb).abs() {
+        return None;
+    }
+    let u = ab / d;
+    let along = (ra * ra - rb * rb + d * d) / (2.0 * d);
+    let h = (ra * ra - along * along).max(0.0).sqrt();
+    let c = a + u * along;
+    let off = (near - c) - u * u.dot(&(near - c));
+    let n = off.norm();
+    // Newton's point on the line through both centres: any point of the
+    // circle (it is symmetric about that line).
+    let v = if n > 1e-12 {
+        off / n
+    } else {
+        let any = if u.x.abs() < 0.9 {
+            Vector3::x()
+        } else {
+            Vector3::y()
+        };
+        let w = any - u * u.dot(&any);
+        w / w.norm()
+    };
+    Some(c + v * h)
+}
+
 struct Evaluation {
     /// Net force on every node (elements + external), N.
     forces: Vec<Vector3<f64>>,
@@ -288,64 +324,135 @@ impl Model {
         })
     }
 
-    /// Puts the free end of every bar attached to a fixed node back on the
-    /// sphere it can swing on, keeping the length change Newton intended.
+    /// Puts the free end of every bar back on the sphere it can swing on
+    /// about its other end, keeping the length change Newton intended.
     ///
     /// A Newton step moves a swinging insulator clamp along a straight line
     /// tangent to its arc; with a nearly rigid string that fake stretch
     /// (δ²/2L) creates huge spurious forces and stalls the iteration (seen in
     /// testing: 100 iterations without convergence). Projecting removes the
     /// curvature error while keeping Newton's radial (length) update.
-    /// Nodes held by several bars (V-strings) get a few alternating passes.
-    /// A bar between two free nodes (a string hanging from a string) is
-    /// projected the same way about its end nearer the supports, after
-    /// that end.
+    ///
+    /// Each bar swings its end farther from the supports about the nearer
+    /// (equally far: its second node about its first, a string's bottom
+    /// about its top). Nodes are placed from the supports outwards, each
+    /// once the nodes it hangs from are: on its one bar's sphere, or where
+    /// its two bars' spheres meet nearest to Newton's point (a V's tip —
+    /// also one closing chains of strings), or, with more bars, by a few
+    /// alternating passes.
     fn project_links(&self, old: &[Vector3<f64>], trial: &mut [Vector3<f64>]) {
-        // Bars from the supports outwards: each node's distance (in bars)
-        // from a fixed node; a bar swings its farther end about the nearer.
         let depth = self.truss_depths();
         // Intended lengths from Newton's (unprojected) step, computed ONCE.
         // Recomputing them from already-projected points in every pass
         // shrank each string by a factor cos θ per pass — a bug found by
         // tracing: −6.5 µm on a 3 m string, thousands of newtons of fake force.
-        let mut links: Vec<(usize, usize, f64, bool)> = self
-            .trusses
-            .iter()
-            .filter_map(|t| {
-                let (fixed, free) = match (self.nodes[t.i].fixed, self.nodes[t.j].fixed) {
-                    (true, false) => (t.i, t.j),
-                    (false, true) => (t.j, t.i),
-                    (false, false) => match (depth[t.i], depth[t.j]) {
-                        (Some(a), Some(b)) if a < b => (t.i, t.j),
-                        (Some(a), Some(b)) if b < a => (t.j, t.i),
-                        _ => return None,
-                    },
-                    (true, true) => return None,
-                };
-                let old_chord = old[free] - old[fixed];
-                let old_len = old_chord.norm();
-                if old_len == 0.0 {
-                    return None;
+        let mut links: Vec<(usize, usize, f64, bool, f64)> = Vec::new();
+        for t in &self.trusses {
+            let (pivot, free) = match (self.nodes[t.i].fixed, self.nodes[t.j].fixed) {
+                (true, false) => (t.i, t.j),
+                (false, true) => (t.j, t.i),
+                (false, false) => match (depth[t.i], depth[t.j]) {
+                    (Some(a), Some(b)) if b < a => (t.j, t.i),
+                    (Some(_), Some(_)) => (t.i, t.j),
+                    _ => continue,
+                },
+                (true, true) => continue,
+            };
+            let old_chord = old[free] - old[pivot];
+            let old_len = old_chord.norm();
+            if old_len == 0.0 {
+                continue;
+            }
+            // The length change Newton intended: the ends' relative move
+            // along the bar (the pivot may move too).
+            let moved = (trial[free] - old[free]) - (trial[pivot] - old[pivot]);
+            let intended = old_len + (old_chord / old_len).dot(&moved);
+            let slack = t.tension_only && intended > (trial[free] - trial[pivot]).norm();
+            links.push((pivot, free, intended, slack, t.unstressed_length));
+        }
+        // The nodes to place, each with its bars (pivot, length); a slack
+        // leg does not hold its node — but a node all of whose bars are
+        // slack would hang on nothing (a joint of a chain of strings, both
+        // its strings slack after a step): it drops until its bar nearest
+        // the supports is taut again (Newton cannot bring it back: slack
+        // bars give it no stiffness and no move changes its force).
+        let mut held: std::collections::BTreeMap<usize, Vec<(usize, f64)>> =
+            std::collections::BTreeMap::new();
+        let mut loose: std::collections::BTreeMap<usize, (usize, f64)> =
+            std::collections::BTreeMap::new();
+        for &(pivot, free, intended, slack, length) in &links {
+            let entry = held.entry(free).or_default();
+            if !slack {
+                entry.push((pivot, intended));
+            } else {
+                let nearer = loose
+                    .get(&free)
+                    .is_none_or(|(p, _)| depth[pivot] < depth[*p]);
+                if nearer {
+                    loose.insert(free, (pivot, intended.max(length)));
                 }
-                // The length change Newton intended: the ends' relative
-                // move along the bar (the nearer end may move too).
-                let moved = (trial[free] - old[free]) - (trial[fixed] - old[fixed]);
-                let intended = old_len + (old_chord / old_len).dot(&moved);
-                let slack = t.tension_only && intended > (trial[free] - trial[fixed]).norm();
-                Some((fixed, free, intended, slack))
-            })
-            .collect();
-        links.sort_by_key(|&(_, free, _, _)| depth[free]);
-        // Several passes reconcile nodes held by more than one string.
-        for _ in 0..5 {
-            for &(fixed, free, intended, slack) in &links {
-                let chord = trial[free] - trial[fixed];
-                let len = chord.norm();
-                // A slack leg does not hold its node.
-                if slack || len == 0.0 {
-                    continue;
+            }
+        }
+        for (node, bar) in loose {
+            if let Some(bars) = held.get_mut(&node)
+                && bars.is_empty()
+            {
+                bars.push(bar);
+            }
+        }
+        // From the supports outwards: a node once every node it hangs from
+        // is placed (a loop: the rest in order of depth).
+        let mut order: Vec<usize> = Vec::with_capacity(held.len());
+        let mut placed: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+        loop {
+            let ready: Vec<usize> = held
+                .iter()
+                .filter(|(n, bars)| {
+                    !placed.contains(n)
+                        && bars
+                            .iter()
+                            .all(|(p, _)| !held.contains_key(p) || placed.contains(p))
+                })
+                .map(|(n, _)| *n)
+                .collect();
+            if ready.is_empty() {
+                let mut rest: Vec<usize> = held
+                    .keys()
+                    .copied()
+                    .filter(|n| !placed.contains(n))
+                    .collect();
+                rest.sort_by_key(|&n| depth[n]);
+                order.extend(rest);
+                break;
+            }
+            for n in ready {
+                placed.insert(n);
+                order.push(n);
+            }
+        }
+        let sphere = |trial: &mut [Vector3<f64>], node: usize, pivot: usize, length: f64| {
+            let chord = trial[node] - trial[pivot];
+            let len = chord.norm();
+            if len > 0.0 {
+                trial[node] = trial[pivot] + chord * (length / len);
+            }
+        };
+        for node in order {
+            let bars = &held[&node];
+            match bars[..] {
+                [] => {}
+                [(p, l)] => sphere(trial, node, p, l),
+                [(p, lp), (q, lq)] => match meeting(trial[p], lp, trial[q], lq, trial[node]) {
+                    Some(at) => trial[node] = at,
+                    None => sphere(trial, node, p, lp),
+                },
+                _ => {
+                    for _ in 0..5 {
+                        for &(p, l) in bars {
+                            sphere(trial, node, p, l);
+                        }
+                    }
                 }
-                trial[free] = trial[fixed] + chord * (intended / len);
             }
         }
     }
@@ -390,27 +497,159 @@ impl Model {
             ) if self
                 .nodes
                 .iter()
-                .any(|n| !n.fixed && n.load != Vector3::zeros()) =>
+                .any(|n| !n.fixed && n.load != Vector3::zeros())
+                || self
+                    .cables
+                    .iter()
+                    .any(|c| c.properties.load.x != 0.0 || c.properties.load.y != 0.0) =>
             {
-                self.solve_by_load_steps(budget).map_err(|_| error)
+                self.solve_by_load_steps(budget)
+                    .or_else(|_| self.solve_by_relaxation(budget))
+                    .map_err(|_| error)
+            }
+            Err(error @ (FeError::NotConverged { .. } | FeError::Singular { .. })) => {
+                self.solve_by_relaxation(budget).map_err(|_| error)
             }
             Err(error) => Err(error),
         }
     }
 
+    /// Last resort for strings hanging from strings (chains of hinged
+    /// joints that Newton can fold or stall on): dynamic relaxation — each
+    /// free node a mass moving under its unbalanced force (masses from the
+    /// stiffness, so every step is stable), the motion stopped at each peak
+    /// of kinetic energy — until near equilibrium, then Newton from there.
+    /// Only for models with such strings (others: the error stands).
+    /// Exit clauses: 50 000 steps or 5 s, and the budget's time limit.
+    fn solve_by_relaxation(&self, budget: &Budget) -> Result<Solution, FeError> {
+        let chained = self
+            .trusses
+            .iter()
+            .any(|t| !self.nodes[t.i].fixed && !self.nodes[t.j].fixed);
+        if !chained {
+            return Err(FeError::InvalidModel("no chained strings".into()));
+        }
+        let started = std::time::Instant::now();
+        let run = budget.start();
+        let mut dof = vec![None; self.nodes.len()];
+        let mut n_dof = 0;
+        for (i, node) in self.nodes.iter().enumerate() {
+            if !node.fixed {
+                dof[i] = Some(n_dof);
+                n_dof += 3;
+            }
+        }
+        let mut positions: Vec<Vector3<f64>> = self.nodes.iter().map(|n| n.position).collect();
+        let mut velocity = vec![Vector3::zeros(); self.nodes.len()];
+        // Masses only grow: a string going slack would otherwise leave its
+        // joint light, and the next taut step throws it far.
+        let mut masses = vec![1.0_f64; self.nodes.len()];
+        let mut guesses = vec![None; self.cables.len()];
+        let mut energy = 0.0_f64;
+        let load_scale = self
+            .nodes
+            .iter()
+            .map(|n| n.load.norm())
+            .chain(self.trusses.iter().map(|t| t.weight))
+            .chain(
+                self.cables
+                    .iter()
+                    .map(|c| c.properties.load.norm() * c.properties.unstressed_length),
+            )
+            .fold(1.0_f64, f64::max);
+        for step in 0..50_000 {
+            if step % 256 == 0 {
+                run.check().map_err(|stop| FeError::NotConverged {
+                    stop,
+                    residual: f64::NAN,
+                    worst_node: 0,
+                })?;
+                if started.elapsed() > Duration::from_secs(5) {
+                    break;
+                }
+            }
+            let eval = self.evaluate(&positions, &dof, n_dof, &mut guesses)?;
+            let mut worst = 0.0_f64;
+            let mut next_energy = 0.0;
+            for (i, f) in eval.forces.iter().enumerate() {
+                let Some(r) = dof[i] else { continue };
+                worst = worst.max(f.norm());
+                // A mass for which a unit time step is stable: the row sum
+                // of the stiffness (Gershgorin), at least a small floor.
+                let row: f64 = (0..3)
+                    .map(|k| {
+                        (0..n_dof)
+                            .map(|c| eval.stiffness[(r + k, c)].abs())
+                            .sum::<f64>()
+                    })
+                    .fold(0.0, f64::max);
+                masses[i] = masses[i].max(row);
+                let mass = masses[i];
+                velocity[i] += f / mass;
+                next_energy += mass * velocity[i].norm_squared();
+            }
+            if worst < 1e-3 * load_scale {
+                break;
+            }
+            // Past a peak of kinetic energy: stop the motion there.
+            if next_energy < energy {
+                velocity.iter_mut().for_each(|v| *v = Vector3::zeros());
+                energy = 0.0;
+                continue;
+            }
+            energy = next_energy;
+            for (i, v) in velocity.iter().enumerate() {
+                if dof[i].is_some() {
+                    positions[i] += v;
+                }
+            }
+        }
+        let mut model = self.clone();
+        for (node, p) in model.nodes.iter_mut().zip(&positions) {
+            node.position = *p;
+        }
+        let result = model.solve_direct(budget);
+        if std::env::var_os("OLS_FE_TRACE").is_some() {
+            let eval = self.evaluate(&positions, &dof, n_dof, &mut guesses)?;
+            let worst = eval
+                .forces
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| dof[*i].is_some())
+                .map(|(_, f)| f.norm())
+                .fold(0.0, f64::max);
+            eprintln!(
+                "relaxation: {:.0?}, largest unbalanced force {worst:.3e} N (target {:.3e}); then Newton: {}",
+                started.elapsed(),
+                1e-3 * load_scale,
+                match &result {
+                    Ok(s) => format!("solved in {} iterations", s.iterations),
+                    Err(e) => e.to_string(),
+                }
+            );
+        }
+        result
+    }
+
     /// Fallback for hard cases (e.g. many heavy point loads far from the
     /// starting shape — a span with 23 alternating 359 N / 30 N markers did
-    /// not converge directly): solve the cables alone, then ramp the point
-    /// loads up, each step starting from the previous solution, halving the
-    /// step after a failure. Exit clauses: at most 40 steps, step ≥ 1/256,
-    /// and the budget's time limit for the whole procedure.
+    /// not converge directly; strings chained between free joints swung
+    /// by wind): solve the cables under their vertical load alone, then
+    /// ramp the point loads and the sideways (wind) part of the cables'
+    /// load up together, each step starting from the previous solution,
+    /// halving the step after a failure. Exit clauses: at most 40 steps,
+    /// step ≥ 1/256, and the budget's time limit for the whole procedure.
     fn solve_by_load_steps(&self, budget: &Budget) -> Result<Solution, FeError> {
         let run = budget.start();
         let full: Vec<Vector3<f64>> = self.nodes.iter().map(|n| n.load).collect();
+        let cable_full: Vec<Vector3<f64>> = self.cables.iter().map(|c| c.properties.load).collect();
         let mut model = self.clone();
         let set_loads = |model: &mut Model, factor: f64| {
             for (node, load) in model.nodes.iter_mut().zip(&full) {
                 node.load = load * factor;
+            }
+            for (cable, load) in model.cables.iter_mut().zip(&cable_full) {
+                cable.properties.load = Vector3::new(load.x * factor, load.y * factor, load.z);
             }
         };
         set_loads(&mut model, 0.0);
@@ -427,7 +666,17 @@ impl Model {
                 node.position = *p;
             }
             set_loads(&mut model, target);
-            match model.solve_direct(budget) {
+            let result = model.solve_direct(budget);
+            if std::env::var_os("OLS_FE_TRACE").is_some() {
+                eprintln!(
+                    "load steps: {target:.4} of the loads: {}",
+                    match &result {
+                        Ok(s) => format!("solved in {} iterations", s.iterations),
+                        Err(e) => e.to_string(),
+                    }
+                );
+            }
+            match result {
                 Ok(next) => {
                     solution = next;
                     done = target;
@@ -490,12 +739,42 @@ impl Model {
             }
             worst
         };
+        // The unbalanced force of all free nodes together (root of the sum
+        // of squares): a step that swings a chain of strings as a whole
+        // lowers it while one joint's force may still grow.
+        let total_residual = |eval: &Evaluation| -> f64 {
+            let s: f64 = eval
+                .forces
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| dof[*i].is_some())
+                .map(|(_, f)| f.norm_squared())
+                .sum();
+            if s.is_nan() { f64::INFINITY } else { s.sqrt() }
+        };
+
+        // Each joint's largest move per step, where strings hang from
+        // strings: a third of its shortest string.
+        let chained = self
+            .trusses
+            .iter()
+            .any(|t| !self.nodes[t.i].fixed && !self.nodes[t.j].fixed);
+        let mut caps: Vec<Option<f64>> = vec![None; self.nodes.len()];
+        if chained {
+            for t in &self.trusses {
+                for n in [t.i, t.j] {
+                    let cap = t.unstressed_length / 3.0;
+                    caps[n] = Some(caps[n].map_or(cap, |c: f64| c.min(cap)));
+                }
+            }
+        }
 
         // Set OLS_FE_TRACE=1 to print the Newton history (diagnostics).
         let trace = std::env::var_os("OLS_FE_TRACE").is_some();
         let mut run = budget.start();
         let mut eval = self.evaluate(&positions, &dof, n_dof, &mut guesses)?;
         let (mut residual, mut worst_node) = free_residual(&eval);
+        let mut total = total_residual(&eval);
         // Convergence tolerance: 1e-9 of the loads, but never below what
         // floating point can resolve. Coordinates carry ~1e-16 relative
         // error, which a stiff bar turns into force noise (k · ε · |x|): with a
@@ -552,7 +831,19 @@ impl Model {
                 .ok_or(FeError::Singular {
                     iteration: run.iterations(),
                 })?;
+            // Strings hanging from strings (chains, a V under a V): a joint
+            // moves at most a third of its shortest string per step — a
+            // longer step can fold a chain the wrong way, which Newton
+            // does not undo. (Models without them step as before.)
             let mut factor: f64 = 1.0;
+            for (i, cap) in caps.iter().enumerate() {
+                if let (Some(cap), Some(r)) = (cap, dof[i]) {
+                    let moved = step.fixed_rows::<3>(r).norm();
+                    if moved > *cap {
+                        factor = factor.min(cap / moved);
+                    }
+                }
+            }
             // Backtracking line search on the unbalanced force.
             loop {
                 let mut trial: Vec<Vector3<f64>> = positions
@@ -568,7 +859,8 @@ impl Model {
                 match self.evaluate(&trial, &dof, n_dof, &mut trial_guesses) {
                     Ok(trial_eval) => {
                         let (r, w) = free_residual(&trial_eval);
-                        if r < residual || factor < 1e-6 {
+                        let tr = total_residual(&trial_eval);
+                        if r < residual || tr < 0.9 * total || factor < 1e-6 {
                             if trace {
                                 eprintln!(
                                     "newton {:>3}: residual {r:.3e} N at node {w}, step factor {factor}, |step| {:.3e} m, mu {mu:.2e}",
@@ -577,6 +869,7 @@ impl Model {
                                 );
                             }
                             mu = if factor == 1.0 { mu * 0.2 } else { mu * 4.0 };
+                            total = tr;
                             (positions, eval, guesses, residual, worst_node) =
                                 (trial, trial_eval, trial_guesses, r, w);
                             break;

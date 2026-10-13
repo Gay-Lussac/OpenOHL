@@ -10426,3 +10426,90 @@ fn a_v_under_a_v_is_applied() {
     assert_eq!(s.strings_to("L1-W").count(), 2);
     assert!(r.model.shape(&r.model.line.sections[0].id, 0).is_some());
 }
+
+/// Chains of strings of any length end in a V — four strings on one side,
+/// five on the other, meeting at the set's wire point — applied, and
+/// solved in every weather case (high wind: by relaxation, then Newton).
+#[test]
+fn chains_of_strings_end_in_a_v() {
+    use crate::editors::{Form, PointRow, StringForm, StringRow, WireRow};
+    let model = synthetic_project("chains");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut f = StringForm::of(&r.model, "T2", 1).unwrap();
+        let x0 = f.strings[0].clone();
+        let top0 = f.points.iter().find(|p| p.label == x0.top).unwrap().at;
+        let w0 = f.wires.iter().find(|w| w.label == x0.wire).unwrap().at;
+        f.strings.clear();
+        let n: [usize; 2] = [4, 5];
+        // Two chains from points 3 m either side, each hanging straight
+        // from its point to the tip's height, then the last strings meet.
+        let depth = top0[2] - w0[2] + 3.0;
+        let mut ends = Vec::new();
+        for (side, dx, count) in [("A", 3.0, n[0]), ("B", -3.0, n[1])] {
+            let label = format!("P{side}");
+            let p = [top0[0] + dx, top0[1], top0[2]];
+            f.points.push(PointRow {
+                label: label.clone(),
+                at: p,
+                description: String::new(),
+            });
+            let mut top = label;
+            for i in 0..count {
+                let wire = format!("{side}{i}-W");
+                let fr = (i + 1) as f64 / count as f64;
+                // Straight from the point towards the tip's spot.
+                let at = [p[0] - dx * fr, p[1], p[2] - depth * fr];
+                f.wires.push(WireRow {
+                    description: String::new(),
+                    label: wire.clone(),
+                    at,
+                    set: None,
+                    weight: 0.0,
+                    dead_end: false,
+                    dead_end_was: false,
+                });
+                f.strings.push(StringRow {
+                    label: format!("{side}{i}"),
+                    top: top.clone(),
+                    wire: wire.clone(),
+                    weight: 100.0,
+                    ..Default::default()
+                });
+                top = wire;
+            }
+            ends.push(top);
+        }
+        let k = f
+            .strings
+            .iter()
+            .position(|x| x.label == format!("B{}", n[1] - 1))
+            .unwrap();
+        f.end_at(&r.model, k, &ends[0]).unwrap();
+        f.wires.retain(|w| w.label != x0.wire);
+        for w in &mut f.wires {
+            if w.label == ends[0] {
+                w.set = Some(1);
+            }
+        }
+        r.editor = Some(Form::String(f));
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_none(), "{:?}", r.status);
+    let s = r.model.line.structure("T2").unwrap();
+    assert_eq!(s.strings_to("A3-W").count(), 2);
+    for c in 0..r.model.cases.len() {
+        r.model.ensure_solved(c);
+        assert!(
+            r.model.cases[c].failed.is_empty(),
+            "case {c}: {:?}",
+            r.model.cases[c].failed
+        );
+    }
+}
