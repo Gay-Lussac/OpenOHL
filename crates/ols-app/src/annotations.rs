@@ -60,6 +60,11 @@ pub struct SectionDisplay {
     /// Their strings: the label.
     #[serde(default)]
     pub string_label: [bool; 3],
+    /// Their strings' tops (the insulator's attachment, on a structure
+    /// point or another string's wire point): the string's label, a little
+    /// down the string from the point it hangs from.
+    #[serde(default)]
+    pub insulator_label: [bool; 3],
     /// Their wire points: the label and set.
     #[serde(default)]
     pub wire_label: [bool; 3],
@@ -83,7 +88,11 @@ impl SectionDisplay {
             ui.end_row();
             for (name, ticks) in [
                 ("Structure id", &mut self.structure_label),
-                ("Points (label)", &mut self.point_label),
+                ("Structure points (label)", &mut self.point_label),
+                (
+                    "Insulator tops (string, hangs from)",
+                    &mut self.insulator_label,
+                ),
                 ("Strings (label)", &mut self.string_label),
                 ("Wire points (label, set)", &mut self.wire_label),
                 ("With descriptions", &mut self.descriptions),
@@ -270,17 +279,18 @@ fn with_description(text: String, description: &str, show: bool) -> String {
 pub fn object_notes(model: &Model, case: usize, view: View) -> Vec<Note> {
     let d = &model.section_display;
     let v = view as usize;
-    let (structures, points, strings, wires) = (
+    let (structures, points, strings, wires, tops) = (
         d.structure_label[v],
         d.point_label[v],
         d.string_label[v],
         d.wire_label[v],
+        d.insulator_label[v],
     );
-    if !(structures || points || strings || wires) {
+    if !(structures || points || strings || wires || tops) {
         return Vec::new();
     }
     let show = d.descriptions[v];
-    let pieces = if strings || wires {
+    let pieces = if strings || wires || tops {
         crate::selection::string_pieces(model, case)
     } else {
         Default::default()
@@ -333,6 +343,15 @@ pub fn object_notes(model: &Model, case: usize, view: View) -> Vec<Note> {
                     [0, 1, 2].map(|k| 0.5 * (a[k] + b[k])),
                     with_description(x.label.clone(), &x.description, show),
                     [120, 180, 255],
+                ));
+            }
+            // Its top: a separate thing from the point it hangs from (the
+            // same place), so written a little down the string.
+            if tops {
+                out.push(note(
+                    [0, 1, 2].map(|k| a[k] + 0.15 * (b[k] - a[k])),
+                    format!("{} top → {}", x.label, x.top),
+                    [150, 230, 150],
                 ));
             }
             // Its wire point, where drawn (the first string to it).

@@ -9105,6 +9105,21 @@ fn descriptions_are_typed_and_shown_as_labels() {
         (0..3).all(|k| (n.at[k] - 0.5 * (a[k] + b[k])).abs() < 1e-9)
             || notes.iter().filter(|n| n.text.starts_with("S1 —")).count() > 1
     );
+    // The insulator's top on its own tick: apart from the structure point
+    // it hangs from (a little down the string).
+    assert!(!texts.iter().any(|t| t.contains(" top → ")), "{texts:?}");
+    r.model.section_display.insulator_label[View::Plan as usize] = true;
+    let notes = object_notes(&r.model, 0, View::Plan);
+    let top = &t2.string("S1").unwrap().top;
+    let n = notes
+        .iter()
+        .find(|n| n.text == format!("S1 top → {top}"))
+        .expect("the top's label");
+    let p = notes
+        .iter()
+        .find(|m| m.text.starts_with(top.as_str()))
+        .unwrap();
+    assert!((0..3).any(|k| (n.at[k] - p.at[k]).abs() > 1e-6));
 }
 
 /// A structure type file opened on its own: its editor is the whole
