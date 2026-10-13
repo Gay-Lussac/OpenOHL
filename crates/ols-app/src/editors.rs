@@ -1920,9 +1920,11 @@ impl StringForm {
     /// instead, keeping its length: where one string ends there already,
     /// the two make a V and the point goes where both lengths meet; where
     /// none does, it goes to the string's end; what hangs below moves
-    /// along. Refused (nothing changes) where the legs cannot meet, where
-    /// two strings end there already, where it would hang below itself,
-    /// or where strings hang from the wire point it alone holds now.
+    /// along. The wire point it alone held goes: what hung from it hangs
+    /// from the new end (lengths kept), its set going along where the new
+    /// end has none. Refused (nothing changes) where the legs cannot meet,
+    /// where two strings end there already, where it would hang below
+    /// itself, or where both wire points have a set.
     pub fn end_at(&mut self, model: &Model, k: usize, wire: &str) -> Result<(), String> {
         let at = |f: &Self, l: &str| {
             f.points
@@ -1947,8 +1949,9 @@ impl StringForm {
             if !self.wires.iter().any(|w| w.label == wire) {
                 self.absorb(model, wire);
             }
-            // Its wire point now: held by it alone, with strings hanging
-            // from it, it would go with them.
+            // Its wire point now: held by it alone, what hangs from it is
+            // hung from the new end instead (moving along, lengths kept),
+            // its set going along where the new end has none.
             let alone = !self
                 .strings
                 .iter()
@@ -1960,12 +1963,21 @@ impl StringForm {
                 .filter(|y| y.top == x.wire)
                 .map(|y| y.label.clone())
                 .collect();
-            if alone && !hanging.is_empty() {
+            let old_set = self
+                .wires
+                .iter()
+                .find(|w| w.label == x.wire)
+                .and_then(|w| w.set);
+            let new_set = self
+                .wires
+                .iter()
+                .find(|w| w.label == wire)
+                .and_then(|w| w.set);
+            if alone && let (Some(a), Some(b)) = (old_set, new_set) {
                 return Err(format!(
-                    "{} holds {} alone and {} hang from it: hang them elsewhere first",
-                    x.label,
-                    x.wire,
-                    hanging.join(", ")
+                    "{} cannot end at {wire}: {} (set {a}) would go and {wire} has a set already \
+                     ({b}) — take one of the sets away first",
+                    x.label, x.wire
                 ));
             }
             let (Some(top), Some(old), Some(w)) =
@@ -2008,8 +2020,34 @@ impl StringForm {
                     ));
                 }
             };
-            self.strings[k].wire = wire.to_owned();
             self.place_wire(wire, target);
+            if alone {
+                // What hangs from the old end: below the new one, as it was
+                // below the old (moved by as much).
+                let d = [0, 1, 2].map(|i| target[i] - old[i]);
+                let below: Vec<String> = self
+                    .chain_below(&x.wire)
+                    .into_iter()
+                    .filter(|w| *w != x.wire)
+                    .collect();
+                for r in self.wires.iter_mut().filter(|r| below.contains(&r.label)) {
+                    r.at = [0, 1, 2].map(|i| r.at[i] + d[i]);
+                }
+                for y in self
+                    .strings
+                    .iter_mut()
+                    .filter(|y| hanging.contains(&y.label))
+                {
+                    y.top = wire.to_owned();
+                }
+                if new_set.is_none()
+                    && let Some(set) = old_set
+                    && let Some(w) = self.wires.iter_mut().find(|w| w.label == wire)
+                {
+                    w.set = Some(set);
+                }
+            }
+            self.strings[k].wire = wire.to_owned();
             self.drop_unused_wires();
             Ok(())
         })();

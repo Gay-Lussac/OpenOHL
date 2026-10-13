@@ -10310,6 +10310,19 @@ fn a_string_ends_at_any_other_wire_point() {
     let leg = f.strings[0].label.clone();
     assert!(!f.end_choices(&model, k(&f, &leg)).contains(&low));
     assert!(f.end_at(&model, k(&f, &leg), &low).is_err());
+    // X1 alone holds the lower V's tip: sent to end at X3's wire point,
+    // what hangs from the tip (nothing here) and X2 stay; with a string
+    // hanging below the tip, it is hung from the new end, lengths kept.
+    add(&mut f, "Y", &low, [0.0, 0.0, -1.5]);
+    let ly = len(&f, "Y");
+    let x2 = k(&f, "X2");
+    f.strings.remove(x2);
+    let x3w = f.strings[k(&f, "X3")].wire.clone();
+    f.end_at(&model, k(&f, "X1"), &x3w).unwrap();
+    assert_eq!(f.strings[k(&f, "Y")].top, x3w, "hung from the new end");
+    assert!((len(&f, "Y") - ly).abs() < 1e-9, "its length kept");
+    assert!((len(&f, "X1") - l1).abs() < 1e-9);
+    assert!(f.wires.iter().all(|w| w.label != low), "the old end went");
     // A wire point of another set of the structure: taken into the window.
     let s = model.line.structure("T2").unwrap();
     let other = s
