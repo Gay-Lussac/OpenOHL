@@ -322,6 +322,10 @@ wind_area = "0.6 m²"         # projected area for wind (default 0)
 | `v_string` | two legs from ±`half_width` (along the structure's local x, across the line) to a clamp below | two tension-only legs to a free clamp; the leeward leg goes slack in strong wind (a version 1 attachment; in version 2 each leg is a string naming the assembly, which gives each half its wind area) |
 | `strain` | clamp `length` from the attachment point, along its conductor | free member of that length: direction and droop follow the conductor tension and the assembly weight |
 
+### Library labels: every string in the library
+
+Each string carries a **library label**: the `id` of its assembly (`insulator` in the files). A labelled string takes its weight, wind area and stiffness from the assembly; its length is its own (or, in a structure type, the assembly's). In a project, the strings of the structures' own (not those inside a structure type's file) are **all taken into the library**: on opening, and whenever an edit puts a string without a label — strings of the same values (suspension or strain, length to the mm, weight, wind area, stiffness) share an entry, an existing one with those values or a new one (`I-3.500m-900N`, `Strain-…`, source "taken from the model's strings"); the labels go in with the edit (one undo). Structures › **String library** is the library as a table: label, name, kind, length, weight, wind area, stiffness, half width (a V), source, and how many strings **use** it. Edited there, every string with the label follows (a new length moves their wire points; a V's tip goes where both legs meet; a length its strings cannot take is refused with the reason); rows can be added; a used row deleted (asked first, listing its strings) leaves its strings its values under a matching or new label (one used by a structure type's strings cannot be deleted: change the type first).
+
 Strings hanging from strings (a V with a string below, a TAK) are built from strings in the structure type (above). Yokes, jumper support strings and counterweights as strings are planned (DESIGN_GOALS §6, §11).
 
 ## Using types in a line

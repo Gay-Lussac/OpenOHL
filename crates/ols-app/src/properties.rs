@@ -389,7 +389,7 @@ pub fn ui(
                 ("weight", format!("{:.0} N", x.weight)),
                 ("wind area", format!("{:.3} m²", x.wind_area)),
                 (
-                    "insulator",
+                    "library label",
                     x.insulator.clone().unwrap_or_else(|| "—".into()),
                 ),
                 (

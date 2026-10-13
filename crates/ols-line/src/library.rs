@@ -136,7 +136,143 @@ fn without_component(
     strings.retain(|s| !gone_strings.contains(&s.label));
 }
 
+/// The line's own strings without a library label, taken into the
+/// insulator library ([`Line::catalogue_strings`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Catalogue {
+    /// Library entries to add (each its values; ids not in the library).
+    pub new: Vec<ols_structures::InsulatorAssembly>,
+    /// The strings to label: (structure, string, library label).
+    pub links: Vec<(String, String, String)>,
+}
+
+impl Catalogue {
+    /// Nothing to do.
+    pub fn is_empty(&self) -> bool {
+        self.links.is_empty()
+    }
+
+    /// Puts the labels on `line`'s strings (the line as stored): each
+    /// labelled string's weight, wind area and stiffness then come from
+    /// its library entry (its own cleared); its length stays its own.
+    pub fn apply_to(&self, line: &mut Line) {
+        for (structure, label, id) in &self.links {
+            if let Some(s) = line.structures.iter_mut().find(|s| s.id == *structure)
+                && let Some(x) = s.strings.iter_mut().find(|x| x.label == *label)
+            {
+                x.insulator = Some(id.clone());
+                x.weight = 0.0;
+                x.wind_area = 0.0;
+                x.stiffness = None;
+            }
+        }
+    }
+}
+
+/// A string's values as a library entry has them: strain, length (mm),
+/// weight (0.1 N), wind area (cm²), stiffness (N), rounded.
+type StringKey = (bool, i64, i64, i64, i64);
+
+fn string_key(strain: bool, length: f64, weight: f64, wind_area: f64, stiffness: f64) -> StringKey {
+    (
+        strain,
+        (length * 1e3).round() as i64,
+        (weight * 10.0).round() as i64,
+        (wind_area * 1e4).round() as i64,
+        stiffness.round() as i64,
+    )
+}
+
 impl Line {
+    /// The structures' own strings (of this line, as stored) without a
+    /// library label, taken into the insulator library: strings of the
+    /// same values (`resolved`: this line resolved — suspension or strain,
+    /// length to the mm, weight, wind area, stiffness) share an entry — one
+    /// of `library` with those values, else a new one (`I-3.500m-900N`,
+    /// `Strain-…`); each such string gets its label. Strings of structure
+    /// types are not labelled here (they are the type file's).
+    pub fn catalogue_strings(&self, resolved: &Line, library: &InsulatorLibrary) -> Catalogue {
+        let key_of = |a: &ols_structures::InsulatorAssembly| {
+            string_key(
+                a.kind == AssemblyKind::Strain,
+                a.length.si(),
+                a.weight.si(),
+                a.wind_area.si(),
+                a.axial_stiffness.si(),
+            )
+        };
+        let mut known: BTreeMap<StringKey, String> = BTreeMap::new();
+        for a in library.iter().filter(|a| a.kind != AssemblyKind::VString) {
+            known.entry(key_of(a)).or_insert_with(|| a.id.clone());
+        }
+        let taken = |id: &str, out: &Catalogue| {
+            library.get(id).is_some() || out.new.iter().any(|a| a.id == id)
+        };
+        let mut out = Catalogue::default();
+        for s in &self.structures {
+            let Some(r) = resolved.structure(&s.id) else {
+                continue;
+            };
+            for x in s.strings.iter().filter(|x| x.insulator.is_none()) {
+                let Some(rx) = r.string(&x.label) else {
+                    continue;
+                };
+                let Some(length) = r.string_length(rx) else {
+                    continue;
+                };
+                let stiffness = rx
+                    .stiffness
+                    .unwrap_or(crate::solve::DEFAULT_INSULATOR_STIFFNESS);
+                let key = string_key(rx.strain, length, rx.weight, rx.wind_area, stiffness);
+                let id = match known.get(&key) {
+                    Some(id) => id.clone(),
+                    None => {
+                        let stem = format!(
+                            "{}-{:.3}m-{:.0}N",
+                            if rx.strain { "Strain" } else { "I" },
+                            key.1 as f64 / 1e3,
+                            rx.weight
+                        );
+                        let id = std::iter::once(stem.clone())
+                            .chain((2..).map(|n| format!("{stem}-{n}")))
+                            .find(|id| !taken(id, &out))
+                            .expect("a free label");
+                        out.new.push(ols_structures::InsulatorAssembly {
+                            format: None,
+                            version: None,
+                            id: id.clone(),
+                            name: format!(
+                                "{} {:.3} m, {:.0} N",
+                                if rx.strain {
+                                    "strain string"
+                                } else {
+                                    "I-string"
+                                },
+                                key.1 as f64 / 1e3,
+                                rx.weight
+                            ),
+                            kind: if rx.strain {
+                                AssemblyKind::Strain
+                            } else {
+                                AssemblyKind::Suspension
+                            },
+                            source: Some("taken from the model's strings".into()),
+                            length: ols_core::units::Length::from_meters(key.1 as f64 / 1e3),
+                            weight: ols_core::units::Force::from_newtons(rx.weight),
+                            axial_stiffness: ols_core::units::Force::from_newtons(stiffness),
+                            wind_area: ols_core::units::Area::from_square_meters(rx.wind_area),
+                            half_width: None,
+                        });
+                        known.insert(key, id.clone());
+                        id
+                    }
+                };
+                out.links.push((s.id.clone(), x.label.clone(), id));
+            }
+        }
+        out
+    }
+
     /// Returns a copy with every typed structure's points, strings and wire
     /// points generated from the libraries — the structure's own items
     /// replacing the type's with the same label (a wire point with a set
@@ -438,6 +574,56 @@ mod tests {
                 .unwrap();
         }
         (structures, insulators)
+    }
+
+    /// The example line's strings taken into an empty library: strings of
+    /// the same values share an entry; labelled and resolved with it, each
+    /// keeps its weight, wind area, stiffness and length; a second pass
+    /// finds nothing; an entry already there with the same values is used.
+    #[test]
+    fn strings_are_taken_into_the_library() {
+        let line = crate::tests::example();
+        let empty = InsulatorLibrary::default();
+        let resolved = line.resolve(&StructureLibrary::default(), &empty).unwrap();
+        let c = line.catalogue_strings(&resolved, &empty);
+        let own: usize = line.structures.iter().map(|s| s.strings.len()).sum();
+        assert_eq!(c.links.len(), own);
+        assert!(!c.new.is_empty() && c.new.len() < own, "{}", c.new.len());
+        let mut library = InsulatorLibrary::default();
+        for a in &c.new {
+            a.validate().unwrap();
+            let back = InsulatorAssembly::parse(Path::new(&a.id), &a.to_toml()).unwrap();
+            library.insert(Path::new(&a.id), back).unwrap();
+        }
+        let mut labelled = line.clone();
+        c.apply_to(&mut labelled);
+        let again = labelled
+            .resolve(&StructureLibrary::default(), &library)
+            .unwrap();
+        for (s, r) in resolved.structures.iter().zip(&again.structures) {
+            for (x, y) in s.strings.iter().zip(&r.strings) {
+                assert!(y.insulator.is_some());
+                assert!(
+                    (x.weight - y.weight).abs() < 0.05,
+                    "{} {}",
+                    x.weight,
+                    y.weight
+                );
+                assert!((x.wind_area - y.wind_area).abs() < 5e-5);
+                let k = |s: &InsulatorString| {
+                    s.stiffness
+                        .unwrap_or(crate::solve::DEFAULT_INSULATOR_STIFFNESS)
+                };
+                assert!((k(x) - k(y)).abs() < 0.5);
+                let (lx, ly) = (s.string_length(x).unwrap(), r.string_length(y).unwrap());
+                assert!((lx - ly).abs() < 1e-6, "{lx} {ly}");
+            }
+        }
+        assert!(labelled.catalogue_strings(&again, &library).is_empty());
+        // The original again, the library holding the entries: no new one.
+        let c2 = line.catalogue_strings(&resolved, &library);
+        assert!(c2.new.is_empty());
+        assert_eq!(c2.links, c.links);
     }
 
     /// Inline strings: simple pylon files reproduce the line without an

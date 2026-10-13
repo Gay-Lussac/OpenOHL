@@ -187,6 +187,9 @@ pub struct Ready {
     popup_serial: u64,
     /// A tool window is open.
     popup_open: bool,
+    /// The strings are being taken into the library (its own command must
+    /// not start it again).
+    cataloguing: bool,
     /// The frame a tool window opened in (every pass of it: egui may
     /// discard a first one) ...
     popup_opened: Option<u64>,
@@ -315,6 +318,7 @@ impl Ready {
             popup_at: egui::pos2(400.0, 200.0),
             popup_serial: 0,
             popup_open: false,
+            cataloguing: false,
             popup_opened: None,
             popup_fresh: false,
 
@@ -1648,11 +1652,33 @@ impl Ready {
             mut commands,
             file,
             display,
+            library,
             ..
         } = changes;
         let mut done = true;
+        // The string library's files first (the commands use them).
+        if let Some((first, _)) = library.first() {
+            for (path, text) in &library {
+                let result = match text {
+                    Some(text) => path
+                        .parent()
+                        .map_or(Ok(()), std::fs::create_dir_all)
+                        .and_then(|()| std::fs::write(path, text)),
+                    None => std::fs::remove_file(path),
+                };
+                if let Err(e) = result {
+                    self.status = Some((format!("{}: {e}", path.display()), true));
+                    return;
+                }
+            }
+            self.library_saved(
+                crate::library::LibraryKind::Insulators,
+                crate::library::PageAction::Saved(first.clone()),
+            );
+            done = !self.status.as_ref().is_some_and(|(_, e)| *e);
+        }
         let n = commands.len();
-        if n > 0 {
+        if n > 0 && done {
             let (what, command) = if n == 1 {
                 commands.remove(0)
             } else {
@@ -2527,6 +2553,178 @@ impl Ready {
     }
 
     pub fn perform(&mut self, action: crate::edit::Action) -> bool {
+        use crate::edit::Action;
+        // The strings an edit puts without a library label are taken into
+        // the library in the same command (one undo takes both back).
+        let action = match action {
+            Action::Command { what, mut command } if !self.cataloguing => {
+                self.label_strings_in(&mut command);
+                Action::Command { what, command }
+            }
+            other => other,
+        };
+        self.perform_one(action)
+    }
+
+    /// The structures `command` puts (in a batch too): their strings
+    /// without a library label get one, new library entries written first
+    /// ([`ols_line::Line::catalogue_strings`] on the line as it will be).
+    fn label_strings_in(&mut self, command: &mut ols_session::Command) {
+        if self.model.can_edit().is_err() {
+            return;
+        }
+        let mut puts: Vec<&mut serde_json::Value> = Vec::new();
+        fn collect<'a>(c: &'a mut ols_session::Command, out: &mut Vec<&'a mut serde_json::Value>) {
+            match c {
+                ols_session::Command::Put {
+                    kind: ols_session::Kind::Structure,
+                    value,
+                    ..
+                } => out.push(value),
+                ols_session::Command::Batch { commands } => {
+                    for c in commands {
+                        collect(c, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        collect(command, &mut puts);
+        if puts.is_empty() {
+            return;
+        }
+        let Some(mut line) = self.model.stored_line().cloned() else {
+            return;
+        };
+        let mut put: Vec<String> = Vec::new();
+        for value in &puts {
+            let Ok(s) = serde_json::from_value::<ols_line::Structure>((*value).clone()) else {
+                return;
+            };
+            if !s.strings.iter().any(|x| x.insulator.is_none()) {
+                continue;
+            }
+            put.push(s.id.clone());
+            match line.structures.iter_mut().find(|t| t.id == s.id) {
+                Some(t) => *t = s,
+                None => line.structures.push(s),
+            }
+        }
+        if put.is_empty() {
+            return;
+        }
+        let empty_s = ols_structures::StructureLibrary::default();
+        let empty_i = ols_structures::InsulatorLibrary::default();
+        let (structures, library) = self
+            .model
+            .types
+            .as_ref()
+            .map_or((&empty_s, &empty_i), |(s, i)| (s, i));
+        let Ok(resolved) = line.resolve(structures, library) else {
+            return;
+        };
+        let mut c = line.catalogue_strings(&resolved, library);
+        c.links.retain(|(s, _, _)| put.contains(s));
+        let used: std::collections::BTreeSet<&str> =
+            c.links.iter().map(|(_, _, id)| id.as_str()).collect();
+        c.new.retain(|a| used.contains(a.id.as_str()));
+        if c.is_empty() || !self.write_library_entries(&c.new) {
+            return;
+        }
+        c.apply_to(&mut line);
+        for value in puts {
+            if let Some(id) = value.get("id").and_then(|v| v.as_str()).map(str::to_owned)
+                && put.contains(&id)
+                && let Some(s) = line.structure(&id)
+            {
+                *value = serde_json::to_value(s).expect("a structure");
+            }
+        }
+    }
+
+    /// Writes new insulator library entries as files (stored in the
+    /// project, the libraries read again); false (the status says why)
+    /// when one cannot be written.
+    fn write_library_entries(&mut self, new: &[ols_structures::InsulatorAssembly]) -> bool {
+        if new.is_empty() {
+            return true;
+        }
+        let dir = crate::library::LibraryKind::Insulators.new_file_dir(&self.model.sources);
+        let mut first = None;
+        for a in new {
+            let path = dir.join(format!(
+                "{}.{}",
+                a.id,
+                ols_structures::insulators::INSULATOR_FILE_EXTENSION
+            ));
+            let written =
+                std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, a.to_toml()));
+            if let Err(e) = written {
+                self.status = Some((format!("{}: {e}", path.display()), true));
+                return false;
+            }
+            first.get_or_insert(path);
+        }
+        if let Some(path) = first {
+            self.library_saved(
+                crate::library::LibraryKind::Insulators,
+                crate::library::PageAction::Saved(path),
+            );
+        }
+        true
+    }
+
+    /// The model's own strings without a library label taken into the
+    /// insulator library ([`ols_line::Line::catalogue_strings`]): new
+    /// entries written as library files (stored in the project), the
+    /// strings labelled in one command. Only where the model can be
+    /// edited; nothing to do: nothing happens.
+    pub fn catalogue_strings(&mut self) {
+        if self.model.can_edit().is_err() {
+            return;
+        }
+        let Some(stored) = self.model.stored_line().cloned() else {
+            return;
+        };
+        let empty = ols_structures::InsulatorLibrary::default();
+        let library = self.model.types.as_ref().map_or(&empty, |(_, i)| i);
+        let c = stored.catalogue_strings(&self.model.line, library);
+        if c.is_empty() {
+            return;
+        }
+        if !self.write_library_entries(&c.new) {
+            return;
+        }
+        self.cataloguing = true;
+        let mut labelled = stored.clone();
+        c.apply_to(&mut labelled);
+        let touched: std::collections::BTreeSet<&str> =
+            c.links.iter().map(|(s, _, _)| s.as_str()).collect();
+        let commands = labelled
+            .structures
+            .iter()
+            .filter(|s| touched.contains(s.id.as_str()))
+            .map(|s| ols_session::Command::Put {
+                kind: ols_session::Kind::Structure,
+                id: s.id.clone(),
+                value: serde_json::to_value(s).expect("a structure"),
+                ord: None,
+            })
+            .collect();
+        let what = format!(
+            "strings taken into the library: {} labelled, {} new entries",
+            c.links.len(),
+            c.new.len()
+        );
+        log::info!("{what}");
+        self.perform(crate::edit::Action::Command {
+            what,
+            command: ols_session::Command::Batch { commands },
+        });
+        self.cataloguing = false;
+    }
+
+    fn perform_one(&mut self, action: crate::edit::Action) -> bool {
         use crate::edit::{Action, EditError};
         let retry = action.confirmed();
         let result = match action {
@@ -4970,6 +5168,7 @@ fn menus(
         ui.label(egui::RichText::new("Tables").small().weak());
         item(ui, Command::Table(TableKind::Structures), out);
         item(ui, Command::Table(TableKind::Strings), out);
+        item(ui, Command::Table(TableKind::Insulators), out);
         ui.separator();
         crate::menu::options_menu(ui, "Display options", |ui| {
             ui.label(
@@ -5557,6 +5756,7 @@ impl eframe::App for App {
                         model.attach(*remote);
                     }
                     let mut ready = Ready::new(*model);
+                    ready.catalogue_strings();
                     ready.view3d.controls = self.controls.clone();
                     ready.snaps = self.snaps.clone();
                     ready.hotbar = self.hotbar.clone();

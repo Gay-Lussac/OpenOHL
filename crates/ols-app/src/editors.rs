@@ -3517,7 +3517,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                     });
                     if !library.is_empty() {
                         ui.horizontal(|ui| {
-                            ui.label("from the library");
+                            ui.label("library label");
                             egui::ComboBox::from_id_salt(("string-library", k))
                                 .selected_text(x.insulator.as_deref().unwrap_or("(given here)"))
                                 .height(300.0)
@@ -3544,8 +3544,9 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 })
                                 .response
                                 .on_hover_text(
-                                    "An insulator assembly of the library: its length, weight, wind \
-                                     area and stiffness are taken; a tension assembly makes a dead end",
+                                    "Its entry in the string library (Structures › String library): its \
+                                     length, weight, wind area and stiffness are taken; a tension assembly \
+                                     makes a dead end. Given here: a label is given when applied",
                                 );
                         });
                     }

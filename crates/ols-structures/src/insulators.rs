@@ -115,6 +115,38 @@ impl InsulatorAssembly {
         }
     }
 
+    /// The assembly as an `.olsi` file (what [`Library::load_dir`] reads
+    /// back), values in SI units.
+    ///
+    /// [`Library::load_dir`]: crate::Library::load_dir
+    pub fn to_toml(&self) -> String {
+        let quote = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+        let kind = match self.kind {
+            AssemblyKind::Suspension => "suspension",
+            AssemblyKind::VString => "v_string",
+            AssemblyKind::Strain => "strain",
+        };
+        let mut out = format!(
+            "format = \"{INSULATOR_FILE_FORMAT}\"\nversion = {INSULATOR_FILE_VERSION}\nid = {}\nname = {}\nkind = \"{kind}\"\n",
+            quote(&self.id),
+            quote(&self.name)
+        );
+        if let Some(s) = &self.source {
+            out += &format!("source = {}\n", quote(s));
+        }
+        out += &format!(
+            "length = \"{} m\"\nweight = \"{} N\"\naxial_stiffness = \"{} N\"\nwind_area = \"{} m²\"\n",
+            self.length.si(),
+            self.weight.si(),
+            self.axial_stiffness.si(),
+            self.wind_area.si()
+        );
+        if let Some(h) = self.half_width {
+            out += &format!("half_width = \"{} m\"\n", h.si());
+        }
+        out
+    }
+
     /// Vertical drop from the attachment point to the clamp in still air,
     /// m: the string length for suspension, the leg depth for V-strings, 0
     /// for strain assemblies — whose direction and droop are not properties
@@ -150,6 +182,36 @@ impl crate::LibraryItem for InsulatorAssembly {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_assembly_is_written_and_read_back() {
+        let a = InsulatorAssembly {
+            format: None,
+            version: None,
+            id: "I \"3.5\"".into(),
+            name: "I 3.500 m".into(),
+            kind: AssemblyKind::VString,
+            source: Some("model".into()),
+            length: Length::from_meters(3.5),
+            weight: Force::from_newtons(900.0),
+            axial_stiffness: Force::from_newtons(4e7),
+            wind_area: Area::from_square_meters(0.25),
+            half_width: Some(Length::from_meters(1.5)),
+        };
+        let b: InsulatorAssembly = toml::from_str(&a.to_toml()).unwrap();
+        assert_eq!(b.id, a.id);
+        assert_eq!((b.kind, b.source.clone()), (a.kind, a.source.clone()));
+        for (x, y) in [
+            (b.length.si(), 3.5),
+            (b.weight.si(), 900.0),
+            (b.axial_stiffness.si(), 4e7),
+            (b.wind_area.si(), 0.25),
+            (b.half_width.unwrap().si(), 1.5),
+        ] {
+            assert!((x - y).abs() < 1e-9, "{x} {y}");
+        }
+        b.validate().unwrap();
+    }
+
     use super::*;
     use crate::{LibraryError, LibraryItem};
     use std::path::Path;
