@@ -1291,9 +1291,22 @@ impl Ready {
                     self.hint(tool);
                 }
             }
+            // Its pylon: the type in the pylon workspace, a structure
+            // without a type in the structure editor (as Edit pylon… in
+            // Properties).
             (Tool::Edit, Selection::Structure(id)) => {
-                self.editor = StructureForm::of(model, id).map(Form::Structure);
+                let (id, typed) = (
+                    id.clone(),
+                    model
+                        .line
+                        .structure(id)
+                        .and_then(|s| s.structure_type.clone()),
+                );
                 self.select(target);
+                match typed {
+                    Some(t) => self.edit_type(&t),
+                    None => self.edit_structure(&id),
+                }
             }
             (Tool::Edit, Selection::Attachment { structure, set }) => {
                 self.editor = StringForm::of(model, structure, *set).map(Form::String);
@@ -2515,6 +2528,13 @@ impl Ready {
             }
             Action::EditStructure { id } => {
                 self.edit_structure(&id);
+                return true;
+            }
+            Action::EditPlacement { id } => {
+                self.editor = crate::editors::StructureForm::of(&self.model, &id)
+                    .map(crate::editors::Form::Structure);
+                // Opened at the mouse, over a window already open.
+                self.popup_open = false;
                 return true;
             }
             Action::Command { what, command } => self.model.apply(&what, command),

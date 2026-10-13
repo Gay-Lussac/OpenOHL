@@ -309,6 +309,13 @@ pub enum Action {
         /// Structure.
         id: String,
     },
+    /// Open structure `id`'s placement window: where it stands, its
+    /// orientation, type and extension, Put it on the line again (no edit
+    /// by itself).
+    EditPlacement {
+        /// Structure.
+        id: String,
+    },
     /// Undo the user's last command.
     Undo,
     /// Redo the user's last undo.

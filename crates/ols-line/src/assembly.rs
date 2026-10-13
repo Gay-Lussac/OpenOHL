@@ -280,7 +280,20 @@ impl Structure {
     /// sets unique, numbers finite, every wire point hanging on strings
     /// reaching the structure.
     pub fn check_strings(&self) -> Result<(), String> {
+        self.check_strings_with(false)
+    }
+
+    /// [`Self::check_strings`] for a structure as stored: a typed one's
+    /// strings may hang from points its type gives (checked once the type
+    /// is merged, [`crate::Line::resolve`]).
+    pub fn check_strings_as_stored(&self) -> Result<(), String> {
+        self.check_strings_with(self.structure_type.is_some())
+    }
+
+    fn check_strings_with(&self, from_type: bool) -> Result<(), String> {
         let id = &self.id;
+        // A top the type may give (not on the structure as stored).
+        let from_type_top = |s: &InsulatorString| from_type && self.node(&s.top).is_none();
         let finite = |p: &Point| p.iter().all(|x| x.is_finite());
         let mut labels = BTreeSet::new();
         for (label, position) in self
@@ -329,7 +342,8 @@ impl Structure {
                     s.label
                 ));
             }
-            if self.node(&s.top).is_none() {
+            let later = from_type_top(s);
+            if !later && self.node(&s.top).is_none() {
                 return bad(&format!("no point \"{}\" for its top", s.top));
             }
             if self.wire(&s.wire).is_none() {
@@ -338,7 +352,7 @@ impl Structure {
             if s.top == s.wire {
                 return bad("its top is its wire point");
             }
-            if self.string_length(s).is_none_or(|l| l < 1e-3) {
+            if !later && self.string_length(s).is_none_or(|l| l < 1e-3) {
                 return bad("its top and wire point are less than 1 mm apart");
             }
             if !(s.weight.is_finite()
@@ -358,10 +372,9 @@ impl Structure {
         // Every wire point on strings must reach the structure through them.
         for w in self.wires.iter().filter(|w| self.is_held(&w.label)) {
             let c = self.component(&w.label);
-            let anchored = c
-                .strings
-                .iter()
-                .any(|&i| self.point(&self.strings[i].top).is_some());
+            let anchored = c.strings.iter().any(|&i| {
+                self.point(&self.strings[i].top).is_some() || from_type_top(&self.strings[i])
+            });
             if !anchored {
                 return Err(format!(
                     "structure {id}: wire point {} hangs on strings that reach no structure point",
@@ -460,7 +473,8 @@ impl Structure {
     /// points; their directions then follow. A wire point no string
     /// reaches keeps its position (fixed to the structure). Strings
     /// without a length (none given yet) keep their wire point where it
-    /// is.
+    /// is, and so do strings hanging from a point not on the structure
+    /// (yet): a typed structure as stored, its type's points not merged.
     pub fn place_wires(&mut self) -> Result<(), String> {
         let id = self.id.clone();
         let mut at: BTreeMap<String, Point> = self
@@ -477,7 +491,18 @@ impl Structure {
             .filter(|w| self.is_held(&w.label))
             .map(|w| w.label.clone())
             .collect();
-        let mut left: Vec<String> = held;
+        let known = |l: &str| self.point(l).is_some() || self.wire(l).is_some();
+        let unknown: Vec<String> = held
+            .iter()
+            .filter(|w| self.strings.iter().any(|s| &s.wire == *w && !known(&s.top)))
+            .cloned()
+            .collect();
+        for w in &unknown {
+            if let Some(p) = self.wire(w) {
+                at.insert(w.clone(), p.position);
+            }
+        }
+        let mut left: Vec<String> = held.into_iter().filter(|w| !unknown.contains(w)).collect();
         let mut leg_angles: Vec<(usize, Point)> = Vec::new();
         while !left.is_empty() {
             let before = left.len();
@@ -996,5 +1021,37 @@ mod tests {
         };
         t.strings = vec![s("a", "B", "A"), s("b", "A", "B")];
         assert!(t.place_wires().unwrap_err().contains("loop"));
+    }
+
+    /// A string hanging from a point the structure does not have (yet: a
+    /// typed structure as stored, its type's points not merged) leaves its
+    /// wire point where it is; no loop is reported.
+    #[test]
+    fn a_string_from_a_type_point_waits_for_its_type() {
+        let mut t = structure(&[]);
+        t.wires = vec![WirePoint {
+            label: "W".into(),
+            position: [1.0, 2.0, 3.0],
+            ..Default::default()
+        }];
+        t.strings = vec![InsulatorString {
+            label: "S".into(),
+            top: "FROM-TYPE".into(),
+            wire: "W".into(),
+            length: 2.0,
+            ..Default::default()
+        }];
+        t.place_wires().unwrap();
+        assert_eq!(t.wires[0].position, [1.0, 2.0, 3.0]);
+        // Checked as stored: fine for a typed structure (its type gives the
+        // point), refused for one without a type, and once merged.
+        assert!(
+            t.check_strings_as_stored()
+                .unwrap_err()
+                .contains("FROM-TYPE")
+        );
+        t.structure_type = Some("T".into());
+        t.check_strings_as_stored().unwrap();
+        assert!(t.check_strings().unwrap_err().contains("FROM-TYPE"));
     }
 }

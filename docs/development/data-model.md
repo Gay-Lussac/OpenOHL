@@ -252,7 +252,10 @@ wire points are placed from the strings. In a weather case the jumpers'
 weight hangs on the clamps of the sections at their ends
 (`jumper::end_weights`: half of the jumper between an end and its first
 support; with ice) — not at stringing. The resolved line is what solvers and exports use; the stored
-line and the project rows are not resolved.
+line and the project rows are not resolved. A typed structure's own strings may hang from the
+type's points: as stored, such a top is not checked and its wire point
+is not placed (`Structure::check_strings_as_stored`, `place_wires`);
+once resolved every structure is checked in full (`check_strings`).
 
 ### Section (`lib.rs`, `condition.rs`)
 

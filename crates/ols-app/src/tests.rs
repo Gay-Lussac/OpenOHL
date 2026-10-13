@@ -9999,12 +9999,15 @@ fn add_string_hangs_from_the_point_clicked() {
     use_tool(
         &mut harness,
         Tool::Edit,
-        Selection::Structure("T3".into()),
+        Selection::Span {
+            section: "S1".into(),
+            span: 0,
+        },
         None,
     );
     {
         let r = harness.state_mut().ready().unwrap();
-        assert!(matches!(r.editor, Some(Form::Structure(_))));
+        assert!(matches!(r.editor, Some(Form::Section(_))), "{:?}", r.editor);
         assert_eq!(r.popup_at, egui::pos2(700.0, 500.0));
     }
     use_tool(&mut harness, Tool::Edit, Selection::None, None);
@@ -10082,4 +10085,42 @@ fn a_string_hung_elsewhere_keeps_its_length() {
     let s = f.strings.iter().position(|x| x.wire == low).unwrap();
     f.move_top(s, &tip).unwrap();
     assert!(f.move_top(legs[0], &low).is_err());
+}
+
+/// Edit on a structure opens its pylon (as Edit pylon… in Properties):
+/// one without a type in the structure editor; its placement window is
+/// Placement… in Properties.
+#[test]
+fn edit_on_a_structure_opens_its_pylon() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project("edit-pylon");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let id = {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r
+            .model
+            .line
+            .structures
+            .iter()
+            .find(|s| s.structure_type.is_none());
+        s.expect("a structure without a type").id.clone()
+    };
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::Structure(id.clone()),
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.editor);
+        assert_eq!(r.placed.as_ref().map(|p| p.id.as_str()), Some(id.as_str()));
+    }
+    let r = harness.state_mut().ready().unwrap();
+    r.perform(crate::edit::Action::EditPlacement { id: id.clone() });
+    assert!(matches!(&r.editor, Some(Form::Structure(f)) if f.id == id));
 }
