@@ -533,7 +533,7 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                 ] {
                     ui.label(name);
                     let mut a = angle.unwrap_or(d);
-                    if value(ui, &mut a, 1.0, "° below the conductor").changed() {
+                    if value(ui, &mut a, 1.0, "° from its tension string").changed() {
                         *angle = Some(a);
                     }
                     ui.end_row();
@@ -597,7 +597,7 @@ fn clamps_ui(
     model: &Model,
 ) {
     ui.separator();
-    ui.label("Helping strings").on_hover_text(
+    ui.label("Suspension strings holding it").on_hover_text(
         "Insulator strings of the structure holding the jumper between its tension clamps, \
          like suspension strings on the line: an I or a V to a wire point without a set. \
          Each holds the jumper in a clamp that swings and turns freely; the jumper runs \
@@ -615,7 +615,7 @@ fn clamps_ui(
         .num_columns(5)
         .show(ui, |ui| {
             for (k, c) in j.supports.iter_mut().enumerate() {
-                ui.label(format!("helping string {}", k + 1));
+                ui.label(format!("clamp {}", k + 1));
                 let id = c.structure.clone().unwrap_or_else(|| from.clone());
                 egui::ComboBox::from_id_salt(("clamp-structure", k))
                     .selected_text(&id)
@@ -689,15 +689,52 @@ fn clamps_ui(
             });
         }
     }
+    // The lengths between the clamps: typed, they give the jumper's length
+    // and its clamps' places.
+    let pieces = jumper_pieces(j);
+    if !pieces.is_empty() {
+        ui.label("Lengths between the clamps (cut lengths; the jumper's length is their sum)");
+        let mut edited = pieces.clone();
+        let mut changed = false;
+        egui::Grid::new("jumper-pieces")
+            .num_columns(2)
+            .show(ui, |ui| {
+                // Each clamp by its wire point; the ends by structure and set.
+                let mut names: Vec<String> =
+                    vec![format!("{} set {}", j.from.structure, j.from.set)];
+                names.extend(j.supports.iter().map(|c| c.wire.clone()));
+                names.push(format!("{} set {}", j.to.structure, j.to.set));
+                for (k, piece) in edited.iter_mut().enumerate() {
+                    let name = format!("{} to {}", names[k], names[k + 1]);
+                    ui.label(name);
+                    changed |= value(ui, piece, 0.01, " m").changed();
+                    ui.end_row();
+                }
+                ui.label("total");
+                ui.label(format!("{:.3} m", edited.iter().sum::<f64>()));
+                ui.end_row();
+            });
+        if changed {
+            for piece in &mut edited {
+                *piece = piece.max(0.05);
+            }
+            set_jumper_pieces(j, &edited);
+        }
+    }
     let why_not = if j.support.is_some() {
-        Some("It has a support string: helping strings replace it (remove it in the Jumpers table)")
+        Some(
+            "It has a support string: clamps on suspension strings replace it (remove it in the Jumpers table)",
+        )
     } else if j.length.is_none() {
-        Some("A jumper held by helping strings is given by its length")
+        Some("A jumper held by suspension strings is given by its length")
     } else {
         None
     };
     let add = ui
-        .add_enabled(why_not.is_none(), egui::Button::new("Add helping string"))
+        .add_enabled(
+            why_not.is_none(),
+            egui::Button::new("Add a clamp on a suspension string"),
+        )
         .on_hover_text(
             "Held by the strings to a wire point without a set of its first end's structure",
         );
@@ -2677,7 +2714,7 @@ impl Form {
             Form::String(f) if f.new => format!("Add strings to {}", f.structure),
             Form::String(f) if f.set == 0 => {
                 format!(
-                    "Strings of {} (no wire ends there: a jumper's helping string)",
+                    "Strings of {} (no wire ends there: a suspension string holding a jumper)",
                     f.structure
                 )
             }
@@ -4322,6 +4359,88 @@ fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
         )
         .small(),
     );
+}
+
+/// The lengths of a jumper's pieces between its clamps, m: from its
+/// first end to the first helping string's clamp, between clamps, and on
+/// to its other end (its length shared by the clamps' places along it);
+/// empty without a length or helping strings.
+pub fn jumper_pieces(j: &ols_line::Jumper) -> Vec<f64> {
+    let Some(length) = j.length else {
+        return Vec::new();
+    };
+    if j.supports.is_empty() {
+        return Vec::new();
+    }
+    let mut at: Vec<f64> = j.supports.iter().map(|c| c.at).collect();
+    at.insert(0, 0.0);
+    at.push(1.0);
+    at.windows(2).map(|w| (w[1] - w[0]) * length).collect()
+}
+
+/// Gives a jumper with helping strings these piece lengths (see
+/// [`jumper_pieces`]): its length their sum, its clamps' places from them.
+pub fn set_jumper_pieces(j: &mut ols_line::Jumper, pieces: &[f64]) {
+    if pieces.len() != j.supports.len() + 1 {
+        return;
+    }
+    let total: f64 = pieces.iter().sum();
+    if total <= 0.0 {
+        return;
+    }
+    let mut run = 0.0;
+    for (c, piece) in j.supports.iter_mut().zip(pieces) {
+        run += piece;
+        c.at = run / total;
+    }
+    j.length = Some(total);
+    j.sag = None;
+}
+
+/// A new jumper from `from` to `to` through clamps on suspension strings
+/// `via` (structure, wire point without a set), in that order: given by its
+/// length, each piece between consecutive clamps 3 % longer than the
+/// straight distance between them (to be typed in its window).
+pub fn new_jumper_through(
+    model: &Model,
+    from: &SectionPoint,
+    to: &SectionPoint,
+    via: &[(String, String)],
+) -> Result<ols_line::Jumper, String> {
+    let line = &model.line;
+    let mut j = new_jumper(model, from, to, &[])?;
+    let mut at: Vec<[f64; 3]> = Vec::with_capacity(via.len() + 2);
+    at.push(line.wire_point(from).ok_or("no first end")?.position);
+    for (s, w) in via {
+        let p = line
+            .structure(s)
+            .and_then(|s| s.wire(w))
+            .ok_or_else(|| format!("no wire point {w} on {s}"))?;
+        at.push(p.position);
+    }
+    at.push(line.wire_point(to).ok_or("no other end")?.position);
+    let pieces: Vec<f64> = at
+        .windows(2)
+        .map(|w| {
+            1.03 * (0..3)
+                .map(|k| (w[1][k] - w[0][k]).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        })
+        .map(|l: f64| l.max(0.05))
+        .collect();
+    j.supports = via
+        .iter()
+        .map(|(s, w)| {
+            let mut c = ols_line::JumperClamp::new(w.clone(), 0.5);
+            if *s != from.structure {
+                c.structure = Some(s.clone());
+            }
+            c
+        })
+        .collect();
+    set_jumper_pieces(&mut j, &pieces);
+    Ok(j)
 }
 
 /// A new jumper from `from` to `to`: the cable of the section at `from`,
