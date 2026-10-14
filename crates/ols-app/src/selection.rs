@@ -490,6 +490,69 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
     out
 }
 
+/// The weather cases drawn: those shown for the line, and every
+/// section's display cases.
+pub fn drawn_cases(model: &Model, case: usize) -> std::collections::BTreeSet<usize> {
+    let mut out: std::collections::BTreeSet<usize> = model.shown(case).into_iter().collect();
+    for s in &model.line.sections {
+        out.extend(model.section_cases(&s.id, case));
+    }
+    out.retain(|k| *k < model.cases.len());
+    out
+}
+
+/// The copies of spans, jumpers and strings drawn in the other weather
+/// cases (and their wind's other side) than [`candidates`] has, each with
+/// its case: a click on any of them picks the object.
+fn other_case_candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<(Candidate, usize)> {
+    let mut out = Vec::new();
+    let strings = snaps.on(Snap::Attachment) || snaps.on(Snap::Structure) || snaps.on(Snap::Point);
+    for k in drawn_cases(model, case) {
+        let Some(c) = model.cases.get(k) else {
+            continue;
+        };
+        for (side, solved) in c.drawn().enumerate() {
+            if snaps.on(Snap::Span) {
+                for shape in &solved.shapes {
+                    let cases = model.section_cases(&shape.section, case);
+                    // Drawn in this case; the first case's own side is
+                    // among the candidates already.
+                    if !cases.contains(&k) || (k == cases[0] && side == 0) {
+                        continue;
+                    }
+                    for (n, span) in shape.spans.iter().enumerate() {
+                        let sel = Selection::Span {
+                            section: shape.section.clone(),
+                            span: n,
+                        };
+                        for w in span.points.windows(2) {
+                            out.push(((sel.clone(), w[0], w[1]), k));
+                        }
+                    }
+                }
+            }
+            if snaps.on(Snap::Jumper) && !(k == case && side == 0) && model.shown(case).contains(&k)
+            {
+                for j in &solved.jumpers {
+                    let sel = Selection::Jumper(j.jumper.clone());
+                    for w in j.points.windows(2) {
+                        out.push(((sel.clone(), w[0], w[1]), k));
+                    }
+                }
+            }
+        }
+        if strings && k != case {
+            for ((structure, label), pieces) in string_pieces(model, k) {
+                let sel = Selection::String { structure, label };
+                for (a, b) in pieces {
+                    out.push(((sel.clone(), a, b), k));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Picks among everything switched on in `snaps`: the [`candidates`], and
 /// the LiDAR points straight from the model (millions of them: not made
 /// into candidates).
@@ -501,7 +564,31 @@ pub fn pick_in_model(
     radius: f64,
     project: impl Fn([f64; 3]) -> Option<[f64; 2]>,
 ) -> Selection {
+    pick_in_model_case(model, case, snaps, at, radius, project).0
+}
+
+/// [`pick_in_model`], also in every other weather case drawn: what was
+/// picked, and the case of the copy clicked where it is not the one shown
+/// (`None`: the case shown, or nothing case-bound).
+pub fn pick_in_model_case(
+    model: &Model,
+    case: usize,
+    snaps: &Snaps,
+    at: [f64; 2],
+    radius: f64,
+    project: impl Fn([f64; 3]) -> Option<[f64; 2]>,
+) -> (Selection, Option<usize>) {
     let mut best = pick_scored(&candidates(model, case, snaps), at, radius, &project);
+    let mut picked_case = None;
+    let others = other_case_candidates(model, case, snaps);
+    let pieces: Vec<Candidate> = others.iter().map(|x| x.0.clone()).collect();
+    if let Some((score, i)) = pick_scored_index(&pieces, at, radius, &project)
+        && best.as_ref().is_none_or(|b| score < b.0)
+    {
+        best = Some((score, pieces[i].0.clone()));
+        picked_case = Some(others[i].1);
+    }
+    let found = best.as_ref().map(|b| b.1.clone());
     if snaps.on(Snap::SurveyPoint)
         && let Some(g) = model.ground.as_ref()
     {
@@ -531,7 +618,35 @@ pub fn pick_in_model(
             }
         }
     }
-    best.map_or(Selection::None, |b| b.1)
+    let chosen = best.map_or(Selection::None, |b| b.1);
+    // The case only for the copy chosen (a point may have won after).
+    let case_of = (found.as_ref() == Some(&chosen))
+        .then_some(picked_case)
+        .flatten();
+    (chosen, case_of)
+}
+
+/// The candidate nearest to `at` within `radius` (as [`pick_scored`]):
+/// its score and index.
+fn pick_scored_index(
+    candidates: &[Candidate],
+    at: [f64; 2],
+    radius: f64,
+    project: &impl Fn([f64; 3]) -> Option<[f64; 2]>,
+) -> Option<(f64, usize)> {
+    candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (s, a, b))| {
+            let (pa, pb) = (project(*a)?, project(*b)?);
+            let d = ols_core::geometry::distance_to_segment(at, pa, pb);
+            let bonus = match s {
+                Selection::String { .. } => 2.5,
+                _ => s.kind().map_or(0.0, Snap::priority),
+            };
+            (d <= radius).then_some((d - bonus, i))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
 }
 
 /// The candidate nearest to `at` on screen within `radius` pixels, given a

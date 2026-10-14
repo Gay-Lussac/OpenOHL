@@ -1201,6 +1201,13 @@ impl TabViewer for Viewer<'_> {
                 None
             }
         };
+        // The weather case of the copy clicked in a view.
+        if let Some(c) = r.view3d.picked_case.take().or(r.plan.picked_case.take())
+            && c != r.model.selection_case
+        {
+            r.model.selection_case = c;
+            r.view3d.dirty.insert(Layer::Selection);
+        }
         if r.selection != before {
             r.view3d.dirty.insert(Layer::Selection);
         }
@@ -1998,6 +2005,8 @@ impl Ready {
     /// Selects `target`.
     pub fn select(&mut self, target: Selection) {
         self.selection = target;
+        // Not a copy clicked in a view: the case shown.
+        self.model.selection_case = None;
         self.view3d.dirty.insert(Layer::Selection);
     }
 

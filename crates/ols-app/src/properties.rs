@@ -675,12 +675,10 @@ pub fn ui(
                             ui.label(egui::RichText::new(h).small());
                         }
                         ui.end_row();
+                        // The case of the copy clicked (else the one shown).
+                        let shown = model.selection_case.unwrap_or(case);
                         for (k, solved) in model.cases.iter().enumerate() {
-                            let name = if k == case {
-                                egui::RichText::new(&solved.case.name).strong()
-                            } else {
-                                egui::RichText::new(&solved.case.name)
-                            };
+                            let name = case_name(&solved.case.name, k == shown, model.selection_case.is_some());
                             ui.label(name);
                             match solved.jumpers.iter().find(|x| x.jumper == id) {
                                 Some(js) => {
@@ -811,7 +809,10 @@ pub fn ui(
                         ui.label(egui::RichText::new(h).small());
                     }
                     ui.end_row();
-                    let shown = model.section_case(&section, case);
+                    // The case of the copy clicked (else the one shown).
+                    let shown = model
+                        .selection_case
+                        .unwrap_or_else(|| model.section_case(&section, case));
                     // Both wind sides shown: the mirror after each case.
                     let rows =
                         model.cases.iter().enumerate().flat_map(|(k, c)| {
@@ -823,11 +824,7 @@ pub fn ui(
                         } else {
                             solved.case.name.clone()
                         };
-                        let name = if k == shown && !mirrored {
-                            egui::RichText::new(text).strong()
-                        } else {
-                            egui::RichText::new(text)
-                        };
+                        let name = case_name(&text, k == shown && !mirrored, model.selection_case.is_some());
                         ui.label(name);
                         match solved
                             .shapes
@@ -884,5 +881,17 @@ pub fn cases_box(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui)) {
 fn description(ui: &mut egui::Ui, text: &str) {
     if !text.trim().is_empty() {
         ui.label(egui::RichText::new(text.trim()).italics());
+    }
+}
+
+/// A weather case's name in a properties list: the case shown in bold;
+/// the case of the copy clicked in a view marked and coloured.
+fn case_name(name: &str, this: bool, clicked: bool) -> egui::RichText {
+    match (this, clicked) {
+        (true, true) => egui::RichText::new(format!("▶ {name}"))
+            .strong()
+            .color(egui::Color32::from_rgb(255, 210, 90)),
+        (true, false) => egui::RichText::new(name).strong(),
+        _ => egui::RichText::new(name),
     }
 }
