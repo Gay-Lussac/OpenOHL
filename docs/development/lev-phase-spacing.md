@@ -99,18 +99,48 @@ like the other clearance results.
   10 °C), each checked on its own.
 - Circuits: ticked in a list (select all / none).
 - Station spacing Δs: default 1 m.
-- Wind pressure for k: 500 or 650 N/m² *(open: by the LeV wind zone,
-  or per line)*.
+- Diagram for k: 2.4.2 (500 N/m²) or 2.4.3 (650 N/m²), a choice
+  *(decided)*.
 - Table 2.4.1 row where a voltage has two (110/132, 220, 380 kV: the
-  insulation level) *(open: a setting per voltage with a default, or
-  the stricter row)*.
-- Altitude for the +14 %/1000 m: *(open: the mean conductor height of
-  the span above sea level, or the station's height)*.
+  lightning impulse withstand level): low or high, chosen **per
+  circuit**; a circuit not set takes the high row (the stricter)
+  *(decided; the default may change)*.
+- Altitude for the +14 %/1000 m: the **mean conductor height of the
+  span** above sea level (the mean height of its conductor points)
+  *(decided)*.
 
 ## Not in this check
 
 On the structure (C1/C2, at least 0.5 m), with wind (C3/C4, wind
 differing by up to 40 % between conductors), phase spacers (2.2.4).
+
+## Implementation plan
+
+1. **Values as data.** A parameter file holding the LeV's C1/C2 rows by
+   nominal voltage (low and high where there are two), the four k
+   lines of each diagram with their swing-class limits, the altitude
+   rule (1000 m, +14 %/1000 m), and the l_k rules by string kind. The
+   LeV values ship as one such file; the LeV design-code plugin can
+   produce it later (design codes as plugins producing rule sets).
+2. **The check** in `ols-clearance` (a module of its own, next to the
+   galloping check that already pairs wires between the same two
+   structures): from the line (resolved: strings, structures), the
+   solved shapes of one weather case, the cables (diameter, weight)
+   and the settings, per pair of conductors between the same two
+   structures of the ticked circuits: stations, closest points, local
+   sags, l_k, β, k, z, margins; the worst station per pair and the
+   violations. Budgets: stations × pieces of the other conductor per
+   pair (a few ms per span pair).
+3. **The app.** A window (Checks menu): the weather cases ticked
+   (default: a still-air case at 10 °C), the circuits ticked (a
+   drop-down of tick boxes, select all / select none), the diagram
+   (500 or 650 N/m²), Δs, and per circuit low or high. The results in
+   the Clearances tab (worst station per pair, all its terms) and in
+   the 3D view (the worst stations marked); exported like the other
+   clearance results. Settings remembered with the project.
+4. **The command line.** The same check from `ols line` (parameter file,
+   cases, circuits), its CSV.
+5. **Tests and benchmarks** (below), docs (user guide, theory page).
 
 ## Tests (planned)
 
