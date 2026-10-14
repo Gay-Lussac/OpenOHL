@@ -2147,8 +2147,9 @@ fn sections_get_a_target_sag_in_their_display_case() {
     );
 }
 
-/// Alignment points: moved, detached, added between two, deleted — one
-/// command; the profile follows.
+/// Alignment points: moved, detached, added between two, a row deleted —
+/// one command; a row deleted takes its point off that alignment only (a
+/// shared point stays on the other), the point going with its last row.
 #[test]
 fn alignment_points_are_edited_in_their_table() {
     use crate::tables::TableKind;
@@ -2193,14 +2194,28 @@ fn alignment_points_are_edited_in_their_table() {
         row[4] = p0[4].clone();
         let page = r.tables.entry(TableKind::AlignmentPoints).or_default();
         page.added.push(row);
-        page.deleted.insert(key1);
+        page.deleted.insert(key1.clone());
     }
-    // The point deleted is the Y pylon's, on the branch too: asked.
-    assert_eq!(
-        apply_table(&mut harness, TableKind::AlignmentPoints, false).unwrap_err(),
-        "needs a confirmation"
-    );
-    apply_table(&mut harness, TableKind::AlignmentPoints, true).unwrap();
+    // The point's row on main deleted: off main, still on the branch
+    // (nothing to confirm).
+    let p1 = key1.split_once('\t').unwrap().1.to_owned();
+    let shared = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .point_alignments(&p1)
+        .len();
+    apply_table(&mut harness, TableKind::AlignmentPoints, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let line = &r.model.line;
+        assert!(line.alignment_point(&p1).is_some(), "the point stays");
+        let on = line.point_alignments(&p1);
+        assert!(!on.contains(&"main".to_owned()), "{on:?}");
+        assert_eq!(on.len(), shared - 1);
+    }
     let r = harness.state_mut().ready().unwrap();
     let rows = TableKind::AlignmentPoints.rows(&r.model, 0);
     let mine: Vec<&crate::tables::Row> = rows.iter().filter(|x| x.cells[0] == "main").collect();
@@ -2211,6 +2226,21 @@ fn alignment_points_are_edited_in_their_table() {
         (mine[1].cells[3].parse::<f64>().unwrap() - e).abs() < 1e-6,
         "the new one second"
     );
+    // Its last rows deleted: the point goes.
+    let keys: Vec<String> = rows
+        .iter()
+        .filter(|x| x.key.split_once('\t').is_some_and(|(_, p)| p == p1))
+        .map(|x| x.key.clone())
+        .collect();
+    assert!(!keys.is_empty());
+    r.tables
+        .entry(TableKind::AlignmentPoints)
+        .or_default()
+        .deleted
+        .extend(keys);
+    apply_table(&mut harness, TableKind::AlignmentPoints, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.line.alignment_point(&p1).is_none());
 }
 
 /// Weather cases: changed, added (between two), deleted — written to the
@@ -2405,8 +2435,45 @@ fn alignment_points_are_added_edited_and_deleted_with_the_tools() {
     let mut kept = before.clone();
     kept.remove(1);
     assert_eq!(points(&mut harness), kept);
-    // Down to none: the alignment stays (a shared point asks first: it
-    // comes off the branch too).
+    // A shared point (on the branch too): the Delete tool asks which
+    // alignments; off the branch only, it stays on this one.
+    let shared = points(&mut harness).into_iter().find(|p| {
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .line
+            .point_alignments(p)
+            .len()
+            > 1
+    });
+    {
+        let p = shared.expect("a point on the branch too");
+        use_tool(
+            &mut harness,
+            Tool::Delete,
+            Selection::AlignmentPoint { id: p.clone() },
+            None,
+        );
+        {
+            let r = harness.state_mut().ready().unwrap();
+            let (id, ticks) = r.point_delete.as_mut().expect("asked which alignments");
+            assert_eq!(*id, p);
+            // Only the other alignments ticked.
+            for (a, on) in ticks.iter_mut() {
+                *on = *a != route;
+            }
+        }
+        harness.run();
+        harness.get_by_label("Take it off the ticked ones").click();
+        harness.run();
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.point_delete.is_none());
+        assert_eq!(r.model.line.point_alignments(&p), vec![route.clone()]);
+    }
+    // Down to none: the alignment stays (a shared point: "Delete from
+    // all", then the confirmation of what goes with it).
     while let Some(first) = points(&mut harness).first().cloned() {
         use_tool(
             &mut harness,
@@ -2414,13 +2481,12 @@ fn alignment_points_are_added_edited_and_deleted_with_the_tools() {
             Selection::AlignmentPoint { id: first.clone() },
             None,
         );
+        if harness.state_mut().ready().unwrap().point_delete.is_some() {
+            harness.get_by_label("Delete from all").click();
+            harness.run();
+        }
         let asked = harness.state_mut().ready().unwrap().confirm.is_some();
         if asked {
-            {
-                let r = harness.state_mut().ready().unwrap();
-                let (impact, _) = r.confirm.as_ref().unwrap();
-                assert!(impact.alignments_changed.contains(&"branch".to_owned()));
-            }
             harness.get_by_label("Delete all").click();
             harness.run();
         }

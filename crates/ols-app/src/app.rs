@@ -187,6 +187,9 @@ pub struct Ready {
     popup_serial: u64,
     /// A tool window is open.
     popup_open: bool,
+    /// The Delete tool on an alignment point on several alignments: the
+    /// point and its alignments, ticked to take it off.
+    pub point_delete: Option<(String, Vec<(String, bool)>)>,
     /// The strings are being taken into the library (its own command must
     /// not start it again).
     cataloguing: bool,
@@ -318,6 +321,7 @@ impl Ready {
             popup_at: egui::pos2(400.0, 200.0),
             popup_serial: 0,
             popup_open: false,
+            point_delete: None,
             cataloguing: false,
             popup_opened: None,
             popup_fresh: false,
@@ -1248,6 +1252,7 @@ impl Ready {
             self.goto.clone(),
             self.coord_dialog.clone(),
             self.move_dialog.clone(),
+            self.point_delete.clone(),
         );
         self.use_tool_at(u);
         log::info!(
@@ -1264,6 +1269,7 @@ impl Ready {
             || (self.goto.is_some() && self.goto != before.1)
             || (self.coord_dialog.is_some() && self.coord_dialog != before.2)
             || (self.move_dialog.is_some() && self.move_dialog != before.3)
+            || (self.point_delete.is_some() && self.point_delete != before.4)
         {
             self.popup_open = false;
         }
@@ -1304,6 +1310,14 @@ impl Ready {
                 let id = id.clone();
                 self.select(target);
                 self.use_tool_on(&id);
+            }
+            // A point on several alignments: which to take it off (a window).
+            (Tool::Delete, Selection::AlignmentPoint { id })
+                if self.model.line.point_alignments(id).len() > 1 =>
+            {
+                let on = self.model.line.point_alignments(id);
+                self.point_delete = Some((id.clone(), on.into_iter().map(|a| (a, true)).collect()));
+                self.select(target);
             }
             (Tool::Delete, _) => {
                 if let Some(action) = delete_action(&self.model.line, &target) {
@@ -2994,6 +3008,7 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         || r.coord_dialog.is_some()
         || r.route_choice.is_some()
         || r.move_dialog.is_some()
+        || r.point_delete.is_some()
         || r.confirm.is_some()
         || r.editor.is_some()
         || r.display_window.is_some()
@@ -3406,6 +3421,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
     move_window(ctx, r);
+    point_delete_window(ctx, r);
     first_steps_window(ctx, r);
     alignment_windows(ctx, r);
     editor_window(ctx, r, rs);
@@ -4614,6 +4630,95 @@ fn circuit_warning(mates: &[crate::editors::CircuitMate]) -> String {
         "Also changed, the same circuit: {}. Apply again to change them all.",
         list.join(", ")
     )
+}
+
+/// The Delete tool's window for an alignment point on several alignments:
+/// off all of them (the point deleted) or off the ones ticked; Escape
+/// closes it.
+fn point_delete_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some((id, mut ticks)) = r.point_delete.clone() else {
+        return;
+    };
+    // None: still open; Some(None): delete it; Some(Some(list)): off these.
+    let mut chosen: Option<Option<Vec<String>>> = None;
+    let mut close = false;
+    let stored = r.model.stored_line().unwrap_or(&r.model.line).clone();
+    tool_window(r, "point-delete", format!("Delete alignment point {id}")).show(ctx, |ui| {
+        ui.label(format!(
+            "{id} is on {} alignments. Delete it from all of them, or take it off the ones ticked \
+             (it stays on the others; the points around keep their order).",
+            ticks.len()
+        ));
+        egui::ScrollArea::vertical()
+            .max_height(220.0)
+            .show(ui, |ui| {
+                for (a, on) in &mut ticks {
+                    let route = stored
+                        .alignment_by_id(a)
+                        .map_or(String::new(), |x| x.route.clone());
+                    ui.checkbox(on, format!("{a} (route {route})"));
+                }
+            });
+        ui.horizontal(|ui| {
+            if ui.small_button("tick all").clicked() {
+                ticks.iter_mut().for_each(|t| t.1 = true);
+            }
+            if ui.small_button("tick none").clicked() {
+                ticks.iter_mut().for_each(|t| t.1 = false);
+            }
+        });
+        ui.separator();
+        ui.horizontal(|ui| {
+            if ui
+                .button("Delete from all")
+                .on_hover_text("The point is deleted: off every alignment")
+                .clicked()
+            {
+                chosen = Some(None);
+            }
+            let ticked: Vec<String> = ticks.iter().filter(|t| t.1).map(|t| t.0.clone()).collect();
+            if ui
+                .add_enabled(
+                    !ticked.is_empty(),
+                    egui::Button::new("Take it off the ticked ones"),
+                )
+                .on_hover_text("Off these alignments only (all ticked: the point is deleted)")
+                .clicked()
+            {
+                chosen = Some((ticked.len() < ticks.len()).then_some(ticked));
+            }
+            close |= ui.button("Cancel").clicked();
+        });
+    });
+    close |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    match chosen {
+        Some(None) => {
+            r.point_delete = None;
+            r.perform(crate::edit::Action::Delete {
+                kind: ols_session::Kind::AlignmentPoint,
+                id,
+                confirm: false,
+            });
+        }
+        Some(Some(off)) => {
+            r.point_delete = None;
+            let mut alignments = stored.alignments.clone();
+            for a in alignments.iter_mut().filter(|a| off.contains(&a.id)) {
+                a.points.retain(|p| *p != id);
+            }
+            match crate::editors::alignments_command(&stored, &alignments) {
+                Ok(command) => {
+                    r.perform(crate::edit::Action::Command {
+                        what: format!("took alignment point {id} off {}", off.join(", ")),
+                        command,
+                    });
+                }
+                Err(e) => r.status = Some((e, true)),
+            }
+        }
+        None if close => r.point_delete = None,
+        None => r.point_delete = Some((id, ticks)),
+    }
 }
 
 /// The "Move structure" window: E, N, z (or on the ground), previewed
