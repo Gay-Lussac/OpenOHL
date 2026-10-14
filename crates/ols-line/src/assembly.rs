@@ -1054,4 +1054,38 @@ mod tests {
         t.check_strings_as_stored().unwrap();
         assert!(t.check_strings().unwrap_err().contains("FROM-TYPE"));
     }
+
+    /// A jumper's helping string on a typed structure, hanging from a
+    /// point its type gives: accepted as stored (checked once merged); on
+    /// a structure without a type, or from another string's wire point,
+    /// refused.
+    #[test]
+    fn a_helping_string_may_hang_from_a_type_point() {
+        let mut t = structure(&[]);
+        t.wires = vec![
+            WirePoint {
+                label: "JH".into(),
+                position: [1.0, 2.0, 3.0],
+                ..Default::default()
+            },
+            WirePoint {
+                label: "N".into(),
+                position: [1.0, 2.0, 5.0],
+                ..Default::default()
+            },
+        ];
+        t.strings = vec![InsulatorString {
+            label: "S-JH".into(),
+            top: "A-FROM-TYPE".into(),
+            wire: "JH".into(),
+            length: 2.0,
+            ..Default::default()
+        }];
+        assert!(crate::clamp_strings(&t, "JH").is_err());
+        t.structure_type = Some("T".into());
+        crate::clamp_strings(&t, "JH").unwrap();
+        t.strings[0].top = "N".into();
+        let why = crate::clamp_strings(&t, "JH").unwrap_err();
+        assert!(why.contains("strings below other strings"), "{why}");
+    }
 }
