@@ -375,7 +375,7 @@ impl LibraryKind {
         LibraryKind::LoadCases,
     ];
 
-    /// Its name in menus: "<title> library" (once).
+    /// Its name in menus: its title and "library" (once).
     pub fn library_name(self) -> String {
         let t = self.title();
         if t.ends_with("library") {

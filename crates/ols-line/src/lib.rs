@@ -324,7 +324,16 @@ pub fn clamp_strings<'a>(
             strings.len()
         ));
     }
-    if let Some(s) = strings.iter().find(|s| structure.point(&s.top).is_none()) {
+    // A top the structure does not have (yet): a typed structure as
+    // stored, its type giving the point (checked once merged, where the
+    // strings are checked in full).
+    let from_type = |s: &InsulatorString| {
+        structure.structure_type.is_some() && structure.node(&s.top).is_none()
+    };
+    if let Some(s) = strings
+        .iter()
+        .find(|s| structure.point(&s.top).is_none() && !from_type(s))
+    {
         return Err(format!(
             "string {} to wire point {wire} on structure {id} hangs from \"{}\", not a structure point: \
              strings below other strings do not hold jumper clamps yet",
