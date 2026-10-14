@@ -87,6 +87,26 @@ fn read_on_routes(e: &Element) -> Result<Vec<String>, String> {
         .collect()
 }
 
+/// Values of plugin columns: `<field key="plugin.column" value="…"/>`.
+fn write_fields(out: &mut String, fields: &ols_line::Fields) {
+    for (key, value) in fields {
+        out.push_str("    <field");
+        attr(out, "key", key);
+        attr(out, "value", value);
+        out.push_str("/>\n");
+    }
+}
+
+/// The `<field>` children.
+fn read_fields(e: &Element) -> Result<ols_line::Fields, String> {
+    e.children_named("field")
+        .map(|f| {
+            check(f, &["key", "value"], &[])?;
+            Ok((text(f, "key")?.to_owned(), text(f, "value")?.to_owned()))
+        })
+        .collect()
+}
+
 fn write_alignment(out: &mut String, a: &Alignment) {
     let Alignment {
         id,
@@ -95,13 +115,14 @@ fn write_alignment(out: &mut String, a: &Alignment) {
         route,
         points,
         legacy: _,
+        fields,
     } = a;
     out.push_str("  <alignment");
     attr(out, "id", id);
     nonempty(out, "name", name);
     nonempty(out, "description", description);
     attr(out, "route", route);
-    if points.is_empty() {
+    if points.is_empty() && fields.is_empty() {
         out.push_str("/>\n");
         return;
     }
@@ -111,6 +132,7 @@ fn write_alignment(out: &mut String, a: &Alignment) {
         attr(out, "ref", p);
         out.push_str("/>\n");
     }
+    write_fields(out, fields);
     out.push_str("  </alignment>\n");
 }
 
@@ -215,6 +237,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         omit_sets,
         members,
         routes,
+        fields,
     } = s;
     out.push_str("  <structure");
     attr(out, "id", id);
@@ -233,6 +256,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         && omit_sets.is_empty()
         && members.is_empty()
         && routes.is_empty()
+        && fields.is_empty()
     {
         out.push_str("/>\n");
         return;
@@ -326,6 +350,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         let list: Vec<String> = m.iter().flat_map(|p| p.iter().map(|v| num(*v))).collect();
         let _ = writeln!(out, "    <member>{}</member>", list.join(" "));
     }
+    write_fields(out, fields);
     out.push_str("  </structure>\n");
 }
 
@@ -345,6 +370,7 @@ fn write_section(out: &mut String, s: &Section) {
         loads,
         color,
         calculation,
+        fields,
     } = s;
     out.push_str("  <section");
     attr(out, "id", id);
@@ -397,6 +423,7 @@ fn write_section(out: &mut String, s: &Section) {
         }
         out.push_str("/>\n");
     }
+    write_fields(out, fields);
     out.push_str("  </section>\n");
 }
 
@@ -421,6 +448,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         bundle,
         bundle_spacing,
         bundle_rotation_deg,
+        fields,
     } = j;
     out.push_str("  <jumper");
     attr(out, "id", id);
@@ -476,6 +504,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         attr(out, "clamp_length", &num(*clamp_length));
         out.push_str("/>\n");
     }
+    write_fields(out, fields);
     out.push_str("  </jumper>\n");
 }
 
@@ -489,6 +518,7 @@ fn write_system(out: &mut String, s: &System) {
         frequency_hz,
         phases,
         color,
+        fields,
     } = s;
     out.push_str("  <system");
     attr(out, "id", id);
@@ -519,6 +549,7 @@ fn write_system(out: &mut String, s: &System) {
         }
         out.push_str("/>\n");
     }
+    write_fields(out, fields);
     out.push_str("  </system>\n");
 }
 
@@ -565,12 +596,19 @@ pub fn to_xml(line: &Line) -> String {
             description,
             legacy_alignment: _,
             legacy_structures: _,
+            fields,
         } = r;
         out.push_str("  <route");
         attr(&mut out, "id", id);
         nonempty(&mut out, "name", name);
         nonempty(&mut out, "description", description);
-        out.push_str("/>\n");
+        if fields.is_empty() {
+            out.push_str("/>\n");
+        } else {
+            out.push_str(">\n");
+            write_fields(&mut out, fields);
+            out.push_str("  </route>\n");
+        }
     }
     for a in alignments {
         write_alignment(&mut out, a);
@@ -723,11 +761,12 @@ fn read_alignment_of(a: &Element, id: String) -> Result<Alignment, String> {
     check(
         a,
         &["id", "name", "description", "route"],
-        &["point", "on_route"],
+        &["point", "on_route", "field"],
     )?;
     let mut out = Alignment::new(&id, &owned(a, "route").unwrap_or_default(), Vec::new());
     out.name = owned(a, "name").unwrap_or_default();
     out.description = owned(a, "description").unwrap_or_default();
+    out.fields = read_fields(a)?;
     let refs: Vec<&Element> = a
         .children_named("point")
         .filter(|p| p.attr("ref").is_some())
@@ -821,6 +860,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             "omit",
             "member",
             "on_route",
+            "field",
         ],
     )?;
     let id = text(e, "id")?.to_owned();
@@ -988,6 +1028,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
         members,
         routes: read_on_routes(e)?,
         id,
+        fields: read_fields(e)?,
     })
 }
 
@@ -1007,7 +1048,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
             "calculation",
             "description",
         ],
-        &["point", "stringing", "load"],
+        &["point", "stringing", "load", "field"],
     )?;
     let calculation = match e.attr("calculation") {
         None => Calculation::default(),
@@ -1060,6 +1101,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
             .collect::<Result<_, String>>()?,
         color: owned(e, "color"),
         calculation,
+        fields: read_fields(e)?,
     })
 }
 
@@ -1083,7 +1125,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             "bundle_rotation_deg",
             "description",
         ],
-        &["from", "to", "support", "clamp"],
+        &["from", "to", "support", "clamp", "field"],
     )?;
     let supports = e
         .children_named("clamp")
@@ -1134,6 +1176,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         bundle: optional(e, "bundle")?,
         bundle_spacing: optional(e, "bundle_spacing")?,
         bundle_rotation_deg: optional(e, "bundle_rotation_deg")?,
+        fields: read_fields(e)?,
     })
 }
 
@@ -1149,7 +1192,7 @@ fn read_system(e: &Element) -> Result<System, String> {
             "color",
             "description",
         ],
-        &["phase"],
+        &["phase", "field"],
     )?;
     let kind = match e.attr("kind") {
         None => SystemKind::default(),
@@ -1176,6 +1219,7 @@ fn read_system(e: &Element) -> Result<System, String> {
                 })
             })
             .collect::<Result<_, String>>()?,
+        fields: read_fields(e)?,
     })
 }
 
@@ -1218,7 +1262,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             check(
                 r,
                 &["id", "name", "description"],
-                &["alignment", "structure"],
+                &["alignment", "structure", "field"],
             )?;
             let structures: Vec<String> = r
                 .children_named("structure")
@@ -1234,6 +1278,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
                 description: owned(r, "description").unwrap_or_default(),
                 legacy_alignment: read_alignment(r.child("alignment"))?,
                 legacy_structures: legacy.then_some(structures),
+                fields: read_fields(r)?,
             })
         })
         .collect::<Result<_, String>>()?;

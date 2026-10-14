@@ -81,6 +81,17 @@
     <xs:attribute name="id" type="xs:string" use="required"/>
   </xs:complexType>
 
+  <xs:complexType name="field">
+    <xs:annotation>
+      <xs:documentation>The value of a table column added by a plugin, by
+        key "plugin.column" (e.g. a design code's insulation level): kept
+        with the object, used by the plugin, shown (unused) where it is not
+        installed.</xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="key" type="xs:string" use="required"/>
+    <xs:attribute name="value" type="xs:string" use="required"/>
+  </xs:complexType>
+
   <xs:complexType name="alignment">
     <xs:annotation>
       <xs:documentation>An alignment: the route it belongs to and its
@@ -109,6 +120,7 @@
           <xs:attribute name="own_routes" type="xs:boolean" default="false"/>
         </xs:complexType>
       </xs:element>
+      <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>
     </xs:sequence>
     <xs:attribute name="id" type="xs:string"/>
     <xs:attribute name="name" type="xs:string"/>
@@ -177,6 +189,7 @@
                   <xs:attribute name="ref" type="xs:string" use="required"/>
                 </xs:complexType>
               </xs:element>
+              <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
             <xs:attribute name="name" type="xs:string"/>
@@ -296,6 +309,7 @@
                     triples.</xs:documentation>
                 </xs:annotation>
               </xs:element>
+              <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
             <xs:attributeGroup ref="ols:xyz"/>
@@ -322,6 +336,7 @@
                   <xs:attribute name="code" type="xs:string"/>
                 </xs:complexType>
               </xs:element>
+              <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
             <xs:attribute name="description" type="xs:string"/>
@@ -350,6 +365,7 @@
                   <xs:attribute name="ice_area" type="xs:double"/>
                 </xs:complexType>
               </xs:element>
+              <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
             <xs:attribute name="description" type="xs:string"/>
@@ -388,6 +404,7 @@
                   <xs:attribute name="clamp_length" type="xs:double" default="0.1"/>
                 </xs:complexType>
               </xs:element>
+              <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
             <xs:attribute name="id" type="xs:string" use="required"/>
             <xs:attribute name="description" type="xs:string"/>

@@ -118,6 +118,7 @@ fn without_component(
         omit: Vec::new(),
         omit_sets: Vec::new(),
         members: Vec::new(),
+        fields: Default::default(),
     };
     let c = probe.component(label);
     let gone: Vec<String> = c

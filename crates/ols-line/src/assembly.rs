@@ -179,6 +179,7 @@ impl Structure {
             omit: Vec::new(),
             omit_sets: Vec::new(),
             members: Vec::new(),
+            fields: Default::default(),
         }
     }
 
@@ -808,6 +809,7 @@ mod tests {
             omit: Vec::new(),
             omit_sets: Vec::new(),
             members: Vec::new(),
+            fields: Default::default(),
         }
     }
 

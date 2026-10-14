@@ -2662,6 +2662,7 @@ impl SectionForm {
             loads: old.map_or_else(Vec::new, |o| o.loads.clone()),
             color: self.color.clone(),
             calculation: self.calculation,
+            fields: old.map_or_else(Default::default, |o| o.fields.clone()),
         }
     }
 

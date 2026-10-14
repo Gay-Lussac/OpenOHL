@@ -343,6 +343,7 @@ pub fn spotted_line(
             loads: Vec::new(),
             color: None,
             calculation: Default::default(),
+            fields: Default::default(),
         })
         .collect();
     out.jumpers.clear();

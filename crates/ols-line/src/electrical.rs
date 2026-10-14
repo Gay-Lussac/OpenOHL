@@ -103,6 +103,10 @@ pub struct System {
     /// default from [`SYSTEM_COLORS`] by its place in the line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Values of columns added by plugins, by `plugin.column`
+    /// ([`crate::Fields`]).
+    #[serde(default, skip_serializing_if = "crate::Fields::is_empty")]
+    pub fields: crate::Fields,
 }
 
 /// Default system colours, by the system's place in the line (repeating).
@@ -737,6 +741,7 @@ mod tests {
                     code: None,
                 })
                 .collect(),
+            fields: Default::default(),
         }
     }
 

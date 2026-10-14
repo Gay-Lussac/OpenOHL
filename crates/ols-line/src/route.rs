@@ -174,6 +174,10 @@ pub struct Route {
     /// …with its structures in order ([`Line::upgrade_routes`]).
     #[serde(default, rename = "structures", skip_serializing)]
     pub legacy_structures: Option<Vec<String>>,
+    /// Values of columns added by plugins, by `plugin.column`
+    /// ([`crate::Fields`]).
+    #[serde(default, skip_serializing_if = "crate::Fields::is_empty")]
+    pub fields: crate::Fields,
 }
 
 impl Route {
@@ -185,6 +189,7 @@ impl Route {
             description: String::new(),
             legacy_alignment: Vec::new(),
             legacy_structures: None,
+            fields: crate::Fields::new(),
         }
     }
 
@@ -215,6 +220,10 @@ pub struct Alignment {
     /// its own points ([`Line::upgrade_routes`]).
     #[serde(skip)]
     pub legacy: Option<(Vec<String>, Vec<OldPoint>)>,
+    /// Values of columns added by plugins, by `plugin.column`
+    /// ([`crate::Fields`]).
+    #[serde(default, skip_serializing_if = "crate::Fields::is_empty")]
+    pub fields: crate::Fields,
 }
 
 impl Alignment {
@@ -227,6 +236,7 @@ impl Alignment {
             route: route.to_owned(),
             points,
             legacy: None,
+            fields: Default::default(),
         }
     }
 }
@@ -245,6 +255,8 @@ struct AlignmentRepr {
     #[serde(default)]
     routes: Option<Vec<String>>,
     points: Vec<PointRef>,
+    #[serde(default)]
+    fields: crate::Fields,
 }
 
 #[derive(Deserialize)]
@@ -272,6 +284,7 @@ impl From<AlignmentRepr> for Alignment {
             route: r.route.unwrap_or_default(),
             points: ids,
             legacy,
+            fields: r.fields,
         }
     }
 }
