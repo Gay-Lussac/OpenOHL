@@ -198,10 +198,13 @@ pub struct Jumper {
     /// `bending_stiffness` is given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stiffness_factor: Option<f64>,
-    /// Angle at which the jumper leaves the clamp at `from`, below the
-    /// conductor's axis, degrees (0: straight on along the conductor;
-    /// negative: up); default [`jumper::DEFAULT_TERMINAL_ANGLE_DEG`]. Used
-    /// where `from` is a section's end clamp.
+    /// Angle at which the jumper leaves the clamp at `from`, degrees, from
+    /// its tension string's line (clamp towards the string's top; two
+    /// strings: the middle of their tops; none: the conductor's axis),
+    /// turned within the conductor's plane towards the weather case's load
+    /// (0: along the string; negative: the other way); default
+    /// [`jumper::DEFAULT_TERMINAL_ANGLE_DEG`]. Used where `from` is a
+    /// section's end clamp.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle_from_deg: Option<f64>,
     /// The same at `to`.

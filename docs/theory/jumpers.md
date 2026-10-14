@@ -35,7 +35,7 @@ If neither end is clamped (both ends are taps on through wires), or `bending_sti
 
 ## Clamped jumper: an elastic rod
 
-Where an end is the first or last point of a section, the clamp holds the jumper. It leaves along the conductor's axis there (the span's tangent at the clamp, continued), turned down by `angle_from_deg` / `angle_to_deg` (default 30°). The cable's bending stiffness \\( EI \\) carries that direction into the jumper. The jumper can therefore not swing in the wind as if hinged.
+Where an end is the first or last point of a section, the clamp holds the jumper. It leaves at `angle_from_deg` / `angle_to_deg` (default 30°) from its tension string's line (from the clamp towards the string's top; two strings: the middle of their tops; none: the conductor's axis at the clamp), turned within the conductor's plane towards the weather case's load on it (straight down in still air, tilted with the wind as the conductor swings): with the string's base direction \\( \\hat s \\) and the load per metre \\( \\mathbf q \\), the exit direction is \\( \\hat s\\cos\\alpha + \\hat n\\sin\\alpha \\), \\( \\hat n \\) the unit part of \\( \\mathbf q \\) square to \\( \\hat s \\) (along the string: no turn). The load is the jumper's own cable's in the case (a jumper of the line's cable: the conductor's). The cable's bending stiffness \\( EI \\) carries that direction into the jumper. The jumper can therefore not swing in the wind as if hinged.
 
 The model is an **inextensible elastic rod**:
 
@@ -135,7 +135,7 @@ Physical values for typical high-voltage jumpers (indications to check a model a
 | Tension | 50–1 000 N | tens of newtons for a short light jumper, hundreds with ice or wind |
 | \\( EI \\) (estimated, \\( k = 0.2 \\)) | 15–1 500 N·m² | grows with \\( E d^4 \\): ~17 for a 13 mm wire, ~455 for Drake 26/7 (28 mm), ~1 500 for a 40 mm conductor |
 | Reduction factor \\( k \\) | 0.2–0.35 | default 0.2 |
-| Clamp exit angle | 0–45° below the conductor's axis | default 30°; 0: straight on |
+| Clamp exit angle | 0–45° from the tension string's line, towards the load | default 30°; 0: along the string |
 | Change of sag between −20 °C and 80 °C | a few cm to a few dm | the length changes by \\( \varepsilon \approx 2 \cdot 10^{-3} \\); the clamps move too, so the sag below the chord can even shrink when hot |
 
 Computation (release build; times for one core — jumpers are independent, so a weather case solves them on all the cores):
