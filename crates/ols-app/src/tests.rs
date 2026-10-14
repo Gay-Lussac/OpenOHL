@@ -5223,15 +5223,15 @@ fn section_labels_and_sags_per_view() {
     use crate::annotations::{Kind, View, notes};
     let mut m = synthetic();
     for v in View::ALL {
-        assert!(notes(&m, 0, v).is_empty());
+        assert!(notes(&m, 0, v, None).is_empty());
     }
     m.section_display.label[View::Plan as usize] = true;
     m.section_display.sag[View::ThreeD as usize] = true;
-    let plan = notes(&m, 0, View::Plan);
+    let plan = notes(&m, 0, View::Plan, None);
     assert_eq!(plan.len(), m.line.sections.len());
     assert!(plan.iter().all(|n| n.kind == Kind::Label));
-    assert!(notes(&m, 0, View::Profile).is_empty());
-    let sags = notes(&m, 0, View::ThreeD);
+    assert!(notes(&m, 0, View::Profile, None).is_empty());
+    let sags = notes(&m, 0, View::ThreeD, None);
     let spans: usize = m.cases[0].shapes.iter().map(|s| s.spans.len()).sum();
     assert_eq!(sags.len(), spans);
     let first = &m.cases[0].shapes[0].spans[0];
@@ -9146,7 +9146,7 @@ fn descriptions_are_typed_and_shown_as_labels() {
     assert_eq!(line.systems[0].description, "220 kV");
     // Labels: none until asked for; then the structures, points, strings,
     // wire points, with their descriptions when ticked.
-    assert!(object_notes(&r.model, 0, View::Plan).is_empty());
+    assert!(object_notes(&r.model, 0, View::Plan, None).is_empty());
     let d = &mut r.model.section_display;
     for ticks in [
         &mut d.structure_label,
@@ -9157,7 +9157,7 @@ fn descriptions_are_typed_and_shown_as_labels() {
     ] {
         ticks[View::Plan as usize] = true;
     }
-    let notes = object_notes(&r.model, 0, View::Plan);
+    let notes = object_notes(&r.model, 0, View::Plan, None);
     assert!(notes.iter().all(|n| n.kind == Kind::Object));
     let texts: Vec<&str> = notes.iter().map(|n| n.text.as_str()).collect();
     assert!(texts.contains(&"T2 — angle tower"), "{texts:?}");
@@ -9175,7 +9175,7 @@ fn descriptions_are_typed_and_shown_as_labels() {
     // it hangs from (a little down the string).
     assert!(!texts.iter().any(|t| t.contains(" top → ")), "{texts:?}");
     r.model.section_display.insulator_label[View::Plan as usize] = true;
-    let notes = object_notes(&r.model, 0, View::Plan);
+    let notes = object_notes(&r.model, 0, View::Plan, None);
     let top = &t2.string("S1").unwrap().top;
     let n = notes
         .iter()
@@ -9196,7 +9196,7 @@ fn descriptions_are_typed_and_shown_as_labels() {
         .flat_map(|s| &s.strings)
         .find_map(|x| x.insulator.clone());
     r.model.section_display.library_label[View::Plan as usize] = true;
-    let notes = object_notes(&r.model, 0, View::Plan);
+    let notes = object_notes(&r.model, 0, View::Plan, None);
     if let Some(id) = labelled {
         assert!(notes.iter().any(|n| n.text == format!("[{id}]")));
     }
@@ -10847,7 +10847,7 @@ fn a_structure_is_added_on_the_point_clicked() {
     }
     let r = harness.state_mut().ready().unwrap();
     r.model.section_display.alignment_point_label[View::Plan as usize] = true;
-    let notes = object_notes(&r.model, 0, View::Plan);
+    let notes = object_notes(&r.model, 0, View::Plan, None);
     assert!(notes.iter().any(|n| n.text == "PX"));
 }
 
@@ -11029,4 +11029,36 @@ fn a_span_is_picked_in_any_weather_case_drawn() {
     assert_eq!(r.model.selection_case, Some(2));
     r.select(Selection::Structure("T2".into()));
     assert_eq!(r.model.selection_case, None);
+}
+
+/// Labels: several weather cases drawn give one label per section (its
+/// first case); in 3D only those within the label distance of the eye
+/// are built.
+#[test]
+fn labels_are_one_per_section_and_near_only() {
+    use crate::annotations::{View, notes, object_notes};
+    let mut model = synthetic();
+    model.shown_cases = vec![0, 2];
+    for k in 0..model.cases.len() {
+        model.ensure_solved(k);
+    }
+    model.section_display.label[View::ThreeD as usize] = true;
+    model.section_display.structure_label[View::ThreeD as usize] = true;
+    let all = notes(&model, 0, View::ThreeD, None);
+    assert_eq!(
+        all.len(),
+        model.line.sections.len(),
+        "one label per section"
+    );
+    // Far from everything: nothing built; near the first structure: some.
+    let s = model.line.structures[0].position;
+    let far = Some(([s[0] + 1e6, s[1], s[2]], 1500.0));
+    assert!(notes(&model, 0, View::ThreeD, far).is_empty());
+    assert!(object_notes(&model, 0, View::ThreeD, far).is_empty());
+    let near = Some((s, 50.0));
+    assert!(!object_notes(&model, 0, View::ThreeD, near).is_empty());
+    assert_eq!(
+        model.section_display.label_range(),
+        crate::annotations::DEFAULT_LABEL_DISTANCE
+    );
 }

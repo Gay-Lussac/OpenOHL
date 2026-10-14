@@ -603,13 +603,16 @@ impl View3d {
         let screen =
             |p: [f64; 3]| project(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32));
         let eye = camera.eye();
+        // Only within the label distance of the eye (not built beyond).
+        let near = Some((eye, model.section_display.label_range()));
         let mut placed: Vec<(f64, egui::Pos2, crate::annotations::Note)> =
-            crate::annotations::notes(model, case, crate::annotations::View::ThreeD)
+            crate::annotations::notes(model, case, crate::annotations::View::ThreeD, near)
                 .into_iter()
                 .chain(crate::annotations::object_notes(
                     model,
                     case,
                     crate::annotations::View::ThreeD,
+                    near,
                 ))
                 .filter_map(|note| {
                     let p = crate::annotations::anchor(&note, rect, screen)?;

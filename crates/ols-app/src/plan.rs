@@ -365,14 +365,16 @@ impl PlanView {
             }
         }
         let mut placer = crate::annotations::Placer::default();
-        for note in crate::annotations::notes(model, case, crate::annotations::View::Plan) {
+        for note in crate::annotations::notes(model, case, crate::annotations::View::Plan, None) {
             let [a, b] = note.ends.map(to_screen);
             if a.distance(b) >= crate::annotations::MIN_SPAN_PX {
                 placer.paint(&painter, to_screen(note.at), &note);
             }
         }
         // Labels of the structures, their points, strings, wire points.
-        for note in crate::annotations::object_notes(model, case, crate::annotations::View::Plan) {
+        for note in
+            crate::annotations::object_notes(model, case, crate::annotations::View::Plan, None)
+        {
             let p = to_screen(note.at);
             if rect.contains(p) {
                 placer.paint(&painter, p, &note);
