@@ -849,33 +849,61 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 Selection::Span { section, span } => {
-                    let shown = model.section_case(section, case);
-                    if let Some(shape) = model.shape(section, case)
-                        && let Some(sp) = shape.spans.get(*span)
-                    {
-                        let lines = match model.cases[shown]
-                            .bundles
-                            .spans
-                            .get(&(section.clone(), *span))
-                        {
-                            Some(l) => l.clone(),
-                            None => vec![sp.points.clone()],
+                    // In every case it is drawn in (both wind sides), the
+                    // copy clicked (else the first case's) the strongest.
+                    let cases = model.section_cases(section, case);
+                    let strong = model
+                        .selection_case
+                        .filter(|k| cases.contains(k))
+                        .unwrap_or(cases[0]);
+                    for k in cases {
+                        let Some(c) = model.cases.get(k) else {
+                            continue;
                         };
-                        let width = if lines.len() > 1 { 3.0 } else { 5.0 };
-                        for l in &lines {
-                            s.polyline(l, hi, width);
+                        for (side, solved) in c.drawn().enumerate() {
+                            let Some(sp) = solved
+                                .shapes
+                                .iter()
+                                .find(|x| x.section == *section)
+                                .and_then(|x| x.spans.get(*span))
+                            else {
+                                continue;
+                            };
+                            let lines = match solved.bundles.spans.get(&(section.clone(), *span)) {
+                                Some(l) => l.clone(),
+                                None => vec![sp.points.clone()],
+                            };
+                            let main = k == strong && side == 0;
+                            let width = match (main, lines.len() > 1) {
+                                (true, true) => 3.0,
+                                (true, false) => 5.0,
+                                (false, true) => 1.5,
+                                (false, false) => 2.5,
+                            };
+                            for l in &lines {
+                                s.polyline(l, hi, width);
+                            }
                         }
                     }
                 }
                 Selection::Jumper(id) => {
-                    if let Some(j) = model
-                        .cases
-                        .get(case)
-                        .and_then(|c| c.jumpers.iter().find(|x| &x.jumper == id))
-                    {
-                        let (_, lines) = jumper_lines(line, j, &model.cases[case].bundles);
-                        for l in &lines {
-                            s.polyline(l, hi, 3.0);
+                    let cases = model.shown(case);
+                    let strong = model
+                        .selection_case
+                        .filter(|k| cases.contains(k))
+                        .unwrap_or(case);
+                    for k in cases {
+                        let Some(c) = model.cases.get(k) else {
+                            continue;
+                        };
+                        for (side, solved) in c.drawn().enumerate() {
+                            if let Some(j) = solved.jumpers.iter().find(|x| &x.jumper == id) {
+                                let (_, lines) = jumper_lines(line, j, &solved.bundles);
+                                let width = if k == strong && side == 0 { 3.0 } else { 1.5 };
+                                for l in &lines {
+                                    s.polyline(l, hi, width);
+                                }
+                            }
                         }
                     }
                 }
@@ -911,8 +939,22 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 Selection::String { structure, label } => {
-                    // Where it is drawn (both wind sides), else as given.
-                    let mut drawn = crate::selection::string_pieces(model, case)
+                    // Where it is drawn in every case drawn (both wind
+                    // sides), else as given; the copies in the case clicked
+                    // (else the one shown) the strongest.
+                    let strong = model.selection_case.unwrap_or(case);
+                    for k in crate::selection::drawn_cases(model, case) {
+                        if k == strong {
+                            continue;
+                        }
+                        for (a, b) in crate::selection::string_pieces(model, k)
+                            .remove(&(structure.clone(), label.clone()))
+                            .unwrap_or_default()
+                        {
+                            s.polyline(&[a, b], hi, 2.0);
+                        }
+                    }
+                    let mut drawn = crate::selection::string_pieces(model, strong)
                         .remove(&(structure.clone(), label.clone()))
                         .unwrap_or_default();
                     if drawn.is_empty()

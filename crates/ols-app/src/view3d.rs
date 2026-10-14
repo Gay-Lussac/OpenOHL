@@ -23,6 +23,9 @@ use crate::selection::{self, Selection};
 /// State of the 3D view.
 #[derive(Default)]
 pub struct View3d {
+    /// The weather case of the copy picked by the last click (`Some(None)`:
+    /// the case shown); taken by the app.
+    pub picked_case: Option<Option<usize>>,
     /// Camera (set when a model is shown).
     pub camera: Option<Camera>,
     /// Navigation controls.
@@ -406,9 +409,11 @@ impl View3d {
             let cam = *camera;
             let project = cam.projector(size);
             let started = std::time::Instant::now();
-            let picked = selection::pick_in_model(model, case, snaps, at, radius, |p| {
-                project(p).map(|(q, _)| q)
-            });
+            let (picked, picked_case) =
+                selection::pick_in_model_case(model, case, snaps, at, radius, |p| {
+                    project(p).map(|(q, _)| q)
+                });
+            self.picked_case = Some(picked_case);
             log::info!(
                 "3D view: picked {} in {:.1?}",
                 picked.describe(),

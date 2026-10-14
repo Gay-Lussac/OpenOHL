@@ -445,6 +445,10 @@ pub struct Model {
     /// The weather cases shown for the whole line (Display weather cases;
     /// empty: the case passed to the views).
     pub shown_cases: Vec<usize>,
+    /// The weather case of the copy clicked last, where several are drawn
+    /// and it is not the one shown (highlighted in the views and the
+    /// properties); `None`: the case shown.
+    pub selection_case: Option<usize>,
     /// Project lines shown next to the line worked on (Versions menu).
     pub other_lines: Vec<OtherLine>,
     /// Project lines another user changed since the last frame (server
@@ -1838,6 +1842,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         editing,
         display_cases: Default::default(),
         shown_cases: vec![0],
+        selection_case: None,
         other_lines: Vec::new(),
         lines_changed: Vec::new(),
         hidden_classes,

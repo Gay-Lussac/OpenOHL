@@ -10973,3 +10973,60 @@ fn a_jumper_is_laid_through_suspension_strings() {
     assert!((k.supports[0].at - 3.0 / 8.0).abs() < 1e-12);
     assert_eq!(jumper_pieces(&k), vec![3.0, 5.0]);
 }
+
+/// Several weather cases drawn: a span is picked on any of its copies,
+/// the case of the copy clicked reported (`None`: the case shown); the
+/// app keeps it (highlight, properties) until something is selected
+/// otherwise.
+#[test]
+fn a_span_is_picked_in_any_weather_case_drawn() {
+    use crate::selection::{Snaps, pick_in_model_case};
+    let mut model = synthetic();
+    model.shown_cases = vec![0, 2];
+    for k in 0..model.cases.len() {
+        model.ensure_solved(k);
+    }
+    let section = model.line.sections[0].id.clone();
+    let mid = |k: usize| {
+        let shape = model.cases[k]
+            .shapes
+            .iter()
+            .find(|s| s.section == section)
+            .unwrap();
+        let p = &shape.spans[0].points;
+        p[p.len() / 2]
+    };
+    let (m0, m2) = (mid(0), mid(2));
+    assert!(
+        (m0[2] - m2[2]).abs() > 0.5,
+        "the ice case sags lower: {m0:?} {m2:?}"
+    );
+    // Seen across the line (x, z on screen), 10 px per m.
+    let project = |p: [f64; 3]| Some([p[0] * 10.0, -p[2] * 10.0]);
+    let at = |p: [f64; 3]| project(p).unwrap();
+    let span = Selection::Span {
+        section: section.clone(),
+        span: 0,
+    };
+    assert_eq!(
+        pick_in_model_case(&model, 0, &Snaps::default(), at(m2), 3.0, project),
+        (span.clone(), Some(2))
+    );
+    assert_eq!(
+        pick_in_model_case(&model, 0, &Snaps::default(), at(m0), 3.0, project),
+        (span.clone(), None)
+    );
+    // The app keeps the case clicked; a selection made otherwise drops it.
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    r.view3d.picked_case = Some(Some(2));
+    r.selection = span.clone();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.selection_case, Some(2));
+    r.select(Selection::Structure("T2".into()));
+    assert_eq!(r.model.selection_case, None);
+}

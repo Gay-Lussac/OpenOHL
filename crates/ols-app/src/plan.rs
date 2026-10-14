@@ -14,6 +14,9 @@ use crate::selection::{self, Selection};
 /// State of the plan view.
 #[derive(Debug, Default)]
 pub struct PlanView {
+    /// The weather case of the copy picked by the last click (`Some(None)`:
+    /// the case shown); taken by the app.
+    pub picked_case: Option<Option<usize>>,
     /// Project coordinates at the centre of the view.
     centre: Option<[f64; 2]>,
     /// Pixels per metre.
@@ -211,7 +214,7 @@ impl PlanView {
         if (response.clicked() || response.double_clicked())
             && let Some(pos) = response.interact_pointer_pos()
         {
-            *selection = selection::pick_in_model(
+            let (picked, picked_case) = selection::pick_in_model_case(
                 model,
                 case,
                 snaps,
@@ -222,6 +225,8 @@ impl PlanView {
                     Some([f64::from(q.x), f64::from(q.y)])
                 },
             );
+            *selection = picked;
+            self.picked_case = Some(picked_case);
             if response.double_clicked()
                 && let Some(f) = selection.focus(model, case)
             {
