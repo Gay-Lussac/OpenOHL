@@ -307,7 +307,7 @@ structure `structure`. Spans are between consecutive points.
 | `supports` | `[JumperClamp]` | — | or: support clamps on a structure's strings, in order from `from` | — |
 | `bending_stiffness` | f64? | N·m² | EI; default estimated from the cable; 0: hinged | — |
 | `stiffness_factor` | f64? | 0–1 | share of the solid-bar EI for the estimate | — |
-| `angle_from_deg`, `angle_to_deg` | f64? | ° | exit angle below the conductor axis at a section's end clamp (−90…90) | — |
+| `angle_from_deg`, `angle_to_deg` | f64? | ° | exit angle at a section's end clamp from its tension string's line (clamp → top; none: the conductor's axis), turned towards the case's load in the conductor's plane (−90…90) | — |
 | `color`, `bundle`, `bundle_spacing`, `bundle_rotation_deg` | optional | — | default: those of the first section through `from` (`Line::jumper_section`) | — |
 
 `JumperClamp`: `structure` (optional; default the structure of the

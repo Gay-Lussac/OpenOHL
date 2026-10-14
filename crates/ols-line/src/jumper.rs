@@ -190,11 +190,12 @@ fn end_position(
         })
 }
 
-/// Angle of a jumper terminal below the conductor's axis when the jumper
-/// gives none, degrees. Terminals angled down are usual on dead-end
-/// clamps; a terminal straight on along a span rising to the structure
-/// points the jumper upwards, and the jumper then swings further in the
-/// wind than a hinged one (the bend at the clamps eases as it swings).
+/// Angle of a jumper terminal from its tension string's line (towards the
+/// load) when the jumper gives none, degrees. Terminals angled down are
+/// usual on dead-end clamps; a terminal straight along a string rising to
+/// the structure points the jumper upwards, and the jumper then swings
+/// further in the wind than a hinged one (the bend at the clamps eases as
+/// it swings).
 pub const DEFAULT_TERMINAL_ANGLE_DEG: f64 = 30.0;
 
 /// Least slack of a jumper, as a share of its length: shorter than its
@@ -203,24 +204,57 @@ pub const DEFAULT_TERMINAL_ANGLE_DEG: f64 = 30.0;
 /// for cutting a jumper to a sag.
 const TAUT: f64 = 1e-5;
 
-/// The direction a section's end clamp holds the jumper in: the
-/// conductor's axis out of the section (the span's tangent at the clamp,
-/// continued), turned down by the terminal angle; `None` when `point` is
-/// not the end of a solved section.
+/// The direction a section's end clamp holds the jumper in: along its
+/// tension string, from the clamp (where the section puts it in the
+/// weather case) back towards the string's top on the structure — two
+/// strings: towards the middle of their tops; none (the wire clamped to
+/// the structure): the conductor's axis out of the section — turned by
+/// the terminal angle within the conductor's plane, towards the case's
+/// load on it (`load`: weight, ice and wind; straight down in still air,
+/// tilted with the wind as the conductor swings), square to that line.
+/// `None` when `point` is not the end of a solved section.
 fn clamp_direction(
     line: &Line,
     shapes: &[SectionShape],
     point: &SectionPoint,
     terminal_deg: f64,
+    load: Vector3<f64>,
 ) -> Option<Vector3<f64>> {
     let axis = conductor_axis(line, shapes, point)?;
-    let flat = axis.xy().norm();
-    if flat < 1e-9 {
-        return Some(axis);
+    let base = end_position(line, shapes, point)
+        .ok()
+        .and_then(|clamp| string_axis(line, point, clamp))
+        .unwrap_or(axis);
+    let g = if load.norm() > 0.0 {
+        load.normalize()
+    } else {
+        -Vector3::z()
+    };
+    let across = g - base * base.dot(&g);
+    if across.norm() < 1e-9 {
+        // The load along the string: no plane to turn in.
+        return Some(base);
     }
-    let down = axis.z.atan2(flat) - terminal_deg.to_radians();
-    let h = axis.xy() / flat;
-    Some(Vector3::new(h.x * down.cos(), h.y * down.cos(), down.sin()))
+    let t = terminal_deg.to_radians();
+    Some(base * t.cos() + across.normalize() * t.sin())
+}
+
+/// The line of the tension string(s) holding the wire point of `point`,
+/// from `clamp` towards the string's top (two: the middle of their tops);
+/// `None` when no string holds it.
+fn string_axis(line: &Line, point: &SectionPoint, clamp: Vector3<f64>) -> Option<Vector3<f64>> {
+    let structure = line.structure(&point.structure)?;
+    let wire = structure.wire_at_set(point.set)?;
+    let tops: Vec<Vector3<f64>> = structure
+        .strings_to(&wire.label)
+        .filter_map(|x| structure.node(&x.top).map(|n| v(n.position())))
+        .collect();
+    if tops.is_empty() {
+        return None;
+    }
+    let mid = tops.iter().sum::<Vector3<f64>>() / tops.len() as f64;
+    let d = mid - clamp;
+    (d.norm() > 1e-9).then(|| d.normalize())
 }
 
 /// The conductor's axis at a section's end clamp, out of the section (the
@@ -640,14 +674,22 @@ fn stiffness(
     jumper: &Jumper,
     shapes: &[SectionShape],
     cable: &Cable,
+    load: Vector3<f64>,
 ) -> Option<Stiff> {
-    let stiff = rod_ends(line, jumper, shapes, cable);
+    let stiff = rod_ends(line, jumper, shapes, cable, load);
     (stiff.ei > 0.0 && (stiff.start.is_some() || stiff.end.is_some())).then_some(stiff)
 }
 
 /// The bending stiffness of a jumper and the directions its end clamps hold
-/// it in, whether or not it is stiff.
-fn rod_ends(line: &Line, jumper: &Jumper, shapes: &[SectionShape], cable: &Cable) -> Stiff {
+/// it in, whether or not it is stiff (`load`: the case's load on it, per
+/// metre: which way its clamps' angles turn).
+fn rod_ends(
+    line: &Line,
+    jumper: &Jumper,
+    shapes: &[SectionShape],
+    cable: &Cable,
+    load: Vector3<f64>,
+) -> Stiff {
     let ei = jumper_bending_stiffness(jumper, cable);
     Stiff {
         start: clamp_direction(
@@ -655,6 +697,7 @@ fn rod_ends(line: &Line, jumper: &Jumper, shapes: &[SectionShape], cable: &Cable
             shapes,
             &jumper.from,
             jumper.angle_from_deg.unwrap_or(DEFAULT_TERMINAL_ANGLE_DEG),
+            load,
         ),
         // Arriving at the clamp: against the direction it holds.
         end: clamp_direction(
@@ -662,6 +705,7 @@ fn rod_ends(line: &Line, jumper: &Jumper, shapes: &[SectionShape], cable: &Cable
             shapes,
             &jumper.to,
             jumper.angle_to_deg.unwrap_or(DEFAULT_TERMINAL_ANGLE_DEG),
+            load,
         )
         .map(|d| -d),
         ei,
@@ -799,7 +843,7 @@ fn cut_length(
     };
     let budget = Budget::new().max_iterations(200);
     let hinged = length_for_sag(still, a, b, sag, &budget).map_err(invalid)?;
-    match stiffness(line, jumper, shapes, cable) {
+    match stiffness(line, jumper, shapes, cable, still.load) {
         Some(stiff) => stiff_length_for_sag(&stiff, still, a, b, sag, hinged).map_err(invalid),
         None => Ok(hinged),
     }
@@ -853,7 +897,11 @@ pub fn solve_jumper(
         ));
     }
     let ea = cable.axial_stiffness().si();
-    let stiff = stiffness(line, jumper, shapes, cable);
+    // The line's wind, whichever way the jumper was entered: across the
+    // line from the case's side (a jumper across the line takes little).
+    let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
+    let load = wire_load_in_line_wind(case, cable, d, along);
+    let stiff = stiffness(line, jumper, shapes, cable, load);
     let reference = match (jumper.length, jumper.sag) {
         (Some(length), _) => length,
         // Given by its sag: cut in this case (the design case; other cases
@@ -867,10 +915,6 @@ pub fn solve_jumper(
     // temperature.
     let dt = case.temperature.celsius() - jumper.temperature;
     let l0 = reference * line.bimetallic.apply(cable).free_thermal_strain(dt).exp();
-    // The line's wind, whichever way the jumper was entered: across the
-    // line from the case's side (a jumper across the line takes little).
-    let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
-    let load = wire_load_in_line_wind(case, cable, d, along);
     let props = CableProperties {
         unstressed_length: l0,
         axial_stiffness: ea,
@@ -895,7 +939,7 @@ pub fn solve_jumper(
     let stiff = if jumper.supports.is_empty() {
         stiff
     } else {
-        Some(rod_ends(line, jumper, shapes, cable))
+        Some(rod_ends(line, jumper, shapes, cable, load))
     };
     if let Some(stiff) = &stiff {
         // Half the string's weight per wire on the jumper.
@@ -1685,7 +1729,9 @@ mod tests {
         line.jumpers[0].angle_to_deg = Some(45.0);
         line.validate().unwrap();
         let (shapes, jumpers) = solve_all(&line, &still(15.0));
-        let axis = conductor_axis(&line, &shapes, &line.jumpers[0].from).unwrap();
+        // From its tension string's line (clamp to top).
+        let clamp = end_position(&line, &shapes, &line.jumpers[0].from).unwrap();
+        let axis = string_axis(&line, &line.jumpers[0].from, clamp).unwrap();
         // The tangent at the clamp, from the first two pieces.
         let p = &jumpers[0].points;
         let (d0, d1) = (
@@ -1702,6 +1748,50 @@ mod tests {
         // One clamped end (the other a tap on a through wire) on a 10.8 m
         // jumper: ~10 % less (1.31 m against 1.45 m when written).
         assert!(stiff < 0.95 * hinged, "{stiff} vs {hinged}");
+    }
+
+    /// A clamp holds its jumper at its angle from its tension string's line
+    /// (clamp to the string's top), turned within the conductor's plane:
+    /// down in still air; towards the wind's side as the wind blows (the
+    /// conductor swings); a steeper string, a steeper jumper.
+    #[test]
+    fn a_jumper_leaves_at_its_angle_from_its_tension_string() {
+        let line = crate::tests::example();
+        let (shapes, _) = solve_all(&line, &still(15.0));
+        let j = &line.jumpers[0];
+        let clamp = end_position(&line, &shapes, &j.from).unwrap();
+        let s = string_axis(&line, &j.from, clamp).expect("a tension string");
+        let down = Vector3::new(0.0, 0.0, -15.0);
+        let d = clamp_direction(&line, &shapes, &j.from, 30.0, down).unwrap();
+        assert!((d.angle(&s).to_degrees() - 30.0).abs() < 1e-9);
+        // In the vertical plane through the string, below it.
+        let n = s.cross(&Vector3::z());
+        assert!(d.dot(&n).abs() < 1e-9 && d.z < s.z, "{d:?} {s:?}");
+        // Wind across the string: turned towards where the load pushes.
+        let across = Vector3::new(-s.y, s.x, 0.0).normalize();
+        let windy = clamp_direction(&line, &shapes, &j.from, 30.0, down + across * 8.0).unwrap();
+        assert!((windy.angle(&s).to_degrees() - 30.0).abs() < 1e-9);
+        assert!(windy.dot(&across) > 0.1, "{windy:?}");
+        // 0°: along the string.
+        let along = clamp_direction(&line, &shapes, &j.from, 0.0, down).unwrap();
+        assert!(along.angle(&s) < 1e-9);
+        // The string's top 2 m higher: the jumper leaves steeper upwards.
+        let mut steep = line.clone();
+        let st = steep.structure(&j.from.structure).unwrap();
+        let w = st.wire_at_set(j.from.set).unwrap().label.clone();
+        let top = st.strings_to(&w).next().unwrap().top.clone();
+        let st = steep
+            .structures
+            .iter_mut()
+            .find(|x| x.id == j.from.structure)
+            .unwrap();
+        st.points
+            .iter_mut()
+            .find(|p| p.label == top)
+            .unwrap()
+            .position[2] += 2.0;
+        let up = clamp_direction(&steep, &shapes, &j.from, 30.0, down).unwrap();
+        assert!(up.z > d.z, "{} vs {}", up.z, d.z);
     }
 
     /// The example's jumper cut to its length, with strings on T3 for
