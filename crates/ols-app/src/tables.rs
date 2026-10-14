@@ -3069,28 +3069,27 @@ fn point_commands(
         }
         Ok(Some(a))
     };
-    // Points deleted: off every alignment.
+    // A row deleted takes its point off that row's alignment (the others
+    // keep their order); the point itself goes only with the last of its
+    // rows (the Delete tool takes it off every alignment at once).
+    let pid_of = |key: &str| key.split_once('\t').map_or(key, |(_, p)| p).to_owned();
     let deleted: BTreeSet<String> = page
         .deleted
         .iter()
-        .filter_map(|k| k.split_once('\t').map(|(_, p)| p.to_owned()))
+        .map(|k| pid_of(k))
+        .filter(|pid| {
+            rows.iter()
+                .filter(|r| pid_of(&r.key) == *pid)
+                .all(|r| page.deleted.contains(&r.key))
+        })
         .collect();
-    for p in &deleted {
-        let on = stored.point_alignments(p);
-        if on.len() > 1 {
-            out.takes.push(format!(
-                "alignment point {p} comes off {} (the others keep their order)",
-                on.join(", ")
-            ));
-        }
-    }
     // The points' values (edited on any of their rows) and the places.
     let mut points: BTreeMap<String, ols_line::AlignmentPoint> = BTreeMap::new();
     let mut edited: BTreeMap<String, String> = BTreeMap::new();
     let mut places: BTreeMap<String, Vec<(f64, String)>> = BTreeMap::new();
     for row in rows {
         let (_, pid) = row.key.split_once('\t').unwrap_or(("", &row.key));
-        if deleted.contains(pid) {
+        if deleted.contains(pid) || page.deleted.contains(&row.key) {
             continue;
         }
         let c = Cells {
