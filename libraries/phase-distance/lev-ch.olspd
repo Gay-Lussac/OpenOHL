@@ -1,0 +1,105 @@
+# Distance between conductors in the span (still air), Swiss LeV
+# (SR 734.31, as of 1 January 2008), Annex 6, 2.2.1:
+#   z = k · sqrt(f + l_k) + C
+# C1 within the same circuit (and towards an earth wire), C2 between
+# circuits: Table 2.4.1 by nominal voltage — two values (low, high) where
+# the insulation level gives two rows (lightning impulse withstand
+# voltage); a voltage between rows takes the next row up. k: Diagrams
+# 2.4.2 (500 N/m²) and 2.4.3 (650 N/m²), linear in the system angle β
+# (0°: one conductor above the other, 90°: side by side), one line per
+# swing class w = d/q (d in mm, q in kg/m), up to w_max.
+# Swiss legislation is not protected by copyright; values from the
+# official text. See docs/development/lev-phase-spacing.md.
+
+format = "ols-phase-distance"
+version = 1
+name = "LeV Annex 6 (SR 734.31): conductors in the span"
+
+[altitude]
+from = "1000 m"     # the values hold up to here
+per_1000_m = 0.14   # above: +14 % per 1000 m
+
+[[voltage]]
+kv = 1
+c1 = ["0.05 m"]
+c2 = ["0.05 m"]
+
+[[voltage]]
+kv = 3
+c1 = ["0.06 m"]
+c2 = ["0.06 m"]
+
+[[voltage]]
+kv = 6
+c1 = ["0.09 m"]
+c2 = ["0.09 m"]
+
+[[voltage]]
+kv = 10
+c1 = ["0.12 m"]
+c2 = ["0.12 m"]
+
+[[voltage]]
+kv = 15
+c1 = ["0.16 m"]
+c2 = ["0.17 m"]
+
+[[voltage]]
+kv = 20
+c1 = ["0.22 m"]
+c2 = ["0.26 m"]
+
+[[voltage]]
+kv = 30
+c1 = ["0.32 m"]
+c2 = ["0.39 m"]
+
+[[voltage]]
+kv = 45
+c1 = ["0.52 m"]
+c2 = ["0.63 m"]
+
+[[voltage]]
+kv = 60
+c1 = ["0.70 m"]
+c2 = ["0.82 m"]
+
+[[voltage]]
+kv = 132            # 110 and 132 kV
+c1 = ["0.92 m", "1.12 m"]
+c2 = ["1.38 m"]
+
+[[voltage]]
+kv = 150
+c1 = ["1.32 m"]
+c2 = ["1.64 m"]
+
+[[voltage]]
+kv = 220
+c1 = ["1.93 m", "2.14 m"]
+c2 = ["2.29 m", "2.56 m"]
+
+[[voltage]]
+kv = 380
+c1 = ["2.64 m", "2.90 m"]
+c2 = ["3.37 m", "3.64 m"]
+
+[[diagram]]
+name = "2.4.2 (500 N/m²)"
+wind_pressure = "500 Pa"
+line = [
+    { w_max = 16.8, k0 = 0.70, k90 = 0.60 },   # swing ≤ 40°
+    { w_max = 28.5, k0 = 0.75, k90 = 0.65 },   # 40°–55°
+    { w_max = 42.8, k0 = 0.85, k90 = 0.70 },   # 55°–65°
+    { k0 = 0.95, k90 = 0.75 },                 # > 65°
+]
+
+[[diagram]]
+name = "2.4.3 (650 N/m²)"
+wind_pressure = "650 Pa"
+line = [
+    { w_max = 12.9, k0 = 0.70, k90 = 0.60 },
+    { w_max = 22.0, k0 = 0.75, k90 = 0.65 },
+    { w_max = 33.0, k0 = 0.85, k90 = 0.70 },
+    { k0 = 0.95, k90 = 0.75 },
+]

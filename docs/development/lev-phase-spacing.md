@@ -1,6 +1,9 @@
 # LeV distance between conductors in the span (still air) — specification
 
-Status: **agreed definition, not implemented yet.** Decisions marked
+Status: **steps 1 and 2 of the plan implemented** (the values file
+`libraries/phase-distance/lev-ch.olspd`, the check
+`ols_clearance::phase_distance`, with tests worked by hand); the app
+window, the circuits table column and the command line to come. Decisions marked
 *(decided)* were taken with the user; *(open)* ones are still to settle.
 Change this page when a decision changes.
 
@@ -131,16 +134,20 @@ differing by up to 40 % between conductors), phase spacers (2.2.4).
    sags, l_k, β, k, z, margins; the worst station per pair and the
    violations. Budgets: stations × pieces of the other conductor per
    pair (a few ms per span pair).
-3. **The app.** A window (Checks menu): the weather cases ticked
+3. **The Circuits table column.** The LeV plugin adds a column
+   "insulation level" (low / high) to the Circuits table. Tables accept
+   columns added by plugins: their values are kept with the objects, and
+   shown (unused) where the plugin is not installed.
+4. **The app.** A window (Checks menu): the weather cases ticked
    (default: a still-air case at 10 °C), the circuits ticked (a
    drop-down of tick boxes, select all / select none), the diagram
    (500 or 650 N/m²), Δs, and per circuit low or high. The results in
    the Clearances tab (worst station per pair, all its terms) and in
    the 3D view (the worst stations marked); exported like the other
    clearance results. Settings remembered with the project.
-4. **The command line.** The same check from `ols line` (parameter file,
+5. **The command line.** The same check from `ols line` (parameter file,
    cases, circuits), its CSV.
-5. **Tests and benchmarks** (below), docs (user guide, theory page).
+6. **Tests and benchmarks** (below), docs (user guide, theory page).
 
 ## Tests (planned)
 

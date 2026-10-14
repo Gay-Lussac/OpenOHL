@@ -32,6 +32,7 @@ pub mod checks;
 pub mod envelope;
 pub mod galloping;
 pub mod geometry;
+pub mod phase_distance;
 pub mod rules;
 pub mod vegetation;
 pub mod wirefit;
@@ -83,6 +84,68 @@ mod tests {
         let rule = &RuleSet::ground(required).rules[0];
         let results = checks::ground_check(rule, &wires, terrain);
         wires.into_iter().zip(results).collect()
+    }
+
+    /// The LeV distance between conductors on the synthetic line at
+    /// 10 °C, still air: every pair between the same two structures is
+    /// checked once, with its terms consistent (z from them); the
+    /// circuits ticked limit the pairs.
+    #[test]
+    fn phase_distances_on_the_example() {
+        use crate::phase_distance::{PhaseDistanceCode, PhaseDistanceSettings, check, conductors};
+        let (line, library) = example();
+        let code = PhaseDistanceCode::parse(include_str!(
+            "../../../libraries/phase-distance/lev-ch.olspd"
+        ))
+        .unwrap();
+        let shapes = solved(10.0);
+        let cs = conductors(&line, &shapes, &library);
+        let settings = PhaseDistanceSettings::default();
+        let budget = ols_core::budget::Budget::new();
+        let pairs = check(&code, &settings, &cs, &budget).unwrap();
+        assert!(!pairs.is_empty());
+        for p in &pairs {
+            let w = &p.worst;
+            let term = |i: usize| w.k[i] * (w.sag[i] + w.lk[i]).sqrt();
+            assert!((w.required - (term(0).max(term(1)) + w.c)).abs() < 1e-9);
+            assert!(w.distance > 0.0 && (0.0..=90.0).contains(&w.beta));
+            assert!(w.k.iter().all(|k| (0.6..=0.95).contains(k)));
+            // Between the same two structures.
+            let ends = |i: usize| {
+                let mut e: Vec<String> = cs[i]
+                    .wire
+                    .ends
+                    .iter()
+                    .map(|k| k.rsplit_once(':').unwrap().0.to_owned())
+                    .collect();
+                e.sort();
+                e
+            };
+            assert_eq!(ends(p.a), ends(p.b));
+        }
+        // No pair twice.
+        let mut keys: Vec<(usize, usize)> = pairs.iter().map(|p| (p.a, p.b)).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), pairs.len());
+        // One circuit ticked: only its pairs (and its earth wires').
+        let first = cs
+            .iter()
+            .find(|c| c.wire.potential.is_some())
+            .unwrap()
+            .wire
+            .circuit
+            .clone();
+        let one = PhaseDistanceSettings {
+            circuits: Some(std::iter::once(first.clone()).collect()),
+            ..PhaseDistanceSettings::default()
+        };
+        let some = check(&code, &one, &cs, &budget).unwrap();
+        assert!(some.len() <= pairs.len());
+        assert!(
+            some.iter()
+                .all(|p| cs[p.a].wire.circuit == first && cs[p.b].wire.circuit == first)
+        );
     }
 
     /// Lowest subconductor below the centre line, m (0 for one wire).

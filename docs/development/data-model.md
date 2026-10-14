@@ -444,7 +444,23 @@ Other data files: structure models `.olsfe` (`ols-structure-model`) and
 poles `.olsp` (`ols-pole`) next to the `.olss`
 ([Structure analysis](../user-guide/structure-analysis.md)); clearance
 rules `.olsr`; thermal ambient `.olsta`; unit costs `.olscost`; galloping
-`.olsg`; LiDAR class schemes `.olsc`.
+`.olsg`; LiDAR class schemes `.olsc`; phase distance codes `.olspd`.
+
+### Phase distance codes (`.olspd`)
+
+`ols-phase-distance`, version 1 (`ols_clearance::phase_distance`): a
+code's values for the distance between conductors in the span,
+\( z = k\sqrt{f + l_k} + C \) — `[[voltage]]` rows (`kv`: up to this
+nominal voltage; `c1`, `c2`: one value, or two — low and high
+insulation level), `[[diagram]]`s (`name`, `wind_pressure`, `line =
+[{ w_max, k0, k90 }]`: k linear in the system angle per swing class
+w = d/q), `[altitude]` (`from`, `per_1000_m`). The Swiss LeV's values:
+`libraries/phase-distance/lev-ch.olspd`. The check pairs conductors
+between the same two structures and takes l_k from the strings at
+their ends (I: its length; V, tension, clamped: 0; the string below a
+V: its length; a TAK: its suspension string's); the settings (diagram,
+station spacing, circuits ticked, each circuit's level) are not in the
+file. See [the specification](lev-phase-spacing.md).
 
 ### Clearance rules (`.olsr`)
 
