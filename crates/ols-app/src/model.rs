@@ -1457,8 +1457,10 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         let dir = structures_dir(&sources);
         step(
             match &library_dir {
-                Some(w) if dir.starts_with(w) => "structure types from the project".to_owned(),
-                _ => format!("structure types from {}", dir.display()),
+                Some(w) if dir.starts_with(w) => {
+                    "the structure library from the project".to_owned()
+                }
+                _ => format!("the structure library from {}", dir.display()),
             },
             &mut log,
         );

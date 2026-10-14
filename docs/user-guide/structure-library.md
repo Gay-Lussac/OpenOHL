@@ -1,6 +1,6 @@
 # Structure and insulator libraries (`.olss`, `.olsi`)
 
-Structure types and insulator assemblies are stored **one per file**, so each can be reused, shared and versioned individually:
+Structure types and insulator assemblies are stored **one per file**, so each can be reused, shared and versioned individually. In the desktop app the structure types are the **Structure library** (Structures menu): every structure the model uses, each imported or exported as a file:
 
 - `*.olss` — structure types ("OLS structure"), like PLS-CADD's structure files: a project keeps its pylons in a **`Structures`** folder next to its line or project file (used automatically by `ols line`); shared types can live in `libraries/structures/`,
 - `libraries/insulators/*.olsi` — insulator assemblies ("OLS insulator"), for detailed strings; simple pylons define their strings in the pylon file itself (below).

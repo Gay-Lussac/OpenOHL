@@ -144,7 +144,7 @@ impl Command {
             Command::Inventory => "Tool inventory".into(),
             Command::RunChecks => "Run checks".into(),
             Command::DisplayCases => "Display weather cases…".into(),
-            Command::Library(k) => format!("{} library", k.title()),
+            Command::Library(k) => k.library_name(),
             Command::Table(k) => format!("{} table", k.title()),
             Command::Hold(t) => format!("{} {}", t.icon(), t.name()),
         }

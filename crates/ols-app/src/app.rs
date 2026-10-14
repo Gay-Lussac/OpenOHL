@@ -618,7 +618,7 @@ impl App {
             .libraries
             .iter()
             .filter(|(_, p)| p.dirty())
-            .map(|(k, _)| format!("{} library page", k.title()))
+            .map(|(k, _)| format!("{} page", k.library_name()))
             .collect();
         out.extend(
             r.tables
