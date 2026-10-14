@@ -659,7 +659,7 @@ impl ProfileView {
         }
         // Section labels and sags (Sections › Display options), on this
         // route's traces of the spans.
-        let notes = crate::annotations::notes(model, case, crate::annotations::View::Profile);
+        let notes = crate::annotations::notes(model, case, crate::annotations::View::Profile, None);
         if !notes.is_empty() {
             let mut placer = crate::annotations::Placer::default();
             for w in &d.wires {

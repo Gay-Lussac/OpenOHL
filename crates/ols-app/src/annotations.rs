@@ -78,9 +78,49 @@ pub struct SectionDisplay {
     /// Every label shown with the object's description.
     #[serde(default)]
     pub descriptions: [bool; 3],
+    /// In 3D, labels only within this distance of the eye, m (none: the
+    /// default, [`DEFAULT_LABEL_DISTANCE`]).
+    #[serde(default)]
+    pub label_distance: Option<f64>,
 }
 
+/// In 3D, labels are written within this distance of the eye, m, unless
+/// the user chose another (Display options).
+pub const DEFAULT_LABEL_DISTANCE: f64 = 1500.0;
+
 impl SectionDisplay {
+    /// In 3D, labels within this distance of the eye, m.
+    pub fn label_range(&self) -> f64 {
+        self.label_distance.unwrap_or(DEFAULT_LABEL_DISTANCE)
+    }
+
+    /// The distance setting (3D labels), shared by both menus.
+    fn distance_ui(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut d = self.label_range();
+        let changed = ui
+            .horizontal(|ui| {
+                ui.label("3D labels within");
+                let r = ui
+                    .add(
+                        egui::DragValue::new(&mut d)
+                            .range(50.0..=50_000.0)
+                            .speed(10.0)
+                            .suffix(" m"),
+                    )
+                    .on_hover_text(
+                        "Labels farther from your eye are not written in the 3D view \
+                         (and not built: a long line stays fluid)",
+                    );
+                ui.label("of the eye");
+                r.changed()
+            })
+            .inner;
+        if changed {
+            self.label_distance = Some(d);
+        }
+        changed
+    }
+
     /// The Structures menu's part: labels of the structures, their
     /// points, strings and wire points, and descriptions, per view (plan
     /// and 3D; the profile names its structures always). Returns whether
@@ -124,6 +164,7 @@ impl SectionDisplay {
                 ui.end_row();
             }
         });
+        changed |= self.distance_ui(ui);
         changed
     }
 
@@ -182,6 +223,7 @@ impl SectionDisplay {
                 ui.end_row();
             }
         });
+        changed |= self.distance_ui(ui);
         changed
     }
 }
@@ -223,16 +265,23 @@ pub struct Note {
 
 /// The notes of `view` for the sections shown in weather case `case`: a
 /// label per section (its first shape shown), a sag per span shown.
-pub fn notes(model: &Model, case: usize, view: View) -> Vec<Note> {
+pub fn notes(model: &Model, case: usize, view: View, near: Option<([f64; 3], f64)>) -> Vec<Note> {
     let display = &model.section_display;
     let (label, sag) = (display.label[view as usize], display.sag[view as usize]);
     if !label && !sag {
         return Vec::new();
     }
     let line = &model.line;
+    let close = |p: [f64; 3]| near.is_none_or(|(eye, r)| within(p, eye, r));
     let mut labelled = std::collections::BTreeSet::new();
     let mut out = Vec::new();
-    for shape in model.shapes_shown(case) {
+    // Each section once, in its first display case: several cases drawn
+    // show their wires, not a label each.
+    for shape in line
+        .sections
+        .iter()
+        .filter_map(|s| model.shape(&s.id, case))
+    {
         let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
             continue;
         };
@@ -253,7 +302,11 @@ pub fn notes(model: &Model, case: usize, view: View) -> Vec<Note> {
                 color,
             }
         };
-        if label && !shape.spans.is_empty() && labelled.insert(shape.section.clone()) {
+        if label
+            && !shape.spans.is_empty()
+            && close(shape.spans[shape.spans.len() / 2].mid_point)
+            && labelled.insert(shape.section.clone())
+        {
             out.push(note(
                 shape.spans.len() / 2,
                 Kind::Label,
@@ -266,11 +319,18 @@ pub fn notes(model: &Model, case: usize, view: View) -> Vec<Note> {
         }
         if sag {
             for (k, s) in shape.spans.iter().enumerate() {
-                out.push(note(k, Kind::Sag, format!("{:.2} m", s.sag)));
+                if close(s.mid_point) {
+                    out.push(note(k, Kind::Sag, format!("{:.2} m", s.sag)));
+                }
             }
         }
     }
     out
+}
+
+/// `p` within `r` of `eye`.
+fn within(p: [f64; 3], eye: [f64; 3], r: f64) -> bool {
+    (0..3).map(|k| (p[k] - eye[k]).powi(2)).sum::<f64>() <= r * r
 }
 
 /// `text` and, when asked for and given, ` — description`.
@@ -285,7 +345,12 @@ fn with_description(text: String, description: &str, show: bool) -> String {
 /// The labels of `view` for the structures, their points, strings (where
 /// drawn in weather case `case`) and wire points, as chosen in Structures
 /// › Display options.
-pub fn object_notes(model: &Model, case: usize, view: View) -> Vec<Note> {
+pub fn object_notes(
+    model: &Model,
+    case: usize,
+    view: View,
+    near: Option<([f64; 3], f64)>,
+) -> Vec<Note> {
     let d = &model.section_display;
     let v = view as usize;
     let (structures, points, strings, wires, tops, library, alignment) = (
@@ -316,8 +381,16 @@ pub fn object_notes(model: &Model, case: usize, view: View) -> Vec<Note> {
         text,
         color,
     };
+    let close = |p: [f64; 3]| near.is_none_or(|(eye, r)| within(p, eye, r));
     let mut out = Vec::new();
-    for s in &model.line.structures {
+    // Structures beyond the distance: none of their labels (their strings
+    // are within some 100 m of them).
+    for s in model
+        .line
+        .structures
+        .iter()
+        .filter(|s| near.is_none_or(|(eye, r)| within(s.position, eye, r + 100.0)))
+    {
         if structures {
             let top = s
                 .points
@@ -411,7 +484,12 @@ pub fn object_notes(model: &Model, case: usize, view: View) -> Vec<Note> {
     }
     if alignment {
         // Where they are drawn: on the ground.
-        for p in &model.line.alignment_points {
+        for p in model
+            .line
+            .alignment_points
+            .iter()
+            .filter(|p| close(p.position))
+        {
             out.push(note(
                 crate::selection::draped(model, p.position),
                 with_description(p.id.clone(), &p.description, show),
