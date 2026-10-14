@@ -117,7 +117,9 @@ impl Tool {
             Tool::Delete => "right-click a structure, string, span or jumper to delete it",
             Tool::GoTo => "right-click to open the Go to window",
             Tool::Edit => "right-click a structure (its pylon), a string or a span to edit it",
-            Tool::AddStructure => "right-click the ground to add a structure there",
+            Tool::AddStructure => {
+                "right-click an alignment point (the structure stands on it) or the ground to add a structure there"
+            }
             Tool::AddString => {
                 "right-click a structure point or a wire point to hang a new string from it"
             }
@@ -165,6 +167,7 @@ impl Tool {
             self,
             Tool::Delete
                 | Tool::Edit
+                | Tool::AddStructure
                 | Tool::AddAlignment
                 | Tool::NewAlignment
                 | Tool::EditAlignment
