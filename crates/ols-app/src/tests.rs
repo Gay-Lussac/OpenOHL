@@ -10893,6 +10893,20 @@ fn a_jumper_is_laid_through_suspension_strings() {
             weight: 100.0,
             ..Default::default()
         });
+        // A string whose wire point was given a set no section uses.
+        st.wires.push(ols_line::WirePoint {
+            label: "W99".into(),
+            position: [mid[0], mid[1], mid[2] - 0.5],
+            set: Some(99),
+            ..Default::default()
+        });
+        st.strings.push(ols_line::InsulatorString {
+            label: "S99".into(),
+            top: "A-JH".into(),
+            wire: "W99".into(),
+            weight: 100.0,
+            ..Default::default()
+        });
         l.jumpers.insert(0, j);
     });
     let mut harness = Harness::builder()
@@ -10906,6 +10920,20 @@ fn a_jumper_is_laid_through_suspension_strings() {
     };
     let end = |p: &ols_line::SectionPoint| string_at(&p.structure, p.set);
     use_tool(&mut harness, Tool::AddJumper, end(&from), None);
+    // A set no section uses: refused, said so; the jumper goes on.
+    use_tool(
+        &mut harness,
+        Tool::AddJumper,
+        string_at(&from.structure, 99),
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let (text, error) = r.status.clone().unwrap();
+        assert!(error && text.contains("holds no section"), "{text}");
+        assert_eq!(r.model.line.jumpers.len(), n);
+        assert_eq!(r.jumper_from.as_ref(), Some(&from));
+    }
     use_tool(
         &mut harness,
         Tool::AddJumper,

@@ -1464,6 +1464,23 @@ impl Ready {
             }
             (Tool::AddJumper, Selection::Attachment { structure, set }) => {
                 let p = ols_line::SectionPoint::new(structure.clone(), *set);
+                // A jumper ends where a section's wire is clamped: a wire
+                // point whose set no section uses is refused (a string the
+                // jumper should pass through, its set given by mistake —
+                // else one jumper would be laid as several).
+                if !model.line.sections.iter().any(|s| s.points.contains(&p)) {
+                    let wire = model
+                        .line
+                        .wire_point(&p)
+                        .map_or(String::new(), |w| format!(" (wire point {})", w.label));
+                    self.status = Some((
+                        format!(
+                            "Add jumper: set {set} on {structure}{wire} holds no section, so no jumper ends there. To pass the jumper through this string, untick its wire point's set in the string window (Edit on the string); then right-click it between the jumper's ends"
+                        ),
+                        true,
+                    ));
+                    return;
+                }
                 match self.jumper_from.take() {
                     None => {
                         self.status = Some((

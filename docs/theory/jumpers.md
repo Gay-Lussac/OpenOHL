@@ -52,7 +52,14 @@ The model is an **inextensible elastic rod**:
 
 ## Support clamps: a rod with rigid pieces
 
-A jumper can hang on **helping strings** between its ends (`supports`): insulator strings of the structure holding it like suspension strings hold the conductor on the line. Each clamp hangs on strings of a structure: one string (an I) or two strings to one wire point (a V). The clamp is free to swing and turn, so no angle is assumed for it. The cable runs straight through it: over the clamp's few centimetres it cannot bend, so the direction it leaves in is the direction it enters in.
+A jumper can pass through clamps between its ends (`supports`), each hanging on **suspension strings of the structure** — ordinary strings, nothing of their own ("helping strings" is only a name for what they do): one string (an I) or two strings to one wire point (a V). The clamp is free to swing and turn, so no angle is assumed for it. The cable runs straight through it: over the clamp's few centimetres it cannot bend, so the direction it leaves in is the direction it enters in.
+
+**Which wire points a jumper passes through.** A clamp hangs on a **wire point without a set**. A wire point with a set is where a wire ends: a section's end, or a jumper's. So:
+
+- the **Add jumper** tool takes a right-click on a string to a wire point *without* a set as a clamp the jumper passes through, and a right-click on a wire point whose set a section uses as the jumper's other end (it is then made at once). A wire point with a set **no section uses** is refused, with the reason: a string meant to hold the jumper was given a set by mistake — accepted, it would split one jumper into several;
+- the **Add string** tool gives a new string's wire point the next free set. To hang a jumper's clamp on such a string, untick its wire point's **set** in the string window first.
+
+The wire points a jumper passes through, in order, are shown in its window (with the lengths between its clamps), in its properties ("passes through JH on T5, then …") and in the Jumpers table (clamps). Laid with the tool — its first end, the strings it passes through in order, its other end — a jumper with clamps is given by the **lengths between its clamps** (its sag depends on the clamps, so it cannot be given by a sag): each first 3 % over the straight distance between the clamps, to be typed in its window; its length is their sum, and each clamp's place along it (`at`, a share of the length) follows from them.
 
 A jumper with support clamps is always solved as the rod above, also with \\( EI = 0 \\) or hinged ends:
 
