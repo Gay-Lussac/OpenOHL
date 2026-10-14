@@ -69,6 +69,9 @@ pub struct SectionDisplay {
     /// a little below the middle of each string.
     #[serde(default)]
     pub library_label: [bool; 3],
+    /// The alignment points: their name (and the structure tied to one).
+    #[serde(default)]
+    pub alignment_point_label: [bool; 3],
     /// Their wire points: the label and set.
     #[serde(default)]
     pub wire_label: [bool; 3],
@@ -98,6 +101,7 @@ impl SectionDisplay {
                     &mut self.insulator_label,
                 ),
                 ("Library labels (strings)", &mut self.library_label),
+                ("Alignment points (name)", &mut self.alignment_point_label),
                 ("Strings (label)", &mut self.string_label),
                 ("Wire points (label, set)", &mut self.wire_label),
                 ("With descriptions", &mut self.descriptions),
@@ -284,15 +288,16 @@ fn with_description(text: String, description: &str, show: bool) -> String {
 pub fn object_notes(model: &Model, case: usize, view: View) -> Vec<Note> {
     let d = &model.section_display;
     let v = view as usize;
-    let (structures, points, strings, wires, tops, library) = (
+    let (structures, points, strings, wires, tops, library, alignment) = (
         d.structure_label[v],
         d.point_label[v],
         d.string_label[v],
         d.wire_label[v],
         d.insulator_label[v],
         d.library_label[v],
+        d.alignment_point_label[v],
     );
-    if !(structures || points || strings || wires || tops || library) {
+    if !(structures || points || strings || wires || tops || library || alignment) {
         return Vec::new();
     }
     let show = d.descriptions[v];
@@ -402,6 +407,16 @@ pub fn object_notes(model: &Model, case: usize, view: View) -> Vec<Note> {
                     [90, 200, 255],
                 ));
             }
+        }
+    }
+    if alignment {
+        // Where they are drawn: on the ground.
+        for p in &model.line.alignment_points {
+            out.push(note(
+                crate::selection::draped(model, p.position),
+                with_description(p.id.clone(), &p.description, show),
+                [90, 200, 220],
+            ));
         }
     }
     out

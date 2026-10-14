@@ -78,9 +78,12 @@ pub struct StructureForm {
     pub message: Option<String>,
 }
 
-/// The alignment points a structure can be put on: (route as the views
-/// name it, index, position, the structure tied to it).
-pub fn alignment_points(line: &Line) -> Vec<(String, usize, [f64; 3], Option<String>)> {
+/// An alignment point a structure can be put on: (alignment, index there,
+/// position, the structure tied to it, the point's name).
+pub type ListedPoint = (String, usize, [f64; 3], Option<String>, String);
+
+/// The alignment points a structure can be put on ([`ListedPoint`]).
+pub fn alignment_points(line: &Line) -> Vec<ListedPoint> {
     line.alignment_views()
         .into_iter()
         .filter(|r| !r.alignment.is_empty())
@@ -88,7 +91,15 @@ pub fn alignment_points(line: &Line) -> Vec<(String, usize, [f64; 3], Option<Str
             r.alignment
                 .iter()
                 .enumerate()
-                .map(|(k, a)| (r.id.clone(), k, a.position, a.structure.clone()))
+                .map(|(k, a)| {
+                    (
+                        r.id.clone(),
+                        k,
+                        a.position,
+                        a.structure.clone(),
+                        a.id.clone(),
+                    )
+                })
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -2957,13 +2968,22 @@ fn structure_ui(
             }
             match f.on_alignment.clone() {
                 Some((route, k)) => {
-                    let text = |r: &str, k: usize, p: [f64; 3]| {
-                        format!("{r}, point {} — E {:.1}, N {:.1}", k + 1, p[0], p[1])
+                    // The point's name first (as written in the views),
+                    // then its alignment and place there.
+                    let text = |p: &ListedPoint| {
+                        format!(
+                            "{} — {} #{} — E {:.1}, N {:.1}",
+                            p.4,
+                            p.0,
+                            p.1 + 1,
+                            p.2[0],
+                            p.2[1]
+                        )
                     };
                     let shown = points
                         .iter()
                         .find(|p| p.0 == route && p.1 == k)
-                        .map_or(String::new(), |p| text(&p.0, p.1, p.2));
+                        .map_or(String::new(), text);
                     let mut chosen = None;
                     egui::ComboBox::from_id_salt("structure-alignment-point")
                         .selected_text(shown)
@@ -2973,8 +2993,8 @@ fn structure_ui(
                             for p in &points {
                                 let taken = p.3.as_ref().filter(|s| **s != f.id);
                                 let label = match taken {
-                                    Some(s) => format!("{} (under {s})", text(&p.0, p.1, p.2)),
-                                    None => text(&p.0, p.1, p.2),
+                                    Some(s) => format!("{} (under {s})", text(p)),
+                                    None => text(p),
                                 };
                                 if ui
                                     .add_enabled(

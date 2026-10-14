@@ -10804,3 +10804,49 @@ fn the_string_library_is_a_table() {
         );
     }
 }
+
+/// Add structure on an alignment point without a structure: the window
+/// puts it on that point (tied); its list names the points as the views
+/// do; Display options write the points' names.
+#[test]
+fn a_structure_is_added_on_the_point_clicked() {
+    use crate::annotations::{View, object_notes};
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project_with("structure-on-point", |l| {
+        let a = l.alignments[0].id.clone();
+        let p0 = l.points_of(&l.alignments[0])[0].position;
+        let p1 = l.points_of(&l.alignments[0])[1].position;
+        let mid = [0, 1, 2].map(|k| 0.5 * (p0[k] + p1[k]));
+        l.alignment_points
+            .push(ols_line::AlignmentPoint::free("PX", mid));
+        let al = l.alignments.iter_mut().find(|x| x.id == a).unwrap();
+        al.points.insert(1, "PX".into());
+    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    use_tool(
+        &mut harness,
+        Tool::AddStructure,
+        Selection::AlignmentPoint { id: "PX".into() },
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Structure(f)) = &r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        let (a, k) = f.on_alignment.clone().expect("on the point");
+        let listed = crate::editors::alignment_points(&r.model.line);
+        let p = listed.iter().find(|p| p.0 == a && p.1 == k).unwrap();
+        assert_eq!(p.4, "PX");
+        let at = r.model.line.alignment_point("PX").unwrap().position;
+        assert!((f.position[0] - at[0]).abs() < 1e-6 && (f.position[1] - at[1]).abs() < 1e-6);
+    }
+    let r = harness.state_mut().ready().unwrap();
+    r.model.section_display.alignment_point_label[View::Plan as usize] = true;
+    let notes = object_notes(&r.model, 0, View::Plan);
+    assert!(notes.iter().any(|n| n.text == "PX"));
+}

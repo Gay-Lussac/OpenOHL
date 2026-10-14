@@ -1494,6 +1494,25 @@ impl Ready {
                 self.editor = SectionForm::of(model, section).map(Form::Section);
                 self.select(target);
             }
+            // On a free alignment point: on it, tied to it (a point with a
+            // structure already: where it is, the window gives the place).
+            (Tool::AddStructure, Selection::AlignmentPoint { id }) => {
+                let free = crate::editors::alignment_points(&model.line)
+                    .into_iter()
+                    .find(|p| p.4 == *id && p.3.is_none());
+                let at = free
+                    .as_ref()
+                    .map(|p| p.2)
+                    .or(u.at)
+                    .or_else(|| model.line.alignment_point(id).map(|p| p.position))
+                    .unwrap_or_else(|| structure_spot(model));
+                let mut f = StructureForm::new_at(model, at);
+                if let Some(p) = free {
+                    f.place_on(model, (p.0, p.1));
+                }
+                self.editor = Some(Form::Structure(f));
+                self.select(target);
+            }
             // Where it was clicked; with no ground there, the first free
             // alignment point (the window gives its place).
             (Tool::AddStructure, _) => {
