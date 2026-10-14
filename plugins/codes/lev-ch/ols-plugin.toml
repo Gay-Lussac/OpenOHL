@@ -6,3 +6,15 @@ sdk = "0.1"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/lev_ch.wasm"
 extension-points = ["design-code"]
+
+# The Circuits table's insulation level (LeV Annex 6, Table 2.4.1: the row
+# of the lightning impulse withstand level). The distance between
+# conductors in the span reads it (`lev-ch.insulation_level` on the
+# circuit's sections).
+[[column]]
+table = "circuits"
+name = "insulation_level"
+title = "insulation level"
+help = "LeV Table 2.4.1: the circuit's lightning impulse withstand level, the low or the high row (110/132, 220, 380 kV); not set: high"
+values = ["low", "high"]
+default = "high"

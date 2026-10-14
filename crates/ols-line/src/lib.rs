@@ -144,6 +144,12 @@ fn half() -> f64 {
     0.5
 }
 
+/// Values of table columns added by plugins (e.g. a design code's
+/// insulation level), by `plugin.column`: kept with the object and saved
+/// with it, used by the plugin, and shown (unused) where the plugin is
+/// not installed.
+pub type Fields = std::collections::BTreeMap<String, String>;
+
 /// A jumper: a slack cable from the wire point of one attachment to that of
 /// another (solved clamp positions when the points belong to sections).
 /// Its cut length is given, or follows from a sag in still air.
@@ -226,6 +232,10 @@ pub struct Jumper {
     /// `from`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bundle_rotation_deg: Option<f64>,
+    /// Values of columns added by plugins, by `plugin.column`
+    /// ([`Fields`]).
+    #[serde(default, skip_serializing_if = "Fields::is_empty")]
+    pub fields: Fields,
 }
 
 /// A string holding a jumper at one point (DESIGN_GOALS §6).
@@ -437,6 +447,10 @@ pub struct Structure {
     /// stands on ([`Line::structure_routes`]).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<String>,
+    /// Values of columns added by plugins, by `plugin.column`
+    /// ([`Fields`]).
+    #[serde(default, skip_serializing_if = "Fields::is_empty")]
+    pub fields: Fields,
 }
 
 /// A structure as files give it: the current fields, or (version 1)
@@ -472,6 +486,8 @@ struct StructureFile {
     members: Vec<Vec<Point>>,
     #[serde(default)]
     routes: Vec<String>,
+    #[serde(default)]
+    fields: Fields,
 }
 
 /// An `omit` entry: a label, or (version 1) `[set, phase]`.
@@ -516,6 +532,7 @@ impl From<StructureFile> for Structure {
             omit_sets,
             members: f.members,
             routes: f.routes,
+            fields: f.fields,
         }
     }
 }
@@ -746,6 +763,10 @@ pub struct Section {
     /// Cable condition and method it is solved with (default Initial FE).
     #[serde(default, skip_serializing_if = "condition::Calculation::is_default")]
     pub calculation: condition::Calculation,
+    /// Values of columns added by plugins, by `plugin.column`
+    /// ([`Fields`]).
+    #[serde(default, skip_serializing_if = "Fields::is_empty")]
+    pub fields: Fields,
 }
 
 fn one() -> u32 {

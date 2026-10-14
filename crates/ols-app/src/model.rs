@@ -474,6 +474,8 @@ pub struct Model {
     /// How the display weather cases apply to the sections (this user's
     /// choice).
     pub cases_shown: CasesShown,
+    /// The table columns the plugins in use add (from their manifests).
+    pub plugin_columns: Vec<crate::tables::PluginColumn>,
 }
 
 /// The wire library: given, else the `*.olsw` files next to the model,
@@ -1818,6 +1820,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .map(|v| v.shown_lines.clone())
         .unwrap_or_default();
     let mut model = Model {
+        plugin_columns: Vec::new(),
         sources,
         line,
         cases: solved,

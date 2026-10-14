@@ -11062,3 +11062,130 @@ fn labels_are_one_per_section_and_near_only() {
         crate::annotations::DEFAULT_LABEL_DISTANCE
     );
 }
+
+/// Plugin columns: the LeV plugin's insulation level in the circuits
+/// table — its default shown where not set; a value chosen goes to the
+/// circuit's sections in one command; one not among its values refused.
+/// Without the plugin the column still shows (unused) and the values stay,
+/// through other edits and an OLS XML round trip.
+#[test]
+fn plugin_columns_in_tables() {
+    use crate::tables::{PluginColumn, TableKind};
+    let model = synthetic_project("plugin-columns");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let lev = PluginColumn {
+        table: "circuits".into(),
+        key: "lev-ch.insulation_level".into(),
+        title: "insulation level".into(),
+        help: String::new(),
+        values: vec!["low".into(), "high".into()],
+        default: Some("high".into()),
+        plugin: "lev-ch 0.1.0".into(),
+        in_use: true,
+    };
+    let own = TableKind::Circuits.columns().len();
+    let key = {
+        let r = harness.state_mut().ready().unwrap();
+        r.model.plugin_columns = vec![lev.clone()];
+        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let x = rows.iter().find(|x| x.cells[6].contains("S3")).unwrap();
+        assert_eq!(x.cells[own], "high");
+        assert!(x.defaulted[own], "the default, not set");
+        // Declared for the circuits only.
+        let sections = TableKind::Sections.rows(&r.model, 0);
+        assert_eq!(sections[0].cells.len(), TableKind::Sections.columns().len());
+        let original = x.cells[own].clone();
+        r.tables
+            .entry(TableKind::Circuits)
+            .or_default()
+            .set(&x.key, own, "Low", &original);
+        x.key.clone()
+    };
+    let before = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .sections
+        .len();
+    apply_table(&mut harness, TableKind::Circuits, false).unwrap();
+    let ids = {
+        let r = harness.state_mut().ready().unwrap();
+        let line = &r.model.line;
+        assert_eq!(line.sections.len(), before);
+        let c = ols_line::electrical::circuits(line)
+            .into_iter()
+            .find(|c| c.sections.contains(&"S3".to_owned()))
+            .unwrap();
+        for id in &c.sections {
+            let s = line.sections.iter().find(|s| &s.id == id).unwrap();
+            assert_eq!(s.fields.get(&lev.key).map(String::as_str), Some("low"));
+        }
+        let others = line
+            .sections
+            .iter()
+            .filter(|s| !c.sections.contains(&s.id))
+            .count();
+        assert!(others > 0);
+        assert!(
+            line.sections
+                .iter()
+                .filter(|s| !c.sections.contains(&s.id))
+                .all(|s| s.fields.is_empty())
+        );
+        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let x = rows.iter().find(|x| x.key == key).unwrap();
+        assert_eq!(x.cells[own], "low");
+        assert!(!x.defaulted[own]);
+        // A value not among its values: refused.
+        r.tables
+            .entry(TableKind::Circuits)
+            .or_default()
+            .set(&key, own, "medium", "low");
+        c.sections
+    };
+    let err = apply_table(&mut harness, TableKind::Circuits, false).unwrap_err();
+    assert!(err.contains("not one of"), "{err}");
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .remove(&TableKind::Circuits);
+    // Without the plugin: an unused column in the sections' tables, the
+    // values kept.
+    let n = TableKind::Sections.columns().len();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.model.plugin_columns.clear();
+        let cols = TableKind::Sections.plugin_columns(&r.model);
+        assert_eq!(cols.len(), 1);
+        assert!(!cols[0].in_use && cols[0].key == lev.key);
+        let rows = TableKind::Sections.rows(&r.model, 0);
+        let s3 = rows.iter().find(|x| x.key == "S3").unwrap();
+        assert_eq!(s3.cells[n], "low");
+        assert_eq!(TableKind::Circuits.plugin_columns(&r.model).len(), 1);
+    }
+    set_cell(
+        &mut harness,
+        TableKind::Sections,
+        "S3",
+        "description",
+        "kept its level",
+    );
+    apply_table(&mut harness, TableKind::Sections, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let s3 = r.model.line.sections.iter().find(|s| s.id == "S3").unwrap();
+    assert_eq!(s3.description, "kept its level");
+    assert_eq!(s3.fields.get(&lev.key).map(String::as_str), Some("low"));
+    // The OLS XML keeps them.
+    let back = ols_io::olsxml::from_xml(&ols_io::olsxml::to_xml(&r.model.line)).unwrap();
+    for id in &ids {
+        let s = back.sections.iter().find(|s| &s.id == id).unwrap();
+        assert_eq!(s.fields.get(&lev.key).map(String::as_str), Some("low"));
+    }
+}

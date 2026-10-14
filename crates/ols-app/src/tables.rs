@@ -17,6 +17,7 @@
 //! Colour cells are drawn in their colour and open the colour tool
 //! ([`crate::color_tool`]), which writes the colour chosen as a typed edit.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -626,6 +627,29 @@ const WEATHER: &[Column] = &[
     ),
 ];
 
+/// A column a plugin adds to a table (`[[column]]` of its manifest), or
+/// one of a plugin not in use whose values are on the objects (shown,
+/// kept, not used).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginColumn {
+    /// The table ([`TableKind::plugin_table`]).
+    pub table: String,
+    /// Key of its values on the objects: `plugin.column`.
+    pub key: String,
+    /// Header.
+    pub title: String,
+    /// What it holds.
+    pub help: String,
+    /// The values it is chosen from; none: typed.
+    pub values: Vec<String>,
+    /// Shown where not set.
+    pub default: Option<String>,
+    /// The plugin (name and version when in use).
+    pub plugin: String,
+    /// Its plugin is in use.
+    pub in_use: bool,
+}
+
 /// One row: the object's key, what selecting it selects, the cells.
 pub struct Row {
     /// Key of the object.
@@ -966,6 +990,147 @@ impl TableKind {
     }
 
     pub fn rows(self, model: &Model, case: usize) -> Vec<Row> {
+        let mut rows = self.own_rows(model, case);
+        let columns = self.plugin_columns(model);
+        if columns.is_empty() {
+            return rows;
+        }
+        let n = self.columns().len();
+        let line = &model.line;
+        let circuits = (self == TableKind::Circuits).then(|| ols_line::electrical::circuits(line));
+        for r in &mut rows {
+            let objects = self.fields_of(line, circuits.as_deref(), &r.key);
+            r.defaulted.resize(n, false);
+            for c in &columns {
+                // Not set: the default (a circuit's sections may differ).
+                let fallback = c.default.as_deref().unwrap_or("");
+                let mut v: Vec<&str> = objects
+                    .iter()
+                    .map(|f| f.get(&c.key).map_or(fallback, String::as_str))
+                    .collect();
+                v.sort_unstable();
+                v.dedup();
+                let unset = objects.iter().all(|f| !f.contains_key(&c.key));
+                let (text, default) = match &v[..] {
+                    [] => (fallback.to_owned(), c.default.is_some()),
+                    [one] => ((*one).to_owned(), unset && c.default.is_some()),
+                    many => (format!("mixed: {}", many.join(" / ")), false),
+                };
+                r.cells.push(text);
+                r.defaulted.push(default);
+            }
+        }
+        rows
+    }
+
+    /// The table's name for plugin columns ([`ols_plugins::COLUMN_TABLES`]);
+    /// none: it takes none.
+    pub fn plugin_table(self) -> Option<&'static str> {
+        Some(match self {
+            TableKind::Structures => "structures",
+            TableKind::Sections => "sections",
+            TableKind::Circuits => "circuits",
+            TableKind::Systems => "systems",
+            TableKind::Jumpers => "jumpers",
+            TableKind::Alignments => "alignments",
+            TableKind::Routes => "routes",
+            _ => return None,
+        })
+    }
+
+    /// Its plugin columns, after its own: those the plugins in use add,
+    /// then the values found on its objects of plugins not in use (shown,
+    /// unused).
+    pub fn plugin_columns(self, model: &Model) -> Vec<PluginColumn> {
+        let Some(table) = self.plugin_table() else {
+            return Vec::new();
+        };
+        let mut out: Vec<PluginColumn> = model
+            .plugin_columns
+            .iter()
+            .filter(|c| c.table == table)
+            .cloned()
+            .collect();
+        let line = &model.line;
+        let mut found = BTreeSet::new();
+        let mut take = |f: &ols_line::Fields| found.extend(f.keys().cloned());
+        match self {
+            TableKind::Structures => line.structures.iter().for_each(|s| take(&s.fields)),
+            TableKind::Sections | TableKind::Circuits => {
+                line.sections.iter().for_each(|s| take(&s.fields));
+            }
+            TableKind::Systems => line.systems.iter().for_each(|s| take(&s.fields)),
+            TableKind::Jumpers => line.jumpers.iter().for_each(|j| take(&j.fields)),
+            TableKind::Alignments => line.alignments.iter().for_each(|a| take(&a.fields)),
+            TableKind::Routes => line.routes.iter().for_each(|r| take(&r.fields)),
+            _ => {}
+        }
+        for key in found {
+            if model.plugin_columns.iter().any(|c| c.key == key) {
+                // Its plugin shows it (in this table or another).
+                continue;
+            }
+            let plugin = key.split_once('.').map_or(key.as_str(), |x| x.0).to_owned();
+            out.push(PluginColumn {
+                table: table.to_owned(),
+                title: key.clone(),
+                help: format!(
+                    "added by plugin {plugin}, not in use here: the values are kept, not used"
+                ),
+                key,
+                values: Vec::new(),
+                default: None,
+                plugin,
+                in_use: false,
+            });
+        }
+        out
+    }
+
+    /// The plugin values of the object(s) of row `key`: a circuit's are its
+    /// sections'.
+    fn fields_of<'a>(
+        self,
+        line: &'a ols_line::Line,
+        circuits: Option<&[ols_line::electrical::Circuit]>,
+        key: &str,
+    ) -> Vec<&'a ols_line::Fields> {
+        let one = match self {
+            TableKind::Structures => line.structure(key).map(|s| &s.fields),
+            TableKind::Sections => line
+                .sections
+                .iter()
+                .find(|s| s.id == key)
+                .map(|s| &s.fields),
+            TableKind::Systems => line.systems.iter().find(|s| s.id == key).map(|s| &s.fields),
+            TableKind::Jumpers => line.jumpers.iter().find(|j| j.id == key).map(|j| &j.fields),
+            TableKind::Alignments => line
+                .alignments
+                .iter()
+                .find(|a| a.id == key)
+                .map(|a| &a.fields),
+            TableKind::Routes => line.routes.iter().find(|r| r.id == key).map(|r| &r.fields),
+            TableKind::Circuits => {
+                let Some(c) = circuits
+                    .unwrap_or_default()
+                    .iter()
+                    .find(|c| circuit_key(c) == key)
+                else {
+                    return Vec::new();
+                };
+                return c
+                    .sections
+                    .iter()
+                    .filter_map(|id| line.sections.iter().find(|s| &s.id == id))
+                    .map(|s| &s.fields)
+                    .collect();
+            }
+            _ => None,
+        };
+        one.into_iter().collect()
+    }
+
+    fn own_rows(self, model: &Model, case: usize) -> Vec<Row> {
         let line = &model.line;
         let mut through: std::collections::HashMap<(&str, u32), usize> =
             std::collections::HashMap::new();
@@ -1957,7 +2122,212 @@ impl TableKind {
                 unreachable!("written to its files")
             }
         }
+        self.plugin_changes(model, stored, page, &mut out)?;
         Ok(out)
+    }
+
+    /// Plugin column edits: each object's value set (empty: unset) in its
+    /// put among `out`'s commands, else in a put of its own.
+    fn plugin_changes(
+        self,
+        model: &Model,
+        stored: &ols_line::Line,
+        page: &TablePage,
+        out: &mut Changes,
+    ) -> Result<(), String> {
+        let columns = self.plugin_columns(model);
+        if columns.is_empty() {
+            return Ok(());
+        }
+        let n = self.columns().len();
+        let circuits =
+            (self == TableKind::Circuits).then(|| ols_line::electrical::circuits(stored));
+        let value_of = |c: &PluginColumn, text: &str| -> Result<String, String> {
+            let v = text.trim();
+            if v.is_empty() || c.values.is_empty() {
+                return Ok(v.to_owned());
+            }
+            c.values
+                .iter()
+                .find(|x| x.eq_ignore_ascii_case(v))
+                .cloned()
+                .ok_or_else(|| {
+                    format!("{}: \"{v}\" is not one of {}", c.title, c.values.join(", "))
+                })
+        };
+        // A circuit's values go to its sections.
+        let ids_of = |key: &str, id: String| -> Vec<String> {
+            match &circuits {
+                Some(cs) => cs
+                    .iter()
+                    .find(|c| circuit_key(c) == key)
+                    .map_or_else(Vec::new, |c| c.sections.clone()),
+                None => vec![id],
+            }
+        };
+        let mut sets: Vec<(Vec<String>, &PluginColumn, String)> = Vec::new();
+        for (key, edits) in page
+            .edits
+            .iter()
+            .filter(|(k, _)| !page.deleted.contains(*k))
+        {
+            // Renamed: its new id.
+            let id = edits
+                .get(&0)
+                .map_or_else(|| key.clone(), |t| t.trim().to_owned());
+            for (&c, text) in edits.range(n..) {
+                if let Some(col) = columns.get(c - n) {
+                    sets.push((ids_of(key, id.clone()), col, value_of(col, text)?));
+                }
+            }
+        }
+        for cells in &page.added {
+            let id = cells
+                .first()
+                .map_or_else(String::new, |t| t.trim().to_owned());
+            for (k, col) in columns.iter().enumerate() {
+                let text = cells.get(n + k).map_or("", String::as_str);
+                if !text.trim().is_empty() {
+                    sets.push((vec![id.clone()], col, value_of(col, text)?));
+                }
+            }
+        }
+        for (ids, col, value) in sets {
+            for id in ids {
+                self.set_field(stored, out, &id, col, &value)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Sets plugin value `col` of object `id` to `value` (empty: unset).
+    fn set_field(
+        self,
+        stored: &ols_line::Line,
+        out: &mut Changes,
+        id: &str,
+        col: &PluginColumn,
+        value: &str,
+    ) -> Result<(), String> {
+        let kind = match self {
+            TableKind::Structures => Kind::Structure,
+            TableKind::Sections | TableKind::Circuits => Kind::Section,
+            TableKind::Jumpers => Kind::Jumper,
+            TableKind::Alignments => Kind::Alignment,
+            TableKind::Routes => Kind::Route,
+            TableKind::Systems => Kind::Meta,
+            _ => return Ok(()),
+        };
+        // The systems are in the line settings.
+        let put_id = if kind == Kind::Meta { "line" } else { id };
+        let found = out
+            .commands
+            .iter_mut()
+            .rev()
+            .find_map(|(_, c)| put_in(c, kind, put_id));
+        let json = |e: serde_json::Error| e.to_string();
+        let mut own = None;
+        let value_json = match found {
+            Some(v) => v,
+            None => {
+                let missing = || format!("no {} {id}", kind.as_str());
+                let v = match self {
+                    TableKind::Structures => {
+                        serde_json::to_value(stored.structure(id).ok_or_else(missing)?)
+                    }
+                    TableKind::Sections | TableKind::Circuits => serde_json::to_value(
+                        stored
+                            .sections
+                            .iter()
+                            .find(|s| s.id == id)
+                            .ok_or_else(missing)?,
+                    ),
+                    TableKind::Jumpers => serde_json::to_value(
+                        stored
+                            .jumpers
+                            .iter()
+                            .find(|j| j.id == id)
+                            .ok_or_else(missing)?,
+                    ),
+                    TableKind::Alignments => serde_json::to_value(
+                        stored
+                            .alignments
+                            .iter()
+                            .find(|a| a.id == id)
+                            .ok_or_else(missing)?,
+                    ),
+                    TableKind::Routes => serde_json::to_value(
+                        stored
+                            .routes
+                            .iter()
+                            .find(|r| r.id == id)
+                            .ok_or_else(missing)?,
+                    ),
+                    _ => match ols_session::line_settings_put(stored, None) {
+                        Command::Put { value, .. } => Ok(value),
+                        _ => unreachable!("a put"),
+                    },
+                }
+                .map_err(json)?;
+                own.insert(v)
+            }
+        };
+        let target = if kind == Kind::Meta {
+            value_json["systems"]
+                .as_array_mut()
+                .and_then(|a| a.iter_mut().find(|s| s["id"] == id))
+                .ok_or_else(|| format!("no system {id}"))?
+        } else {
+            value_json
+        };
+        patch_field(target, &col.key, value);
+        if let Some(value) = own {
+            out.commands.push((
+                format!("set {} of {} {id}", col.title, kind.as_str()),
+                Command::Put {
+                    kind,
+                    id: put_id.to_owned(),
+                    value,
+                    ord: None,
+                },
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// The value of the put of object (`kind`, `id`) in `c` (a batch
+/// searched from its end).
+fn put_in<'a>(c: &'a mut Command, kind: Kind, id: &str) -> Option<&'a mut serde_json::Value> {
+    match c {
+        Command::Put {
+            kind: k,
+            id: i,
+            value,
+            ..
+        } if *k == kind && i == id => Some(value),
+        Command::Batch { commands } => commands.iter_mut().rev().find_map(|c| put_in(c, kind, id)),
+        _ => None,
+    }
+}
+
+/// Sets `key` in an object's `fields` (empty `value`: removes it).
+fn patch_field(object: &mut serde_json::Value, key: &str, value: &str) {
+    let Some(o) = object.as_object_mut() else {
+        return;
+    };
+    let fields = o
+        .entry("fields")
+        .or_insert_with(|| serde_json::Value::Object(Default::default()));
+    if let Some(f) = fields.as_object_mut() {
+        if value.is_empty() {
+            f.remove(key);
+        } else {
+            f.insert(key.to_owned(), value.into());
+        }
+    }
+    if o["fields"].as_object().is_some_and(|f| f.is_empty()) {
+        o.remove("fields");
     }
 }
 
@@ -3758,7 +4128,43 @@ impl TablePage {
             TableKind::WeatherCases => weather_path(model).is_some(),
             _ => model.can_edit().is_ok(),
         };
-        let columns = kind.columns();
+        // Its own columns, then the plugins'.
+        let own = kind.columns().len();
+        let plugin_columns = kind.plugin_columns(model);
+        let columns: Vec<(Cow<'static, str>, f32, Edit, Cow<'static, str>)> = kind
+            .columns()
+            .iter()
+            .map(|c| (Cow::Borrowed(c.0), c.1, c.2, Cow::Borrowed(c.3)))
+            .chain(plugin_columns.iter().map(|c| {
+                let help = if c.in_use {
+                    format!("{} (plugin {})", c.help, c.plugin)
+                } else {
+                    c.help.clone()
+                };
+                let title = if c.in_use {
+                    c.title.clone()
+                } else {
+                    format!("{} (unused)", c.title)
+                };
+                let width = (title.chars().count() as f32 * 7.5).clamp(80.0, 180.0);
+                (Cow::Owned(title), width, Yes, Cow::Owned(help))
+            }))
+            .collect();
+        let choices_of = |c: usize, cells: &[String]| {
+            if c < own {
+                return choices(kind, c, model, cells);
+            }
+            let p = &plugin_columns[c - own];
+            (!p.values.is_empty()).then(|| {
+                let mut v = vec![String::new()];
+                v.extend(p.values.iter().cloned());
+                (v, false)
+            })
+        };
+        let none_of = |c: usize| if c < own { kind.none_choice(c) } else { None };
+        for cells in &mut self.added {
+            cells.resize(columns.len(), String::new());
+        }
         let rows = kind.rows(model, case);
         let mut action = None;
         let mut apply = false;
@@ -3778,7 +4184,8 @@ impl TablePage {
                 .on_hover_text("A new object, typed in the row (pending until Apply)")
                 .clicked()
             {
-                let cells = kind.new_row(model, case, &self.added);
+                let mut cells = kind.new_row(model, case, &self.added);
+                cells.resize(columns.len(), String::new());
                 self.added.push(cells);
                 self.confirm = None;
             }
@@ -4065,7 +4472,7 @@ impl TablePage {
                                         );
                                         continue;
                                     }
-                                    if let Some(list) = choices(kind, c, model, &self.added[k]) {
+                                    if let Some(list) = choices_of(c, &self.added[k]) {
                                         let mut text = self.added[k][c].clone();
                                         if choice_cell(
                                             ui,
@@ -4074,7 +4481,7 @@ impl TablePage {
                                             &mut text,
                                             list,
                                             Some(egui::Color32::LIGHT_GREEN),
-                                            kind.none_choice(c),
+                                            none_of(c),
                                         ) {
                                             self.added[k][c] = text;
                                         }
@@ -4087,7 +4494,7 @@ impl TablePage {
                                             &mut self.added[k][c],
                                             Some(egui::Color32::LIGHT_GREEN),
                                             false,
-                                            col.3,
+                                            &col.3,
                                         );
                                         if tool {
                                             open_tool = Some((
@@ -4227,7 +4634,7 @@ impl TablePage {
                                 let default = edited.is_none()
                                     && row.defaulted.get(c).copied().unwrap_or(false);
                                 let dim = ui.visuals().weak_text_color();
-                                if let Some(list) = choices(kind, c, model, &row.cells) {
+                                if let Some(list) = choices_of(c, &row.cells) {
                                     let color = match (edited, default) {
                                         (Some(_), _) => Some(egui::Color32::YELLOW),
                                         (None, true) => Some(dim),
@@ -4240,7 +4647,7 @@ impl TablePage {
                                         &mut text,
                                         list,
                                         color,
-                                        kind.none_choice(c),
+                                        none_of(c),
                                     ) {
                                         self.set(&row.key, c, &text, original);
                                     }
@@ -4253,7 +4660,7 @@ impl TablePage {
                                             col.3
                                         )
                                     } else {
-                                        col.3.to_owned()
+                                        col.3.to_string()
                                     };
                                     let (tool, changed) = color_cell(
                                         ui,
@@ -4292,7 +4699,7 @@ impl TablePage {
                                 let hover = if default {
                                     format!("default (not set on it; type to set it) — {}", col.3)
                                 } else {
-                                    col.3.to_owned()
+                                    col.3.to_string()
                                 };
                                 if ui
                                     .add_sized([col.1, row_height], edit)

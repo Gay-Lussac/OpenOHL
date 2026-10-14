@@ -128,6 +128,16 @@ files](../user-guide/line-file.md).
 | `circuit_starts` | `[SectionPoint]` | — | circuit ends that are starts (power flows in) | structures + sets |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
+**Plugin values** (`fields`, `ols_line::Fields`): structures, sections,
+jumpers, systems, alignments and routes carry a map `plugin.column →
+text`, the values of the table columns plugins add (`[[column]]` in a
+plugin's manifest, [Writing plugins](plugins.md#table-columns)). Empty
+maps are not written. Kept with the object through every edit, written
+to OLS XML as `<field key value>`; shown (unused) where the plugin is not
+installed. A circuit's values are on all its sections. Known keys:
+`lev-ch.insulation_level` (`low` / `high`, the circuits' LeV insulation
+level, read by `ols_clearance::phase_distance`).
+
 ### Route, Alignment and AlignmentPoint (`route.rs`)
 
 | Entity.field | Type | Unit | Meaning | References |
@@ -459,9 +469,10 @@ w = d/q), `[altitude]` (`from`, `per_1000_m`). The Swiss LeV's values:
 between the same two structures (and, when asked, nearby conductors
 elsewhere within a distance) and takes l_k from the strings at their
 ends (I: its length; V, tension, clamped: 0; the string below a V: its
-length; a TAK: its suspension string's); the settings (diagram,
-station spacing, circuits ticked, each circuit's level, nearby pairs
-and their distance) are not in the file. Results per pair: the worst
+length; a TAK: its suspension string's), and each circuit's insulation
+level from its sections' `lev-ch.insulation_level` (not set: high); the
+settings (diagram, station spacing, circuits ticked, nearby pairs and
+their distance) are not in the file. Results per pair: the worst
 station (points, where along each conductor, d, z and its terms) and
 the length of conductor below z. See [the specification](lev-phase-spacing.md).
 

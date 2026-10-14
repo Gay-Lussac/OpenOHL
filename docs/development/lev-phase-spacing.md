@@ -1,11 +1,12 @@
 # LeV distance between conductors in the span (still air) — specification
 
-Status: **steps 1 and 2 of the plan implemented** (the values file
+Status: **steps 1 to 3 of the plan implemented** (the values file
 `libraries/phase-distance/lev-ch.olspd`, the check
-`ols_clearance::phase_distance`, with tests worked by hand), with the
-length below z, nearby pairs and the faster search after the first
-run on an existing line; the app window, the circuits table column,
-the command line and the report library to come. Decisions marked
+`ols_clearance::phase_distance`, with tests worked by hand; the length
+below z, nearby pairs and the faster search after the first run on an
+existing line; the Circuits table's insulation level, a column of the
+LeV plugin); the app window, the command line and the report library to
+come. Decisions marked
 *(decided)* were taken with the user; *(open)* ones are still to settle.
 Change this page when a decision changes.
 
@@ -126,8 +127,9 @@ span and tight only at the structure is easy to recognise.
   *(decided)*.
 - Table 2.4.1 row where a voltage has two (110/132, 220, 380 kV: the
   lightning impulse withstand level): low or high, chosen **per
-  circuit**; a circuit not set takes the high row (the stricter)
-  *(decided; the default may change)*.
+  circuit** in the Circuits table (the LeV plugin's column); a circuit
+  not set takes the high row (the stricter) *(decided; the default may
+  change)*.
 - Altitude for the +14 %/1000 m: the **mean conductor height of the
   span** above sea level (the mean height of its conductor points)
   *(decided)*.
@@ -154,14 +156,19 @@ differing by up to 40 % between conductors), phase spacers (2.2.4).
    sags, l_k, β, k, z, margins; the worst station per pair and the
    length below z. Pairs measured on all cores; the closest point
    searched in boxes of pieces, nearest first.
-3. **The Circuits table column.** The LeV plugin adds a column
-   "insulation level" (low / high) to the Circuits table. Tables accept
-   columns added by plugins: their values are kept with the objects, and
-   shown (unused) where the plugin is not installed.
+3. **The Circuits table column** *(done)*. The LeV plugin's manifest
+   adds a column "insulation level" (low / high, not set: high) to the
+   Circuits table; its value is kept on the circuit's sections
+   (`lev-ch.insulation_level`) and the check reads it there. Tables
+   accept columns added by plugins (`[[column]]` in any plugin's
+   manifest, on structures, sections, circuits, systems, jumpers,
+   alignments, routes): the values are kept with the objects, saved and
+   in OLS XML, and shown (unused) where the plugin is not installed.
 4. **The app.** A window (Checks menu): the weather cases ticked
    (default: a still-air case at 10 °C), the circuits ticked (a
    drop-down of tick boxes, select all / select none), the diagram
-   (500 or 650 N/m²), Δs, and per circuit low or high. The results in
+   (500 or 650 N/m²), Δs, nearby pairs and their distance (the levels:
+   the Circuits table). The results in
    the Clearances tab (worst station per pair, all its terms) and in
    the 3D view (the worst stations marked); exported like the other
    clearance results. Settings remembered with the project.

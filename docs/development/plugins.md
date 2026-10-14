@@ -19,6 +19,31 @@ network = false
 filesystem = []
 ```
 
+### Table columns
+
+A plugin may add columns to the app's tables, declared in its manifest
+(any tier; nothing to implement):
+
+```toml
+[[column]]
+table = "circuits"         # structures, sections, circuits, systems,
+                           # jumpers, alignments or routes
+name = "insulation_level"  # unique in the plugin: letters, digits, _ -
+title = "insulation level" # header (default: name)
+help = "…"                 # shown on the header
+values = ["low", "high"]   # a dropdown; none: typed
+default = "high"           # shown, dimmed, where not set
+```
+
+The values are kept on the objects, in their `fields` under
+`plugin.name` (here `lev-ch.insulation_level`; a circuit's on all its
+sections), saved with the project and in OLS XML (`<field key value>`).
+The plugin, or the check that belongs to it, reads them there. Without
+the plugin, a project keeps the values and the tables still show them
+in a column marked "(unused)", typed like text. The Swiss LeV plugin
+declares the circuits' insulation level this way (the distance between
+conductors reads it).
+
 ## WebAssembly plugins
 
 The interface is defined in WIT: `crates/ols-plugins/wit/plugin.wit`. A Rust example lives in `plugins/examples/hello-wasm`:

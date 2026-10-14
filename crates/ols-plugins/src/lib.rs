@@ -240,6 +240,53 @@ pub struct RequestedLimits {
     pub memory_mib: Option<u64>,
 }
 
+/// A `[[column]]` of a manifest: a column the plugin adds to one of the
+/// app's tables. Its values are kept with the objects under
+/// `plugin.name` ([`Manifest::field_key`]) and saved with the project; a
+/// project opened without the plugin still shows them (unused).
+///
+/// ```toml
+/// [[column]]
+/// table = "circuits"        # structures, sections, circuits, systems,
+///                           # jumpers, alignments or routes
+/// name = "insulation_level" # unique in the plugin: letters, digits, _ -
+/// title = "insulation level"
+/// help = "LeV Table 2.4.1: the row of the lightning impulse level"
+/// values = ["low", "high"]  # a choice; none: typed
+/// default = "high"          # shown where not set
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TableColumn {
+    /// The table it is added to.
+    pub table: String,
+    /// Its name in the plugin.
+    pub name: String,
+    /// Its header (default: its name).
+    #[serde(default)]
+    pub title: String,
+    /// What it holds, in words.
+    #[serde(default)]
+    pub help: String,
+    /// The values it is chosen from; none: typed.
+    #[serde(default)]
+    pub values: Vec<String>,
+    /// The value shown where none is set.
+    #[serde(default)]
+    pub default: Option<String>,
+}
+
+/// The tables a plugin may add columns to.
+pub const COLUMN_TABLES: [&str; 7] = [
+    "structures",
+    "sections",
+    "circuits",
+    "systems",
+    "jumpers",
+    "alignments",
+    "routes",
+];
+
 /// A parsed `ols-plugin.toml`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -252,6 +299,9 @@ pub struct Manifest {
     /// Requested limits (more than the defaults).
     #[serde(default)]
     pub limits: RequestedLimits,
+    /// `[[column]]`s the plugin adds to the app's tables.
+    #[serde(default, rename = "column")]
+    pub columns: Vec<TableColumn>,
     /// Directory containing the manifest.
     #[serde(skip)]
     pub dir: PathBuf,
@@ -281,7 +331,51 @@ impl Manifest {
                 ),
             });
         }
+        let bad = |message: String| PluginError::Manifest {
+            path: dir.join(MANIFEST_FILE),
+            message,
+        };
+        let mut names = std::collections::BTreeSet::new();
+        for c in &manifest.columns {
+            if !COLUMN_TABLES.contains(&c.table.as_str()) {
+                return Err(bad(format!(
+                    "column {}: table \"{}\" is not one of {}",
+                    c.name,
+                    c.table,
+                    COLUMN_TABLES.join(", ")
+                )));
+            }
+            let ok = |s: &str| {
+                !s.is_empty()
+                    && s.chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+            };
+            if !ok(&c.name) {
+                return Err(bad(format!(
+                    "column \"{}\": a name of letters, digits, _ and -",
+                    c.name
+                )));
+            }
+            if !names.insert((c.table.clone(), c.name.clone())) {
+                return Err(bad(format!("column {} twice in {}", c.name, c.table)));
+            }
+            if let Some(d) = &c.default
+                && !c.values.is_empty()
+                && !c.values.contains(d)
+            {
+                return Err(bad(format!(
+                    "column {}: default \"{d}\" is not one of its values",
+                    c.name
+                )));
+            }
+        }
         Ok(manifest)
+    }
+
+    /// The key a column's values are kept under on the objects:
+    /// `plugin.column`.
+    pub fn field_key(&self, column: &TableColumn) -> String {
+        format!("{}.{}", self.plugin.name, column.name)
     }
 
     /// Loads `ols-plugin.toml` from a plugin directory.
@@ -1098,6 +1192,32 @@ mod tests {
         assert_eq!(m.plugin.extension_points, ["checks"]);
         assert_eq!(m.entry_path(), Path::new("/plugins/t/t.wasm"));
         assert!(!m.permissions.network);
+    }
+
+    /// `[[column]]`s: read, keyed `plugin.column`; a table, name or
+    /// default not allowed is refused.
+    #[test]
+    fn table_columns() {
+        let m = manifest(
+            "0.1",
+            "[[column]]\ntable = \"circuits\"\nname = \"level\"\nvalues = [\"low\", \"high\"]\ndefault = \"high\"",
+        );
+        assert_eq!(m.columns.len(), 1);
+        assert_eq!(m.field_key(&m.columns[0]), "t.level");
+        assert_eq!(m.columns[0].values, ["low", "high"]);
+        for bad in [
+            "table = \"nowhere\"\nname = \"x\"",
+            "table = \"circuits\"\nname = \"a.b\"",
+            "table = \"circuits\"\nname = \"x\"\nvalues = [\"a\"]\ndefault = \"b\"",
+        ] {
+            let text = format!(
+                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.1\"\ntier=\"wasm\"\nentry=\"t.wasm\"\n[[column]]\n{bad}"
+            );
+            assert!(
+                Manifest::parse(&text, Path::new("/plugins/t")).is_err(),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

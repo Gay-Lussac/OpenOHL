@@ -6173,6 +6173,12 @@ impl eframe::App for App {
                     });
                 }
                 self.plugins.manager_ui(&ctx);
+                // The plugins' table columns (installed, removed, turned
+                // on or off).
+                let columns = self.plugins.table_columns();
+                if ready.model.plugin_columns != columns {
+                    ready.model.plugin_columns = columns;
+                }
                 crate::codes::window(&ctx, ready, &self.plugins);
                 let go = [
                     ready.galloping.ui(&ctx, &ready.model),

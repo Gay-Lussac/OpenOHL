@@ -18,7 +18,7 @@
 //! β (of the line joining the points, from the vertical), k, and the
 //! required z; the margin d − z.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -281,8 +281,6 @@ pub struct PhaseDistanceSettings {
     /// The circuits checked (none: all); a pair when both its conductors'
     /// circuits are.
     pub circuits: Option<BTreeSet<String>>,
-    /// Each circuit's insulation level (not given: the default, high).
-    pub levels: BTreeMap<String, Level>,
     /// Also pairs of conductors not between the same two structures
     /// (another line's, the next span's) where they come within
     /// `max_distance`.
@@ -298,7 +296,6 @@ impl Default for PhaseDistanceSettings {
             diagram: 0,
             spacing: 1.0,
             circuits: None,
-            levels: BTreeMap::new(),
             nearby: false,
             max_distance: 20.0,
         }
@@ -314,6 +311,24 @@ pub struct Conductor {
     pub w: f64,
     /// l_k at its first and last point, m.
     pub lk: [f64; 2],
+    /// Insulation level of its circuit (its section's [`LEVEL_FIELD`]);
+    /// not set: the default, high.
+    pub level: Option<Level>,
+}
+
+/// Where a section keeps its circuit's insulation level: the LeV plugin's
+/// column of the Circuits table (`low` or `high`).
+pub const LEVEL_FIELD: &str = "lev-ch.insulation_level";
+
+impl Level {
+    /// From a value of [`LEVEL_FIELD`]: `low` or `high` (any case).
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "low" => Some(Self::Low),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
 }
 
 /// The worst station of a pair.
@@ -422,10 +437,11 @@ pub fn conductors(
     wires_of(line, shapes, &[])
         .into_iter()
         .map(|wire| {
-            let w = line
-                .sections
-                .iter()
-                .find(|s| s.id == wire.section)
+            let section = line.sections.iter().find(|s| s.id == wire.section);
+            let level = section
+                .and_then(|s| s.fields.get(LEVEL_FIELD))
+                .and_then(|v| Level::parse(v));
+            let w = section
                 .and_then(|s| library.get(&s.cable))
                 .map_or(0.0, |c| {
                     let q = c.weight().si() / 9.806_65;
@@ -439,7 +455,7 @@ pub fn conductors(
                 [a, b] => [lk_at(line, a), lk_at(line, b)],
                 _ => [0.0, 0.0],
             };
-            Conductor { wire, w, lk }
+            Conductor { wire, w, lk, level }
         })
         .collect()
 }
@@ -722,13 +738,7 @@ pub fn check(
         let kv = a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0));
         // The insulation level of the circuit of the higher voltage
         // (equal: high when either is).
-        let level_of = |c: &Conductor| {
-            settings
-                .levels
-                .get(&c.wire.circuit)
-                .copied()
-                .unwrap_or_default()
-        };
+        let level_of = |c: &Conductor| c.level.unwrap_or_default();
         let level = match (a.wire.kv(), b.wire.kv()) {
             (Some(x), Some(y)) if x > y => level_of(a),
             (Some(x), Some(y)) if y > x => level_of(b),
@@ -932,14 +942,13 @@ mod tests {
             },
             w: 10.0,
             lk,
+            level: Some(Level::Low),
         }
     }
 
+    /// The default settings (the conductors are at the low level).
     fn low() -> PhaseDistanceSettings {
-        PhaseDistanceSettings {
-            levels: BTreeMap::from([("C1".into(), Level::Low), ("C2".into(), Level::Low)]),
-            ..PhaseDistanceSettings::default()
-        }
+        PhaseDistanceSettings::default()
     }
 
     fn run(c: &[Conductor], s: &PhaseDistanceSettings) -> Vec<PhaseDistancePair> {
@@ -1058,6 +1067,21 @@ mod tests {
         assert!(run(&[a, c], &near).is_empty());
     }
 
+    /// The level from the circuit's column: not set, the high row
+    /// (C₁ 2.90 m at 380 kV instead of 2.64 m).
+    #[test]
+    fn level_not_set_is_high() {
+        let mut a = conductor("C1", 1, 0.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
+        let mut b = conductor("C1", 2, 0.0, 24.0, 0.0, 12.0, [4.5, 4.5]);
+        assert!((run(&[a.clone(), b.clone()], &low())[0].worst.c - 2.64).abs() < 1e-9);
+        a.level = None;
+        b.level = None;
+        assert!((run(&[a, b], &low())[0].worst.c - 2.90).abs() < 1e-9);
+        assert_eq!(Level::parse(" Low "), Some(Level::Low));
+        assert_eq!(Level::parse("HIGH"), Some(Level::High));
+        assert_eq!(Level::parse("medium"), None);
+    }
+
     /// Side by side (β = 90°): k = 0.60; two circuits: C₂.
     #[test]
     fn side_by_side_and_two_circuits() {
@@ -1174,6 +1198,7 @@ mod tests {
             omit_sets: Vec::new(),
             members: Vec::new(),
             routes: Vec::new(),
+            fields: Default::default(),
         };
         let mut st = st;
         // The tension string runs along: its wire point 3 m away.

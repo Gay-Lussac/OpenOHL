@@ -146,6 +146,29 @@ mod tests {
             some.iter()
                 .all(|p| cs[p.a].wire.circuit == first && cs[p.b].wire.circuit == first)
         );
+        // The insulation level from the circuits' column on the sections:
+        // not set high, set low: C₁ from the low row (or the same where a
+        // voltage has one row).
+        assert!(cs.iter().all(|c| c.level.is_none()));
+        let mut low = line.clone();
+        for s in &mut low.sections {
+            s.fields
+                .insert(crate::phase_distance::LEVEL_FIELD.into(), "low".into());
+        }
+        let cs_low = conductors(&low, &shapes, &library);
+        assert!(
+            cs_low
+                .iter()
+                .all(|c| c.level == Some(crate::phase_distance::Level::Low))
+        );
+        let lower = check(&code, &settings, &cs_low, &budget).unwrap();
+        assert_eq!(lower.len(), pairs.len());
+        assert!(
+            lower
+                .iter()
+                .zip(&pairs)
+                .all(|(l, h)| l.worst.c <= h.worst.c + 1e-12)
+        );
     }
 
     /// Lowest subconductor below the centre line, m (0 for one wire).

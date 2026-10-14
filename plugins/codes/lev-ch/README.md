@@ -34,3 +34,11 @@ with wind, LeV minimum temperature; all factors 1, strength 1/S. Wires of
 another diameter need their own file (the load is per metre for the
 reference diameter). Not generated: exceptional load cases (one-sided
 additional load, broken conductor).
+
+## Table column
+
+The manifest adds an **insulation level** column (low / high, not set:
+high) to the app's Electrical circuits table: the row of LeV Table 2.4.1
+for the circuit's lightning impulse withstand level. It is kept on the
+circuit's sections as `lev-ch.insulation_level`, and the distance between
+conductors in the span (`ols_clearance::phase_distance`) reads it there.

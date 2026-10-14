@@ -450,6 +450,32 @@ impl Plugins {
         l.problem().is_none() && !self.disabled.contains(&l.found.name())
     }
 
+    /// The table columns the plugins in use add (`[[column]]` of their
+    /// manifests).
+    pub fn table_columns(&self) -> Vec<crate::tables::PluginColumn> {
+        self.listed
+            .iter()
+            .filter(|l| self.enabled(l))
+            .filter_map(|l| l.found.manifest.as_ref().ok())
+            .flat_map(|m| {
+                m.columns.iter().map(|c| crate::tables::PluginColumn {
+                    table: c.table.clone(),
+                    key: m.field_key(c),
+                    title: if c.title.is_empty() {
+                        c.name.clone()
+                    } else {
+                        c.title.clone()
+                    },
+                    help: c.help.clone(),
+                    values: c.values.clone(),
+                    default: c.default.clone(),
+                    plugin: format!("{} {}", m.plugin.name, m.plugin.version),
+                    in_use: true,
+                })
+            })
+            .collect()
+    }
+
     /// The Python plugins in use: name, entry script.
     pub fn python_scripts(&self) -> Vec<(String, PathBuf)> {
         self.listed

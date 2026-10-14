@@ -63,6 +63,9 @@ The names are those of the line file:
     <!-- or support clamps, in order from `from` (structure: default the `from` end's) -->
     <clamp structure="T3" wire="JW" at="0.5" clamp_length="0.1"/>
   </jumper>
+  <!-- structures, sections, jumpers, systems, alignments and routes may
+       hold the values of plugins' table columns, last inside them:
+       <field key="lev-ch.insulation_level" value="low"/> -->
   <circuit_start structure="T7" set="1"/>       <!-- a circuit's end that is a start -->
   <phase_color label="L1" color="#8b4513"/>     <!-- display colours -->
   <creep_stretch creep_case="…">
