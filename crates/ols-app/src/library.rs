@@ -375,12 +375,24 @@ impl LibraryKind {
         LibraryKind::LoadCases,
     ];
 
+    /// Its name in menus: "<title> library" (once).
+    pub fn library_name(self) -> String {
+        let t = self.title();
+        if t.ends_with("library") {
+            t.to_owned()
+        } else {
+            format!("{t} library")
+        }
+    }
+
     /// Title of its page.
     pub fn title(self) -> &'static str {
         match self {
             LibraryKind::Cables => "Wires",
             LibraryKind::Insulators => "Insulators",
-            LibraryKind::StructureTypes => "Structure types",
+            // All the structures (pylons) the model uses, as a library:
+            // each imported or exported as a file.
+            LibraryKind::StructureTypes => "Structure library",
             LibraryKind::WeatherCases => "Weather cases",
             LibraryKind::LoadCases => "Load cases",
         }
