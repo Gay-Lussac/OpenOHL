@@ -2,8 +2,10 @@
 
 Status: **steps 1 and 2 of the plan implemented** (the values file
 `libraries/phase-distance/lev-ch.olspd`, the check
-`ols_clearance::phase_distance`, with tests worked by hand); the app
-window, the circuits table column and the command line to come. Decisions marked
+`ols_clearance::phase_distance`, with tests worked by hand), with the
+length below z, nearby pairs and the faster search after the first
+run on an existing line; the app window, the circuits table column,
+the command line and the report library to come. Decisions marked
 *(decided)* were taken with the user; *(open)* ones are still to settle.
 Change this page when a decision changes.
 
@@ -77,7 +79,8 @@ conductors always from the same case):
 
 The stations are taken on each conductor of the pair in turn (P on the
 first and Q on the second, then the other way), so a short and a long
-conductor are both covered.
+conductor are both covered. For a bundle, each subconductor's stations
+are measured to the nearest subconductor of the other conductor.
 
 ## Which pairs *(decided — may change)*
 
@@ -87,14 +90,31 @@ conductor are both covered.
 - Only the **circuits ticked** (a drop-down list of tick boxes, with
   select all / select none); a pair is checked when both its
   conductors' circuits are ticked.
+- **Nearby pairs** *(decided)*: a tick box adds pairs of conductors not
+  between the same two structures (another line's spans, the next
+  span's) whose boxes come within a **maximum distance** (field,
+  default 20 m — keep it above the largest z, about 12 m at 380 kV);
+  they are measured only where closer than that distance.
 - Same circuit (and phase to earth wire): C1; different circuits: C2.
+- Not paired: jumpers (they only go from one span to the next), two
+  earth wires, two conductors of the same circuit and phase (one
+  potential), two sharing a clamp (the next span of the same wire).
 
 ## Report
 
-Per pair: the worst station (position along the span, d, z, the margin,
-f and l_k of each conductor, β, k, C, the voltage and the case), the
-violations (stations below 0), shown in the Clearances tab and exported
-like the other clearance results.
+Per pair: the worst station (its two points, where along each
+conductor, d, z, the margin, f and l_k of each conductor, β, k, C, the
+voltage and the case), and the **length of conductor below z** (m, on
+the conductor and subconductor where it is longest — each stretch
+counted once, not per subconductor pair or measuring direction).
+Shown in the Clearances tab and exported like the other clearance
+results. **Clicking a result** draws in the model the line between its
+two points, labelled with its length d and the required z.
+
+A note on the report: a worst station **at a clamp** (f about 0) is
+legitimate — the formula holds there too, with z then C plus the
+string term — but is marked as such, so a design that is fine in the
+span and tight only at the structure is easy to recognise.
 
 ## Settings
 
@@ -132,8 +152,8 @@ differing by up to 40 % between conductors), phase spacers (2.2.4).
    and the settings, per pair of conductors between the same two
    structures of the ticked circuits: stations, closest points, local
    sags, l_k, β, k, z, margins; the worst station per pair and the
-   violations. Budgets: stations × pieces of the other conductor per
-   pair (a few ms per span pair).
+   length below z. Pairs measured on all cores; the closest point
+   searched in boxes of pieces, nearest first.
 3. **The Circuits table column.** The LeV plugin adds a column
    "insulation level" (low / high) to the Circuits table. Tables accept
    columns added by plugins: their values are kept with the objects, and
@@ -147,7 +167,25 @@ differing by up to 40 % between conductors), phase spacers (2.2.4).
    clearance results. Settings remembered with the project.
 5. **The command line.** The same check from `ols line` (parameter file,
    cases, circuits), its CSV.
-6. **Tests and benchmarks** (below), docs (user guide, theory page).
+6. **The report library** *(to discuss before building)*: reports
+   saved with the time, the state of the line, the parameters given
+   (and, made by a plugin, the plugin and its version); imported,
+   exported, managed and kept track of, and reloaded into the model to
+   check.
+7. **Tests and benchmarks** (below), docs (user guide, theory page).
+
+### First run on an existing line (local)
+
+The still-air 10 °C case of a 25 km line with 380, 220, 132 and 65 kV
+circuits: 930 conductors, 5593 pairs between the same structures,
+60 below z (about 12 km of conductor in all); with nearby pairs
+(20 m), 10 468 pairs and 4 more below. 0.8 s on all cores (first
+version: 10.9 s, one core, every piece of the other conductor per
+station; now boxes of 8 pieces searched nearest first). The worst: a
+380 kV conductor above a 132 kV one in long spans (f 25–29 m, l_k
+7.6 m), and a phase near its clamp against an earth wire. Two phases
+of a short drop span that cross each other in the data (d ≈ 0) were
+found too.
 
 ## Tests (planned)
 

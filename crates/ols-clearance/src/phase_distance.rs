@@ -19,6 +19,8 @@
 //! required z; the margin d − z.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ols_core::budget::Budget;
 use ols_core::units::Length;
@@ -281,6 +283,13 @@ pub struct PhaseDistanceSettings {
     pub circuits: Option<BTreeSet<String>>,
     /// Each circuit's insulation level (not given: the default, high).
     pub levels: BTreeMap<String, Level>,
+    /// Also pairs of conductors not between the same two structures
+    /// (another line's, the next span's) where they come within
+    /// `max_distance`.
+    pub nearby: bool,
+    /// Nearby pairs: measured where closer than this, m (keep it above
+    /// the largest z, about 12 m at 380 kV).
+    pub max_distance: f64,
 }
 
 impl Default for PhaseDistanceSettings {
@@ -290,6 +299,8 @@ impl Default for PhaseDistanceSettings {
             spacing: 1.0,
             circuits: None,
             levels: BTreeMap::new(),
+            nearby: false,
+            max_distance: 20.0,
         }
     }
 }
@@ -310,6 +321,9 @@ pub struct Conductor {
 pub struct Station {
     /// The point on the first conductor and on the second.
     pub at: [P3; 2],
+    /// Where along each conductor, m of its length from its first point
+    /// (near 0 or its length: at a clamp, where f is about 0).
+    pub along: [f64; 2],
     /// Distance between them, m.
     pub distance: f64,
     /// Required z, m.
@@ -344,12 +358,16 @@ pub struct PhaseDistancePair {
     pub same_circuit: bool,
     /// Nominal voltage used, kV.
     pub kv: f64,
+    /// Both hang between the same two structures (else a nearby pair).
+    pub same_span: bool,
     /// Mean conductor height of the span, m above sea level.
     pub altitude: f64,
     /// The worst station.
     pub worst: Station,
-    /// Stations below the requirement.
-    pub violations: usize,
+    /// Length of conductor below the requirement, m: on the conductor
+    /// and subconductor where it is longest (each stretch counted once,
+    /// not per subconductor pair or measuring direction).
+    pub length_below: f64,
 }
 
 /// l_k at the end of a conductor at `key` (`structure:set`): the length
@@ -469,64 +487,131 @@ fn dist(a: P3, b: P3) -> f64 {
     (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt()
 }
 
-/// A polyline's stations every `spacing` of its 3D length, its ends
-/// included: (point, share of its length from its first point).
-fn stations(points: &[P3], spacing: f64) -> Vec<(P3, f64)> {
-    let lengths: Vec<f64> = points.windows(2).map(|w| dist(w[0], w[1])).collect();
-    let total: f64 = lengths.iter().sum();
-    if total <= 0.0 {
-        return vec![(points[0], 0.0)];
-    }
-    let n = (total / spacing.max(1e-3)).ceil().max(1.0) as usize;
-    (0..=n)
-        .map(|i| {
-            let s = total * i as f64 / n as f64;
-            (point_at(points, &lengths, s), s / total)
-        })
-        .collect()
+/// A polyline with its piece lengths and the boxes of runs of pieces,
+/// for fast closest-point searches.
+struct Poly<'a> {
+    points: &'a [P3],
+    /// Length from the first point to each point, m.
+    run: Vec<f64>,
+    /// Bounding box (min, max) of each run of `CHUNK` pieces.
+    boxes: Vec<(P3, P3)>,
 }
 
-fn point_at(points: &[P3], lengths: &[f64], s: f64) -> P3 {
-    let mut run = 0.0;
-    for (k, l) in lengths.iter().enumerate() {
-        if run + l >= s || k + 1 == lengths.len() {
-            let t = if *l > 0.0 {
-                ((s - run) / l).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            let (a, b) = (points[k], points[k + 1]);
-            return [0, 1, 2].map(|c| a[c] + (b[c] - a[c]) * t);
-        }
-        run += l;
-    }
-    points[points.len() - 1]
-}
+/// Pieces per box.
+const CHUNK: usize = 8;
 
-/// The closest point of a polyline to `p`: (point, share of the
-/// polyline's 3D length from its first point).
-fn closest(points: &[P3], p: P3) -> (P3, f64) {
-    let lengths: Vec<f64> = points.windows(2).map(|w| dist(w[0], w[1])).collect();
-    let total: f64 = lengths.iter().sum::<f64>().max(1e-12);
-    let mut best = (points[0], 0.0, f64::INFINITY);
-    let mut run = 0.0;
-    for (k, w) in points.windows(2).enumerate() {
-        let (a, b) = (w[0], w[1]);
-        let d = [0, 1, 2].map(|c| b[c] - a[c]);
-        let dd: f64 = d.iter().map(|x| x * x).sum();
-        let t = if dd > 0.0 {
-            ((0..3).map(|c| (p[c] - a[c]) * d[c]).sum::<f64>() / dd).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let q = [0, 1, 2].map(|c| a[c] + d[c] * t);
-        let e = dist(p, q);
-        if e < best.2 {
-            best = (q, (run + lengths[k] * t) / total, e);
+impl<'a> Poly<'a> {
+    fn new(points: &'a [P3]) -> Self {
+        let mut run = vec![0.0];
+        for w in points.windows(2) {
+            run.push(run[run.len() - 1] + dist(w[0], w[1]));
         }
-        run += lengths[k];
+        let boxes = (0..points.len().saturating_sub(1))
+            .step_by(CHUNK)
+            .map(|k| {
+                let ps = &points[k..(k + CHUNK + 1).min(points.len())];
+                let mut lo = ps[0];
+                let mut hi = ps[0];
+                for p in ps {
+                    for c in 0..3 {
+                        lo[c] = lo[c].min(p[c]);
+                        hi[c] = hi[c].max(p[c]);
+                    }
+                }
+                (lo, hi)
+            })
+            .collect();
+        Self { points, run, boxes }
     }
-    (best.0, best.1)
+
+    fn total(&self) -> f64 {
+        self.run[self.run.len() - 1]
+    }
+
+    /// Bounding box of the whole polyline.
+    fn bounds(&self) -> (P3, P3) {
+        self.boxes.iter().fold(
+            ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]),
+            |(lo, hi), (a, b)| {
+                (
+                    [0, 1, 2].map(|c| lo[c].min(a[c])),
+                    [0, 1, 2].map(|c| hi[c].max(b[c])),
+                )
+            },
+        )
+    }
+
+    /// Stations every `spacing` of its 3D length, its ends included:
+    /// (point, length from its first point, length it stands for).
+    fn stations(&self, spacing: f64) -> Vec<(P3, f64, f64)> {
+        let total = self.total();
+        if total <= 0.0 {
+            return vec![(self.points[0], 0.0, 0.0)];
+        }
+        let n = (total / spacing.max(1e-3)).ceil().max(1.0) as usize;
+        let step = total / n as f64;
+        let mut k = 0;
+        (0..=n)
+            .map(|i| {
+                let s = step * i as f64;
+                while k + 2 < self.points.len() && self.run[k + 1] < s {
+                    k += 1;
+                }
+                let l = self.run[k + 1] - self.run[k];
+                let t = if l > 0.0 {
+                    ((s - self.run[k]) / l).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let (a, b) = (self.points[k], self.points[k + 1]);
+                let weight = if i == 0 || i == n { step / 2.0 } else { step };
+                ([0, 1, 2].map(|c| a[c] + (b[c] - a[c]) * t), s, weight)
+            })
+            .collect()
+    }
+
+    /// The closest point to `p`: (point, length from the first point,
+    /// distance); none farther than `cutoff`.
+    fn closest(&self, p: P3, cutoff: f64) -> Option<(P3, f64, f64)> {
+        let mut order: Vec<(f64, usize)> = self
+            .boxes
+            .iter()
+            .enumerate()
+            .map(|(i, (lo, hi))| {
+                let d2: f64 = (0..3)
+                    .map(|c| (lo[c] - p[c]).max(p[c] - hi[c]).max(0.0).powi(2))
+                    .sum();
+                (d2.sqrt(), i)
+            })
+            .filter(|(d, _)| *d <= cutoff)
+            .collect();
+        order.sort_by(|x, y| x.0.total_cmp(&y.0));
+        let mut best: Option<(P3, f64, f64)> = None;
+        for (bound, i) in order {
+            if best.is_some_and(|b| bound >= b.2) {
+                break;
+            }
+            let start = i * CHUNK;
+            let end = (start + CHUNK).min(self.points.len() - 1);
+            for k in start..end {
+                let (a, b) = (self.points[k], self.points[k + 1]);
+                let d = [0, 1, 2].map(|c| b[c] - a[c]);
+                let dd: f64 = d.iter().map(|x| x * x).sum();
+                let t = if dd > 0.0 {
+                    ((0..3).map(|c| (p[c] - a[c]) * d[c]).sum::<f64>() / dd).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let q = [0, 1, 2].map(|c| a[c] + d[c] * t);
+                let e = dist(p, q);
+                if e <= cutoff && best.is_none_or(|b| e < b.2) {
+                    let s = self.run[k] + (self.run[k + 1] - self.run[k]) * t;
+                    best = Some((q, s, e));
+                }
+            }
+        }
+        best
+    }
 }
 
 /// The sag of a polyline at `p` (a point of it): vertically below its
@@ -543,7 +628,11 @@ fn local_sag(points: &[P3], p: P3) -> f64 {
 }
 
 /// Checks the pairs of `conductors` hanging between the same two
-/// structures. Exit clause: the budget's time limit (checked per pair).
+/// structures, and with [`PhaseDistanceSettings::nearby`] those coming
+/// within its distance elsewhere. Not paired: jumpers, two earth wires,
+/// two conductors of the same circuit and phase (one potential), two
+/// sharing a clamp. The pairs are measured on all cores. Exit clause:
+/// the budget's time limit and cancellation (checked per pair).
 pub fn check(
     code: &PhaseDistanceCode,
     settings: &PhaseDistanceSettings,
@@ -562,133 +651,231 @@ pub fn check(
             .is_none_or(|set| set.contains(&c.wire.circuit))
     };
     let keys: Vec<Option<[String; 2]>> = conductors.iter().map(|c| span_key(&c.wire)).collect();
-    let mut out = Vec::new();
+    let subs: Vec<Vec<Vec<P3>>> = conductors.iter().map(|c| subconductors(&c.wire)).collect();
+    let polys: Vec<Vec<Poly>> = subs
+        .iter()
+        .map(|s| {
+            s.iter()
+                .filter(|p| p.len() >= 2)
+                .map(|p| Poly::new(p))
+                .collect()
+        })
+        .collect();
+    let bounds: Vec<Option<(P3, P3)>> = polys
+        .iter()
+        .map(|ps| {
+            ps.iter().map(Poly::bounds).reduce(|(a, b), (c, d)| {
+                (
+                    [0, 1, 2].map(|k| a[k].min(c[k])),
+                    [0, 1, 2].map(|k| b[k].max(d[k])),
+                )
+            })
+        })
+        .collect();
+    let apart = |i: usize, j: usize| match (bounds[i], bounds[j]) {
+        (Some((a, b)), Some((c, d))) => (0..3)
+            .map(|k| (c[k] - b[k]).max(a[k] - d[k]).max(0.0).powi(2))
+            .sum::<f64>()
+            .sqrt(),
+        _ => f64::INFINITY,
+    };
+    // The pairs to measure (cheap tests first).
+    let mut candidates = Vec::new();
     for i in 0..conductors.len() {
         let Some(key) = &keys[i] else { continue };
-        if !ticked(&conductors[i]) {
+        if !ticked(&conductors[i]) || polys[i].is_empty() {
             continue;
         }
         for j in i + 1..conductors.len() {
-            if keys[j].as_ref() != Some(key) || !ticked(&conductors[j]) {
+            let Some(other) = &keys[j] else { continue };
+            if !ticked(&conductors[j]) || polys[j].is_empty() {
                 continue;
             }
-            run.check()
-                .map_err(|stop| format!("phase distances: {stop}"))?;
+            let same_span = other == key;
+            if !same_span && (!settings.nearby || apart(i, j) > settings.max_distance) {
+                continue;
+            }
             let (a, b) = (&conductors[i], &conductors[j]);
-            // Earth wires (no potential) count as the same circuit (C₁).
-            let earth = a.wire.potential.is_none() || b.wire.potential.is_none();
-            let same_circuit = earth || a.wire.circuit == b.wire.circuit;
-            let kv = a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0));
-            if kv <= 0.0 {
+            if !a.wire.phase.is_empty()
+                && a.wire.circuit == b.wire.circuit
+                && a.wire.phase == b.wire.phase
+            {
+                // One potential.
+                continue;
+            }
+            if a.wire.ends.iter().any(|e| b.wire.ends.contains(e)) {
+                // Connected at a clamp (the next span of the same wire).
+                continue;
+            }
+            if a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0)) <= 0.0 {
                 // Two earth wires: nothing to keep apart.
                 continue;
             }
-            // The insulation level of the circuit of the higher voltage
-            // (equal: high when either is).
-            let level_of = |c: &Conductor| {
-                settings
-                    .levels
-                    .get(&c.wire.circuit)
-                    .copied()
-                    .unwrap_or_default()
-            };
-            let level = match (a.wire.kv(), b.wire.kv()) {
-                (Some(x), Some(y)) if x > y => level_of(a),
-                (Some(x), Some(y)) if y > x => level_of(b),
-                (Some(_), Some(_)) => {
-                    if level_of(a) == Level::High || level_of(b) == Level::High {
-                        Level::High
-                    } else {
-                        Level::Low
-                    }
-                }
-                (Some(_), None) => level_of(a),
-                _ => level_of(b),
-            };
-            let all: Vec<f64> = a
-                .wire
-                .points
-                .iter()
-                .chain(&b.wire.points)
-                .map(|p| p[2])
-                .collect();
-            let altitude = all.iter().sum::<f64>() / all.len().max(1) as f64;
-            let c = code.c(same_circuit, kv, level) * code.altitude_factor(altitude);
-            let mut worst: Option<Station> = None;
-            let mut violations = 0;
-            let (sa, sb) = (subconductors(&a.wire), subconductors(&b.wire));
-            for pa in &sa {
-                for pb in &sb {
-                    // Stations on each in turn, the closest point on the other.
-                    for (first, second, swap) in [(pa, pb, false), (pb, pa, true)] {
-                        if first.len() < 2 || second.len() < 2 {
-                            continue;
-                        }
-                        let (cf, cs) = if swap { (b, a) } else { (a, b) };
-                        for (p, sp) in stations(first, settings.spacing) {
-                            let (q, sq) = closest(second, p);
-                            let d = dist(p, q);
-                            let dz = (p[2] - q[2]).abs();
-                            let beta = if d > 0.0 {
-                                (dz / d).clamp(0.0, 1.0).acos().to_degrees()
-                            } else {
-                                0.0
-                            };
-                            let fp = local_sag(first, p);
-                            let fq = local_sag(second, q);
-                            let lp = lk_linear(cf.lk, sp);
-                            let lq = lk_linear(cs.lk, sq);
-                            let (kp, kq) = (diagram.k(cf.w, beta), diagram.k(cs.w, beta));
-                            let z = (kp * (fp + lp).max(0.0).sqrt())
-                                .max(kq * (fq + lq).max(0.0).sqrt())
-                                + c;
-                            let st = if swap {
-                                Station {
-                                    at: [q, p],
-                                    distance: d,
-                                    required: z,
-                                    sag: [fq, fp],
-                                    lk: [lq, lp],
-                                    beta,
-                                    k: [kq, kp],
-                                    c,
-                                }
-                            } else {
-                                Station {
-                                    at: [p, q],
-                                    distance: d,
-                                    required: z,
-                                    sag: [fp, fq],
-                                    lk: [lp, lq],
-                                    beta,
-                                    k: [kp, kq],
-                                    c,
-                                }
-                            };
-                            if st.margin() < 0.0 {
-                                violations += 1;
-                            }
-                            if worst.as_ref().is_none_or(|w| st.margin() < w.margin()) {
-                                worst = Some(st);
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some(worst) = worst {
-                out.push(PhaseDistancePair {
-                    a: i,
-                    b: j,
-                    same_circuit,
-                    kv,
-                    altitude,
-                    worst,
-                    violations,
-                });
-            }
+            candidates.push((i, j, same_span));
         }
     }
-    Ok(out)
+    let measure = |i: usize, j: usize, same_span: bool| -> Option<PhaseDistancePair> {
+        let (a, b) = (&conductors[i], &conductors[j]);
+        // Earth wires (no potential) count as the same circuit (C₁).
+        let earth = a.wire.potential.is_none() || b.wire.potential.is_none();
+        let same_circuit = earth || a.wire.circuit == b.wire.circuit;
+        let kv = a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0));
+        // The insulation level of the circuit of the higher voltage
+        // (equal: high when either is).
+        let level_of = |c: &Conductor| {
+            settings
+                .levels
+                .get(&c.wire.circuit)
+                .copied()
+                .unwrap_or_default()
+        };
+        let level = match (a.wire.kv(), b.wire.kv()) {
+            (Some(x), Some(y)) if x > y => level_of(a),
+            (Some(x), Some(y)) if y > x => level_of(b),
+            (Some(_), Some(_)) => {
+                if level_of(a) == Level::High || level_of(b) == Level::High {
+                    Level::High
+                } else {
+                    Level::Low
+                }
+            }
+            (Some(_), None) => level_of(a),
+            _ => level_of(b),
+        };
+        let all: Vec<f64> = a
+            .wire
+            .points
+            .iter()
+            .chain(&b.wire.points)
+            .map(|p| p[2])
+            .collect();
+        let altitude = all.iter().sum::<f64>() / all.len().max(1) as f64;
+        let c = code.c(same_circuit, kv, level) * code.altitude_factor(altitude);
+        // Same span: every station; nearby: where within the distance.
+        let cutoff = if same_span {
+            f64::INFINITY
+        } else {
+            settings.max_distance
+        };
+        let mut worst: Option<Station> = None;
+        let mut length_below = 0.0f64;
+        // Stations on each conductor in turn, the closest point on the
+        // other (its nearest subconductor).
+        for swap in [false, true] {
+            let (fi, si) = if swap { (j, i) } else { (i, j) };
+            let (cf, cs) = (&conductors[fi], &conductors[si]);
+            for first in &polys[fi] {
+                let mut below = 0.0;
+                for (p, sp, weight) in first.stations(settings.spacing) {
+                    let mut station: Option<Station> = None;
+                    for second in &polys[si] {
+                        let Some((q, sq, d)) = second.closest(p, cutoff) else {
+                            continue;
+                        };
+                        let dz = (p[2] - q[2]).abs();
+                        let beta = if d > 0.0 {
+                            (dz / d).clamp(0.0, 1.0).acos().to_degrees()
+                        } else {
+                            0.0
+                        };
+                        let fp = local_sag(first.points, p);
+                        let fq = local_sag(second.points, q);
+                        let lp = lk_linear(cf.lk, sp / first.total().max(1e-12));
+                        let lq = lk_linear(cs.lk, sq / second.total().max(1e-12));
+                        let (kp, kq) = (diagram.k(cf.w, beta), diagram.k(cs.w, beta));
+                        let z = (kp * (fp + lp).max(0.0).sqrt())
+                            .max(kq * (fq + lq).max(0.0).sqrt())
+                            + c;
+                        let st = if swap {
+                            Station {
+                                at: [q, p],
+                                along: [sq, sp],
+                                distance: d,
+                                required: z,
+                                sag: [fq, fp],
+                                lk: [lq, lp],
+                                beta,
+                                k: [kq, kp],
+                                c,
+                            }
+                        } else {
+                            Station {
+                                at: [p, q],
+                                along: [sp, sq],
+                                distance: d,
+                                required: z,
+                                sag: [fp, fq],
+                                lk: [lp, lq],
+                                beta,
+                                k: [kp, kq],
+                                c,
+                            }
+                        };
+                        if station.as_ref().is_none_or(|w| st.margin() < w.margin()) {
+                            station = Some(st);
+                        }
+                    }
+                    let Some(st) = station else { continue };
+                    if st.margin() < 0.0 {
+                        below += weight;
+                    }
+                    if worst.as_ref().is_none_or(|w| st.margin() < w.margin()) {
+                        worst = Some(st);
+                    }
+                }
+                length_below = length_below.max(below);
+            }
+        }
+        worst.map(|worst| PhaseDistancePair {
+            a: i,
+            b: j,
+            same_circuit,
+            kv,
+            same_span,
+            altitude,
+            worst,
+            length_below,
+        })
+    };
+    // The pairs shared out over the cores, in their order.
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(candidates.len())
+        .max(1);
+    let next = AtomicUsize::new(0);
+    let stopped: Mutex<Option<String>> = Mutex::new(None);
+    let mut found: Vec<(usize, PhaseDistancePair)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        if let Err(stop) = run.check() {
+                            *stopped.lock().expect("not poisoned") =
+                                Some(format!("phase distances: {stop}"));
+                            return mine;
+                        }
+                        let k = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(&(i, j, same_span)) = candidates.get(k) else {
+                            return mine;
+                        };
+                        if let Some(pair) = measure(i, j, same_span) {
+                            mine.push((k, pair));
+                        }
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().expect("a phase distance worker panicked"))
+            .collect()
+    });
+    if let Some(stop) = stopped.into_inner().expect("not poisoned") {
+        return Err(stop);
+    }
+    found.sort_by_key(|(k, _)| *k);
+    Ok(found.into_iter().map(|(_, pair)| pair).collect())
 }
 
 #[cfg(test)]
@@ -800,17 +987,75 @@ mod tests {
         assert!((w.sag[0] - 12.0).abs() < 1e-9, "{:?}", w.sag);
         let z = 0.70 * 16.5f64.sqrt() + 2.64;
         assert!((w.required - z).abs() < 1e-9, "{} {z}", w.required);
-        assert_eq!(pairs[0].violations, 0);
-        // 5 m apart: violations around mid-span only.
+        assert_eq!(pairs[0].length_below, 0.0);
+        // 5 m apart: below around mid-span only.
         let a = conductor("C1", 1, 0.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
         let b = conductor("C1", 2, 0.0, 25.0, 0.0, 12.0, [4.5, 4.5]);
         let p = &run(&[a, b], &low())[0];
-        assert!(p.worst.margin() < 0.0 && p.violations > 0);
+        assert!(p.worst.margin() < 0.0 && p.length_below > 0.0);
         assert!(
-            p.violations < 2 * 301,
+            p.length_below < 300.0,
             "not at the clamps: {}",
-            p.violations
+            p.length_below
         );
+    }
+
+    /// The length below the requirement: 5 m apart, f = 12 m, l_k = 4.5 m
+    /// at both ends: z > 5 m where 48·t(1 − t) + 4.5 > (2.36 / 0.70)²,
+    /// t from 0.177 to 0.823, about 194 m of the 300 m — counted once,
+    /// not per measuring direction.
+    #[test]
+    fn length_below() {
+        let a = conductor("C1", 1, 0.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
+        let b = conductor("C1", 2, 0.0, 25.0, 0.0, 12.0, [4.5, 4.5]);
+        let p = &run(&[a, b], &low())[0];
+        let t = 0.5 - (0.25 - (((2.36f64 / 0.70).powi(2) - 4.5) / 48.0)).sqrt();
+        let expected = 300.0 * (1.0 - 2.0 * t);
+        assert!(
+            (p.length_below - expected).abs() < 3.0,
+            "{} {expected}",
+            p.length_below
+        );
+        // Where along: the worst at mid-span.
+        assert!(
+            (p.worst.along[0] - 150.0).abs() < 2.0,
+            "{:?}",
+            p.worst.along
+        );
+    }
+
+    /// Nearby pairs: a parallel line 6 m to the side on its own
+    /// structures is checked only when asked, within the distance; two
+    /// conductors of one circuit and phase, or sharing a clamp, never.
+    #[test]
+    fn nearby_pairs() {
+        let a = conductor("C1", 1, 0.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
+        let mut b = conductor("C2", 1, 6.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
+        b.wire.ends = vec!["T3:1".into(), "T4:1".into()];
+        assert!(run(&[a.clone(), b.clone()], &low()).is_empty());
+        let near = PhaseDistanceSettings {
+            nearby: true,
+            ..low()
+        };
+        let pairs = run(&[a.clone(), b.clone()], &near);
+        assert_eq!(pairs.len(), 1);
+        assert!(!pairs[0].same_span && !pairs[0].same_circuit);
+        assert!((pairs[0].worst.distance - 6.0).abs() < 1e-6);
+        let far = PhaseDistanceSettings {
+            max_distance: 5.0,
+            ..near.clone()
+        };
+        assert!(run(&[a.clone(), b.clone()], &far).is_empty());
+        // One circuit and phase: one potential.
+        let (mut a1, mut b1) = (a.clone(), b.clone());
+        a1.wire.phase = "L1".into();
+        b1.wire.phase = "L1".into();
+        b1.wire.circuit = "C1".into();
+        assert!(run(&[a1, b1], &near).is_empty());
+        // Sharing a clamp: the next span.
+        let mut c = b.clone();
+        c.wire.ends = vec!["T2:1".into(), "T4:1".into()];
+        assert!(run(&[a, c], &near).is_empty());
     }
 
     /// Side by side (β = 90°): k = 0.60; two circuits: C₂.

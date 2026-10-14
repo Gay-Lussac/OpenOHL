@@ -456,11 +456,14 @@ insulation level), `[[diagram]]`s (`name`, `wind_pressure`, `line =
 [{ w_max, k0, k90 }]`: k linear in the system angle per swing class
 w = d/q), `[altitude]` (`from`, `per_1000_m`). The Swiss LeV's values:
 `libraries/phase-distance/lev-ch.olspd`. The check pairs conductors
-between the same two structures and takes l_k from the strings at
-their ends (I: its length; V, tension, clamped: 0; the string below a
-V: its length; a TAK: its suspension string's); the settings (diagram,
-station spacing, circuits ticked, each circuit's level) are not in the
-file. See [the specification](lev-phase-spacing.md).
+between the same two structures (and, when asked, nearby conductors
+elsewhere within a distance) and takes l_k from the strings at their
+ends (I: its length; V, tension, clamped: 0; the string below a V: its
+length; a TAK: its suspension string's); the settings (diagram,
+station spacing, circuits ticked, each circuit's level, nearby pairs
+and their distance) are not in the file. Results per pair: the worst
+station (points, where along each conductor, d, z and its terms) and
+the length of conductor below z. See [the specification](lev-phase-spacing.md).
 
 ### Clearance rules (`.olsr`)
 
