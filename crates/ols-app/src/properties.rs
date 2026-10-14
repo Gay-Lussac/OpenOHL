@@ -548,6 +548,27 @@ pub fn ui(
                     }
                 }
             });
+            // The wire points it passes through (clamps on suspension
+            // strings), in order, with the lengths between its clamps.
+            if !j.supports.is_empty() {
+                let through: Vec<String> = j
+                    .supports
+                    .iter()
+                    .map(|c| format!("{} on {}", c.wire, c.structure_id(j)))
+                    .collect();
+                ui.label(format!("passes through {}", through.join(", then ")));
+                let pieces = crate::editors::jumper_pieces(j);
+                if !pieces.is_empty() {
+                    let text: Vec<String> = pieces.iter().map(|l| format!("{l:.2}")).collect();
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "lengths between its clamps: {} m",
+                            text.join(" + ")
+                        ))
+                        .small(),
+                    );
+                }
+            }
             let section = line.jumper_section(j);
             let b = line.jumper_bundle(j);
             // Where each bundle value comes from: the jumper or its section.

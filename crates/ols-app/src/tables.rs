@@ -338,13 +338,13 @@ const JUMPERS: &[Column] = &[
         "angle from °",
         75.0,
         Yes,
-        "leaves the clamp at from this far below the conductor (empty: 30)",
+        "leaves the clamp at from at this angle from its tension string, turned towards the load (empty: 30)",
     ),
     (
         "angle to °",
         75.0,
         Yes,
-        "leaves the clamp at to this far below the conductor (empty: 30)",
+        "leaves the clamp at to at this angle from its tension string, turned towards the load (empty: 30)",
     ),
     (
         "rigid",
