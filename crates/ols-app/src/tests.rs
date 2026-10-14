@@ -10850,3 +10850,98 @@ fn a_structure_is_added_on_the_point_clicked() {
     let notes = object_notes(&r.model, 0, View::Plan);
     assert!(notes.iter().any(|n| n.text == "PX"));
 }
+
+/// Add jumper: its first end, then the suspension strings it passes
+/// through (to wire points without a set) in order, then its other end —
+/// a jumper with a clamp on each, given by the lengths between its clamps
+/// (3 % over the straight distances), its window opened to type them; a
+/// piece typed sets its length and the clamps' places.
+#[test]
+fn a_jumper_is_laid_through_suspension_strings() {
+    use crate::editors::{Form, jumper_pieces, set_jumper_pieces};
+    use crate::tools::Tool;
+    let model = synthetic_project_with("jumper-through", |l| {
+        let j = l.jumpers.remove(0);
+        let (a, b) = (
+            l.wire_point(&j.from).unwrap().position,
+            l.wire_point(&j.to).unwrap().position,
+        );
+        let mid = [
+            0.5 * (a[0] + b[0]),
+            0.5 * (a[1] + b[1]),
+            0.5 * (a[2] + b[2]) - 1.0,
+        ];
+        let st = l
+            .structures
+            .iter_mut()
+            .find(|s| s.id == j.from.structure)
+            .unwrap();
+        st.points.push(ols_line::StructurePoint {
+            description: String::new(),
+            label: "A-JH".into(),
+            position: [mid[0], mid[1], mid[2] + 2.0],
+        });
+        st.wires.push(ols_line::WirePoint {
+            label: "JH".into(),
+            position: mid,
+            ..Default::default()
+        });
+        st.strings.push(ols_line::InsulatorString {
+            label: "S-JH".into(),
+            top: "A-JH".into(),
+            wire: "JH".into(),
+            weight: 100.0,
+            ..Default::default()
+        });
+        l.jumpers.insert(0, j);
+    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (from, to, n) = {
+        let r = harness.state_mut().ready().unwrap();
+        let j = r.model.line.jumpers[0].clone();
+        (j.from, j.to, r.model.line.jumpers.len())
+    };
+    let end = |p: &ols_line::SectionPoint| string_at(&p.structure, p.set);
+    use_tool(&mut harness, Tool::AddJumper, end(&from), None);
+    use_tool(
+        &mut harness,
+        Tool::AddJumper,
+        Selection::String {
+            structure: from.structure.clone(),
+            label: "S-JH".into(),
+        },
+        None,
+    );
+    use_tool(&mut harness, Tool::AddJumper, end(&to), None);
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.line.jumpers.len(), n + 1, "{:?}", r.status);
+    let j = r.model.line.jumpers.last().unwrap().clone();
+    assert_eq!(j.supports.len(), 1);
+    assert_eq!(j.supports[0].wire, "JH");
+    assert!(j.sag.is_none() && j.length.is_some());
+    let pieces = jumper_pieces(&j);
+    assert_eq!(pieces.len(), 2);
+    let line = &r.model.line;
+    let (a, m, b) = (
+        line.wire_point(&from).unwrap().position,
+        line.structure(&from.structure)
+            .unwrap()
+            .wire("JH")
+            .unwrap()
+            .position,
+        line.wire_point(&to).unwrap().position,
+    );
+    let d = |p: [f64; 3], q: [f64; 3]| (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt();
+    assert!((pieces[0] - 1.03 * d(a, m)).abs() < 1e-6, "{pieces:?}");
+    assert!((pieces[1] - 1.03 * d(m, b)).abs() < 1e-6);
+    assert!(matches!(&r.editor, Some(Form::Jumper(f)) if f.jumper.id == j.id));
+    // Pieces typed: the length their sum, the clamp at the first's share.
+    let mut k = j.clone();
+    set_jumper_pieces(&mut k, &[3.0, 5.0]);
+    assert!((k.length.unwrap() - 8.0).abs() < 1e-12);
+    assert!((k.supports[0].at - 3.0 / 8.0).abs() < 1e-12);
+    assert_eq!(jumper_pieces(&k), vec![3.0, 5.0]);
+}

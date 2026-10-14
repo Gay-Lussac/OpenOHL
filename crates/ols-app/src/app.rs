@@ -278,6 +278,9 @@ pub struct Ready {
     pub design_code: crate::codes::DesignCodeWindow,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
+    /// Add jumper: the helping strings right-clicked after it, in order
+    /// (structure, wire point).
+    pub jumper_via: Vec<(String, String)>,
     /// A page to bring to the front (with a table filter), from a tool.
     pub open_page: Option<(Tab, Option<String>)>,
     /// A structure without a type in the pylon editor.
@@ -368,6 +371,7 @@ impl Ready {
             open_project: None,
             design_code: Default::default(),
             jumper_from: None,
+            jumper_via: Vec::new(),
             open_page: None,
             placed: None,
             coord_dialog: None,
@@ -1402,20 +1406,104 @@ impl Ready {
                     ));
                 }
             }
+            // A suspension string of the structure (to a wire point without
+            // a set: not one holding a wire), after the first end: the
+            // jumper passes through a clamp on it, in click order.
+            (Tool::AddJumper, Selection::String { structure, label })
+                if self.jumper_from.is_some() =>
+            {
+                let st = model.line.structure(structure);
+                let wire = st.and_then(|s| s.string(label)).map(|x| x.wire.clone());
+                let helping = st.zip(wire.as_ref()).is_some_and(|(s, w)| {
+                    s.wire(w).is_some_and(|w| w.set.is_none())
+                        && !s
+                            .component(w)
+                            .wires
+                            .iter()
+                            .any(|&i| s.wires[i].set.is_some())
+                });
+                match wire {
+                    Some(w) if helping => {
+                        if self
+                            .jumper_via
+                            .iter()
+                            .any(|v| v.0 == *structure && v.1 == w)
+                        {
+                            self.status = Some((
+                                format!("Add jumper: {structure} {w} holds the jumper already"),
+                                true,
+                            ));
+                            return;
+                        }
+                        self.jumper_via.push((structure.clone(), w));
+                        let via: Vec<String> = self
+                            .jumper_via
+                            .iter()
+                            .map(|v| format!("{} {}", v.0, v.1))
+                            .collect();
+                        let from = self.jumper_from.clone().expect("checked");
+                        self.status = Some((
+                            format!(
+                                "Add jumper from {} set {} through {}: right-click more suspension strings, then the other end",
+                                from.structure,
+                                from.set,
+                                via.join(", ")
+                            ),
+                            false,
+                        ));
+                    }
+                    _ => {
+                        self.status = Some((
+                            format!(
+                                "Add jumper: {structure} {label} holds a wire (its wire point has a set): right-click a suspension string to a wire point without a set, or the other end"
+                            ),
+                            true,
+                        ));
+                    }
+                }
+            }
             (Tool::AddJumper, Selection::Attachment { structure, set }) => {
                 let p = ols_line::SectionPoint::new(structure.clone(), *set);
                 match self.jumper_from.take() {
                     None => {
                         self.status = Some((
                             format!(
-                                "Add jumper from {structure} set {set}: right-click the other string (the same one again: cancel)"
+                                "Add jumper from {structure} set {set}: right-click the suspension strings it passes through in order (if any), then the other end (the same one again or Escape: cancel)"
                             ),
                             false,
                         ));
                         self.jumper_from = Some(p);
+                        self.jumper_via.clear();
                     }
                     Some(from) if from == p => {
+                        self.jumper_via.clear();
                         self.status = Some(("Add jumper: cancelled".into(), false));
+                    }
+                    Some(from) if !self.jumper_via.is_empty() => {
+                        let via = std::mem::take(&mut self.jumper_via);
+                        match crate::editors::new_jumper_through(model, &from, &p, &via) {
+                            Ok(j) => {
+                                let id = j.id.clone();
+                                if self.perform(crate::edit::Action::Command {
+                                    what: format!(
+                                        "added jumper {id} through {} suspension strings",
+                                        via.len()
+                                    ),
+                                    command: ols_session::Command::Put {
+                                        kind: ols_session::Kind::Jumper,
+                                        id: id.clone(),
+                                        value: serde_json::to_value(&j).expect("a jumper"),
+                                        ord: None,
+                                    },
+                                }) {
+                                    self.select(Selection::Jumper(id.clone()));
+                                    // Its window: the lengths between its clamps.
+                                    self.editor = crate::editors::JumperForm::of(&self.model, &id)
+                                        .map(Form::Jumper);
+                                }
+                            }
+                            Err(e) => self.status = Some((e, true)),
+                        }
                     }
                     Some(from) => match crate::editors::new_jumper(model, &from, &p, &[]) {
                         Ok(j) => {
@@ -3129,6 +3217,15 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {
         r.cancel_string_wire();
+    }
+    // A jumper being laid out (Add jumper): Escape gives it up.
+    if r.jumper_from.is_some()
+        && !windows
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        r.jumper_from = None;
+        r.jumper_via.clear();
+        r.status = Some(("Add jumper: cancelled".into(), false));
     }
     // A new alignment being laid out: the same keys.
     if !r.new_alignment.is_empty() && !windows {
