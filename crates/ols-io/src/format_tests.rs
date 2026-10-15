@@ -136,6 +136,7 @@ fn rich_line() -> Line {
         behavior: ols_cables::BimetallicBehavior::Compression,
         max_virtual_compression: Some(ols_core::units::Stress::from_megapascals(50.0)),
     };
+    line.solver.jumper_loads = ols_line::JumperLoads::Pull;
     let second = line.alignments[1].id.clone();
     let s2 = (
         line.structures[2].position,

@@ -278,6 +278,8 @@ pub struct Ready {
     pub creep_stretch_window: Option<ols_line::condition::CreepStretch>,
     /// Criteria › Bimetallic conductor model, when open: the choice.
     pub bimetallic_window: Option<ols_cables::BimetallicModel>,
+    /// Criteria › Calculation options (a draft while open).
+    pub solver_window: Option<ols_line::SolverOptions>,
     /// Terrain › Coordinate system: its windows and the reprojection.
     pub crs: crate::crs::Windows,
     /// Terrain › Backgrounds: its windows and the import running.
@@ -378,6 +380,7 @@ impl Ready {
             controls_window: None,
             creep_stretch_window: None,
             bimetallic_window: None,
+            solver_window: None,
             crs: Default::default(),
             backgrounds: Default::default(),
             open_project: None,
@@ -3603,6 +3606,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     controls_window(ctx, r);
     creep_stretch_window(ctx, r);
     bimetallic_window(ctx, r);
+    solver_window(ctx, r);
     crs_windows(ctx, r);
     if r.backgrounds.show(ctx, &r.model) {
         r.reopen = true;
@@ -4020,6 +4024,95 @@ fn bimetallic_window(ctx: &egui::Context, r: &mut Ready) {
         }
     }
     r.bimetallic_window = (open && !ok && !cancel).then_some(draft);
+}
+
+/// Criteria › Calculation options: how the line's calculations are done
+/// (one command, undoable; the sections it touches are solved again).
+/// The measured cost of the jumpers' pull, for the window (release
+/// builds): a test line, and an existing 25 km line where nearly every
+/// section ends at a jumper.
+const PULL_COST: &str = "measured: about 3× the time of the estimate on a test line (31 \
+    sections, 21 at 15 jumpers), about 4× on an existing line where nearly every section ends at \
+    a jumper (554 sections, 518 jumpers, 99 weather cases: 48 s → 204 s); sections away from \
+    jumpers are not solved again.";
+
+fn solver_window(ctx: &egui::Context, r: &mut Ready) {
+    use ols_line::JumperLoads;
+    let Some(mut draft) = r.solver_window else {
+        return;
+    };
+    let jumpers = r.model.line.jumpers.len();
+    let (mut ok, mut cancel) = (false, false);
+    let mut open = true;
+    egui::Window::new("Calculation options")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(560.0)
+        .show(ctx, |ui| {
+            ui.strong("Jumpers on the clamps");
+            ui.label(
+                "What the sections at a jumper's ends carry at their clamps (clamps hanging \
+                 from strings; a wire clamped to the structure leaves it to the structure). \
+                 The jumper itself is solved between the clamps either way; the ruling-span \
+                 method leaves jumpers out.",
+            );
+            for (j, text, help) in [
+                (
+                    JumperLoads::Estimate,
+                    "An estimate (default): weight, ice and wind",
+                    "Each end carries the weight, ice and wind (across the line, from the \
+                     weather case's side) of the jumper up to its first helping string, half of \
+                     it without",
+                ),
+                (
+                    JumperLoads::Pull,
+                    "The jumper's own pull",
+                    "The force the solved jumper exerts on each clamp (its tension there, with \
+                     its stiffness; not the moments of clamped ends): the sections and the \
+                     jumpers are solved in turn until the clamps no longer move",
+                ),
+            ] {
+                ui.radio_value(&mut draft.jumper_loads, j, text)
+                    .on_hover_text(help);
+            }
+            ui.label(
+                egui::RichText::new(format!(
+                    "{jumpers} jumper(s) on this line. Computation time: the estimate costs \
+                     nothing more; the pull solves the sections at jumpers and the jumpers again \
+                     in two or three passes — {}",
+                    PULL_COST
+                ))
+                .small()
+                .weak(),
+            );
+            if let Err(why) = r.model.can_edit() {
+                crate::menu::error_label(ui, format!("read-only: {why}"));
+            }
+            ui.horizontal(|ui| {
+                ok = ui
+                    .add_enabled(
+                        r.model.can_edit().is_ok() && draft != r.model.line.solver,
+                        egui::Button::new("OK"),
+                    )
+                    .clicked();
+                cancel = ui.button("Cancel").clicked();
+            });
+        });
+    if ok {
+        let command = r
+            .model
+            .editing
+            .as_ref()
+            .map(|e| e.session.solver_command(draft));
+        if let Ok(command) = command {
+            r.perform(crate::edit::Action::Command {
+                what: "calculation options".into(),
+                command,
+            });
+        }
+    }
+    r.solver_window = (open && !ok && !cancel).then_some(draft);
 }
 
 /// Criteria › Creep-Stretch: the weather case for the final after creep
@@ -5620,6 +5713,17 @@ fn menus(
             .clicked()
         {
             r.bimetallic_window = Some(r.model.line.bimetallic);
+            ui.close();
+        }
+        if ui
+            .button("Calculation options…")
+            .on_hover_text(
+                "How the calculations are done for the whole line: what of the jumpers the \
+                 sections carry at their clamps",
+            )
+            .clicked()
+        {
+            r.solver_window = Some(r.model.line.solver);
             ui.close();
         }
         if ui

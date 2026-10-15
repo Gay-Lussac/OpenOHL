@@ -98,6 +98,7 @@ pub fn empty_line() -> Line {
         systems: vec![],
         creep_stretch: Default::default(),
         bimetallic: Default::default(),
+        solver: Default::default(),
         circuit_starts: Vec::new(),
         condition_cases: Default::default(),
     }

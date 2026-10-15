@@ -571,6 +571,7 @@ pub fn to_xml(line: &Line) -> String {
         display,
         creep_stretch,
         bimetallic,
+        solver,
         circuit_starts,
         condition_cases: _,
     } = line;
@@ -660,6 +661,12 @@ pub fn to_xml(line: &Line) -> String {
         behavior,
         max_virtual_compression,
     } = bimetallic;
+    if !solver.is_default() {
+        let ols_line::SolverOptions { jumper_loads } = solver;
+        out.push_str("  <solver");
+        attr(&mut out, "jumper_loads", jumper_loads.as_str());
+        out.push_str("/>\n");
+    }
     if !bimetallic.is_default() {
         out.push_str("  <bimetallic");
         attr(&mut out, "behavior", behavior.as_str());
@@ -1251,6 +1258,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             "phase_color",
             "creep_stretch",
             "bimetallic",
+            "solver",
             "circuit_start",
         ],
     )?;
@@ -1320,6 +1328,18 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             }
         }
     };
+    let solver = match root.child("solver") {
+        None => ols_line::SolverOptions::default(),
+        Some(s) => {
+            check(s, &["jumper_loads"], &[])?;
+            let jumper_loads = match owned(s, "jumper_loads") {
+                None => ols_line::JumperLoads::default(),
+                Some(t) => ols_line::JumperLoads::parse(&t)
+                    .ok_or_else(|| format!("solver jumper_loads \"{t}\": estimate or pull"))?,
+            };
+            ols_line::SolverOptions { jumper_loads }
+        }
+    };
     let bimetallic = match root.child("bimetallic") {
         None => ols_cables::BimetallicModel::default(),
         Some(b) => {
@@ -1353,6 +1373,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         format: owned(root, "format").unwrap_or_else(|| ols_line::LINE_FILE_FORMAT.into()),
         version,
         bimetallic,
+        solver,
         name: text(root, "name")?.to_owned(),
         crs: owned(root, "crs").unwrap_or_default(),
         alignment: own,

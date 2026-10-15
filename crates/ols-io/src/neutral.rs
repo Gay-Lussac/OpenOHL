@@ -54,6 +54,7 @@ pub fn empty_line(name: &str) -> Line {
         bimetallic: Default::default(),
         circuit_starts: Vec::new(),
         condition_cases: Default::default(),
+        solver: Default::default(),
     }
 }
 
