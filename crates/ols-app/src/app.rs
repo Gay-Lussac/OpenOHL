@@ -4032,9 +4032,9 @@ fn bimetallic_window(ctx: &egui::Context, r: &mut Ready) {
 /// builds): a test line, and an existing 25 km line where nearly every
 /// section ends at a jumper.
 const PULL_COST: &str = "measured: about 3× the time of the estimate on a test line (31 \
-    sections, 21 at 15 jumpers), about 4× on an existing line where nearly every section ends at \
-    a jumper (554 sections, 518 jumpers, 99 weather cases: 48 s → 204 s); sections away from \
-    jumpers are not solved again.";
+    sections, 21 at 15 jumpers), about 5× on an existing line where nearly every section ends at \
+    a jumper (554 sections, 518 jumpers, 99 weather cases: 32 s → 158 s, the sections over the \
+    cores); sections away from jumpers are not solved again.";
 
 fn solver_window(ctx: &egui::Context, r: &mut Ready) {
     use ols_line::JumperLoads;
