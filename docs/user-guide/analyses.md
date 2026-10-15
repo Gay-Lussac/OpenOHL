@@ -97,9 +97,10 @@ case_pairs = [["glaze ice", "everyday"]]
 The Swiss ordinance's still-air distance between two conductors of a
 span (LeV Annex 6, 2.2.1): \( z = k\sqrt{f + l_k} + C \), with f the local
 sag, l_k from the strings at the conductors' ends, k by the system angle
-and swing class (diagram 2.4.2 or 2.4.3), C by voltage (C₁ within a
-circuit and towards an earth wire, C₂ between circuits, the low or high
-row by insulation level), +14 % per 1000 m above 1000 m. The values are
+and swing class (diagram 2.4.2 or 2.4.3), C by voltage (C₁ within one
+electrical system and towards earth, C₂ between different systems; at
+220 and 380 kV the line of the circuit's insulation level, each value
+for its lightning impulse withstand voltage), +14 % per 1000 m above 1000 m. The values are
 a file, `libraries/phase-distance/lev-ch.olspd`; the method and the
 decisions behind it: [the specification](../development/lev-phase-spacing.md).
 

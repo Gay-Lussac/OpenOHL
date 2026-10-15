@@ -461,8 +461,11 @@ rules `.olsr`; thermal ambient `.olsta`; unit costs `.olscost`; galloping
 `ols-phase-distance`, version 1 (`ols_clearance::phase_distance`): a
 code's values for the distance between conductors in the span,
 \( z = k\sqrt{f + l_k} + C \) — `[[voltage]]` rows (`kv`: up to this
-nominal voltage; `c1`, `c2`: one value, or two — low and high
-insulation level), `[[diagram]]`s (`name`, `wind_pressure`, `line =
+nominal voltage; `c1` within one electrical system and towards earth,
+`c2` between systems, optional `c3`, `c4` the same with wind: one value,
+or two — the low and the high insulation level; optional `c1_bil_kv`,
+`c2_bil_kv`: the lightning impulse withstand voltage each value is
+for), `[[diagram]]`s (`name`, `wind_pressure`, `line =
 [{ w_max, k0, k90 }]`: k linear in the system angle per swing class
 w = d/q), `[altitude]` (`from`, `per_1000_m`). The Swiss LeV's values:
 `libraries/phase-distance/lev-ch.olspd`. The check pairs conductors

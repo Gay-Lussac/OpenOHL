@@ -39,17 +39,41 @@ pub const PHASE_DISTANCE_FILE_EXTENSION: &str = "olspd";
 
 type P3 = [f64; 3];
 
-/// C₁ (same circuit, and towards an earth wire) and C₂ (different
-/// circuits) up to a nominal voltage, m: the low and the high row (equal
-/// where the code gives one).
+/// The distances of one nominal voltage, m: C₁ (within one electrical
+/// system, and towards earth: earth wires, earthed parts), C₂ (between
+/// different electrical systems), and C₃, C₄ (the same with wind, for
+/// the checks with wind) — each on the line of the low and of the high
+/// insulation level (equal where the code gives one line), with the
+/// lightning impulse withstand voltage each value is for, where given.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoltageRow {
     /// Nominal voltage, kV: this row for systems up to it.
     pub kv: f64,
-    /// C₁, low and high row, m.
+    /// C₁, low and high line, m.
     pub c1: [f64; 2],
-    /// C₂, low and high row, m.
+    /// The impulse withstand voltage C₁ is for, low and high, kV.
+    pub c1_bil_kv: Option<[f64; 2]>,
+    /// C₂, low and high line, m.
     pub c2: [f64; 2],
+    /// The impulse withstand voltage C₂ is for, low and high, kV.
+    pub c2_bil_kv: Option<[f64; 2]>,
+    /// C₃ (with wind, within one system), low and high line, m.
+    pub c3: Option<[f64; 2]>,
+    /// C₄ (with wind, between systems), low and high line, m.
+    pub c4: Option<[f64; 2]>,
+}
+
+impl VoltageRow {
+    /// The code gives two lines (two insulation levels).
+    pub fn two_levels(&self) -> bool {
+        let differ = |c: [f64; 2]| c[0] != c[1];
+        differ(self.c1)
+            || differ(self.c2)
+            || self.c3.is_some_and(differ)
+            || self.c4.is_some_and(differ)
+            || self.c1_bil_kv.is_some_and(differ)
+            || self.c2_bil_kv.is_some_and(differ)
+    }
 }
 
 /// One line of a k diagram: for conductors of swing class w = d/q up to
@@ -117,10 +141,10 @@ pub enum Level {
 }
 
 impl PhaseDistanceCode {
-    /// C for a pair: same circuit (or towards an earth wire) C₁, else C₂,
+    /// C for a pair: within one system (or towards earth) C₁, else C₂,
     /// at nominal voltage `kv` (the first row up to it; above the last:
     /// the last), at `level`, before the altitude.
-    pub fn c(&self, same_circuit: bool, kv: f64, level: Level) -> f64 {
+    pub fn c(&self, same_system: bool, kv: f64, level: Level) -> f64 {
         let row = self
             .voltages
             .iter()
@@ -128,7 +152,7 @@ impl PhaseDistanceCode {
             .or(self.voltages.last())
             .expect("a code has voltage rows");
         let i = usize::from(level == Level::High);
-        if same_circuit { row.c1[i] } else { row.c2[i] }
+        if same_system { row.c1[i] } else { row.c2[i] }
     }
 
     /// The altitude factor at mean height `h` above sea level, m.
@@ -163,15 +187,32 @@ impl PhaseDistanceCode {
         };
         let mut voltages = Vec::new();
         for r in raw.voltages {
+            let kv_pair = |v: Option<Vec<f64>>, what: &str| -> Result<Option<[f64; 2]>, String> {
+                match v.as_deref() {
+                    None => Ok(None),
+                    Some([a]) => Ok(Some([*a, *a])),
+                    Some([a, b]) => Ok(Some([*a, *b])),
+                    Some(_) => Err(format!(
+                        "{} kV: {what} needs one value or two (low, high)",
+                        r.kv
+                    )),
+                }
+            };
             let row = VoltageRow {
                 kv: r.kv,
                 c1: pair(r.c1, "c1", r.kv)?,
+                c1_bil_kv: kv_pair(r.c1_bil_kv, "c1_bil_kv")?,
                 c2: pair(r.c2, "c2", r.kv)?,
+                c2_bil_kv: kv_pair(r.c2_bil_kv, "c2_bil_kv")?,
+                c3: r.c3.map(|v| pair(v, "c3", r.kv)).transpose()?,
+                c4: r.c4.map(|v| pair(v, "c4", r.kv)).transpose()?,
             };
             if row
                 .c1
                 .iter()
                 .chain(&row.c2)
+                .chain(row.c3.iter().flatten())
+                .chain(row.c4.iter().flatten())
                 .any(|c| !(c.is_finite() && *c >= 0.0))
             {
                 return Err(format!("{} kV: C must be ≥ 0", r.kv));
@@ -247,12 +288,24 @@ impl PhaseDistanceCode {
             }
         };
         for r in &self.voltages {
+            let bil = |name: &str, b: Option<[f64; 2]>| match b {
+                None => String::new(),
+                Some([x, y]) if x == y => format!("{name} = [{x}]\n"),
+                Some([x, y]) => format!("{name} = [{x}, {y}]\n"),
+            };
+            let more = |name: &str, c: Option<[f64; 2]>| {
+                c.map_or(String::new(), |c| format!("{name} = {}\n", pair(c)))
+            };
             let _ = write!(
                 out,
-                "\n[[voltage]]\nkv = {}\nc1 = {}\nc2 = {}\n",
+                "\n[[voltage]]\nkv = {}\nc1 = {}\n{}c2 = {}\n{}{}{}",
                 r.kv,
                 pair(r.c1),
-                pair(r.c2)
+                bil("c1_bil_kv", r.c1_bil_kv),
+                pair(r.c2),
+                bil("c2_bil_kv", r.c2_bil_kv),
+                more("c3", r.c3),
+                more("c4", r.c4),
             );
         }
         for d in &self.diagrams {
@@ -277,7 +330,15 @@ impl PhaseDistanceCode {
 struct RawVoltage {
     kv: f64,
     c1: Vec<Length>,
+    #[serde(default)]
+    c1_bil_kv: Option<Vec<f64>>,
     c2: Vec<Length>,
+    #[serde(default)]
+    c2_bil_kv: Option<Vec<f64>>,
+    #[serde(default)]
+    c3: Option<Vec<Length>>,
+    #[serde(default)]
+    c4: Option<Vec<Length>>,
 }
 
 #[derive(Deserialize)]
@@ -365,6 +426,8 @@ pub struct Conductor {
     pub w: f64,
     /// l_k at its first and last point, m.
     pub lk: [f64; 2],
+    /// Its section's electrical system (C₁ within one, C₂ between).
+    pub system: Option<String>,
     /// Insulation level of its circuit (its section's [`LEVEL_FIELD`]);
     /// not set: the default, high.
     pub level: Option<Level>,
@@ -423,8 +486,8 @@ pub struct PhaseDistancePair {
     pub a: usize,
     /// Second conductor.
     pub b: usize,
-    /// Same circuit, or towards an earth wire: C₁.
-    pub same_circuit: bool,
+    /// Within one electrical system, or towards an earth wire: C₁.
+    pub same_system: bool,
     /// Nominal voltage used, kV.
     pub kv: f64,
     /// Both hang between the same two structures (else a nearby pair).
@@ -509,7 +572,14 @@ pub fn conductors(
                 [a, b] => [lk_at(line, a), lk_at(line, b)],
                 _ => [0.0, 0.0],
             };
-            Conductor { wire, w, lk, level }
+            let system = section.and_then(|s| s.system.clone());
+            Conductor {
+                wire,
+                w,
+                lk,
+                system,
+                level,
+            }
         })
         .collect()
 }
@@ -786,9 +856,15 @@ pub fn check(
     }
     let measure = |i: usize, j: usize, same_span: bool| -> Option<PhaseDistancePair> {
         let (a, b) = (&conductors[i], &conductors[j]);
-        // Earth wires (no potential) count as the same circuit (C₁).
+        // C₁ within one electrical system and towards earth (an earth
+        // wire: no potential); C₂ between systems.
         let earth = a.wire.potential.is_none() || b.wire.potential.is_none();
-        let same_circuit = earth || a.wire.circuit == b.wire.circuit;
+        let same_system = earth
+            || match (&a.system, &b.system) {
+                (Some(x), Some(y)) => x == y,
+                // No system given: by the circuit names.
+                _ => a.wire.circuit == b.wire.circuit,
+            };
         let kv = a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0));
         // The insulation level of the circuit of the higher voltage
         // (equal: high when either is).
@@ -814,7 +890,7 @@ pub fn check(
             .map(|p| p[2])
             .collect();
         let altitude = all.iter().sum::<f64>() / all.len().max(1) as f64;
-        let c = code.c(same_circuit, kv, level) * code.altitude_factor(altitude);
+        let c = code.c(same_system, kv, level) * code.altitude_factor(altitude);
         // Same span: every station; nearby: where within the distance.
         let cutoff = if same_span {
             f64::INFINITY
@@ -893,7 +969,7 @@ pub fn check(
         worst.map(|worst| PhaseDistancePair {
             a: i,
             b: j,
-            same_circuit,
+            same_system,
             kv,
             same_span,
             altitude,
@@ -996,6 +1072,7 @@ mod tests {
             },
             w: 10.0,
             lk,
+            system: Some(circuit.into()),
             level: Some(Level::Low),
         }
     }
@@ -1013,6 +1090,9 @@ mod tests {
     #[test]
     fn written_and_read_back() {
         let c = lev();
+        let mut c = c;
+        c.voltages[0].c3 = Some([0.1, 0.1]);
+        c.voltages[0].c4 = Some([0.2, 0.3]);
         let text = c.to_text("edited\nby a test");
         assert!(text.starts_with("# edited\n# by a test\n"));
         assert_eq!(PhaseDistanceCode::parse(&text).unwrap(), c);
@@ -1026,11 +1106,21 @@ mod tests {
         assert_eq!(c.c(true, 380.0, Level::Low), 2.64);
         assert_eq!(c.c(true, 380.0, Level::High), 2.90);
         assert_eq!(c.c(false, 380.0, Level::High), 3.64);
-        assert_eq!(c.c(true, 110.0, Level::Low), 0.92);
+        // 110 and 132 kV: rows of their own, one line each.
+        assert_eq!(c.c(true, 110.0, Level::High), 0.92);
+        assert_eq!(c.c(true, 132.0, Level::Low), 1.12);
         assert_eq!(c.c(false, 110.0, Level::Low), 1.38);
         assert_eq!(c.c(false, 132.0, Level::High), 1.38);
-        // 65 kV: the 110/132 kV row.
+        // 65 kV: the 110 kV row.
         assert_eq!(c.c(true, 65.0, Level::Low), 0.92);
+        // 220 and 380 kV: two lines, each value for its impulse level.
+        let row = |kv: f64| c.voltages.iter().find(|r| r.kv == kv).unwrap();
+        assert!(row(220.0).two_levels() && !row(132.0).two_levels());
+        assert_eq!(row(220.0).c1_bil_kv, Some([950.0, 1050.0]));
+        assert_eq!(row(220.0).c2_bil_kv, Some([1050.0, 1175.0]));
+        assert_eq!(row(380.0).c1_bil_kv, Some([1300.0, 1425.0]));
+        assert_eq!(row(380.0).c2_bil_kv, Some([1550.0, 1675.0]));
+        assert_eq!(c.c(false, 220.0, Level::Low), 2.29);
         assert!((c.altitude_factor(500.0) - 1.0).abs() < 1e-12);
         assert!((c.altitude_factor(2000.0) - 1.14).abs() < 1e-12);
         let d = &c.diagrams[0];
@@ -1111,7 +1201,7 @@ mod tests {
         };
         let pairs = run(&[a.clone(), b.clone()], &near);
         assert_eq!(pairs.len(), 1);
-        assert!(!pairs[0].same_span && !pairs[0].same_circuit);
+        assert!(!pairs[0].same_span && !pairs[0].same_system);
         assert!((pairs[0].worst.distance - 6.0).abs() < 1e-6);
         let far = PhaseDistanceSettings {
             max_distance: 5.0,
@@ -1123,6 +1213,7 @@ mod tests {
         a1.wire.phase = "L1".into();
         b1.wire.phase = "L1".into();
         b1.wire.circuit = "C1".into();
+        b1.system = Some("C1".into());
         assert!(run(&[a1, b1], &near).is_empty());
         // Sharing a clamp: the next span.
         let mut c = b.clone();
@@ -1151,7 +1242,7 @@ mod tests {
         let a = conductor("C1", 1, 0.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
         let b = conductor("C2", 2, 8.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
         let p = &run(&[a, b], &low())[0];
-        assert!(!p.same_circuit);
+        assert!(!p.same_system);
         assert!((p.worst.beta - 90.0).abs() < 1e-6);
         let z = 0.60 * 16.5f64.sqrt() + 3.37;
         assert!(

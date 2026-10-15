@@ -53,8 +53,9 @@ pub struct Row {
     pub span: [(String, usize); 2],
     /// Each conductor's circuit and phase, in words.
     pub what: [String; 2],
-    /// Same circuit, or towards an earth wire: C₁.
-    pub same_circuit: bool,
+    /// Within one electrical system, or towards an earth wire: C₁.
+    #[serde(alias = "same_circuit")]
+    pub same_system: bool,
     /// Between the same two structures (else a nearby pair).
     pub same_span: bool,
     /// Nominal voltage used, kV.
@@ -497,16 +498,72 @@ fn code_table(ui: &mut egui::Ui, code: &mut PhaseDistanceCode, edit: bool) {
                 .striped(true)
                 .spacing([10.0, 2.0])
                 .show(ui, |ui| {
-                    for h in ["up to kV", "C₁ low", "C₁ high", "C₂ low", "C₂ high"] {
-                        ui.label(egui::RichText::new(h).small().strong());
+                    for (h, tip) in [
+                        ("up to kV", "nominal voltage: this row for systems up to it"),
+                        ("level", "insulation level, where the voltage has two lines"),
+                        ("C₁ m", "within one electrical system, and towards earth"),
+                        ("at kV", "the lightning impulse withstand voltage C₁ is for"),
+                        ("C₂ m", "between different electrical systems"),
+                        ("at kV", "the lightning impulse withstand voltage C₂ is for"),
+                        ("C₃ m", "with wind, within one system (checks with wind)"),
+                        ("C₄ m", "with wind, between systems (checks with wind)"),
+                    ] {
+                        ui.label(egui::RichText::new(h).small().strong())
+                            .on_hover_text(tip);
                     }
                     ui.end_row();
-                    for r in &mut code.voltages {
-                        num(ui, &mut r.kv, 1.0, 0);
-                        for v in r.c1.iter_mut().chain(r.c2.iter_mut()) {
-                            num(ui, v, 0.01, 2);
+                    // An optional pair: "—" when not given (typed in: set).
+                    let opt = |ui: &mut egui::Ui,
+                               v: &mut Option<[f64; 2]>,
+                               i: usize,
+                               speed: f64,
+                               d: usize| {
+                        match v {
+                            Some(p) => num(ui, &mut p[i], speed, d),
+                            None if edit => {
+                                let mut x = 0.0;
+                                num(ui, &mut x, speed, d);
+                                if x != 0.0 {
+                                    *v = Some([x, x]);
+                                }
+                            }
+                            None => {
+                                ui.label("—");
+                            }
                         }
-                        ui.end_row();
+                    };
+                    for r in &mut code.voltages {
+                        let lines = if r.two_levels() { 2 } else { 1 };
+                        for i in 0..lines {
+                            if i == 0 {
+                                num(ui, &mut r.kv, 1.0, 0);
+                            } else {
+                                ui.label("");
+                            }
+                            ui.label(match (lines, i) {
+                                (1, _) => "—",
+                                (_, 0) => "low",
+                                _ => "high",
+                            });
+                            num(ui, &mut r.c1[i], 0.01, 2);
+                            opt(ui, &mut r.c1_bil_kv, i, 5.0, 0);
+                            num(ui, &mut r.c2[i], 0.01, 2);
+                            opt(ui, &mut r.c2_bil_kv, i, 5.0, 0);
+                            opt(ui, &mut r.c3, i, 0.01, 2);
+                            opt(ui, &mut r.c4, i, 0.01, 2);
+                            ui.end_row();
+                        }
+                        // One line: both levels the same.
+                        if lines == 1 {
+                            r.c1[1] = r.c1[0];
+                            r.c2[1] = r.c2[0];
+                            for p in [&mut r.c3, &mut r.c4, &mut r.c1_bil_kv, &mut r.c2_bil_kv]
+                                .into_iter()
+                                .flatten()
+                            {
+                                p[1] = p[0];
+                            }
+                        }
                     }
                 });
             ui.horizontal(|ui| {
@@ -696,7 +753,7 @@ impl PhaseDistanceWindow {
                             (b.wire.section.clone(), b.wire.span),
                         ],
                         what: [what(a), what(b)],
-                        same_circuit: p.same_circuit,
+                        same_system: p.same_system,
                         same_span: p.same_span,
                         kv: p.kv,
                         distance: w.distance,
@@ -1335,6 +1392,21 @@ impl PhaseDistanceWindow {
                 );
                 let line = &model.line;
                 let ticked = |n: &String| self.circuits.as_ref().is_none_or(|s| s.contains(n));
+                // The table's row of each voltage (a level only where it has
+                // two lines).
+                let code = self
+                    .current_values(model)
+                    .ok()
+                    .and_then(|(_, t, _)| PhaseDistanceCode::parse(&t).ok());
+                let row_of = |kv: f64| {
+                    code.as_ref().and_then(|c| {
+                        c.voltages
+                            .iter()
+                            .find(|r| kv <= r.kv + 1e-9)
+                            .or(c.voltages.last())
+                            .cloned()
+                    })
+                };
                 egui::ScrollArea::vertical()
                     .id_salt("phase-distance-levels-rows")
                     .max_height(160.0)
@@ -1377,6 +1449,27 @@ impl PhaseDistanceWindow {
                                         continue;
                                     };
                                     ui.label(format!("{kv:.0}"));
+                                    let row = row_of(kv);
+                                    if row.as_ref().is_some_and(|r| !r.two_levels()) {
+                                        ui.label(
+                                            egui::RichText::new("one line in the table")
+                                                .small()
+                                                .weak(),
+                                        );
+                                        ui.end_row();
+                                        continue;
+                                    }
+                                    // A level with the impulse voltages its values are for.
+                                    let label = |v: &str| {
+                                        let i = usize::from(v == "high");
+                                        match row.as_ref().map(|r| (r.c1_bil_kv, r.c2_bil_kv)) {
+                                            Some((Some(a), Some(b))) => format!(
+                                                "{v} (C₁ at {:.0} kV, C₂ at {:.0} kV)",
+                                                a[i], b[i]
+                                            ),
+                                            _ => v.to_owned(),
+                                        }
+                                    };
                                     let mut set: Vec<&str> = sections
                                         .iter()
                                         .map(|s| {
@@ -1402,7 +1495,9 @@ impl PhaseDistanceWindow {
                                             ui,
                                             |ui| {
                                                 for v in ["low", "high"] {
-                                                    if ui.selectable_label(set == [v], v).clicked()
+                                                    if ui
+                                                        .selectable_label(set == [v], label(v))
+                                                        .clicked()
                                                     {
                                                         chosen = Some(v);
                                                     }
@@ -1513,7 +1608,7 @@ impl PhaseDistanceWindow {
                                 }
                                 ui.label(&r.what[k]);
                             }
-                            ui.label(if r.same_circuit { "C₁" } else { "C₂" });
+                            ui.label(if r.same_system { "C₁" } else { "C₂" });
                             ui.label(format!("{:.0}", r.kv));
                             let mono = |v: f64| egui::RichText::new(format!("{v:.2}")).monospace();
                             let m = mono(r.margin());
@@ -1618,10 +1713,12 @@ fn explanation(ui: &mut egui::Ui) {
             small(
                 ui,
                 "k: by β (0° one above the other, 90° side by side) on the line of the \
-                 conductor's swing class w = d/q of the diagram chosen. C: C₁ within a circuit \
-                 and towards an earth wire, C₂ between circuits, by the higher nominal \
-                 voltage and the circuit's insulation level (low / high row), +14 % per \
-                 1000 m of mean conductor height above 1000 m.",
+                 conductor's swing class w = d/q of the diagram chosen. C: C₁ within one \
+                 electrical system and towards earth (earth wires), C₂ between different \
+                 systems, by the higher nominal voltage and, where it has two lines, the \
+                 circuit's insulation level (low / high: the lightning impulse withstand \
+                 voltage each value is for), +14 % per 1000 m of mean conductor height above \
+                 1000 m.",
             );
             small(
                 ui,
@@ -1652,7 +1749,7 @@ fn csv(r: &Report) -> String {
             q(&row.span[1].0),
             row.span[1].1 + 1,
             q(&row.what[1]),
-            if row.same_circuit { "C1" } else { "C2" },
+            if row.same_system { "C1" } else { "C2" },
             row.kv,
             row.distance,
             row.required,

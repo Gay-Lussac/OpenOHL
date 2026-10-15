@@ -1,10 +1,13 @@
 # Distance between conductors in the span (still air), Swiss LeV
 # (SR 734.31, as of 1 January 2008), Annex 6, 2.2.1:
 #   z = k · sqrt(f + l_k) + C
-# C1 within the same circuit (and towards an earth wire), C2 between
-# circuits: Table 2.4.1 by nominal voltage — two values (low, high) where
-# the insulation level gives two rows (lightning impulse withstand
-# voltage); a voltage between rows takes the next row up. k: Diagrams
+# Table 2.4.1 by nominal voltage: C1 within one electrical system and
+# towards earth (earth wires, earthed parts), C2 between different
+# systems; C3 and C4 the same with wind (for the checks with wind; not
+# given yet: to be filled in). Where the insulation level gives two lines,
+# each value has two (low, high), and c1_bil_kv / c2_bil_kv give the
+# lightning impulse withstand voltage each is for. A voltage between rows
+# takes the next row up. k: Diagrams
 # 2.4.2 (500 N/m²) and 2.4.3 (650 N/m²), linear in the system angle β
 # (0°: one conductor above the other, 90°: side by side), one line per
 # swing class w = d/q (d in mm, q in kg/m), up to w_max.
@@ -65,8 +68,13 @@ c1 = ["0.70 m"]
 c2 = ["0.82 m"]
 
 [[voltage]]
-kv = 132            # 110 and 132 kV
-c1 = ["0.92 m", "1.12 m"]
+kv = 110
+c1 = ["0.92 m"]
+c2 = ["1.38 m"]
+
+[[voltage]]
+kv = 132
+c1 = ["1.12 m"]
 c2 = ["1.38 m"]
 
 [[voltage]]
@@ -77,12 +85,16 @@ c2 = ["1.64 m"]
 [[voltage]]
 kv = 220
 c1 = ["1.93 m", "2.14 m"]
+c1_bil_kv = [950, 1050]
 c2 = ["2.29 m", "2.56 m"]
+c2_bil_kv = [1050, 1175]
 
 [[voltage]]
 kv = 380
 c1 = ["2.64 m", "2.90 m"]
+c1_bil_kv = [1300, 1425]
 c2 = ["3.37 m", "3.64 m"]
+c2_bil_kv = [1550, 1675]
 
 [[diagram]]
 name = "2.4.2 (500 N/m²)"
