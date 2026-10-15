@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 ols-cables.workspace = true
+ols-clearance.workspace = true
 ols-core.workspace = true
 ols-crs.workspace = true
 ols-line.workspace = true

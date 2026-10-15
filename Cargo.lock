@@ -3645,6 +3645,7 @@ name = "ols-io"
 version = "0.0.1"
 dependencies = [
  "ols-cables",
+ "ols-clearance",
  "ols-core",
  "ols-crs",
  "ols-line",
