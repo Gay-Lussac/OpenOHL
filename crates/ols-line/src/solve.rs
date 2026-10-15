@@ -725,10 +725,7 @@ fn build(
                 .map(|l| {
                     let [down, across] = l.forces(case, cable.diameter.si());
                     (
-                        along(&crate::SpanPlace {
-                            fraction: l.fraction,
-                            distance: l.distance,
-                        }),
+                        along(&l.place()),
                         // The model is one subconductor: its share.
                         (left * across - Vector3::new(0.0, 0.0, down)) / bundle,
                         None,
@@ -1357,6 +1354,8 @@ pub fn solve_section_coupled(
     coupling: &Coupling,
 ) -> Result<SectionShape, LineError> {
     use crate::condition::{Condition, Method};
+    // Places given by station: as fractions of their spans.
+    let section = &*line.section_with_fractions(section);
     // The line's bimetallic model for cables that do not give their own.
     let cable = &*line.bimetallic.apply(cable);
     // The wind's side is the line's: a section whose points run against
@@ -3622,6 +3621,26 @@ mod span_tests {
                 "below the clamps"
             );
         }
+        // By station: half-way between the span's structures' stations.
+        let (sa, sb) = pointed
+            .span_stations(
+                &pointed.sections[0].points[0].structure,
+                &pointed.sections[0].points[1].structure,
+            )
+            .expect("the span on an alignment");
+        let mut by_station = base.clone();
+        by_station.sections[0].span_points.push(crate::SpanPoint {
+            label: "S".into(),
+            span: 0,
+            at: crate::SpanPlace::at_station(0.5 * (sa + sb)),
+            description: String::new(),
+        });
+        by_station.validate().unwrap();
+        let resolved = by_station.section_with_fractions(&by_station.sections[0]);
+        assert!((resolved.span_points[0].at.fraction - 0.5).abs() < 1e-9);
+        let at = shape(&by_station).span_points[0].1;
+        let st = shape(&by_station);
+        assert!((along(at, &st) - 0.5).abs() < 0.02, "{}", along(at, &st));
         // A span point alone changes nothing of the shape (the sag as
         // sampled: within a millimetre).
         assert!(

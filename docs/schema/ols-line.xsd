@@ -358,6 +358,7 @@
                   <xs:attribute name="span" type="xs:unsignedInt" use="required"/>
                   <xs:attribute name="fraction" type="xs:double"/>
                   <xs:attribute name="distance" type="xs:double"/>
+                  <xs:attribute name="station" type="xs:double"/>
                   <xs:attribute name="vertical" type="xs:double" use="required"/>
                   <xs:attribute name="label" type="xs:string"/>
                   <xs:attribute name="diameter" type="xs:double"/>
@@ -377,8 +378,10 @@
                   <xs:attribute name="span" type="xs:unsignedInt" use="required"/>
                   <xs:attribute name="start_fraction" type="xs:double"/>
                   <xs:attribute name="start_distance" type="xs:double"/>
+                  <xs:attribute name="start_station" type="xs:double"/>
                   <xs:attribute name="end_fraction" type="xs:double"/>
                   <xs:attribute name="end_distance" type="xs:double"/>
+                  <xs:attribute name="end_station" type="xs:double"/>
                   <xs:attribute name="load" type="xs:double" use="required"/>
                   <xs:attribute name="label" type="xs:string"/>
                 </xs:complexType>
@@ -393,6 +396,7 @@
                   <xs:attribute name="span" type="xs:unsignedInt" use="required"/>
                   <xs:attribute name="fraction" type="xs:double"/>
                   <xs:attribute name="distance" type="xs:double"/>
+                  <xs:attribute name="station" type="xs:double"/>
                   <xs:attribute name="description" type="xs:string"/>
                 </xs:complexType>
               </xs:element>

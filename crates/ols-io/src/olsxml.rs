@@ -89,12 +89,16 @@ fn read_on_routes(e: &Element) -> Result<Vec<String>, String> {
 
 /// A place along a span: `{prefix}fraction` or `{prefix}distance`.
 fn write_place(out: &mut String, prefix: &str, p: &ols_line::SpanPlace) {
-    // The fraction unless a distance is given (then only when set too).
-    if p.distance.is_none() || p.fraction != 0.0 {
+    // The fraction unless a distance or station is given (then only when
+    // set too).
+    if (p.distance.is_none() && p.station.is_none()) || p.fraction != 0.0 {
         let _ = write!(out, " {prefix}fraction=\"{}\"", num(p.fraction));
     }
     if let Some(d) = p.distance {
         let _ = write!(out, " {prefix}distance=\"{}\"", num(d));
+    }
+    if let Some(s) = p.station {
+        let _ = write!(out, " {prefix}station=\"{}\"", num(s));
     }
 }
 
@@ -103,6 +107,7 @@ fn read_place(e: &Element, prefix: &str) -> Result<ols_line::SpanPlace, String> 
     Ok(ols_line::SpanPlace {
         fraction: optional(e, &format!("{prefix}fraction"))?.unwrap_or(0.0),
         distance: optional(e, &format!("{prefix}distance"))?,
+        station: optional(e, &format!("{prefix}station"))?,
     })
 }
 
@@ -497,6 +502,7 @@ fn write_section(out: &mut String, s: &Section) {
             span,
             fraction,
             distance,
+            station,
             vertical,
             label,
             diameter,
@@ -511,6 +517,7 @@ fn write_section(out: &mut String, s: &Section) {
             &ols_line::SpanPlace {
                 fraction: *fraction,
                 distance: *distance,
+                station: *station,
             },
         );
         let _ = write!(out, " vertical=\"{}\"", num(*vertical));
@@ -1241,6 +1248,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
                         "span",
                         "fraction",
                         "distance",
+                        "station",
                         "vertical",
                         "label",
                         "diameter",
@@ -1260,6 +1268,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
                     wind_area: optional(l, "wind_area")?,
                     ice_area: optional(l, "ice_area")?,
                     distance: optional(l, "distance")?,
+                    station: optional(l, "station")?,
                 })
             })
             .collect::<Result<_, String>>()?,
@@ -1275,8 +1284,10 @@ fn read_section(e: &Element) -> Result<Section, String> {
                         "span",
                         "start_fraction",
                         "start_distance",
+                        "start_station",
                         "end_fraction",
                         "end_distance",
+                        "end_station",
                         "load",
                         "label",
                     ],
@@ -1296,7 +1307,14 @@ fn read_section(e: &Element) -> Result<Section, String> {
             .map(|p| {
                 check(
                     p,
-                    &["label", "span", "fraction", "distance", "description"],
+                    &[
+                        "label",
+                        "span",
+                        "fraction",
+                        "distance",
+                        "station",
+                        "description",
+                    ],
                     &[],
                 )?;
                 Ok(ols_line::SpanPoint {
