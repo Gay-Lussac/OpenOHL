@@ -29,27 +29,33 @@ Art. 33), item 2.2.1 — the direct distance of two conductors in the span:
   to 1000 m above sea level; above, the values grow linearly by 14 % per
   1000 m.
 
-  As validated with the user (C₃ and C₄ to be filled in from the
-  ordinance):
+  Table 2.4.1 (consolidated text of 1 June 2019 on fedlex.admin.ch),
+  as validated with the user; "at kV": the lightning impulse withstand
+  voltage the value is for (C₃ and C₄ come with 50-Hz test voltages in
+  the ordinance, not kept here):
 
-  | Up to kV | Level | C₁ m | C₁ at kV | C₂ m | C₂ at kV |
-  |---|---|---|---|---|---|
-  | 1 | — | 0.05 | — | 0.05 | — |
-  | 3 | — | 0.06 | — | 0.06 | — |
-  | 6 | — | 0.09 | — | 0.09 | — |
-  | 10 | — | 0.12 | — | 0.12 | — |
-  | 15 | — | 0.16 | — | 0.17 | — |
-  | 20 | — | 0.22 | — | 0.26 | — |
-  | 30 | — | 0.32 | — | 0.39 | — |
-  | 45 | — | 0.52 | — | 0.63 | — |
-  | 60 | — | 0.70 | — | 0.82 | — |
-  | 110 | — | 0.92 | — | 1.38 | — |
-  | 132 | — | 1.12 | — | 1.38 | — |
-  | 150 | — | 1.32 | — | 1.64 | — |
-  | 220 | low | 1.93 | 950 | 2.29 | 1050 |
-  | 220 | high | 2.14 | 1050 | 2.56 | 1175 |
-  | 380 | low | 2.64 | 1300 | 3.37 | 1550 |
-  | 380 | high | 2.90 | 1425 | 3.64 | 1675 |
+  | Up to kV | Level | C₁ m | C₁ at kV | C₂ m | C₂ at kV | C₃ m | C₄ m |
+  |---|---|---|---|---|---|---|---|
+  | < 1 | — | 0.05 | — | 0.05 | — | 0.05 | 0.05 |
+  | 3 | — | 0.06 | 40 | 0.06 | 46 | 0.06 | 0.06 |
+  | 6 | — | 0.09 | 60 | 0.09 | 70 | 0.09 | 0.09 |
+  | 10 | — | 0.12 | 75 | 0.12 | 85 | 0.12 | 0.12 |
+  | 15 | — | 0.16 | 95 | 0.17 | 110 | 0.16 | 0.16 |
+  | 20 | — | 0.22 | 125 | 0.26 | 145 | 0.18 | 0.18 |
+  | 30 | — | 0.32 | 170 | 0.39 | 195 | 0.21 | 0.24 |
+  | 45 | — | 0.52 | 250 | 0.63 | 290 | 0.30 | 0.36 |
+  | 60 | — | 0.70 | 325 | 0.82 | 375 | 0.45 | 0.52 |
+  | 110 | — | 0.92 | 450 | 1.38 | 650 | 0.61 | 0.89 |
+  | 132 | — | 1.12 | 550 | 1.38 | 650 | 0.76 | 0.89 |
+  | 150 | — | 1.32 | 650 | 1.64 | 750 | 0.92 | 1.05 |
+  | 220 | low | 1.93 | 950 | 2.29 | 1050 | 1.35 | 1.60 |
+  | 220 | high | 2.14 | 1050 | 2.56 | 1175 | 1.60 | 1.90 |
+  | 380 | low | 2.64 | 1300 | 3.37 | 1550 | 2.09 | 2.30 |
+  | 380 | high | 2.90 | 1425 | 3.64 | 1675 | 2.33 | 2.86 |
+
+  The ordinance's text (2.1.1, 2.2.1) says "Stromkreis" (circuit) where
+  the table says "System": one three-phase circuit, an electrical system
+  in the line file.
 - \\( f \\): the conductor's sag at 10 °C conductor temperature (2.4).
 - \\( l_k \\): the length (Baulänge) of suspension strings (2.4).
 - \\( k \\): Diagrams 2.4.2 (wind pressure 500 N/m²) and 2.4.3
