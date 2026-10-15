@@ -2090,8 +2090,9 @@ pub fn solve_line_with(
 /// Jumper loads on clamps, by section point (the whole bundle's, N).
 pub type JumperLoadMap = std::collections::BTreeMap<crate::SectionPoint, [f64; 3]>;
 
-/// Every section, the jumpers' loads `jumpers` on their clamps; sections
-/// sharing an assembly together.
+/// Every section, the jumpers' loads `jumpers` on their clamps, spread
+/// over the cores (sections are independent finite-element models);
+/// sections sharing an assembly then together.
 fn solve_sections_with(
     line: &Line,
     library: &ols_cables::Library,
@@ -2103,14 +2104,11 @@ fn solve_sections_with(
         jumpers: Some(jumpers.clone()),
         ..Coupling::default()
     };
-    let mut results: Vec<Result<SectionShape, LineError>> = line
-        .sections
-        .iter()
-        .map(|section| {
-            let cable = cable_of(library, section)?;
-            solve_section_coupled(line, section, cable, case, budget, &coupling)
-        })
-        .collect();
+    let all: Vec<&Section> = line.sections.iter().collect();
+    let mut results = crate::jumper::in_parallel(&all, |section| {
+        let cable = cable_of(library, section)?;
+        solve_section_coupled(line, section, cable, case, budget, &coupling)
+    });
     for group in coupled_groups(line) {
         solve_coupled(line, library, case, &group, &mut results, budget, jumpers);
     }
@@ -2199,11 +2197,15 @@ pub fn jumper_pull(
             jumpers: Some(used.clone()),
             ..Coupling::default()
         };
-        for &k in &again {
+        // Over the cores.
+        let solved = crate::jumper::in_parallel(&again, |&k| {
             let section = &line.sections[k];
-            results[k] = cable_of(library, section).and_then(|cable| {
+            cable_of(library, section).and_then(|cable| {
                 solve_section_coupled(line, section, cable, case, budget, &coupling)
-            });
+            })
+        });
+        for (&k, r) in again.iter().zip(solved) {
+            results[k] = r;
         }
         for group in groups
             .iter()
