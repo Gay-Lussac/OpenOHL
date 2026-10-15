@@ -113,9 +113,10 @@ set in the Electrical circuits table (the LeV plugin's column; not set:
 high). **Check** runs in the background; the pairs come worst first: the
 two spans and circuits, C₁ or C₂, kV, d, z, d − z, the length of
 conductor below z, and at the worst station f, l_k, β, k and C, with a
-note when it is at a clamp (f ≈ 0) or on a nearby span. Clicking a span
-selects it and draws the worst station's line in the 3D view, labelled
-with d and z. **Export CSV…** writes every pair with the points. Below
+note when it is at a clamp (f ≈ 0) or on a nearby span. Clicking a span,
+or d, z or d − z, selects the span, shows the result's weather case and
+draws the worst station's line in the 3D view, labelled with d and z;
+the line goes when the window is closed (or a new run starts). **Export CSV…** writes every pair with the points. Below
 the settings, the window explains the computation ("How it is
 computed") and shows the **values used** as tables, for transparency:
 C₁ and C₂ by nominal voltage (low and high rows), the k lines of each

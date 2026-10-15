@@ -11213,10 +11213,10 @@ fn the_checks_menu_opens_the_phase_distance_window() {
         assert!(w.open);
         assert!(w.file.ends_with("lev-ch.olspd"), "{}", w.file.display());
         assert!(w.circuits.is_none(), "every circuit");
-        // The first case when the example has no still-air 10 °C case.
-        if w.cases.is_empty() {
-            w.cases.insert(0);
-        }
+        // A case other than the one shown: a click shows it.
+        let other = (r.case + 1) % r.model.cases.len();
+        assert_ne!(other, r.case);
+        w.cases = std::iter::once(other).collect();
     }
     harness.get_by_label("Check").click();
     let started = std::time::Instant::now();
@@ -11264,6 +11264,20 @@ fn the_checks_menu_opens_the_phase_distance_window() {
     let (a, b, text) = r.view3d.measure.clone().expect("the line drawn");
     assert_eq!([a, b], row.at);
     assert!(text.contains("d ") && text.contains("z "), "{text}");
+    // In its weather case.
+    assert_eq!(r.model.cases[r.case].case.name, row.case);
+    // The window closed: the line gone.
+    r.phase_distance.open = false;
+    harness.run();
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .view3d
+            .measure
+            .is_none()
+    );
 }
 
 /// The library of performed checks: a run of the LeV distance between
@@ -11534,4 +11548,52 @@ fn phase_distance_values_are_locked_but_an_admin_edits_them() {
             .is_none(),
         "locked for a designer"
     );
+}
+
+/// Sections table: the bundle angle after the bundle and its spacing —
+/// 0 shown (dimmed) for a bundle not turned, typed in, emptied: not
+/// turned again.
+#[test]
+fn sections_table_turns_the_bundle() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("bundle-angle");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let col = TableKind::Sections.column("bundle angle °");
+    assert_eq!(col, TableKind::Sections.column("spacing m") + 1);
+    set_cell(&mut harness, TableKind::Sections, "S1", "bundle", "3");
+    set_cell(&mut harness, TableKind::Sections, "S1", "spacing m", "0.45");
+    apply_table(&mut harness, TableKind::Sections, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let rows = TableKind::Sections.rows(&r.model, r.case);
+        let s1 = rows.iter().find(|x| x.key == "S1").unwrap();
+        assert_eq!(s1.cells[col], "0");
+        assert!(s1.defaulted[col]);
+    }
+    set_cell(
+        &mut harness,
+        TableKind::Sections,
+        "S1",
+        "bundle angle °",
+        "60",
+    );
+    apply_table(&mut harness, TableKind::Sections, false).unwrap();
+    let rot = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let s = r.model.line.sections.iter().find(|s| s.id == "S1").unwrap();
+        (s.bundle, s.bundle_rotation_deg)
+    };
+    assert_eq!(rot(&mut harness), (3, Some(60.0)));
+    set_cell(
+        &mut harness,
+        TableKind::Sections,
+        "S1",
+        "bundle angle °",
+        "",
+    );
+    apply_table(&mut harness, TableKind::Sections, false).unwrap();
+    assert_eq!(rot(&mut harness), (3, None));
 }

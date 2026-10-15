@@ -284,6 +284,8 @@ pub struct Out {
     pub measure: Option<Measure>,
     /// A command to apply (a report saved).
     pub apply: Option<(String, ols_session::Command)>,
+    /// The weather case to show (that of the result clicked), by name.
+    pub case: Option<String>,
 }
 
 /// The Distance between conductors window.
@@ -1404,14 +1406,25 @@ impl PhaseDistanceWindow {
                             ui.label(if r.same_circuit { "C₁" } else { "C₂" });
                             ui.label(format!("{:.0}", r.kv));
                             let mono = |v: f64| egui::RichText::new(format!("{v:.2}")).monospace();
-                            ui.label(mono(r.distance));
-                            ui.label(mono(r.required));
                             let m = mono(r.margin());
-                            ui.label(if r.margin() < 0.0 {
+                            let m = if r.margin() < 0.0 {
                                 m.color(egui::Color32::LIGHT_RED)
                             } else {
                                 m
-                            });
+                            };
+                            // The values too: a click goes to the worst station.
+                            for v in [mono(r.distance), mono(r.required), m] {
+                                if ui
+                                    .selectable_label(picked, v)
+                                    .on_hover_text(
+                                        "Go to the worst station: its line drawn with d and z, \
+                                         in its weather case",
+                                    )
+                                    .clicked()
+                                {
+                                    clicked = Some((i, 0));
+                                }
+                            }
                             ui.label(format!("{:.0}", r.length_below));
                             ui.label(format!("{:.2} / {:.2}", r.sag[0], r.sag[1]));
                             ui.label(format!("{:.2} / {:.2}", r.lk[0], r.lk[1]));
@@ -1445,6 +1458,7 @@ impl PhaseDistanceWindow {
         if let Some((i, k)) = clicked {
             let r = &report.rows[i];
             self.picked = Some(i);
+            out.case = Some(r.case.clone());
             out.go = Some(Selection::Span {
                 section: r.span[k].0.clone(),
                 span: r.span[k].1,
