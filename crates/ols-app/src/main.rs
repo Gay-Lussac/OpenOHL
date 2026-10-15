@@ -40,6 +40,7 @@ mod lod;
 mod menu;
 mod model;
 mod octree;
+mod phase_distance;
 mod placed_editor;
 mod plan;
 mod plugins;

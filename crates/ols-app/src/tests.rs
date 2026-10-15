@@ -11189,3 +11189,79 @@ fn plugin_columns_in_tables() {
         assert_eq!(s.fields.get(&lev.key).map(String::as_str), Some("low"));
     }
 }
+
+/// Checks › LeV / OLEI › Distance between conductors: the window opens with the
+/// shipped LeV values, checks the ticked case in the background (pairs
+/// worst first, every circuit), and a pair's span link selects the span
+/// and draws its worst station's line with d and z.
+#[test]
+fn the_checks_menu_opens_the_phase_distance_window() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Checks").click();
+    harness.run();
+    harness.get_by_label_contains("LeV / OLEI").hover();
+    harness.run();
+    harness.get_by_label("Distance between conductors…").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let w = &mut r.phase_distance;
+        assert!(w.open);
+        assert!(w.file.ends_with("lev-ch.olspd"), "{}", w.file.display());
+        assert!(w.circuits.is_none(), "every circuit");
+        // The first case when the example has no still-air 10 °C case.
+        if w.cases.is_empty() {
+            w.cases.insert(0);
+        }
+    }
+    harness.get_by_label("Check").click();
+    let started = std::time::Instant::now();
+    let (row, below) = loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let (Some(rep), false) = r.phase_distance.report() {
+            let rep = rep.as_ref().unwrap();
+            assert!(!rep.rows.is_empty());
+            assert!(
+                rep.rows.windows(2).all(|w| w[0].margin() <= w[1].margin()),
+                "worst first"
+            );
+            for x in &rep.rows {
+                assert!(x.distance > 0.0 && x.required > x.c);
+            }
+            break (
+                rep.rows[0].clone(),
+                rep.rows.iter().filter(|x| x.margin() < 0.0).count(),
+            );
+        }
+        assert!(started.elapsed().as_secs() < 60, "no report in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    // All pairs shown, then a span link.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .phase_distance
+        .only_below = false;
+    harness.run();
+    let _ = below;
+    let label = format!("{} span {}", row.span[0].0, row.span[0].1 + 1);
+    harness.query_all_by_label(&label).next().unwrap().click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(
+        r.selection,
+        Selection::Span {
+            section: row.span[0].0.clone(),
+            span: row.span[0].1
+        }
+    );
+    let (a, b, text) = r.view3d.measure.clone().expect("the line drawn");
+    assert_eq!([a, b], row.at);
+    assert!(text.contains("d ") && text.contains("z "), "{text}");
+}

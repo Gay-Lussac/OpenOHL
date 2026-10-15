@@ -92,6 +92,31 @@ radial = { by_voltage = [[0, "2 m"], [245, "3.5 m"]] }
 case_pairs = [["glaze ice", "everyday"]]
 ```
 
+## Distance between conductors in the span (Swiss LeV)
+
+The Swiss ordinance's still-air distance between two conductors of a
+span (LeV Annex 6, 2.2.1): \( z = k\sqrt{f + l_k} + C \), with f the local
+sag, l_k from the strings at the conductors' ends, k by the system angle
+and swing class (diagram 2.4.2 or 2.4.3), C by voltage (C₁ within a
+circuit and towards an earth wire, C₂ between circuits, the low or high
+row by insulation level), +14 % per 1000 m above 1000 m. The values are
+a file, `libraries/phase-distance/lev-ch.olspd`; the method and the
+decisions behind it: [the specification](../development/lev-phase-spacing.md).
+
+In the desktop app: **Checks › LeV / OLEI › Distance between
+conductors…** — the values file, the k diagram, the weather cases (the
+still-air 10 °C ones ticked first; each checked on its own), the
+circuits (ticked in a list, select all / none), the station spacing
+(1 m), and nearby spans (conductors not between the same two
+structures, within a distance). The insulation level of each circuit is
+set in the Electrical circuits table (the LeV plugin's column; not set:
+high). **Check** runs in the background; the pairs come worst first: the
+two spans and circuits, C₁ or C₂, kV, d, z, d − z, the length of
+conductor below z, and at the worst station f, l_k, β, k and C, with a
+note when it is at a clamp (f ≈ 0) or on a nearby span. Clicking a span
+selects it and draws the worst station's line in the 3D view, labelled
+with d and z. **Export CSV…** writes every pair with the points.
+
 ## LiDAR classification
 
 ```bash

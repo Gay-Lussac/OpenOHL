@@ -250,6 +250,8 @@ pub struct Ready {
     pub placement: Option<crate::pylon_builder::Placement>,
     /// Checks › Galloping ellipses.
     pub galloping: crate::galloping::GallopingWindow,
+    /// Checks › Distance between conductors (LeV).
+    pub phase_distance: crate::phase_distance::PhaseDistanceWindow,
     /// Checks › Vegetation.
     pub vegetation: crate::vegetation::VegetationWindow,
     /// Checks › As-built wires.
@@ -353,6 +355,7 @@ impl Ready {
             pylon_builder: None,
             placement: None,
             galloping: Default::default(),
+            phase_distance: Default::default(),
             vegetation: Default::default(),
             wirefit: Default::default(),
             vertical_clearances: crate::clearance_zones::ZoneWindow::new(
@@ -5665,6 +5668,21 @@ fn menus(
             r.galloping.show(&r.model, r.case);
             ui.close();
         }
+        // The Swiss ordinance's checks (LeV / OLEI), more to come.
+        ui.menu_button("LeV / OLEI", |ui| {
+            if ui
+                .button("Distance between conductors…")
+                .on_hover_text(
+                    "Still-air distance between the conductors of each span, \
+                     z = k·√(f + l_k) + C (LeV Annex 6, 2.2.1), by a phase distance code \
+                     (.olspd)",
+                )
+                .clicked()
+            {
+                r.phase_distance.show(&r.model);
+                ui.close();
+            }
+        });
         if ui
             .button("Vegetation…")
             .on_hover_text("Vegetation points near the wires, growth and trees falling in")
@@ -6187,6 +6205,20 @@ impl eframe::App for App {
                 ];
                 if let Some(target) = go.into_iter().flatten().next() {
                     ready.go_to(target);
+                }
+                let out = ready.phase_distance.ui(&ctx, &ready.model);
+                if let Some(target) = out.go {
+                    ready.go_to(target);
+                }
+                if let Some(m) = out.measure {
+                    // The view on the line's middle, close enough to read.
+                    let mid = [0, 1, 2].map(|i| (m.0[i] + m.1[i]) / 2.0);
+                    if let Some(cam) = ready.view3d.camera.as_mut() {
+                        cam.target = mid;
+                        cam.distance = cam.distance.min(60.0);
+                    }
+                    ready.plan.centre_on(mid);
+                    ready.view3d.measure = Some(m);
                 }
                 for out in [
                     ready.vertical_clearances.ui(&ctx, &mut ready.model),

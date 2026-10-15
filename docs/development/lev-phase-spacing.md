@@ -1,11 +1,12 @@
 # LeV distance between conductors in the span (still air) — specification
 
-Status: **steps 1 to 3 of the plan implemented** (the values file
+Status: **steps 1 to 4 of the plan implemented** (the values file
 `libraries/phase-distance/lev-ch.olspd`, the check
 `ols_clearance::phase_distance`, with tests worked by hand; the length
 below z, nearby pairs and the faster search after the first run on an
 existing line; the Circuits table's insulation level, a column of the
-LeV plugin); the app window, the command line and the report library to
+LeV plugin; the window, Checks › LeV / OLEI › Distance between
+conductors); the library of performed checks and the command line to
 come. Decisions marked
 *(decided)* were taken with the user; *(open)* ones are still to settle.
 Change this page when a decision changes.
@@ -108,8 +109,8 @@ conductor, d, z, the margin, f and l_k of each conductor, β, k, C, the
 voltage and the case), and the **length of conductor below z** (m, on
 the conductor and subconductor where it is longest — each stretch
 counted once, not per subconductor pair or measuring direction).
-Shown in the Clearances tab and exported like the other clearance
-results. **Clicking a result** draws in the model the line between its
+Shown in the check's window, worst first, and exported as CSV.
+**Clicking a result** draws in the model the line between its
 two points, labelled with its length d and the required z.
 
 A note on the report: a worst station **at a clamp** (f about 0) is
@@ -164,22 +165,49 @@ differing by up to 40 % between conductors), phase spacers (2.2.4).
    manifest, on structures, sections, circuits, systems, jumpers,
    alignments, routes): the values are kept with the objects, saved and
    in OLS XML, and shown (unused) where the plugin is not installed.
-4. **The app.** A window (Checks menu): the weather cases ticked
+4. **The app** *(done; saving to the library comes with it)*. A window
+   (Checks › LeV / OLEI, a submenu for the ordinance's checks): the weather cases ticked
    (default: a still-air case at 10 °C), the circuits ticked (a
    drop-down of tick boxes, select all / select none), the diagram
    (500 or 650 N/m²), Δs, nearby pairs and their distance (the levels:
-   the Circuits table). The results in
-   the Clearances tab (worst station per pair, all its terms) and in
-   the 3D view (the worst stations marked); exported like the other
-   clearance results. Settings remembered with the project.
+   the Circuits table). The results in the window (worst station per
+   pair, all its terms; only those below z, or all), the clicked one's
+   line in the 3D view with d and z; CSV export. The settings are kept
+   for the session; with the library, a saved report keeps them.
 5. **The command line.** The same check from `ols line` (parameter file,
    cases, circuits), its CSV.
-6. **The report library** *(to discuss before building)*: reports
-   saved with the time, the state of the line, the parameters given
-   (and, made by a plugin, the plugin and its version); imported,
-   exported, managed and kept track of, and reloaded into the model to
-   check.
+6. **The library of performed checks** *(decided — see below)*.
 7. **Tests and benchmarks** (below), docs (user guide, theory page).
+
+### The library of performed checks *(decided)*
+
+For every check (this one first, then wire clearances, wind
+clearances, galloping, loads…), with one format:
+
+1. **Saving**: each check's window offers to save its result in the
+   project's library of performed checks (a choice, per run).
+2. **Where**: in the project, **attached to the branch of the line** it
+   was made on (version control): it moves with the branch — commits,
+   checkout, merge, the bundles carrying a branch to an offline copy —
+   and is imported and exported with it.
+3. **The state of the line**: the report records the project log entry
+   it was made after and a fingerprint of each object it used. Reloaded,
+   it says "line unchanged", or "changed since" with the objects changed
+   (e.g. 4 sections, 2 structures).
+4. **Contents**: the time and user; the app's version, and the plugin's
+   name and version when a plugin made it; every parameter (the values
+   file and its fingerprint, the weather cases with their values, the
+   settings, the insulation levels used); the results; a note.
+5. **Reloading**: its results in the Clearances tab and the 3D view
+   (clicking one draws the line with d and z); marked *stale* when the
+   line changed; **run again** with the same parameters shows the
+   comparison (new, fixed, worse, better), then **asks whether to
+   replace the old report with the new one** — one report per check is
+   kept, no history (the line's history is kept by version control).
+6. **Managing**: a list filtered by check, date, user and status;
+   rename, note, delete (asking first); a **status** to follow where it
+   is (e.g. draft, checked, approved). Sharing (a file format for other
+   people) later.
 
 ### First run on an existing line (local)
 
