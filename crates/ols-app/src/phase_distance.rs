@@ -314,6 +314,11 @@ pub struct PhaseDistanceWindow {
     ask: Option<Ask>,
     compared: bool,
     save_error: Option<String>,
+    /// The file was chosen (else the project's copy is used, if any).
+    chosen: bool,
+    /// The values being edited (an admin).
+    pub(crate) editing: Option<PhaseDistanceCode>,
+    values_error: Option<String>,
     /// The line's state against the saved report's, for this line version.
     since: Option<(u64, String, bool)>,
     job: Job<Report>,
@@ -336,6 +341,9 @@ impl Default for PhaseDistanceWindow {
             ask: None,
             compared: true,
             save_error: None,
+            chosen: false,
+            editing: None,
+            values_error: None,
             since: None,
             job: Job::default(),
         }
@@ -397,6 +405,154 @@ fn levels(model: &Model) -> BTreeMap<String, String> {
     out
 }
 
+/// Where the values come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Source {
+    /// A saved report's.
+    Report,
+    /// The project's copy (an admin's edit).
+    Project,
+    /// A file.
+    File,
+}
+
+/// Kind of the project's library files holding edited values.
+const VALUES_KIND: &str = "phase-distance";
+
+/// The project's copy of the values file `name`, if an admin made one.
+fn project_values(model: &Model, name: &str) -> Option<String> {
+    let s = &model.editing.as_ref().ok()?.session;
+    s.library_files(VALUES_KIND)
+        .ok()?
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, t)| t)
+}
+
+/// The user is an admin of the project.
+fn is_admin(model: &Model) -> bool {
+    model.editing.as_ref().is_ok_and(|e| {
+        e.session
+            .role(&e.user)
+            .is_ok_and(|r| r == Some(ols_session::Role::Admin))
+    })
+}
+
+/// Keeps `code` as the project's copy of values file `name` (admins).
+fn save_values(model: &Model, name: &str, code: &PhaseDistanceCode) -> Result<(), String> {
+    let e = model
+        .editing
+        .as_ref()
+        .map_err(|e| format!("read-only: {e}"))?;
+    if !is_admin(model) {
+        return Err("only an admin of the project may change the values".into());
+    }
+    let time = e.session.now().map_err(|e| e.to_string())?;
+    let text = code.to_text(&format!(
+        "Edited in OLS CAD by {} on {time} (the project's copy of {name}).",
+        e.user
+    ));
+    // Read back: refused when it does not hold.
+    PhaseDistanceCode::parse(&text)?;
+    e.session
+        .put_library_file(&e.user, VALUES_KIND, name, &text)
+        .map_err(|e| e.to_string())
+}
+
+/// Removes the project's copy of values file `name` (admins).
+fn reset_values(model: &Model, name: &str) -> Result<(), String> {
+    let e = model
+        .editing
+        .as_ref()
+        .map_err(|e| format!("read-only: {e}"))?;
+    if !is_admin(model) {
+        return Err("only an admin of the project may change the values".into());
+    }
+    e.session
+        .delete_library_file(&e.user, VALUES_KIND, name)
+        .map_err(|e| e.to_string())
+}
+
+/// The values as tables: C₁/C₂ by voltage, each diagram's k lines, the
+/// altitude rule; typed in when `edit`.
+fn code_table(ui: &mut egui::Ui, code: &mut PhaseDistanceCode, edit: bool) {
+    let num = |ui: &mut egui::Ui, v: &mut f64, speed: f64, decimals: usize| {
+        if edit {
+            ui.add(
+                egui::DragValue::new(v)
+                    .speed(speed)
+                    .min_decimals(decimals)
+                    .max_decimals(decimals + 2),
+            );
+        } else {
+            ui.label(egui::RichText::new(format!("{v:.decimals$}")).monospace());
+        }
+    };
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.label(egui::RichText::new("C by nominal voltage, m (Table 2.4.1)").strong());
+            egui::Grid::new("phase-distance-voltages")
+                .striped(true)
+                .spacing([10.0, 2.0])
+                .show(ui, |ui| {
+                    for h in ["up to kV", "C₁ low", "C₁ high", "C₂ low", "C₂ high"] {
+                        ui.label(egui::RichText::new(h).small().strong());
+                    }
+                    ui.end_row();
+                    for r in &mut code.voltages {
+                        num(ui, &mut r.kv, 1.0, 0);
+                        for v in r.c1.iter_mut().chain(r.c2.iter_mut()) {
+                            num(ui, v, 0.01, 2);
+                        }
+                        ui.end_row();
+                    }
+                });
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Altitude: from").small());
+                if code.altitude_from.is_finite() {
+                    num(ui, &mut code.altitude_from, 10.0, 0);
+                } else {
+                    ui.label("—");
+                }
+                ui.label(egui::RichText::new("m, + share per 1000 m").small());
+                num(ui, &mut code.altitude_per_1000, 0.01, 2);
+            });
+        });
+        ui.separator();
+        for (i, d) in code.diagrams.iter_mut().enumerate() {
+            ui.vertical(|ui| {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "k, diagram {} ({:.0} Pa)",
+                        d.name, d.wind_pressure
+                    ))
+                    .strong(),
+                );
+                egui::Grid::new(("phase-distance-diagram-lines", i))
+                    .striped(true)
+                    .spacing([10.0, 2.0])
+                    .show(ui, |ui| {
+                        for h in ["w = d/q up to", "k at β 0°", "k at β 90°"] {
+                            ui.label(egui::RichText::new(h).small().strong());
+                        }
+                        ui.end_row();
+                        for l in &mut d.lines {
+                            match &mut l.w_max {
+                                Some(w) => num(ui, w, 0.1, 1),
+                                None => {
+                                    ui.label("above");
+                                }
+                            }
+                            num(ui, &mut l.k0, 0.01, 2);
+                            num(ui, &mut l.k90, 0.01, 2);
+                            ui.end_row();
+                        }
+                    });
+            });
+        }
+    });
+}
+
 /// The plugin that sets the insulation levels, with its version, when in
 /// use.
 fn plugin_of(model: &Model) -> Option<String> {
@@ -434,20 +590,12 @@ impl PhaseDistanceWindow {
         self.comparison = None;
         self.ask = None;
         self.compared = self.loaded.is_none();
-        let (values_file, text) = match &self.values {
-            Some(v) => v.clone(),
-            None => match std::fs::read_to_string(&self.file) {
-                Ok(t) => (
-                    self.file
-                        .file_name()
-                        .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
-                    t,
-                ),
-                Err(e) => {
-                    self.job.result = Some(Err(format!("{}: {e}", self.file.display())));
-                    return;
-                }
-            },
+        let (values_file, text) = match self.current_values(model) {
+            Ok((name, text, _)) => (name, text),
+            Err(e) => {
+                self.job.result = Some(Err(e));
+                return;
+            }
         };
         let mut params = Params {
             values_sha256: ols_session::versions::hash(&text),
@@ -755,8 +903,6 @@ impl PhaseDistanceWindow {
             .open(&mut open)
             .default_width(980.0)
             .show(ctx, |ui| {
-                explanation(ui);
-                ui.separator();
                 self.settings_ui(ui, model);
                 ui.horizontal(|ui| {
                     if ui
@@ -768,6 +914,16 @@ impl PhaseDistanceWindow {
                     self.job.status_ui(ui);
                 });
                 self.library_ui(ui, model, &mut out);
+                ui.separator();
+                // How it computes and with which values: open, in a box of
+                // its own height so the results keep their place.
+                egui::ScrollArea::vertical()
+                    .id_salt("phase-distance-how-and-values")
+                    .max_height(260.0)
+                    .show(ui, |ui| {
+                        explanation(ui);
+                        self.values_ui(ui, model);
+                    });
                 ui.separator();
                 self.results_ui(ui, &mut out);
             });
@@ -902,29 +1058,136 @@ impl PhaseDistanceWindow {
         }
     }
 
+    /// The values used: a saved report's, else the file chosen, else the
+    /// project's copy (edited by an admin), else the shipped file: (file
+    /// name, text, where from).
+    fn current_values(&self, model: &Model) -> Result<(String, String, Source), String> {
+        if let Some((name, text)) = &self.values {
+            return Ok((name.clone(), text.clone(), Source::Report));
+        }
+        let name = self
+            .file
+            .file_name()
+            .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+        if !self.chosen
+            && let Some(text) = project_values(model, &name)
+        {
+            return Ok((name, text, Source::Project));
+        }
+        std::fs::read_to_string(&self.file)
+            .map(|t| (name, t, Source::File))
+            .map_err(|e| format!("{}: {e}", self.file.display()))
+    }
+
+    /// The values as a table (read only; an admin may edit them: kept in
+    /// the project).
+    fn values_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let current = self.current_values(model);
+        let admin = is_admin(model);
+        egui::CollapsingHeader::new("Values used")
+            .id_salt("phase-distance-values")
+            .default_open(true)
+            .show(ui, |ui| {
+                let (name, text, source) = match &current {
+                    Ok(c) => c.clone(),
+                    Err(e) => {
+                        crate::menu::error_label(ui, e);
+                        return;
+                    }
+                };
+                let code = match PhaseDistanceCode::parse(&text) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        crate::menu::error_label(ui, format!("{name}: {e}"));
+                        return;
+                    }
+                };
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} — {name}, {}",
+                            code.name,
+                            match source {
+                                Source::Report => "as saved in the report",
+                                Source::Project => "the project's copy (edited by an admin)",
+                                Source::File => "the file",
+                            }
+                        ))
+                        .small(),
+                    );
+                    if self.editing.is_none() {
+                        let b = ui.add_enabled(admin, egui::Button::new("Edit values"));
+                        let b = if admin {
+                            b.on_hover_text(
+                                "Change the values; saved as the project's copy, used by every \
+                                 run on this project",
+                            )
+                        } else {
+                            b.on_disabled_hover_text(
+                                "Locked: only an admin of the project may edit them",
+                            )
+                        };
+                        if b.clicked() {
+                            self.editing = Some(code.clone());
+                            self.values_error = None;
+                        }
+                        if admin
+                            && source == Source::Project
+                            && ui
+                                .button("Back to the file")
+                                .on_hover_text("Remove the project's copy: the file's values again")
+                                .clicked()
+                        {
+                            self.values_error = reset_values(model, &name).err();
+                        }
+                    }
+                });
+                let editing = self.editing.is_some();
+                let mut code = self.editing.take().unwrap_or(code);
+                let mut keep = editing;
+                if editing {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Editing the values (admin):")
+                                .color(egui::Color32::YELLOW),
+                        );
+                        if ui.button("Save in the project").clicked() {
+                            match save_values(model, &name, &code) {
+                                Ok(()) => {
+                                    keep = false;
+                                    self.values = None;
+                                    self.chosen = false;
+                                    self.values_error = None;
+                                }
+                                Err(e) => self.values_error = Some(e),
+                            }
+                        }
+                        if ui.button("Cancel").clicked() {
+                            keep = false;
+                            self.values_error = None;
+                        }
+                    });
+                }
+                code_table(ui, &mut code, editing);
+                if keep {
+                    self.editing = Some(code);
+                }
+                if let Some(e) = &self.values_error {
+                    crate::menu::error_label(ui, e);
+                }
+            });
+    }
+
     fn settings_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
-        let code = match &self.values {
-            Some((_, t)) => PhaseDistanceCode::parse(t).ok(),
-            None => std::fs::read_to_string(&self.file)
-                .ok()
-                .and_then(|t| PhaseDistanceCode::parse(&t).ok()),
-        };
+        let code = self
+            .current_values(model)
+            .ok()
+            .and_then(|(_, t, _)| PhaseDistanceCode::parse(&t).ok());
         ui.horizontal(|ui| {
-            match &self.values {
-                Some((name, _)) => {
-                    ui.label(format!("values: {name} (as saved in the report)"))
-                        .on_hover_text("Choose… to use a file instead");
-                }
-                None => {
-                    let name = self
-                        .file
-                        .file_name()
-                        .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-                    ui.label(format!("values: {name}"))
-                        .on_hover_text(self.file.display().to_string());
-                }
-            }
-            if ui.button("Choose…").clicked()
+            if ui
+                .button("Choose a values file…")
+                .on_hover_text("Another .olspd file instead of the values used")
+                .clicked()
                 && let Some(p) = rfd::FileDialog::new()
                     .add_filter("Phase distance code", &["olspd"])
                     .set_directory(ols_core::files::shipped_library("phase-distance"))
@@ -932,6 +1195,7 @@ impl PhaseDistanceWindow {
             {
                 self.file = p;
                 self.values = None;
+                self.chosen = true;
             }
             match &code {
                 Some(c) => {
