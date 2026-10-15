@@ -81,6 +81,20 @@ mod code_bindings {
 
 pub use code_bindings::ols::plugin::code_types::{CodeInfo, Generated};
 
+mod check_bindings {
+    wasmtime::component::bindgen!({
+        world: "check-plugin",
+        path: "wit",
+    });
+}
+
+pub use check_bindings::exports::ols::plugin::check::{
+    CheckInfo, Choice, ConductorPair, Evaluated, ValueTable,
+};
+
+/// Extension point of check plugins (`check-plugin` world).
+pub const CHECK: &str = "check";
+
 /// Extension point of design-code plugins (`code-plugin` world).
 pub const DESIGN_CODE: &str = "design-code";
 
@@ -911,6 +925,141 @@ impl WasmCodePlugin {
             .call_generate(&mut self.store, parameters)
             .map_err(|e| classify(e, &name, "generate", limits))
     }
+}
+
+impl WasmHost {
+    /// Loads a check plugin (`check-plugin` world, extension point
+    /// [`CHECK`] in its manifest), with the limits its manifest asks for.
+    pub fn load_check(&self, dir: &Path) -> Result<WasmCheckPlugin, PluginError> {
+        let p = self.prepare(dir, Some((CHECK, "a check plugin")))?;
+        self.check_instance(p.manifest, p.component, p.store, p.limits)
+    }
+
+    fn check_instance(
+        &self,
+        manifest: Manifest,
+        component: Component,
+        mut store: Store<HostState>,
+        limits: Limits,
+    ) -> Result<WasmCheckPlugin, PluginError> {
+        let instance =
+            check_bindings::CheckPlugin::instantiate(&mut store, &component, &self.linker)
+                .map_err(|e| classify(e, &manifest.plugin.name, "instantiation", limits))?;
+        Ok(WasmCheckPlugin {
+            manifest,
+            component,
+            store,
+            instance,
+            limits,
+        })
+    }
+
+    /// Another instance of check plugin `plugin` (its own store: one per
+    /// thread), without compiling it again.
+    pub fn another_check(&self, plugin: &WasmCheckPlugin) -> Result<WasmCheckPlugin, PluginError> {
+        let state = HostState {
+            wasi: WasiCtxBuilder::new().build(),
+            table: ResourceTable::new(),
+            limits: StoreLimitsBuilder::new()
+                .memory_size(plugin.limits.max_memory_bytes)
+                .build(),
+        };
+        let mut store = Store::new(&self.engine, state);
+        store.limiter(|state| &mut state.limits);
+        store.set_epoch_deadline(plugin.limits.deadline_ticks());
+        store.set_hostcall_fuel(plugin.limits.max_memory_bytes);
+        self.check_instance(
+            plugin.manifest.clone(),
+            plugin.component.clone(),
+            store,
+            plugin.limits,
+        )
+    }
+}
+
+/// A loaded check plugin.
+pub struct WasmCheckPlugin {
+    manifest: Manifest,
+    component: Component,
+    store: Store<HostState>,
+    instance: check_bindings::CheckPlugin,
+    limits: Limits,
+}
+
+impl WasmCheckPlugin {
+    /// The plugin's manifest.
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    fn call<T>(
+        &mut self,
+        function: &'static str,
+        f: impl FnOnce(
+            &check_bindings::exports::ols::plugin::check::Guest,
+            &mut Store<HostState>,
+        ) -> wasmtime::Result<T>,
+    ) -> Result<T, PluginError> {
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+        let (name, limits) = (self.manifest.plugin.name.clone(), self.limits);
+        f(self.instance.ols_plugin_check(), &mut self.store)
+            .map_err(|e| classify(e, &name, function, limits))
+    }
+
+    /// Calls `checks`.
+    pub fn checks(&mut self) -> Result<Vec<CheckInfo>, PluginError> {
+        self.call("checks", |g, s| g.call_checks(s))
+    }
+
+    /// Calls `value-tables` (inner `Err`: the plugin's own error, about the
+    /// values).
+    pub fn value_tables(
+        &mut self,
+        check: &str,
+        values: &str,
+    ) -> Result<Result<Vec<ValueTable>, String>, PluginError> {
+        self.call("value-tables", |g, s| g.call_value_tables(s, check, values))
+    }
+
+    /// Calls `edit-value`: the values file with that cell changed.
+    pub fn edit_value(
+        &mut self,
+        check: &str,
+        values: &str,
+        cell: [u32; 3],
+        text: &str,
+    ) -> Result<Result<String, String>, PluginError> {
+        self.call("edit-value", |g, s| {
+            g.call_edit_value(s, check, values, cell[0], cell[1], cell[2], text)
+        })
+    }
+
+    /// Calls `evaluate` for one pair and its stations.
+    pub fn evaluate(
+        &mut self,
+        check: &str,
+        values: &str,
+        choices: &[u32],
+        pair: &ConductorPair,
+        stations: &[f64],
+    ) -> Result<Result<Evaluated, String>, PluginError> {
+        self.call("evaluate", |g, s| {
+            g.call_evaluate(s, check, values, choices, pair, stations)
+        })
+    }
+}
+
+/// The check plugins in `roots` (each as [`discover`] reads it): those
+/// whose manifest lists [`CHECK`], usable or not; a name found again is
+/// left out.
+pub fn discover_checks(roots: &[PathBuf]) -> Vec<Found> {
+    let mut names = std::collections::BTreeSet::new();
+    roots
+        .iter()
+        .flat_map(|r| discover(r))
+        .filter(|f| f.provides(CHECK))
+        .filter(|f| names.insert(f.name()))
+        .collect()
 }
 
 /// The design-code plugins in `roots` (each as [`discover`] reads it):

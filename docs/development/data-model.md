@@ -464,7 +464,10 @@ rules `.olsr`; thermal ambient `.olsta`; unit costs `.olscost`; galloping
 
 ### Phase distance codes (`.olspd`)
 
-`ols-phase-distance`, version 1 (`ols_clearance::phase_distance`): a
+`ols-phase-distance`, version 1, read and written by the **lev-ch
+plugin** (`plugins/codes/lev-ch/src/phase_distance.rs`; OLS CAD only
+measures, `ols_clearance::phase_distance`, and keeps a project's edited
+copy as a library file of kind `phase-distance`): a
 code's values for the distance between conductors in the span,
 \( z = k\sqrt{f + l_k} + C \) — `[[voltage]]` rows (`kv`: up to this
 nominal voltage; `c1` within one electrical system and towards earth,
@@ -474,7 +477,7 @@ or two — the low and the high insulation level; optional `c1_bil_kv`,
 for), `[[diagram]]`s (`name`, `wind_pressure`, `line =
 [{ w_max, k0, k90 }]`: k linear in the system angle per swing class
 w = d/q), `[altitude]` (`from`, `per_1000_m`). The Swiss LeV's values:
-`libraries/phase-distance/lev-ch.olspd`. The check pairs conductors
+`plugins/codes/lev-ch/phase-distance.olspd` (shipped in the plugin). The check pairs conductors
 between the same two structures (and, when asked, nearby conductors
 elsewhere within a distance) and takes l_k from the strings at their
 ends (I: its length; V, tension, clamped: 0; the string below a V: its
@@ -483,7 +486,10 @@ level from its sections' `lev-ch.insulation_level` (not set: high); the
 settings (diagram, station spacing, circuits ticked, nearby pairs and
 their distance) are not in the file. Results per pair: the worst
 station (points, where along each conductor, d, z and its terms) and
-the length of conductor below z. See [the specification](lev-phase-spacing.md).
+the length of conductor below z; conductors joined by spacers in the
+span: each one's largest sag between its clamps, and the plugin's rule
+2.2.4. A run's parameters keep the plugin's name and version and its
+choices. See [the specification](lev-phase-spacing.md).
 
 ### Clearance rules (`.olsr`)
 

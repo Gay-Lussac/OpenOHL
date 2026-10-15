@@ -100,12 +100,17 @@ sag, l_k from the strings at the conductors' ends, k by the system angle
 and swing class (diagram 2.4.2 or 2.4.3), C by voltage (C₁ within one
 electrical system and towards earth, C₂ between different systems; at
 220 and 380 kV the line of the circuit's insulation level, each value
-for its lightning impulse withstand voltage), +14 % per 1000 m above 1000 m. The values are
-a file, `libraries/phase-distance/lev-ch.olspd`; the method and the
-decisions behind it: [the specification](../development/lev-phase-spacing.md).
+for its lightning impulse withstand voltage), +14 % per 1000 m above 1000 m. Conductors
+joined by phase spacers in the span (2.2.4): \( z = k\sqrt{d_f} + C_3 \)
+(C₄ between systems), at least C₁ (C₂) and at least 0.90 m, d_f the
+largest sag between the spacers. The values and the rules are the
+**lev-ch plugin**'s (it must be in use: Plugins › Plugin manager); OLS
+CAD measures the conductors. The method and the decisions behind it:
+[the specification](../development/lev-phase-spacing.md).
 
 In the desktop app: **Checks › LeV / OLEI › Distance between
-conductors…** — the values file, the k diagram, the weather cases (the
+conductors…** — a values file (else the project's copy, else the
+plugin's), the k diagram, the weather cases (the
 still-air 10 °C ones ticked first; each checked on its own), the
 circuits (ticked in a list, select all / none), the station spacing
 (1 m), and nearby spans (conductors not between the same two
@@ -116,7 +121,8 @@ their voltage and level (low or high row of Table 2.4.1; not set: high),
 chosen there for all the circuit's sections — the same value as the
 Electrical circuits table's column (LeV plugin). **Check** runs in the background; the pairs come worst first: the
 two spans and circuits, C₁ or C₂, kV, d, z, d − z, the length of
-conductor below z, and at the worst station f, l_k, β, k and C, with a
+conductor below z, and at the worst station f, l_k, β, k and C and the
+rule (2.2.1, or 2.2.4 with spacers), with a
 note when it is at a clamp (f ≈ 0) or on a nearby span. Clicking a span,
 or d, z or d − z, selects the span, shows the result's weather case and
 draws the worst station's line in the 3D view, labelled with d and z;
@@ -125,12 +131,13 @@ the settings, the window explains the computation ("How it is
 computed") and shows the **values used** as tables, for transparency:
 C₁ and C₂ by nominal voltage (low and high rows), the k lines of each
 diagram by swing class, the altitude rule, and where they come from
-(the file, a saved report, or the project's copy). They are locked;
-an **admin** of the project may **Edit values** and **Save in the
-project**: the project's copy of the file (headed with who edited it and
-when), used by every run on the project and kept in each report;
-**Back to the file** removes the copy. **Choose a values file…** uses
-another `.olspd` instead.
+(the plugin's, a file chosen, a saved report, or the project's copy),
+as the plugin shows them. They are locked; an **admin** of the project
+may **Edit values** (a cell at a time, checked by the plugin) and
+**Save in the project**: the project's copy of the file (headed with who
+edited it and when), used by every run on the project and kept in each
+report; **Back to the plugin's** removes the copy. **Choose a values
+file…** uses another `.olspd` instead.
 
 **Save** keeps the run in the [library of performed
 checks](#the-library-of-performed-checks) under a name: its parameters

@@ -11196,6 +11196,28 @@ fn plugin_columns_in_tables() {
     }
 }
 
+/// The lev-ch plugin in use (`plugins/codes`), when built: whether it is
+/// (not built: the test is skipped, unless the plugin tests are required).
+fn lev_plugin(h: &mut Harness<'_, App>) -> bool {
+    let codes = root().join("plugins/codes");
+    let built = codes
+        .join("lev-ch/target/wasm32-wasip2/release/lev_ch.wasm")
+        .is_file();
+    assert!(
+        built || std::env::var_os("OLS_REQUIRE_PLUGIN_TESTS").is_none(),
+        "lev-ch plugin not built"
+    );
+    if !built {
+        return false;
+    }
+    let app = h.state_mut();
+    app.plugins = crate::plugins::Plugins::load(None, None);
+    app.plugins.folders = vec![codes];
+    app.plugins.refresh();
+    h.run();
+    true
+}
+
 /// Checks › LeV / OLEI › Distance between conductors: the window opens with the
 /// shipped LeV values, checks the ticked case in the background (pairs
 /// worst first, every circuit), and a pair's span link selects the span
@@ -11207,6 +11229,9 @@ fn the_checks_menu_opens_the_phase_distance_window() {
         .with_size(egui::vec2(1600.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
+    if !lev_plugin(&mut harness) {
+        return;
+    }
     harness.get_by_label("Checks").click();
     harness.run();
     harness.get_by_label_contains("LeV / OLEI").hover();
@@ -11223,7 +11248,8 @@ fn the_checks_menu_opens_the_phase_distance_window() {
     {
         let r = harness.state_mut().ready().unwrap();
         let w = &mut r.phase_distance;
-        assert!(w.file.ends_with("lev-ch.olspd"), "{}", w.file.display());
+        assert!(w.file.is_none(), "the plugin's values");
+        assert!(w.check().is_ok(), "{:?}", w.check().err());
         assert!(w.circuits.is_none(), "every circuit");
         // A case other than the one shown: a click shows it.
         let other = (r.case + 1) % r.model.cases.len();
@@ -11306,6 +11332,9 @@ fn performed_checks_are_saved_and_run_again() {
         .with_size(egui::vec2(1600.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
+    if !lev_plugin(&mut harness) {
+        return;
+    }
     let run = |h: &mut Harness<'_, App>| {
         let started = std::time::Instant::now();
         loop {
@@ -11483,6 +11512,9 @@ fn phase_distance_values_are_locked_but_an_admin_edits_them() {
         .with_size(egui::vec2(1600.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
+    if !lev_plugin(&mut harness) {
+        return;
+    }
     {
         let r = harness.state_mut().ready().unwrap();
         r.phase_distance.show(&r.model);
@@ -11495,8 +11527,14 @@ fn phase_distance_values_are_locked_but_an_admin_edits_them() {
     harness.run();
     {
         let r = harness.state_mut().ready().unwrap();
-        let code = r.phase_distance.editing.as_mut().expect("editing");
-        code.voltages.last_mut().unwrap().c2[1] = 3.70;
+        let w = &mut r.phase_distance;
+        let text = w.editing.clone().expect("editing");
+        // 380 kV high, C₂: the last line of the first table.
+        let tables = w.tables_of(&text).unwrap();
+        let last = tables[0].rows.len() as u32 - 1;
+        assert_eq!(tables[0].rows[last as usize][4], "3.64");
+        w.editing = Some(w.edit_cell(&text, [0, last, 4], "3.70").unwrap());
+        assert!(w.edit_cell(&text, [0, last, 4], "-1").is_err());
     }
     harness.run();
     harness.get_by_label("Save in the project").click();
@@ -11531,7 +11569,7 @@ fn phase_distance_values_are_locked_but_an_admin_edits_them() {
     }
     harness.run();
     harness.get_by_label_contains("the project's copy");
-    harness.get_by_label("Back to the file").click();
+    harness.get_by_label("Back to the plugin's").click();
     harness.run();
     {
         let r = harness.state_mut().ready().unwrap();
@@ -11624,6 +11662,9 @@ fn phase_distance_page_sets_the_insulation_levels() {
         .with_size(egui::vec2(1600.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
+    if !lev_plugin(&mut harness) {
+        return;
+    }
     {
         let r = harness.state_mut().ready().unwrap();
         r.phase_distance.show(&r.model);
@@ -11635,19 +11676,18 @@ fn phase_distance_page_sets_the_insulation_levels() {
         .expect("a circuit's level")
         .click();
     harness.run();
-    harness.get_by_label_contains("low (C₁ at 950 kV").click();
+    harness
+        .query_all_by_label("low")
+        .last()
+        .expect("the low choice")
+        .click();
     harness.run();
     let r = harness.state_mut().ready().unwrap();
     let line = &r.model.line;
     let low: Vec<&ols_line::Section> = line
         .sections
         .iter()
-        .filter(|s| {
-            s.fields
-                .get(ols_clearance::phase_distance::LEVEL_FIELD)
-                .map(String::as_str)
-                == Some("low")
-        })
+        .filter(|s| s.fields.get("lev-ch.insulation_level").map(String::as_str) == Some("low"))
         .collect();
     assert!(!low.is_empty());
     let circuit = &low[0].circuit;

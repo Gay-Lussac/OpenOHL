@@ -1,11 +1,11 @@
 [plugin]
 name = "lev-ch"
 version = "0.1.0"
-description = "Swiss LeV / OLEI (SR 734.31): additional load by altitude zone, wind, safety factors, from your parameter file"
+description = "Swiss LeV / OLEI (SR 734.31): additional load by altitude zone, wind, safety factors, from your parameter file; the distance between conductors in the span (Annex 6, 2.2)"
 sdk = "0.1"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/lev_ch.wasm"
-extension-points = ["design-code"]
+extension-points = ["design-code", "check"]
 
 # The Circuits table's insulation level (LeV Annex 6, Table 2.4.1: the row
 # of the lightning impulse withstand level). The distance between

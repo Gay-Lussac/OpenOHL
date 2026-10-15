@@ -7,7 +7,7 @@ generates weather cases (`.olswc`) and load cases (`.olslc`) with notes.
 | Plugin | Code | Units of the parameter file |
 | --- | --- | --- |
 | `en50341` | EN 50341-1 general approach + national annex (NNA) overlay | SI |
-| `lev-ch` | Swiss LeV / OLEI (SR 734.31) load assumptions | SI |
+| `lev-ch` | Swiss LeV / OLEI (SR 734.31) load assumptions; the distance between conductors in the span (check) | SI |
 | `iec60826` | IEC 60826 reliability-based loading | SI |
 | `nesc` | NESC (ANSI C2) Rule 250 | US customary |
 | `csa-c22-3` | CSA C22.3 No. 1 loading zones and construction grades | SI |

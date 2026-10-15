@@ -14,12 +14,22 @@
 //! Every number comes from the parameter file (see
 //! `example-parameters.toml` and the README).
 //!
+//! It also runs the check of the distance between conductors in the span
+//! (`check` interface, [`phase_distance`]): the LeV's values and rules,
+//! on what OLS CAD measures.
+//!
 //! Build with `cargo build --release --target wasm32-wasip2`.
 
 wit_bindgen::generate!({
-    world: "code-plugin",
+    world: "code-check-plugin",
     path: "../../../crates/ols-plugins/wit",
 });
+
+pub mod phase_distance;
+
+use exports::ols::plugin::check::{
+    CheckInfo, Choice, ConductorPair, Evaluated, Guest as CheckGuest, ValueTable,
+};
 
 use ols_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
 use serde::Deserialize;
@@ -200,3 +210,96 @@ ols_code_common::code_plugin!(
     "Swiss LeV / OLEI: additional load by altitude zone and diameter, wind, safety factors",
     cases
 );
+
+/// The check's id: what OLS CAD measures for it.
+const PHASE_DISTANCE: &str = "phase-distance";
+
+fn only_phase_distance(check: &str) -> Result<(), String> {
+    if check == PHASE_DISTANCE {
+        Ok(())
+    } else {
+        Err(format!("{NAME} runs no check \"{check}\""))
+    }
+}
+
+impl CheckGuest for Code {
+    fn checks() -> Vec<CheckInfo> {
+        let code =
+            phase_distance::Code::parse(phase_distance::VALUES).expect("the shipped values read");
+        vec![CheckInfo {
+            id: PHASE_DISTANCE.into(),
+            title: "Distance between conductors (LeV)".into(),
+            menu: vec!["LeV/OLEI".into()],
+            explanation: phase_distance::EXPLANATION.into(),
+            values: phase_distance::VALUES.into(),
+            values_extension: "olspd".into(),
+            choices: vec![Choice {
+                title: "k diagram".into(),
+                help: "LeV Diagram 2.4.2 (500 N/m²) or 2.4.3 (650 N/m²): the wind pressure of \
+                       the line's region"
+                    .into(),
+                options: code.diagrams.iter().map(|d| d.name.clone()).collect(),
+                default: 0,
+            }],
+            circuit_columns: vec![phase_distance::LEVEL_FIELD.into()],
+        }]
+    }
+
+    fn value_tables(check: String, values: String) -> Result<Vec<ValueTable>, String> {
+        only_phase_distance(&check)?;
+        Ok(phase_distance::tables(&values)?
+            .into_iter()
+            .map(|t| ValueTable {
+                title: t.title,
+                note: t.note,
+                columns: t.columns,
+                rows: t.rows,
+                editable: t.editable,
+            })
+            .collect())
+    }
+
+    fn edit_value(
+        check: String,
+        values: String,
+        table: u32,
+        row: u32,
+        column: u32,
+        text: String,
+    ) -> Result<String, String> {
+        only_phase_distance(&check)?;
+        phase_distance::edit(
+            &values,
+            table as usize,
+            row as usize,
+            column as usize,
+            &text,
+        )
+    }
+
+    fn evaluate(
+        check: String,
+        values: String,
+        choices: Vec<u32>,
+        pair: ConductorPair,
+        stations: Vec<f64>,
+    ) -> Result<Evaluated, String> {
+        only_phase_distance(&check)?;
+        let p = phase_distance::Pair {
+            same_system: pair.same_system,
+            kv: [pair.kv.0, pair.kv.1],
+            fields: [&pair.fields.0, &pair.fields.1],
+            altitude: pair.altitude,
+            diameter_mm: [pair.diameter_mm.0, pair.diameter_mm.1],
+            mass_kg_m: [pair.mass_kg_m.0, pair.mass_kg_m.1],
+            spacer_sag: pair.spacer_sag.map(|s| [s.0, s.1]),
+        };
+        let diagram = choices.first().copied().unwrap_or(0) as usize;
+        let (values, rule) = phase_distance::evaluate(&values, diagram, &p, &stations)?;
+        Ok(Evaluated {
+            values,
+            per_station: 4,
+            rule,
+        })
+    }
+}

@@ -476,6 +476,15 @@ impl Plugins {
             .collect()
     }
 
+    /// The directories of the check plugins in use.
+    pub fn check_dirs(&self) -> Vec<PathBuf> {
+        self.listed
+            .iter()
+            .filter(|l| self.enabled(l) && l.found.provides(ols_plugins::CHECK))
+            .map(|l| l.found.dir.clone())
+            .collect()
+    }
+
     /// The Python plugins in use: name, entry script.
     pub fn python_scripts(&self) -> Vec<(String, PathBuf)> {
         self.listed

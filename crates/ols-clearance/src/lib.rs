@@ -92,24 +92,22 @@ mod tests {
     /// circuits ticked limit the pairs.
     #[test]
     fn phase_distances_on_the_example() {
-        use crate::phase_distance::{PhaseDistanceCode, PhaseDistanceSettings, check, conductors};
+        use crate::phase_distance::tests::TestCode;
+        use crate::phase_distance::{PhaseDistanceSettings, check, conductors};
         let (line, library) = example();
-        let code = PhaseDistanceCode::parse(include_str!(
-            "../../../libraries/phase-distance/lev-ch.olspd"
-        ))
-        .unwrap();
         let shapes = solved(10.0);
         let cs = conductors(&line, &shapes, &library);
         let settings = PhaseDistanceSettings::default();
         let budget = ols_core::budget::Budget::new();
-        let pairs = check(&code, &settings, &cs, &budget).unwrap();
+        let pairs = check(&settings, &cs, &budget, || Ok(TestCode)).unwrap();
         assert!(!pairs.is_empty());
         for p in &pairs {
             let w = &p.worst;
-            let term = |i: usize| w.k[i] * (w.sag[i] + w.lk[i]).sqrt();
-            assert!((w.required - (term(0).max(term(1)) + w.c)).abs() < 1e-9);
+            let (k, c) = (&w.values[..2], w.values[2]);
+            let term = |i: usize| k[i] * (w.sag[i] + w.lk[i]).sqrt();
+            assert!((w.required - (term(0).max(term(1)) + c).max(0.9)).abs() < 1e-9);
             assert!(w.distance > 0.0 && (0.0..=90.0).contains(&w.beta));
-            assert!(w.k.iter().all(|k| (0.6..=0.95).contains(k)));
+            assert!(k.iter().all(|k| (0.6..=0.7).contains(k)));
             // Between the same two structures.
             let ends = |i: usize| {
                 let mut e: Vec<String> = cs[i]
@@ -140,35 +138,26 @@ mod tests {
             circuits: Some(std::iter::once(first.clone()).collect()),
             ..PhaseDistanceSettings::default()
         };
-        let some = check(&code, &one, &cs, &budget).unwrap();
+        let some = check(&one, &cs, &budget, || Ok(TestCode)).unwrap();
         assert!(some.len() <= pairs.len());
         assert!(
             some.iter()
                 .all(|p| cs[p.a].wire.circuit == first && cs[p.b].wire.circuit == first)
         );
-        // The insulation level from the circuits' column on the sections:
-        // not set high, set low: C₁ from the low row (or the same where a
-        // voltage has one row).
-        assert!(cs.iter().all(|c| c.level.is_none()));
+        // The sections' plugin columns go with their conductors (the
+        // plugin reads the insulation level there); the cables' sizes.
         let mut low = line.clone();
         for s in &mut low.sections {
             s.fields
-                .insert(crate::phase_distance::LEVEL_FIELD.into(), "low".into());
+                .insert("lev-ch.insulation_level".into(), "low".into());
         }
         let cs_low = conductors(&low, &shapes, &library);
         assert!(
-            cs_low
-                .iter()
-                .all(|c| c.level == Some(crate::phase_distance::Level::Low))
+            cs_low.iter().all(
+                |c| c.fields.get("lev-ch.insulation_level").map(String::as_str) == Some("low")
+            )
         );
-        let lower = check(&code, &settings, &cs_low, &budget).unwrap();
-        assert_eq!(lower.len(), pairs.len());
-        assert!(
-            lower
-                .iter()
-                .zip(&pairs)
-                .all(|(l, h)| l.worst.c <= h.worst.c + 1e-12)
-        );
+        assert!(cs.iter().all(|c| c.diameter_mm > 5.0 && c.mass_kg_m > 0.1));
     }
 
     /// Lowest subconductor below the centre line, m (0 for one wire).

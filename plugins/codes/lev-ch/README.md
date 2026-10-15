@@ -5,8 +5,9 @@ Leitungsverordnung (LeV / OLEI, SR 734.31) for overhead lines: an
 additional (ice / snow) load per metre that depends on the conductor
 diameter and the altitude zone, wind on the conductors, their reduced
 combination; loads unfactored, strengths divided by the safety factor.
-**No values of the ordinance are included**: they come from your
-parameter file.
+For the load cases **no values of the ordinance are included**: they come
+from your parameter file. It also runs the **distance between conductors
+in the span** (Annex 6, 2.2), with the ordinance's values (below).
 
 ## Parameter file
 
@@ -41,4 +42,25 @@ The manifest adds an **insulation level** column (low / high, not set:
 high) to the app's Electrical circuits table: the row of LeV Table 2.4.1
 for the circuit's lightning impulse withstand level. It is kept on the
 circuit's sections as `lev-ch.insulation_level`, and the distance between
-conductors in the span (`ols_clearance::phase_distance`) reads it there.
+conductors in the span reads it there.
+
+## Distance between conductors in the span (check)
+
+The plugin's `check` interface (`phase-distance`): OLS CAD measures the
+conductors (pairs, stations, distance d, angle β, local sag f, l_k, the
+largest sags between phase spacers), the plugin says what is required at
+each station:
+
+- 2.2.1: z = k·√(f + l_k) + C₁ within one system, + C₂ between systems
+  (2.2.3: the larger z of the two conductors);
+- 2.2.4, conductors joined by phase spacers: z = k·√d_f + C₃ ≥ C₁
+  (+ C₄ ≥ C₂ between systems), at least 0.90 m;
+- k from Diagram 2.4.2 or 2.4.3 (a choice) by β and the swing class
+  w = d/q; C by the higher nominal voltage and the circuit's insulation
+  level; +14 % per 1000 m above 1000 m.
+
+The values — Table 2.4.1 (C₁–C₄, both insulation levels with their
+impulse withstand voltages) and the k diagrams — are the ordinance's
+(Swiss legislation is not protected by copyright), in
+`phase-distance.olspd`; an admin may edit a project's copy in the
+check's window. Tests: `cargo test` here (native).

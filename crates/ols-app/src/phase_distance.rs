@@ -18,11 +18,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use eframe::egui;
-use ols_clearance::phase_distance::{
-    Conductor, LEVEL_FIELD, Level, PhaseDistanceCode, PhaseDistanceSettings, check, conductors,
-};
+use ols_clearance::phase_distance::{Conductor, PhaseDistanceSettings, conductors};
+use ols_io::checks::PluginCheck;
+use ols_plugins::{ValueTable, WasmCheckPlugin, WasmHost};
 use ols_session::reports::{self, CheckReport, LineState, ReportStatus};
 use serde::{Deserialize, Serialize};
 
@@ -82,6 +83,9 @@ pub struct Row {
     pub k: [f64; 2],
     /// C after the altitude, m.
     pub c: f64,
+    /// The rule applied (e.g. "2.2.1"; "2.2.4 (phase spacers)").
+    #[serde(default)]
+    pub rule: String,
 }
 
 impl Row {
@@ -120,8 +124,14 @@ pub struct Params {
     pub values_text: String,
     /// SHA-256 of the text.
     pub values_sha256: String,
-    /// The k diagram (index).
+    /// The k diagram (index; the first choice).
     pub diagram: usize,
+    /// The plugin's choices (the k diagram first).
+    #[serde(default)]
+    pub choices: Vec<u32>,
+    /// The plugin that ran it, with its version.
+    #[serde(default)]
+    pub plugin: String,
     /// Its name.
     pub diagram_name: String,
     /// Station spacing, m.
@@ -293,14 +303,17 @@ pub struct Out {
 pub struct PhaseDistanceWindow {
     /// To be shown (the app opens its page).
     pub open: bool,
-    /// The code's values file.
-    pub file: PathBuf,
+    /// A values file chosen (none: the project's copy, else the
+    /// plugin's).
+    pub file: Option<PathBuf>,
     /// Weather cases ticked (indices in the model's cases).
     pub cases: BTreeSet<usize>,
     /// Circuits ticked (none: all).
     pub circuits: Option<BTreeSet<String>>,
     /// The settings (circuits: from `circuits`).
     pub settings: PhaseDistanceSettings,
+    /// The plugin's choices (the k diagram).
+    pub choices: Vec<u32>,
     /// Only pairs below z.
     pub only_below: bool,
     /// The row clicked.
@@ -317,10 +330,14 @@ pub struct PhaseDistanceWindow {
     ask: Option<Ask>,
     compared: bool,
     save_error: Option<String>,
-    /// The file was chosen (else the project's copy is used, if any).
-    chosen: bool,
-    /// The values being edited (an admin).
-    pub(crate) editing: Option<PhaseDistanceCode>,
+    /// The values being edited (an admin): the file's text.
+    pub(crate) editing: Option<String>,
+    /// A cell being typed: (table, row, column), its text.
+    cell: Option<([u32; 3], String)>,
+    /// The plugin running the check, for the plugins in use.
+    plugin: Option<Loaded>,
+    /// The values shown as tables, for their text.
+    tables: Option<(String, Result<Vec<ValueTable>, String>)>,
     values_error: Option<String>,
     /// The line's state against the saved report's, for this line version.
     since: Option<(u64, String, bool)>,
@@ -331,10 +348,11 @@ impl Default for PhaseDistanceWindow {
     fn default() -> Self {
         Self {
             open: false,
-            file: ols_core::files::shipped_library("phase-distance").join("lev-ch.olspd"),
+            file: None,
             cases: BTreeSet::new(),
             circuits: None,
             settings: PhaseDistanceSettings::default(),
+            choices: Vec::new(),
             only_below: true,
             picked: None,
             values: None,
@@ -344,13 +362,61 @@ impl Default for PhaseDistanceWindow {
             ask: None,
             compared: true,
             save_error: None,
-            chosen: false,
             editing: None,
+            cell: None,
+            plugin: None,
+            tables: None,
             values_error: None,
             since: None,
             job: Job::default(),
         }
     }
+}
+
+/// The check plugin, loaded for the plugins in use.
+struct Loaded {
+    /// The check plugins' directories it was looked for in.
+    dirs: Vec<PathBuf>,
+    /// The host, the check, an instance for the window's calls.
+    check: Result<(Arc<WasmHost>, PluginCheck, WasmCheckPlugin), String>,
+}
+
+/// The check of the plugins in `dirs`, loaded.
+fn load_plugin(dirs: &[PathBuf]) -> Result<(Arc<WasmHost>, PluginCheck, WasmCheckPlugin), String> {
+    let host = Arc::new(WasmHost::new().map_err(|e| e.to_string())?);
+    let (checks, problems) = ols_io::checks::list(&host, dirs);
+    let check = checks
+        .into_iter()
+        .find(|c| c.info.id == ols_io::checks::PHASE_DISTANCE)
+        .ok_or_else(|| {
+            let mut why = "no check plugin in use runs it: install the lev-ch plugin or turn it \
+                           on (Plugins › Plugin manager)"
+                .to_owned();
+            if !problems.is_empty() {
+                why.push_str(&format!(" ({})", problems.join("; ")));
+            }
+            why
+        })?;
+    let instance = host.load_check(&check.dir).map_err(|e| e.to_string())?;
+    Ok((host, check, instance))
+}
+
+/// The name of the plugin's values file (`<plugin>.<extension>`).
+fn values_name(check: &PluginCheck) -> String {
+    let plugin = check.plugin.split(' ').next().unwrap_or_default();
+    format!("{plugin}.{}", check.info.values_extension)
+}
+
+/// The plugin's circuit column (the insulation level) and its default
+/// value (none set by the column: `high`).
+fn level_column(model: &Model, check: &PluginCheck) -> (Option<String>, String) {
+    let key = check.info.circuit_columns.first().cloned();
+    let default = key
+        .as_ref()
+        .and_then(|k| model.plugin_columns.iter().find(|c| &c.key == k))
+        .and_then(|c| c.default.clone())
+        .unwrap_or_else(|| "high".into());
+    (key, default)
 }
 
 /// The still-air cases at 10 °C (the LeV's f), else none.
@@ -383,26 +449,21 @@ fn circuit_names(model: &Model) -> Vec<String> {
     v
 }
 
-/// The insulation level each circuit is checked at: its sections'
-/// (the Electrical circuits table's column), else high.
-fn levels(model: &Model) -> BTreeMap<String, String> {
-    let mut out = BTreeMap::new();
+/// The value of plugin column `key` each circuit is checked with: its
+/// sections' (the Electrical circuits table's column), else `default`;
+/// sections of a circuit set differently: the last value in order
+/// (`high` over `low`).
+fn levels(model: &Model, key: &str, default: &str) -> BTreeMap<String, String> {
+    let mut out: BTreeMap<String, String> = BTreeMap::new();
     for s in &model.line.sections {
-        let level = s
+        let v = s
             .fields
-            .get(LEVEL_FIELD)
-            .and_then(|v| Level::parse(v))
-            .unwrap_or_default();
-        let text = match level {
-            Level::Low => "low",
-            Level::High => "high",
-        };
-        // Sections of one circuit set differently: high wins.
-        let e = out
-            .entry(s.circuit.clone())
-            .or_insert_with(|| text.to_owned());
-        if text == "high" {
-            *e = text.to_owned();
+            .get(key)
+            .map(|v| v.trim().to_ascii_lowercase())
+            .unwrap_or_else(|| default.to_owned());
+        let e = out.entry(s.circuit.clone()).or_insert_with(|| v.clone());
+        if v > *e {
+            *e = v;
         }
     }
     out
@@ -413,6 +474,8 @@ fn levels(model: &Model) -> BTreeMap<String, String> {
 enum Source {
     /// A saved report's.
     Report,
+    /// The plugin's own.
+    Plugin,
     /// The project's copy (an admin's edit).
     Project,
     /// A file.
@@ -441,8 +504,9 @@ fn is_admin(model: &Model) -> bool {
     })
 }
 
-/// Keeps `code` as the project's copy of values file `name` (admins).
-fn save_values(model: &Model, name: &str, code: &PhaseDistanceCode) -> Result<(), String> {
+/// Keeps `text` as the project's copy of values file `name` (admins),
+/// headed by who edited it when.
+fn save_values(model: &Model, name: &str, text: &str) -> Result<(), String> {
     let e = model
         .editing
         .as_ref()
@@ -451,12 +515,15 @@ fn save_values(model: &Model, name: &str, code: &PhaseDistanceCode) -> Result<()
         return Err("only an admin of the project may change the values".into());
     }
     let time = e.session.now().map_err(|e| e.to_string())?;
-    let text = code.to_text(&format!(
-        "Edited in OLS CAD by {} on {time} (the project's copy of {name}).",
+    let body: String = text
+        .lines()
+        .skip_while(|l| l.starts_with("# Edited in OLS CAD"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let text = format!(
+        "# Edited in OLS CAD by {} on {time} (the project's copy of {name}).\n{body}",
         e.user
-    ));
-    // Read back: refused when it does not hold.
-    PhaseDistanceCode::parse(&text)?;
+    );
     e.session
         .put_library_file(&e.user, VALUES_KIND, name, &text)
         .map_err(|e| e.to_string())
@@ -476,159 +543,138 @@ fn reset_values(model: &Model, name: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// The values as tables: C₁/C₂ by voltage, each diagram's k lines, the
-/// altitude rule; typed in when `edit`.
-fn code_table(ui: &mut egui::Ui, code: &mut PhaseDistanceCode, edit: bool) {
-    let num = |ui: &mut egui::Ui, v: &mut f64, speed: f64, decimals: usize| {
-        if edit {
-            ui.add(
-                egui::DragValue::new(v)
-                    .speed(speed)
-                    .min_decimals(decimals)
-                    .max_decimals(decimals + 2),
-            );
-        } else {
-            ui.label(egui::RichText::new(format!("{v:.decimals$}")).monospace());
-        }
-    };
-    ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
-            ui.label(egui::RichText::new("C by nominal voltage, m (Table 2.4.1)").strong());
-            egui::Grid::new("phase-distance-voltages")
-                .striped(true)
-                .spacing([10.0, 2.0])
-                .show(ui, |ui| {
-                    for (h, tip) in [
-                        ("up to kV", "nominal voltage: this row for systems up to it"),
-                        ("level", "insulation level, where the voltage has two lines"),
-                        ("C₁ m", "within one electrical system, and towards earth"),
-                        ("at kV", "the lightning impulse withstand voltage C₁ is for"),
-                        ("C₂ m", "between different electrical systems"),
-                        ("at kV", "the lightning impulse withstand voltage C₂ is for"),
-                        ("C₃ m", "with wind, within one system (checks with wind)"),
-                        ("C₄ m", "with wind, between systems (checks with wind)"),
-                    ] {
-                        ui.label(egui::RichText::new(h).small().strong())
-                            .on_hover_text(tip);
-                    }
-                    ui.end_row();
-                    // An optional pair: "—" when not given (typed in: set).
-                    let opt = |ui: &mut egui::Ui,
-                               v: &mut Option<[f64; 2]>,
-                               i: usize,
-                               speed: f64,
-                               d: usize| {
-                        match v {
-                            Some(p) => num(ui, &mut p[i], speed, d),
-                            None if edit => {
-                                let mut x = 0.0;
-                                num(ui, &mut x, speed, d);
-                                if x != 0.0 {
-                                    *v = Some([x, x]);
-                                }
-                            }
-                            None => {
-                                ui.label("—");
-                            }
-                        }
-                    };
-                    for r in &mut code.voltages {
-                        let lines = if r.two_levels() { 2 } else { 1 };
-                        for i in 0..lines {
-                            if i == 0 {
-                                num(ui, &mut r.kv, 1.0, 0);
-                            } else {
-                                ui.label("");
-                            }
-                            ui.label(match (lines, i) {
-                                (1, _) => "—",
-                                (_, 0) => "low",
-                                _ => "high",
-                            });
-                            num(ui, &mut r.c1[i], 0.01, 2);
-                            opt(ui, &mut r.c1_bil_kv, i, 5.0, 0);
-                            num(ui, &mut r.c2[i], 0.01, 2);
-                            opt(ui, &mut r.c2_bil_kv, i, 5.0, 0);
-                            opt(ui, &mut r.c3, i, 0.01, 2);
-                            opt(ui, &mut r.c4, i, 0.01, 2);
-                            ui.end_row();
-                        }
-                        // One line: both levels the same.
-                        if lines == 1 {
-                            r.c1[1] = r.c1[0];
-                            r.c2[1] = r.c2[0];
-                            for p in [&mut r.c3, &mut r.c4, &mut r.c1_bil_kv, &mut r.c2_bil_kv]
-                                .into_iter()
-                                .flatten()
-                            {
-                                p[1] = p[0];
-                            }
-                        }
-                    }
-                });
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Altitude: from").small());
-                if code.altitude_from.is_finite() {
-                    num(ui, &mut code.altitude_from, 10.0, 0);
-                } else {
-                    ui.label("—");
-                }
-                ui.label(egui::RichText::new("m, + share per 1000 m").small());
-                num(ui, &mut code.altitude_per_1000, 0.01, 2);
-            });
-        });
-        ui.separator();
-        for (i, d) in code.diagrams.iter_mut().enumerate() {
+/// The values as the plugin shows them; typed in (a cell at a time,
+/// through the plugin) when `edit`: the cell changed and its text.
+fn value_tables_ui(
+    ui: &mut egui::Ui,
+    tables: &[ValueTable],
+    edit: bool,
+    cell: &mut Option<([u32; 3], String)>,
+) -> Option<([u32; 3], String)> {
+    let mut changed = None;
+    ui.horizontal_wrapped(|ui| {
+        for (ti, t) in tables.iter().enumerate() {
             ui.vertical(|ui| {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "k, diagram {} ({:.0} Pa)",
-                        d.name, d.wind_pressure
-                    ))
-                    .strong(),
-                );
-                egui::Grid::new(("phase-distance-diagram-lines", i))
+                ui.label(egui::RichText::new(&t.title).strong())
+                    .on_hover_text(&t.note);
+                egui::Grid::new(("phase-distance-values", ti))
                     .striped(true)
                     .spacing([10.0, 2.0])
                     .show(ui, |ui| {
-                        for h in ["w = d/q up to", "k at β 0°", "k at β 90°"] {
+                        for h in &t.columns {
                             ui.label(egui::RichText::new(h).small().strong());
                         }
                         ui.end_row();
-                        for l in &mut d.lines {
-                            match &mut l.w_max {
-                                Some(w) => num(ui, w, 0.1, 1),
-                                None => {
-                                    ui.label("above");
+                        for (ri, row) in t.rows.iter().enumerate() {
+                            for (ci, text) in row.iter().enumerate() {
+                                let id = [ti as u32, ri as u32, ci as u32];
+                                let editable = edit && t.editable.get(ci).copied().unwrap_or(false);
+                                if !editable {
+                                    ui.label(egui::RichText::new(text).monospace());
+                                    continue;
+                                }
+                                let mut typed = match cell {
+                                    Some((c, s)) if *c == id => s.clone(),
+                                    _ => text.clone(),
+                                };
+                                let r = ui.add(
+                                    egui::TextEdit::singleline(&mut typed)
+                                        .desired_width(56.0)
+                                        .font(egui::TextStyle::Monospace),
+                                );
+                                if r.changed() {
+                                    *cell = Some((id, typed.clone()));
+                                }
+                                if r.lost_focus()
+                                    && cell.as_ref().is_some_and(|(c, _)| *c == id)
+                                    && let Some((c, s)) = cell.take()
+                                    && s != *text
+                                {
+                                    changed = Some((c, s));
                                 }
                             }
-                            num(ui, &mut l.k0, 0.01, 2);
-                            num(ui, &mut l.k90, 0.01, 2);
                             ui.end_row();
                         }
                     });
             });
+            ui.separator();
         }
     });
-}
-
-/// The plugin that sets the insulation levels, with its version, when in
-/// use.
-fn plugin_of(model: &Model) -> Option<String> {
-    model
-        .plugin_columns
-        .iter()
-        .find(|c| c.in_use && c.key == LEVEL_FIELD)
-        .map(|c| c.plugin.clone())
+    changed
 }
 
 impl PhaseDistanceWindow {
     /// Opens the window: the still-air 10 °C cases ticked when none is.
     pub fn show(&mut self, model: &Model) {
         self.open = true;
+        self.ensure_plugin(model);
         self.cases.retain(|k| *k < model.cases.len());
         if self.cases.is_empty() {
             self.cases = still_air_10(model);
+        }
+    }
+
+    /// Loads the check plugin when the plugins in use changed.
+    fn ensure_plugin(&mut self, model: &Model) {
+        if self
+            .plugin
+            .as_ref()
+            .is_some_and(|p| p.dirs == model.check_plugins)
+        {
+            return;
+        }
+        let check = load_plugin(&model.check_plugins);
+        if let Ok((_, c, _)) = &check {
+            self.choices = c.info.choices.iter().map(|x| x.default).collect();
+        }
+        self.plugin = Some(Loaded {
+            dirs: model.check_plugins.clone(),
+            check,
+        });
+        self.tables = None;
+    }
+
+    /// The check plugin, or why there is none.
+    pub(crate) fn check(&self) -> Result<&PluginCheck, String> {
+        match self.plugin.as_ref().map(|p| &p.check) {
+            Some(Ok((_, c, _))) => Ok(c),
+            Some(Err(e)) => Err(e.clone()),
+            None => Err("the check plugin is not loaded yet".into()),
+        }
+    }
+
+    /// The values of `text` as tables (the plugin's), kept for the text.
+    pub(crate) fn tables_of(&mut self, text: &str) -> Result<Vec<ValueTable>, String> {
+        if let Some((t, r)) = &self.tables
+            && t == text
+        {
+            return r.clone();
+        }
+        let r = match self.plugin.as_mut().map(|p| &mut p.check) {
+            Some(Ok((_, c, instance))) => instance
+                .value_tables(&c.info.id, text)
+                .map_err(|e| e.to_string())
+                .and_then(|r| r),
+            Some(Err(e)) => Err(e.clone()),
+            None => Err("the check plugin is not loaded yet".into()),
+        };
+        self.tables = Some((text.to_owned(), r.clone()));
+        r
+    }
+
+    /// `text` with a cell set, through the plugin.
+    pub(crate) fn edit_cell(
+        &mut self,
+        text: &str,
+        cell: [u32; 3],
+        value: &str,
+    ) -> Result<String, String> {
+        match self.plugin.as_mut().map(|p| &mut p.check) {
+            Some(Ok((_, c, instance))) => instance
+                .edit_value(&c.info.id, text, cell, value)
+                .map_err(|e| e.to_string())?,
+            Some(Err(e)) => Err(e.clone()),
+            None => Err("the check plugin is not loaded yet".into()),
         }
     }
 
@@ -645,6 +691,15 @@ impl PhaseDistanceWindow {
             self.job.result = Some(Err("tick a weather case".into()));
             return;
         }
+        self.ensure_plugin(model);
+        let (host, check) = match self.plugin.as_ref().map(|p| &p.check) {
+            Some(Ok((h, c, _))) => (h.clone(), c.clone()),
+            Some(Err(e)) => {
+                self.job.result = Some(Err(e.clone()));
+                return;
+            }
+            None => return,
+        };
         self.picked = None;
         self.comparison = None;
         self.ask = None;
@@ -656,12 +711,23 @@ impl PhaseDistanceWindow {
                 return;
             }
         };
+        let (key, default) = level_column(model, &check);
+        let choices = self.choices.clone();
+        let diagram_name = check
+            .info
+            .choices
+            .first()
+            .zip(choices.first())
+            .and_then(|(c, k)| c.options.get(*k as usize).cloned())
+            .unwrap_or_default();
         let mut params = Params {
             values_sha256: ols_session::versions::hash(&text),
             values_file,
             values_text: text,
-            diagram: self.settings.diagram,
-            diagram_name: String::new(),
+            diagram: choices.first().copied().unwrap_or(0) as usize,
+            choices: choices.clone(),
+            plugin: check.plugin.clone(),
+            diagram_name: diagram_name.clone(),
             spacing: self.settings.spacing,
             nearby: self.settings.nearby,
             max_distance: self.settings.max_distance,
@@ -678,7 +744,10 @@ impl PhaseDistanceWindow {
                     ice_load_n_m: c.case.ice_load.map(|l| l.si()),
                 })
                 .collect(),
-            levels: levels(model),
+            levels: key
+                .as_deref()
+                .map(|k| levels(model, k, &default))
+                .unwrap_or_default(),
         };
         let state = model
             .editing
@@ -697,12 +766,6 @@ impl PhaseDistanceWindow {
         let mut settings = self.settings.clone();
         settings.circuits = self.circuits.clone();
         self.job.start(ctx, move || {
-            let code = PhaseDistanceCode::parse(&params.values_text)
-                .map_err(|e| format!("{}: {e}", params.values_file))?;
-            let diagram = code
-                .diagrams
-                .get(settings.diagram)
-                .map_or_else(String::new, |d| d.name.clone());
             let mut notes = Vec::new();
             let mut rows = Vec::new();
             for (solved, ready) in cases {
@@ -722,7 +785,16 @@ impl PhaseDistanceWindow {
                 // Exit clause: about a second for a 25 km line.
                 let budget =
                     ols_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(300));
-                let pairs = check(&code, &settings, &cs, &budget)?;
+                let pairs = ols_io::checks::phase_distance(
+                    &host,
+                    &check,
+                    &params.values_text,
+                    &choices,
+                    &settings,
+                    &cs,
+                    &budget,
+                )
+                .map_err(|e| format!("{}: {e}", check.plugin))?;
                 let length = |c: &Conductor| {
                     c.wire
                         .points
@@ -746,6 +818,8 @@ impl PhaseDistanceWindow {
                     let (a, b) = (&cs[p.a], &cs[p.b]);
                     let w = &p.worst;
                     let near = |c: &Conductor, s: f64| s < NEAR_CLAMP || length(c) - s < NEAR_CLAMP;
+                    // The plugin's numbers: k of each, C.
+                    let v = |i: usize| w.values.get(i).copied().unwrap_or(f64::NAN);
                     rows.push(Row {
                         case: name.clone(),
                         span: [
@@ -765,16 +839,17 @@ impl PhaseDistanceWindow {
                         sag: w.sag,
                         lk: w.lk,
                         beta: w.beta,
-                        k: w.k,
-                        c: w.c,
+                        k: [v(0), v(1)],
+                        c: v(2),
+                        rule: p.rule.clone(),
                     });
                 }
             }
             rows.sort_by(|a, b| a.margin().total_cmp(&b.margin()));
-            params.diagram_name = diagram.clone();
+            params.diagram_name = diagram_name.clone();
             Ok(Report {
-                code: code.name,
-                diagram,
+                code: params.plugin.clone(),
+                diagram: diagram_name,
                 notes,
                 pairs: rows.len(),
                 rows,
@@ -817,7 +892,11 @@ impl PhaseDistanceWindow {
                 )),
             }
         }
-        self.settings.diagram = params.diagram;
+        self.choices = if params.choices.is_empty() {
+            vec![params.diagram as u32]
+        } else {
+            params.choices.clone()
+        };
         self.settings.spacing = params.spacing;
         self.settings.nearby = params.nearby;
         self.settings.max_distance = params.max_distance;
@@ -885,7 +964,7 @@ impl PhaseDistanceWindow {
             time: editing.session.now().map_err(|e| e.to_string())?,
             user: editing.user.clone(),
             app: format!("OLS CAD {}", env!("CARGO_PKG_VERSION")),
-            plugin: plugin_of(model),
+            plugin: self.check().ok().map(|c| c.plugin.clone()),
             status: ReportStatus::Draft,
             note,
             state,
@@ -945,6 +1024,10 @@ impl PhaseDistanceWindow {
     /// The page (a dock page: floating first, it may be docked).
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         self.job.poll();
+        self.ensure_plugin(model);
+        if let Err(e) = self.check() {
+            crate::menu::error_label(ui, e);
+        }
         // A run again of a saved report: compared with it, then asked.
         if !self.compared
             && !self.job.running()
@@ -976,7 +1059,8 @@ impl PhaseDistanceWindow {
             .id_salt("phase-distance-how-and-values")
             .max_height(260.0)
             .show(ui, |ui| {
-                explanation(ui);
+                let plugin = self.check().ok().map(|c| c.info.explanation.clone());
+                explanation(ui, plugin.as_deref());
                 self.values_ui(ui, model);
             });
         ui.separator();
@@ -1112,27 +1196,29 @@ impl PhaseDistanceWindow {
     }
 
     /// The values used: a saved report's, else the file chosen, else the
-    /// project's copy (edited by an admin), else the shipped file: (file
+    /// project's copy (edited by an admin), else the plugin's: (file
     /// name, text, where from).
     fn current_values(&self, model: &Model) -> Result<(String, String, Source), String> {
         if let Some((name, text)) = &self.values {
             return Ok((name.clone(), text.clone(), Source::Report));
         }
-        let name = self
-            .file
-            .file_name()
-            .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-        if !self.chosen
-            && let Some(text) = project_values(model, &name)
-        {
+        if let Some(file) = &self.file {
+            let name = file
+                .file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+            return std::fs::read_to_string(file)
+                .map(|t| (name, t, Source::File))
+                .map_err(|e| format!("{}: {e}", file.display()));
+        }
+        let check = self.check()?;
+        let name = values_name(check);
+        if let Some(text) = project_values(model, &name) {
             return Ok((name, text, Source::Project));
         }
-        std::fs::read_to_string(&self.file)
-            .map(|t| (name, t, Source::File))
-            .map_err(|e| format!("{}: {e}", self.file.display()))
+        Ok((name, check.info.values.clone(), Source::Plugin))
     }
 
-    /// The values as a table (read only; an admin may edit them: kept in
+    /// The values as tables (read only; an admin may edit them: kept in
     /// the project).
     fn values_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
         let current = self.current_values(model);
@@ -1148,8 +1234,10 @@ impl PhaseDistanceWindow {
                         return;
                     }
                 };
-                let code = match PhaseDistanceCode::parse(&text) {
-                    Ok(c) => c,
+                let editing = self.editing.is_some();
+                let shown = self.editing.clone().unwrap_or_else(|| text.clone());
+                let tables = match self.tables_of(&shown) {
+                    Ok(t) => t,
                     Err(e) => {
                         crate::menu::error_label(ui, format!("{name}: {e}"));
                         return;
@@ -1158,17 +1246,17 @@ impl PhaseDistanceWindow {
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(format!(
-                            "{} — {name}, {}",
-                            code.name,
+                            "{name}, {}",
                             match source {
                                 Source::Report => "as saved in the report",
                                 Source::Project => "the project's copy (edited by an admin)",
-                                Source::File => "the file",
+                                Source::File => "the file chosen",
+                                Source::Plugin => "the plugin's",
                             }
                         ))
                         .small(),
                     );
-                    if self.editing.is_none() {
+                    if !editing {
                         let b = ui.add_enabled(admin, egui::Button::new("Edit values"));
                         let b = if admin {
                             b.on_hover_text(
@@ -1181,23 +1269,22 @@ impl PhaseDistanceWindow {
                             )
                         };
                         if b.clicked() {
-                            self.editing = Some(code.clone());
+                            self.editing = Some(text.clone());
                             self.values_error = None;
                         }
                         if admin
                             && source == Source::Project
                             && ui
-                                .button("Back to the file")
-                                .on_hover_text("Remove the project's copy: the file's values again")
+                                .button("Back to the plugin's")
+                                .on_hover_text(
+                                    "Remove the project's copy: the plugin's values again",
+                                )
                                 .clicked()
                         {
                             self.values_error = reset_values(model, &name).err();
                         }
                     }
                 });
-                let editing = self.editing.is_some();
-                let mut code = self.editing.take().unwrap_or(code);
-                let mut keep = editing;
                 if editing {
                     ui.horizontal(|ui| {
                         ui.label(
@@ -1205,25 +1292,35 @@ impl PhaseDistanceWindow {
                                 .color(egui::Color32::YELLOW),
                         );
                         if ui.button("Save in the project").clicked() {
-                            match save_values(model, &name, &code) {
+                            let edited = self.editing.clone().unwrap_or_default();
+                            match save_values(model, &name, &edited) {
                                 Ok(()) => {
-                                    keep = false;
+                                    self.editing = None;
                                     self.values = None;
-                                    self.chosen = false;
+                                    self.file = None;
                                     self.values_error = None;
                                 }
                                 Err(e) => self.values_error = Some(e),
                             }
                         }
                         if ui.button("Cancel").clicked() {
-                            keep = false;
+                            self.editing = None;
+                            self.cell = None;
                             self.values_error = None;
                         }
                     });
                 }
-                code_table(ui, &mut code, editing);
-                if keep {
-                    self.editing = Some(code);
+                let mut cell = self.cell.take();
+                let changed = value_tables_ui(ui, &tables, editing, &mut cell);
+                self.cell = cell;
+                if let Some((c, value)) = changed {
+                    match self.edit_cell(&shown, c, &value) {
+                        Ok(new) => {
+                            self.editing = Some(new);
+                            self.values_error = None;
+                        }
+                        Err(e) => self.values_error = Some(e),
+                    }
                 }
                 if let Some(e) = &self.values_error {
                     crate::menu::error_label(ui, e);
@@ -1232,42 +1329,48 @@ impl PhaseDistanceWindow {
     }
 
     fn settings_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
-        let code = self
-            .current_values(model)
-            .ok()
-            .and_then(|(_, t, _)| PhaseDistanceCode::parse(&t).ok());
+        let choices = self
+            .check()
+            .map(|c| c.info.choices.clone())
+            .unwrap_or_default();
+        let ext = self
+            .check()
+            .map_or("olspd".to_owned(), |c| c.info.values_extension.clone());
         ui.horizontal(|ui| {
             if ui
                 .button("Choose a values file…")
-                .on_hover_text("Another .olspd file instead of the values used")
+                .on_hover_text("Another values file instead of the values used")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Phase distance code", &["olspd"])
-                    .set_directory(ols_core::files::shipped_library("phase-distance"))
+                    .add_filter("Values", &[ext.as_str()])
                     .pick_file()
             {
-                self.file = p;
+                self.file = Some(p);
                 self.values = None;
-                self.chosen = true;
             }
-            match &code {
-                Some(c) => {
-                    ui.label("k diagram");
-                    let shown = c
-                        .diagrams
-                        .get(self.settings.diagram)
-                        .map_or("—".to_owned(), |d| d.name.clone());
-                    egui::ComboBox::from_id_salt("phase-distance-diagram")
-                        .selected_text(shown)
-                        .show_ui(ui, |ui| {
-                            for (k, d) in c.diagrams.iter().enumerate() {
-                                ui.selectable_value(&mut self.settings.diagram, k, &d.name);
-                            }
-                        });
-                }
-                None => {
-                    crate::menu::error_label(ui, "the values file does not read");
-                }
+            if self.file.is_some()
+                && ui
+                    .small_button("Forget the file")
+                    .on_hover_text("The project's copy, else the plugin's values")
+                    .clicked()
+            {
+                self.file = None;
+            }
+            self.choices.resize(choices.len(), 0);
+            for (k, c) in choices.iter().enumerate() {
+                ui.label(&c.title).on_hover_text(&c.help);
+                let shown = c
+                    .options
+                    .get(self.choices[k] as usize)
+                    .cloned()
+                    .unwrap_or_else(|| "—".into());
+                egui::ComboBox::from_id_salt(("phase-distance-choice", k))
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        for (i, o) in c.options.iter().enumerate() {
+                            ui.selectable_value(&mut self.choices[k], i as u32, o);
+                        }
+                    });
             }
         });
         ui.horizontal(|ui| {
@@ -1372,41 +1475,37 @@ impl PhaseDistanceWindow {
         });
     }
 
-    /// The circuits ticked with their voltage and insulation level, the
-    /// level chosen here (on all the circuit's sections: the Electrical
-    /// circuits table's column).
+    /// The circuits ticked with their voltage and the plugin's circuit
+    /// column (the insulation level), set here (on all the circuit's
+    /// sections: the Electrical circuits table's column).
     fn levels_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
         let editable = model.can_edit().is_ok();
-        egui::CollapsingHeader::new("Circuits checked and their insulation level")
+        let Ok(check) = self.check() else {
+            return;
+        };
+        let (Some(key), default) = level_column(model, check) else {
+            return;
+        };
+        let column = model.plugin_columns.iter().find(|c| c.key == key).cloned();
+        let title = column.as_ref().map_or(key.clone(), |c| c.title.clone());
+        egui::CollapsingHeader::new(format!("Circuits checked and their {title}"))
             .id_salt("phase-distance-levels")
             .default_open(true)
             .show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "The row of Table 2.4.1 where a voltage has two (lightning impulse \
-                         withstand level); not set: high. The same as the Electrical circuits \
-                         table's column (LeV plugin).",
-                    )
-                    .small()
-                    .weak(),
-                );
+                if let Some(c) = &column {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} The same as the Electrical circuits table's column ({}).",
+                            c.help, c.plugin
+                        ))
+                        .small()
+                        .weak(),
+                    );
+                }
+                let options: Vec<String> =
+                    column.as_ref().map_or_else(Vec::new, |c| c.values.clone());
                 let line = &model.line;
                 let ticked = |n: &String| self.circuits.as_ref().is_none_or(|s| s.contains(n));
-                // The table's row of each voltage (a level only where it has
-                // two lines).
-                let code = self
-                    .current_values(model)
-                    .ok()
-                    .and_then(|(_, t, _)| PhaseDistanceCode::parse(&t).ok());
-                let row_of = |kv: f64| {
-                    code.as_ref().and_then(|c| {
-                        c.voltages
-                            .iter()
-                            .find(|r| kv <= r.kv + 1e-9)
-                            .or(c.voltages.last())
-                            .cloned()
-                    })
-                };
                 egui::ScrollArea::vertical()
                     .id_salt("phase-distance-levels-rows")
                     .max_height(160.0)
@@ -1415,7 +1514,7 @@ impl PhaseDistanceWindow {
                             .striped(true)
                             .spacing([12.0, 2.0])
                             .show(ui, |ui| {
-                                for h in ["circuit", "kV", "insulation level"] {
+                                for h in ["circuit", "kV", title.as_str()] {
                                     ui.label(egui::RichText::new(h).small().strong());
                                 }
                                 ui.end_row();
@@ -1441,7 +1540,7 @@ impl PhaseDistanceWindow {
                                     let Some(kv) = kv else {
                                         ui.label("—");
                                         ui.label(
-                                            egui::RichText::new("earthed (C₁ by the phase's)")
+                                            egui::RichText::new("earthed (by the phase's)")
                                                 .small()
                                                 .weak(),
                                         );
@@ -1449,41 +1548,18 @@ impl PhaseDistanceWindow {
                                         continue;
                                     };
                                     ui.label(format!("{kv:.0}"));
-                                    let row = row_of(kv);
-                                    if row.as_ref().is_some_and(|r| !r.two_levels()) {
-                                        ui.label(
-                                            egui::RichText::new("one line in the table")
-                                                .small()
-                                                .weak(),
-                                        );
-                                        ui.end_row();
-                                        continue;
-                                    }
-                                    // A level with the impulse voltages its values are for.
-                                    let label = |v: &str| {
-                                        let i = usize::from(v == "high");
-                                        match row.as_ref().map(|r| (r.c1_bil_kv, r.c2_bil_kv)) {
-                                            Some((Some(a), Some(b))) => format!(
-                                                "{v} (C₁ at {:.0} kV, C₂ at {:.0} kV)",
-                                                a[i], b[i]
-                                            ),
-                                            _ => v.to_owned(),
-                                        }
-                                    };
                                     let mut set: Vec<&str> = sections
                                         .iter()
-                                        .map(|s| {
-                                            s.fields.get(LEVEL_FIELD).map_or("", String::as_str)
-                                        })
+                                        .map(|s| s.fields.get(&key).map_or("", String::as_str))
                                         .collect();
                                     set.sort_unstable();
                                     set.dedup();
                                     let shown = match set.as_slice() {
-                                        [""] => "high (not set)".to_owned(),
+                                        [""] => format!("{default} (not set)"),
                                         [one] => (*one).to_owned(),
                                         _ => "mixed".to_owned(),
                                     };
-                                    let mut chosen: Option<&str> = None;
+                                    let mut chosen: Option<String> = None;
                                     ui.add_enabled_ui(editable, |ui| {
                                         egui::ComboBox::from_id_salt((
                                             "phase-distance-level",
@@ -1494,25 +1570,25 @@ impl PhaseDistanceWindow {
                                         .show_ui(
                                             ui,
                                             |ui| {
-                                                for v in ["low", "high"] {
+                                                for v in &options {
                                                     if ui
-                                                        .selectable_label(set == [v], label(v))
+                                                        .selectable_label(set == [v.as_str()], v)
                                                         .clicked()
                                                     {
-                                                        chosen = Some(v);
+                                                        chosen = Some(v.clone());
                                                     }
                                                 }
                                             },
                                         );
                                     });
                                     if let Some(v) = chosen
-                                        && set != [v]
+                                        && set != [v.as_str()]
                                     {
                                         let commands = sections
                                             .iter()
                                             .map(|s| {
                                                 let mut s = (*s).clone();
-                                                s.fields.insert(LEVEL_FIELD.into(), v.into());
+                                                s.fields.insert(key.clone(), v.clone());
                                                 ols_session::Command::Put {
                                                     kind: ols_session::Kind::Section,
                                                     id: s.id.clone(),
@@ -1523,7 +1599,7 @@ impl PhaseDistanceWindow {
                                             })
                                             .collect();
                                         out.apply = Some((
-                                            format!("{name}: insulation level {v}"),
+                                            format!("{name}: {title} {v}"),
                                             ols_session::Command::Batch { commands },
                                         ));
                                     }
@@ -1577,7 +1653,7 @@ impl PhaseDistanceWindow {
                     .show(ui, |ui| {
                         for h in [
                             "case", "span", "circuit", "other", "circuit", "C", "kV", "d m", "z m",
-                            "d − z", "below m", "f m", "l_k m", "β °", "k", "C m", "",
+                            "d − z", "below m", "f m", "l_k m", "β °", "k", "C m", "rule", "",
                         ] {
                             ui.strong(h);
                         }
@@ -1636,6 +1712,7 @@ impl PhaseDistanceWindow {
                             ui.label(format!("{:.0}", r.beta));
                             ui.label(format!("{:.2} / {:.2}", r.k[0], r.k[1]));
                             ui.label(format!("{:.2}", r.c));
+                            ui.label(&r.rule);
                             let mut note = Vec::new();
                             if r.at_clamp {
                                 note.push("at a clamp (f ≈ 0)");
@@ -1677,8 +1754,9 @@ impl PhaseDistanceWindow {
     }
 }
 
-/// How the check computes, in brief (always shown at the top).
-fn explanation(ui: &mut egui::Ui) {
+/// How the check computes, in brief (always shown at the top): the
+/// measuring (OLS CAD's), then the rules (the plugin's).
+fn explanation(ui: &mut egui::Ui, rules: Option<&str>) {
     egui::CollapsingHeader::new("How it is computed")
         .id_salt("phase-distance-how")
         .default_open(true)
@@ -1686,39 +1764,33 @@ fn explanation(ui: &mut egui::Ui) {
             let small = |ui: &mut egui::Ui, t: &str| {
                 ui.label(egui::RichText::new(t).small());
             };
+            for p in rules
+                .unwrap_or_default()
+                .split("\n\n")
+                .filter(|p| !p.trim().is_empty())
+            {
+                small(ui, &p.replace('\n', " "));
+            }
             small(
                 ui,
-                "LeV Annex 6, 2.2.1, still air: the conductors of a span must be at least \
-                 z = k·√(f + l_k) + C apart (the larger z of the two conductors).",
-            );
-            small(
-                ui,
-                "Pairs: the conductors between the same two structures (and, ticked, nearby \
-                 spans within the distance); not two earth wires, one circuit's same phase, \
-                 or two sharing a clamp; a bundle by its subconductors.",
+                "Measured by OLS CAD — pairs: the conductors between the same two structures \
+                 (and, ticked, nearby spans within the distance); not two earth wires, one \
+                 circuit's same phase, or two sharing a clamp; a bundle by its subconductors.",
             );
             small(
                 ui,
                 "Stations every Δs along each conductor in turn; at each, the closest point \
-                 of the other, measured in the vertical plane through both: d their distance, \
-                 β the angle of the line joining them from the vertical.",
+                 of the other: d their distance, β the angle of the line joining them from \
+                 the vertical.",
             );
             small(
                 ui,
                 "f: the local sag there, below the chord between the clamps (0 at the \
                  clamps). l_k: the suspension string's length at each end (I-string: its \
                  length; V, tension or clamped: 0; below a V: the string below; TAK: its \
-                 suspension string), linear between the ends.",
-            );
-            small(
-                ui,
-                "k: by β (0° one above the other, 90° side by side) on the line of the \
-                 conductor's swing class w = d/q of the diagram chosen. C: C₁ within one \
-                 electrical system and towards earth (earth wires), C₂ between different \
-                 systems, by the higher nominal voltage and, where it has two lines, the \
-                 circuit's insulation level (low / high: the lightning impulse withstand \
-                 voltage each value is for), +14 % per 1000 m of mean conductor height above \
-                 1000 m.",
+                 suspension string), linear between the ends. Conductors joined by \
+                 interphase spacers in the span: each one's largest sag between its spacer \
+                 clamps (and the span's clamps).",
             );
             small(
                 ui,

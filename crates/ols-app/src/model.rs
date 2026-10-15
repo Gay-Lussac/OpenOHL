@@ -476,6 +476,9 @@ pub struct Model {
     pub cases_shown: CasesShown,
     /// The table columns the plugins in use add (from their manifests).
     pub plugin_columns: Vec<crate::tables::PluginColumn>,
+    /// The directories of the check plugins in use (extension point
+    /// `check`).
+    pub check_plugins: Vec<std::path::PathBuf>,
 }
 
 /// The wire library: given, else the `*.olsw` files next to the model,
@@ -1821,6 +1824,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .unwrap_or_default();
     let mut model = Model {
         plugin_columns: Vec::new(),
+        check_plugins: Vec::new(),
         sources,
         line,
         cases: solved,

@@ -6631,6 +6631,10 @@ impl eframe::App for App {
                 if ready.model.plugin_columns != columns {
                     ready.model.plugin_columns = columns;
                 }
+                let checks = self.plugins.check_dirs();
+                if ready.model.check_plugins != checks {
+                    ready.model.check_plugins = checks;
+                }
                 crate::codes::window(&ctx, ready, &self.plugins);
                 let go = [
                     ready.galloping.ui(&ctx, &ready.model),

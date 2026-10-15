@@ -43,3 +43,120 @@ world code-plugin {
     /// the error says what is wrong with the file.
     export generate: func(parameters: string) -> result<generated, string>;
 }
+
+/// A check run by a plugin (extension point `check`): OLS CAD measures
+/// the line (the conductors, their pairs, stations along them: the
+/// geometry), the plugin holds the values and the rules and says what is
+/// required at each station. The first such check: the distance between
+/// conductors in the span (`phase-distance`).
+interface check {
+    /// A table of a check's values, shown to the user (and edited by an
+    /// admin, cell by cell, through `edit-value`).
+    record value-table {
+        /// Title.
+        title: string,
+        /// What it holds, in words.
+        note: string,
+        /// Column titles.
+        columns: list<string>,
+        /// Rows of cell texts.
+        rows: list<list<string>>,
+        /// Which columns may be edited.
+        editable: list<bool>,
+    }
+
+    /// A choice the user makes before a run (e.g. a diagram).
+    record choice {
+        /// Title.
+        title: string,
+        /// What it chooses.
+        help: string,
+        /// The options.
+        options: list<string>,
+        /// The option taken unless chosen.
+        default: u32,
+    }
+
+    /// A check the plugin runs.
+    record check-info {
+        /// Its id: what OLS CAD measures for it (`phase-distance`).
+        id: string,
+        /// Title in the Checks menu.
+        title: string,
+        /// Its submenu of the Checks menu, outer first.
+        menu: list<string>,
+        /// How the computation is done, shown in the check's window.
+        explanation: string,
+        /// Its values file (TOML) as shipped: values from the code, read
+        /// and edited through `value-tables` / `edit-value`.
+        values: string,
+        /// Extension of a values file (without the dot).
+        values-extension: string,
+        /// Choices before a run.
+        choices: list<choice>,
+        /// Plugin columns (`plugin.name`) the check's window shows per
+        /// circuit to be set there.
+        circuit-columns: list<string>,
+    }
+
+    /// A pair of conductors as OLS CAD measured it (`phase-distance`):
+    /// what the rules need besides the stations.
+    record conductor-pair {
+        /// In one electrical system (or towards an earth wire).
+        same-system: bool,
+        /// Both hang between the same two structures.
+        same-span: bool,
+        /// Nominal voltage of each conductor, kV (none: an earth wire).
+        kv: tuple<option<f64>, option<f64>>,
+        /// Plugin columns' values of each conductor's section
+        /// (`plugin.name`, value).
+        fields: tuple<list<tuple<string, string>>, list<tuple<string, string>>>,
+        /// Mean conductor height of the span, m above sea level.
+        altitude: f64,
+        /// Diameter of each conductor, mm.
+        diameter-mm: tuple<f64, f64>,
+        /// Mass of each conductor, kg/m.
+        mass-kg-m: tuple<f64, f64>,
+        /// Spacers join them in the span: the largest sag of each between
+        /// its spacer clamps (and its span's clamps), m.
+        spacer-sag: option<tuple<f64, f64>>,
+    }
+
+    /// What the plugin requires along a pair.
+    record evaluated {
+        /// Per station, `per-station` values: the required distance (m)
+        /// first, then the check's own (shown with the worst station).
+        values: list<f64>,
+        /// How many values per station.
+        per-station: u32,
+        /// The rule applied, in words (e.g. "2.2.1").
+        rule: string,
+    }
+
+    /// The checks the plugin runs.
+    checks: func() -> list<check-info>;
+
+    /// The values of `values` (a values file's text) as tables.
+    value-tables: func(check: string, values: string) -> result<list<value-table>, string>;
+
+    /// `values` with cell (`table`, `row`, `column`) set to `text`: the
+    /// new file's text, or what is wrong.
+    edit-value: func(check: string, values: string, table: u32, row: u32, column: u32, text: string) -> result<string, string>;
+
+    /// What is required at each station of a pair. `stations`: per
+    /// station 6 numbers — distance (m), system angle β from the vertical
+    /// (°), each conductor's local sag (m), each one's string length l_k
+    /// there (m).
+    evaluate: func(check: string, values: string, choices: list<u32>, pair: conductor-pair, stations: list<f64>) -> result<evaluated, string>;
+}
+
+/// World of check plugins (extension point `check`).
+world check-plugin {
+    export check;
+}
+
+/// A design-code plugin that also runs checks.
+world code-check-plugin {
+    include code-plugin;
+    export check;
+}

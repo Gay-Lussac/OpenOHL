@@ -10,9 +10,10 @@ in the solve; places by station; **the spacers in the solve**
 fraction, distance, station or regular spacing), spacers with Add string
 between two span points, both selectable, drawn, in Properties and in the
 tables (Span points and loads, Spacers), deleted with what goes with
-them; Criteria › Default values with its `.olsdef` file. To come: the LeV
-check in the plugin with 2.2.4, then the sweep of the other default
-values.
+them; Criteria › Default values with its `.olsdef` file; the LeV check
+moved to the lev-ch plugin, with rule 2.2.4 for conductors joined by
+spacers ([LeV distance](lev-phase-spacing.md)). To come: the sweep of
+the other default values.
 
 Decided with the user: spans with spacers refuse the ruling span; span
 points (and point and spread loads) are placed with one span tool — by a

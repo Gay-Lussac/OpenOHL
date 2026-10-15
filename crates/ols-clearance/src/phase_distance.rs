@@ -2,395 +2,43 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Distance between conductors in the span, still air, as a code gives it
-//! by a formula of the local sag and string length:
-//! \\( z = k \sqrt{f + l_k} + C \\) (Swiss LeV, Annex 6, 2.2.1 — see
-//! `docs/development/lev-phase-spacing.md`).
+//! Distance between conductors in the span: the measuring. A code gives
+//! the distance required by a formula of the local sag and string length
+//! (Swiss LeV, Annex 6, 2.2.1: \\( z = k \sqrt{f + l_k} + C \\)); its
+//! values and its rules are a check plugin's (the `lev-ch` plugin; see
+//! `docs/development/lev-phase-spacing.md`), not OLS CAD's.
 //!
-//! The code's values are data (`.olspd`): C₁/C₂ by nominal voltage (a low
-//! and a high row where the insulation level gives two), the k lines of
-//! each diagram (k linear in the system angle β, one line per swing class
-//! w = d/q), and the altitude rule. The check pairs the conductors hanging
-//! between the same two structures; along each, every `spacing` of its
-//! length, it takes the closest point on the other and there: the
-//! distance, each conductor's local sag f (vertically below its chord)
-//! and l_k (linear between its ends by the kind of string holding them),
-//! β (of the line joining the points, from the vertical), k, and the
-//! required z; the margin d − z.
+//! OLS CAD measures: it pairs the conductors hanging between the same
+//! two structures (and, asked, those coming near elsewhere); along each,
+//! every `spacing` of its length, it takes the closest point on the
+//! other and there the distance, the system angle β (of the line joining
+//! the points, from the vertical), each conductor's local sag f
+//! (vertically below its chord) and l_k (the suspension string's length,
+//! linear between its ends). For conductors joined by interphase spacers
+//! in the span it gives each one's largest sag between its spacer
+//! clamps. The [`Evaluator`] (the plugin) says what is required at each
+//! station; the check keeps each pair's worst station (the smallest
+//! margin d − z) and the length of conductor below the requirement.
 
 use std::collections::BTreeSet;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ols_core::budget::Budget;
-use ols_core::units::Length;
 use ols_line::solve::SectionShape;
-use ols_line::{Line, Structure};
-use serde::Deserialize;
+use ols_line::{Fields, Line, Structure};
 
 use crate::checks::{Wire, wires_of};
 
-/// File format id of a phase distance code.
-pub const PHASE_DISTANCE_FILE_FORMAT: &str = "ols-phase-distance";
-/// Newest version read.
-pub const PHASE_DISTANCE_FILE_VERSION: u32 = 1;
-/// File extension.
-pub const PHASE_DISTANCE_FILE_EXTENSION: &str = "olspd";
-
 type P3 = [f64; 3];
 
-/// The distances of one nominal voltage, m: C₁ (within one electrical
-/// system, and towards earth: earth wires, earthed parts), C₂ (between
-/// different electrical systems), and C₃, C₄ (the same with wind, for
-/// the checks with wind) — each on the line of the low and of the high
-/// insulation level (equal where the code gives one line), with the
-/// lightning impulse withstand voltage each value is for, where given.
-#[derive(Debug, Clone, PartialEq)]
-pub struct VoltageRow {
-    /// Nominal voltage, kV: this row for systems up to it.
-    pub kv: f64,
-    /// C₁, low and high line, m.
-    pub c1: [f64; 2],
-    /// The impulse withstand voltage C₁ is for, low and high, kV.
-    pub c1_bil_kv: Option<[f64; 2]>,
-    /// C₂, low and high line, m.
-    pub c2: [f64; 2],
-    /// The impulse withstand voltage C₂ is for, low and high, kV.
-    pub c2_bil_kv: Option<[f64; 2]>,
-    /// C₃ (with wind, within one system), low and high line, m.
-    pub c3: Option<[f64; 2]>,
-    /// C₄ (with wind, between systems), low and high line, m.
-    pub c4: Option<[f64; 2]>,
-}
+/// Numbers per station handed to the [`Evaluator`]: the distance (m),
+/// β (°), the local sag of each conductor (m), l_k of each (m).
+pub const STATION_VALUES: usize = 6;
 
-impl VoltageRow {
-    /// The code gives two lines (two insulation levels).
-    pub fn two_levels(&self) -> bool {
-        let differ = |c: [f64; 2]| c[0] != c[1];
-        differ(self.c1)
-            || differ(self.c2)
-            || self.c3.is_some_and(differ)
-            || self.c4.is_some_and(differ)
-            || self.c1_bil_kv.is_some_and(differ)
-            || self.c2_bil_kv.is_some_and(differ)
-    }
-}
-
-/// One line of a k diagram: for conductors of swing class w = d/q up to
-/// `w_max` (d in mm, q in kg/m; none: no limit), k from `k0` at β = 0°
-/// to `k90` at β = 90°, linearly.
-#[derive(Debug, Clone, PartialEq)]
-pub struct KLine {
-    /// Upper limit of the class (none: the last).
-    pub w_max: Option<f64>,
-    /// k at β = 0° (conductors one above the other).
-    pub k0: f64,
-    /// k at β = 90° (side by side).
-    pub k90: f64,
-}
-
-/// A k diagram: for a wind pressure, its lines by swing class.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Diagram {
-    /// Its name (e.g. "2.4.2").
-    pub name: String,
-    /// Wind pressure it is for, Pa.
-    pub wind_pressure: f64,
-    /// Lines in increasing w.
-    pub lines: Vec<KLine>,
-}
-
-impl Diagram {
-    /// k for a conductor of swing class `w` at system angle `beta_deg`.
-    pub fn k(&self, w: f64, beta_deg: f64) -> f64 {
-        let line = self
-            .lines
-            .iter()
-            .find(|l| l.w_max.is_none_or(|m| w <= m))
-            .or(self.lines.last())
-            .expect("a diagram has lines");
-        let t = (beta_deg / 90.0).clamp(0.0, 1.0);
-        line.k0 + (line.k90 - line.k0) * t
-    }
-}
-
-/// A code's values for the distance between conductors in the span.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PhaseDistanceCode {
-    /// Name.
-    pub name: String,
-    /// C₁/C₂ rows in increasing voltage.
-    pub voltages: Vec<VoltageRow>,
-    /// The k diagrams.
-    pub diagrams: Vec<Diagram>,
-    /// Altitude up to which C holds, m.
-    pub altitude_from: f64,
-    /// C grows by this share per 1000 m above `altitude_from`.
-    pub altitude_per_1000: f64,
-}
-
-/// The insulation level of a circuit: the low or the high row of the
-/// table where a voltage has two.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Level {
-    /// The low row.
-    Low,
-    /// The high row (the stricter; the default).
-    #[default]
-    High,
-}
-
-impl PhaseDistanceCode {
-    /// C for a pair: within one system (or towards earth) C₁, else C₂,
-    /// at nominal voltage `kv` (the first row up to it; above the last:
-    /// the last), at `level`, before the altitude.
-    pub fn c(&self, same_system: bool, kv: f64, level: Level) -> f64 {
-        let row = self
-            .voltages
-            .iter()
-            .find(|r| kv <= r.kv + 1e-9)
-            .or(self.voltages.last())
-            .expect("a code has voltage rows");
-        let i = usize::from(level == Level::High);
-        if same_system { row.c1[i] } else { row.c2[i] }
-    }
-
-    /// The altitude factor at mean height `h` above sea level, m.
-    pub fn altitude_factor(&self, h: f64) -> f64 {
-        1.0 + self.altitude_per_1000 * ((h - self.altitude_from).max(0.0) / 1000.0)
-    }
-
-    /// Parses and checks a code file.
-    pub fn parse(text: &str) -> Result<Self, String> {
-        let raw: RawCode = toml::from_str(text).map_err(|e| e.to_string())?;
-        ols_core::files::check_header(
-            raw.format.as_deref(),
-            raw.version,
-            PHASE_DISTANCE_FILE_FORMAT,
-            PHASE_DISTANCE_FILE_VERSION,
-            "phase distance",
-        )?;
-        if raw.voltages.is_empty() {
-            return Err("give at least one [[voltage]]".into());
-        }
-        if raw.diagrams.is_empty() {
-            return Err("give at least one [[diagram]]".into());
-        }
-        let pair = |v: Vec<Length>, what: &str, kv: f64| -> Result<[f64; 2], String> {
-            match v.as_slice() {
-                [a] => Ok([a.si(), a.si()]),
-                [a, b] => Ok([a.si(), b.si()]),
-                _ => Err(format!(
-                    "{kv} kV: {what} needs one value or two (low, high)"
-                )),
-            }
-        };
-        let mut voltages = Vec::new();
-        for r in raw.voltages {
-            let kv_pair = |v: Option<Vec<f64>>, what: &str| -> Result<Option<[f64; 2]>, String> {
-                match v.as_deref() {
-                    None => Ok(None),
-                    Some([a]) => Ok(Some([*a, *a])),
-                    Some([a, b]) => Ok(Some([*a, *b])),
-                    Some(_) => Err(format!(
-                        "{} kV: {what} needs one value or two (low, high)",
-                        r.kv
-                    )),
-                }
-            };
-            let row = VoltageRow {
-                kv: r.kv,
-                c1: pair(r.c1, "c1", r.kv)?,
-                c1_bil_kv: kv_pair(r.c1_bil_kv, "c1_bil_kv")?,
-                c2: pair(r.c2, "c2", r.kv)?,
-                c2_bil_kv: kv_pair(r.c2_bil_kv, "c2_bil_kv")?,
-                c3: r.c3.map(|v| pair(v, "c3", r.kv)).transpose()?,
-                c4: r.c4.map(|v| pair(v, "c4", r.kv)).transpose()?,
-            };
-            if row
-                .c1
-                .iter()
-                .chain(&row.c2)
-                .chain(row.c3.iter().flatten())
-                .chain(row.c4.iter().flatten())
-                .any(|c| !(c.is_finite() && *c >= 0.0))
-            {
-                return Err(format!("{} kV: C must be ≥ 0", r.kv));
-            }
-            voltages.push(row);
-        }
-        if voltages.windows(2).any(|w| w[1].kv <= w[0].kv) {
-            return Err("[[voltage]] rows must be in increasing kv".into());
-        }
-        let mut diagrams = Vec::new();
-        for d in raw.diagrams {
-            if d.lines.is_empty() {
-                return Err(format!("diagram {}: give its [[diagram.line]]s", d.name));
-            }
-            let lines: Vec<KLine> = d
-                .lines
-                .into_iter()
-                .map(|l| KLine {
-                    w_max: l.w_max,
-                    k0: l.k0,
-                    k90: l.k90,
-                })
-                .collect();
-            if lines
-                .iter()
-                .any(|l| !(l.k0 > 0.0 && l.k90 > 0.0 && l.k0.is_finite() && l.k90.is_finite()))
-            {
-                return Err(format!("diagram {}: k must be > 0", d.name));
-            }
-            diagrams.push(Diagram {
-                name: d.name,
-                wind_pressure: d.wind_pressure.map_or(0.0, |p| p.si()),
-                lines,
-            });
-        }
-        let altitude = raw.altitude.unwrap_or_default();
-        Ok(Self {
-            name: raw.name,
-            voltages,
-            diagrams,
-            altitude_from: altitude.from.map_or(f64::INFINITY, |l| l.si()),
-            altitude_per_1000: altitude.per_1000_m,
-        })
-    }
-
-    /// As a code file (read back by [`Self::parse`]); `comment` heads it
-    /// (each line becomes a `#` line).
-    pub fn to_text(&self, comment: &str) -> String {
-        use std::fmt::Write as _;
-        let mut out = String::new();
-        for l in comment.lines() {
-            let _ = writeln!(out, "# {l}");
-        }
-        if !comment.is_empty() {
-            out.push('\n');
-        }
-        let q = |s: &str| toml::Value::String(s.to_owned()).to_string();
-        let _ = writeln!(out, "format = \"{PHASE_DISTANCE_FILE_FORMAT}\"");
-        let _ = writeln!(out, "version = {PHASE_DISTANCE_FILE_VERSION}");
-        let _ = writeln!(out, "name = {}", q(&self.name));
-        if self.altitude_from.is_finite() || self.altitude_per_1000 != 0.0 {
-            out.push_str("\n[altitude]\n");
-            if self.altitude_from.is_finite() {
-                let _ = writeln!(out, "from = \"{} m\"", self.altitude_from);
-            }
-            let _ = writeln!(out, "per_1000_m = {}", self.altitude_per_1000);
-        }
-        let pair = |c: [f64; 2]| {
-            if c[0] == c[1] {
-                format!("[\"{} m\"]", c[0])
-            } else {
-                format!("[\"{} m\", \"{} m\"]", c[0], c[1])
-            }
-        };
-        for r in &self.voltages {
-            let bil = |name: &str, b: Option<[f64; 2]>| match b {
-                None => String::new(),
-                Some([x, y]) if x == y => format!("{name} = [{x}]\n"),
-                Some([x, y]) => format!("{name} = [{x}, {y}]\n"),
-            };
-            let more = |name: &str, c: Option<[f64; 2]>| {
-                c.map_or(String::new(), |c| format!("{name} = {}\n", pair(c)))
-            };
-            let _ = write!(
-                out,
-                "\n[[voltage]]\nkv = {}\nc1 = {}\n{}c2 = {}\n{}{}{}",
-                r.kv,
-                pair(r.c1),
-                bil("c1_bil_kv", r.c1_bil_kv),
-                pair(r.c2),
-                bil("c2_bil_kv", r.c2_bil_kv),
-                more("c3", r.c3),
-                more("c4", r.c4),
-            );
-        }
-        for d in &self.diagrams {
-            let _ = write!(
-                out,
-                "\n[[diagram]]\nname = {}\nwind_pressure = \"{} Pa\"\nline = [\n",
-                q(&d.name),
-                d.wind_pressure
-            );
-            for l in &d.lines {
-                let w = l.w_max.map_or(String::new(), |w| format!("w_max = {w}, "));
-                let _ = writeln!(out, "    {{ {w}k0 = {}, k90 = {} }},", l.k0, l.k90);
-            }
-            out.push_str("]\n");
-        }
-        out
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawVoltage {
-    kv: f64,
-    c1: Vec<Length>,
-    #[serde(default)]
-    c1_bil_kv: Option<Vec<f64>>,
-    c2: Vec<Length>,
-    #[serde(default)]
-    c2_bil_kv: Option<Vec<f64>>,
-    #[serde(default)]
-    c3: Option<Vec<Length>>,
-    #[serde(default)]
-    c4: Option<Vec<Length>>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawLine {
-    #[serde(default)]
-    w_max: Option<f64>,
-    k0: f64,
-    k90: f64,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawDiagram {
-    name: String,
-    #[serde(default)]
-    wind_pressure: Option<ols_core::units::Stress>,
-    #[serde(rename = "line")]
-    lines: Vec<RawLine>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct RawAltitude {
-    #[serde(default)]
-    from: Option<Length>,
-    #[serde(default)]
-    per_1000_m: f64,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawCode {
-    #[serde(default)]
-    format: Option<String>,
-    #[serde(default)]
-    version: Option<u32>,
-    #[serde(default)]
-    name: String,
-    #[serde(rename = "voltage")]
-    voltages: Vec<RawVoltage>,
-    #[serde(rename = "diagram")]
-    diagrams: Vec<RawDiagram>,
-    #[serde(default)]
-    altitude: Option<RawAltitude>,
-}
-
-/// How the check runs.
+/// How the measuring runs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PhaseDistanceSettings {
-    /// The k diagram (index in the code's).
-    pub diagram: usize,
     /// Stations every this length along a conductor, m.
     pub spacing: f64,
     /// The circuits checked (none: all); a pair when both its conductors'
@@ -401,14 +49,13 @@ pub struct PhaseDistanceSettings {
     /// `max_distance`.
     pub nearby: bool,
     /// Nearby pairs: measured where closer than this, m (keep it above
-    /// the largest z, about 12 m at 380 kV).
+    /// the largest distance required, about 12 m at 380 kV).
     pub max_distance: f64,
 }
 
 impl Default for PhaseDistanceSettings {
     fn default() -> Self {
         Self {
-            diagram: 0,
             spacing: 1.0,
             circuits: None,
             nearby: false,
@@ -422,30 +69,57 @@ impl Default for PhaseDistanceSettings {
 pub struct Conductor {
     /// The wire (section span).
     pub wire: Wire,
-    /// Swing class w = d/q (d in mm, q in kg/m).
-    pub w: f64,
+    /// Diameter of its cable, mm.
+    pub diameter_mm: f64,
+    /// Mass of its cable, kg/m.
+    pub mass_kg_m: f64,
     /// l_k at its first and last point, m.
     pub lk: [f64; 2],
-    /// Its section's electrical system (C₁ within one, C₂ between).
+    /// Its section's electrical system.
     pub system: Option<String>,
-    /// Insulation level of its circuit (its section's [`LEVEL_FIELD`]);
-    /// not set: the default, high.
-    pub level: Option<Level>,
+    /// Its section's plugin columns' values (e.g. the circuit's
+    /// insulation level).
+    pub fields: Fields,
+    /// The interphase spacers clamped on it in this span: spacer id,
+    /// where (as solved).
+    pub spacers: Vec<(String, P3)>,
 }
 
-/// Where a section keeps its circuit's insulation level: the LeV plugin's
-/// column of the Circuits table (`low` or `high`).
-pub const LEVEL_FIELD: &str = "lev-ch.insulation_level";
+/// A pair of conductors as measured, for the [`Evaluator`].
+#[derive(Debug, Clone, Copy)]
+pub struct PairGeometry<'a> {
+    /// The first conductor.
+    pub a: &'a Conductor,
+    /// The second.
+    pub b: &'a Conductor,
+    /// Within one electrical system, or towards an earth wire.
+    pub same_system: bool,
+    /// Both hang between the same two structures.
+    pub same_span: bool,
+    /// Mean conductor height of the span, m above sea level.
+    pub altitude: f64,
+    /// Spacers join them in the span: the largest sag of each between
+    /// its clamps on the span (the spacers' and the span's ends), m.
+    pub spacer_sag: Option<[f64; 2]>,
+}
 
-impl Level {
-    /// From a value of [`LEVEL_FIELD`]: `low` or `high` (any case).
-    pub fn parse(text: &str) -> Option<Self> {
-        match text.trim().to_ascii_lowercase().as_str() {
-            "low" => Some(Self::Low),
-            "high" => Some(Self::High),
-            _ => None,
-        }
-    }
+/// What an [`Evaluator`] requires along a pair.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Required {
+    /// `per_station` numbers per station: the distance required (m),
+    /// then the evaluator's own (kept with the worst station).
+    pub values: Vec<f64>,
+    /// Numbers per station (at least 1).
+    pub per_station: usize,
+    /// The rule applied, in words.
+    pub rule: String,
+}
+
+/// What a code requires: the distance at each station of a pair
+/// (implemented by a check plugin).
+pub trait Evaluator {
+    /// For `pair`, from `stations` ([`STATION_VALUES`] numbers each).
+    fn evaluate(&mut self, pair: &PairGeometry, stations: &[f64]) -> Result<Required, String>;
 }
 
 /// The worst station of a pair.
@@ -458,7 +132,7 @@ pub struct Station {
     pub along: [f64; 2],
     /// Distance between them, m.
     pub distance: f64,
-    /// Required z, m.
+    /// Required, m.
     pub required: f64,
     /// Local sag of each conductor, m.
     pub sag: [f64; 2],
@@ -466,10 +140,8 @@ pub struct Station {
     pub lk: [f64; 2],
     /// System angle β, degrees from the vertical.
     pub beta: f64,
-    /// k of each conductor.
-    pub k: [f64; 2],
-    /// C (after the altitude), m.
-    pub c: f64,
+    /// The evaluator's own numbers there (after the distance required).
+    pub values: Vec<f64>,
 }
 
 impl Station {
@@ -486,14 +158,18 @@ pub struct PhaseDistancePair {
     pub a: usize,
     /// Second conductor.
     pub b: usize,
-    /// Within one electrical system, or towards an earth wire: C₁.
+    /// Within one electrical system, or towards an earth wire.
     pub same_system: bool,
-    /// Nominal voltage used, kV.
+    /// Nominal voltage, the higher of the two, kV.
     pub kv: f64,
     /// Both hang between the same two structures (else a nearby pair).
     pub same_span: bool,
     /// Mean conductor height of the span, m above sea level.
     pub altitude: f64,
+    /// The largest sags between spacers, when spacers join them.
+    pub spacer_sag: Option<[f64; 2]>,
+    /// The rule the evaluator applied.
+    pub rule: String,
     /// The worst station.
     pub worst: Station,
     /// Length of conductor below the requirement, m: on the conductor
@@ -545,7 +221,8 @@ fn lk_of(s: &Structure, wire: &str) -> f64 {
 }
 
 /// The conductors of a solved line: every section span (not jumpers),
-/// with its swing class and its ends' l_k.
+/// with its cable's diameter and mass, its ends' l_k and the spacers on
+/// it.
 pub fn conductors(
     line: &Line,
     shapes: &[SectionShape],
@@ -555,33 +232,80 @@ pub fn conductors(
         .into_iter()
         .map(|wire| {
             let section = line.sections.iter().find(|s| s.id == wire.section);
-            let level = section
-                .and_then(|s| s.fields.get(LEVEL_FIELD))
-                .and_then(|v| Level::parse(v));
-            let w = section
-                .and_then(|s| library.get(&s.cable))
-                .map_or(0.0, |c| {
-                    let q = c.weight().si() / 9.806_65;
-                    if q > 0.0 {
-                        c.diameter.si() * 1000.0 / q
-                    } else {
-                        0.0
-                    }
-                });
+            let cable = section.and_then(|s| library.get(&s.cable));
             let lk = match wire.ends.as_slice() {
                 [a, b] => [lk_at(line, a), lk_at(line, b)],
                 _ => [0.0, 0.0],
             };
-            let system = section.and_then(|s| s.system.clone());
+            // Its span points holding spacers, where solved.
+            let solved = shapes.iter().find(|s| s.section == wire.section);
+            let spacers = section
+                .into_iter()
+                .flat_map(|s| &s.span_points)
+                .filter(|p| p.span == wire.span)
+                .flat_map(|p| {
+                    let at = solved.and_then(|x| {
+                        x.span_points
+                            .iter()
+                            .find(|(l, _)| *l == p.label)
+                            .map(|(_, q)| *q)
+                    });
+                    line.spacers
+                        .iter()
+                        .filter(|x| {
+                            [&x.a, &x.b]
+                                .iter()
+                                .any(|e| e.section == wire.section && e.point == p.label)
+                        })
+                        .filter_map(move |x| at.map(|q| (x.id.clone(), q)))
+                })
+                .collect();
             Conductor {
-                wire,
-                w,
+                diameter_mm: cable.map_or(0.0, |c| c.diameter.si() * 1000.0),
+                mass_kg_m: cable.map_or(0.0, |c| c.weight().si() / 9.806_65),
                 lk,
-                system,
-                level,
+                system: section.and_then(|s| s.system.clone()),
+                fields: section.map(|s| s.fields.clone()).unwrap_or_default(),
+                spacers,
+                wire,
             }
         })
         .collect()
+}
+
+/// The largest sag of `points` between consecutive clamps `at` (points
+/// of it; with its ends): vertically below the chord of each stretch, m.
+fn largest_sag_between(points: &[P3], at: &[P3]) -> f64 {
+    let (Some(f), Some(l)) = (points.first(), points.last()) else {
+        return 0.0;
+    };
+    let flat = (l[0] - f[0]).hypot(l[1] - f[1]);
+    if flat <= 0.0 {
+        return 0.0;
+    }
+    let t =
+        |p: &P3| ((p[0] - f[0]) * (l[0] - f[0]) + (p[1] - f[1]) * (l[1] - f[1])) / (flat * flat);
+    let mut clamps: Vec<(f64, f64)> = std::iter::once(*f)
+        .chain(at.iter().copied())
+        .chain(std::iter::once(*l))
+        .map(|p| (t(&p), p[2]))
+        .collect();
+    clamps.sort_by(|x, y| x.0.total_cmp(&y.0));
+    let mut sag = 0.0f64;
+    for w in clamps.windows(2) {
+        let ((t0, z0), (t1, z1)) = (w[0], w[1]);
+        if t1 - t0 <= 1e-12 {
+            continue;
+        }
+        for p in points {
+            let s = t(p);
+            if s > t0 && s < t1 {
+                let chord = z0 + (z1 - z0) * (s - t0) / (t1 - t0);
+                sag = sag.max(chord - p[2]);
+            }
+        }
+    }
+    sag
 }
 
 /// l_k at share `t` of a conductor's length, linear between its ends.
@@ -771,18 +495,16 @@ fn local_sag(points: &[P3], p: P3) -> f64 {
 /// structures, and with [`PhaseDistanceSettings::nearby`] those coming
 /// within its distance elsewhere. Not paired: jumpers, two earth wires,
 /// two conductors of the same circuit and phase (one potential), two
-/// sharing a clamp. The pairs are measured on all cores. Exit clause:
-/// the budget's time limit and cancellation (checked per pair).
-pub fn check(
-    code: &PhaseDistanceCode,
+/// sharing a clamp. What is required comes from an [`Evaluator`] (one
+/// call per pair), made by `make` for each core the pairs are measured
+/// on. Exit clause: the budget's time limit and cancellation (checked per
+/// pair).
+pub fn check<E: Evaluator>(
     settings: &PhaseDistanceSettings,
     conductors: &[Conductor],
     budget: &Budget,
+    make: impl Fn() -> Result<E, String> + Sync,
 ) -> Result<Vec<PhaseDistancePair>, String> {
-    let diagram = code
-        .diagrams
-        .get(settings.diagram)
-        .ok_or_else(|| format!("no diagram {} in {}", settings.diagram, code.name))?;
     let run = budget.start();
     let ticked = |c: &Conductor| {
         settings
@@ -854,10 +576,23 @@ pub fn check(
             candidates.push((i, j, same_span));
         }
     }
-    let measure = |i: usize, j: usize, same_span: bool| -> Option<PhaseDistancePair> {
+    // A station measured: (direction, polyline of the first conductor,
+    // station on it), the length it stands for, the points and where
+    // along each (in the pair's order).
+    struct Measured {
+        group: (bool, usize, usize),
+        weight: f64,
+        at: [P3; 2],
+        along: [f64; 2],
+    }
+    let measure = |evaluator: &mut E,
+                   i: usize,
+                   j: usize,
+                   same_span: bool|
+     -> Result<Option<PhaseDistancePair>, String> {
         let (a, b) = (&conductors[i], &conductors[j]);
-        // C₁ within one electrical system and towards earth (an earth
-        // wire: no potential); C₂ between systems.
+        // Within one electrical system and towards earth (an earth wire:
+        // no potential); else between systems.
         let earth = a.wire.potential.is_none() || b.wire.potential.is_none();
         let same_system = earth
             || match (&a.system, &b.system) {
@@ -866,22 +601,6 @@ pub fn check(
                 _ => a.wire.circuit == b.wire.circuit,
             };
         let kv = a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0));
-        // The insulation level of the circuit of the higher voltage
-        // (equal: high when either is).
-        let level_of = |c: &Conductor| c.level.unwrap_or_default();
-        let level = match (a.wire.kv(), b.wire.kv()) {
-            (Some(x), Some(y)) if x > y => level_of(a),
-            (Some(x), Some(y)) if y > x => level_of(b),
-            (Some(_), Some(_)) => {
-                if level_of(a) == Level::High || level_of(b) == Level::High {
-                    Level::High
-                } else {
-                    Level::Low
-                }
-            }
-            (Some(_), None) => level_of(a),
-            _ => level_of(b),
-        };
         let all: Vec<f64> = a
             .wire
             .points
@@ -890,24 +609,41 @@ pub fn check(
             .map(|p| p[2])
             .collect();
         let altitude = all.iter().sum::<f64>() / all.len().max(1) as f64;
-        let c = code.c(same_system, kv, level) * code.altitude_factor(altitude);
+        // Spacers between these two in the span: each one's largest sag
+        // between its clamps.
+        let joined: Vec<&String> = a
+            .spacers
+            .iter()
+            .filter(|(id, _)| b.spacers.iter().any(|(x, _)| x == id))
+            .map(|(id, _)| id)
+            .collect();
+        let spacer_sag = (same_span && !joined.is_empty()).then(|| {
+            [a, b].map(|c| {
+                let at: Vec<P3> = c
+                    .spacers
+                    .iter()
+                    .filter(|(id, _)| joined.contains(&id))
+                    .map(|(_, p)| *p)
+                    .collect();
+                largest_sag_between(&c.wire.points, &at)
+            })
+        });
         // Same span: every station; nearby: where within the distance.
         let cutoff = if same_span {
             f64::INFINITY
         } else {
             settings.max_distance
         };
-        let mut worst: Option<Station> = None;
-        let mut length_below = 0.0f64;
-        // Stations on each conductor in turn, the closest point on the
-        // other (its nearest subconductor).
+        let mut rows: Vec<f64> = Vec::new();
+        let mut measured: Vec<Measured> = Vec::new();
+        // Stations on each conductor in turn, the closest point on each
+        // subconductor of the other.
         for swap in [false, true] {
             let (fi, si) = if swap { (j, i) } else { (i, j) };
             let (cf, cs) = (&conductors[fi], &conductors[si]);
-            for first in &polys[fi] {
-                let mut below = 0.0;
-                for (p, sp, weight) in first.stations(settings.spacing) {
-                    let mut station: Option<Station> = None;
+            for (n, first) in polys[fi].iter().enumerate() {
+                for (k, (p, sp, weight)) in first.stations(settings.spacing).into_iter().enumerate()
+                {
                     for second in &polys[si] {
                         let Some((q, sq, d)) = second.closest(p, cutoff) else {
                             continue;
@@ -922,60 +658,98 @@ pub fn check(
                         let fq = local_sag(second.points, q);
                         let lp = lk_linear(cf.lk, sp / first.total().max(1e-12));
                         let lq = lk_linear(cs.lk, sq / second.total().max(1e-12));
-                        let (kp, kq) = (diagram.k(cf.w, beta), diagram.k(cs.w, beta));
-                        let z = (kp * (fp + lp).max(0.0).sqrt())
-                            .max(kq * (fq + lq).max(0.0).sqrt())
-                            + c;
-                        let st = if swap {
-                            Station {
-                                at: [q, p],
-                                along: [sq, sp],
-                                distance: d,
-                                required: z,
-                                sag: [fq, fp],
-                                lk: [lq, lp],
-                                beta,
-                                k: [kq, kp],
-                                c,
-                            }
+                        let (at, along, f, l) = if swap {
+                            ([q, p], [sq, sp], [fq, fp], [lq, lp])
                         } else {
-                            Station {
-                                at: [p, q],
-                                along: [sp, sq],
-                                distance: d,
-                                required: z,
-                                sag: [fp, fq],
-                                lk: [lp, lq],
-                                beta,
-                                k: [kp, kq],
-                                c,
-                            }
+                            ([p, q], [sp, sq], [fp, fq], [lp, lq])
                         };
-                        if station.as_ref().is_none_or(|w| st.margin() < w.margin()) {
-                            station = Some(st);
-                        }
-                    }
-                    let Some(st) = station else { continue };
-                    if st.margin() < 0.0 {
-                        below += weight;
-                    }
-                    if worst.as_ref().is_none_or(|w| st.margin() < w.margin()) {
-                        worst = Some(st);
+                        rows.extend([d, beta, f[0], f[1], l[0], l[1]]);
+                        measured.push(Measured {
+                            group: (swap, n, k),
+                            weight,
+                            at,
+                            along,
+                        });
                     }
                 }
-                length_below = length_below.max(below);
             }
         }
-        worst.map(|worst| PhaseDistancePair {
+        if measured.is_empty() {
+            return Ok(None);
+        }
+        let pair = PairGeometry {
+            a,
+            b,
+            same_system,
+            same_span,
+            altitude,
+            spacer_sag,
+        };
+        let req = evaluator.evaluate(&pair, &rows)?;
+        let per = req.per_station;
+        if per == 0 || req.values.len() != per * measured.len() {
+            return Err(format!(
+                "the check gave {} numbers for {} stations ({per} each)",
+                req.values.len(),
+                measured.len()
+            ));
+        }
+        let station = |m: usize| {
+            let r = &rows[m * STATION_VALUES..(m + 1) * STATION_VALUES];
+            let v = &req.values[m * per..(m + 1) * per];
+            Station {
+                at: measured[m].at,
+                along: measured[m].along,
+                distance: r[0],
+                required: v[0],
+                sag: [r[2], r[3]],
+                lk: [r[4], r[5]],
+                beta: r[1],
+                values: v[1..].to_vec(),
+            }
+        };
+        let margin = |m: usize| rows[m * STATION_VALUES] - req.values[m * per];
+        // Per station the closest subconductor (the smallest margin); the
+        // length below per conductor and subconductor measured from.
+        let mut worst: Option<usize> = None;
+        let mut length_below = 0.0f64;
+        let mut below = 0.0;
+        let mut m = 0;
+        while m < measured.len() {
+            let g = measured[m].group;
+            let mut best = m;
+            let mut e = m + 1;
+            while e < measured.len() && measured[e].group == g {
+                if margin(e) < margin(best) {
+                    best = e;
+                }
+                e += 1;
+            }
+            if margin(best) < 0.0 {
+                below += measured[best].weight;
+            }
+            if worst.is_none_or(|w| margin(best) < margin(w)) {
+                worst = Some(best);
+            }
+            // The end of a polyline's stations.
+            if e == measured.len() || (measured[e].group.0, measured[e].group.1) != (g.0, g.1) {
+                length_below = length_below.max(below);
+                below = 0.0;
+            }
+            m = e;
+        }
+        Ok(worst.map(|w| PhaseDistancePair {
             a: i,
             b: j,
             same_system,
             kv,
             same_span,
             altitude,
-            worst,
+            spacer_sag,
+            rule: req.rule.clone(),
+            worst: station(w),
             length_below,
-        })
+        }))
     };
     // The pairs shared out over the cores, in their order.
     let threads = std::thread::available_parallelism()
@@ -984,23 +758,43 @@ pub fn check(
         .max(1);
     let next = AtomicUsize::new(0);
     let stopped: Mutex<Option<String>> = Mutex::new(None);
+    let stop = |why: String| {
+        let mut s = stopped.lock().expect("not poisoned");
+        if s.is_none() {
+            *s = Some(why);
+        }
+    };
     let mut found: Vec<(usize, PhaseDistancePair)> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..threads)
             .map(|_| {
                 scope.spawn(|| {
                     let mut mine = Vec::new();
+                    let mut evaluator = match make() {
+                        Ok(e) => e,
+                        Err(e) => {
+                            stop(e);
+                            return mine;
+                        }
+                    };
                     loop {
-                        if let Err(stop) = run.check() {
-                            *stopped.lock().expect("not poisoned") =
-                                Some(format!("phase distances: {stop}"));
+                        if let Err(why) = run.check() {
+                            stop(format!("phase distances: {why}"));
+                            return mine;
+                        }
+                        if stopped.lock().expect("not poisoned").is_some() {
                             return mine;
                         }
                         let k = next.fetch_add(1, Ordering::Relaxed);
                         let Some(&(i, j, same_span)) = candidates.get(k) else {
                             return mine;
                         };
-                        if let Some(pair) = measure(i, j, same_span) {
-                            mine.push((k, pair));
+                        match measure(&mut evaluator, i, j, same_span) {
+                            Ok(Some(pair)) => mine.push((k, pair)),
+                            Ok(None) => {}
+                            Err(e) => {
+                                stop(e);
+                                return mine;
+                            }
                         }
                     }
                 })
@@ -1019,16 +813,42 @@ pub fn check(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use ols_line::electrical::{Potential, SystemKind};
     use ols_line::{InsulatorString, StructurePoint, WirePoint};
 
-    fn lev() -> PhaseDistanceCode {
-        PhaseDistanceCode::parse(include_str!(
-            "../../../libraries/phase-distance/lev-ch.olspd"
-        ))
-        .unwrap()
+    /// A test code (LeV-like, its numbers for the tests only): z =
+    /// k·√(f + l_k) + C with k from 0.70 (β 0°) to 0.60 (β 90°), C 2.64 m
+    /// within a system, 3.37 m between, +14 % per 1000 m above 1000 m;
+    /// with spacers k·√d_f + C, at least 0.90 m. The station's numbers
+    /// after z: k of each, C.
+    pub(crate) struct TestCode;
+
+    impl Evaluator for TestCode {
+        fn evaluate(&mut self, pair: &PairGeometry, s: &[f64]) -> Result<Required, String> {
+            let c = if pair.same_system { 2.64 } else { 3.37 }
+                * (1.0 + 0.14 * ((pair.altitude - 1000.0).max(0.0) / 1000.0));
+            let mut values = Vec::new();
+            for r in s.chunks(STATION_VALUES) {
+                let k = 0.70 - 0.10 * (r[1] / 90.0).clamp(0.0, 1.0);
+                let z = match pair.spacer_sag {
+                    Some(df) => (k * df[0].sqrt()).max(k * df[1].sqrt()) + c,
+                    None => (k * (r[2] + r[4]).sqrt()).max(k * (r[3] + r[5]).sqrt()) + c,
+                };
+                values.extend([z.max(0.9), k, k, c]);
+            }
+            Ok(Required {
+                values,
+                per_station: 4,
+                rule: if pair.spacer_sag.is_some() {
+                    "spacers"
+                } else {
+                    "span"
+                }
+                .into(),
+            })
+        }
     }
 
     fn kv(u: f64) -> Option<Potential> {
@@ -1070,10 +890,12 @@ mod tests {
                 points,
                 ends: vec![format!("T1:{set}"), format!("T2:{set}")],
             },
-            w: 10.0,
+            diameter_mm: 30.0,
+            mass_kg_m: 3.0,
             lk,
             system: Some(circuit.into()),
-            level: Some(Level::Low),
+            fields: Fields::new(),
+            spacers: Vec::new(),
         }
     }
 
@@ -1083,69 +905,7 @@ mod tests {
     }
 
     fn run(c: &[Conductor], s: &PhaseDistanceSettings) -> Vec<PhaseDistancePair> {
-        check(&lev(), s, c, &Budget::new()).unwrap()
-    }
-
-    /// Written back and read again: the same values.
-    #[test]
-    fn written_and_read_back() {
-        let c = lev();
-        let mut c = c;
-        c.voltages[0].c3 = Some([0.1, 0.1]);
-        c.voltages[0].c4 = Some([0.2, 0.3]);
-        let text = c.to_text("edited\nby a test");
-        assert!(text.starts_with("# edited\n# by a test\n"));
-        assert_eq!(PhaseDistanceCode::parse(&text).unwrap(), c);
-    }
-
-    /// The shipped LeV values: C₁/C₂ by voltage and level, the next row
-    /// up between rows, the altitude rule, k by β and swing class.
-    #[test]
-    fn the_lev_values() {
-        let c = lev();
-        assert_eq!(c.c(true, 380.0, Level::Low), 2.64);
-        assert_eq!(c.c(true, 380.0, Level::High), 2.90);
-        assert_eq!(c.c(false, 380.0, Level::High), 3.64);
-        // 110 and 132 kV: one line each, C₁ and C₃ their own (450 / 550
-        // kV), C₂ and C₄ the same (650 kV).
-        assert_eq!(c.c(true, 110.0, Level::Low), 0.92);
-        assert_eq!(c.c(true, 110.0, Level::High), 0.92);
-        assert_eq!(c.c(true, 132.0, Level::Low), 1.12);
-        assert_eq!(c.c(true, 132.0, Level::High), 1.12);
-        assert_eq!(c.c(false, 110.0, Level::Low), 1.38);
-        assert_eq!(c.c(false, 132.0, Level::High), 1.38);
-        // 65 kV: the 110 kV row.
-        assert_eq!(c.c(true, 65.0, Level::Low), 0.92);
-        // 220 and 380 kV: two lines, each value for its impulse level.
-        let row = |kv: f64| c.voltages.iter().find(|r| r.kv == kv).unwrap();
-        assert!(row(220.0).two_levels() && !row(132.0).two_levels());
-        assert_eq!(row(220.0).c1_bil_kv, Some([950.0, 1050.0]));
-        assert_eq!(row(220.0).c2_bil_kv, Some([1050.0, 1175.0]));
-        assert_eq!(row(380.0).c1_bil_kv, Some([1300.0, 1425.0]));
-        assert_eq!(row(380.0).c2_bil_kv, Some([1550.0, 1675.0]));
-        assert_eq!(c.c(false, 220.0, Level::Low), 2.29);
-        // C₃ and C₄ (brief approaches), as in the table.
-        assert_eq!(row(110.0).c3, Some([0.61, 0.61]));
-        assert_eq!(row(132.0).c3, Some([0.76, 0.76]));
-        assert!(!row(110.0).two_levels() && !row(132.0).two_levels());
-        assert_eq!(row(132.0).c4, Some([0.89, 0.89]));
-        assert_eq!(row(220.0).c3, Some([1.35, 1.60]));
-        assert_eq!(row(220.0).c4, Some([1.60, 1.90]));
-        assert_eq!(row(380.0).c3, Some([2.09, 2.33]));
-        assert_eq!(row(380.0).c4, Some([2.30, 2.86]));
-        assert!(c.voltages.iter().all(|r| r.c3.is_some() && r.c4.is_some()));
-        assert_eq!(row(3.0).c1_bil_kv, Some([40.0, 40.0]));
-        assert!(!row(3.0).two_levels());
-        assert!((c.altitude_factor(500.0) - 1.0).abs() < 1e-12);
-        assert!((c.altitude_factor(2000.0) - 1.14).abs() < 1e-12);
-        let d = &c.diagrams[0];
-        assert!((d.k(10.0, 0.0) - 0.70).abs() < 1e-12);
-        assert!((d.k(10.0, 90.0) - 0.60).abs() < 1e-12);
-        assert!((d.k(20.0, 45.0) - 0.70).abs() < 1e-12);
-        assert!((d.k(50.0, 0.0) - 0.95).abs() < 1e-12);
-        // At 650 N/m² the classes change: w = 20 is the second line there
-        // too, w = 25 the third.
-        assert!((c.diagrams[1].k(25.0, 0.0) - 0.85).abs() < 1e-12);
+        check(s, c, &Budget::new(), || Ok(TestCode)).unwrap()
     }
 
     /// One conductor 6 m above the other (β = 0°), 380 kV, the same
@@ -1236,21 +996,6 @@ mod tests {
         assert!(run(&[a, c], &near).is_empty());
     }
 
-    /// The level from the circuit's column: not set, the high row
-    /// (C₁ 2.90 m at 380 kV instead of 2.64 m).
-    #[test]
-    fn level_not_set_is_high() {
-        let mut a = conductor("C1", 1, 0.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
-        let mut b = conductor("C1", 2, 0.0, 24.0, 0.0, 12.0, [4.5, 4.5]);
-        assert!((run(&[a.clone(), b.clone()], &low())[0].worst.c - 2.64).abs() < 1e-9);
-        a.level = None;
-        b.level = None;
-        assert!((run(&[a, b], &low())[0].worst.c - 2.90).abs() < 1e-9);
-        assert_eq!(Level::parse(" Low "), Some(Level::Low));
-        assert_eq!(Level::parse("HIGH"), Some(Level::High));
-        assert_eq!(Level::parse("medium"), None);
-    }
-
     /// Side by side (β = 90°): k = 0.60; two circuits: C₂.
     #[test]
     fn side_by_side_and_two_circuits() {
@@ -1285,8 +1030,9 @@ mod tests {
         );
         assert!(p.worst.lk[0] > 1.5 && p.worst.lk[0] < 1.65);
         // The larger of the two conductors' terms.
-        let term = |i: usize| p.worst.k[i] * (p.worst.sag[i] + p.worst.lk[i]).sqrt();
-        assert!(p.worst.beta < 1.0 && (p.worst.k[0] - 0.70).abs() < 0.002);
+        let k = &p.worst.values[..2];
+        let term = |i: usize| k[i] * (p.worst.sag[i] + p.worst.lk[i]).sqrt();
+        assert!(p.worst.beta < 1.0 && (k[0] - 0.70).abs() < 0.002);
         let z = term(0).max(term(1)) + 2.64;
         assert!((p.worst.required - z).abs() < 1e-9);
         // Mid-span itself: l_k 1.5 exactly.
@@ -1302,7 +1048,7 @@ mod tests {
         let p = &run(&[a.clone(), b.clone()], &low())[0];
         // Mean height 2027 − 2·12·(2/3)… the parabola's mean: 2019 m.
         let f = 1.0 + 0.14 * (p.altitude - 1000.0) / 1000.0;
-        assert!((p.worst.c - 2.64 * f).abs() < 1e-9);
+        assert!((p.worst.values[2] - 2.64 * f).abs() < 1e-9);
         assert!(p.altitude > 2000.0 && p.altitude < 2030.0, "{}", p.altitude);
         let s = PhaseDistanceSettings {
             circuits: Some(BTreeSet::from(["C2".to_owned()])),
@@ -1379,5 +1125,55 @@ mod tests {
         assert!((lk_of(&st, "WB") - 1.5).abs() < 1e-9);
         assert!((lk_of(&st, "WK") - 2.0).abs() < 1e-9);
         assert_eq!(lk_of(&st, "WC"), 0.0);
+    }
+
+    /// Two conductors joined by a spacer at mid-span: each one's largest
+    /// sag between its clamps (a quarter of the sag for a parabola halved),
+    /// handed on; the rule follows. A spacer on one only: not joined.
+    #[test]
+    fn spacers_give_the_sag_between_their_clamps() {
+        let mut a = conductor("C1", 1, 0.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
+        let mut b = conductor("C1", 2, 0.0, 24.0, 0.0, 12.0, [4.5, 4.5]);
+        a.spacers = vec![("SP".into(), [150.0, 0.0, 18.0])];
+        b.spacers = vec![("SP".into(), [150.0, 0.0, 12.0])];
+        let p = &run(&[a.clone(), b.clone()], &low())[0];
+        let df = p.spacer_sag.expect("joined");
+        // 12 m at mid-span, the half spans' parabolas sag 3 m.
+        assert!(
+            (df[0] - 3.0).abs() < 0.01 && (df[1] - 3.0).abs() < 0.01,
+            "{df:?}"
+        );
+        assert_eq!(p.rule, "spacers");
+        let k = p.worst.values[0];
+        assert!((p.worst.required - (k * df[0].max(df[1]).sqrt() + 2.64)).abs() < 1e-9);
+        b.spacers[0].0 = "other".into();
+        let p = &run(&[a, b], &low())[0];
+        assert!(p.spacer_sag.is_none() && p.rule == "span");
+        // Two spacers at thirds: the largest of the three stretches.
+        let pts: Vec<P3> = (0..=300)
+            .map(|i| {
+                let t = f64::from(i) / 300.0;
+                [f64::from(i), 0.0, 30.0 - 48.0 * t * (1.0 - t)]
+            })
+            .collect();
+        let at = |x: usize| pts[x];
+        let s = largest_sag_between(&pts, &[at(100), at(200)]);
+        // A parabola's sag over a third of the span: 12/9 m.
+        assert!((s - 12.0 / 9.0).abs() < 0.01, "{s}");
+    }
+
+    /// An evaluator's error stops the check and is told.
+    #[test]
+    fn an_evaluator_error_is_told() {
+        struct Broken;
+        impl Evaluator for Broken {
+            fn evaluate(&mut self, _: &PairGeometry, _: &[f64]) -> Result<Required, String> {
+                Err("no values for 380 kV".into())
+            }
+        }
+        let a = conductor("C1", 1, 0.0, 30.0, 0.0, 12.0, [4.5, 4.5]);
+        let b = conductor("C1", 2, 0.0, 24.0, 0.0, 12.0, [4.5, 4.5]);
+        let e = check(&low(), &[a, b], &Budget::new(), || Ok(Broken)).unwrap_err();
+        assert!(e.contains("380 kV"), "{e}");
     }
 }

@@ -133,6 +133,46 @@ Swiss LeV, IEC 60826, NESC, CSA C22.3, ASCE MOP 74, GO 95); they share
 the `code_plugin!` macro implementing the world). See
 [Design codes](../user-guide/design-codes.md).
 
+## Check plugins
+
+A plugin that runs a check implements the `check` interface
+(`crates/ols-plugins/wit/code.wit`: the `check-plugin` world, or
+`code-check-plugin` for a design-code plugin that also runs checks) and
+lists the extension point `check`. **OLS CAD measures, the plugin holds
+the values and the rules**: the measuring stays in OLS CAD (it is
+geometry, and fast), the code's numbers and its formulas stay out of it.
+
+- `checks()` lists the checks it runs: the **id** of what OLS CAD
+  measures for it (today `phase-distance`, the distance between
+  conductors in the span), its title and Checks submenu, an
+  **explanation** of the computation (shown in its window), its
+  **values** file as shipped (TOML) with its extension, the **choices**
+  made before a run (e.g. the k diagram), and the plugin columns of the
+  circuits its window shows to be set there.
+- `value-tables(check, values)` shows a values file as tables (shown
+  locked in the window, for transparency); `edit-value(check, values,
+  table, row, column, text)` returns the file with that cell changed (an
+  admin's edit, kept as the project's copy), or what is wrong.
+- `evaluate(check, values, choices, pair, stations)`: for one pair of
+  conductors (`conductor-pair`: same system, same span, each one's kV,
+  plugin columns, diameter and mass, the mean height, the largest sags
+  between spacers when spacers join them) and its stations (6 numbers
+  each: distance, β, each local sag, each l_k), the numbers required at
+  each station — the distance first, then the check's own (kept with the
+  worst station) — and the rule applied.
+
+The host (`ols_io::checks`, `WasmHost::load_check`) measures
+(`ols_clearance::phase_distance`), calls the plugin once per pair, one
+instance per core (`WasmHost::another_check`, compiled once), and keeps
+each pair's worst station and the length below. The `lev-ch` plugin runs
+the LeV distance between conductors (Annex 6, 2.2.1 and, with phase
+spacers, 2.2.4); its values are the law's (Swiss legislation is not
+protected by copyright), in `plugins/codes/lev-ch/phase-distance.olspd`.
+On an existing line (930 conductors, 5593 pairs) it takes about as long
+as the same computation built into OLS CAD (0.8 s against 0.65–0.9 s;
+with nearby pairs, 10 475, 0.9 s against 0.65–0.7 s), plus about 0.3 s
+to load the plugin once.
+
 ## Python plugins
 
 Python plugins are scripts (`tier = "python"`, `entry` the script). Outside the application they use the `ols` package built from `crates/ols-py`; inside it, the Python console runs them (Plugins › Python console › Plugin scripts) with the `ols` module of the application, which also reads and edits the open project ([Python console](../user-guide/desktop-app.md#python-console)). See `plugins/examples/hello-python`.

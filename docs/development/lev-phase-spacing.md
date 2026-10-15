@@ -1,8 +1,18 @@
 # LeV distance between conductors in the span (still air) — specification
 
-Status: **steps 1 to 4 and 6 of the plan implemented** (the values file
-`libraries/phase-distance/lev-ch.olspd`, the check
-`ols_clearance::phase_distance`, with tests worked by hand; the length
+Status: **steps 1 to 4 and 6 of the plan implemented**, and **moved to
+the lev-ch plugin** (decided with the user: OLS CAD keeps what lets the
+check run — the conductors, the pairs, the stations, the sags between
+spacers, the window — the plugin the values and the rules, through the
+`check` plugin interface; see [Writing plugins](plugins.md#check-plugins)
+for the speed comparison). The values file
+`plugins/codes/lev-ch/phase-distance.olspd`, the measuring
+`ols_clearance::phase_distance`, the rules `lev-ch`'s
+`phase_distance.rs`, with tests worked by hand; rule 2.2.4 (phase
+spacers: z = k·√d_f + C₃ ≥ C₁, C₄ ≥ C₂ between systems, at least
+0.90 m; d_f the largest sag between the spacers — taken per conductor
+over its stretches between its spacer clamps and the span's clamps, an
+interpretation to confirm); the length
 below z, nearby pairs and the faster search after the first run on an
 existing line; the Circuits table's insulation level, a column of the
 LeV plugin; the window, Checks › LeV / OLEI › Distance between
@@ -173,7 +183,8 @@ span and tight only at the structure is easy to recognise.
 ## Not in this check
 
 On the structure (C1/C2, at least 0.5 m), with wind (C3/C4, wind
-differing by up to 40 % between conductors), phase spacers (2.2.4).
+differing by up to 40 % between conductors). Phase spacers (2.2.4): in
+the check since the spacers came (see the status).
 
 ## Implementation plan
 
