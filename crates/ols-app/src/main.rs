@@ -20,6 +20,7 @@ mod annotations;
 mod app;
 mod backgrounds;
 mod bom;
+mod check_library;
 mod chunks;
 mod class_colors;
 mod clearance;

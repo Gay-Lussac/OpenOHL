@@ -247,6 +247,9 @@ pub enum Kind {
     Section,
     /// A jumper.
     Jumper,
+    /// A performed check's report ([`reports`]): kept with the line's
+    /// branch, not part of the line itself.
+    Report,
 }
 
 impl Kind {
@@ -260,6 +263,7 @@ impl Kind {
             Self::Structure => "structure",
             Self::Section => "section",
             Self::Jumper => "jumper",
+            Self::Report => "report",
         }
     }
 
@@ -272,6 +276,7 @@ impl Kind {
             "structure" => Self::Structure,
             "section" => Self::Section,
             "jumper" => Self::Jumper,
+            "report" => Self::Report,
             other => return Err(SessionError::Store(format!("unknown object kind {other}"))),
         })
     }
@@ -813,6 +818,8 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
             Kind::Jumper => line
                 .jumpers
                 .push(serde_json::from_value::<Jumper>(v).map_err(parse_err)?),
+            // Kept with the line, not part of it.
+            Kind::Report => {}
         }
     }
     // Ids inside the JSON must match the object ids.
@@ -856,7 +863,11 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
                         }
                     }
                 }
-                Kind::Meta | Kind::Route | Kind::Alignment | Kind::AlignmentPoint => {}
+                Kind::Meta
+                | Kind::Route
+                | Kind::Alignment
+                | Kind::AlignmentPoint
+                | Kind::Report => {}
             }
         }
     }
@@ -1759,7 +1770,8 @@ impl Session {
                 let keep: std::collections::BTreeSet<(Kind, String)> =
                     new.iter().map(|(k, id, _)| (*k, id.clone())).collect();
                 for (k, id) in self.objects.keys() {
-                    if !keep.contains(&(*k, id.clone())) {
+                    // The reports stay: they are not part of the line.
+                    if *k != Kind::Report && !keep.contains(&(*k, id.clone())) {
                         out.push(Command::Delete {
                             kind: *k,
                             id: id.clone(),
@@ -2000,6 +2012,11 @@ impl Session {
                     return Err(refused(format!("no jumper {id}")));
                 }
             }
+            Kind::Report => {
+                if !self.objects.contains_key(&(kind, id.to_owned())) {
+                    return Err(refused(format!("no report {id}")));
+                }
+            }
         }
         Ok(impact)
     }
@@ -2192,6 +2209,13 @@ impl Session {
             }
         }
         inverse.reverse();
+        for (kind, id) in &changed {
+            if *kind == Kind::Report
+                && let Some(o) = objects.get(&(*kind, id.clone()))
+            {
+                reports::check_value(id, &o.value)?;
+            }
+        }
         let line = line_of(&objects)?;
         changed.sort();
         changed.dedup();
@@ -2547,6 +2571,7 @@ pub mod collab;
 pub mod impact;
 pub mod lines;
 pub mod live;
+pub mod reports;
 pub mod reproject;
 pub mod spatial;
 pub mod surfaces;

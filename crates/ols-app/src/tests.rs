@@ -11265,3 +11265,179 @@ fn the_checks_menu_opens_the_phase_distance_window() {
     assert_eq!([a, b], row.at);
     assert!(text.contains("d ") && text.contains("z "), "{text}");
 }
+
+/// The library of performed checks: a run of the LeV distance between
+/// conductors saved (kept with the line, logged); the line edited: the
+/// report is stale; opened again: its parameters and results; run again:
+/// compared with it, then replaced on request; deleted after a
+/// confirmation, undo brings it back.
+#[test]
+fn performed_checks_are_saved_and_run_again() {
+    let model = synthetic_project("performed-checks");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let run = |h: &mut Harness<'_, App>| {
+        let started = std::time::Instant::now();
+        loop {
+            h.step();
+            let r = h.state_mut().ready().unwrap();
+            if let (Some(rep), false) = r.phase_distance.report() {
+                assert!(rep.is_ok(), "{rep:?}");
+                break;
+            }
+            assert!(started.elapsed().as_secs() < 60, "no report in 60 s");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        h.run();
+    };
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.phase_distance.show(&r.model);
+        if r.phase_distance.cases.is_empty() {
+            r.phase_distance.cases.insert(0);
+        }
+        let model = &r.model;
+        let ctx = egui::Context::default();
+        r.phase_distance.start(model, &ctx);
+    }
+    run(&mut harness);
+    harness.get_by_label("Save").click();
+    harness.run();
+    let saved = {
+        let r = harness.state_mut().ready().unwrap();
+        let s = &r.model.editing.as_ref().unwrap().session;
+        let reports = s.reports();
+        assert_eq!(reports.len(), 1);
+        let x = reports[0].clone();
+        assert_eq!(x.id, crate::phase_distance::CHECK_TITLE);
+        assert_eq!(x.check, crate::phase_distance::CHECK_ID);
+        assert_eq!(x.status, ols_session::reports::ReportStatus::Draft);
+        assert!(x.summary.contains("pairs"), "{}", x.summary);
+        assert!(
+            x.parameters["values_text"]
+                .as_str()
+                .unwrap()
+                .contains("[[voltage]]")
+        );
+        assert!(
+            ols_session::reports::changed_since(&x.state, &s.check_state().unwrap()).is_empty()
+        );
+        x
+    };
+    // The line edited: stale.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let p = r.model.line.structure("T2").unwrap().position;
+        r.perform(crate::edit::Action::Command {
+            what: "T2 up".into(),
+            command: ols_session::Command::MoveStructure {
+                id: "T2".into(),
+                position: [p[0], p[1], p[2] + 3.0],
+            },
+        });
+        let s = &r.model.editing.as_ref().unwrap().session;
+        let c = ols_session::reports::changed_since(&saved.state, &s.check_state().unwrap());
+        assert!(c.changed.contains(&"structure:T2".to_owned()), "{c:?}");
+        r.check_library.show();
+    }
+    harness.run();
+    harness.get_by_label_contains("stale").hover();
+    // Opened again from the library: its parameters and results.
+    harness.get_by_label("Open").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let w = &r.phase_distance;
+        assert_eq!(
+            w.loaded.as_ref().map(|x| x.id.as_str()),
+            Some(saved.id.as_str())
+        );
+        assert!(
+            w.values.is_some(),
+            "the values as saved; log {:?}",
+            r.model.log.iter().rev().take(3).collect::<Vec<_>>()
+        );
+        let (rep, _) = w.report();
+        let rep = rep.unwrap().as_ref().unwrap();
+        let kept: crate::phase_distance::Saved =
+            serde_json::from_value(saved.results.clone()).unwrap();
+        assert_eq!(rep.rows, kept.rows);
+        assert!(
+            rep.rows
+                .iter()
+                .all(|x| x.margin() < crate::phase_distance::KEPT_WITHIN)
+        );
+    }
+    harness.get_by_label_contains("stale").hover();
+    // Run again: compared, then replaced on request.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let ctx = egui::Context::default();
+        r.phase_distance.start(&r.model, &ctx);
+    }
+    run(&mut harness);
+    harness.run();
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .phase_distance
+            .comparison
+            .is_some()
+    );
+    harness
+        .get_by_label_contains("Compared with the saved report")
+        .hover();
+    harness.get_by_label("Replace").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s = &r.model.editing.as_ref().unwrap().session;
+        let reports = s.reports();
+        assert_eq!(reports.len(), 1, "replaced, not added");
+        assert!(
+            ols_session::reports::changed_since(&reports[0].state, &s.check_state().unwrap())
+                .is_empty(),
+            "made on the line as it is now"
+        );
+        assert_ne!(reports[0].state, saved.state);
+    }
+    // Deleted after a confirmation; undo brings it back (the check's
+    // window closed: it lies over the library).
+    harness.state_mut().ready().unwrap().phase_distance.open = false;
+    harness.run();
+    harness.get_by_label("Delete…").click();
+    harness.run();
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .editing
+            .as_ref()
+            .unwrap()
+            .session
+            .reports()
+            .len(),
+        1,
+        "not before the confirmation"
+    );
+    harness.get_by_label("Delete").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(
+        r.model
+            .editing
+            .as_ref()
+            .unwrap()
+            .session
+            .reports()
+            .is_empty()
+    );
+    r.perform(crate::edit::Action::Undo);
+    assert_eq!(r.model.editing.as_ref().unwrap().session.reports().len(), 1);
+}

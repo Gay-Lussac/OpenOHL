@@ -9,14 +9,22 @@
 //! levels from the Electrical circuits table (the LeV plugin's column).
 //! Computed on demand in the background; worst pairs first; a click
 //! selects the span and draws the worst station's line with d and z.
+//!
+//! A run is saved in the library of performed checks
+//! ([`ols_session::reports`]) with its parameters (the values file's text
+//! included) and the pairs below z or within [`KEPT_WITHIN`] of it;
+//! reopened, it shows whether the line changed since; run again, the new
+//! run is compared with it and may replace it.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use eframe::egui;
 use ols_clearance::phase_distance::{
-    Conductor, PhaseDistanceCode, PhaseDistanceSettings, check, conductors,
+    Conductor, LEVEL_FIELD, Level, PhaseDistanceCode, PhaseDistanceSettings, check, conductors,
 };
+use ols_session::reports::{self, CheckReport, LineState, ReportStatus};
+use serde::{Deserialize, Serialize};
 
 use crate::job::{Job, save_csv};
 use crate::model::Model;
@@ -26,8 +34,18 @@ use crate::selection::Selection;
 /// clamp" (f about 0), m.
 const NEAR_CLAMP: f64 = 2.0;
 
+/// The check's id in the library of performed checks.
+pub const CHECK_ID: &str = "phase-distance";
+
+/// The check in words.
+pub const CHECK_TITLE: &str = "Distance between conductors (LeV)";
+
+/// A saved report keeps the pairs below z and those within this of it,
+/// m (all of them are counted).
+pub const KEPT_WITHIN: f64 = 1.0;
+
 /// One pair of conductors in one weather case.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Row {
     /// Weather case.
     pub case: String,
@@ -70,6 +88,70 @@ impl Row {
     pub fn margin(&self) -> f64 {
         self.distance - self.required
     }
+
+    /// The pair in its case, to compare runs.
+    fn key(&self) -> (String, [(String, usize); 2]) {
+        (self.case.clone(), self.span.clone())
+    }
+}
+
+/// A weather case as checked.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaseParams {
+    /// Its name.
+    pub name: String,
+    /// Wire temperature, °C.
+    pub temperature_c: f64,
+    /// Wind pressure, Pa.
+    pub wind_pressure_pa: f64,
+    /// Ice thickness, m.
+    pub ice_thickness_m: f64,
+    /// Ice load given, N/m.
+    pub ice_load_n_m: Option<f64>,
+}
+
+/// Every parameter of a run.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Params {
+    /// The values file's name.
+    pub values_file: String,
+    /// Its text, as used.
+    pub values_text: String,
+    /// SHA-256 of the text.
+    pub values_sha256: String,
+    /// The k diagram (index).
+    pub diagram: usize,
+    /// Its name.
+    pub diagram_name: String,
+    /// Station spacing, m.
+    pub spacing: f64,
+    /// Nearby spans too.
+    pub nearby: bool,
+    /// Their distance, m.
+    pub max_distance: f64,
+    /// Circuits ticked (none: all).
+    pub circuits: Option<Vec<String>>,
+    /// The weather cases.
+    pub cases: Vec<CaseParams>,
+    /// The insulation level used for each circuit.
+    pub levels: BTreeMap<String, String>,
+}
+
+/// What a saved report keeps as results.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Saved {
+    /// Pairs checked.
+    pub pairs: usize,
+    /// Pairs below z.
+    pub below: usize,
+    /// Conductor below z, all pairs, m.
+    pub length_below_m: f64,
+    /// The code's name.
+    pub code: String,
+    /// The notes of the run.
+    pub notes: Vec<String>,
+    /// The pairs below z or within [`KEPT_WITHIN`] of it, worst first.
+    pub rows: Vec<Row>,
 }
 
 /// What a check found.
@@ -83,6 +165,111 @@ pub struct Report {
     pub notes: Vec<String>,
     /// Pairs of every case, worst first.
     pub rows: Vec<Row>,
+    /// Pairs checked (a saved report keeps only some rows).
+    pub pairs: usize,
+    /// Its parameters.
+    pub params: Params,
+    /// The state of the line it ran on (a project).
+    pub state: Option<LineState>,
+}
+
+impl Report {
+    /// Pairs below z, and conductor below z (m).
+    fn below(&self) -> (usize, f64) {
+        let b: Vec<&Row> = self.rows.iter().filter(|r| r.margin() < 0.0).collect();
+        (b.len(), b.iter().map(|r| r.length_below).sum())
+    }
+}
+
+/// A pair compared with the saved report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Change {
+    /// Below z now, not before.
+    New,
+    /// Below z before, not now.
+    Fixed,
+    /// Below z both times, worse now (by more than 1 cm).
+    Worse,
+    /// Below z both times, better now.
+    Better,
+}
+
+impl Change {
+    fn text(self) -> &'static str {
+        match self {
+            Change::New => "new",
+            Change::Fixed => "fixed",
+            Change::Worse => "worse",
+            Change::Better => "better",
+        }
+    }
+}
+
+/// A pair, in its case.
+type PairKey = (String, [(String, usize); 2]);
+
+/// A run compared with a saved report: each pair's change, and the saved
+/// pairs below z that are no more (their spans gone).
+#[derive(Debug, Clone, Default)]
+pub struct Comparison {
+    /// By pair.
+    pub changes: BTreeMap<PairKey, Change>,
+    /// Saved pairs below z not found now.
+    pub gone: usize,
+}
+
+impl Comparison {
+    /// Compares a new run with the saved rows.
+    pub fn of(new: &[Row], saved: &[Row]) -> Self {
+        let old: BTreeMap<PairKey, &Row> = saved.iter().map(|r| (r.key(), r)).collect();
+        let mut out = Comparison::default();
+        for r in new {
+            let before = old.get(&r.key()).map(|o| o.margin());
+            let now = r.margin();
+            let change = match before {
+                Some(b) if b < 0.0 && now >= 0.0 => Some(Change::Fixed),
+                Some(b) if b < 0.0 && now < b - 0.01 => Some(Change::Worse),
+                Some(b) if b < 0.0 && now > b + 0.01 => Some(Change::Better),
+                Some(b) if b < 0.0 => None,
+                _ if now < 0.0 => Some(Change::New),
+                _ => None,
+            };
+            if let Some(c) = change {
+                out.changes.insert(r.key(), c);
+            }
+        }
+        let now: BTreeSet<PairKey> = new.iter().map(Row::key).collect();
+        out.gone = saved
+            .iter()
+            .filter(|r| r.margin() < 0.0 && !now.contains(&r.key()))
+            .count();
+        out
+    }
+
+    /// Counts in words.
+    pub fn summary(&self) -> String {
+        let n = |c: Change| self.changes.values().filter(|x| **x == c).count();
+        let mut s = format!(
+            "{} new, {} fixed, {} worse, {} better",
+            n(Change::New),
+            n(Change::Fixed),
+            n(Change::Worse),
+            n(Change::Better)
+        );
+        if self.gone > 0 {
+            s.push_str(&format!(", {} gone (their spans are no more)", self.gone));
+        }
+        s
+    }
+}
+
+/// A question waiting in the window.
+#[derive(Debug, Clone, PartialEq)]
+enum Ask {
+    /// A report of this name exists: replace it?
+    Overwrite(String),
+    /// Run again: replace the saved report with this run?
+    Replace,
 }
 
 /// A line to draw: the worst station of a pair, with its label.
@@ -95,6 +282,8 @@ pub struct Out {
     pub go: Option<Selection>,
     /// The line to draw (d and z), replacing the last.
     pub measure: Option<Measure>,
+    /// A command to apply (a report saved).
+    pub apply: Option<(String, ols_session::Command)>,
 }
 
 /// The Distance between conductors window.
@@ -113,6 +302,20 @@ pub struct PhaseDistanceWindow {
     pub only_below: bool,
     /// The row clicked.
     pub picked: Option<usize>,
+    /// The values of a saved report (file name, text), used instead of
+    /// the file until another is chosen.
+    pub values: Option<(String, String)>,
+    /// The saved report shown or run again.
+    pub loaded: Option<CheckReport>,
+    /// The name to save under.
+    pub save_name: String,
+    /// The last run compared with the saved report.
+    pub comparison: Option<Comparison>,
+    ask: Option<Ask>,
+    compared: bool,
+    save_error: Option<String>,
+    /// The line's state against the saved report's, for this line version.
+    since: Option<(u64, String, bool)>,
     job: Job<Report>,
 }
 
@@ -126,6 +329,14 @@ impl Default for PhaseDistanceWindow {
             settings: PhaseDistanceSettings::default(),
             only_below: true,
             picked: None,
+            values: None,
+            loaded: None,
+            save_name: String::new(),
+            comparison: None,
+            ask: None,
+            compared: true,
+            save_error: None,
+            since: None,
             job: Job::default(),
         }
     }
@@ -161,6 +372,41 @@ fn circuit_names(model: &Model) -> Vec<String> {
     v
 }
 
+/// The insulation level each circuit is checked at: its sections'
+/// (the Electrical circuits table's column), else high.
+fn levels(model: &Model) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for s in &model.line.sections {
+        let level = s
+            .fields
+            .get(LEVEL_FIELD)
+            .and_then(|v| Level::parse(v))
+            .unwrap_or_default();
+        let text = match level {
+            Level::Low => "low",
+            Level::High => "high",
+        };
+        // Sections of one circuit set differently: high wins.
+        let e = out
+            .entry(s.circuit.clone())
+            .or_insert_with(|| text.to_owned());
+        if text == "high" {
+            *e = text.to_owned();
+        }
+    }
+    out
+}
+
+/// The plugin that sets the insulation levels, with its version, when in
+/// use.
+fn plugin_of(model: &Model) -> Option<String> {
+    model
+        .plugin_columns
+        .iter()
+        .find(|c| c.in_use && c.key == LEVEL_FIELD)
+        .map(|c| c.plugin.clone())
+}
+
 impl PhaseDistanceWindow {
     /// Opens the window: the still-air 10 °C cases ticked when none is.
     pub fn show(&mut self, model: &Model) {
@@ -185,7 +431,53 @@ impl PhaseDistanceWindow {
             return;
         }
         self.picked = None;
-        let path = self.file.clone();
+        self.comparison = None;
+        self.ask = None;
+        self.compared = self.loaded.is_none();
+        let (values_file, text) = match &self.values {
+            Some(v) => v.clone(),
+            None => match std::fs::read_to_string(&self.file) {
+                Ok(t) => (
+                    self.file
+                        .file_name()
+                        .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+                    t,
+                ),
+                Err(e) => {
+                    self.job.result = Some(Err(format!("{}: {e}", self.file.display())));
+                    return;
+                }
+            },
+        };
+        let mut params = Params {
+            values_sha256: ols_session::versions::hash(&text),
+            values_file,
+            values_text: text,
+            diagram: self.settings.diagram,
+            diagram_name: String::new(),
+            spacing: self.settings.spacing,
+            nearby: self.settings.nearby,
+            max_distance: self.settings.max_distance,
+            circuits: self.circuits.as_ref().map(|c| c.iter().cloned().collect()),
+            cases: self
+                .cases
+                .iter()
+                .filter_map(|k| model.cases.get(*k))
+                .map(|c| CaseParams {
+                    name: c.case.name.clone(),
+                    temperature_c: c.case.temperature.celsius(),
+                    wind_pressure_pa: c.case.wind_pressure.si(),
+                    ice_thickness_m: c.case.ice_thickness.si(),
+                    ice_load_n_m: c.case.ice_load.map(|l| l.si()),
+                })
+                .collect(),
+            levels: levels(model),
+        };
+        let state = model
+            .editing
+            .as_ref()
+            .ok()
+            .and_then(|e| e.session.check_state().ok());
         let line = model.line.clone();
         let library = model.library.clone();
         let wind = model.wind;
@@ -198,10 +490,8 @@ impl PhaseDistanceWindow {
         let mut settings = self.settings.clone();
         settings.circuits = self.circuits.clone();
         self.job.start(ctx, move || {
-            let text =
-                std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            let code =
-                PhaseDistanceCode::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+            let code = PhaseDistanceCode::parse(&params.values_text)
+                .map_err(|e| format!("{}: {e}", params.values_file))?;
             let diagram = code
                 .diagrams
                 .get(settings.diagram)
@@ -274,24 +564,199 @@ impl PhaseDistanceWindow {
                 }
             }
             rows.sort_by(|a, b| a.margin().total_cmp(&b.margin()));
+            params.diagram_name = diagram.clone();
             Ok(Report {
                 code: code.name,
                 diagram,
                 notes,
+                pairs: rows.len(),
                 rows,
+                params,
+                state,
             })
         });
+    }
+
+    /// Shows saved report `r`: its parameters set (its values used until
+    /// another file is chosen), its results shown; Check runs it again.
+    pub fn load(&mut self, r: &CheckReport, model: &Model) -> Result<(), String> {
+        if r.check != CHECK_ID {
+            return Err(format!("{} is not a {CHECK_TITLE} report", r.id));
+        }
+        let params: Params = serde_json::from_value(r.parameters.clone())
+            .map_err(|e| format!("report {}: parameters: {e}", r.id))?;
+        let saved: Saved = serde_json::from_value(r.results.clone())
+            .map_err(|e| format!("report {}: results: {e}", r.id))?;
+        let mut notes = saved.notes.clone();
+        self.cases.clear();
+        for c in &params.cases {
+            match model.cases.iter().position(|m| m.case.name == c.name) {
+                Some(k) => {
+                    let m = &model.cases[k].case;
+                    if (m.temperature.celsius() - c.temperature_c).abs() > 1e-9
+                        || (m.wind_pressure.si() - c.wind_pressure_pa).abs() > 1e-9
+                        || (m.ice_thickness.si() - c.ice_thickness_m).abs() > 1e-12
+                    {
+                        notes.push(format!(
+                            "weather case \"{}\" has other values now than in the report",
+                            c.name
+                        ));
+                    }
+                    self.cases.insert(k);
+                }
+                None => notes.push(format!(
+                    "weather case \"{}\" of the report is not in the model",
+                    c.name
+                )),
+            }
+        }
+        self.settings.diagram = params.diagram;
+        self.settings.spacing = params.spacing;
+        self.settings.nearby = params.nearby;
+        self.settings.max_distance = params.max_distance;
+        self.circuits = params.circuits.clone().map(|c| c.into_iter().collect());
+        self.values = Some((params.values_file.clone(), params.values_text.clone()));
+        self.save_name = r.id.clone();
+        self.picked = None;
+        self.comparison = None;
+        self.ask = None;
+        self.compared = true;
+        self.job.result = Some(Ok(Report {
+            code: saved.code.clone(),
+            diagram: params.diagram_name.clone(),
+            notes,
+            rows: saved.rows.clone(),
+            pairs: saved.pairs,
+            params,
+            state: Some(r.state.clone()),
+        }));
+        self.loaded = Some(r.clone());
+        self.only_below = true;
+        self.open = true;
+        Ok(())
+    }
+
+    /// The last run as a report named `name` (status draft; a report it
+    /// replaces keeps its note).
+    fn to_check_report(&self, model: &Model, name: &str) -> Result<CheckReport, String> {
+        let Some(Ok(r)) = &self.job.result else {
+            return Err("run the check first".into());
+        };
+        let editing = model
+            .editing
+            .as_ref()
+            .map_err(|e| format!("read-only: {e}"))?;
+        let state = r
+            .state
+            .clone()
+            .ok_or("the run was not made on a project: open the project and run it again")?;
+        let (below, length) = r.below();
+        let saved = Saved {
+            pairs: r.pairs,
+            below,
+            length_below_m: length,
+            code: r.code.clone(),
+            notes: r.notes.clone(),
+            rows: r
+                .rows
+                .iter()
+                .filter(|x| x.margin() < KEPT_WITHIN)
+                .cloned()
+                .collect(),
+        };
+        let note = editing
+            .session
+            .report(name)
+            .map(|o| o.note)
+            .unwrap_or_default();
+        Ok(CheckReport {
+            format: reports::REPORT_FILE_FORMAT.into(),
+            version: reports::REPORT_FILE_VERSION,
+            id: name.to_owned(),
+            check: CHECK_ID.into(),
+            title: CHECK_TITLE.into(),
+            time: editing.session.now().map_err(|e| e.to_string())?,
+            user: editing.user.clone(),
+            app: format!("OLS CAD {}", env!("CARGO_PKG_VERSION")),
+            plugin: plugin_of(model),
+            status: ReportStatus::Draft,
+            note,
+            state,
+            summary: format!(
+                "{} pairs, {below} below z ({length:.0} m of conductor)",
+                r.pairs
+            ),
+            parameters: serde_json::to_value(&r.params).map_err(|e| e.to_string())?,
+            results: serde_json::to_value(&saved).map_err(|e| e.to_string())?,
+        })
+    }
+
+    /// Saves the last run as report `name` (asked first when one of that
+    /// name exists and is not the one run again).
+    fn save(
+        &mut self,
+        model: &Model,
+        name: &str,
+        confirmed: bool,
+    ) -> Option<(String, ols_session::Command)> {
+        let name = name.trim();
+        if name.is_empty() {
+            self.ask = None;
+            self.save_error = Some("give the report a name".into());
+            return None;
+        }
+        let exists = model
+            .editing
+            .as_ref()
+            .ok()
+            .is_some_and(|e| e.session.report(name).is_some());
+        if exists && !confirmed {
+            self.ask = Some(Ask::Overwrite(name.to_owned()));
+            return None;
+        }
+        match self.to_check_report(model, name) {
+            Ok(r) => {
+                self.ask = None;
+                self.comparison = None;
+                let what = format!("saved check report {name}");
+                let command = r.put();
+                // The run shown is the saved report now.
+                if let Some(Ok(rep)) = &mut self.job.result {
+                    rep.rows.retain(|x| x.margin() < KEPT_WITHIN);
+                }
+                self.loaded = Some(r);
+                Some((what, command))
+            }
+            Err(e) => {
+                self.ask = None;
+                self.save_error = Some(e);
+                None
+            }
+        }
     }
 
     /// The window.
     pub fn ui(&mut self, ctx: &egui::Context, model: &Model) -> Out {
         self.job.poll();
+        // A run again of a saved report: compared with it, then asked.
+        if !self.compared
+            && !self.job.running()
+            && let (Some(Ok(new)), Some(old)) = (&self.job.result, &self.loaded)
+        {
+            self.compared = true;
+            if let Ok(saved) = serde_json::from_value::<Saved>(old.results.clone()) {
+                self.comparison = Some(Comparison::of(&new.rows, &saved.rows));
+                self.ask = Some(Ask::Replace);
+            }
+        }
         let mut out = Out::default();
         let mut open = self.open;
         egui::Window::new("Distance between conductors (LeV)")
             .open(&mut open)
             .default_width(980.0)
             .show(ctx, |ui| {
+                explanation(ui);
+                ui.separator();
                 self.settings_ui(ui, model);
                 ui.horizontal(|ui| {
                     if ui
@@ -302,6 +767,7 @@ impl PhaseDistanceWindow {
                     }
                     self.job.status_ui(ui);
                 });
+                self.library_ui(ui, model, &mut out);
                 ui.separator();
                 self.results_ui(ui, &mut out);
             });
@@ -309,17 +775,155 @@ impl PhaseDistanceWindow {
         out
     }
 
-    fn settings_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
-        let code = std::fs::read_to_string(&self.file)
-            .ok()
-            .and_then(|t| PhaseDistanceCode::parse(&t).ok());
+    /// The saved report shown (its line's state now), the questions, and
+    /// saving the last run.
+    fn library_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
+        let session = model.editing.as_ref().ok().map(|e| &e.session);
+        if let Some(r) = &self.loaded {
+            if self
+                .since
+                .as_ref()
+                .is_none_or(|s| s.0 != model.line_version)
+            {
+                let now = session.and_then(|s| s.check_state().ok());
+                self.since = Some(match now {
+                    Some(now) => {
+                        let c = reports::changed_since(&r.state, &now);
+                        (model.line_version, c.summary(), c.is_empty())
+                    }
+                    None => (model.line_version, "not a project".into(), false),
+                });
+            }
+            let (_, since, same) = self.since.clone().unwrap_or_default();
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Saved report \"{}\" — {} by {}, {}:",
+                        r.id,
+                        r.time,
+                        r.user,
+                        r.status.as_str()
+                    ))
+                    .strong(),
+                );
+                let t = egui::RichText::new(if same {
+                    since
+                } else {
+                    format!("stale — {since}")
+                });
+                ui.label(if same {
+                    t.color(egui::Color32::LIGHT_GREEN)
+                } else {
+                    t.color(egui::Color32::YELLOW)
+                });
+                ui.label(
+                    egui::RichText::new("Check runs it again with its parameters")
+                        .small()
+                        .weak(),
+                );
+            });
+        }
+        match self.ask.clone() {
+            Some(Ask::Replace) => {
+                let (name, summary) = (
+                    self.loaded.as_ref().map_or(String::new(), |r| r.id.clone()),
+                    self.comparison
+                        .as_ref()
+                        .map_or(String::new(), Comparison::summary),
+                );
+                crate::menu::message(
+                    ui,
+                    format!("Compared with the saved report: {summary}."),
+                    Some(egui::Color32::YELLOW),
+                );
+                ui.horizontal(|ui| {
+                    ui.label(format!(
+                        "Replace the saved report \"{name}\" with this run?"
+                    ));
+                    if ui.button("Replace").clicked() {
+                        out.apply = self.save(model, &name, true);
+                    }
+                    if ui.button("Keep the saved one").clicked() {
+                        self.ask = None;
+                    }
+                });
+            }
+            Some(Ask::Overwrite(name)) => {
+                ui.horizontal(|ui| {
+                    crate::menu::message(
+                        ui,
+                        format!("A report \"{name}\" exists: replace it with this run?"),
+                        Some(egui::Color32::YELLOW),
+                    );
+                    if ui.button("Replace").clicked() {
+                        out.apply = self.save(model, &name, true);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.ask = None;
+                    }
+                });
+            }
+            None => {}
+        }
+        let ran = matches!(self.job.result, Some(Ok(_))) && !self.job.running();
         ui.horizontal(|ui| {
-            let name = self
-                .file
-                .file_name()
-                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-            ui.label(format!("values: {name}"))
-                .on_hover_text(self.file.display().to_string());
+            if self.save_name.is_empty() {
+                self.save_name = CHECK_TITLE.into();
+            }
+            ui.label("Save in the library of performed checks as");
+            ui.add(egui::TextEdit::singleline(&mut self.save_name).desired_width(240.0));
+            let why = match (ran, session) {
+                (false, _) => Some("run the check first"),
+                (_, None) => Some("open a project to keep reports"),
+                _ => None,
+            };
+            let r = ui.add_enabled(
+                why.is_none() && self.ask.is_none(),
+                egui::Button::new("Save"),
+            );
+            let r = match why {
+                Some(w) => r.on_disabled_hover_text(w),
+                None => r.on_hover_text(
+                    "Kept with this line's branch: its parameters, the pairs below z and \
+                     within 1 m of it, the state of the line",
+                ),
+            };
+            if r.clicked() {
+                let name = self.save_name.clone();
+                out.apply = self.save(model, &name, false);
+            }
+        });
+        if let Some(e) = &self.save_error {
+            crate::menu::error_label(ui, e);
+        }
+        if out.apply.is_some() {
+            self.save_error = None;
+            self.since = None;
+        }
+    }
+
+    fn settings_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let code = match &self.values {
+            Some((_, t)) => PhaseDistanceCode::parse(t).ok(),
+            None => std::fs::read_to_string(&self.file)
+                .ok()
+                .and_then(|t| PhaseDistanceCode::parse(&t).ok()),
+        };
+        ui.horizontal(|ui| {
+            match &self.values {
+                Some((name, _)) => {
+                    ui.label(format!("values: {name} (as saved in the report)"))
+                        .on_hover_text("Choose… to use a file instead");
+                }
+                None => {
+                    let name = self
+                        .file
+                        .file_name()
+                        .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+                    ui.label(format!("values: {name}"))
+                        .on_hover_text(self.file.display().to_string());
+                }
+            }
             if ui.button("Choose…").clicked()
                 && let Some(p) = rfd::FileDialog::new()
                     .add_filter("Phase distance code", &["olspd"])
@@ -327,6 +931,7 @@ impl PhaseDistanceWindow {
                     .pick_file()
             {
                 self.file = p;
+                self.values = None;
             }
             match &code {
                 Some(c) => {
@@ -460,15 +1065,7 @@ impl PhaseDistanceWindow {
 
     fn results_ui(&mut self, ui: &mut egui::Ui, out: &mut Out) {
         let report = match &self.job.result {
-            None => {
-                ui.label(
-                    "z = k·√(f + l_k) + C between the conductors of each span, at stations \
-                     along each, the closest point of the other; f the local sag, l_k from the \
-                     strings at the ends, k by the system angle and swing class, C by voltage, \
-                     circuits and altitude.",
-                );
-                return;
-            }
+            None => return,
             Some(Err(e)) => {
                 crate::menu::error_label(ui, e);
                 return;
@@ -478,16 +1075,20 @@ impl PhaseDistanceWindow {
         for n in &report.notes {
             crate::menu::message(ui, egui::RichText::new(n).small(), None);
         }
-        let below: Vec<&Row> = report.rows.iter().filter(|r| r.margin() < 0.0).collect();
-        let length: f64 = below.iter().map(|r| r.length_below).sum();
+        let (below, length) = report.below();
+        let kept = report.rows.len() < report.pairs;
         let mut export = false;
         ui.horizontal(|ui| {
             ui.label(format!(
-                "{} — {}: {} pairs, {} below z ({length:.0} m of conductor)",
+                "{} — {}: {} pairs, {below} below z ({length:.0} m of conductor){}",
                 report.code,
                 report.diagram,
-                report.rows.len(),
-                below.len()
+                report.pairs,
+                if kept {
+                    format!("; {} kept (within {KEPT_WITHIN} m of z)", report.rows.len())
+                } else {
+                    String::new()
+                }
             ));
             ui.checkbox(&mut self.only_below, "only those");
             export = ui.button("Export CSV…").clicked();
@@ -508,6 +1109,9 @@ impl PhaseDistanceWindow {
                             "d − z", "below m", "f m", "l_k m", "β °", "k", "C m", "",
                         ] {
                             ui.strong(h);
+                        }
+                        if self.comparison.is_some() {
+                            ui.strong("vs saved");
                         }
                         ui.end_row();
                         for (i, r) in report
@@ -558,6 +1162,18 @@ impl PhaseDistanceWindow {
                                 note.push("nearby span");
                             }
                             ui.label(egui::RichText::new(note.join(", ")).small().weak());
+                            if let Some(c) = &self.comparison {
+                                let change = c.changes.get(&r.key()).copied();
+                                let text = change.map_or("", Change::text);
+                                let color = match change {
+                                    Some(Change::New | Change::Worse) => egui::Color32::LIGHT_RED,
+                                    Some(Change::Fixed | Change::Better) => {
+                                        egui::Color32::LIGHT_GREEN
+                                    }
+                                    None => ui.visuals().weak_text_color(),
+                                };
+                                ui.label(egui::RichText::new(text).color(color));
+                            }
                             ui.end_row();
                         }
                     });
@@ -576,6 +1192,56 @@ impl PhaseDistanceWindow {
             ));
         }
     }
+}
+
+/// How the check computes, in brief (always shown at the top).
+fn explanation(ui: &mut egui::Ui) {
+    egui::CollapsingHeader::new("How it is computed")
+        .id_salt("phase-distance-how")
+        .default_open(true)
+        .show(ui, |ui| {
+            let small = |ui: &mut egui::Ui, t: &str| {
+                ui.label(egui::RichText::new(t).small());
+            };
+            small(
+                ui,
+                "LeV Annex 6, 2.2.1, still air: the conductors of a span must be at least \
+                 z = k·√(f + l_k) + C apart (the larger z of the two conductors).",
+            );
+            small(
+                ui,
+                "Pairs: the conductors between the same two structures (and, ticked, nearby \
+                 spans within the distance); not two earth wires, one circuit's same phase, \
+                 or two sharing a clamp; a bundle by its subconductors.",
+            );
+            small(
+                ui,
+                "Stations every Δs along each conductor in turn; at each, the closest point \
+                 of the other, measured in the vertical plane through both: d their distance, \
+                 β the angle of the line joining them from the vertical.",
+            );
+            small(
+                ui,
+                "f: the local sag there, below the chord between the clamps (0 at the \
+                 clamps). l_k: the suspension string's length at each end (I-string: its \
+                 length; V, tension or clamped: 0; below a V: the string below; TAK: its \
+                 suspension string), linear between the ends.",
+            );
+            small(
+                ui,
+                "k: by β (0° one above the other, 90° side by side) on the line of the \
+                 conductor's swing class w = d/q of the diagram chosen. C: C₁ within a circuit \
+                 and towards an earth wire, C₂ between circuits, by the higher nominal \
+                 voltage and the circuit's insulation level (low / high row), +14 % per \
+                 1000 m of mean conductor height above 1000 m.",
+            );
+            small(
+                ui,
+                "Per pair: the worst station (smallest d − z) and the length of conductor \
+                 below z. A worst station at a clamp has f ≈ 0: z there is C plus the string \
+                 term.",
+            );
+        });
 }
 
 fn csv(r: &Report) -> String {

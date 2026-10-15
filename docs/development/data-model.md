@@ -576,12 +576,35 @@ case name), `condition` (initial, creep, load, max sag), factors
 |---|---|
 | `ols_meta(key, value)` | settings: `session_schema` (3), `grid_size`, the weather file used, … |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
-| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; `json` as in the line file; `meta` (id `line`) holds `name`, `crs`, `display`, `systems`, `creep_stretch`, `bimetallic`, `circuit_starts` (projects before routes and alignments also an `alignment`, converted once when they open) |
+| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `report` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; `meta` (id `line`) holds `name`, `crs`, `display`, `systems`, `creep_stretch`, `bimetallic`, `circuit_starts` (projects before routes and alignments also an `alignment`, converted once when they open) |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
 | `line_snapshot` | named saved lines |
 | `library_file(kind, name, user, text)` | the project's library files; `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`; not logged, not undone |
 | `spatial_index` | plan bounds and tile of every object (ADR-0008) |
 | `vc_*`, `edit_grant`, `surface`, point cloud tables | versions and reviews, edit rights, terrain surfaces, LiDAR ([Versions](../user-guide/versions.md), ADR-0007) |
+
+### Performed checks (`ols_session::reports`)
+
+A check's saved run: a `model_object` of kind `report` on the project
+line it was made on, so it belongs to that line's branch (commits,
+checkout, merges and bundles carry it like any object; saving, a status,
+a note, a rename or a deletion is a logged, undoable command). Not part
+of `ols_line::Line`: the line file and the views never see it, and a line
+replaced (`replace_line`) keeps it. Restricted edit grants do not limit
+it. Exported alone as `.olscr` (JSON).
+
+`CheckReport` (`format` `ols-check-report`, `version` 1): `id` (its name,
+unique on the line), `check` (e.g. `phase-distance`), `title`, `time`
+(UTC), `user`, `app` (and version), `plugin` (name and version, when one
+took part), `status` (`draft`, `checked`, `approved`), `note`, `state`
+(the line state: `line`, `seq` — its last log entry — and `objects`, a
+SHA-256 per object `kind:id` and project library file
+`library:kind/name`, compared with now to say what changed since),
+`summary`, `parameters` and `results` (check-specific JSON). The LeV
+distance between conductors keeps as parameters the values file's name,
+text and SHA-256, the diagram, spacing, nearby pairs, the circuits, the
+weather cases with their values and each circuit's insulation level;
+as results the counts and the pairs below z or within 1 m of it.
 
 ### Commands (the only way to change a project)
 
