@@ -1121,6 +1121,16 @@ mod tests {
         assert_eq!(row(380.0).c1_bil_kv, Some([1300.0, 1425.0]));
         assert_eq!(row(380.0).c2_bil_kv, Some([1550.0, 1675.0]));
         assert_eq!(c.c(false, 220.0, Level::Low), 2.29);
+        // C₃ and C₄ (brief approaches), as in the table.
+        assert_eq!(row(110.0).c3, Some([0.61, 0.61]));
+        assert_eq!(row(132.0).c4, Some([0.89, 0.89]));
+        assert_eq!(row(220.0).c3, Some([1.35, 1.60]));
+        assert_eq!(row(220.0).c4, Some([1.60, 1.90]));
+        assert_eq!(row(380.0).c3, Some([2.09, 2.33]));
+        assert_eq!(row(380.0).c4, Some([2.30, 2.86]));
+        assert!(c.voltages.iter().all(|r| r.c3.is_some() && r.c4.is_some()));
+        assert_eq!(row(3.0).c1_bil_kv, Some([40.0, 40.0]));
+        assert!(!row(3.0).two_levels());
         assert!((c.altitude_factor(500.0) - 1.0).abs() < 1e-12);
         assert!((c.altitude_factor(2000.0) - 1.14).abs() < 1e-12);
         let d = &c.diagrams[0];
