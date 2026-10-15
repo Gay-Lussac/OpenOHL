@@ -385,6 +385,10 @@ impl Session {
             return Ok(());
         }
         for key in changed {
+            // Reports of checks change nothing of the design.
+            if key.0 == Kind::Report {
+                continue;
+            }
             // Points tied to structures the user may move follow them.
             if key.0 == Kind::AlignmentPoint
                 && let Some((old, new)) = lines

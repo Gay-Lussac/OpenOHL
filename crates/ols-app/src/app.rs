@@ -252,6 +252,8 @@ pub struct Ready {
     pub galloping: crate::galloping::GallopingWindow,
     /// Checks › Distance between conductors (LeV).
     pub phase_distance: crate::phase_distance::PhaseDistanceWindow,
+    /// Checks › Performed checks: the library of saved reports.
+    pub check_library: crate::check_library::CheckLibraryWindow,
     /// Checks › Vegetation.
     pub vegetation: crate::vegetation::VegetationWindow,
     /// Checks › As-built wires.
@@ -356,6 +358,7 @@ impl Ready {
             placement: None,
             galloping: Default::default(),
             phase_distance: Default::default(),
+            check_library: Default::default(),
             vegetation: Default::default(),
             wirefit: Default::default(),
             vertical_clearances: crate::clearance_zones::ZoneWindow::new(
@@ -5562,6 +5565,17 @@ fn menus(
                 .small()
                 .weak(),
         );
+        if ui
+            .button("Performed checks…")
+            .on_hover_text(
+                "The library of the checks saved on this project line: whether the line changed \
+                 since, status, note; open one again, export, import",
+            )
+            .clicked()
+        {
+            r.check_library.show();
+            ui.close();
+        }
         ui.separator();
         ui.label(egui::RichText::new("Structure loads").strong());
         if ui
@@ -6206,7 +6220,27 @@ impl eframe::App for App {
                 if let Some(target) = go.into_iter().flatten().next() {
                     ready.go_to(target);
                 }
+                let library = ready.check_library.ui(&ctx, &ready.model);
+                if let Some(r) = library.open {
+                    match r.check.as_str() {
+                        crate::phase_distance::CHECK_ID => {
+                            if let Err(e) = ready.phase_distance.load(&r, &ready.model) {
+                                ready.model.log.push(e);
+                            }
+                        }
+                        other => ready
+                            .model
+                            .log
+                            .push(format!("no window for the check \"{other}\" here")),
+                    }
+                }
+                if let Some((what, command)) = library.apply {
+                    ready.perform(crate::edit::Action::Command { what, command });
+                }
                 let out = ready.phase_distance.ui(&ctx, &ready.model);
+                if let Some((what, command)) = out.apply {
+                    ready.perform(crate::edit::Action::Command { what, command });
+                }
                 if let Some(target) = out.go {
                     ready.go_to(target);
                 }

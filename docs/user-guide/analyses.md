@@ -115,7 +115,34 @@ two spans and circuits, C₁ or C₂, kV, d, z, d − z, the length of
 conductor below z, and at the worst station f, l_k, β, k and C, with a
 note when it is at a clamp (f ≈ 0) or on a nearby span. Clicking a span
 selects it and draws the worst station's line in the 3D view, labelled
-with d and z. **Export CSV…** writes every pair with the points.
+with d and z. **Export CSV…** writes every pair with the points. The
+window explains the computation at its top ("How it is computed").
+
+**Save** keeps the run in the [library of performed
+checks](#the-library-of-performed-checks) under a name: its parameters
+(the values file's text included), the pairs below z and within 1 m of
+it, the counts. Opened again it shows its results and whether the line
+changed since (*stale*); **Check** runs it again with its parameters,
+shows each pair against the saved run (new, fixed, worse, better) and
+asks whether to replace the saved report.
+
+## The library of performed checks
+
+**Checks › Performed checks…** lists the checks saved on the project
+line you work on: name, check, when, by whom, **status** (draft,
+checked, approved — chosen in the list), the **line** (unchanged, or
+what changed since: e.g. "1 structure changed"), the result and a
+**note** (double-click to write it; double-click the name to rename).
+Filter by text, check and status. **Open** shows the report in its
+check's window; **Export…** writes it to a file (`.olscr`), **Import…**
+reads one onto this line (a report of the same name is replaced after
+you confirm); **Delete…** asks first.
+
+Reports are kept with the project line (its branch in
+[Versions](versions.md)): a line made from another takes its reports,
+commits, merges and bundles carry them, and each change to a report is
+an edit like any other (undo brings it back). Saving a report needs a
+project and a designer's rights.
 
 ## LiDAR classification
 

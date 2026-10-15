@@ -1,13 +1,13 @@
 # LeV distance between conductors in the span (still air) — specification
 
-Status: **steps 1 to 4 of the plan implemented** (the values file
+Status: **steps 1 to 4 and 6 of the plan implemented** (the values file
 `libraries/phase-distance/lev-ch.olspd`, the check
 `ols_clearance::phase_distance`, with tests worked by hand; the length
 below z, nearby pairs and the faster search after the first run on an
 existing line; the Circuits table's insulation level, a column of the
 LeV plugin; the window, Checks › LeV / OLEI › Distance between
-conductors); the library of performed checks and the command line to
-come. Decisions marked
+conductors; the library of performed checks, Checks › Performed
+checks); the command line to come. Decisions marked
 *(decided)* were taken with the user; *(open)* ones are still to settle.
 Change this page when a decision changes.
 
@@ -176,7 +176,8 @@ differing by up to 40 % between conductors), phase spacers (2.2.4).
    for the session; with the library, a saved report keeps them.
 5. **The command line.** The same check from `ols line` (parameter file,
    cases, circuits), its CSV.
-6. **The library of performed checks** *(decided — see below)*.
+6. **The library of performed checks** *(done, for this check — see
+   below; the other checks to follow)*.
 7. **Tests and benchmarks** (below), docs (user guide, theory page).
 
 ### The library of performed checks *(decided)*
