@@ -216,6 +216,60 @@ impl PhaseDistanceCode {
             altitude_per_1000: altitude.per_1000_m,
         })
     }
+
+    /// As a code file (read back by [`Self::parse`]); `comment` heads it
+    /// (each line becomes a `#` line).
+    pub fn to_text(&self, comment: &str) -> String {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        for l in comment.lines() {
+            let _ = writeln!(out, "# {l}");
+        }
+        if !comment.is_empty() {
+            out.push('\n');
+        }
+        let q = |s: &str| toml::Value::String(s.to_owned()).to_string();
+        let _ = writeln!(out, "format = \"{PHASE_DISTANCE_FILE_FORMAT}\"");
+        let _ = writeln!(out, "version = {PHASE_DISTANCE_FILE_VERSION}");
+        let _ = writeln!(out, "name = {}", q(&self.name));
+        if self.altitude_from.is_finite() || self.altitude_per_1000 != 0.0 {
+            out.push_str("\n[altitude]\n");
+            if self.altitude_from.is_finite() {
+                let _ = writeln!(out, "from = \"{} m\"", self.altitude_from);
+            }
+            let _ = writeln!(out, "per_1000_m = {}", self.altitude_per_1000);
+        }
+        let pair = |c: [f64; 2]| {
+            if c[0] == c[1] {
+                format!("[\"{} m\"]", c[0])
+            } else {
+                format!("[\"{} m\", \"{} m\"]", c[0], c[1])
+            }
+        };
+        for r in &self.voltages {
+            let _ = write!(
+                out,
+                "\n[[voltage]]\nkv = {}\nc1 = {}\nc2 = {}\n",
+                r.kv,
+                pair(r.c1),
+                pair(r.c2)
+            );
+        }
+        for d in &self.diagrams {
+            let _ = write!(
+                out,
+                "\n[[diagram]]\nname = {}\nwind_pressure = \"{} Pa\"\nline = [\n",
+                q(&d.name),
+                d.wind_pressure
+            );
+            for l in &d.lines {
+                let w = l.w_max.map_or(String::new(), |w| format!("w_max = {w}, "));
+                let _ = writeln!(out, "    {{ {w}k0 = {}, k90 = {} }},", l.k0, l.k90);
+            }
+            out.push_str("]\n");
+        }
+        out
+    }
 }
 
 #[derive(Deserialize)]
@@ -953,6 +1007,15 @@ mod tests {
 
     fn run(c: &[Conductor], s: &PhaseDistanceSettings) -> Vec<PhaseDistancePair> {
         check(&lev(), s, c, &Budget::new()).unwrap()
+    }
+
+    /// Written back and read again: the same values.
+    #[test]
+    fn written_and_read_back() {
+        let c = lev();
+        let text = c.to_text("edited\nby a test");
+        assert!(text.starts_with("# edited\n# by a test\n"));
+        assert_eq!(PhaseDistanceCode::parse(&text).unwrap(), c);
     }
 
     /// The shipped LeV values: C₁/C₂ by voltage and level, the next row

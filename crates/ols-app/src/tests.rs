@@ -11441,3 +11441,97 @@ fn performed_checks_are_saved_and_run_again() {
     r.perform(crate::edit::Action::Undo);
     assert_eq!(r.model.editing.as_ref().unwrap().session.reports().len(), 1);
 }
+
+/// The LeV values in the window: shown as tables, locked; an admin edits
+/// them (Edit values), saved as the project's copy and used by the next run;
+/// back to the file; a designer may not edit them.
+#[test]
+fn phase_distance_values_are_locked_but_an_admin_edits_them() {
+    let model = synthetic_project("values-locked");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.phase_distance.show(&r.model);
+    }
+    harness.run();
+    // Shown: the 380 kV row.
+    harness.get_by_label("380");
+    harness.get_by_label("3.64");
+    harness.get_by_label("Edit values").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let code = r.phase_distance.editing.as_mut().expect("editing");
+        code.voltages.last_mut().unwrap().c2[1] = 3.70;
+    }
+    harness.run();
+    harness.get_by_label("Save in the project").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.phase_distance.editing.is_none());
+        let s = &r.model.editing.as_ref().unwrap().session;
+        let files = s.library_files("phase-distance").unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, "lev-ch.olspd");
+        assert!(files[0].1.contains("3.7 m"), "{}", files[0].1);
+        assert!(files[0].1.starts_with("# Edited in OLS CAD by"));
+        // The next run uses them.
+        if r.phase_distance.cases.is_empty() {
+            r.phase_distance.cases.insert(0);
+        }
+        let ctx = egui::Context::default();
+        r.phase_distance.start(&r.model, &ctx);
+    }
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let (Some(rep), false) = r.phase_distance.report() {
+            let rep = rep.as_ref().unwrap();
+            assert!(rep.params.values_text.contains("3.7 m"));
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 60);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    harness.get_by_label_contains("the project's copy");
+    harness.get_by_label("Back to the file").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s = &r.model.editing.as_ref().unwrap().session;
+        assert!(s.library_files("phase-distance").unwrap().is_empty());
+        // A designer: locked.
+        let admin = r.model.editing.as_ref().unwrap().user.clone();
+        s.set_user(&admin, "dee", ols_session::Role::Designer)
+            .unwrap();
+        r.model.editing.as_mut().unwrap().user = "dee".into();
+    }
+    harness.run();
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .phase_distance
+            .editing
+            .is_none()
+    );
+    harness.get_by_label("Edit values").click();
+    harness.run();
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .phase_distance
+            .editing
+            .is_none(),
+        "locked for a designer"
+    );
+}

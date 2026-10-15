@@ -170,7 +170,8 @@ differing by up to 40 % between conductors), phase spacers (2.2.4).
    (default: a still-air case at 10 °C), the circuits ticked (a
    drop-down of tick boxes, select all / select none), the diagram
    (500 or 650 N/m²), Δs, nearby pairs and their distance (the levels:
-   the Circuits table). The results in the window (worst station per
+   the Circuits table). The values used shown as tables, locked; an
+   admin may edit them, kept as the project's copy of the file. The results in the window (worst station per
    pair, all its terms; only those below z, or all), the clicked one's
    line in the 3D view with d and z; CSV export. The settings are kept
    for the session; with the library, a saved report keeps them.

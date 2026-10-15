@@ -115,8 +115,17 @@ two spans and circuits, C₁ or C₂, kV, d, z, d − z, the length of
 conductor below z, and at the worst station f, l_k, β, k and C, with a
 note when it is at a clamp (f ≈ 0) or on a nearby span. Clicking a span
 selects it and draws the worst station's line in the 3D view, labelled
-with d and z. **Export CSV…** writes every pair with the points. The
-window explains the computation at its top ("How it is computed").
+with d and z. **Export CSV…** writes every pair with the points. Below
+the settings, the window explains the computation ("How it is
+computed") and shows the **values used** as tables, for transparency:
+C₁ and C₂ by nominal voltage (low and high rows), the k lines of each
+diagram by swing class, the altitude rule, and where they come from
+(the file, a saved report, or the project's copy). They are locked;
+an **admin** of the project may **Edit values** and **Save in the
+project**: the project's copy of the file (headed with who edited it and
+when), used by every run on the project and kept in each report;
+**Back to the file** removes the copy. **Choose a values file…** uses
+another `.olspd` instead.
 
 **Save** keeps the run in the [library of performed
 checks](#the-library-of-performed-checks) under a name: its parameters
