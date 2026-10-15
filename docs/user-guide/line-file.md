@@ -125,7 +125,9 @@ How the wire is held at each point of a section follows from these. The usual ca
 | `bundle_rotation_deg` | no (0) | Turns the arrangement (counter-clockwise looking ahead). 0: the two highest subconductors level — two side by side, three with two side by side above one, four in a square. |
 | `points` | yes | `{ "structure": id, "set": n }` (a wire point) in line order; spans are between consecutive points. |
 | `stringing` | yes | See below. |
-| `loads` | no | Point loads: `{ "span": index, "fraction": 0–1 (horizontal, from the back point), "vertical": N, "label": "…" }`. |
+| `loads` | no | Point loads: `{ "span": index, "fraction": 0–1 (horizontal, from the back point) or "distance": m (from the back point, horizontal), "vertical": N, "label": "…" }`. |
+| `spread_loads` | no | Loads spread along part of a span: `{ "span": index, "start": place, "end": place, "load": N/m (downward, whole bundle), "label": "…" }`; a place is `{ "fraction": 0–1 }` or `{ "distance": m }`. Solved by finite elements on the wire they cover (the ruling span leaves loads out). |
+| `span_points` | no | Points on spans where spacers are clamped: `{ "label": "P1", "span": index, "at": place }`. |
 | `color` | no | Display colour `#rrggbb`, overriding the phase colour. |
 | `calculation` | no (`"initial-fe"`) | How the section is solved: a cable condition and a method — `initial-rs`, `creep-rs`, `load-rs`, `max-sag-rs`, `initial-fe`, `creep-fe`, `load-fe`, `max-sag-fe`. See below. |
 

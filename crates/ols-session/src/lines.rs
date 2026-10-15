@@ -101,6 +101,8 @@ pub fn empty_line() -> Line {
         solver: Default::default(),
         circuit_starts: Vec::new(),
         condition_cases: Default::default(),
+        spacers: vec![],
+        defaults: Default::default(),
     }
 }
 

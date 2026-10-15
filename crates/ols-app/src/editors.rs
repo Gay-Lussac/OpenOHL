@@ -2693,6 +2693,8 @@ impl SectionForm {
             points: self.points.clone(),
             stringing: self.stringing.clone(),
             loads: old.map_or_else(Vec::new, |o| o.loads.clone()),
+            spread_loads: old.map_or_else(Vec::new, |o| o.spread_loads.clone()),
+            span_points: old.map_or_else(Vec::new, |o| o.span_points.clone()),
             color: self.color.clone(),
             calculation: self.calculation,
             fields: old.map_or_else(Default::default, |o| o.fields.clone()),

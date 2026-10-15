@@ -107,6 +107,8 @@ pub struct Impact {
     /// Jumpers deleted with it (at its attachments, or at the points of
     /// deleted sections).
     pub jumpers: Vec<String>,
+    /// Spacers deleted with it (on deleted sections).
+    pub spacers: Vec<String>,
     /// Alignments deleted with it (a route's alignments).
     pub alignments_deleted: Vec<String>,
     /// Alignments an alignment point deleted is taken off (when it is on
@@ -127,6 +129,7 @@ impl Impact {
             attachments: vec![],
             sections: vec![],
             jumpers: vec![],
+            spacers: vec![],
             alignments_deleted: vec![],
             alignments_changed: vec![],
             structures_changed: vec![],
@@ -140,6 +143,7 @@ impl Impact {
         !(self.attachments.is_empty()
             && self.sections.is_empty()
             && self.jumpers.is_empty()
+            && self.spacers.is_empty()
             && self.alignments_deleted.is_empty()
             && self.alignments_changed.is_empty()
             && self.structures_changed.is_empty()
@@ -152,6 +156,7 @@ impl Impact {
             ("attachments and insulators", &self.attachments[..]),
             ("sections", &self.sections[..]),
             ("jumpers", &self.jumpers[..]),
+            ("spacers", &self.spacers[..]),
             ("alignments deleted", &self.alignments_deleted[..]),
             (
                 "alignments it is taken off (their other points keep their order)",
@@ -250,6 +255,8 @@ pub enum Kind {
     /// A performed check's report ([`reports`]): kept with the line's
     /// branch, not part of the line itself.
     Report,
+    /// An interphase spacer (between span points of two sections).
+    Spacer,
 }
 
 impl Kind {
@@ -264,6 +271,7 @@ impl Kind {
             Self::Section => "section",
             Self::Jumper => "jumper",
             Self::Report => "report",
+            Self::Spacer => "spacer",
         }
     }
 
@@ -277,6 +285,7 @@ impl Kind {
             "section" => Self::Section,
             "jumper" => Self::Jumper,
             "report" => Self::Report,
+            "spacer" => Self::Spacer,
             other => return Err(SessionError::Store(format!("unknown object kind {other}"))),
         })
     }
@@ -560,6 +569,8 @@ struct Meta {
     bimetallic: ols_cables::BimetallicModel,
     #[serde(default, skip_serializing_if = "ols_line::SolverOptions::is_default")]
     solver: ols_line::SolverOptions,
+    #[serde(default, skip_serializing_if = "ols_line::Defaults::is_default")]
+    defaults: ols_line::Defaults,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     circuit_starts: Vec<ols_line::SectionPoint>,
 }
@@ -576,6 +587,7 @@ impl Meta {
             creep_stretch: line.creep_stretch.clone(),
             bimetallic: line.bimetallic,
             solver: line.solver,
+            defaults: line.defaults,
             circuit_starts: line.circuit_starts.clone(),
         }
     }
@@ -725,6 +737,11 @@ fn objects_of(line: &Line) -> Vec<(Kind, String, Value)> {
             .iter()
             .map(|j| (Kind::Jumper, j.id.clone(), json(j))),
     );
+    out.extend(
+        line.spacers
+            .iter()
+            .map(|s| (Kind::Spacer, s.id.clone(), json(s))),
+    );
     out
 }
 
@@ -798,6 +815,8 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
         solver: meta.solver,
         circuit_starts: meta.circuit_starts,
         condition_cases: Default::default(),
+        spacers: vec![],
+        defaults: meta.defaults,
     };
     for ((kind, id), o) in ordered {
         let v = o.value.clone();
@@ -824,6 +843,9 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
                 .push(serde_json::from_value::<Jumper>(v).map_err(parse_err)?),
             // Kept with the line, not part of it.
             Kind::Report => {}
+            Kind::Spacer => line
+                .spacers
+                .push(serde_json::from_value::<ols_line::Spacer>(v).map_err(parse_err)?),
         }
     }
     // Ids inside the JSON must match the object ids.
@@ -865,6 +887,13 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
                                 out.insert(sec.id.clone());
                             }
                         }
+                    }
+                }
+                // The sections it joins.
+                Kind::Spacer => {
+                    if let Some(s) = line.spacers.iter().find(|s| &s.id == id) {
+                        out.insert(s.a.section.clone());
+                        out.insert(s.b.section.clone());
                     }
                 }
                 Kind::Meta
@@ -1454,6 +1483,9 @@ impl Session {
                 for j in &impact.jumpers {
                     out.push(del(Kind::Jumper, j));
                 }
+                for s in &impact.spacers {
+                    out.push(del(Kind::Spacer, s));
+                }
                 for sec in &impact.sections {
                     out.push(del(Kind::Section, sec));
                 }
@@ -1522,6 +1554,9 @@ impl Session {
                 };
                 for j in &impact.jumpers {
                     out.push(del(Kind::Jumper, j));
+                }
+                for s in &impact.spacers {
+                    out.push(del(Kind::Spacer, s));
                 }
                 for sec in &impact.sections {
                     out.push(del(Kind::Section, sec));
@@ -1614,6 +1649,20 @@ impl Session {
                             out.push(put(Kind::AlignmentPoint, &p.id.clone(), &p));
                         }
                     }
+                    // A section renamed: its spacers follow.
+                    Kind::Section => {
+                        for s in &self.line.spacers {
+                            if s.a.section == id || s.b.section == id {
+                                let mut s = s.clone();
+                                for end in [&mut s.a, &mut s.b] {
+                                    if end.section == id {
+                                        end.section = new_id.clone();
+                                    }
+                                }
+                                out.push(put(Kind::Spacer, &s.id.clone(), &s));
+                            }
+                        }
+                    }
                     // A route renamed: its alignments and the structures
                     // giving it follow.
                     Kind::Route => {
@@ -1647,7 +1696,7 @@ impl Session {
                             }
                         }
                     }
-                    Kind::Section | Kind::Jumper => {}
+                    Kind::Jumper | Kind::Spacer => {}
                     other => {
                         return Err(refused(format!(
                             "a {} is not renamed this way",
@@ -2025,11 +2074,14 @@ impl Session {
                     return Err(refused(format!("no jumper {id}")));
                 }
             }
-            Kind::Report => {
+            Kind::Report | Kind::Spacer => {
                 if !self.objects.contains_key(&(kind, id.to_owned())) {
-                    return Err(refused(format!("no report {id}")));
+                    return Err(refused(format!("no {} {id}", kind.as_str())));
                 }
             }
+        }
+        if kind == Kind::Section {
+            impact.spacers = self.spacers_on(&[id.to_owned()]);
         }
         Ok(impact)
     }
@@ -2070,6 +2122,7 @@ impl Session {
             })
             .map(|j| j.id.clone())
             .collect();
+        impact.spacers = self.spacers_on(&impact.sections);
         Ok(impact)
     }
 
@@ -2124,7 +2177,26 @@ impl Session {
             .map(|j| j.id.clone())
             .collect();
         impact.alignment_detached = self.points_tied_to(id).into_iter().map(|p| p.id).collect();
+        impact.spacers = self.spacers_on(&impact.sections);
         Ok(impact)
+    }
+
+    /// The spacers on any of `sections`.
+    fn spacers_on(&self, sections: &[String]) -> Vec<String> {
+        self.line
+            .spacers
+            .iter()
+            .filter(|s| sections.contains(&s.a.section) || sections.contains(&s.b.section))
+            .map(|s| s.id.clone())
+            .collect()
+    }
+
+    /// The command setting the project's default values (Criteria ›
+    /// Default values): one logged, undoable put of the line's settings.
+    pub fn defaults_command(&self, defaults: ols_line::Defaults) -> Command {
+        let mut line = self.line.clone();
+        line.defaults = defaults;
+        line_settings_put(&line, None)
     }
 
     /// Applies `command` (validated, atomic), logs it as `entry_kind`.

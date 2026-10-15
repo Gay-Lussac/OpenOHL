@@ -55,6 +55,8 @@ pub fn empty_line(name: &str) -> Line {
         circuit_starts: Vec::new(),
         condition_cases: Default::default(),
         solver: Default::default(),
+        spacers: Default::default(),
+        defaults: Default::default(),
     }
 }
 

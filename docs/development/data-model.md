@@ -121,6 +121,8 @@ files](../user-guide/line-file.md).
 | `structures` | `[Structure]` | — | towers and poles | — |
 | `sections` | `[Section]` | — | wire sections | structures + sets |
 | `jumpers` | `[Jumper]` | — | jumpers between wire points | structures + sets |
+| `spacers` | `[Spacer]` | m, N | interphase spacers: an insulator between span points of two sections of one span (`a`, `b`: section id + span point label; insulator label or weight, wind area, stiffness; `length` (none: the still-air distance at stringing); `compression` limit, N, from the project defaults when made; both sections by finite elements, ruling span refused) | sections + span point labels |
+| `defaults` | `Defaults` | N | the project's default values (Criteria › Default values): `spacer_compression` (10 000 N); exported / imported as `.olsdef` (`ols-defaults`, TOML) | — |
 | `systems` | `[System]` | — | electrical systems | — |
 | `display` | `Display` | — | phase colours, `ahead_deg` | phase labels |
 | `creep_stretch` | `CreepStretch` | — | weather cases for creep / load stretch | weather case **names** |
@@ -284,7 +286,9 @@ once resolved every structure is checked in full (`check_strings`).
 | `bundle_rotation_deg` | f64? | ° CCW looking ahead | rotation of the arrangement | — |
 | `points` | `[SectionPoint]` | — | attachment points in line order; first and last are strain points | structure id + set |
 | `stringing` | `Stringing` | — | how it is strung (below) | — |
-| `loads` | `[SpanLoad]` | — | point loads in spans | span index |
+| `loads` | `[SpanLoad]` | — | point loads in spans: `fraction` (horizontal, from the back point) or `distance` (m, wins when given) | span index |
+| `spread_loads` | `[SpreadLoad]` | N/m | loads spread along part of a span: `start`, `end` (each a place: `fraction` or `distance`), `load` (downward, N/m of conductor, whole bundle); on the wire pieces they cover (FE) | span index |
+| `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place) where spacers are clamped; nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers name them |
 | `color` | string? | — | `#rrggbb`, overrides the phase colour | — |
 | `calculation` | `Calculation` | — | condition and method, kebab-case (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
 
