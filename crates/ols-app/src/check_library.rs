@@ -31,7 +31,7 @@ pub struct Out {
 /// The Performed checks window.
 #[derive(Default)]
 pub struct CheckLibraryWindow {
-    /// Shown.
+    /// To be shown (the app opens its page).
     pub open: bool,
     /// Rows containing this.
     pub filter: String,
@@ -60,15 +60,10 @@ impl CheckLibraryWindow {
         self.since = None;
     }
 
-    /// The window.
-    pub fn ui(&mut self, ctx: &egui::Context, model: &Model) -> Out {
+    /// The page (a dock page: floating first, it may be docked).
+    pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         let mut out = Out::default();
-        let mut open = self.open;
-        egui::Window::new("Performed checks")
-            .open(&mut open)
-            .default_width(1000.0)
-            .show(ctx, |ui| self.contents(ui, model, &mut out));
-        self.open = open;
+        self.contents(ui, model, &mut out);
         if out.apply.is_some() {
             self.since = None;
         }

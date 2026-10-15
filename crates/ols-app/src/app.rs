@@ -49,6 +49,10 @@ pub enum Tab {
     Loads,
     /// A structure without a type in the pylon editor.
     StructureEditor,
+    /// Checks › LeV / OLEI › Distance between conductors.
+    PhaseDistance,
+    /// Checks › Performed checks.
+    CheckLibrary,
 }
 
 impl Tab {
@@ -86,6 +90,8 @@ impl Tab {
             Tab::People => "People",
             Tab::Loads => "Structure loads",
             Tab::StructureEditor => "Structure editor",
+            Tab::PhaseDistance => "Distance between conductors (LeV)",
+            Tab::CheckLibrary => "Performed checks",
         }
     }
 }
@@ -1009,6 +1015,12 @@ impl App {
             _ => None,
         }
     }
+
+    /// The pages and where they are.
+    #[cfg(test)]
+    pub fn dock(&mut self) -> &mut DockState<Tab> {
+        &mut self.dock
+    }
 }
 
 struct Viewer<'a> {
@@ -1126,6 +1138,16 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::StructureEditor => {
                 r.placed_ui(ui, self.rs);
+                None
+            }
+            Tab::PhaseDistance => {
+                let out = r.phase_distance.ui(ui, &r.model);
+                r.phase_distance_out(out);
+                None
+            }
+            Tab::CheckLibrary => {
+                let out = r.check_library.ui(ui, &r.model);
+                r.check_library_out(out);
                 None
             }
             Tab::Loads => {
@@ -4952,6 +4974,56 @@ fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
 
 /// What a vertical or radial clearance window asks: its violations drawn
 /// (layer "Clearance violations"), a span gone to.
+impl Ready {
+    /// What the Distance between conductors page asks: a report saved, the
+    /// result's weather case shown, its span gone to, its line drawn.
+    fn phase_distance_out(&mut self, out: crate::phase_distance::Out) {
+        if let Some((what, command)) = out.apply {
+            self.perform(crate::edit::Action::Command { what, command });
+        }
+        if let Some(name) = &out.case
+            && let Some(k) = self.model.cases.iter().position(|c| &c.case.name == name)
+            && k != self.case
+        {
+            self.set_case(k);
+        }
+        if let Some(target) = out.go {
+            self.go_to(target);
+        }
+        if let Some(m) = out.measure {
+            // The view on the line's middle, close enough to read.
+            let mid = [0, 1, 2].map(|i| (m.0[i] + m.1[i]) / 2.0);
+            if let Some(cam) = self.view3d.camera.as_mut() {
+                cam.target = mid;
+                cam.distance = cam.distance.min(60.0);
+            }
+            self.plan.centre_on(mid);
+            self.view3d.measure = Some(m);
+        }
+    }
+
+    /// What the Performed checks page asks: a report opened in its check's
+    /// page, a change applied.
+    fn check_library_out(&mut self, out: crate::check_library::Out) {
+        if let Some(r) = out.open {
+            match r.check.as_str() {
+                crate::phase_distance::CHECK_ID => {
+                    if let Err(e) = self.phase_distance.load(&r, &self.model) {
+                        self.model.log.push(e);
+                    }
+                }
+                other => self
+                    .model
+                    .log
+                    .push(format!("no page for the check \"{other}\" here")),
+            }
+        }
+        if let Some((what, command)) = out.apply {
+            self.perform(crate::edit::Action::Command { what, command });
+        }
+    }
+}
+
 fn clearance_zone_out(r: &mut Ready, out: crate::clearance_zones::Out) {
     if let Some(marks) = out.marks {
         r.plan.marks = marks.iter().map(|m| m.0).collect();
@@ -5155,6 +5227,7 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
         Tab::Table(_) => 2,
         Tab::Python => 3,
         Tab::StructureEditor => 4,
+        Tab::PhaseDistance | Tab::CheckLibrary => 5,
         _ => 0,
     };
     if group(&tab) > 0 {
@@ -5168,6 +5241,7 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
                 w.set_size(match group(&tab) {
                     2 => egui::vec2(1250.0, 560.0),
                     4 => egui::vec2(1150.0, 760.0),
+                    5 => egui::vec2(1050.0, 780.0),
                     _ => egui::vec2(900.0, 620.0),
                 });
             }
@@ -6220,53 +6294,20 @@ impl eframe::App for App {
                 if let Some(target) = go.into_iter().flatten().next() {
                     ready.go_to(target);
                 }
-                let library = ready.check_library.ui(&ctx, &ready.model);
-                if let Some(r) = library.open {
-                    match r.check.as_str() {
-                        crate::phase_distance::CHECK_ID => {
-                            if let Err(e) = ready.phase_distance.load(&r, &ready.model) {
-                                ready.model.log.push(e);
-                            }
-                        }
-                        other => ready
-                            .model
-                            .log
-                            .push(format!("no window for the check \"{other}\" here")),
-                    }
+                // The checks' pages asked for: opened (floating first).
+                if std::mem::take(&mut ready.phase_distance.open) {
+                    open_page(&mut self.dock, Tab::PhaseDistance);
                 }
-                if let Some((what, command)) = library.apply {
-                    ready.perform(crate::edit::Action::Command { what, command });
+                if std::mem::take(&mut ready.check_library.open) {
+                    open_page(&mut self.dock, Tab::CheckLibrary);
                 }
-                let out = ready.phase_distance.ui(&ctx, &ready.model);
-                if let Some((what, command)) = out.apply {
-                    ready.perform(crate::edit::Action::Command { what, command });
-                }
-                // The result clicked in its weather case.
-                if let Some(name) = &out.case
-                    && let Some(k) = ready.model.cases.iter().position(|c| &c.case.name == name)
-                    && k != ready.case
-                {
-                    ready.set_case(k);
-                }
-                // Its line gone with the window (or a new run, a report
-                // opened: no result picked).
+                // The line of a result gone with its page (or a new run, a
+                // report opened: no result picked).
                 if ready.view3d.measure.is_some()
-                    && (!ready.phase_distance.open || ready.phase_distance.picked.is_none())
+                    && (self.dock.find_tab(&Tab::PhaseDistance).is_none()
+                        || ready.phase_distance.picked.is_none())
                 {
                     ready.view3d.measure = None;
-                }
-                if let Some(target) = out.go {
-                    ready.go_to(target);
-                }
-                if let Some(m) = out.measure {
-                    // The view on the line's middle, close enough to read.
-                    let mid = [0, 1, 2].map(|i| (m.0[i] + m.1[i]) / 2.0);
-                    if let Some(cam) = ready.view3d.camera.as_mut() {
-                        cam.target = mid;
-                        cam.distance = cam.distance.min(60.0);
-                    }
-                    ready.plan.centre_on(mid);
-                    ready.view3d.measure = Some(m);
                 }
                 for out in [
                     ready.vertical_clearances.ui(&ctx, &mut ready.model),
