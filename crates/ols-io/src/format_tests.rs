@@ -147,6 +147,13 @@ fn rich_line() -> Line {
             description: "a third".into(),
         });
     }
+    line.sections[0].span_points.push(ols_line::SpanPoint {
+        label: "P2".into(),
+        span: 0,
+        at: ols_line::SpanPlace::at_station(123.5),
+        description: String::new(),
+    });
+    line.sections[0].loads[0].station = Some(110.0);
     line.sections[0].spread_loads.push(ols_line::SpreadLoad {
         span: 0,
         start: ols_line::SpanPlace::at_fraction(0.1),

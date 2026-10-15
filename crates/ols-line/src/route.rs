@@ -538,6 +538,67 @@ impl Line {
         self.alignment_points.len() != before
     }
 
+    /// The stations of structures `a` and `b` (a span's ends), along the
+    /// first alignment both stand on; none when no alignment has both.
+    pub fn span_stations(&self, a: &str, b: &str) -> Option<(f64, f64)> {
+        let (pa, pb) = (self.structure(a)?.position, self.structure(b)?.position);
+        self.alignment_views()
+            .into_iter()
+            .find(|v| v.structures.iter().any(|s| s == a) && v.structures.iter().any(|s| s == b))
+            .map(|v| {
+                let pis = positions(&v.alignment);
+                (project(&pis, pa).0, project(&pis, pb).0)
+            })
+    }
+
+    /// Section `section` with its places given by station turned into
+    /// fractions of their spans ([`Line::span_stations`]); unchanged when
+    /// it has none. A station whose span has no stations stays as given
+    /// (its fraction).
+    pub fn section_with_fractions<'s>(
+        &self,
+        section: &'s crate::Section,
+    ) -> std::borrow::Cow<'s, crate::Section> {
+        let any = section.loads.iter().any(|l| l.station.is_some())
+            || section.span_points.iter().any(|p| p.at.station.is_some())
+            || section
+                .spread_loads
+                .iter()
+                .any(|l| l.start.station.is_some() || l.end.station.is_some());
+        if !any {
+            return std::borrow::Cow::Borrowed(section);
+        }
+        let mut s = section.clone();
+        let stations = |span: usize| {
+            let w = s.points.get(span..=span + 1)?;
+            self.span_stations(&w[0].structure, &w[1].structure)
+        };
+        let resolve = |span: usize, p: &mut crate::SpanPlace| {
+            if let (Some(st), Some((a, b))) = (p.station, stations(span))
+                && (b - a).abs() > 1e-9
+            {
+                *p = crate::SpanPlace::at_fraction(((st - a) / (b - a)).clamp(0.0, 1.0));
+            }
+        };
+        let mut loads = s.loads.clone();
+        for l in &mut loads {
+            let mut p = l.place();
+            resolve(l.span, &mut p);
+            (l.fraction, l.distance, l.station) = (p.fraction, p.distance, p.station);
+        }
+        let mut points = s.span_points.clone();
+        for p in &mut points {
+            resolve(p.span, &mut p.at);
+        }
+        let mut spread = s.spread_loads.clone();
+        for l in &mut spread {
+            resolve(l.span, &mut l.start);
+            resolve(l.span, &mut l.end);
+        }
+        (s.loads, s.span_points, s.spread_loads) = (loads, points, spread);
+        std::borrow::Cow::Owned(s)
+    }
+
     /// Every alignment with the structures on it, in the line's order.
     pub fn alignment_views(&self) -> Vec<AlignmentView> {
         let near = self.near_alignments();

@@ -707,7 +707,9 @@ impl Stringing {
 }
 
 /// A place along a span: a horizontal fraction of it from its back point,
-/// or a horizontal distance from that point (m), which wins when given.
+/// a horizontal distance from that point (m), or a station of the line
+/// (m, along the alignment the span's structures stand on) — a station
+/// wins over a distance, which wins over the fraction.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpanPlace {
@@ -717,6 +719,9 @@ pub struct SpanPlace {
     /// Horizontal distance from the back point, m.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distance: Option<f64>,
+    /// Station of the line, m ([`Line::span_stations`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub station: Option<f64>,
 }
 
 impl SpanPlace {
@@ -724,15 +729,23 @@ impl SpanPlace {
     pub fn at_fraction(fraction: f64) -> Self {
         Self {
             fraction,
-            distance: None,
+            ..Self::default()
         }
     }
 
     /// At `distance` m from the back point.
     pub fn at_distance(distance: f64) -> Self {
         Self {
-            fraction: 0.0,
             distance: Some(distance),
+            ..Self::default()
+        }
+    }
+
+    /// At station `station` m of the line.
+    pub fn at_station(station: f64) -> Self {
+        Self {
+            station: Some(station),
+            ..Self::default()
         }
     }
 
@@ -745,11 +758,12 @@ impl SpanPlace {
         }
     }
 
-    /// Readable: `0.25` or `120 m`.
+    /// Readable: `0.25`, `120 m` or `st. 1520 m`.
     pub fn text(&self) -> String {
-        match self.distance {
-            Some(d) => format!("{d} m"),
-            None => format!("{}", self.fraction),
+        match (self.station, self.distance) {
+            (Some(s), _) => format!("st. {s} m"),
+            (None, Some(d)) => format!("{d} m"),
+            (None, None) => format!("{}", self.fraction),
         }
     }
 }
@@ -944,6 +958,9 @@ pub struct SpanLoad {
     /// the place (the fraction is not used).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distance: Option<f64>,
+    /// Station of the line, m: given, it is the place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub station: Option<f64>,
     /// Downward force, N: on the whole bundle (shared between its
     /// subconductors).
     pub vertical: f64,
@@ -967,6 +984,15 @@ pub struct SpanLoad {
 }
 
 impl SpanLoad {
+    /// Its place along the span.
+    pub fn place(&self) -> SpanPlace {
+        SpanPlace {
+            fraction: self.fraction,
+            distance: self.distance,
+            station: self.station,
+        }
+    }
+
     /// Downward and horizontal forces, N, on the whole bundle in a case,
     /// on a wire of bare diameter `wire_diameter` (m). The ice is the
     /// wire's radial ice, t, on the body's surface: on a sphere of
@@ -1702,16 +1728,14 @@ impl Line {
                     ));
                 }
             }
-            let place_ok = |p: &SpanPlace| match p.distance {
-                Some(d) => d.is_finite() && d > 0.0,
-                None => 0.0 < p.fraction && p.fraction < 1.0,
+            let place_ok = |p: &SpanPlace| match (p.station, p.distance) {
+                (Some(s), _) => s.is_finite(),
+                (None, Some(d)) => d.is_finite() && d > 0.0,
+                (None, None) => 0.0 < p.fraction && p.fraction < 1.0,
             };
             if let Some(l) = sec.loads.iter().find(|l| {
                 l.span >= spans
-                    || !place_ok(&SpanPlace {
-                        fraction: l.fraction,
-                        distance: l.distance,
-                    })
+                    || !place_ok(&l.place())
                     || !(l.diameter >= 0.0 && l.diameter.is_finite())
                     || [l.drag, l.wind_area, l.ice_area]
                         .iter()

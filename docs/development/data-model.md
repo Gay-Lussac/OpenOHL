@@ -286,8 +286,8 @@ once resolved every structure is checked in full (`check_strings`).
 | `bundle_rotation_deg` | f64? | ° CCW looking ahead | rotation of the arrangement | — |
 | `points` | `[SectionPoint]` | — | attachment points in line order; first and last are strain points | structure id + set |
 | `stringing` | `Stringing` | — | how it is strung (below) | — |
-| `loads` | `[SpanLoad]` | — | point loads in spans: `fraction` (horizontal, from the back point) or `distance` (m, wins when given) | span index |
-| `spread_loads` | `[SpreadLoad]` | N/m | loads spread along part of a span: `start`, `end` (each a place: `fraction` or `distance`), `load` (downward, N/m of conductor, whole bundle); on the wire pieces they cover (FE) | span index |
+| `loads` | `[SpanLoad]` | — | point loads in spans: `fraction` (horizontal, from the back point), `distance` (m) or `station` (m, of the line along the alignment both structures stand on — turned into a fraction when solved, `Line::section_with_fractions`); a station wins over a distance, a distance over the fraction | span index |
+| `spread_loads` | `[SpreadLoad]` | N/m | loads spread along part of a span: `start`, `end` (each a place: `fraction`, `distance` or `station`), `load` (downward, N/m of conductor, whole bundle); on the wire pieces they cover (FE) | span index |
 | `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place) where spacers are clamped; nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers name them |
 | `color` | string? | — | `#rrggbb`, overrides the phase colour | — |
 | `calculation` | `Calculation` | — | condition and method, kebab-case (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
