@@ -18,11 +18,38 @@ Art. 33), item 2.2.1 — the direct distance of two conductors in the span:
 
 \\[ z = k \cdot \sqrt{f + l_k} + C \\]
 
-- \\( C = C_1 \\) within the same circuit, and towards an earth wire
-  (2.1.1); \\( C = C_2 \\) between different circuits — Table 2.4.1, by
-  nominal voltage (the larger nominal voltage where circuits differ,
-  2.3). The table holds up to 1000 m above sea level; above, the values
-  grow linearly by 14 % per 1000 m.
+- \\( C = C_1 \\) within one electrical system, and towards earth (earth
+  wires, earthed parts); \\( C = C_2 \\) between different electrical
+  systems — Table 2.4.1, by nominal voltage (the larger nominal voltage
+  where systems differ, 2.3). The table also gives C₃ and C₄, the same
+  with wind (for the checks with wind). Where a voltage has two lines,
+  they are the two insulation levels: each value is given for a
+  lightning impulse withstand voltage (e.g. 220 kV low: C₁ at 950 kV,
+  C₂ at 1050 kV; high: C₁ at 1050 kV, C₂ at 1175 kV). The table holds up
+  to 1000 m above sea level; above, the values grow linearly by 14 % per
+  1000 m.
+
+  As validated with the user (C₃ and C₄ to be filled in from the
+  ordinance):
+
+  | Up to kV | Level | C₁ m | C₁ at kV | C₂ m | C₂ at kV |
+  |---|---|---|---|---|---|
+  | 1 | — | 0.05 | — | 0.05 | — |
+  | 3 | — | 0.06 | — | 0.06 | — |
+  | 6 | — | 0.09 | — | 0.09 | — |
+  | 10 | — | 0.12 | — | 0.12 | — |
+  | 15 | — | 0.16 | — | 0.17 | — |
+  | 20 | — | 0.22 | — | 0.26 | — |
+  | 30 | — | 0.32 | — | 0.39 | — |
+  | 45 | — | 0.52 | — | 0.63 | — |
+  | 60 | — | 0.70 | — | 0.82 | — |
+  | 110 | — | 0.92 | — | 1.38 | — |
+  | 132 | — | 1.12 | — | 1.38 | — |
+  | 150 | — | 1.32 | — | 1.64 | — |
+  | 220 | low | 1.93 | 950 | 2.29 | 1050 |
+  | 220 | high | 2.14 | 1050 | 2.56 | 1175 |
+  | 380 | low | 2.64 | 1300 | 3.37 | 1550 |
+  | 380 | high | 2.90 | 1425 | 3.64 | 1675 |
 - \\( f \\): the conductor's sag at 10 °C conductor temperature (2.4).
 - \\( l_k \\): the length (Baulänge) of suspension strings (2.4).
 - \\( k \\): Diagrams 2.4.2 (wind pressure 500 N/m²) and 2.4.3
@@ -97,7 +124,9 @@ are measured to the nearest subconductor of the other conductor.
   span's) whose boxes come within a **maximum distance** (field,
   default 20 m — keep it above the largest z, about 12 m at 380 kV);
   they are measured only where closer than that distance.
-- Same circuit (and phase to earth wire): C1; different circuits: C2.
+- Within one electrical system (and to an earth wire): C1; between
+  different systems: C2 *(decided)*. Sections without a system compare
+  by circuit name.
 - Not paired: jumpers (they only go from one span to the next), two
   earth wires, two conductors of the same circuit and phase (one
   potential), two sharing a clamp (the next span of the same wire).

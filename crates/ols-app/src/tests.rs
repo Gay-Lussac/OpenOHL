@@ -11629,7 +11629,7 @@ fn phase_distance_page_sets_the_insulation_levels() {
         .expect("a circuit's level")
         .click();
     harness.run();
-    harness.get_by_label("low").click();
+    harness.get_by_label_contains("low (C₁ at 950 kV").click();
     harness.run();
     let r = harness.state_mut().ready().unwrap();
     let line = &r.model.line;
