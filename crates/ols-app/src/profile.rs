@@ -763,8 +763,25 @@ pub fn ratio_text(k: f64) -> String {
 
 /// View › Profile aspect ratio: fitted heights, a ratio of the list or
 /// one typed; whether it changed. The menu stays open (radio choices).
+/// The typed choice is remembered as chosen (in the menu's memory) even
+/// when its value is one of the list's, and keeps its last value.
 pub fn ratio_menu(ui: &mut egui::Ui, ratio: &mut Option<f64>) -> bool {
     let before = *ratio;
+    let id = egui::Id::new("profile-ratio-typed");
+    // (chosen, its value).
+    let (mut typed, mut value) = ui
+        .data(|d| d.get_temp::<(bool, f64)>(id))
+        .unwrap_or((false, 3.0));
+    // A ratio not in the list is a typed one (set elsewhere, remembered).
+    if let Some(k) = *ratio
+        && !RATIOS.contains(&k)
+    {
+        typed = true;
+        value = k;
+    }
+    if ratio.is_none() {
+        typed = false;
+    }
     ui.label(
         egui::RichText::new("Stations : heights in the profile view (yours only)")
             .small()
@@ -775,6 +792,7 @@ pub fn ratio_menu(ui: &mut egui::Ui, ratio: &mut Option<f64>) -> bool {
         .clicked()
     {
         *ratio = None;
+        typed = false;
     }
     for k in RATIOS {
         let text = if k == 1.0 {
@@ -782,31 +800,34 @@ pub fn ratio_menu(ui: &mut egui::Ui, ratio: &mut Option<f64>) -> bool {
         } else {
             format!("1:{} (heights ×{})", ratio_text(k), ratio_text(k))
         };
-        if ui.radio(*ratio == Some(k), text).clicked() {
+        if ui.radio(!typed && *ratio == Some(k), text).clicked() {
             *ratio = Some(k);
+            typed = false;
         }
     }
     ui.horizontal(|ui| {
-        let mut other = ratio.filter(|k| !RATIOS.contains(k)).is_some();
-        let mut k = ratio.unwrap_or(10.0);
-        if ui.radio(other, "1:").clicked() {
-            other = true;
-            *ratio = Some(k);
-        }
         if ui
-            .add_enabled(
-                other,
-                egui::DragValue::new(&mut k)
-                    .range(0.1..=500.0)
-                    .speed(0.1)
-                    .max_decimals(2),
-            )
-            .on_hover_text("Heights drawn this many times larger than stations")
-            .changed()
+            .radio(typed, "1:")
+            .on_hover_text("A ratio of your own: type it or drag")
+            .clicked()
         {
-            *ratio = Some(k);
+            typed = true;
+            *ratio = Some(value);
         }
+        let r = ui.add(
+            egui::DragValue::new(&mut value)
+                .range(0.1..=500.0)
+                .speed(0.1)
+                .max_decimals(2),
+        );
+        // Typing or dragging the value chooses it.
+        if r.changed() || (r.gained_focus() && !typed) {
+            typed = true;
+            *ratio = Some(value);
+        }
+        r.on_hover_text("Heights drawn this many times larger than stations");
     });
+    ui.data_mut(|d| d.insert_temp(id, (typed, value)));
     *ratio != before
 }
 

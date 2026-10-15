@@ -11658,3 +11658,113 @@ fn phase_distance_page_sets_the_insulation_levels() {
             .any(|s| &s.circuit != circuit && s.fields.is_empty())
     );
 }
+
+/// View › Profile aspect ratio, a ratio of your own: "1:" chooses it (its
+/// last value, 3 at first), the value is typed in — 10, also a value of
+/// the list, stays the typed choice; a ratio of the list chosen after.
+#[test]
+fn the_profile_takes_a_ratio_of_your_own() {
+    use egui_kittest::kittest::NodeT as _;
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let open = |h: &mut Harness<'_, App>| {
+        h.get_by_label("View").click();
+        h.run();
+        h.get_by_label_contains("Profile aspect ratio").hover();
+        h.run();
+    };
+    let ratio = |h: &mut Harness<'_, App>| h.state_mut().ready().unwrap().model.profile_ratio;
+    open(&mut harness);
+    harness.get_by_label("1:").click();
+    harness.run();
+    assert_eq!(ratio(&mut harness), Some(3.0));
+    // Typed: 10.
+    // The menu's value field: the spin button on the row of "1:".
+    let row = harness.get_by_label("1:").rect().center().y;
+    let at = harness
+        .query_all_by_role(egui::accesskit::Role::SpinButton)
+        .map(|x| x.rect().center())
+        .min_by(|a, b| (a.y - row).abs().total_cmp(&(b.y - row).abs()))
+        .expect("the value field");
+    assert!((at.y - row).abs() < 5.0, "{at:?} {row}");
+    harness
+        .query_all_by_role(egui::accesskit::Role::SpinButton)
+        .find(|x| x.rect().center() == at)
+        .unwrap()
+        .click();
+    harness.run();
+    assert!(
+        harness.query_by_label("1:").is_some(),
+        "the menu stays open"
+    );
+    // Editing: the text selected, typed over.
+    harness.event(egui::Event::Text("10".into()));
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(ratio(&mut harness), Some(10.0));
+    // Still the typed choice (the list's 1:10 not ticked).
+    let typed = harness.get_by_label("1:").accesskit_node().toggled();
+    assert_eq!(typed, Some(egui::accesskit::Toggled::True));
+    let listed = harness
+        .get_by_label("1:10 (heights ×10)")
+        .accesskit_node()
+        .toggled();
+    assert_eq!(listed, Some(egui::accesskit::Toggled::False));
+    // One of the list.
+    harness.get_by_label("1:5 (heights ×5)").click();
+    harness.run();
+    assert_eq!(ratio(&mut harness), Some(5.0));
+    assert_eq!(
+        harness.get_by_label("1:").accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::False)
+    );
+}
+
+/// Strings: a tension string may hang from the wire point of a suspension
+/// string without a set (a TAK) though that one is not of its group: the
+/// editor lists every wire point of the structure as "hangs from", and
+/// takes the other group in when one is chosen.
+#[test]
+fn a_string_hangs_from_another_groups_wire_point() {
+    let model = synthetic_project_with("tak-top", |line| {
+        let s = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+        let a = s.points[0].position;
+        s.points.push(ols_line::StructurePoint {
+            description: String::new(),
+            label: "B".into(),
+            position: [a[0] + 2.0, a[1], a[2]],
+        });
+        s.wires.push(ols_line::WirePoint {
+            label: "WS".into(),
+            position: [a[0] + 2.0, a[1], a[2] - 3.0],
+            ..Default::default()
+        });
+        s.strings.push(ols_line::InsulatorString {
+            label: "SUS".into(),
+            top: "B".into(),
+            wire: "WS".into(),
+            ..Default::default()
+        });
+    });
+    let mut f = crate::editors::StringForm::of(&model, "T3", 2).expect("set 2 of T3");
+    assert!(!f.strings.iter().any(|x| x.label == "SUS"), "another group");
+    let k = f.strings.iter().position(|x| x.wire == "W2").unwrap();
+    assert!(f.top_choices(&model, k).contains(&"WS".to_owned()));
+    f.hang_from(&model, k, "WS").unwrap();
+    let x = &f.strings[k];
+    assert_eq!(x.top, "WS");
+    assert!(f.strings.iter().any(|x| x.label == "SUS"), "taken in");
+    // Applied: the line holds.
+    let mut line = model.line.clone();
+    let resolved = model.line.structure("T3").cloned();
+    let s = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+    f.apply_to(s, resolved.as_ref());
+    line.validate().unwrap();
+    let s = line.structure("T3").unwrap();
+    assert_eq!(s.strings.iter().find(|y| y.wire == "W2").unwrap().top, "WS");
+    assert!(s.strings.iter().any(|y| y.label == "SUS"));
+}

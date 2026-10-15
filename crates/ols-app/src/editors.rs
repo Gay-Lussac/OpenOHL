@@ -1917,6 +1917,39 @@ impl StringForm {
         out
     }
 
+    /// The wire points string `k` may hang from: the form's and the
+    /// structure's others (with or without a set: a TAK's tension strings
+    /// hang from a suspension string's wire point), but its own and those
+    /// hanging below it (a loop).
+    pub fn top_choices(&self, model: &Model, k: usize) -> Vec<String> {
+        let Some(x) = self.strings.get(k) else {
+            return Vec::new();
+        };
+        let below = self.chain_below(&x.wire);
+        let mut out: Vec<String> = self.wires.iter().map(|w| w.label.clone()).collect();
+        if let Some(s) = model.line.structure(&self.structure) {
+            for w in &s.wires {
+                if !out.contains(&w.label) {
+                    out.push(w.label.clone());
+                }
+            }
+        }
+        out.retain(|w| !below.contains(w));
+        out
+    }
+
+    /// String `k` hangs from wire point `top` of the form or the structure
+    /// ([`Self::move_top`]); one outside the form is taken in first with
+    /// what moves with it.
+    pub fn hang_from(&mut self, model: &Model, k: usize, top: &str) -> Result<(), String> {
+        let in_form =
+            self.points.iter().any(|p| p.label == top) || self.wires.iter().any(|w| w.label == top);
+        if !in_form {
+            self.absorb(model, top);
+        }
+        self.move_top(k, top)
+    }
+
     /// Takes wire point `wire` of the structure (as resolved) into the
     /// form with the strings and wire points joined to it, to be edited
     /// and applied with the rest.
@@ -3519,12 +3552,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
             let mut remove = None;
             for (k, length) in lengths.iter().enumerate() {
                 let owns = owner(f, &f.strings[k].wire) == Some(k);
-                let others: Vec<String> = f
-                    .wires
-                    .iter()
-                    .filter(|w| w.label != f.strings[k].wire)
-                    .map(|w| w.label.clone())
-                    .collect();
+                let others: Vec<String> = f.top_choices(model, k);
                 let ends = f.end_choices(model, k);
                 let mut ends_at: Option<Option<String>> = None;
                 let mut retop: Option<String> = None;
@@ -3631,7 +3659,11 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 }
                                 ui.separator();
                                 ui.label(
-                                    egui::RichText::new("the bottom of another string").small().weak(),
+                                    egui::RichText::new(
+                                        "the bottom of another string (with or without a set)",
+                                    )
+                                    .small()
+                                    .weak(),
                                 );
                                 for w in &others {
                                     if ui.selectable_label(x.top == *w, w).clicked() && x.top != *w {
@@ -3881,7 +3913,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                 }
                 // Hung from another point: its length kept.
                 if let Some(top) = retop {
-                    f.note = f.move_top(k, &top).err();
+                    f.note = f.hang_from(model, k, &top).err();
                 }
                 if let Some(len) = want_len {
                     f.note = f.set_length(k, len).err();

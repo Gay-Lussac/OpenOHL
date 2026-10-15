@@ -58,3 +58,9 @@ all = { level = "warn", priority = -1 }
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# Development and test builds: the dependencies optimised (the WebAssembly
+# engine compiling plugins, rendering, SQLite run many times faster in the
+# tests); the workspace's own code as usual, with its debug assertions.
+[profile.dev.package."*"]
+opt-level = 2
