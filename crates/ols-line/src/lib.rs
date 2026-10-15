@@ -123,6 +123,9 @@ pub struct Line {
         skip_serializing_if = "ols_cables::BimetallicModel::is_default"
     )]
     pub bimetallic: ols_cables::BimetallicModel,
+    /// How the calculations are done (Criteria › Calculation options).
+    #[serde(default, skip_serializing_if = "SolverOptions::is_default")]
+    pub solver: SolverOptions,
     /// The ends of electrical circuits (conductor paths) that are starts
     /// (power flows in); a circuit none of whose ends is listed runs along
     /// the line, from its end that comes first ([`electrical::circuits`]).
@@ -142,6 +145,60 @@ fn default_jumper_temperature() -> f64 {
 
 fn half() -> f64 {
     0.5
+}
+
+/// How the line's calculations are done (Criteria › Calculation
+/// options); every section is solved again when they change.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SolverOptions {
+    /// What of the jumpers the sections carry at their clamps.
+    #[serde(default)]
+    pub jumper_loads: JumperLoads,
+}
+
+impl SolverOptions {
+    /// Nothing changed from the defaults.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// What of a jumper the sections at its ends carry at their clamps (on
+/// clamps hanging from strings; a wire clamped to the structure leaves it
+/// to the structure). The ruling-span method leaves jumpers out either
+/// way, as every point load.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JumperLoads {
+    /// An estimate (the default): each end carries the weight, ice and
+    /// wind (across the line from the weather case's side, as on the
+    /// jumper itself) of the jumper up to its first support, half of it
+    /// without supports.
+    #[default]
+    Estimate,
+    /// The jumper's own pull: the force the solved jumper exerts on each
+    /// clamp (its tension at the end, with its stiffness), the sections
+    /// and the jumpers solved in turn until the clamps no longer move.
+    Pull,
+}
+
+impl JumperLoads {
+    /// Every choice.
+    pub const ALL: [Self; 2] = [Self::Estimate, Self::Pull];
+
+    /// As written in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Estimate => "estimate",
+            Self::Pull => "pull",
+        }
+    }
+
+    /// From its written name.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|j| j.as_str() == text)
+    }
 }
 
 /// Values of table columns added by plugins (e.g. a design code's

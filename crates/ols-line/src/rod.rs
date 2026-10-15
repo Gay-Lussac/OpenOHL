@@ -96,6 +96,9 @@ pub(crate) struct RodShape {
     pub points: Vec<V>,
     /// Largest tension, N.
     pub max_tension: f64,
+    /// The forces the rod exerts on its ends A and B, N (its stiffness's
+    /// moments at clamped ends left out).
+    pub end_forces: [V; 2],
     /// The held points, as the rod's.
     pub holds: Vec<HoldShape>,
     /// Piece directions (to start the next solve from).
@@ -392,6 +395,21 @@ impl Rod {
         }
     }
 
+    /// The forces the rod exerts on A and on B: at A all its loads (its
+    /// own, the held weights, the strings) and what holds B (λ); at B,
+    /// λ against it.
+    fn end_forces(&self, d: &[V], lambda: V, mu: &[f64], active: &[(usize, usize)]) -> [V; 2] {
+        let nodes = self.nodes(d);
+        let mut a = self.q * self.pieces.iter().sum::<f64>() + lambda;
+        for h in &self.holds {
+            a += h.load;
+        }
+        for (&c, m) in active.iter().zip(mu) {
+            a += self.arm(c, &nodes, d) * (2.0 * m);
+        }
+        [a, -lambda]
+    }
+
     /// The largest tension along the rod (at the pieces' middles).
     fn max_tension(&self, d: &[V], lambda: V, mu: &[f64], active: &[(usize, usize)]) -> f64 {
         let nodes = self.nodes(d);
@@ -576,6 +594,7 @@ impl Rod {
         Ok(RodShape {
             points: nodes,
             max_tension: self.max_tension(&d, lambda, &mu, &active),
+            end_forces: self.end_forces(&d, lambda, &mu, &active),
             holds,
             directions: d,
         })

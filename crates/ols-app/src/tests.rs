@@ -8282,7 +8282,9 @@ fn the_start_screen_opens_the_plugin_manager() {
         .build_eframe(|_| app);
     h.run();
     h.get_by_label("Plugins…").click();
-    h.run();
+    // The manager repaints while it reads the plugins' formats in the
+    // background (long on a busy machine): a few frames, not until idle.
+    h.run_steps(4);
     assert!(h.state().plugins.open);
     h.get_by_label("Plugin manager");
 }
@@ -11767,4 +11769,36 @@ fn a_string_hangs_from_another_groups_wire_point() {
     let s = line.structure("T3").unwrap();
     assert_eq!(s.strings.iter().find(|y| y.wire == "W2").unwrap().top, "WS");
     assert!(s.strings.iter().any(|y| y.label == "SUS"));
+}
+
+/// Criteria › Calculation options: the jumpers' own pull chosen — one
+/// command, undoable; the line's settings say so and the sections at the
+/// jumper are solved with it.
+#[test]
+fn calculation_options_choose_the_jumpers_pull() {
+    let model = synthetic_project("solver-options");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Criteria").click();
+    harness.run();
+    harness.get_by_label("Calculation options…").click();
+    harness.run();
+    harness.get_by_label("The jumper's own pull").click();
+    harness.run();
+    harness.get_by_label("OK").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(
+        r.model.line.solver.jumper_loads,
+        ols_line::JumperLoads::Pull
+    );
+    let stored = r.model.stored_line().unwrap();
+    assert_eq!(stored.solver.jumper_loads, ols_line::JumperLoads::Pull);
+    r.perform(crate::edit::Action::Undo);
+    assert_eq!(
+        r.model.line.solver.jumper_loads,
+        ols_line::JumperLoads::Estimate
+    );
 }

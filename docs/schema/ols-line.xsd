@@ -448,6 +448,27 @@
           </xs:complexType>
         </xs:element>
 
+        <xs:element name="solver" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>How the calculations are done (Criteria ›
+              Calculation options). jumper_loads: what of the jumpers the
+              sections carry at their clamps — an estimate (the default:
+              the weight, ice and wind of the part each end carries) or the
+              jumper's own pull (its solved end forces, the sections and
+              jumpers solved in turn until they settle).</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:attribute name="jumper_loads" default="estimate">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="estimate"/>
+                  <xs:enumeration value="pull"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+          </xs:complexType>
+        </xs:element>
+
         <xs:element name="bimetallic" minOccurs="0">
           <xs:complexType>
             <xs:attribute name="behavior" default="compression">

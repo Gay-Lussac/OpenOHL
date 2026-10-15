@@ -125,6 +125,7 @@ files](../user-guide/line-file.md).
 | `display` | `Display` | — | phase colours, `ahead_deg` | phase labels |
 | `creep_stretch` | `CreepStretch` | — | weather cases for creep / load stretch | weather case **names** |
 | `bimetallic` | `BimetallicModel` | Pa | outer-strand behaviour of bimetallic cables above the transition temperature, for cables that do not say | — |
+| `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); in the project's line settings and OLS XML `<solver>` | — |
 | `circuit_starts` | `[SectionPoint]` | — | circuit ends that are starts (power flows in) | structures + sets |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
@@ -258,10 +259,11 @@ point with a set replaces the type's wire point **with that set** (and
 what moves with it), `omit`/`omit_sets` leave items out, weights,
 stiffnesses and wind areas come from the insulator library where a
 string has none (a V-string assembly's shared by its legs), and the
-wire points are placed from the strings. In a weather case the jumpers'
-weight hangs on the clamps of the sections at their ends
-(`jumper::end_weights`: half of the jumper between an end and its first
-support; with ice) — not at stringing. The resolved line is what solvers and exports use; the stored
+wire points are placed from the strings. In a weather case the jumpers
+load the clamps of the sections at their ends, as the line's
+`solver.jumper_loads` says: an estimate (`jumper::end_loads`: weight,
+ice and wind of the jumper between an end and its first support) or
+the solved jumper's own pull (`solve::jumper_pull`) — not at stringing. The resolved line is what solvers and exports use; the stored
 line and the project rows are not resolved. A typed structure's own strings may hang from the
 type's points: as stored, such a top is not checked and its wire point
 is not placed (`Structure::check_strings_as_stored`, `place_wires`);

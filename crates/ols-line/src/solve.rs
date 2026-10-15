@@ -544,10 +544,11 @@ pub struct Coupling {
     /// Where this section's clamps are held, by section point: on the
     /// assemblies another section solves.
     pub held: std::collections::BTreeMap<crate::SectionPoint, Point>,
-    /// The jumpers' weight on clamps in the weather case, by section point
-    /// (the whole bundle's, N; [`crate::jumper::end_weights`]). None: from
-    /// the jumpers, each taken as of this section's cable.
-    pub jumpers: Option<std::collections::BTreeMap<crate::SectionPoint, f64>>,
+    /// The jumpers' load on clamps in the weather case, by section point
+    /// (the whole bundle's, N, a force; [`crate::jumper::end_loads`], as
+    /// the line's [`crate::JumperLoads`] says). None: from the jumpers,
+    /// each taken as of this section's cable.
+    pub jumpers: Option<std::collections::BTreeMap<crate::SectionPoint, [f64; 3]>>,
 }
 
 /// The clamp's position to start from: plumb below a suspension string's
@@ -1748,17 +1749,18 @@ fn solve_fe(
     // In the weather case, other sections' clamps in the assemblies pulled
     // as given (held in the stringing state).
     let mut loaded = pulled(&layout, section, coupling);
-    // The jumpers hanging on its clamps, in the weather case.
+    // The jumpers hanging on its clamps, in the weather case (as the
+    // line's calculation options say).
     let jumpers = match &coupling.jumpers {
         Some(j) => std::borrow::Cow::Borrowed(j),
-        None => std::borrow::Cow::Owned(crate::jumper::end_weights(line, case, |id| {
+        None => std::borrow::Cow::Owned(crate::jumper::end_loads(line, case, |id| {
             (id == section.cable).then_some(cable)
         })),
     };
     let bundle = f64::from(section.bundle.max(1));
     for (h, point) in loaded.iter_mut().zip(&section.points) {
-        if let (Some(w), At::Free(i)) = (jumpers.get(point), h.clamp) {
-            h.free[i].2.z -= w / bundle;
+        if let (Some(f), At::Free(i)) = (jumpers.get(point), h.clamp) {
+            h.free[i].2 += Vector3::new(f[0], f[1], f[2]) / bundle;
         }
     }
     let curves = curves_of(cable);
@@ -2060,15 +2062,45 @@ pub fn solve_line(
     solve_line_with(line, library, case, &default_fe_budget())
 }
 
-/// [`solve_line`] with the exit clauses of `budget` for each solve.
+/// [`solve_line`] with the exit clauses of `budget` for each solve. The
+/// jumpers on the clamps as the line's [`crate::JumperLoads`] says: their
+/// estimated loads, or their own pull ([`jumper_pull`]).
 pub fn solve_line_with(
     line: &Line,
     library: &ols_cables::Library,
     case: &WeatherCase,
     budget: &Budget,
 ) -> Vec<Result<SectionShape, LineError>> {
+    let estimate = crate::jumper::end_loads(line, case, |id| library.get(id));
+    let mut results = solve_sections_with(line, library, case, budget, &estimate);
+    if line.solver.jumper_loads == crate::JumperLoads::Pull {
+        jumper_pull(
+            line,
+            library,
+            case,
+            budget,
+            &estimate,
+            estimate.clone(),
+            &mut results,
+        );
+    }
+    results
+}
+
+/// Jumper loads on clamps, by section point (the whole bundle's, N).
+pub type JumperLoadMap = std::collections::BTreeMap<crate::SectionPoint, [f64; 3]>;
+
+/// Every section, the jumpers' loads `jumpers` on their clamps; sections
+/// sharing an assembly together.
+fn solve_sections_with(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+    jumpers: &JumperLoadMap,
+) -> Vec<Result<SectionShape, LineError>> {
     let coupling = Coupling {
-        jumpers: Some(crate::jumper::end_weights(line, case, |id| library.get(id))),
+        jumpers: Some(jumpers.clone()),
         ..Coupling::default()
     };
     let mut results: Vec<Result<SectionShape, LineError>> = line
@@ -2080,9 +2112,107 @@ pub fn solve_line_with(
         })
         .collect();
     for group in coupled_groups(line) {
-        solve_coupled(line, library, case, &group, &mut results, budget);
+        solve_coupled(line, library, case, &group, &mut results, budget, jumpers);
     }
     results
+}
+
+/// Passes of the jumpers' pull (exit clause; the clamps settle in two or
+/// three).
+pub const JUMPER_PULL_PASSES: usize = 8;
+
+/// The jumpers' own pull on the clamps ([`crate::JumperLoads::Pull`]):
+/// the jumpers solved between the solved clamps, the force each exerts
+/// on its clamps ([`crate::jumper::JumperShape::end_forces`]) put on the
+/// sections in place of the estimate, the sections whose clamps it
+/// changes solved again (with their groups), and so on until it changes
+/// less than 0.5 N (or 1e-4 of itself). A clamp whose jumpers did not all
+/// solve keeps the estimate. `used`: the loads the sections in `results`
+/// were solved with; returns those of the last pass.
+///
+/// Expected cost: per pass, the jumpers and the sections at them solved
+/// again (two or three passes: about twice to three times the time of the
+/// sections at jumpers; the others are not touched).
+pub fn jumper_pull(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+    estimate: &JumperLoadMap,
+    mut used: JumperLoadMap,
+    results: &mut [Result<SectionShape, LineError>],
+) -> JumperLoadMap {
+    if line.jumpers.is_empty() {
+        return used;
+    }
+    let groups = coupled_groups(line);
+    for _ in 0..JUMPER_PULL_PASSES {
+        let shapes: Vec<SectionShape> = results
+            .iter()
+            .filter_map(|r| r.as_ref().ok().cloned())
+            .collect();
+        let solved = crate::jumper::solve_jumpers(line, library, case, &shapes);
+        // The pull on each clamp: the sum of its jumpers', where all of
+        // them solved; else the estimate.
+        let mut next = estimate.clone();
+        let mut failed: std::collections::BTreeSet<&crate::SectionPoint> = Default::default();
+        let mut pulled: JumperLoadMap = Default::default();
+        for (j, r) in line.jumpers.iter().zip(&solved) {
+            match r {
+                Ok(s) => {
+                    for (p, f) in [(&j.from, s.end_forces[0]), (&j.to, s.end_forces[1])] {
+                        let e = pulled.entry(p.clone()).or_insert([0.0; 3]);
+                        for c in 0..3 {
+                            e[c] += f[c];
+                        }
+                    }
+                }
+                Err(_) => {
+                    failed.insert(&j.from);
+                    failed.insert(&j.to);
+                }
+            }
+        }
+        for (p, f) in pulled {
+            if !failed.contains(&p) {
+                next.insert(p, f);
+            }
+        }
+        // The sections whose clamps' loads changed.
+        let moved = |p: &crate::SectionPoint| {
+            let a = v(next.get(p).copied().unwrap_or([0.0; 3]));
+            let b = v(used.get(p).copied().unwrap_or([0.0; 3]));
+            (a - b).norm() > 0.5_f64.max(1e-4 * a.norm())
+        };
+        let again: Vec<usize> = line
+            .sections
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.points.iter().any(moved))
+            .map(|(k, _)| k)
+            .collect();
+        used = next;
+        if again.is_empty() {
+            return used;
+        }
+        let coupling = Coupling {
+            jumpers: Some(used.clone()),
+            ..Coupling::default()
+        };
+        for &k in &again {
+            let section = &line.sections[k];
+            results[k] = cable_of(library, section).and_then(|cable| {
+                solve_section_coupled(line, section, cable, case, budget, &coupling)
+            });
+        }
+        for group in groups
+            .iter()
+            .filter(|g| g.iter().any(|k| again.contains(k)))
+        {
+            solve_coupled(line, library, case, group, results, budget, &used);
+        }
+    }
+    used
 }
 
 fn cable_of<'a>(
@@ -2168,6 +2298,7 @@ pub fn solve_coupled(
     group: &[usize],
     results: &mut [Result<SectionShape, LineError>],
     budget: &Budget,
+    jumpers: &JumperLoadMap,
 ) {
     type Points = std::collections::BTreeMap<crate::SectionPoint, Point>;
     let pulls_of = |results: &[Result<SectionShape, LineError>]| -> Option<Points> {
@@ -2203,7 +2334,6 @@ pub fn solve_coupled(
     let Some(mut pulls) = pulls_of(results) else {
         return;
     };
-    let jumpers = crate::jumper::end_weights(line, case, |id| library.get(id));
     for _ in 0..COUPLING_PASSES {
         for &k in group {
             let section = &line.sections[k];

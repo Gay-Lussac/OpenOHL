@@ -46,9 +46,10 @@ pub struct SolvedLine {
     jumpers: BTreeMap<String, Result<JumperShape, LineError>>,
     /// What each jumper was solved from: kept while unchanged.
     jumper_inputs: BTreeMap<String, JumperInputs>,
-    /// The jumpers' weight on the clamps the sections were solved with: a
-    /// section whose jumpers weigh otherwise now is solved again.
-    jumper_weights: BTreeMap<crate::SectionPoint, f64>,
+    /// The jumpers' loads on the clamps the sections were solved with (the
+    /// estimate, or their last pull): a section whose jumpers load it
+    /// otherwise now is solved again.
+    jumper_weights: BTreeMap<crate::SectionPoint, [f64; 3]>,
 }
 
 /// What a jumper's solution depends on: itself, the sections at its ends,
@@ -102,7 +103,7 @@ fn solve_one(
     library: &ols_cables::Library,
     case: &WeatherCase,
     id: &str,
-    jumpers: &BTreeMap<crate::SectionPoint, f64>,
+    jumpers: &crate::solve::JumperLoadMap,
 ) -> Result<SectionShape, LineError> {
     let section = line
         .sections
@@ -175,9 +176,20 @@ impl SolvedLine {
             .retain(|id, _| line.sections.iter().any(|s| &s.id == id));
         update.dropped = before - self.sections.len();
         let mut resolved: HashSet<&str> = HashSet::new();
-        // The jumpers' weight on the clamps now: a section whose jumpers
-        // weigh otherwise than when it was solved is solved again.
-        let weights = crate::jumper::end_weights(line, &self.case, |id| library.get(id));
+        // The jumpers' load on the clamps now: a section whose jumpers
+        // load it otherwise than when it was solved (their weight, the
+        // calculation options) is solved again. Pulling: the last pulls
+        // where there are some (the passes below settle them again).
+        let estimate = crate::jumper::end_loads(line, &self.case, |id| library.get(id));
+        let pull = line.solver.jumper_loads == crate::JumperLoads::Pull;
+        let mut weights = estimate.clone();
+        if pull {
+            for (p, f) in &self.jumper_weights {
+                if estimate.contains_key(p) {
+                    weights.insert(p.clone(), *f);
+                }
+            }
+        }
         let reweighed: HashSet<&str> = line
             .sections
             .iter()
@@ -228,11 +240,45 @@ impl SolvedLine {
                 &group,
                 &mut results,
                 &default_fe_budget(),
+                &weights,
             );
             for &k in &group {
                 let id = &line.sections[k].id;
                 self.sections.insert(id.clone(), results[k].clone());
                 resolved.insert(id);
+            }
+        }
+        if pull {
+            // The jumpers' own pull, settled again on the sections.
+            let mut results: Vec<Result<SectionShape, LineError>> = line
+                .sections
+                .iter()
+                .map(|s| {
+                    self.sections
+                        .get(&s.id)
+                        .cloned()
+                        .unwrap_or_else(|| Err(LineError::Invalid("not solved".into())))
+                })
+                .collect();
+            let before = results.clone();
+            weights = crate::solve::jumper_pull(
+                line,
+                library,
+                &self.case,
+                &default_fe_budget(),
+                &estimate,
+                weights,
+                &mut results,
+            );
+            for (k, (now, was)) in results.into_iter().zip(before).enumerate() {
+                if now != was {
+                    let id = &line.sections[k].id;
+                    self.sections.insert(id.clone(), now);
+                    if resolved.insert(id) {
+                        update.solved += 1;
+                        update.kept = update.kept.saturating_sub(1);
+                    }
+                }
             }
         }
         self.jumper_weights = weights;
@@ -392,5 +438,45 @@ mod tests {
         let u = solved.update(&line, &lib, &[]);
         assert_eq!((u.solved, u.kept, u.dropped), (1, 2, 1));
         assert_same_as_full(&line, &solved);
+    }
+
+    /// The jumpers' own pull (Criteria › Calculation options): solved from
+    /// scratch, the same as a full solve; switched on, and after an edit,
+    /// the clamps where a full solve puts them (the passes settle to
+    /// within their tolerance from where they start).
+    #[test]
+    fn updates_with_the_jumpers_pull_match_a_full_solve() {
+        let lib = library();
+        let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let mut line = crate::tests::example();
+        line.solver.jumper_loads = crate::JumperLoads::Pull;
+        let solved = SolvedLine::solve(&line, &lib, &case);
+        assert_same_as_full(&line, &solved);
+        let close = |line: &Line, solved: &SolvedLine| {
+            let full: Vec<SectionShape> = solve_line(line, &lib, &case)
+                .into_iter()
+                .map(Result::unwrap)
+                .collect();
+            for (a, b) in solved.shapes(line).iter().zip(&full) {
+                for (p, q) in a.clamps.iter().zip(&b.clamps) {
+                    let d = (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt();
+                    assert!(d < 2e-3, "{} {p:?} {q:?}", a.section);
+                }
+            }
+        };
+        // Switched on from the estimate (no section said dirty).
+        let mut estimate = line.clone();
+        estimate.solver.jumper_loads = crate::JumperLoads::Estimate;
+        let mut solved = SolvedLine::solve(&estimate, &lib, &case);
+        let u = solved.update(&line, &lib, &[]);
+        assert!(u.solved >= 1, "the sections at the jumper: {u:?}");
+        close(&line, &solved);
+        // An edit.
+        line.sections[0].stringing = crate::Stringing::Tension {
+            horizontal_tension: 23_000.0,
+            temperature: 15.0,
+        };
+        solved.update(&line, &lib, &["S1".to_owned()]);
+        close(&line, &solved);
     }
 }

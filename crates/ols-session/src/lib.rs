@@ -558,6 +558,8 @@ struct Meta {
         skip_serializing_if = "ols_cables::BimetallicModel::is_default"
     )]
     bimetallic: ols_cables::BimetallicModel,
+    #[serde(default, skip_serializing_if = "ols_line::SolverOptions::is_default")]
+    solver: ols_line::SolverOptions,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     circuit_starts: Vec<ols_line::SectionPoint>,
 }
@@ -573,6 +575,7 @@ impl Meta {
             systems: line.systems.clone(),
             creep_stretch: line.creep_stretch.clone(),
             bimetallic: line.bimetallic,
+            solver: line.solver,
             circuit_starts: line.circuit_starts.clone(),
         }
     }
@@ -792,6 +795,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
         systems: meta.systems,
         creep_stretch: meta.creep_stretch,
         bimetallic: meta.bimetallic,
+        solver: meta.solver,
         circuit_starts: meta.circuit_starts,
         condition_cases: Default::default(),
     };
@@ -1378,6 +1382,15 @@ impl Session {
     pub fn bimetallic_command(&self, bimetallic: ols_cables::BimetallicModel) -> Command {
         let mut line = self.line.clone();
         line.bimetallic = bimetallic;
+        line_settings_put(&line, None)
+    }
+
+    /// The command setting the line's calculation options (Criteria ›
+    /// Calculation options): one logged, undoable put of the line's
+    /// settings.
+    pub fn solver_command(&self, solver: ols_line::SolverOptions) -> Command {
+        let mut line = self.line.clone();
+        line.solver = solver;
         line_settings_put(&line, None)
     }
 

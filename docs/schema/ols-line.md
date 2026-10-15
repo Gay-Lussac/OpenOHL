@@ -71,6 +71,7 @@ The names are those of the line file:
   <creep_stretch creep_case="…">
     <load_case name="…"/>
   </creep_stretch>
+  <solver jumper_loads="pull"/>                 <!-- Criteria › Calculation options; default estimate -->
   <bimetallic behavior="bird_cage"/>            <!-- or compression, max_virtual_compression_pa="…" -->
 </line>
 ```
