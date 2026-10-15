@@ -141,6 +141,12 @@ const SECTIONS: &[Column] = &[
     ),
     ("bundle", 55.0, Yes, "subconductors"),
     ("spacing m", 70.0, Yes, "subconductor spacing"),
+    (
+        "bundle angle °",
+        90.0,
+        Yes,
+        "rotation of the bundle, degrees counter-clockwise looking ahead; 0: the two highest subconductors level (a triple bundle: two side by side above one)",
+    ),
     ("status", 95.0, Yes, "in the blocks (rolling) or clipped in"),
     (
         "condition",
@@ -824,13 +830,25 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
             for row in rows.iter_mut() {
                 set(
                     row,
-                    4,
+                    TableKind::Sections.column("system"),
                     system
                         .get(row.key.as_str())
                         .cloned()
                         .unwrap_or_else(|| "earthed".into()),
                 );
-                set(row, 12, shown.join("; "));
+                set(
+                    row,
+                    TableKind::Sections.column("display cases"),
+                    shown.join("; "),
+                );
+                // A bundle not turned: 0°.
+                if row.cells[5].trim().parse::<u32>().is_ok_and(|n| n > 1) {
+                    set(
+                        row,
+                        TableKind::Sections.column("bundle angle °"),
+                        "0".into(),
+                    );
+                }
             }
         }
         TableKind::Strings => {
@@ -1266,6 +1284,7 @@ impl TableKind {
                             s.system.clone().unwrap_or_default(),
                             s.bundle.to_string(),
                             s.bundle_spacing.map_or(String::new(), |v| f(v, 3)),
+                            s.bundle_rotation_deg.map_or(String::new(), |v| f(v, 1)),
                             if s.stringing.clipped() {
                                 "clipped in".into()
                             } else {
@@ -1513,12 +1532,13 @@ impl TableKind {
                 cells[4] = like.system.unwrap_or_default();
                 cells[5] = like.bundle.to_string();
                 cells[6] = f(like.spacing, 3);
-                cells[7] = "in the blocks".into();
-                cells[TableKind::Sections.column("calculation")] =
+                let col = |n: &str| TableKind::Sections.column(n);
+                cells[col("status")] = "in the blocks".into();
+                cells[col("calculation")] =
                     ols_line::condition::Calculation::default().label().into();
-                cells[8] = "tension".into();
-                cells[9] = "20".into();
-                cells[10] = "15".into();
+                cells[col("condition")] = "tension".into();
+                cells[col("value")] = "20".into();
+                cells[col("temp °C")] = "15".into();
             }
             TableKind::Strings => {
                 cells[9] = "suspension".into();
@@ -1722,14 +1742,14 @@ impl TableKind {
                 }
                 for key in page.edits.keys().filter(|k| !page.deleted.contains(*k)) {
                     let c = existing(key)?;
-                    let display = Some(TableKind::Sections.column("display cases"));
+                    let display = TableKind::Sections.column("display cases");
                     let only_display = page
                         .edits
                         .get(key)
-                        .is_some_and(|e| e.keys().all(|k| Some(*k) == display));
+                        .is_some_and(|e| e.keys().all(|k| *k == display));
                     let new_id = c.get(0).trim().to_owned();
                     out.display
-                        .push((new_id.clone(), display_case(model, &c.get(12))?));
+                        .push((new_id.clone(), display_case(model, &c.get(display))?));
                     if only_display {
                         continue;
                     }
@@ -1827,7 +1847,10 @@ impl TableKind {
                     let mut form = SectionForm::new_through(model, case, Vec::new(), None);
                     form.id = id.clone();
                     section_cells(&mut form, &c, model, case, &id)?;
-                    out.display.push((id, display_case(model, &c.get(12))?));
+                    out.display.push((
+                        id,
+                        display_case(model, &c.get(TableKind::Sections.column("display cases")))?,
+                    ));
                     out.commands.push(form.command(Some(stored))?);
                 }
             }
@@ -2944,7 +2967,13 @@ fn section_cells(
     if let Some(s) = opt_num(&c.get(6), &format!("{name} spacing"))? {
         form.spacing = s;
     }
-    let clipped = match c.get(7).trim().to_lowercase().as_str() {
+    let col = |n: &str| TableKind::Sections.column(n);
+    form.rotation = opt_num(
+        &c.get(col("bundle angle °")),
+        &format!("{name} bundle angle"),
+    )?
+    .unwrap_or(0.0);
+    let clipped = match c.get(col("status")).trim().to_lowercase().as_str() {
         "in the blocks" | "blocks" | "unclipped" | "rolling" => false,
         "clipped in" | "clipped" => true,
         other => {
@@ -2953,13 +2982,13 @@ fn section_cells(
             ));
         }
     };
-    if form.stringing.clipped() && (!clipped || c.changed(8)) {
+    if form.stringing.clipped() && (!clipped || c.changed(col("condition"))) {
         form.stringing = form.unclipped(model, case);
     }
     // The points first: a sag in a span needs the spans.
-    if is_new || c.changed(11) {
+    if is_new || c.changed(col("points")) {
         let points: Vec<SectionPoint> = c
-            .get(11)
+            .get(col("points"))
             .split([',', '→'])
             .filter(|t| !t.trim().is_empty())
             .map(parse_point)
@@ -2969,15 +2998,15 @@ fn section_cells(
         }
         form.set_points(model, case, points);
     }
-    let temperature = num(&c.get(10), &format!("{name} temperature"))?;
+    let temperature = num(&c.get(col("temp °C")), &format!("{name} temperature"))?;
     if !form.stringing.clipped() {
-        let condition = c.get(8).trim().to_lowercase();
-        if c.changed(8) && !c.changed(9) && !is_new {
+        let condition = c.get(col("condition")).trim().to_lowercase();
+        if c.changed(col("condition")) && !c.changed(col("value")) && !is_new {
             return Err(format!(
                 "{name}: give the value (kN or m) for the new condition"
             ));
         }
-        let value = num(&c.get(9), &format!("{name} value"))?;
+        let value = num(&c.get(col("value")), &format!("{name} value"))?;
         form.stringing = if condition == "tension" {
             Stringing::Tension {
                 horizontal_tension: value * 1000.0,
@@ -3011,7 +3040,10 @@ fn section_cells(
     if clipped && !form.stringing.clipped() {
         form.clip_in(model)?;
     }
-    for (col, measure) in [(13, Measure::Tension), (14, Measure::Sag)] {
+    for (col, measure) in [
+        (col("H kN"), Measure::Tension),
+        (col("max sag m"), Measure::Sag),
+    ] {
         if c.changed(col) {
             let target = num(&c.get(col), &format!("{name} {}", SECTIONS[col].0))?;
             let shown = model.section_case(&form.id, case);

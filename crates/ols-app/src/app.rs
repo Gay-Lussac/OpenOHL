@@ -6241,6 +6241,20 @@ impl eframe::App for App {
                 if let Some((what, command)) = out.apply {
                     ready.perform(crate::edit::Action::Command { what, command });
                 }
+                // The result clicked in its weather case.
+                if let Some(name) = &out.case
+                    && let Some(k) = ready.model.cases.iter().position(|c| &c.case.name == name)
+                    && k != ready.case
+                {
+                    ready.set_case(k);
+                }
+                // Its line gone with the window (or a new run, a report
+                // opened: no result picked).
+                if ready.view3d.measure.is_some()
+                    && (!ready.phase_distance.open || ready.phase_distance.picked.is_none())
+                {
+                    ready.view3d.measure = None;
+                }
                 if let Some(target) = out.go {
                     ready.go_to(target);
                 }

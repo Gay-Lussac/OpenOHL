@@ -868,7 +868,7 @@ impl Bundle {
     /// Positions of the subconductors around the centre line, m: (across,
     /// up) in the plane across the wire — across to the right looking
     /// ahead, up away from the ground. On a circle of radius
-    /// `s / (2·sin(π/n))`; by default the two lowest subconductors are
+    /// `s / (2·sin(π/n))`; by default the two highest subconductors are
     /// level. One entry `[0, 0]` for a single wire or a bundle without a
     /// spacing (geometry as one wire).
     pub fn offsets(&self) -> Vec<[f64; 2]> {
@@ -877,8 +877,15 @@ impl Bundle {
             return vec![[0.0, 0.0]];
         };
         let r = s / (2.0 * (std::f64::consts::PI / f64::from(n)).sin());
+        // One at the bottom for an odd count (a triple bundle: two side by
+        // side above one), a flat bottom for an even one.
+        let odd = n % 2 == 1;
         let start = -std::f64::consts::FRAC_PI_2
-            + std::f64::consts::PI / f64::from(n)
+            + if odd {
+                0.0
+            } else {
+                std::f64::consts::PI / f64::from(n)
+            }
             + self.rotation_deg.unwrap_or(0.0).to_radians();
         (0..n)
             .map(|k| {
@@ -1581,7 +1588,7 @@ mod tests {
         for n in 3..=8 {
             s.bundle = n;
             let o = s.bundle_offsets();
-            // Neighbours 0.4 m apart; the two lowest level.
+            // Neighbours 0.4 m apart; the two highest level.
             for k in 0..o.len() {
                 let (a, b) = (o[k], o[(k + 1) % o.len()]);
                 assert!(
@@ -1590,15 +1597,16 @@ mod tests {
                 );
             }
             let mut ys: Vec<f64> = o.iter().map(|p| p[1]).collect();
-            ys.sort_by(f64::total_cmp);
+            ys.sort_by(|a, b| b.total_cmp(a));
             assert!((ys[0] - ys[1]).abs() < 1e-12, "{n}: {o:?}");
         }
-        // Three: one on top; turned by 60°: one at the bottom.
+        // Three: two side by side above one at the bottom; turned by 60°:
+        // one on top.
         s.bundle = 3;
         let r = 0.4 / (2.0 * (std::f64::consts::PI / 3.0).sin());
-        assert!(s.bundle_offsets().iter().any(|p| (p[1] - r).abs() < 1e-12));
-        s.bundle_rotation_deg = Some(60.0);
         assert!(s.bundle_offsets().iter().any(|p| (p[1] + r).abs() < 1e-12));
+        s.bundle_rotation_deg = Some(60.0);
+        assert!(s.bundle_offsets().iter().any(|p| (p[1] - r).abs() < 1e-12));
         // Checked in the line.
         let mut line = example();
         line.sections[0].bundle_spacing = Some(0.4);
