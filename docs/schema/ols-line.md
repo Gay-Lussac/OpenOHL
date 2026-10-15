@@ -66,6 +66,12 @@ The names are those of the line file:
   <!-- structures, sections, jumpers, systems, alignments and routes may
        hold the values of plugins' table columns, last inside them:
        <field key="lev-ch.insulation_level" value="low"/> -->
+  <!-- in <section>: <spread_load span start_fraction|start_distance end_fraction|end_distance load label/>,
+       <span_point label span fraction|distance description/>; <load distance="…"/> instead of fraction -->
+  <spacer id="SP1" weight="120" compression="10000">   <!-- an interphase spacer -->
+    <end section="S1" point="P1"/> <end section="S2" point="P1"/>
+  </spacer>
+  <defaults spacer_compression="10000"/>        <!-- the project's default values -->
   <circuit_start structure="T7" set="1"/>       <!-- a circuit's end that is a start -->
   <phase_color label="L1" color="#8b4513"/>     <!-- display colours -->
   <creep_stretch creep_case="…">

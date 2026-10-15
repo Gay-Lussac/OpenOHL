@@ -1203,3 +1203,89 @@ fn old_projects_get_routes_and_alignments_when_they_open() {
     let s = Session::open(&path).unwrap();
     assert!(s.line().routes.is_empty() && s.line().alignments.is_empty());
 }
+
+/// Spacers are objects of the project: put and undone; a section renamed
+/// takes them along; a section deleted takes its spacers, after a
+/// confirmation that lists them; the project's default values set as the
+/// line's settings.
+#[test]
+fn spacers_follow_their_sections() {
+    let (_p, mut s) = project("spacers");
+    let mut line = s.export();
+    for sec in &mut line.sections[..2] {
+        sec.span_points.push(ols_line::SpanPoint {
+            label: "P1".into(),
+            span: 0,
+            at: ols_line::SpanPlace::at_fraction(0.4),
+            description: String::new(),
+        });
+    }
+    let (s1, s2) = (line.sections[0].id.clone(), line.sections[1].id.clone());
+    s.apply(
+        "ana",
+        Command::ReplaceLine {
+            line: Box::new(line),
+        },
+    )
+    .unwrap();
+    let spacer = ols_line::Spacer {
+        id: "SP1".into(),
+        a: ols_line::SpanPointRef {
+            section: s1.clone(),
+            point: "P1".into(),
+        },
+        b: ols_line::SpanPointRef {
+            section: s2.clone(),
+            point: "P1".into(),
+        },
+        compression: Some(10_000.0),
+        ..Default::default()
+    };
+    s.apply("ana", put(Kind::Spacer, "SP1", &spacer)).unwrap();
+    assert_eq!(s.line().spacers.len(), 1);
+    s.undo("ana").unwrap();
+    assert!(s.line().spacers.is_empty());
+    s.redo("ana").unwrap();
+    // Renamed section: the spacer follows.
+    s.apply(
+        "ana",
+        Command::Rename {
+            kind: Kind::Section,
+            id: s1.clone(),
+            new_id: "S1x".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(s.line().spacers[0].a.section, "S1x");
+    // Deleted section: asked first, the spacer listed, then both gone.
+    let err = s
+        .apply(
+            "ana",
+            Command::Delete {
+                kind: Kind::Section,
+                id: s2.clone(),
+                confirm: false,
+            },
+        )
+        .unwrap_err();
+    let SessionError::NeedsConfirmation(impact) = &err else {
+        panic!("{err}");
+    };
+    assert_eq!(impact.spacers, ["SP1"]);
+    s.apply(
+        "ana",
+        Command::Delete {
+            kind: Kind::Section,
+            id: s2,
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert!(s.line().spacers.is_empty());
+    // The default values.
+    let d = ols_line::Defaults {
+        spacer_compression: 8000.0,
+    };
+    s.apply("ana", s.defaults_command(d)).unwrap();
+    assert_eq!(s.line().defaults, d);
+}

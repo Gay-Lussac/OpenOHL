@@ -137,6 +137,42 @@ fn rich_line() -> Line {
         max_virtual_compression: Some(ols_core::units::Stress::from_megapascals(50.0)),
     };
     line.solver.jumper_loads = ols_line::JumperLoads::Pull;
+    line.defaults.spacer_compression = 8000.0;
+    line.sections[0].loads[0].distance = Some(30.0);
+    for sec in &mut line.sections[..2] {
+        sec.span_points.push(ols_line::SpanPoint {
+            label: "P1".into(),
+            span: 0,
+            at: ols_line::SpanPlace::at_distance(40.0),
+            description: "a third".into(),
+        });
+    }
+    line.sections[0].spread_loads.push(ols_line::SpreadLoad {
+        span: 0,
+        start: ols_line::SpanPlace::at_fraction(0.1),
+        end: ols_line::SpanPlace::at_distance(50.0),
+        load: 12.5,
+        label: "tray".into(),
+    });
+    line.spacers.push(ols_line::Spacer {
+        id: "SP1".into(),
+        description: "interphase".into(),
+        a: ols_line::SpanPointRef {
+            section: line.sections[0].id.clone(),
+            point: "P1".into(),
+        },
+        b: ols_line::SpanPointRef {
+            section: line.sections[1].id.clone(),
+            point: "P1".into(),
+        },
+        insulator: None,
+        length: Some(3.5),
+        weight: 120.0,
+        wind_area: 0.05,
+        stiffness: Some(5e6),
+        compression: Some(8000.0),
+        fields: Default::default(),
+    });
     let second = line.alignments[1].id.clone();
     let s2 = (
         line.structures[2].position,

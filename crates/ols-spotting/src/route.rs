@@ -344,6 +344,8 @@ pub fn spotted_line(
             color: None,
             calculation: Default::default(),
             fields: Default::default(),
+            spread_loads: Default::default(),
+            span_points: Default::default(),
         })
         .collect();
     out.jumpers.clear();

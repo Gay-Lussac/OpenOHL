@@ -1,6 +1,31 @@
 # Interphase spacers: a string between two conductors in a span (proposal)
 
-Status: **proposal, not built**. What it would take to model an
+Status: **decided, being built.** Done: the data (span points, point
+loads by fraction or distance, spread loads, spacers, the project's
+default values with their file), checked (a spacer's sections by finite
+elements only), saved, logged, in OLS XML; spread loads and span points
+in the solve. To come: the spacers in the solve (sections joined, one
+model), the app (the span tool, strings between span points, tables,
+drawing, Default values), the LeV check in the plugin with 2.2.4.
+
+Decided with the user: spans with spacers refuse the ruling span; span
+points (and point and spread loads) are placed with one span tool — by a
+fraction of the span, a length along it, or a regular spacing — and the
+spacer is drawn with the add-string tool between two span points; a
+spacer's compression limit defaults to 10 000 N, from the project's
+default values (Criteria › Default values, exported and imported as a
+file); spread loads by start, end and N/m; the LeV check moves to the
+plugin with the phase-spacer rule, the core keeping what it needs to
+run (and compared for speed).
+
+Added by the user: a place on a span may also be given by its **station**
+(along the span's alignment, between its two structures' stations);
+with the span tool the object is placed where the span is clicked. At
+the end, a sweep of the program's **non-plugin default values** (e.g. the
+jumper exit angle, insulator stiffness, label distance) into the
+project's Default values and their file.
+
+Original proposal: What it would take to model an
 insulator string held between two conductors in a span (an interphase
 spacer, *Phasenabstandhalter*), used to keep conductors apart (against
 galloping, conductors swinging together, or to reduce the distance a

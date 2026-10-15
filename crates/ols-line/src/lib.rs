@@ -104,6 +104,10 @@ pub struct Line {
     /// Jumpers between attachment points.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub jumpers: Vec<Jumper>,
+    /// Interphase spacers: strings between two conductors in a span,
+    /// clamped at span points ([`Spacer`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spacers: Vec<Spacer>,
     /// Electrical systems (phases or poles with their voltage); sections
     /// refer to them ([`electrical`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -126,6 +130,10 @@ pub struct Line {
     /// How the calculations are done (Criteria › Calculation options).
     #[serde(default, skip_serializing_if = "SolverOptions::is_default")]
     pub solver: SolverOptions,
+    /// The project's default values (Criteria › Default values): what new
+    /// objects start with.
+    #[serde(default, skip_serializing_if = "Defaults::is_default")]
+    pub defaults: Defaults,
     /// The ends of electrical circuits (conductor paths) that are starts
     /// (power flows in); a circuit none of whose ends is listed runs along
     /// the line, from its end that comes first ([`electrical::circuits`]).
@@ -698,6 +706,230 @@ impl Stringing {
     }
 }
 
+/// A place along a span: a horizontal fraction of it from its back point,
+/// or a horizontal distance from that point (m), which wins when given.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpanPlace {
+    /// Horizontal fraction of the span from its back point, 0–1.
+    #[serde(default)]
+    pub fraction: f64,
+    /// Horizontal distance from the back point, m.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<f64>,
+}
+
+impl SpanPlace {
+    /// At `fraction` of the span.
+    pub fn at_fraction(fraction: f64) -> Self {
+        Self {
+            fraction,
+            distance: None,
+        }
+    }
+
+    /// At `distance` m from the back point.
+    pub fn at_distance(distance: f64) -> Self {
+        Self {
+            fraction: 0.0,
+            distance: Some(distance),
+        }
+    }
+
+    /// Its fraction of a span `horizontal` m long.
+    pub fn fraction_of(&self, horizontal: f64) -> f64 {
+        match self.distance {
+            Some(d) if horizontal > 0.0 => d / horizontal,
+            Some(_) => 0.0,
+            None => self.fraction,
+        }
+    }
+
+    /// Readable: `0.25` or `120 m`.
+    pub fn text(&self) -> String {
+        match self.distance {
+            Some(d) => format!("{d} m"),
+            None => format!("{}", self.fraction),
+        }
+    }
+}
+
+/// A point on a span of a section: where a spacer (or later another
+/// string) is clamped on the conductor ([`Spacer`]).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpanPoint {
+    /// Label, unique on the section.
+    pub label: String,
+    /// Span index (0 = first span of the section).
+    pub span: usize,
+    /// Where along the span.
+    pub at: SpanPlace,
+    /// What it is, in words.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+}
+
+/// A load spread along part of a span (e.g. a heated stretch, a cable
+/// tray, a wire carrying another): downward, N/m of the conductor between
+/// two places, on the whole bundle.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpreadLoad {
+    /// Span index (0 = first span of the section).
+    pub span: usize,
+    /// Where it starts.
+    pub start: SpanPlace,
+    /// Where it ends.
+    pub end: SpanPlace,
+    /// Downward load, N per metre of conductor (the whole bundle's).
+    pub load: f64,
+    /// Label.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+}
+
+/// A span point of a section, by the section's id and the point's label.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpanPointRef {
+    /// Section id.
+    pub section: String,
+    /// The span point's label.
+    pub point: String,
+}
+
+/// An interphase spacer: an insulator string between span points of two
+/// conductors of the same span, keeping them apart. Fitted after
+/// stringing; the sections it joins are solved together, by finite
+/// elements only (not the ruling span).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Spacer {
+    /// Unique id.
+    pub id: String,
+    /// What it is, in words.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    /// One end.
+    pub a: SpanPointRef,
+    /// The other end.
+    pub b: SpanPointRef,
+    /// Insulator library label (`.olsi`): its weight, wind area, stiffness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insulator: Option<String>,
+    /// Its length, m (none: the distance between its ends where the
+    /// wires hang at stringing).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<f64>,
+    /// Weight, N (half at each end).
+    #[serde(default)]
+    pub weight: f64,
+    /// Wind area, m².
+    #[serde(default)]
+    pub wind_area: f64,
+    /// Axial stiffness EA, N (none: the insulator's, else the default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stiffness: Option<f64>,
+    /// Compression it may take, N (none: tension only); beyond, flagged.
+    /// New spacers take the project's default ([`Defaults`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compression: Option<f64>,
+    /// Values of columns added by plugins, by `plugin.column`.
+    #[serde(default, skip_serializing_if = "Fields::is_empty")]
+    pub fields: Fields,
+}
+
+/// The default spacer compression limit, N.
+pub const DEFAULT_SPACER_COMPRESSION: f64 = 10_000.0;
+
+fn default_spacer_compression() -> f64 {
+    DEFAULT_SPACER_COMPRESSION
+}
+
+/// The project's default values (Criteria › Default values): what new
+/// objects start with; exported and imported as a file
+/// ([`DEFAULTS_FILE_FORMAT`]).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Defaults {
+    /// A new spacer's compression limit, N.
+    #[serde(default = "default_spacer_compression")]
+    pub spacer_compression: f64,
+}
+
+impl Default for Defaults {
+    fn default() -> Self {
+        Self {
+            spacer_compression: DEFAULT_SPACER_COMPRESSION,
+        }
+    }
+}
+
+/// File format id of exported default values.
+pub const DEFAULTS_FILE_FORMAT: &str = "ols-defaults";
+/// Newest version read.
+pub const DEFAULTS_FILE_VERSION: u32 = 1;
+/// File extension of exported default values.
+pub const DEFAULTS_FILE_EXTENSION: &str = "olsdef";
+
+impl Defaults {
+    /// Nothing changed from the program's.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// As a file (TOML).
+    pub fn to_text(&self) -> String {
+        format!(
+            "# Default values of an OLS CAD project (Criteria › Default values).\n\
+             format = \"{DEFAULTS_FILE_FORMAT}\"\nversion = {DEFAULTS_FILE_VERSION}\n\n\
+             [spacer]\n# Compression a new spacer may take.\ncompression = \"{} N\"\n",
+            self.spacer_compression
+        )
+    }
+
+    /// Reads a file; values not given keep the program's defaults.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Raw {
+            format: Option<String>,
+            version: Option<u32>,
+            #[serde(default)]
+            spacer: Option<RawSpacer>,
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct RawSpacer {
+            #[serde(default)]
+            compression: Option<ols_core::units::Force>,
+        }
+        let raw: Raw = toml::from_str(text).map_err(|e| e.to_string())?;
+        ols_core::files::check_header(
+            raw.format.as_deref(),
+            raw.version,
+            DEFAULTS_FILE_FORMAT,
+            DEFAULTS_FILE_VERSION,
+            "default values",
+        )?;
+        let mut d = Self::default();
+        if let Some(c) = raw.spacer.and_then(|s| s.compression) {
+            d.spacer_compression = c.si();
+        }
+        d.validate()?;
+        Ok(d)
+    }
+
+    /// The values hold.
+    pub fn validate(&self) -> Result<(), String> {
+        if !(self.spacer_compression.is_finite() && self.spacer_compression >= 0.0) {
+            return Err("the spacer compression limit must be ≥ 0".into());
+        }
+        Ok(())
+    }
+}
+
 /// A point load in a span: its weight, and as a body of some size (a
 /// marker ball, an obstruction light) the wind on it and the ice it takes.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -706,7 +938,12 @@ pub struct SpanLoad {
     /// Span index (0 = first span of the section).
     pub span: usize,
     /// Horizontal fraction of the span from its back point, 0–1.
+    #[serde(default)]
     pub fraction: f64,
+    /// Horizontal distance from the span's back point, m: given, it is
+    /// the place (the fraction is not used).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<f64>,
     /// Downward force, N: on the whole bundle (shared between its
     /// subconductors).
     pub vertical: f64,
@@ -811,9 +1048,15 @@ pub struct Section {
     pub points: Vec<SectionPoint>,
     /// Stringing.
     pub stringing: Stringing,
-    /// Point loads (marker balls, spacers, …).
+    /// Point loads (marker balls, lights, …).
     #[serde(default)]
     pub loads: Vec<SpanLoad>,
+    /// Loads spread along parts of spans.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spread_loads: Vec<SpreadLoad>,
+    /// Points on its spans where spacers are clamped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub span_points: Vec<SpanPoint>,
     /// Display colour (`#rrggbb`), overriding the phase colour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
@@ -1459,9 +1702,16 @@ impl Line {
                     ));
                 }
             }
+            let place_ok = |p: &SpanPlace| match p.distance {
+                Some(d) => d.is_finite() && d > 0.0,
+                None => 0.0 < p.fraction && p.fraction < 1.0,
+            };
             if let Some(l) = sec.loads.iter().find(|l| {
                 l.span >= spans
-                    || !(0.0 < l.fraction && l.fraction < 1.0)
+                    || !place_ok(&SpanPlace {
+                        fraction: l.fraction,
+                        distance: l.distance,
+                    })
                     || !(l.diameter >= 0.0 && l.diameter.is_finite())
                     || [l.drag, l.wind_area, l.ice_area]
                         .iter()
@@ -1472,6 +1722,32 @@ impl Line {
                     "section {}: load {:?} is not inside a span, or has a negative size",
                     sec.id, l.label
                 ));
+            }
+            if let Some(l) = sec.spread_loads.iter().find(|l| {
+                l.span >= spans
+                    || !(place_ok(&l.start) || l.start == SpanPlace::default())
+                    || !(place_ok(&l.end) || l.end.fraction == 1.0)
+                    || !(l.load.is_finite() && l.load >= 0.0)
+            }) {
+                return invalid(format!(
+                    "section {}: spread load {:?} is not inside a span, or is negative",
+                    sec.id, l.label
+                ));
+            }
+            let mut labels = std::collections::BTreeSet::new();
+            for p in &sec.span_points {
+                if p.label.trim().is_empty() || !labels.insert(p.label.as_str()) {
+                    return invalid(format!(
+                        "section {}: span point labels must be given and unique ({:?})",
+                        sec.id, p.label
+                    ));
+                }
+                if p.span >= spans || !place_ok(&p.at) {
+                    return invalid(format!(
+                        "section {}: span point {} is not inside a span",
+                        sec.id, p.label
+                    ));
+                }
             }
             if let Some(c) = sec.color.as_deref().filter(|c| !is_hex_color(c)) {
                 return invalid(format!("section {}: colour \"{c}\" is not #rrggbb", sec.id));
@@ -1553,6 +1829,52 @@ impl Line {
                 return bad(&format!("colour \"{c}\" is not #rrggbb"));
             }
         }
+        self.defaults.validate().map_err(LineError::Invalid)?;
+        let mut ids = std::collections::BTreeSet::new();
+        for s in &self.spacers {
+            let bad = |m: &str| invalid(format!("spacer {}: {m}", s.id));
+            if s.id.trim().is_empty() || !ids.insert(s.id.as_str()) {
+                return invalid(format!("spacer ids must be given and unique ({:?})", s.id));
+            }
+            if s.a.section == s.b.section {
+                return bad("its ends must be on two different sections");
+            }
+            let mut spans = Vec::new();
+            for end in [&s.a, &s.b] {
+                let Some(sec) = self.sections.iter().find(|x| x.id == end.section) else {
+                    return bad(&format!("no section {}", end.section));
+                };
+                let Some(p) = sec.span_points.iter().find(|p| p.label == end.point) else {
+                    return bad(&format!(
+                        "no span point {} on section {}",
+                        end.point, sec.id
+                    ));
+                };
+                if sec.calculation.method() != condition::Method::Fe {
+                    return bad(&format!(
+                        "section {} is calculated by ruling span: a spacer needs finite \
+                         elements (its calculation: … FE)",
+                        sec.id
+                    ));
+                }
+                let span = &sec.points[p.span..=p.span + 1];
+                let mut ends = [span[0].structure.clone(), span[1].structure.clone()];
+                ends.sort();
+                spans.push(ends);
+            }
+            if spans[0] != spans[1] {
+                return bad("its ends must be in the same span (between the same two structures)");
+            }
+            let positive = |x: f64| x.is_finite() && x > 0.0;
+            let at_least_0 = |x: f64| x.is_finite() && x >= 0.0;
+            if !(at_least_0(s.weight) && at_least_0(s.wind_area))
+                || s.stiffness.is_some_and(|k| !positive(k))
+                || s.compression.is_some_and(|c| !at_least_0(c))
+                || s.length.is_some_and(|l| !positive(l))
+            {
+                return bad("weight, wind area, compression ≥ 0; stiffness and length > 0");
+            }
+        }
         Ok(())
     }
 }
@@ -1560,6 +1882,116 @@ impl Line {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A line with a spacer between S1 and S2 (both T1–T2) at span
+    /// points a third along.
+    fn spaced() -> Line {
+        let mut line = example();
+        for s in &mut line.sections[..2] {
+            s.span_points.push(SpanPoint {
+                label: "P1".into(),
+                span: 0,
+                at: SpanPlace::at_fraction(1.0 / 3.0),
+                description: String::new(),
+            });
+        }
+        line.spacers.push(Spacer {
+            id: "SP1".into(),
+            a: SpanPointRef {
+                section: line.sections[0].id.clone(),
+                point: "P1".into(),
+            },
+            b: SpanPointRef {
+                section: line.sections[1].id.clone(),
+                point: "P1".into(),
+            },
+            weight: 150.0,
+            compression: Some(DEFAULT_SPACER_COMPRESSION),
+            ..Default::default()
+        });
+        line
+    }
+
+    /// Span points, spread loads and spacers: checked (labels unique,
+    /// inside their span; a spacer between two sections of one span, both
+    /// by finite elements — not the ruling span); places by fraction or
+    /// distance; the project defaults as a file and back.
+    #[test]
+    fn span_points_spread_loads_and_spacers() {
+        let line = spaced();
+        line.validate().unwrap();
+        let text = serde_json::to_string(&line).unwrap();
+        assert_eq!(serde_json::from_str::<Line>(&text).unwrap(), line);
+        // A ruling-span section refuses its spacer.
+        let mut rs = line.clone();
+        rs.sections[0].calculation = condition::Calculation::InitialRs;
+        assert!(
+            rs.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("ruling span")
+        );
+        // Both ends on one section, a missing point, another span.
+        let mut one = line.clone();
+        one.spacers[0].b.section = one.spacers[0].a.section.clone();
+        assert!(one.validate().is_err());
+        let mut missing = line.clone();
+        missing.spacers[0].b.point = "nope".into();
+        assert!(missing.validate().is_err());
+        let mut far = line.clone();
+        far.spacers[0].b.section = far.sections[2].id.clone();
+        far.sections[2].span_points.push(SpanPoint {
+            label: "P1".into(),
+            span: 0,
+            at: SpanPlace::at_fraction(0.5),
+            description: String::new(),
+        });
+        assert!(
+            far.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("same span")
+        );
+        // Labels unique; places inside the span.
+        let mut twice = line.clone();
+        let again = twice.sections[0].span_points[0].clone();
+        twice.sections[0].span_points.push(again);
+        assert!(twice.validate().is_err());
+        let mut out = line.clone();
+        out.sections[0].span_points[0].at = SpanPlace::at_fraction(1.5);
+        assert!(out.validate().is_err());
+        // A spread load and a point load placed by distance.
+        let mut loaded = line.clone();
+        loaded.sections[0].spread_loads.push(SpreadLoad {
+            span: 0,
+            start: SpanPlace::at_distance(20.0),
+            end: SpanPlace::at_fraction(0.5),
+            load: 15.0,
+            label: "tray".into(),
+        });
+        loaded.sections[0].loads.push(SpanLoad {
+            span: 0,
+            distance: Some(40.0),
+            vertical: 50.0,
+            ..Default::default()
+        });
+        loaded.validate().unwrap();
+        assert!((SpanPlace::at_distance(30.0).fraction_of(120.0) - 0.25).abs() < 1e-12);
+        assert_eq!(SpanPlace::at_fraction(0.4).fraction_of(120.0), 0.4);
+        let mut negative = loaded.clone();
+        negative.sections[0].spread_loads[0].load = -1.0;
+        assert!(negative.validate().is_err());
+        // Defaults: 10 000 N, written and read back, changed.
+        let d = Defaults::default();
+        assert_eq!(d.spacer_compression, 10_000.0);
+        assert_eq!(Defaults::parse(&d.to_text()).unwrap(), d);
+        let mine = Defaults::parse(
+            "format = \"ols-defaults\"\nversion = 1\n[spacer]\ncompression = \"8 kN\"\n",
+        )
+        .unwrap();
+        assert_eq!(mine.spacer_compression, 8000.0);
+        assert!(Defaults::parse("format = \"x\"").is_err());
+    }
 
     pub(crate) fn example() -> Line {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))

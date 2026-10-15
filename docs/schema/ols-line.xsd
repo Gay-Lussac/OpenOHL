@@ -356,13 +356,44 @@
               <xs:element name="load" minOccurs="0" maxOccurs="unbounded">
                 <xs:complexType>
                   <xs:attribute name="span" type="xs:unsignedInt" use="required"/>
-                  <xs:attribute name="fraction" type="xs:double" use="required"/>
+                  <xs:attribute name="fraction" type="xs:double"/>
+                  <xs:attribute name="distance" type="xs:double"/>
                   <xs:attribute name="vertical" type="xs:double" use="required"/>
                   <xs:attribute name="label" type="xs:string"/>
                   <xs:attribute name="diameter" type="xs:double"/>
                   <xs:attribute name="drag" type="xs:double"/>
                   <xs:attribute name="wind_area" type="xs:double"/>
                   <xs:attribute name="ice_area" type="xs:double"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="spread_load" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A load spread along part of a span: from start
+                    to end (each a fraction of the span or a horizontal distance
+                    from its back point, m), downward, N per metre of conductor
+                    (the whole bundle's).</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="span" type="xs:unsignedInt" use="required"/>
+                  <xs:attribute name="start_fraction" type="xs:double"/>
+                  <xs:attribute name="start_distance" type="xs:double"/>
+                  <xs:attribute name="end_fraction" type="xs:double"/>
+                  <xs:attribute name="end_distance" type="xs:double"/>
+                  <xs:attribute name="load" type="xs:double" use="required"/>
+                  <xs:attribute name="label" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="span_point" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A point on a span where a spacer is clamped
+                    (fraction of the span or distance from its back point).</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="label" type="xs:string" use="required"/>
+                  <xs:attribute name="span" type="xs:unsignedInt" use="required"/>
+                  <xs:attribute name="fraction" type="xs:double"/>
+                  <xs:attribute name="distance" type="xs:double"/>
+                  <xs:attribute name="description" type="xs:string"/>
                 </xs:complexType>
               </xs:element>
               <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>
@@ -426,6 +457,34 @@
 
         <!-- An end of an electrical circuit (a conductor path) that is a start;
              a circuit none of whose ends is listed runs along the line. -->
+        <xs:element name="spacer" minOccurs="0" maxOccurs="unbounded">
+          <xs:annotation>
+            <xs:documentation>An interphase spacer: an insulator between span
+              points of two sections of the same span (both solved by finite
+              elements). compression: what it may take, N (none: tension
+              only).</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="end" minOccurs="2" maxOccurs="2">
+                <xs:complexType>
+                  <xs:attribute name="section" type="xs:string" use="required"/>
+                  <xs:attribute name="point" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+            <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="description" type="xs:string"/>
+            <xs:attribute name="insulator" type="xs:string"/>
+            <xs:attribute name="length" type="xs:double"/>
+            <xs:attribute name="weight" type="xs:double"/>
+            <xs:attribute name="wind_area" type="xs:double"/>
+            <xs:attribute name="stiffness" type="xs:double"/>
+            <xs:attribute name="compression" type="xs:double"/>
+          </xs:complexType>
+        </xs:element>
+
         <xs:element name="circuit_start" type="ols:sectionPoint" minOccurs="0" maxOccurs="unbounded"/>
 
         <xs:element name="phase_color" minOccurs="0" maxOccurs="unbounded">
@@ -445,6 +504,16 @@
               </xs:element>
             </xs:sequence>
             <xs:attribute name="creep_case" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="defaults" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>The project's default values (Criteria › Default
+              values): spacer_compression, N (default 10000).</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:attribute name="spacer_compression" type="xs:double" default="10000"/>
           </xs:complexType>
         </xs:element>
 

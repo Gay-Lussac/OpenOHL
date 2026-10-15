@@ -87,6 +87,105 @@ fn read_on_routes(e: &Element) -> Result<Vec<String>, String> {
         .collect()
 }
 
+/// A place along a span: `{prefix}fraction` or `{prefix}distance`.
+fn write_place(out: &mut String, prefix: &str, p: &ols_line::SpanPlace) {
+    // The fraction unless a distance is given (then only when set too).
+    if p.distance.is_none() || p.fraction != 0.0 {
+        let _ = write!(out, " {prefix}fraction=\"{}\"", num(p.fraction));
+    }
+    if let Some(d) = p.distance {
+        let _ = write!(out, " {prefix}distance=\"{}\"", num(d));
+    }
+}
+
+/// Reads a place along a span (`{prefix}fraction` / `{prefix}distance`).
+fn read_place(e: &Element, prefix: &str) -> Result<ols_line::SpanPlace, String> {
+    Ok(ols_line::SpanPlace {
+        fraction: optional(e, &format!("{prefix}fraction"))?.unwrap_or(0.0),
+        distance: optional(e, &format!("{prefix}distance"))?,
+    })
+}
+
+fn write_spacer(out: &mut String, s: &ols_line::Spacer) {
+    let ols_line::Spacer {
+        id,
+        description,
+        a,
+        b,
+        insulator,
+        length,
+        weight,
+        wind_area,
+        stiffness,
+        compression,
+        fields,
+    } = s;
+    out.push_str("  <spacer");
+    attr(out, "id", id);
+    nonempty(out, "description", description);
+    opt_text(out, "insulator", insulator.as_deref());
+    opt_num(out, "length", *length);
+    let _ = write!(
+        out,
+        " weight=\"{}\" wind_area=\"{}\"",
+        num(*weight),
+        num(*wind_area)
+    );
+    opt_num(out, "stiffness", *stiffness);
+    opt_num(out, "compression", *compression);
+    out.push_str(">\n");
+    for end in [a, b] {
+        out.push_str("    <end");
+        attr(out, "section", &end.section);
+        attr(out, "point", &end.point);
+        out.push_str("/>\n");
+    }
+    write_fields(out, fields);
+    out.push_str("  </spacer>\n");
+}
+
+fn read_spacer(e: &Element) -> Result<ols_line::Spacer, String> {
+    check(
+        e,
+        &[
+            "id",
+            "description",
+            "insulator",
+            "length",
+            "weight",
+            "wind_area",
+            "stiffness",
+            "compression",
+        ],
+        &["end", "field"],
+    )?;
+    let ends: Vec<ols_line::SpanPointRef> = e
+        .children_named("end")
+        .map(|x| {
+            check(x, &["section", "point"], &[])?;
+            Ok(ols_line::SpanPointRef {
+                section: text(x, "section")?.to_owned(),
+                point: text(x, "point")?.to_owned(),
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    let [a, b] = <[ols_line::SpanPointRef; 2]>::try_from(ends)
+        .map_err(|_| "<spacer>: two <end>s".to_owned())?;
+    Ok(ols_line::Spacer {
+        id: text(e, "id")?.to_owned(),
+        description: owned(e, "description").unwrap_or_default(),
+        a,
+        b,
+        insulator: owned(e, "insulator"),
+        length: optional(e, "length")?,
+        weight: optional(e, "weight")?.unwrap_or(0.0),
+        wind_area: optional(e, "wind_area")?.unwrap_or(0.0),
+        stiffness: optional(e, "stiffness")?,
+        compression: optional(e, "compression")?,
+        fields: read_fields(e)?,
+    })
+}
+
 /// Values of plugin columns: `<field key="plugin.column" value="…"/>`.
 fn write_fields(out: &mut String, fields: &ols_line::Fields) {
     for (key, value) in fields {
@@ -368,6 +467,8 @@ fn write_section(out: &mut String, s: &Section) {
         points,
         stringing,
         loads,
+        spread_loads,
+        span_points,
         color,
         calculation,
         fields,
@@ -395,6 +496,7 @@ fn write_section(out: &mut String, s: &Section) {
         let SpanLoad {
             span,
             fraction,
+            distance,
             vertical,
             label,
             diameter,
@@ -402,12 +504,16 @@ fn write_section(out: &mut String, s: &Section) {
             wind_area,
             ice_area,
         } = l;
-        let _ = write!(
+        let _ = write!(out, "    <load span=\"{span}\"");
+        write_place(
             out,
-            "    <load span=\"{span}\" fraction=\"{}\" vertical=\"{}\"",
-            num(*fraction),
-            num(*vertical)
+            "",
+            &ols_line::SpanPlace {
+                fraction: *fraction,
+                distance: *distance,
+            },
         );
+        let _ = write!(out, " vertical=\"{}\"", num(*vertical));
         nonempty(out, "label", label);
         if *diameter != 0.0 {
             let _ = write!(out, " diameter=\"{}\"", num(*diameter));
@@ -421,6 +527,35 @@ fn write_section(out: &mut String, s: &Section) {
                 let _ = write!(out, " {name}=\"{}\"", num(*v));
             }
         }
+        out.push_str("/>\n");
+    }
+    for l in spread_loads {
+        let ols_line::SpreadLoad {
+            span,
+            start,
+            end,
+            load,
+            label,
+        } = l;
+        let _ = write!(out, "    <spread_load span=\"{span}\"");
+        write_place(out, "start_", start);
+        write_place(out, "end_", end);
+        let _ = write!(out, " load=\"{}\"", num(*load));
+        nonempty(out, "label", label);
+        out.push_str("/>\n");
+    }
+    for p in span_points {
+        let ols_line::SpanPoint {
+            label,
+            span,
+            at,
+            description,
+        } = p;
+        out.push_str("    <span_point");
+        attr(out, "label", label);
+        let _ = write!(out, " span=\"{span}\"");
+        write_place(out, "", at);
+        nonempty(out, "description", description);
         out.push_str("/>\n");
     }
     write_fields(out, fields);
@@ -572,6 +707,8 @@ pub fn to_xml(line: &Line) -> String {
         creep_stretch,
         bimetallic,
         solver,
+        spacers,
+        defaults,
         circuit_starts,
         condition_cases: _,
     } = line;
@@ -629,6 +766,9 @@ pub fn to_xml(line: &Line) -> String {
     for j in jumpers {
         write_jumper(&mut out, j);
     }
+    for s in spacers {
+        write_spacer(&mut out, s);
+    }
     for p in circuit_starts {
         section_point(&mut out, "circuit_start", p, "  ");
     }
@@ -661,6 +801,14 @@ pub fn to_xml(line: &Line) -> String {
         behavior,
         max_virtual_compression,
     } = bimetallic;
+    if !defaults.is_default() {
+        let ols_line::Defaults { spacer_compression } = defaults;
+        let _ = writeln!(
+            out,
+            "  <defaults spacer_compression=\"{}\"/>",
+            num(*spacer_compression)
+        );
+    }
     if !solver.is_default() {
         let ols_line::SolverOptions { jumper_loads } = solver;
         out.push_str("  <solver");
@@ -1055,7 +1203,14 @@ fn read_section(e: &Element) -> Result<Section, String> {
             "calculation",
             "description",
         ],
-        &["point", "stringing", "load", "field"],
+        &[
+            "point",
+            "stringing",
+            "load",
+            "spread_load",
+            "span_point",
+            "field",
+        ],
     )?;
     let calculation = match e.attr("calculation") {
         None => Calculation::default(),
@@ -1085,6 +1240,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
                     &[
                         "span",
                         "fraction",
+                        "distance",
                         "vertical",
                         "label",
                         "diameter",
@@ -1096,19 +1252,61 @@ fn read_section(e: &Element) -> Result<Section, String> {
                 )?;
                 Ok(SpanLoad {
                     span: number(l, "span")?,
-                    fraction: number(l, "fraction")?,
+                    fraction: optional(l, "fraction")?.unwrap_or(0.0),
                     vertical: number(l, "vertical")?,
                     label: owned(l, "label").unwrap_or_default(),
                     diameter: optional(l, "diameter")?.unwrap_or(0.0),
                     drag: optional(l, "drag")?,
                     wind_area: optional(l, "wind_area")?,
                     ice_area: optional(l, "ice_area")?,
+                    distance: optional(l, "distance")?,
                 })
             })
             .collect::<Result<_, String>>()?,
         color: owned(e, "color"),
         calculation,
         fields: read_fields(e)?,
+        spread_loads: e
+            .children_named("spread_load")
+            .map(|l| {
+                check(
+                    l,
+                    &[
+                        "span",
+                        "start_fraction",
+                        "start_distance",
+                        "end_fraction",
+                        "end_distance",
+                        "load",
+                        "label",
+                    ],
+                    &[],
+                )?;
+                Ok(ols_line::SpreadLoad {
+                    span: number(l, "span")?,
+                    start: read_place(l, "start_")?,
+                    end: read_place(l, "end_")?,
+                    load: number(l, "load")?,
+                    label: owned(l, "label").unwrap_or_default(),
+                })
+            })
+            .collect::<Result<_, String>>()?,
+        span_points: e
+            .children_named("span_point")
+            .map(|p| {
+                check(
+                    p,
+                    &["label", "span", "fraction", "distance", "description"],
+                    &[],
+                )?;
+                Ok(ols_line::SpanPoint {
+                    label: text(p, "label")?.to_owned(),
+                    span: number(p, "span")?,
+                    at: read_place(p, "")?,
+                    description: owned(p, "description").unwrap_or_default(),
+                })
+            })
+            .collect::<Result<_, String>>()?,
     })
 }
 
@@ -1255,6 +1453,8 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             "system",
             "section",
             "jumper",
+            "spacer",
+            "defaults",
             "phase_color",
             "creep_stretch",
             "bimetallic",
@@ -1406,6 +1606,20 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         display,
         creep_stretch,
         condition_cases: Default::default(),
+        spacers: root
+            .children_named("spacer")
+            .map(read_spacer)
+            .collect::<Result<_, _>>()?,
+        defaults: match root.child("defaults") {
+            None => ols_line::Defaults::default(),
+            Some(d) => {
+                check(d, &["spacer_compression"], &[])?;
+                ols_line::Defaults {
+                    spacer_compression: optional(d, "spacer_compression")?
+                        .unwrap_or(ols_line::DEFAULT_SPACER_COMPRESSION),
+                }
+            }
+        },
     };
     // Older documents: read into routes, alignments and alignment points.
     line.upgrade_routes();
