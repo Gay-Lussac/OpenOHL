@@ -121,7 +121,7 @@ files](../user-guide/line-file.md).
 | `structures` | `[Structure]` | — | towers and poles | — |
 | `sections` | `[Section]` | — | wire sections | structures + sets |
 | `jumpers` | `[Jumper]` | — | jumpers between wire points | structures + sets |
-| `spacers` | `[Spacer]` | m, N | interphase spacers: an insulator between span points of two sections of one span (`a`, `b`: section id + span point label; insulator label or weight, wind area, stiffness; `length` (none: the still-air distance at stringing); `compression` limit, N, from the project defaults when made; both sections by finite elements, ruling span refused) | sections + span point labels |
+| `spacers` | `[Spacer]` | m, N | interphase spacers: an insulator between span points of two sections of one span (`a`, `b`: section id + span point label; insulator label or weight, wind area, stiffness; `length` (none: the still-air distance at stringing); `compression` limit, N, from the project defaults when made; both sections by finite elements, ruling span refused); solved by `solve::solve_spacer_group` (the sections joined, in turn, Aitken's relaxation), reported on the section at `a` (`SectionShape::spacers`: ends, axial force, slack, over its limit) | sections + span point labels |
 | `defaults` | `Defaults` | N | the project's default values (Criteria › Default values): `spacer_compression` (10 000 N); exported / imported as `.olsdef` (`ols-defaults`, TOML) | — |
 | `systems` | `[System]` | — | electrical systems | — |
 | `display` | `Display` | — | phase colours, `ahead_deg` | phase labels |

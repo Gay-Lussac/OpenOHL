@@ -248,6 +248,39 @@ impl SolvedLine {
                 resolved.insert(id);
             }
         }
+        // Sections joined by spacers with one solved again: solved together.
+        for group in crate::solve::spacer_groups(line) {
+            if !group
+                .iter()
+                .any(|&k| resolved.contains(line.sections[k].id.as_str()))
+            {
+                continue;
+            }
+            let mut results: Vec<Result<SectionShape, LineError>> = line
+                .sections
+                .iter()
+                .map(|s| {
+                    self.sections
+                        .get(&s.id)
+                        .cloned()
+                        .unwrap_or_else(|| Err(LineError::Invalid("not solved".into())))
+                })
+                .collect();
+            crate::solve::solve_spacer_group(
+                line,
+                library,
+                &self.case,
+                &group,
+                &mut results,
+                &default_fe_budget(),
+                &weights,
+            );
+            for &k in &group {
+                let id = &line.sections[k].id;
+                self.sections.insert(id.clone(), results[k].clone());
+                resolved.insert(id);
+            }
+        }
         if pull {
             // The jumpers' own pull, settled again on the sections.
             let mut results: Vec<Result<SectionShape, LineError>> = line

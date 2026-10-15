@@ -122,6 +122,8 @@ pub struct SectionShape {
     /// Its span points as solved: label, position (finite elements only,
     /// else empty).
     pub span_points: Vec<(String, Point)>,
+    /// The spacers it holds, as solved ([`solve_spacer_group`]).
+    pub spacers: Vec<SpacerState>,
 }
 
 /// A string as solved.
@@ -167,6 +169,8 @@ struct Built {
     free: Vec<Vec<(String, usize)>>,
     /// Its span points' nodes on the wire, labelled.
     span_points: Vec<(String, usize)>,
+    /// The spacers it holds: truss, fixed node.
+    spacers: Vec<(SpacerHold, usize, usize)>,
 }
 
 fn is_suspension(insulator: Vector3<f64>, wire: Vector3<f64>) -> bool {
@@ -554,6 +558,91 @@ pub struct Coupling {
     /// the line's [`crate::JumperLoads`] says). None: from the jumpers,
     /// each taken as of this section's cable.
     pub jumpers: Option<std::collections::BTreeMap<crate::SectionPoint, [f64; 3]>>,
+    /// The spacers this section holds as bars to fixed points (the other
+    /// sections' span points), and the spacers' forces on its span points
+    /// ([`solve_spacer_group`]).
+    pub spacers: SpacerCoupling,
+}
+
+/// The spacers on a section in a pass of [`solve_spacer_group`] (the
+/// whole bundle's values; the model of one subconductor takes its share).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SpacerCoupling {
+    /// The spacers it holds.
+    pub holds: Vec<SpacerHold>,
+    /// The force on each of its span points, by label, N.
+    pub pulls: std::collections::BTreeMap<String, Point>,
+}
+
+/// A spacer held by a section: a bar from its span point `point` to a
+/// fixed point `at` (the other end, where the other section puts it).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpacerHold {
+    /// The spacer's id.
+    pub id: String,
+    /// The span point it is clamped at on this section.
+    pub point: String,
+    /// The other end.
+    pub at: Point,
+    /// Unstressed length, m.
+    pub length: f64,
+    /// Axial stiffness EA, N.
+    pub stiffness: f64,
+    /// It takes no compression.
+    pub tension_only: bool,
+    /// Its weight, N (half lands on this section's point).
+    pub weight: f64,
+    /// The wind on this end, N.
+    pub wind: Point,
+    /// The compression it may take, N (beyond: flagged).
+    pub compression: Option<f64>,
+}
+
+/// A spacer as solved (reported by the section holding it).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpacerState {
+    /// The spacer's id.
+    pub id: String,
+    /// Its ends: on this section, and the other.
+    pub ends: [Point; 2],
+    /// Axial force, N (tension positive; the whole bundle's).
+    pub force: f64,
+    /// The force it exerts on the other end, N.
+    pub on_other: Point,
+    /// Slack (tension only, pushed together).
+    pub slack: bool,
+    /// Beyond the compression it may take.
+    pub over: bool,
+}
+
+/// The spacers in one subconductor's model (the share of each).
+#[derive(Debug, Clone, Default)]
+struct Extras {
+    holds: Vec<SpacerHold>,
+    pulls: Vec<(String, Vector3<f64>)>,
+}
+
+impl Extras {
+    /// A section's share (`bundle` subconductors) of its spacers.
+    fn of(spacers: &SpacerCoupling, bundle: f64) -> Self {
+        Self {
+            holds: spacers
+                .holds
+                .iter()
+                .map(|h| SpacerHold {
+                    stiffness: h.stiffness / bundle,
+                    weight: h.weight / bundle,
+                    wind: [0, 1, 2].map(|c| h.wind[c] / bundle),
+                    ..h.clone()
+                })
+                .collect(),
+            pulls: spacers
+                .pulls
+                .iter()
+                .map(|(l, f)| (l.clone(), v(*f) / bundle))
+                .collect(),
+        }
+    }
 }
 
 /// The clamp's position to start from: plumb below a suspension string's
@@ -574,6 +663,7 @@ fn build(
     cable: &Cable,
     case: &WeatherCase,
     with_loads: bool,
+    extras: &Extras,
 ) -> Result<Built, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let ea = cable.axial_stiffness().si();
@@ -811,6 +901,7 @@ fn build(
         });
         span_elements.push(elements);
     }
+    let spacers = spacer_bars(&mut model, &span_points, extras, &invalid)?;
     Ok(Built {
         model,
         clamps,
@@ -818,8 +909,48 @@ fn build(
         members,
         supports,
         free: free_labels,
+        spacers,
         span_points,
     })
+}
+
+/// The spacers of `extras` in a model: the forces on span points, and the
+/// bars to fixed points with their weight (half on each end) and the wind
+/// on this end.
+fn spacer_bars(
+    model: &mut Model,
+    span_points: &[(String, usize)],
+    extras: &Extras,
+    invalid: &dyn Fn(String) -> LineError,
+) -> Result<Vec<(SpacerHold, usize, usize)>, LineError> {
+    let node_of = |label: &str| {
+        span_points
+            .iter()
+            .find(|(l, _)| l == label)
+            .map(|(_, n)| *n)
+            .ok_or_else(|| invalid(format!("span point {label} not on the wire")))
+    };
+    for (label, f) in &extras.pulls {
+        let n = node_of(label)?;
+        model.nodes[n].load += f;
+    }
+    let mut out = Vec::new();
+    for h in &extras.holds {
+        let n = node_of(&h.point)?;
+        model.nodes[n].load += v(h.wind);
+        let fixed = model.nodes.len();
+        model.nodes.push(Node::fixed(v(h.at)));
+        model.trusses.push(TrussElement {
+            i: n,
+            j: fixed,
+            unstressed_length: h.length,
+            axial_stiffness: h.stiffness,
+            tension_only: h.tension_only,
+            weight: h.weight,
+        });
+        out.push((h.clone(), model.trusses.len() - 1, fixed));
+    }
+    Ok(out)
 }
 
 /// Builds and solves a section model.
@@ -829,10 +960,19 @@ fn solve_built(
     reference: &Reference,
     cable: &Cable,
     case: &WeatherCase,
-    with_loads: bool,
     budget: &Budget,
+    loads: Option<&Extras>,
 ) -> Result<(Built, ols_wirefe::Solution), LineError> {
-    let built = build(section, layout, reference, cable, case, with_loads)?;
+    let none = Extras::default();
+    let built = build(
+        section,
+        layout,
+        reference,
+        cable,
+        case,
+        loads.is_some(),
+        loads.unwrap_or(&none),
+    )?;
     let solution = built
         .model
         .solve(budget)
@@ -887,7 +1027,15 @@ fn estimate_strain_weights(
         "stringing",
         ols_core::units::Temperature::from_celsius(reference.temperature),
     );
-    let (built, solution) = solve_built(section, &held, &reference, cable, &case, true, budget)?;
+    let (built, solution) = solve_built(
+        section,
+        &held,
+        &reference,
+        cable,
+        &case,
+        budget,
+        Some(&Extras::default()),
+    )?;
     for (k, holder) in layout.iter_mut().enumerate() {
         if !holder.estimate {
             continue;
@@ -990,7 +1138,7 @@ fn reference(
             lengths,
             temperature,
         };
-        let (built, solved) = solve_built(section, layout, &reference, cable, &case, false, budget)
+        let (built, solved) = solve_built(section, layout, &reference, cable, &case, budget, None)
             .map_err(|e| invalid(format!("stringing: {e}")))?;
         let previous = clamps.clone();
         clamps = settled(layout, &clamps, &built, &solved);
@@ -1200,7 +1348,7 @@ fn rolled(
         budget,
     )?;
     for _ in 0..20 {
-        let (built, solved) = solve_built(section, layout, &r, cable, case, false, budget)?;
+        let (built, solved) = solve_built(section, layout, &r, cable, case, budget, None)?;
         let clamps = settled(layout, &r.clamps, &built, &solved);
         let moved = clamps
             .iter()
@@ -1466,8 +1614,7 @@ fn strung(
         "stringing",
         Temperature::from_celsius(reference.temperature),
     );
-    let (built, solution) =
-        solve_built(section, &layout, &reference, cable, &still, false, budget)?;
+    let (built, solution) = solve_built(section, &layout, &reference, cable, &still, budget, None)?;
     let clamps: Vec<Vector3<f64>> = built
         .clamps
         .iter()
@@ -1743,6 +1890,7 @@ fn solve_rs(
         pulls: Vec::new(),
         nodes: Vec::new(),
         span_points: Vec::new(),
+        spacers: Vec::new(),
     })
 }
 
@@ -1831,7 +1979,7 @@ fn solve_fe(
                 ols_core::units::Temperature::from_celsius(reference.temperature),
             );
             let (b, sol) = solve_built(
-                section, &layout, &reference, cable, &stringing, false, budget,
+                section, &layout, &reference, cable, &stringing, budget, None,
             )?;
             Some(span_tensions(&b, &sol))
         }
@@ -1851,8 +1999,17 @@ fn solve_fe(
     if !section.stringing.clipped() && reference.lengths.len() > 1 {
         reference = rolled(section, &loaded, &reference, cable, case, budget)?;
     }
-    let (mut built, mut solution) =
-        solve_built(section, &loaded, &reference, cable, case, true, budget)?;
+    // The spacers it holds and is pulled by (its subconductor's share).
+    let extras = Extras::of(&coupling.spacers, bundle);
+    let (mut built, mut solution) = solve_built(
+        section,
+        &loaded,
+        &reference,
+        cable,
+        case,
+        budget,
+        Some(&extras),
+    )?;
     if let (Some(m), Some(strung)) = (&curves, &strung) {
         use ols_cables::mechanics::MaterialState;
         use ols_core::units::{Force, Temperature};
@@ -1892,8 +2049,15 @@ fn solve_fe(
             for (l, (b, k)) in reference.lengths.iter_mut().zip(base.iter().zip(&factors)) {
                 *l = b * k;
             }
-            (built, solution) =
-                solve_built(section, &loaded, &reference, cable, case, true, budget)?;
+            (built, solution) = solve_built(
+                section,
+                &loaded,
+                &reference,
+                cable,
+                case,
+                budget,
+                Some(&extras),
+            )?;
         }
         if !settled {
             return Err(LineError::Invalid(format!(
@@ -1908,7 +2072,15 @@ fn solve_fe(
         for l in &mut reference.lengths {
             *l *= 1.0 + offset;
         }
-        (built, solution) = solve_built(section, &loaded, &reference, &core, case, true, budget)?;
+        (built, solution) = solve_built(
+            section,
+            &loaded,
+            &reference,
+            &core,
+            case,
+            budget,
+            Some(&extras),
+        )?;
     }
     let pos = &solution.positions;
     let mut spans = Vec::with_capacity(built.span_elements.len());
@@ -1996,6 +2168,41 @@ fn solve_fe(
                 .collect()
         })
         .collect();
+    let spacer_states: Vec<SpacerState> = built
+        .spacers
+        .iter()
+        .map(|(h, truss, fixed)| {
+            let element = &built.model.trusses[*truss];
+            let (here, there) = (pos[element.i], pos[*fixed]);
+            // The whole bundle's.
+            let force = solution.truss_forces[*truss] * bundle;
+            let towards = there - here;
+            let u = if towards.norm() > 0.0 {
+                towards / towards.norm()
+            } else {
+                Vector3::zeros()
+            };
+            let slack = h.tension_only && force <= 0.0 && towards.norm() < h.length;
+            let over = h.compression.is_some_and(|c| -force > c);
+            if over {
+                flags.push(format!(
+                    "spacer {}: {:.0} N of compression, more than the {:.0} N it may take",
+                    h.id,
+                    -force,
+                    h.compression.unwrap_or(0.0)
+                ));
+            }
+            SpacerState {
+                id: h.id.clone(),
+                ends: [p(here), p(there)],
+                force,
+                // Tension pulls the other end towards this one.
+                on_other: p(-u * force),
+                slack,
+                over,
+            }
+        })
+        .collect();
     Ok(SectionShape {
         section: section.id.clone(),
         clamps: built.clamps.iter().map(|&c| p(pos[c])).collect(),
@@ -2040,6 +2247,7 @@ fn solve_fe(
             .iter()
             .map(|(label, n)| (label.clone(), p(pos[*n])))
             .collect(),
+        spacers: spacer_states,
     })
 }
 
@@ -2175,6 +2383,9 @@ fn solve_sections_with(
     for group in coupled_groups(line) {
         solve_coupled(line, library, case, &group, &mut results, budget, jumpers);
     }
+    for group in spacer_groups(line) {
+        solve_spacer_group(line, library, case, &group, &mut results, budget, jumpers);
+    }
     results
 }
 
@@ -2276,6 +2487,12 @@ pub fn jumper_pull(
         {
             solve_coupled(line, library, case, group, results, budget, &used);
         }
+        for group in spacer_groups(line)
+            .iter()
+            .filter(|g| g.iter().any(|k| again.contains(k)))
+        {
+            solve_spacer_group(line, library, case, group, results, budget, &used);
+        }
     }
     used
 }
@@ -2344,6 +2561,292 @@ pub fn coupled_groups(line: &Line) -> Vec<Vec<usize>> {
 /// clause; a TAK settles in a few).
 pub const COUPLING_PASSES: usize = 30;
 
+/// The groups of sections (indices) joined by spacers, with more than one
+/// section each.
+pub fn spacer_groups(line: &Line) -> Vec<Vec<usize>> {
+    let n = line.sections.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let index = |id: &str| line.sections.iter().position(|s| s.id == id);
+    for s in &line.spacers {
+        if let (Some(a), Some(b)) = (index(&s.a.section), index(&s.b.section)) {
+            let (x, y) = (find(&mut parent, a), find(&mut parent, b));
+            if x != y {
+                parent[x.max(y)] = x.min(y);
+            }
+        }
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+    for k in 0..n {
+        let r = find(&mut parent, k);
+        groups.entry(r).or_default().push(k);
+    }
+    groups.into_values().filter(|g| g.len() > 1).collect()
+}
+
+/// Passes of the spacers' coupling (exit clause; a few in practice).
+pub const SPACER_PASSES: usize = 40;
+
+/// Solves a group of sections joined by spacers ([`spacer_groups`]): each
+/// spacer is held by the section at its end `a`, as a bar to where the
+/// section at `b` puts its span point, and pulls that point with the
+/// bar's force, half way from the last pass (they overshoot otherwise);
+/// the sections are solved in turn until the forces change less than
+/// 1 N (or 1e-4 of themselves). A spacer without a length takes the
+/// distance between its ends in still air at the sections' stringing
+/// temperatures. Each end carries half its weight and the wind on it
+/// (across the span, from the weather case's side). `results` holds the
+/// sections solved alone and gets the coupled ones; not settling in
+/// [`SPACER_PASSES`] passes is an error for the group. Sections also
+/// sharing an assembly with another (a TAK) are not supported with
+/// spacers yet (an error).
+///
+/// Expected cost: a few solves of each section of the group.
+pub fn solve_spacer_group(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    group: &[usize],
+    results: &mut [Result<SectionShape, LineError>],
+    budget: &Budget,
+    jumpers: &JumperLoadMap,
+) {
+    let fail = |results: &mut [Result<SectionShape, LineError>], m: String| {
+        for &k in group {
+            results[k] = Err(LineError::Invalid(m.clone()));
+        }
+    };
+    let in_tak = coupled_groups(line);
+    if let Some(&k) = group.iter().find(|k| in_tak.iter().any(|g| g.contains(k))) {
+        fail(
+            results,
+            format!(
+                "section {}: spacers on a section sharing an assembly (a TAK) are not supported yet",
+                line.sections[k].id
+            ),
+        );
+        return;
+    }
+    let index = |id: &str| line.sections.iter().position(|s| s.id == id);
+    let spacers: Vec<&crate::Spacer> = line
+        .spacers
+        .iter()
+        .filter(|s| index(&s.a.section).is_some_and(|k| group.contains(&k)))
+        .collect();
+    let point_at =
+        |results: &[Result<SectionShape, LineError>], end: &crate::SpanPointRef| -> Option<Point> {
+            let k = index(&end.section)?;
+            results[k]
+                .as_ref()
+                .ok()?
+                .span_points
+                .iter()
+                .find(|(l, _)| *l == end.point)
+                .map(|(_, p)| *p)
+        };
+    // Lengths: given, else in still air at stringing.
+    let mut lengths = std::collections::BTreeMap::new();
+    let mut still: std::collections::BTreeMap<usize, Result<SectionShape, LineError>> =
+        Default::default();
+    for s in &spacers {
+        let length = match s.length {
+            Some(l) => l,
+            None => {
+                let mut at = Vec::new();
+                for end in [&s.a, &s.b] {
+                    let Some(k) = index(&end.section) else {
+                        continue;
+                    };
+                    let shape = still.entry(k).or_insert_with(|| {
+                        let section = &line.sections[k];
+                        let calm = WeatherCase::still(
+                            "stringing",
+                            ols_core::units::Temperature::from_celsius(
+                                section.stringing.temperature(),
+                            ),
+                        );
+                        let coupling = Coupling {
+                            jumpers: Some(Default::default()),
+                            ..Coupling::default()
+                        };
+                        cable_of(library, section).and_then(|cable| {
+                            solve_section_coupled(line, section, cable, &calm, budget, &coupling)
+                        })
+                    });
+                    if let Some(p) = shape
+                        .as_ref()
+                        .ok()
+                        .and_then(|x| x.span_points.iter().find(|(l, _)| *l == end.point))
+                    {
+                        at.push(v(p.1));
+                    }
+                }
+                match at.as_slice() {
+                    [a, b] => (a - b).norm(),
+                    _ => {
+                        fail(
+                            results,
+                            format!("spacer {}: its ends did not solve at stringing", s.id),
+                        );
+                        return;
+                    }
+                }
+            }
+        };
+        lengths.insert(s.id.clone(), length);
+    }
+    // The wind on a spacer, half on each end: across its span.
+    let wind_of = |results: &[Result<SectionShape, LineError>], s: &crate::Spacer| -> Point {
+        if case.wind_pressure.si() <= 0.0 || s.wind_area <= 0.0 {
+            return [0.0; 3];
+        }
+        let Some(k) = index(&s.a.section) else {
+            return [0.0; 3];
+        };
+        let Some(span) = line.sections[k]
+            .span_points
+            .iter()
+            .find(|p| p.label == s.a.point)
+            .map(|p| p.span)
+        else {
+            return [0.0; 3];
+        };
+        let Some(shape) = results[k].as_ref().ok() else {
+            return [0.0; 3];
+        };
+        let d = v(shape.clamps[span + 1]) - v(shape.clamps[span]);
+        let h = d.xy();
+        if h.norm() == 0.0 {
+            return [0.0; 3];
+        }
+        let left = Vector3::new(-h.y, h.x, 0.0) / h.norm();
+        p(left * (0.5 * case.wind_pressure.si() * s.wind_area * case.wind_from.to_left()))
+    };
+    // The forces on the pulled ends, one vector per spacer (in `spacers`'
+    // order): fixed point of g(f) — the pulled sections solved under f,
+    // then the holding sections with their bars to where those put the
+    // ends give the bars' forces — with Aitken's relaxation.
+    let n = spacers.len();
+    let mut f: Vec<Vector3<f64>> = vec![Vector3::zeros(); n];
+    let mut last: Option<Vec<Vector3<f64>>> = None;
+    let mut omega = 0.5;
+    let solve_with = |results: &mut [Result<SectionShape, LineError>],
+                      sections: &[usize],
+                      f: &[Vector3<f64>]| {
+        let mut couplings: std::collections::BTreeMap<usize, SpacerCoupling> = Default::default();
+        for (s, force) in spacers.iter().zip(f) {
+            let (Some(a), Some(b)) = (index(&s.a.section), index(&s.b.section)) else {
+                continue;
+            };
+            let wind = wind_of(results, s);
+            if let Some(at) = point_at(results, &s.b) {
+                couplings.entry(a).or_default().holds.push(SpacerHold {
+                    id: s.id.clone(),
+                    point: s.a.point.clone(),
+                    at,
+                    length: lengths[&s.id],
+                    stiffness: s.stiffness.unwrap_or(DEFAULT_INSULATOR_STIFFNESS),
+                    tension_only: s.compression.is_none(),
+                    weight: s.weight,
+                    wind,
+                    compression: s.compression,
+                });
+            }
+            // The other end: the bar's force, half its weight, the wind.
+            let pull = force + Vector3::new(0.0, 0.0, -0.5 * s.weight) + v(wind);
+            let e = couplings
+                .entry(b)
+                .or_default()
+                .pulls
+                .entry(s.b.point.clone())
+                .or_insert([0.0; 3]);
+            for c in 0..3 {
+                e[c] += pull[c];
+            }
+        }
+        let solved = crate::jumper::in_parallel(sections, |&k| {
+            let section = &line.sections[k];
+            let coupling = Coupling {
+                jumpers: Some(jumpers.clone()),
+                spacers: couplings.get(&k).cloned().unwrap_or_default(),
+                ..Coupling::default()
+            };
+            cable_of(library, section).and_then(|cable| {
+                solve_section_coupled(line, section, cable, case, budget, &coupling)
+            })
+        });
+        for (&k, r) in sections.iter().zip(solved) {
+            results[k] = r;
+        }
+    };
+    // The sections pulled, then those holding (a section may be both).
+    let pulled: Vec<usize> = group
+        .iter()
+        .copied()
+        .filter(|k| spacers.iter().any(|s| index(&s.b.section) == Some(*k)))
+        .collect();
+    let holding: Vec<usize> = group
+        .iter()
+        .copied()
+        .filter(|k| spacers.iter().any(|s| index(&s.a.section) == Some(*k)))
+        .collect();
+    for _ in 0..SPACER_PASSES {
+        solve_with(results, &pulled, &f);
+        solve_with(results, &holding, &f);
+        // g(f): the bars' forces on the pulled ends.
+        let mut g = Vec::with_capacity(n);
+        for s in &spacers {
+            let Some(a) = index(&s.a.section) else { return };
+            let Ok(shape) = &results[a] else {
+                return;
+            };
+            let Some(state) = shape.spacers.iter().find(|x| x.id == s.id) else {
+                fail(
+                    results,
+                    format!("spacer {}: not solved on {}", s.id, s.a.section),
+                );
+                return;
+            };
+            g.push(v(state.on_other));
+        }
+        let r: Vec<Vector3<f64>> = g.iter().zip(&f).map(|(g, f)| g - f).collect();
+        let size = r.iter().map(Vector3::norm).fold(0.0, f64::max);
+        let scale = g.iter().map(Vector3::norm).fold(0.0, f64::max);
+        if size < 1.0_f64.max(1e-4 * scale) {
+            // Settled: the sections as solved with f ≈ g. The pulled ones
+            // once more with g, so both sides agree.
+            solve_with(results, &pulled, &g);
+            return;
+        }
+        // Aitken: the step from the last two residuals.
+        if let Some(prev) = &last {
+            let dr: Vec<Vector3<f64>> = r.iter().zip(prev).map(|(a, b)| a - b).collect();
+            let den: f64 = dr.iter().map(|x| x.norm_squared()).sum();
+            if den > 0.0 {
+                let num: f64 = prev.iter().zip(&dr).map(|(a, b)| a.dot(b)).sum();
+                omega = (-omega * num / den).clamp(-1.0, 1.0);
+                if omega.abs() < 0.05 {
+                    omega = 0.05_f64.copysign(omega);
+                }
+            }
+        }
+        for (fi, ri) in f.iter_mut().zip(&r) {
+            *fi += ri * omega;
+        }
+        last = Some(r);
+    }
+    fail(
+        results,
+        format!("the spacers did not settle in {SPACER_PASSES} passes"),
+    );
+}
+
 /// Solves a group of sections sharing assemblies together (Dirichlet–
 /// Neumann): the first section through a shared assembly solves it, the
 /// other sections' wires pulling on their clamps in it; the others hold
@@ -2406,6 +2909,7 @@ pub fn solve_coupled(
                 pulls: pulls.clone(),
                 held: held_of(results),
                 jumpers: Some(jumpers.clone()),
+                ..Coupling::default()
             };
             results[k] = cable_of(library, section).and_then(|cable| {
                 solve_section_coupled(line, section, cable, case, budget, &coupling)
@@ -3649,5 +4153,116 @@ mod span_tests {
             s.spans[0].sag,
             span.sag
         );
+    }
+}
+
+#[cfg(test)]
+mod spacer_tests {
+    use super::*;
+    use ols_core::units::Temperature;
+
+    fn library() -> ols_cables::Library {
+        ols_cables::Library::load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables"),
+        )
+        .unwrap()
+    }
+
+    /// S1 and S2 (both T1–T2) with span points at mid-span and a spacer
+    /// between them of `length` (none: from stringing).
+    fn spaced(length: Option<f64>, compression: Option<f64>) -> Line {
+        let mut line = crate::tests::example();
+        for s in &mut line.sections[..2] {
+            s.span_points.push(crate::SpanPoint {
+                label: "M".into(),
+                span: 0,
+                at: crate::SpanPlace::at_fraction(0.5),
+                description: String::new(),
+            });
+        }
+        line.spacers.push(crate::Spacer {
+            id: "SP".into(),
+            a: crate::SpanPointRef {
+                section: line.sections[0].id.clone(),
+                point: "M".into(),
+            },
+            b: crate::SpanPointRef {
+                section: line.sections[1].id.clone(),
+                point: "M".into(),
+            },
+            length,
+            weight: 200.0,
+            compression,
+            ..Default::default()
+        });
+        line.validate().unwrap();
+        line
+    }
+
+    fn mid(shape: &SectionShape) -> Vector3<f64> {
+        v(shape.span_points[0].1)
+    }
+
+    /// A spacer between two conductors of a span: shorter than their gap,
+    /// it pulls them together (its ends at its length, in tension, equal
+    /// and opposite on both); of the stringing distance it takes almost
+    /// nothing in still air at that temperature; longer, it pushes them
+    /// apart in compression — flagged beyond its limit, slack if it takes
+    /// none.
+    #[test]
+    fn a_spacer_joins_two_conductors() {
+        let lib = library();
+        let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let solve = |line: &Line| -> Vec<SectionShape> {
+            solve_line(line, &lib, &case)
+                .into_iter()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+        let free = solve(&crate::tests::example());
+        let gap = (mid_of(&free[0]) - mid_of(&free[1])).norm();
+        fn mid_of(s: &SectionShape) -> Vector3<f64> {
+            let p = &s.spans[0].points;
+            v(p[p.len() / 2])
+        }
+        assert!(gap > 1.0, "{gap}");
+        // Shorter: pulled together to its length.
+        let short = solve(&spaced(Some(0.7 * gap), Some(10_000.0)));
+        let (a, b) = (mid(&short[0]), mid(&short[1]));
+        assert!(
+            ((a - b).norm() - 0.7 * gap).abs() < 0.01,
+            "{} {}",
+            (a - b).norm(),
+            0.7 * gap
+        );
+        let state = &short[0].spacers[0];
+        assert!(state.force > 0.0, "tension: {}", state.force);
+        assert!(!state.slack && !state.over);
+        assert!(short[1].spacers.is_empty(), "held by its end a");
+        // Of the stringing distance (stringing at 15 °C here or not, it is
+        // its length at stringing): a small force in still air.
+        let set = solve(&spaced(None, Some(10_000.0)));
+        let s = &set[0].spacers[0];
+        assert!(
+            s.force.abs() < 0.05 * state.force.abs().max(100.0),
+            "{}",
+            s.force
+        );
+        // Longer: pushed apart, in compression; flagged beyond its limit.
+        let long = solve(&spaced(Some(1.3 * gap), Some(50.0)));
+        let s = &long[0].spacers[0];
+        assert!(s.force < 0.0, "compression: {}", s.force);
+        assert!(s.over && long[0].flags.iter().any(|f| f.contains("spacer SP")));
+        assert!((mid(&long[0]) - mid(&long[1])).norm() > gap);
+        // Tension only: slack, nothing pushes.
+        let slack = solve(&spaced(Some(1.3 * gap), None));
+        let s = &slack[0].spacers[0];
+        assert!(s.slack && s.force.abs() < 1.0, "{s:?}");
+        // Its weight: the two clamps lower than without it.
+        assert!(mid(&slack[1])[2] < mid_of(&free[1])[2] + 1e-6);
+        // The incremental solve: the same.
+        let line = spaced(Some(0.7 * gap), Some(10_000.0));
+        let inc = crate::incremental::SolvedLine::solve(&line, &lib, &case);
+        assert_eq!(inc.shapes(&line), solve(&line));
     }
 }
