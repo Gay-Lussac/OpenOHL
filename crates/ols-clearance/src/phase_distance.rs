@@ -1106,9 +1106,10 @@ mod tests {
         assert_eq!(c.c(true, 380.0, Level::Low), 2.64);
         assert_eq!(c.c(true, 380.0, Level::High), 2.90);
         assert_eq!(c.c(false, 380.0, Level::High), 3.64);
-        // 110 kV: two lines (450 / 550 kV); 132 kV: the high one alone.
+        // 110 and 132 kV: one line each, C₁ and C₃ their own (450 / 550
+        // kV), C₂ and C₄ the same (650 kV).
         assert_eq!(c.c(true, 110.0, Level::Low), 0.92);
-        assert_eq!(c.c(true, 110.0, Level::High), 1.12);
+        assert_eq!(c.c(true, 110.0, Level::High), 0.92);
         assert_eq!(c.c(true, 132.0, Level::Low), 1.12);
         assert_eq!(c.c(true, 132.0, Level::High), 1.12);
         assert_eq!(c.c(false, 110.0, Level::Low), 1.38);
@@ -1124,8 +1125,9 @@ mod tests {
         assert_eq!(row(380.0).c2_bil_kv, Some([1550.0, 1675.0]));
         assert_eq!(c.c(false, 220.0, Level::Low), 2.29);
         // C₃ and C₄ (brief approaches), as in the table.
-        assert_eq!(row(110.0).c3, Some([0.61, 0.76]));
-        assert!(row(110.0).two_levels() && !row(132.0).two_levels());
+        assert_eq!(row(110.0).c3, Some([0.61, 0.61]));
+        assert_eq!(row(132.0).c3, Some([0.76, 0.76]));
+        assert!(!row(110.0).two_levels() && !row(132.0).two_levels());
         assert_eq!(row(132.0).c4, Some([0.89, 0.89]));
         assert_eq!(row(220.0).c3, Some([1.35, 1.60]));
         assert_eq!(row(220.0).c4, Some([1.60, 1.90]));

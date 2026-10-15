@@ -102,15 +102,15 @@ c2_bil_kv = [375]
 c3 = ["0.45 m"]
 c4 = ["0.52 m"]
 
-# 110 and 132 kV share the table's lines: 110 kV has both insulation
-# levels (450 / 550 kV), 132 kV only the high one (550 kV).
+# 110 and 132 kV: C1 and C3 of their own (450 / 550 kV), C2 and C4 the
+# same (650 kV); one line each (no insulation levels).
 [[voltage]]
 kv = 110
-c1 = ["0.92 m", "1.12 m"]
-c1_bil_kv = [450, 550]
+c1 = ["0.92 m"]
+c1_bil_kv = [450]
 c2 = ["1.38 m"]
 c2_bil_kv = [650]
-c3 = ["0.61 m", "0.76 m"]
+c3 = ["0.61 m"]
 c4 = ["0.89 m"]
 
 [[voltage]]
