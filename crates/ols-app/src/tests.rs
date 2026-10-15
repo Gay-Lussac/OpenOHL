@@ -1407,7 +1407,11 @@ fn use_tool(
 ) {
     let r = h.state_mut().ready().unwrap();
     r.hotbar.hold(tool);
-    r.use_tool(crate::selection::Use { target, at });
+    r.use_tool(crate::selection::Use {
+        target,
+        at,
+        on: None,
+    });
     h.run();
 }
 
@@ -11801,4 +11805,193 @@ fn calculation_options_choose_the_jumpers_pull() {
         r.model.line.solver.jumper_loads,
         ols_line::JumperLoads::Estimate
     );
+}
+
+/// The span tool: a span right-clicked where its wire is clicked gives a
+/// window placing a span point there (by distance, as clicked); two span
+/// points, one on each conductor of a span, joined with Add string make a
+/// spacer (the project's default compression limit), solved and drawn;
+/// regular point loads and a spread load by station; the tables list them
+/// and change them; deleting a span point takes its spacer.
+#[test]
+fn spacers_are_laid_between_span_points() {
+    use crate::editors::Form;
+    use crate::span_tool::{PlaceBy, SpanWhat};
+    use crate::tables::TableKind;
+    use crate::tools::Tool;
+    let model = synthetic_project_with("spacers", |_| {});
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (s0, s1, on) = {
+        let r = harness.state_mut().ready().unwrap();
+        let l = &r.model.line;
+        let (s0, s1) = (l.sections[0].id.clone(), l.sections[1].id.clone());
+        let at = |k: usize| {
+            l.sections[k].points[..2]
+                .iter()
+                .map(|p| p.structure.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(at(0), at(1));
+        let points = &r.model.shape(&s0, r.case).unwrap().spans[0].points;
+        // A point of the wire a third of the way along.
+        let on = crate::scene::at_fraction(points, 1.0 / 3.0).unwrap();
+        (s0, s1, on)
+    };
+    // Its window: a span point where the span was clicked.
+    let add_point = |h: &mut Harness<'_, App>, section: &str| {
+        let r = h.state_mut().ready().unwrap();
+        r.hotbar.hold(Tool::OnSpan);
+        r.use_tool(crate::selection::Use {
+            target: Selection::Span {
+                section: section.into(),
+                span: 0,
+            },
+            at: None,
+            on: Some(on),
+        });
+        let Some(Form::Span(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert_eq!(f.what, SpanWhat::Point);
+        assert!(
+            (f.from / f.horizontal - 1.0 / 3.0).abs() < 0.01,
+            "{}",
+            f.from
+        );
+        f.label = "M".into();
+        h.run();
+        press(h, egui::Key::Enter, egui::Modifiers::NONE);
+        let r = h.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+    };
+    add_point(&mut harness, &s0);
+    add_point(&mut harness, &s1);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let p = &r.model.line.sections[0].span_points[0];
+        assert_eq!(p.label, "M");
+        assert!(p.at.distance.is_some());
+        // Solved where it is: on the wire.
+        let shape = r.model.shape(&s0, r.case).unwrap();
+        assert_eq!(shape.span_points.len(), 1);
+    }
+    // Add string: one span point, then the other — the spacer's window.
+    let point = |section: &str| Selection::SpanPoint {
+        section: section.into(),
+        label: "M".into(),
+    };
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .defaults
+        .spacer_compression = 7000.0;
+    use_tool(&mut harness, Tool::AddString, point(&s0), None);
+    assert!(harness.state_mut().ready().unwrap().spacer_from.is_some());
+    use_tool(&mut harness, Tool::AddString, point(&s1), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Spacer(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert_eq!(f.spacer.compression, Some(7000.0));
+        f.spacer.weight = 150.0;
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        assert_eq!(r.model.line.spacers.len(), 1);
+        let id = r.model.line.spacers[0].id.clone();
+        let x = crate::selection::spacer_state(&r.model, r.case, &id).expect("solved");
+        assert!(x.force.is_finite());
+        // Drawn and selectable.
+        let wires = crate::scene::prims(&r.model, crate::scene::Layer::Wires, r.case);
+        assert!(wires.iter().any(|p| p.points == x.ends.to_vec()));
+        let rows = TableKind::Spacers.rows(&r.model, r.case);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].cells[TableKind::Spacers.column("weight N")],
+            "150.0"
+        );
+        assert!(!rows[0].cells[TableKind::Spacers.column("force N")].is_empty());
+    }
+    // The table changes it.
+    let id = harness.state_mut().ready().unwrap().model.line.spacers[0]
+        .id
+        .clone();
+    set_cell(&mut harness, TableKind::Spacers, &id, "compression N", "");
+    apply_table(&mut harness, TableKind::Spacers, false).unwrap();
+    assert_eq!(
+        harness.state_mut().ready().unwrap().model.line.spacers[0].compression,
+        None
+    );
+    // Point loads every 50 m and a spread load by station.
+    let before = harness.state_mut().ready().unwrap().model.line.sections[0]
+        .loads
+        .len();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut f = crate::span_tool::SpanForm::new(&r.model, r.case, &s0, 0, None).unwrap();
+        f.what = SpanWhat::Load;
+        (f.regular, f.from, f.to, f.spacing) = (true, 50.0, 150.0, 50.0);
+        assert_eq!(f.distances(), vec![50.0, 100.0, 150.0]);
+        r.editor = Some(Form::Span(f));
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        assert_eq!(r.model.line.sections[0].loads.len(), before + 3);
+        let mut f = crate::span_tool::SpanForm::new(&r.model, r.case, &s0, 0, None).unwrap();
+        f.what = SpanWhat::Spread;
+        if f.stations.is_some() {
+            f.by = PlaceBy::Station;
+        }
+        (f.from, f.to, f.per_metre) = (10.0, 30.0, 25.0);
+        r.editor = Some(Form::Span(f));
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let l = &r.model.line.sections[0].spread_loads[0];
+        assert_eq!(l.load, 25.0);
+        let rows = TableKind::SpanObjects.rows(&r.model, r.case);
+        // Two span points, the point loads, one spread load.
+        let loads: usize = r.model.line.sections.iter().map(|s| s.loads.len()).sum();
+        assert_eq!(rows.len(), 3 + loads);
+    }
+    // A load's place typed in the table.
+    let key = format!("{s0}\tl\t{before}");
+    set_cell(&mut harness, TableKind::SpanObjects, &key, "at", "0.2");
+    apply_table(&mut harness, TableKind::SpanObjects, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let l = &r.model.line.sections[0].loads[before];
+        assert_eq!((l.fraction, l.distance), (0.2, None));
+    }
+    // Deleting a span point takes its spacer.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.hotbar.hold(Tool::Delete);
+        r.use_tool(crate::selection::Use {
+            target: point(&s1),
+            at: None,
+            on: None,
+        });
+    }
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.line.spacers.is_empty(), "{:?}", r.status);
+    assert!(r.model.line.sections[1].span_points.is_empty());
+    assert_eq!(r.model.line.sections[0].span_points.len(), 1);
 }

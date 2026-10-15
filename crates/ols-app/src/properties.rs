@@ -343,6 +343,97 @@ pub fn ui(
                 format!("Strings hanging from it: {}", hanging.join(", "))
             });
         }
+        Selection::SpanPoint { section, label } => {
+            ui.heading(format!("{section} span point {label}"));
+            let Some(p) = line
+                .sections
+                .iter()
+                .find(|s| s.id == section)
+                .and_then(|s| s.span_points.iter().find(|p| p.label == label))
+            else {
+                ui.label("Not in the line any more.");
+                return;
+            };
+            if ui.link(format!("section {section}, span {}", p.span + 1)).clicked() {
+                next = Some(Selection::Span {
+                    section: section.clone(),
+                    span: p.span,
+                });
+            }
+            description(ui, &p.description);
+            let mut rows = vec![
+                ("span".to_owned(), (p.span + 1).to_string()),
+                ("place".to_owned(), p.at.text()),
+            ];
+            if let Some((_, q)) = model
+                .shape(&section, case)
+                .and_then(|s| s.span_points.iter().find(|(l, _)| *l == label))
+            {
+                rows.push((
+                    "height (case shown)".to_owned(),
+                    format!("{:.2} m", q[2]),
+                ));
+            }
+            let rows: Vec<(&str, String)> = rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
+            grid(ui, "span-point", &rows);
+            for s in line.spacers.iter().filter(|s| {
+                [&s.a, &s.b]
+                    .iter()
+                    .any(|e| e.section == section && e.point == label)
+            }) {
+                if ui.link(format!("spacer {}", s.id)).clicked() {
+                    next = Some(Selection::Spacer(s.id.clone()));
+                }
+            }
+        }
+        Selection::Spacer(id) => {
+            ui.heading(format!("spacer {id}"));
+            let Some(s) = line.spacers.iter().find(|s| s.id == id) else {
+                ui.label("Not in the line any more.");
+                return;
+            };
+            description(ui, &s.description);
+            for e in [&s.a, &s.b] {
+                if ui
+                    .link(format!("{} span point {}", e.section, e.point))
+                    .clicked()
+                {
+                    next = Some(Selection::SpanPoint {
+                        section: e.section.clone(),
+                        label: e.point.clone(),
+                    });
+                }
+            }
+            let mut rows = vec![
+                ("insulator", s.insulator.clone().unwrap_or_else(|| "–".into())),
+                (
+                    "length",
+                    s.length
+                        .map_or_else(|| "as strung".into(), |l| format!("{l:.3} m")),
+                ),
+                ("weight", format!("{:.0} N", s.weight)),
+                ("wind area", format!("{:.3} m²", s.wind_area)),
+                (
+                    "compression limit",
+                    s.compression
+                        .map_or_else(|| "tension only".into(), |c| format!("{c:.0} N")),
+                ),
+            ];
+            if let Some(x) = crate::selection::spacer_state(model, case, &id) {
+                rows.push(("force (case shown)", format!("{:.0} N", x.force)));
+                rows.push((
+                    "state",
+                    if x.over {
+                        "over its compression limit".into()
+                    } else if x.slack {
+                        "slack".into()
+                    } else {
+                        "ok".into()
+                    },
+                ));
+            }
+            grid(ui, "spacer", &rows);
+        }
         Selection::String { structure, label } => {
             let Some(st) = line.structure(&structure) else {
                 ui.label(format!("{structure}: not in the line"));

@@ -54,6 +54,7 @@ mod python;
 mod remote;
 mod scene;
 mod selection;
+mod span_tool;
 mod spot;
 mod structure_desk;
 mod surfaces;
