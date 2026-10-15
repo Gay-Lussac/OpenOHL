@@ -45,11 +45,14 @@ pub enum Tool {
     /// Right-click a structure: the jumpers missing there; or two
     /// strings: a jumper between them.
     AddJumper,
+    /// Right-click a span: a span point, a point load or a spread load
+    /// there (by fraction, distance, station or regular spacing).
+    OnSpan,
 }
 
 impl Tool {
     /// Every tool (the inventory).
-    pub const ALL: [Tool; 12] = [
+    pub const ALL: [Tool; 13] = [
         Tool::Select,
         Tool::Move,
         Tool::Delete,
@@ -62,6 +65,7 @@ impl Tool {
         Tool::AddJumper,
         Tool::NewAlignment,
         Tool::EditAlignment,
+        Tool::OnSpan,
     ];
 
     /// Name.
@@ -79,6 +83,7 @@ impl Tool {
             Tool::NewAlignment => "New alignment",
             Tool::EditAlignment => "Edit alignment",
             Tool::AddJumper => "Add jumper",
+            Tool::OnSpan => "Add on span",
         }
     }
 
@@ -97,6 +102,7 @@ impl Tool {
             Tool::NewAlignment => "⤳",
             Tool::EditAlignment => "⤲",
             Tool::AddJumper => "Ψ",
+            Tool::OnSpan => "⊙",
         }
     }
 
@@ -114,14 +120,16 @@ impl Tool {
         match self {
             Tool::Select => "right-click an object to select it",
             Tool::Move => "right-click a structure to move it",
-            Tool::Delete => "right-click a structure, string, span or jumper to delete it",
+            Tool::Delete => {
+                "right-click a structure, string, span, jumper, span point or spacer to delete it"
+            }
             Tool::GoTo => "right-click to open the Go to window",
             Tool::Edit => "right-click a structure (its pylon), a string or a span to edit it",
             Tool::AddStructure => {
                 "right-click an alignment point (the structure stands on it) or the ground to add a structure there"
             }
             Tool::AddString => {
-                "right-click a structure point or a wire point to hang a new string from it"
+                "right-click a structure point or a wire point to hang a new string from it; or two span points: a spacer between them"
             }
             Tool::StringWire => {
                 "right-click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"
@@ -137,6 +145,9 @@ impl Tool {
             }
             Tool::AddJumper => {
                 "right-click a structure: the jumpers missing there (section ends of the same circuit and phase); or two strings: a jumper between them"
+            }
+            Tool::OnSpan => {
+                "right-click a span: a span point, a point load or a spread load where it was clicked"
             }
         }
     }
@@ -159,6 +170,15 @@ impl Tool {
     /// held.
     pub fn picks_points(self) -> bool {
         self == Tool::AddString
+    }
+
+    /// Spans (their span points, spacers) can be right-clicked while it is
+    /// held.
+    pub fn picks_spans(self) -> bool {
+        matches!(
+            self,
+            Tool::AddString | Tool::OnSpan | Tool::Delete | Tool::Edit
+        )
     }
 
     /// Alignment points can be right-clicked while it is held.
@@ -189,6 +209,7 @@ impl Tool {
             Tool::NewAlignment => "new_alignment",
             Tool::EditAlignment => "edit_alignment",
             Tool::AddJumper => "add_jumper",
+            Tool::OnSpan => "on_span",
         }
     }
 }

@@ -361,6 +361,10 @@ pub enum Form {
     Alignment(AlignmentForm),
     /// A jumper.
     Jumper(JumperForm),
+    /// Objects added on a span (the span tool).
+    Span(crate::span_tool::SpanForm),
+    /// A new spacer between two span points.
+    Spacer(crate::span_tool::SpacerForm),
 }
 
 /// A jumper being changed: the jumper as it will be put.
@@ -2759,6 +2763,9 @@ impl Form {
             Form::Section(f) => format!("Section {}", f.id),
             Form::Alignment(f) => format!("Alignment point {}", f.id),
             Form::Jumper(f) => format!("Jumper {}", f.jumper.id),
+            Form::Span(f) => format!("On span {} of {}", f.span + 1, f.section),
+            Form::Spacer(f) if f.new => "Add spacer".into(),
+            Form::Spacer(f) => format!("Spacer {}", f.spacer.id),
         }
     }
 
@@ -2809,6 +2816,8 @@ impl Form {
             }
             Form::Alignment(f) => f.command(model),
             Form::Jumper(f) => f.command(),
+            Form::Span(f) => f.command(model),
+            Form::Spacer(f) => f.command(model),
         }
     }
 
@@ -2839,6 +2848,8 @@ impl Form {
             }
             Form::Alignment(f) => alignment_ui(ui, f, model),
             Form::Jumper(f) => jumper_ui(ui, f, model),
+            Form::Span(f) => crate::span_tool::span_ui(ui, f),
+            Form::Spacer(f) => crate::span_tool::spacer_ui(ui, f, model),
         }
         ui.separator();
         ui.horizontal(|ui| {

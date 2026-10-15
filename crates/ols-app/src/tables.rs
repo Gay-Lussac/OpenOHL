@@ -56,6 +56,11 @@ pub enum TableKind {
     Routes,
     /// Weather cases (of the model's weather case file).
     WeatherCases,
+    /// Interphase spacers (added with Add string between span points).
+    Spacers,
+    /// Span points, point loads and spread loads (added with the span
+    /// tool).
+    SpanObjects,
 }
 
 /// How a column is typed in.
@@ -306,6 +311,87 @@ const STRINGS: &[Column] = &[
         220.0,
         Yes,
         "what it is, in words (free text)",
+    ),
+];
+
+const SPACERS: &[Column] = &[
+    ("id", 90.0, Derived, "unique id"),
+    ("a", 150.0, Derived, "one end: section, span point"),
+    ("b", 150.0, Derived, "the other end: section, span point"),
+    (
+        "insulator",
+        150.0,
+        Yes,
+        "insulator library id (empty: its own values)",
+    ),
+    (
+        "length m",
+        75.0,
+        Yes,
+        "its length (empty: the distance between its ends where the wires hang at stringing)",
+    ),
+    ("weight N", 70.0, Yes, "weight (half at each end)"),
+    ("wind area m²", 85.0, Yes, "area the wind blows on"),
+    ("EA N", 90.0, Yes, "axial stiffness (empty: the default)"),
+    (
+        "compression N",
+        95.0,
+        Yes,
+        "compression it may take, flagged beyond (empty: tension only)",
+    ),
+    (
+        "force N",
+        75.0,
+        Derived,
+        "axial force in the case shown (tension positive)",
+    ),
+    (
+        "state",
+        110.0,
+        Derived,
+        "in the case shown: ok, slack, or over its compression limit",
+    ),
+    ("description", 200.0, Yes, "what it is"),
+];
+
+const SPAN_OBJECTS: &[Column] = &[
+    ("section", 90.0, Derived, "its section"),
+    ("span", 45.0, Derived, "span of the section (1 = first)"),
+    (
+        "kind",
+        90.0,
+        Derived,
+        "span point, point load or spread load",
+    ),
+    (
+        "label",
+        110.0,
+        Yes,
+        "label (a span point's: fixed, spacers use it)",
+    ),
+    (
+        "at",
+        100.0,
+        Yes,
+        "where: a fraction (0.25), a distance from the back structure (120 m) or a station (st. 1520 m); a spread load's start",
+    ),
+    (
+        "end",
+        100.0,
+        Yes,
+        "a spread load's end, written the same way",
+    ),
+    (
+        "load",
+        80.0,
+        Yes,
+        "a point load's weight, N; a spread load's, N/m",
+    ),
+    (
+        "diameter m",
+        80.0,
+        Yes,
+        "a point load's body, taken as a sphere (0: a point)",
     ),
 ];
 
@@ -916,7 +1002,7 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
 
 impl TableKind {
     /// Every table (the Tables menu).
-    pub const ALL: [TableKind; 11] = [
+    pub const ALL: [TableKind; 13] = [
         TableKind::Structures,
         TableKind::Sections,
         TableKind::Strings,
@@ -928,6 +1014,8 @@ impl TableKind {
         TableKind::Alignments,
         TableKind::AlignmentPoints,
         TableKind::WeatherCases,
+        TableKind::Spacers,
+        TableKind::SpanObjects,
     ];
 
     /// Title of its page.
@@ -944,6 +1032,8 @@ impl TableKind {
             TableKind::AlignmentPoints => "Alignment points",
             TableKind::Routes => "Routes",
             TableKind::WeatherCases => "Weather cases",
+            TableKind::Spacers => "Spacers",
+            TableKind::SpanObjects => "Span points and loads",
         }
     }
 
@@ -961,6 +1051,8 @@ impl TableKind {
             TableKind::AlignmentPoints => "alignments",
             TableKind::Routes => "routes",
             TableKind::WeatherCases => "weather",
+            TableKind::Spacers => "spacers",
+            TableKind::SpanObjects => "span_objects",
         }
     }
 
@@ -978,6 +1070,8 @@ impl TableKind {
             TableKind::AlignmentPoints => POINTS,
             TableKind::Routes => ROUTES,
             TableKind::WeatherCases => WEATHER,
+            TableKind::Spacers => SPACERS,
+            TableKind::SpanObjects => SPAN_OBJECTS,
         }
     }
 
@@ -1005,6 +1099,11 @@ impl TableKind {
     /// none added or deleted here.
     pub fn fixed_rows(self) -> bool {
         self == TableKind::Circuits
+    }
+
+    /// Rows can be added here (not those added with a tool in the views).
+    pub fn adds_rows(self) -> bool {
+        !self.fixed_rows() && !matches!(self, TableKind::Spacers | TableKind::SpanObjects)
     }
 
     pub fn rows(self, model: &Model, case: usize) -> Vec<Row> {
@@ -1498,6 +1597,8 @@ impl TableKind {
                     }
                 })
                 .collect(),
+            TableKind::Spacers => spacer_rows(model, case),
+            TableKind::SpanObjects => span_object_rows(model),
         };
         defaults(self, model, case, &mut rows);
         rows
@@ -1625,6 +1726,8 @@ impl TableKind {
                 cells[W_ICE] = "0".into();
                 cells[W_PRESSURE] = "0".into();
             }
+            // Added with tools in the views.
+            TableKind::Spacers | TableKind::SpanObjects => {}
         }
         cells
     }
@@ -2141,6 +2244,8 @@ impl TableKind {
                     out.commands.push((what, cmd));
                 }
             }
+            TableKind::Spacers => spacer_commands(stored, page, &existing, &mut out)?,
+            TableKind::SpanObjects => span_object_commands(stored, page, &existing, &mut out)?,
             TableKind::WeatherCases | TableKind::Insulators => {
                 unreachable!("written to its files")
             }
@@ -4209,11 +4314,13 @@ impl TablePage {
             );
             ui.separator();
             if ui
-                .add_enabled(
-                    editable && !kind.fixed_rows(),
-                    egui::Button::new("+ Add row"),
-                )
+                .add_enabled(editable && kind.adds_rows(), egui::Button::new("+ Add row"))
                 .on_hover_text("A new object, typed in the row (pending until Apply)")
+                .on_disabled_hover_text(match kind {
+                    TableKind::Spacers => "Add spacers with Add string, between two span points",
+                    TableKind::SpanObjects => "Add them with the Add on span tool",
+                    _ => "Read-only",
+                })
                 .clicked()
             {
                 let mut cells = kind.new_row(model, case, &self.added);
@@ -4841,4 +4948,334 @@ fn color_cell(
         .on_hover_text(hover)
         .changed();
     (button.clicked(), changed)
+}
+
+/// The spacers, their forces in weather case `case`.
+fn spacer_rows(model: &Model, case: usize) -> Vec<Row> {
+    let end = |e: &ols_line::SpanPointRef| format!("{} {}", e.section, e.point);
+    model
+        .line
+        .spacers
+        .iter()
+        .map(|s| {
+            let solved = crate::selection::spacer_state(model, case, &s.id);
+            Row {
+                defaulted: Vec::new(),
+                key: s.id.clone(),
+                select: Selection::Spacer(s.id.clone()),
+                cells: vec![
+                    s.id.clone(),
+                    end(&s.a),
+                    end(&s.b),
+                    s.insulator.clone().unwrap_or_default(),
+                    s.length.map_or(String::new(), |v| f(v, 3)),
+                    f(s.weight, 1),
+                    f(s.wind_area, 3),
+                    s.stiffness.map_or(String::new(), |v| f(v, 0)),
+                    s.compression.map_or(String::new(), |v| f(v, 0)),
+                    solved.map_or(String::new(), |x| f(x.force, 0)),
+                    solved.map_or(String::new(), |x| {
+                        if x.over {
+                            "over its compression limit".into()
+                        } else if x.slack {
+                            "slack".into()
+                        } else {
+                            "ok".into()
+                        }
+                    }),
+                    s.description.clone(),
+                ],
+            }
+        })
+        .collect()
+}
+
+/// The spacers table's changes.
+fn spacer_commands<'a>(
+    stored: &ols_line::Line,
+    page: &TablePage,
+    existing: &impl Fn(&String) -> Result<Cells<'a>, String>,
+    out: &mut Changes,
+) -> Result<(), String> {
+    for key in &page.deleted {
+        out.commands.push((
+            format!("deleted spacer {key}"),
+            Command::Delete {
+                kind: Kind::Spacer,
+                id: key.clone(),
+                confirm: true,
+            },
+        ));
+    }
+    for key in page.edits.keys().filter(|k| !page.deleted.contains(*k)) {
+        let c = existing(key)?;
+        let mut s = stored
+            .spacers
+            .iter()
+            .find(|s| &s.id == key)
+            .ok_or_else(|| format!("no spacer {key}"))?
+            .clone();
+        let name = format!("spacer {key}");
+        s.insulator = opt(&c.get(3));
+        s.length = opt_num(&c.get(4), &format!("{name} length"))?;
+        s.weight = opt_num(&c.get(5), &format!("{name} weight"))?.unwrap_or(0.0);
+        s.wind_area = opt_num(&c.get(6), &format!("{name} wind area"))?.unwrap_or(0.0);
+        s.stiffness = opt_num(&c.get(7), &format!("{name} EA"))?;
+        s.compression = opt_num(&c.get(8), &format!("{name} compression"))?;
+        s.description = c.get(11).trim().to_owned();
+        out.commands.push((
+            format!("changed {name}"),
+            Command::Put {
+                kind: Kind::Spacer,
+                id: key.clone(),
+                value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
+                ord: None,
+            },
+        ));
+    }
+    Ok(())
+}
+
+/// Key of a span object: section, kind (p, l, s) and index.
+fn span_object_key(section: &str, kind: char, k: usize) -> String {
+    format!("{section}\t{kind}\t{k}")
+}
+
+/// The span points, point loads and spread loads of the sections.
+fn span_object_rows(model: &Model) -> Vec<Row> {
+    let mut rows = Vec::new();
+    for s in &model.line.sections {
+        let row = |kind: char, k: usize, span: usize, select: Selection, cells: [String; 6]| {
+            let [a, b, c, d, e, g] = cells;
+            Row {
+                defaulted: Vec::new(),
+                key: span_object_key(&s.id, kind, k),
+                select,
+                cells: vec![s.id.clone(), (span + 1).to_string(), a, b, c, d, e, g],
+            }
+        };
+        let span_of = |span: usize| Selection::Span {
+            section: s.id.clone(),
+            span,
+        };
+        for (k, p) in s.span_points.iter().enumerate() {
+            rows.push(row(
+                'p',
+                k,
+                p.span,
+                Selection::SpanPoint {
+                    section: s.id.clone(),
+                    label: p.label.clone(),
+                },
+                [
+                    "span point".into(),
+                    p.label.clone(),
+                    p.at.text(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                ],
+            ));
+        }
+        for (k, l) in s.loads.iter().enumerate() {
+            rows.push(row(
+                'l',
+                k,
+                l.span,
+                span_of(l.span),
+                [
+                    "point load".into(),
+                    l.label.clone(),
+                    l.place().text(),
+                    String::new(),
+                    f(l.vertical, 1),
+                    f(l.diameter, 3),
+                ],
+            ));
+        }
+        for (k, l) in s.spread_loads.iter().enumerate() {
+            rows.push(row(
+                's',
+                k,
+                l.span,
+                span_of(l.span),
+                [
+                    "spread load".into(),
+                    l.label.clone(),
+                    l.start.text(),
+                    l.end.text(),
+                    f(l.load, 2),
+                    String::new(),
+                ],
+            ));
+        }
+    }
+    rows
+}
+
+/// The span objects table's changes: each section changed put once, after
+/// deleting the spacers clamped on the span points deleted.
+fn span_object_commands<'a>(
+    stored: &ols_line::Line,
+    page: &TablePage,
+    existing: &impl Fn(&String) -> Result<Cells<'a>, String>,
+    out: &mut Changes,
+) -> Result<(), String> {
+    let parse_key = |key: &str| -> Result<(String, char, usize), String> {
+        let mut it = key.split('\t');
+        match (
+            it.next(),
+            it.next().and_then(|k| k.chars().next()),
+            it.next().and_then(|k| k.parse().ok()),
+        ) {
+            (Some(s), Some(kind), Some(k)) => Ok((s.to_owned(), kind, k)),
+            _ => Err(format!("{key}: not a span object")),
+        }
+    };
+    let mut sections: BTreeMap<String, ols_line::Section> = BTreeMap::new();
+    let mut gone: BTreeMap<String, BTreeSet<(char, usize)>> = BTreeMap::new();
+    let take =
+        |sections: &mut BTreeMap<String, ols_line::Section>, id: &str| -> Result<(), String> {
+            if !sections.contains_key(id) {
+                let s = stored
+                    .sections
+                    .iter()
+                    .find(|s| s.id == id)
+                    .ok_or_else(|| format!("no section {id}"))?;
+                sections.insert(id.to_owned(), s.clone());
+            }
+            Ok(())
+        };
+    for key in page.edits.keys().filter(|k| !page.deleted.contains(*k)) {
+        let (id, kind, k) = parse_key(key)?;
+        take(&mut sections, &id)?;
+        let s = sections.get_mut(&id).expect("taken");
+        let c = existing(key)?;
+        let name = format!("{id} {}", c.get(3).trim());
+        match kind {
+            'p' => {
+                let p = s
+                    .span_points
+                    .get_mut(k)
+                    .ok_or_else(|| format!("{name}: gone"))?;
+                if c.get(3).trim() != p.label {
+                    return Err(format!(
+                        "span point {}: its label is fixed (spacers use it)",
+                        p.label
+                    ));
+                }
+                p.at = parse_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
+            }
+            'l' => {
+                let l = s.loads.get_mut(k).ok_or_else(|| format!("{name}: gone"))?;
+                l.label = c.get(3).trim().to_owned();
+                let p = parse_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
+                (l.fraction, l.distance, l.station) = (p.fraction, p.distance, p.station);
+                l.vertical = num(&c.get(6), &format!("{name} load"))?;
+                l.diameter = opt_num(&c.get(7), &format!("{name} diameter"))?.unwrap_or(0.0);
+            }
+            _ => {
+                let l = s
+                    .spread_loads
+                    .get_mut(k)
+                    .ok_or_else(|| format!("{name}: gone"))?;
+                l.label = c.get(3).trim().to_owned();
+                l.start = parse_place(&c.get(4)).map_err(|e| format!("{name} start: {e}"))?;
+                l.end = parse_place(&c.get(5)).map_err(|e| format!("{name} end: {e}"))?;
+                l.load = num(&c.get(6), &format!("{name} load"))?;
+            }
+        }
+    }
+    for key in &page.deleted {
+        let (id, kind, k) = parse_key(key)?;
+        take(&mut sections, &id)?;
+        gone.entry(id).or_default().insert((kind, k));
+    }
+    for (id, set) in &gone {
+        let s = sections.get_mut(id).expect("taken");
+        let keep = |kind: char, k: usize| !set.contains(&(kind, k));
+        let labels: Vec<String> = s
+            .span_points
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| !keep('p', *k))
+            .map(|(_, p)| p.label.clone())
+            .collect();
+        for x in stored.spacers.iter().filter(|x| {
+            [&x.a, &x.b]
+                .iter()
+                .any(|e| &e.section == id && labels.contains(&e.point))
+        }) {
+            out.takes.push(format!("spacer {}", x.id));
+            out.commands.push((
+                format!("deleted spacer {}", x.id),
+                Command::Delete {
+                    kind: Kind::Spacer,
+                    id: x.id.clone(),
+                    confirm: true,
+                },
+            ));
+        }
+        let mut k = 0;
+        s.span_points.retain(|_| {
+            k += 1;
+            keep('p', k - 1)
+        });
+        k = 0;
+        s.loads.retain(|_| {
+            k += 1;
+            keep('l', k - 1)
+        });
+        k = 0;
+        s.spread_loads.retain(|_| {
+            k += 1;
+            keep('s', k - 1)
+        });
+    }
+    for (id, s) in sections {
+        out.commands.push((
+            format!("changed the span objects of section {id}"),
+            Command::Put {
+                kind: Kind::Section,
+                id,
+                value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
+                ord: None,
+            },
+        ));
+    }
+    Ok(())
+}
+
+/// A place on a span as written in the table ([`ols_line::SpanPlace::text`]):
+/// `0.25`, `120 m` or `st. 1520 m`.
+fn parse_place(text: &str) -> Result<ols_line::SpanPlace, String> {
+    let t = text.trim();
+    let number = |s: &str| {
+        s.trim().parse::<f64>().map_err(|_| {
+            format!(
+                "\"{text}\": write a fraction (0.25), a distance (120 m) or a station (st. 1520 m)"
+            )
+        })
+    };
+    if let Some(s) = t.strip_prefix("st.") {
+        return Ok(ols_line::SpanPlace::at_station(number(
+            s.trim().trim_end_matches('m'),
+        )?));
+    }
+    if let Some(d) = t.strip_suffix('m') {
+        let d = number(d)?;
+        if d < 0.0 {
+            return Err(format!(
+                "\"{text}\": a distance from the back structure is not negative"
+            ));
+        }
+        return Ok(ols_line::SpanPlace::at_distance(d));
+    }
+    let x = number(t)?;
+    if !(0.0..=1.0).contains(&x) {
+        return Err(format!(
+            "\"{text}\": a fraction is from 0 to 1 (a distance: add m)"
+        ));
+    }
+    Ok(ols_line::SpanPlace::at_fraction(x))
 }

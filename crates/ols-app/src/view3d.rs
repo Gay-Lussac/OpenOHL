@@ -406,7 +406,12 @@ impl View3d {
                 self.captured,
                 target.describe()
             );
-            selection::Use { target, at: ground }
+            let on = selection::on_span(model, case, &target, at, |p| project(p).map(|(q, _)| q));
+            selection::Use {
+                target,
+                at: ground,
+                on,
+            }
         });
         if let Some((at, double)) = pick_at {
             let cam = *camera;

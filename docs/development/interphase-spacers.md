@@ -5,8 +5,14 @@ loads by fraction or distance, spread loads, spacers, the project's
 default values with their file), checked (a spacer's sections by finite
 elements only), saved, logged, in OLS XML; spread loads and span points
 in the solve; places by station; **the spacers in the solve**
-(`solve::solve_spacer_group`, below). To come: the app (the span tool, strings between span points, tables,
-drawing, Default values), the LeV check in the plugin with 2.2.4.
+(`solve::solve_spacer_group`, below); **the app**: the Add on span tool
+(span points, point loads, spread loads where the span is clicked; by
+fraction, distance, station or regular spacing), spacers with Add string
+between two span points, both selectable, drawn, in Properties and in the
+tables (Span points and loads, Spacers), deleted with what goes with
+them; Criteria › Default values with its `.olsdef` file. To come: the LeV
+check in the plugin with 2.2.4, then the sweep of the other default
+values.
 
 Decided with the user: spans with spacers refuse the ruling span; span
 points (and point and spread loads) are placed with one span tool — by a

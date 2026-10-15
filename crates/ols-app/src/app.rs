@@ -280,6 +280,9 @@ pub struct Ready {
     pub bimetallic_window: Option<ols_cables::BimetallicModel>,
     /// Criteria › Calculation options (a draft while open).
     pub solver_window: Option<ols_line::SolverOptions>,
+    /// Criteria › Default values: the values being changed, and what the
+    /// last export or import said (an error: true).
+    pub defaults_window: Option<(ols_line::Defaults, Option<(String, bool)>)>,
     /// Terrain › Coordinate system: its windows and the reprojection.
     pub crs: crate::crs::Windows,
     /// Terrain › Backgrounds: its windows and the import running.
@@ -290,6 +293,8 @@ pub struct Ready {
     pub design_code: crate::codes::DesignCodeWindow,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
+    /// Add string: the first span point right-clicked (a spacer).
+    pub spacer_from: Option<ols_line::SpanPointRef>,
     /// Add jumper: the helping strings right-clicked after it, in order
     /// (structure, wire point).
     pub jumper_via: Vec<(String, String)>,
@@ -381,11 +386,13 @@ impl Ready {
             creep_stretch_window: None,
             bimetallic_window: None,
             solver_window: None,
+            defaults_window: None,
             crs: Default::default(),
             backgrounds: Default::default(),
             open_project: None,
             design_code: Default::default(),
             jumper_from: None,
+            spacer_from: None,
             jumper_via: Vec::new(),
             open_page: None,
             placed: None,
@@ -1111,7 +1118,11 @@ impl TabViewer for Viewer<'_> {
                 let used = r
                     .profile
                     .ui(ui, &r.model, r.case, &mut r.selection, &snaps)
-                    .map(|target| crate::selection::Use { target, at: None });
+                    .map(|target| crate::selection::Use {
+                        target,
+                        at: None,
+                        on: None,
+                    });
                 if let Some(depth) = r.profile.new_corridor.take() {
                     r.model.profile_corridor = depth;
                 }
@@ -1259,6 +1270,9 @@ impl Ready {
         }
         if self.hotbar.tool().picks_points() {
             s.0.insert(crate::selection::Snap::Point);
+        }
+        if self.hotbar.tool().picks_spans() {
+            s.0.insert(crate::selection::Snap::Span);
         }
         if self.hotbar.tool().picks_alignment() {
             s.0.insert(crate::selection::Snap::AlignmentPoint);
@@ -1633,8 +1647,48 @@ impl Ready {
                     }
                 }
             }
-            (Tool::Edit, Selection::Span { section, .. }) => {
+            (Tool::OnSpan, Selection::Span { section, span }) => {
+                self.editor =
+                    crate::span_tool::SpanForm::new(model, self.case, section, *span, u.on)
+                        .map(Form::Span);
+                self.select(target);
+            }
+            // A spacer: from a span point to another.
+            (Tool::AddString, Selection::SpanPoint { section, label }) => {
+                let p = ols_line::SpanPointRef {
+                    section: section.clone(),
+                    point: label.clone(),
+                };
+                match self.spacer_from.take() {
+                    None => {
+                        self.status = Some((
+                            format!(
+                                "Add spacer from {section} span point {label}: right-click the span point at its other end (the same one again or Escape: cancel)"
+                            ),
+                            false,
+                        ));
+                        self.spacer_from = Some(p);
+                    }
+                    Some(from) if from == p => {
+                        self.status = Some(("Add spacer: cancelled".into(), false));
+                    }
+                    Some(from) => {
+                        self.editor = Some(Form::Spacer(crate::span_tool::SpacerForm::new(
+                            model, from, p,
+                        )));
+                    }
+                }
+                self.select(target);
+            }
+            (
+                Tool::Edit,
+                Selection::Span { section, .. } | Selection::SpanPoint { section, .. },
+            ) => {
                 self.editor = SectionForm::of(model, section).map(Form::Section);
+                self.select(target);
+            }
+            (Tool::Edit, Selection::Spacer(id)) => {
+                self.editor = crate::span_tool::SpacerForm::of(model, id).map(Form::Spacer);
                 self.select(target);
             }
             // On a free alignment point: on it, tied to it (a point with a
@@ -3042,6 +3096,11 @@ impl Ready {
                 .structure(structure)
                 .is_some_and(|s| s.node(label).is_some()),
             Selection::AlignmentPoint { id } => line.alignment_point(id).is_some(),
+            Selection::SpanPoint { section, label } => line
+                .sections
+                .iter()
+                .any(|s| &s.id == section && s.span_points.iter().any(|p| &p.label == label)),
+            Selection::Spacer(id) => line.spacers.iter().any(|s| &s.id == id),
         }
     }
 
@@ -3108,6 +3167,50 @@ fn delete_action(line: &ols_line::Line, target: &Selection) -> Option<crate::edi
         Selection::Structure(id) => del(Kind::Structure, id),
         Selection::Span { section, .. } => del(Kind::Section, section),
         Selection::Jumper(id) => del(Kind::Jumper, id),
+        Selection::Spacer(id) => del(Kind::Spacer, id),
+        // The section without it, and the spacers clamped on it.
+        Selection::SpanPoint { section, label } => {
+            let mut s = line.sections.iter().find(|s| &s.id == section)?.clone();
+            s.span_points.retain(|p| &p.label != label);
+            let spacers: Vec<&ols_line::Spacer> = line
+                .spacers
+                .iter()
+                .filter(|x| {
+                    [&x.a, &x.b]
+                        .iter()
+                        .any(|e| &e.section == section && &e.point == label)
+                })
+                .collect();
+            let mut commands: Vec<ols_session::Command> = spacers
+                .iter()
+                .map(|x| ols_session::Command::Delete {
+                    kind: Kind::Spacer,
+                    id: x.id.clone(),
+                    confirm: true,
+                })
+                .collect();
+            commands.push(ols_session::Command::Put {
+                kind: Kind::Section,
+                id: section.clone(),
+                value: serde_json::to_value(&s).ok()?,
+                ord: None,
+            });
+            Action::Command {
+                what: if spacers.is_empty() {
+                    format!("deleted span point {label} of {section}")
+                } else {
+                    format!(
+                        "deleted span point {label} of {section} and spacers {}",
+                        spacers
+                            .iter()
+                            .map(|x| x.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                },
+                command: ols_session::Command::Batch { commands },
+            }
+        }
         Selection::Attachment { structure, set } => Action::DeleteAttachment {
             structure: structure.clone(),
             set: *set,
@@ -3283,6 +3386,14 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         r.jumper_from = None;
         r.jumper_via.clear();
         r.status = Some(("Add jumper: cancelled".into(), false));
+    }
+    // A spacer being laid out (Add string): Escape gives it up.
+    if r.spacer_from.is_some()
+        && !windows
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        r.spacer_from = None;
+        r.status = Some(("Add spacer: cancelled".into(), false));
     }
     // A new alignment being laid out: the same keys.
     if !r.new_alignment.is_empty() && !windows {
@@ -3607,6 +3718,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     creep_stretch_window(ctx, r);
     bimetallic_window(ctx, r);
     solver_window(ctx, r);
+    defaults_window(ctx, r);
     crs_windows(ctx, r);
     if r.backgrounds.show(ctx, &r.model) {
         r.reopen = true;
@@ -4035,6 +4147,123 @@ const PULL_COST: &str = "measured: about 3× the time of the estimate on a test 
     sections, 21 at 15 jumpers), about 5× on an existing line where nearly every section ends at \
     a jumper (554 sections, 518 jumpers, 99 weather cases: 32 s → 158 s, the sections over the \
     cores); sections away from jumpers are not solved again.";
+
+/// Criteria › Default values: what new objects start with, for the
+/// project; exported and imported as a file.
+fn defaults_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some((mut draft, mut message)) = r.defaults_window.take() else {
+        return;
+    };
+    let (mut ok, mut cancel) = (false, false);
+    let mut open = true;
+    egui::Window::new("Default values")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(480.0)
+        .show(ctx, |ui| {
+            ui.label(
+                "What new objects start with in this project (objects already made keep \
+                 their values).",
+            );
+            egui::Grid::new("defaults").num_columns(2).show(ui, |ui| {
+                ui.label("spacer compression limit")
+                    .on_hover_text("The compression a new spacer may take; beyond, it is flagged");
+                ui.add(
+                    egui::DragValue::new(&mut draft.spacer_compression)
+                        .speed(10.0)
+                        .range(0.0..=f64::MAX)
+                        .suffix(" N"),
+                );
+                ui.end_row();
+            });
+            if ui
+                .add_enabled(!draft.is_default(), egui::Button::new("Program's values"))
+                .on_hover_text("Back to the values OLS CAD starts with")
+                .clicked()
+            {
+                draft = ols_line::Defaults::default();
+            }
+            ui.separator();
+            let ext = ols_line::DEFAULTS_FILE_EXTENSION;
+            ui.horizontal(|ui| {
+                if ui
+                    .button("Export…")
+                    .on_hover_text(format!("Writes these values to a .{ext} file"))
+                    .clicked()
+                    && let Some(p) = rfd::FileDialog::new()
+                        .add_filter("Default values", &[ext])
+                        .set_file_name(format!("defaults.{ext}"))
+                        .save_file()
+                {
+                    message = Some(match std::fs::write(&p, draft.to_text()) {
+                        Ok(()) => (format!("exported to {}", p.display()), false),
+                        Err(e) => (format!("{}: {e}", p.display()), true),
+                    });
+                }
+                if ui
+                    .button("Import…")
+                    .on_hover_text(format!(
+                        "Reads the values of a .{ext} file (OK keeps them for the project)"
+                    ))
+                    .clicked()
+                    && let Some(p) = rfd::FileDialog::new()
+                        .add_filter("Default values", &[ext])
+                        .pick_file()
+                {
+                    message = Some(
+                        match std::fs::read_to_string(&p)
+                            .map_err(|e| e.to_string())
+                            .and_then(|t| ols_line::Defaults::parse(&t))
+                        {
+                            Ok(d) => {
+                                draft = d;
+                                (format!("read {}", p.display()), false)
+                            }
+                            Err(e) => (format!("{}: {e}", p.display()), true),
+                        },
+                    );
+                }
+            });
+            if let Some((m, error)) = &message {
+                if *error {
+                    crate::menu::error_label(ui, m.clone());
+                } else {
+                    ui.label(egui::RichText::new(m).small().weak());
+                }
+            }
+            if let Err(why) = r.model.can_edit() {
+                crate::menu::error_label(ui, format!("read-only: {why}"));
+            }
+            ui.horizontal(|ui| {
+                ok = ui
+                    .add_enabled(
+                        r.model.can_edit().is_ok()
+                            && draft != r.model.line.defaults
+                            && draft.validate().is_ok(),
+                        egui::Button::new("OK"),
+                    )
+                    .clicked();
+                cancel = ui.button("Cancel").clicked();
+            });
+        });
+    if ok {
+        let command = r
+            .model
+            .editing
+            .as_ref()
+            .map(|e| e.session.defaults_command(draft));
+        if let Ok(command) = command {
+            r.perform(crate::edit::Action::Command {
+                what: "default values".into(),
+                command,
+            });
+        }
+    }
+    if open && !ok && !cancel {
+        r.defaults_window = Some((draft, message));
+    }
+}
 
 fn solver_window(ctx: &egui::Context, r: &mut Ready) {
     use ols_line::JumperLoads;
@@ -5665,6 +5894,8 @@ fn menus(
         ui.label(egui::RichText::new("Tables").small().weak());
         item(ui, Command::Table(TableKind::Sections), out);
         item(ui, Command::Table(TableKind::Jumpers), out);
+        item(ui, Command::Table(TableKind::SpanObjects), out);
+        item(ui, Command::Table(TableKind::Spacers), out);
         item(ui, Command::Table(TableKind::Systems), out);
         item(ui, Command::Table(TableKind::Circuits), out);
         ui.separator();
@@ -5724,6 +5955,17 @@ fn menus(
             .clicked()
         {
             r.solver_window = Some(r.model.line.solver);
+            ui.close();
+        }
+        if ui
+            .button("Default values…")
+            .on_hover_text(
+                "What new objects start with in this project (a spacer's compression limit); \
+                 exported and imported as a file",
+            )
+            .clicked()
+        {
+            r.defaults_window = Some((r.model.line.defaults, None));
             ui.close();
         }
         if ui

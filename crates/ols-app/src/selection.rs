@@ -55,6 +55,16 @@ pub enum Selection {
         /// Its id.
         id: String,
     },
+    /// A point on a span where spacers are clamped, by its section and
+    /// label.
+    SpanPoint {
+        /// Section id.
+        section: String,
+        /// The span point's label.
+        label: String,
+    },
+    /// An interphase spacer, by id.
+    Spacer(String),
     /// A LiDAR point shown (index in the model's points).
     LidarPoint(usize),
     /// A point of the ground surface (survey; index in its points).
@@ -69,6 +79,42 @@ pub struct Use {
     pub target: Selection,
     /// The ground under the pointer (the crosshair in first person).
     pub at: Option<[f64; 3]>,
+    /// On a span: the point of its wire clicked ([`on_span`]).
+    pub on: Option<[f64; 3]>,
+}
+
+/// The point of span `target` (as drawn in weather case `case`) nearest to
+/// `at` on screen: on its wire, between the drawn points.
+pub fn on_span(
+    model: &Model,
+    case: usize,
+    target: &Selection,
+    at: [f64; 2],
+    project: impl Fn([f64; 3]) -> Option<[f64; 2]>,
+) -> Option<[f64; 3]> {
+    let Selection::Span { section, span } = target else {
+        return None;
+    };
+    let points = &model.shape(section, case)?.spans.get(*span)?.points;
+    let mut best: Option<(f64, [f64; 3])> = None;
+    for w in points.windows(2) {
+        let (Some(a), Some(b)) = (project(w[0]), project(w[1])) else {
+            continue;
+        };
+        let d = [b[0] - a[0], b[1] - a[1]];
+        let len2 = d[0] * d[0] + d[1] * d[1];
+        let u = if len2 > 0.0 {
+            (((at[0] - a[0]) * d[0] + (at[1] - a[1]) * d[1]) / len2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let q = [a[0] + u * d[0], a[1] + u * d[1]];
+        let e = (q[0] - at[0]).hypot(q[1] - at[1]);
+        if best.is_none_or(|b| e < b.0) {
+            best = Some((e, [0, 1, 2].map(|k| w[0][k] + u * (w[1][k] - w[0][k]))));
+        }
+    }
+    best.map(|b| b.1)
 }
 
 /// What can be clicked (snapped to), switched on and off in the Snap menu (Edit).
@@ -195,6 +241,7 @@ impl Selection {
             Selection::Span { .. } => Snap::Span,
             Selection::Attachment { .. } | Selection::String { .. } => Snap::Attachment,
             Selection::Point { .. } => Snap::Point,
+            Selection::SpanPoint { .. } | Selection::Spacer(_) => Snap::Span,
             Selection::AlignmentPoint { .. } => Snap::AlignmentPoint,
             Selection::LidarPoint(_) => Snap::LidarPoint,
             Selection::SurveyPoint(_) => Snap::SurveyPoint,
@@ -211,6 +258,8 @@ impl Selection {
             Selection::Attachment { structure, set } => format!("{structure} set {set}"),
             Selection::String { structure, label } => format!("{structure} string {label}"),
             Selection::Point { structure, label } => format!("{structure} point {label}"),
+            Selection::SpanPoint { section, label } => format!("{section} span point {label}"),
+            Selection::Spacer(id) => format!("spacer {id}"),
             Selection::AlignmentPoint { id } => {
                 format!("alignment point {id}")
             }
@@ -263,10 +312,39 @@ impl Selection {
                 .structure(structure)?
                 .node(label)
                 .map(|n| n.position()),
+            Selection::SpanPoint { section, label } => model
+                .shape(section, case)?
+                .span_points
+                .iter()
+                .find(|(l, _)| l == label)
+                .map(|(_, p)| *p),
+            Selection::Spacer(id) => {
+                spacer_ends(model, case, id).map(|[a, b]| [0, 1, 2].map(|k| 0.5 * (a[k] + b[k])))
+            }
             Selection::AlignmentPoint { id } => alignment_point(model, id),
             Selection::LidarPoint(_) | Selection::SurveyPoint(_) => position(model, self),
         }
     }
+}
+
+/// A spacer's ends as solved in weather case `case` (reported by the
+/// section at its end `a`).
+pub fn spacer_ends(model: &Model, case: usize, id: &str) -> Option<[[f64; 3]; 2]> {
+    spacer_state(model, case, id).map(|x| x.ends)
+}
+
+/// A spacer as solved in weather case `case`.
+pub fn spacer_state<'a>(
+    model: &'a Model,
+    case: usize,
+    id: &str,
+) -> Option<&'a ols_line::solve::SpacerState> {
+    let s = model.line.spacers.iter().find(|s| s.id == id)?;
+    model
+        .shape(&s.a.section, case)?
+        .spacers
+        .iter()
+        .find(|x| x.id == id)
 }
 
 /// The exact coordinates of a LiDAR or survey point.
@@ -470,6 +548,20 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
                         out.push((sel.clone(), w[0], w[1]));
                     }
                 }
+                // Its span points and the spacers it holds.
+                for (label, p) in &shape.span_points {
+                    out.push((
+                        Selection::SpanPoint {
+                            section: shape.section.clone(),
+                            label: label.clone(),
+                        },
+                        *p,
+                        *p,
+                    ));
+                }
+                for s in &shape.spacers {
+                    out.push((Selection::Spacer(s.id.clone()), s.ends[0], s.ends[1]));
+                }
             }
         }
         if snaps.on(Snap::Jumper) {
@@ -642,6 +734,10 @@ fn pick_scored_index(
             let d = ols_core::geometry::distance_to_segment(at, pa, pb);
             let bonus = match s {
                 Selection::String { .. } => 2.5,
+                // Points on the wire over the wire; a spacer over both
+                // wires it joins.
+                Selection::SpanPoint { .. } => 7.0,
+                Selection::Spacer(_) => 1.0,
                 _ => s.kind().map_or(0.0, Snap::priority),
             };
             (d <= radius).then_some((d - bonus, i))
@@ -680,6 +776,10 @@ fn pick_scored(
             // the wires.
             let bonus = match s {
                 Selection::String { .. } => 2.5,
+                // Points on the wire over the wire; a spacer over both
+                // wires it joins.
+                Selection::SpanPoint { .. } => 7.0,
+                Selection::Spacer(_) => 1.0,
                 _ => s.kind().map_or(0.0, Snap::priority),
             };
             (d <= radius).then_some((d - bonus, s))

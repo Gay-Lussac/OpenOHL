@@ -204,9 +204,20 @@ impl PlanView {
                     })
                     .map_or(model.origin[2], |s| s.position[2])
             });
+            let on = selection::on_span(
+                model,
+                case,
+                &target,
+                [f64::from(pos.x), f64::from(pos.y)],
+                |p| {
+                    let q = to_screen(p);
+                    Some([f64::from(q.x), f64::from(q.y)])
+                },
+            );
             Some(selection::Use {
                 target,
                 at: Some([x, y, z]),
+                on,
             })
         } else {
             None

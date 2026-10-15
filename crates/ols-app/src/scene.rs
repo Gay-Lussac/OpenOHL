@@ -466,22 +466,23 @@ pub fn wires(
             }
             // Marker balls and other bodies with a size, on the wire
             // (the bundle's centre) where they hang.
+            // (Places by station as fractions, by distance from the
+            // span's plan length.)
             let ball = tint.unwrap_or(BALL_COLOR);
-            for l in line
+            let def = line
                 .sections
                 .iter()
                 .find(|sec| sec.id == shape.section)
-                .into_iter()
-                .flat_map(|sec| &sec.loads)
-            {
+                .map(|sec| line.section_with_fractions(sec));
+            let place = |span: usize, at: ols_line::SpanPlace| {
+                let points = &shape.spans.get(span)?.points;
+                at_fraction(points, at.fraction_of(plan_length(points)))
+            };
+            for l in def.iter().flat_map(|sec| &sec.loads) {
                 let d = l
                     .wind_area
                     .map_or(l.diameter, |a| (4.0 * a / std::f64::consts::PI).sqrt());
-                let Some(at) = shape
-                    .spans
-                    .get(l.span)
-                    .and_then(|sp| at_fraction(&sp.points, l.fraction))
-                else {
+                let Some(at) = place(l.span, l.place()) else {
                     continue;
                 };
                 if d > 0.0 {
@@ -489,6 +490,42 @@ pub fn wires(
                     p.filled = true;
                     out.push(p);
                 }
+            }
+            // Spread loads: the stretch of wire they lie on.
+            let spread = tint.unwrap_or(BALL_COLOR);
+            for l in def.iter().flat_map(|sec| &sec.spread_loads) {
+                let Some(points) = shape.spans.get(l.span).map(|sp| &sp.points) else {
+                    continue;
+                };
+                let h = plan_length(points);
+                let stretch = between(points, l.start.fraction_of(h), l.end.fraction_of(h));
+                if stretch.len() > 1 {
+                    out.push(Prim::new(stretch[0], stretch, rgba(spread, alpha), 5.0).at(0, 1));
+                }
+            }
+            // Span points (as solved, else where they are given).
+            let dot = tint.unwrap_or(SPAN_POINT_COLOR);
+            for p in def.iter().flat_map(|sec| &sec.span_points) {
+                let at = shape
+                    .span_points
+                    .iter()
+                    .find(|(l, _)| *l == p.label)
+                    .map(|(_, q)| *q)
+                    .or_else(|| place(p.span, p.at));
+                if let Some(at) = at {
+                    let mut s = Prim::new(at, sphere(at, 0.25), rgba(dot, alpha), 0.0).at(0, 1);
+                    s.filled = true;
+                    out.push(s);
+                }
+            }
+            // The spacers it holds, red beyond their compression limit.
+            for x in &shape.spacers {
+                let col = match tint {
+                    Some(c) => c,
+                    None if x.over => [230, 40, 40],
+                    None => SPACER_COLOR,
+                };
+                out.push(Prim::new(x.ends[0], x.ends.to_vec(), rgba(col, alpha), 4.0).at(0, 1));
             }
         }
         for j in solved.jumpers.iter().filter(|_| this_case) {
@@ -552,6 +589,43 @@ const DASH_UNIT: f64 = 1.5;
 /// Colour of marker balls and other bodies on the wires (aviation
 /// orange).
 const BALL_COLOR: [u8; 3] = [240, 110, 30];
+
+/// Colour of span points.
+const SPAN_POINT_COLOR: [u8; 3] = [90, 200, 230];
+
+/// Colour of interphase spacers.
+const SPACER_COLOR: [u8; 3] = [150, 210, 110];
+
+/// Horizontal length of a span's polyline (its plan chord), m.
+pub fn plan_length(points: &[[f64; 3]]) -> f64 {
+    match (points.first(), points.last()) {
+        (Some(a), Some(b)) => (b[0] - a[0]).hypot(b[1] - a[1]),
+        _ => 0.0,
+    }
+}
+
+/// The part of a span's polyline between two horizontal fractions.
+pub fn between(points: &[[f64; 3]], from: f64, to: f64) -> Vec<[f64; 3]> {
+    let (from, to) = (from.min(to).clamp(0.0, 1.0), from.max(to).clamp(0.0, 1.0));
+    let (Some(a), Some(b)) = (points.first(), points.last()) else {
+        return Vec::new();
+    };
+    let chord = [b[0] - a[0], b[1] - a[1]];
+    let len2 = chord[0] * chord[0] + chord[1] * chord[1];
+    if len2 <= 0.0 {
+        return Vec::new();
+    }
+    let t = |p: &[f64; 3]| ((p[0] - a[0]) * chord[0] + (p[1] - a[1]) * chord[1]) / len2;
+    let mut out: Vec<[f64; 3]> = at_fraction(points, from).into_iter().collect();
+    out.extend(
+        points
+            .iter()
+            .filter(|p| (from..=to).contains(&t(p)))
+            .copied(),
+    );
+    out.extend(at_fraction(points, to));
+    out
+}
 
 /// The point of a span's polyline at a horizontal fraction of the way
 /// between its ends (measured along their plan chord).
@@ -970,9 +1044,16 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         s.point(b, hi, 9.0);
                     }
                 }
-                Selection::Point { .. } => {
+                Selection::Point { .. } | Selection::SpanPoint { .. } => {
                     if let Some(p) = selection.focus(model, case) {
                         s.point(p, hi, 12.0);
+                    }
+                }
+                Selection::Spacer(id) => {
+                    if let Some([a, b]) = crate::selection::spacer_ends(model, case, id) {
+                        s.polyline(&[a, b], hi, 5.0);
+                        s.point(a, hi, 9.0);
+                        s.point(b, hi, 9.0);
                     }
                 }
                 Selection::AlignmentPoint { id } => {
