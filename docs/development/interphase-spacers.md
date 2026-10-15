@@ -4,8 +4,8 @@ Status: **decided, being built.** Done: the data (span points, point
 loads by fraction or distance, spread loads, spacers, the project's
 default values with their file), checked (a spacer's sections by finite
 elements only), saved, logged, in OLS XML; spread loads and span points
-in the solve. To come: the spacers in the solve (sections joined, one
-model), the app (the span tool, strings between span points, tables,
+in the solve; places by station; **the spacers in the solve**
+(`solve::solve_spacer_group`, below). To come: the app (the span tool, strings between span points, tables,
 drawing, Default values), the LeV check in the plugin with 2.2.4.
 
 Decided with the user: spans with spacers refuse the ruling span; span
@@ -24,6 +24,30 @@ with the span tool the object is placed where the span is clicked. At
 the end, a sweep of the program's **non-plugin default values** (e.g. the
 jumper exit angle, insulator stiffness, label distance) into the
 project's Default values and their file.
+
+### How the spacers are solved (as built)
+
+The sections joined by spacers (`solve::spacer_groups`) are solved in
+turn, not in one model (so every model feature — stress-strain curves,
+bimetallic cables, rolling in the blocks, the jumpers' pull — keeps
+working): the section at a spacer's end `a` **holds** it, as a bar from
+its span point to a fixed point where the section at end `b` puts its
+span point; the section at `b` is **pulled** there by the bar's force.
+Per pass: the pulled sections under the current forces f, then the
+holding ones at the new positions, giving the bars' forces g(f); f is
+moved towards g with **Aitken's relaxation** (the step from the last
+two residuals) until they differ by less than 1 N (or 1e-4 of the
+force), at most 40 passes (two-sided simple relaxation oscillates: a
+stiff bar between two soft wires). Each end carries half the spacer's
+weight and the wind on it (across its span, from the case's side); a
+bundle's model takes its share. A spacer without a length takes the
+distance between its ends in still air at the sections' stringing
+temperatures. Reported on the holding section (`SectionShape::spacers`):
+its ends, its axial force (tension positive), slack (tension only,
+pushed), over its compression limit (flagged). Also in the incremental
+solve and in each pass of the jumpers' pull. Not yet: spacers on a
+section that shares an assembly with another (a TAK) — refused with an
+error.
 
 Original proposal: What it would take to model an
 insulator string held between two conductors in a span (an interphase
