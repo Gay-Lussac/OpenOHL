@@ -53,6 +53,9 @@ pub struct View3d {
     pub marks: Vec<([f64; 3], [f64; 3])>,
     /// A wire being strung: its points so far.
     pub draft: Vec<[f64; 3]>,
+    /// A measured line to draw on top, with its label (the distance
+    /// between conductors' worst station: d and z).
+    pub measure: Option<crate::phase_distance::Measure>,
     /// The camera was fitted to the line's structures or wires (else to
     /// its alignments or the ground: fitted again when the first
     /// structures come).
@@ -624,6 +627,33 @@ impl View3d {
         let mut placer = crate::annotations::Placer::default();
         for (_, p, note) in &placed {
             placer.paint(&painter, *p, note);
+        }
+        // A measured line: on top, its label at its middle.
+        if let Some((a, b, label)) = &self.measure
+            && let (Some(p), Some(q)) = (screen(*a), screen(*b))
+        {
+            for (w, c) in [
+                (5.0, egui::Color32::from_black_alpha(180)),
+                (2.5, egui::Color32::from_rgb(255, 210, 60)),
+            ] {
+                painter.line_segment([p, q], egui::Stroke::new(w, c));
+            }
+            for x in [p, q] {
+                painter.circle_filled(x, 4.5, egui::Color32::from_rgb(255, 210, 60));
+            }
+            let mid = p + (q - p) * 0.5;
+            let galley = painter.layout_no_wrap(
+                label.clone(),
+                egui::FontId::proportional(14.0),
+                egui::Color32::WHITE,
+            );
+            let at = mid + egui::vec2(8.0, -8.0 - galley.size().y);
+            painter.rect_filled(
+                egui::Rect::from_min_size(at, galley.size()).expand(3.0),
+                3.0,
+                egui::Color32::from_black_alpha(170),
+            );
+            painter.galley(at, galley, egui::Color32::WHITE);
         }
         // Label of the selection.
         if let Some(f) = selection.focus(model, case)
