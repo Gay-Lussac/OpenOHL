@@ -290,7 +290,7 @@ pub struct Out {
 
 /// The Distance between conductors window.
 pub struct PhaseDistanceWindow {
-    /// Shown.
+    /// To be shown (the app opens its page).
     pub open: bool,
     /// The code's values file.
     pub file: PathBuf,
@@ -885,8 +885,8 @@ impl PhaseDistanceWindow {
         }
     }
 
-    /// The window.
-    pub fn ui(&mut self, ctx: &egui::Context, model: &Model) -> Out {
+    /// The page (a dock page: floating first, it may be docked).
+    pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         self.job.poll();
         // A run again of a saved report: compared with it, then asked.
         if !self.compared
@@ -900,36 +900,30 @@ impl PhaseDistanceWindow {
             }
         }
         let mut out = Out::default();
-        let mut open = self.open;
-        egui::Window::new("Distance between conductors (LeV)")
-            .open(&mut open)
-            .default_width(980.0)
-            .show(ctx, |ui| {
-                self.settings_ui(ui, model);
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(!self.job.running(), egui::Button::new("Check"))
-                        .clicked()
-                    {
-                        self.start(model, ui.ctx());
-                    }
-                    self.job.status_ui(ui);
-                });
-                self.library_ui(ui, model, &mut out);
-                ui.separator();
-                // How it computes and with which values: open, in a box of
-                // its own height so the results keep their place.
-                egui::ScrollArea::vertical()
-                    .id_salt("phase-distance-how-and-values")
-                    .max_height(260.0)
-                    .show(ui, |ui| {
-                        explanation(ui);
-                        self.values_ui(ui, model);
-                    });
-                ui.separator();
-                self.results_ui(ui, &mut out);
+        self.settings_ui(ui, model);
+        self.levels_ui(ui, model, &mut out);
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!self.job.running(), egui::Button::new("Check"))
+                .clicked()
+            {
+                self.start(model, ui.ctx());
+            }
+            self.job.status_ui(ui);
+        });
+        self.library_ui(ui, model, &mut out);
+        ui.separator();
+        // How it computes and with which values: open, in a box of
+        // its own height so the results keep their place.
+        egui::ScrollArea::vertical()
+            .id_salt("phase-distance-how-and-values")
+            .max_height(260.0)
+            .show(ui, |ui| {
+                explanation(ui);
+                self.values_ui(ui, model);
             });
-        self.open = open;
+        ui.separator();
+        self.results_ui(ui, &mut out);
         out
     }
 
@@ -1319,14 +1313,130 @@ impl PhaseDistanceWindow {
             )
             .on_hover_text("Keep it above the largest z (about 12 m at 380 kV)");
         });
-        ui.label(
-            egui::RichText::new(
-                "Insulation level (low / high row of Table 2.4.1) per circuit: the Electrical \
-                 circuits table, column of the LeV plugin; not set: high.",
-            )
-            .small()
-            .weak(),
-        );
+    }
+
+    /// The circuits ticked with their voltage and insulation level, the
+    /// level chosen here (on all the circuit's sections: the Electrical
+    /// circuits table's column).
+    fn levels_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
+        let editable = model.can_edit().is_ok();
+        egui::CollapsingHeader::new("Circuits checked and their insulation level")
+            .id_salt("phase-distance-levels")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "The row of Table 2.4.1 where a voltage has two (lightning impulse \
+                         withstand level); not set: high. The same as the Electrical circuits \
+                         table's column (LeV plugin).",
+                    )
+                    .small()
+                    .weak(),
+                );
+                let line = &model.line;
+                let ticked = |n: &String| self.circuits.as_ref().is_none_or(|s| s.contains(n));
+                egui::ScrollArea::vertical()
+                    .id_salt("phase-distance-levels-rows")
+                    .max_height(160.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new("phase-distance-levels-grid")
+                            .striped(true)
+                            .spacing([12.0, 2.0])
+                            .show(ui, |ui| {
+                                for h in ["circuit", "kV", "insulation level"] {
+                                    ui.label(egui::RichText::new(h).small().strong());
+                                }
+                                ui.end_row();
+                                for name in circuit_names(model).iter().filter(|n| ticked(n)) {
+                                    let sections: Vec<&ols_line::Section> = line
+                                        .sections
+                                        .iter()
+                                        .filter(|s| &s.circuit == name)
+                                        .collect();
+                                    let kv = sections
+                                        .iter()
+                                        .filter_map(|s| s.system.as_deref())
+                                        .filter_map(|id| line.systems.iter().find(|x| x.id == id))
+                                        .map(|x| x.voltage_kv)
+                                        .fold(None, |m: Option<f64>, v| {
+                                            Some(m.map_or(v, |m| m.max(v)))
+                                        });
+                                    ui.label(if name.is_empty() {
+                                        "(no circuit name)"
+                                    } else {
+                                        name.as_str()
+                                    });
+                                    let Some(kv) = kv else {
+                                        ui.label("—");
+                                        ui.label(
+                                            egui::RichText::new("earthed (C₁ by the phase's)")
+                                                .small()
+                                                .weak(),
+                                        );
+                                        ui.end_row();
+                                        continue;
+                                    };
+                                    ui.label(format!("{kv:.0}"));
+                                    let mut set: Vec<&str> = sections
+                                        .iter()
+                                        .map(|s| {
+                                            s.fields.get(LEVEL_FIELD).map_or("", String::as_str)
+                                        })
+                                        .collect();
+                                    set.sort_unstable();
+                                    set.dedup();
+                                    let shown = match set.as_slice() {
+                                        [""] => "high (not set)".to_owned(),
+                                        [one] => (*one).to_owned(),
+                                        _ => "mixed".to_owned(),
+                                    };
+                                    let mut chosen: Option<&str> = None;
+                                    ui.add_enabled_ui(editable, |ui| {
+                                        egui::ComboBox::from_id_salt((
+                                            "phase-distance-level",
+                                            name,
+                                        ))
+                                        .selected_text(shown)
+                                        .width(120.0)
+                                        .show_ui(
+                                            ui,
+                                            |ui| {
+                                                for v in ["low", "high"] {
+                                                    if ui.selectable_label(set == [v], v).clicked()
+                                                    {
+                                                        chosen = Some(v);
+                                                    }
+                                                }
+                                            },
+                                        );
+                                    });
+                                    if let Some(v) = chosen
+                                        && set != [v]
+                                    {
+                                        let commands = sections
+                                            .iter()
+                                            .map(|s| {
+                                                let mut s = (*s).clone();
+                                                s.fields.insert(LEVEL_FIELD.into(), v.into());
+                                                ols_session::Command::Put {
+                                                    kind: ols_session::Kind::Section,
+                                                    id: s.id.clone(),
+                                                    value: serde_json::to_value(&s)
+                                                        .expect("serialises"),
+                                                    ord: None,
+                                                }
+                                            })
+                                            .collect();
+                                        out.apply = Some((
+                                            format!("{name}: insulation level {v}"),
+                                            ols_session::Command::Batch { commands },
+                                        ));
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+                    });
+            });
     }
 
     fn results_ui(&mut self, ui: &mut egui::Ui, out: &mut Out) {

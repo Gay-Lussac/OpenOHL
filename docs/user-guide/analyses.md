@@ -108,9 +108,12 @@ conductors…** — the values file, the k diagram, the weather cases (the
 still-air 10 °C ones ticked first; each checked on its own), the
 circuits (ticked in a list, select all / none), the station spacing
 (1 m), and nearby spans (conductors not between the same two
-structures, within a distance). The insulation level of each circuit is
-set in the Electrical circuits table (the LeV plugin's column; not set:
-high). **Check** runs in the background; the pairs come worst first: the
+structures, within a distance). The page opens floating; drag its tab
+onto a panel (next to Properties, for example) to dock it. **Circuits
+checked and their insulation level** lists the ticked circuits with
+their voltage and level (low or high row of Table 2.4.1; not set: high),
+chosen there for all the circuit's sections — the same value as the
+Electrical circuits table's column (LeV plugin). **Check** runs in the background; the pairs come worst first: the
 two spans and circuits, C₁ or C₂, kV, d, z, d − z, the length of
 conductor below z, and at the worst station f, l_k, β, k and C, with a
 note when it is at a clamp (f ≈ 0) or on a nearby span. Clicking a span,
@@ -138,8 +141,8 @@ asks whether to replace the saved report.
 
 ## The library of performed checks
 
-**Checks › Performed checks…** lists the checks saved on the project
-line you work on: name, check, when, by whom, **status** (draft,
+**Checks › Performed checks…** (a page like the check's, floating
+first, dockable) lists the checks saved on the project line you work on: name, check, when, by whom, **status** (draft,
 checked, approved — chosen in the list), the **line** (unchanged, or
 what changed since: e.g. "1 structure changed"), the result and a
 **note** (double-click to write it; double-click the name to rename).

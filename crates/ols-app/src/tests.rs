@@ -11207,10 +11207,16 @@ fn the_checks_menu_opens_the_phase_distance_window() {
     harness.run();
     harness.get_by_label("Distance between conductors…").click();
     harness.run();
+    // A page of its own, floating first (it may be docked).
+    let at = harness
+        .state_mut()
+        .dock()
+        .find_tab(&crate::app::Tab::PhaseDistance)
+        .expect("its page");
+    assert!(!at.surface.is_main(), "floating");
     {
         let r = harness.state_mut().ready().unwrap();
         let w = &mut r.phase_distance;
-        assert!(w.open);
         assert!(w.file.ends_with("lev-ch.olspd"), "{}", w.file.display());
         assert!(w.circuits.is_none(), "every circuit");
         // A case other than the one shown: a click shows it.
@@ -11266,8 +11272,10 @@ fn the_checks_menu_opens_the_phase_distance_window() {
     assert!(text.contains("d ") && text.contains("z "), "{text}");
     // In its weather case.
     assert_eq!(r.model.cases[r.case].case.name, row.case);
-    // The window closed: the line gone.
-    r.phase_distance.open = false;
+    // The page closed: the line gone.
+    let dock = harness.state_mut().dock();
+    let at = dock.find_tab(&crate::app::Tab::PhaseDistance).unwrap();
+    dock.remove_tab(at);
     harness.run();
     assert!(
         harness
@@ -11357,7 +11365,8 @@ fn performed_checks_are_saved_and_run_again() {
         r.check_library.show();
     }
     harness.run();
-    harness.get_by_label_contains("stale").hover();
+    // In the library: what changed since.
+    harness.get_by_label_contains("changed since:").hover();
     // Opened again from the library: its parameters and results.
     harness.get_by_label("Open").click();
     harness.run();
@@ -11421,7 +11430,9 @@ fn performed_checks_are_saved_and_run_again() {
     }
     // Deleted after a confirmation; undo brings it back (the check's
     // window closed: it lies over the library).
-    harness.state_mut().ready().unwrap().phase_distance.open = false;
+    let dock = harness.state_mut().dock();
+    let at = dock.find_tab(&crate::app::Tab::PhaseDistance).unwrap();
+    dock.remove_tab(at);
     harness.run();
     harness.get_by_label("Delete…").click();
     harness.run();
@@ -11596,4 +11607,54 @@ fn sections_table_turns_the_bundle() {
     );
     apply_table(&mut harness, TableKind::Sections, false).unwrap();
     assert_eq!(rot(&mut harness), (3, None));
+}
+
+/// The LeV page lists the circuits checked with their insulation level
+/// (not set: high); one chosen there goes to all the circuit's sections.
+#[test]
+fn phase_distance_page_sets_the_insulation_levels() {
+    let model = synthetic_project("levels-in-page");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.phase_distance.show(&r.model);
+    }
+    harness.run();
+    harness
+        .query_all_by_value("high (not set)")
+        .next()
+        .expect("a circuit's level")
+        .click();
+    harness.run();
+    harness.get_by_label("low").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let line = &r.model.line;
+    let low: Vec<&ols_line::Section> = line
+        .sections
+        .iter()
+        .filter(|s| {
+            s.fields
+                .get(ols_clearance::phase_distance::LEVEL_FIELD)
+                .map(String::as_str)
+                == Some("low")
+        })
+        .collect();
+    assert!(!low.is_empty());
+    let circuit = &low[0].circuit;
+    assert!(
+        line.sections
+            .iter()
+            .filter(|s| &s.circuit == circuit)
+            .all(|s| low.iter().any(|l| l.id == s.id)),
+        "all the circuit's sections"
+    );
+    assert!(
+        line.sections
+            .iter()
+            .any(|s| &s.circuit != circuit && s.fields.is_empty())
+    );
 }
