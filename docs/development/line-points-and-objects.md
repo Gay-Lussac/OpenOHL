@@ -1,7 +1,17 @@
 # Points on the wires and the objects on them (proposal)
 
-Status: **draft, to be discussed** — nothing built. Every point below is
-an engine change (data, solver, files), listed for the user's decisions.
+Status: **draft, decisions taken (below); the tap's details being
+discussed** — nothing built. Every point below is an engine change
+(data, solver, files).
+
+Decided with the user (2026-10-16): **one object per point**; objects
+of a given geometry, with **templates** for the most used ones and more
+geometry in advanced settings (in the adding tool and the table); the
+**spacers' ends become clamp objects** (one clamp object for jumpers and
+spacers); a tap clamp is a **hinge (ball joint) without strength** — no
+moment, no torsion passed between the jumper and the wire; jumper points
+placed by fraction, length from `from` **and** distance along the line;
+**one library file** for point and spread types.
 
 Asked by the user: point loads on jumpers too; a jumper starting from a
 point — on a span or on another jumper; not every point load a sphere,
@@ -42,8 +52,7 @@ One idea, **a labelled point on a wire**, on two hosts:
 
 ## 2. Objects on the points
 
-An **object** is put on a point (a point may hold several, e.g. a clamp
-and a marker ball? — to decide). It refers to a **type** of the library,
+An **object** is put on a point — **one object per point**. It refers to a **type** of the library,
 or gives its own values; per object only what the type allows to
 override.
 
@@ -56,14 +65,19 @@ description and a **kind**:
 | Kind | What it is | Properties |
 | --- | --- | --- |
 | `body` | marker ball, obstruction light, bird diverter, weight, sensor | mass (N weight); its **shape** for wind and ice: `sphere` (diameter), `cylinder` (diameter, length, along or across the wire), `box` (three sizes), or `areas` (wind area, ice surface given); drag coefficient (default by shape) |
-| `clamp` | a tap clamp: where a jumper starts on a span or a jumper | mass; length of the clamp along the host wire; the jumper's exit (angle, as at section clamps); which cables it takes (diameters, optional) |
-| `spacer clamp` | the clamp of an interphase spacer (today the spacer's end) | mass (now in the spacer's weight) — *optional, to decide* |
+| `clamp` | where a jumper or a spacer is held on a span or a jumper (a tap clamp, a spacer's end clamp) | mass; its size for wind and ice (a template); length along the host wire; which cables it takes (diameters, optional); a **hinge**: it passes forces, no moment |
 | `spread` | a heated stretch, a cable lashed on, covers, a bird-diverter run as N/m | load N/m; for the wind an added diameter (or none); for the ice whether it takes ice and on what diameter |
 
 A **spread object** lies between **two points** of the same span (or
 the same jumper): start label, end label.
 
 ### Loads in a weather case
+
+Templates (shipped in the library, the adding tool's first choices):
+marker ball (sphere), obstruction light (cylinder), bird diverter (given
+areas), weight (no wind), tap clamp, spacer clamp, heated stretch,
+lashed cable (spread). Advanced settings (adding tool, table): the
+shape and its sizes, given areas, drag, ice surface.
 
 - `body`: weight; ice on its surface by the case's ice thickness (shape
   formula per shape, as the sphere's today); wind on its iced area, its
@@ -91,8 +105,11 @@ A jumper end (`from` or `to`) becomes either, as now, **a section end**
 ### Solving
 
 - The end is where the point is solved in the weather case (it moves with
-  the wire), the jumper's exit direction from the clamp type (its angle
-  from the host wire, turned towards the load, as at section clamps).
+  the wire). The clamp is a **hinge**: the jumper leaves it in the
+  direction its own equilibrium gives (no exit angle, no moment); the
+  rod model already takes a free end (`rod::Rod` `start`/`end` none),
+  the jumper's own bending stiffness acting along it as now. The host
+  wire takes the force only (the wires carry no bending nor torsion).
 - **On the host:** the clamp's weight, and the jumper's load:
   - *estimate* (the default today): the tap end carries the weight, ice
     and wind of its part of the jumper, as section clamps do;
@@ -151,17 +168,14 @@ A jumper end (`from` or `to`) becomes either, as now, **a section end**
 4. App: tool, tables, library page, drawing.
 5. Docs: data model, line file, the library, theory (taps, shapes).
 
-## Questions
+## Decisions (questions answered)
 
-1. Several objects on one point (a clamp and a ball at the same place),
-   or one object per point?
-2. Shapes to support first: sphere, cylinder, box, given areas — others
-   (e.g. a light's housing as given areas only)?
-3. Should the spacer's ends become clamp objects too (their mass, a type
-   from the library), or stay as today?
-4. A tap clamp's type: its exit angle like the section clamps' (30°
-   default), or a fixed direction (e.g. straight down)?
-5. Points on a jumper placed by fraction and by length from `from` — also
-   by distance along the line (projected), like the span's distance?
-6. The library: one file of both point and spread types (`.olsload`), or
-   two?
+1. One object per point.
+2. Given geometry, templates for the most used, more in advanced
+   settings (adding tool and table).
+3. Spacer ends become clamp objects (one clamp object for jumpers and
+   spacers).
+4. A tap clamp is a hinge without strength (forces only) — details and
+   costs being discussed.
+5. Jumper points also by distance along the line.
+6. One library file for point and spread types (`.olsload`).
