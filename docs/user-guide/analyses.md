@@ -108,7 +108,8 @@ largest sag between the spacers. The values and the rules are the
 CAD measures the conductors. The method and the decisions behind it:
 [the specification](../development/lev-phase-spacing.md).
 
-In the desktop app: **Checks › LeV / OLEI › Distance between
+In the desktop app, with the lev-ch plugin in use (the plugin defines
+the menu: without it, it is not there): **Checks › LeV/OLEI › Distance between
 conductors…** — a values file (else the project's copy, else the
 plugin's), the k diagram, the weather cases (the
 still-air 10 °C ones ticked first; each checked on its own), the

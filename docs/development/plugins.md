@@ -144,7 +144,10 @@ geometry, and fast), the code's numbers and its formulas stay out of it.
 
 - `checks()` lists the checks it runs: the **id** of what OLS CAD
   measures for it (today `phase-distance`, the distance between
-  conductors in the span), its title and Checks submenu, an
+  conductors in the span), its title and **its Checks submenu** (the app
+  builds the Checks menu from the plugins in use: a check's entry is
+  there only while its plugin is; a check OLS CAD does not measure for is
+  listed, greyed), an
   **explanation** of the computation (shown in its window), its
   **values** file as shipped (TOML) with its extension, the **choices**
   made before a run (e.g. the k diagram), and the plugin columns of the

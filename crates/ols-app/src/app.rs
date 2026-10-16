@@ -49,7 +49,7 @@ pub enum Tab {
     Loads,
     /// A structure without a type in the pylon editor.
     StructureEditor,
-    /// Checks › LeV / OLEI › Distance between conductors.
+    /// Checks › (the plugin's submenu) › Distance between conductors.
     PhaseDistance,
     /// Checks › Performed checks.
     CheckLibrary,
@@ -90,7 +90,7 @@ impl Tab {
             Tab::People => "People",
             Tab::Loads => "Structure loads",
             Tab::StructureEditor => "Structure editor",
-            Tab::PhaseDistance => "Distance between conductors (LeV)",
+            Tab::PhaseDistance => "Distance between conductors",
             Tab::CheckLibrary => "Performed checks",
         }
     }
@@ -6102,21 +6102,20 @@ fn menus(
             r.galloping.show(&r.model, r.case);
             ui.close();
         }
-        // The Swiss ordinance's checks (LeV / OLEI), more to come.
-        ui.menu_button("LeV / OLEI", |ui| {
-            if ui
-                .button("Distance between conductors…")
-                .on_hover_text(
-                    "Still-air distance between the conductors of each span, \
-                     z = k·√(f + l_k) + C (LeV Annex 6, 2.2.1), by a phase distance code \
-                     (.olspd)",
-                )
-                .clicked()
-            {
+        // The checks of the check plugins in use, in their own submenus
+        // (none without them).
+        let checks: Vec<(Vec<String>, ols_io::checks::PluginCheck)> = r
+            .model
+            .checks
+            .iter()
+            .map(|c| (c.info.menu.clone(), c.clone()))
+            .collect();
+        if let Some(id) = plugin_checks_menu(ui, &checks) {
+            if id == ols_io::checks::PHASE_DISTANCE {
                 r.phase_distance.show(&r.model);
-                ui.close();
             }
-        });
+            ui.close();
+        }
         if ui
             .button("Vegetation…")
             .on_hover_text("Vegetation points near the wires, growth and trees falling in")
@@ -6631,10 +6630,7 @@ impl eframe::App for App {
                 if ready.model.plugin_columns != columns {
                     ready.model.plugin_columns = columns;
                 }
-                let checks = self.plugins.check_dirs();
-                if ready.model.check_plugins != checks {
-                    ready.model.check_plugins = checks;
-                }
+                ready.model.set_check_plugins(self.plugins.check_dirs());
                 crate::codes::window(&ctx, ready, &self.plugins);
                 let go = [
                     ready.galloping.ui(&ctx, &ready.model),
@@ -6812,4 +6808,55 @@ impl eframe::App for App {
             ctx.request_repaint();
         }
     }
+}
+
+/// The checks of the plugins as menus: each in its submenu (`menu`, outer
+/// first), as its plugin gives it; the id of the one clicked. A check this
+/// OLS CAD does not measure for is shown, not usable.
+fn plugin_checks_menu(
+    ui: &mut egui::Ui,
+    checks: &[(Vec<String>, ols_io::checks::PluginCheck)],
+) -> Option<String> {
+    let mut clicked = None;
+    let mut submenus: Vec<&String> = Vec::new();
+    for (path, _) in checks {
+        if let Some(first) = path.first()
+            && !submenus.contains(&first)
+        {
+            submenus.push(first);
+        }
+    }
+    for name in submenus {
+        let inner: Vec<(Vec<String>, ols_io::checks::PluginCheck)> = checks
+            .iter()
+            .filter(|(p, _)| p.first() == Some(name))
+            .map(|(p, c)| (p[1..].to_vec(), c.clone()))
+            .collect();
+        ui.menu_button(name, |ui| {
+            if let Some(id) = plugin_checks_menu(ui, &inner) {
+                clicked = Some(id);
+            }
+        });
+    }
+    for (_, c) in checks.iter().filter(|(p, _)| p.is_empty()) {
+        let known = c.info.id == ols_io::checks::PHASE_DISTANCE;
+        let help = c
+            .info
+            .explanation
+            .split("\n\n")
+            .next()
+            .unwrap_or_default()
+            .replace('\n', " ");
+        let b = ui
+            .add_enabled(known, egui::Button::new(format!("{}…", c.info.title)))
+            .on_hover_text(format!("{help} ({})", c.plugin))
+            .on_disabled_hover_text(format!(
+                "{}: this version of OLS CAD does not measure for \"{}\"",
+                c.plugin, c.info.id
+            ));
+        if b.clicked() {
+            clicked = Some(c.info.id.clone());
+        }
+    }
+    clicked
 }

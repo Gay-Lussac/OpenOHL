@@ -479,6 +479,11 @@ pub struct Model {
     /// The directories of the check plugins in use (extension point
     /// `check`).
     pub check_plugins: Vec<std::path::PathBuf>,
+    /// The checks they run (their menus, titles, values), and the plugins
+    /// that could not be read ([`Model::set_check_plugins`]).
+    pub checks: Vec<ols_io::checks::PluginCheck>,
+    /// Why a check plugin could not be read.
+    pub check_problems: Vec<String>,
 }
 
 /// The wire library: given, else the `*.olsw` files next to the model,
@@ -1181,6 +1186,24 @@ impl Model {
         self.section_cases(section, case)[0]
     }
 
+    /// The check plugins in use are those in `dirs`: their checks read
+    /// (each plugin compiled once, a fraction of a second), when they
+    /// changed.
+    pub fn set_check_plugins(&mut self, dirs: Vec<std::path::PathBuf>) {
+        if self.check_plugins == dirs {
+            return;
+        }
+        (self.checks, self.check_problems) = if dirs.is_empty() {
+            (Vec::new(), Vec::new())
+        } else {
+            match ols_plugins::WasmHost::new() {
+                Ok(host) => ols_io::checks::list(&host, &dirs),
+                Err(e) => (Vec::new(), vec![e.to_string()]),
+            }
+        };
+        self.check_plugins = dirs;
+    }
+
     /// Section `section` as shown (its display case, else `case`).
     pub fn shape(&self, section: &str, case: usize) -> Option<&SectionShape> {
         self.cases
@@ -1825,6 +1848,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     let mut model = Model {
         plugin_columns: Vec::new(),
         check_plugins: Vec::new(),
+        checks: Vec::new(),
+        check_problems: Vec::new(),
         sources,
         line,
         cases: solved,

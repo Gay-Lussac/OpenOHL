@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Checks › LeV / OLEI › Distance between conductors: the still-air distance
+//! Checks › (the plugin's submenu, LeV/OLEI) › Distance between conductors: the still-air distance
 //! between the conductors of each span by a phase distance code
 //! (`.olspd`, [`ols_clearance::phase_distance`]), in the weather cases
 //! ticked (each on its own), for the circuits ticked; the insulation
@@ -39,7 +39,8 @@ const NEAR_CLAMP: f64 = 2.0;
 pub const CHECK_ID: &str = "phase-distance";
 
 /// The check in words.
-pub const CHECK_TITLE: &str = "Distance between conductors (LeV)";
+/// (A check's title is its plugin's; this where there is none.)
+pub const CHECK_TITLE: &str = "Distance between conductors";
 
 /// A saved report keeps the pairs below z and those within this of it,
 /// m (all of them are counted).
@@ -381,22 +382,23 @@ struct Loaded {
     check: Result<(Arc<WasmHost>, PluginCheck, WasmCheckPlugin), String>,
 }
 
-/// The check of the plugins in `dirs`, loaded.
-fn load_plugin(dirs: &[PathBuf]) -> Result<(Arc<WasmHost>, PluginCheck, WasmCheckPlugin), String> {
-    let host = Arc::new(WasmHost::new().map_err(|e| e.to_string())?);
-    let (checks, problems) = ols_io::checks::list(&host, dirs);
-    let check = checks
-        .into_iter()
+/// The plugins' check of the distance between conductors, loaded.
+fn load_plugin(model: &Model) -> Result<(Arc<WasmHost>, PluginCheck, WasmCheckPlugin), String> {
+    let check = model
+        .checks
+        .iter()
         .find(|c| c.info.id == ols_io::checks::PHASE_DISTANCE)
+        .cloned()
         .ok_or_else(|| {
             let mut why = "no check plugin in use runs it: install the lev-ch plugin or turn it \
                            on (Plugins › Plugin manager)"
                 .to_owned();
-            if !problems.is_empty() {
-                why.push_str(&format!(" ({})", problems.join("; ")));
+            if !model.check_problems.is_empty() {
+                why.push_str(&format!(" ({})", model.check_problems.join("; ")));
             }
             why
         })?;
+    let host = Arc::new(WasmHost::new().map_err(|e| e.to_string())?);
     let instance = host.load_check(&check.dir).map_err(|e| e.to_string())?;
     Ok((host, check, instance))
 }
@@ -623,7 +625,7 @@ impl PhaseDistanceWindow {
         {
             return;
         }
-        let check = load_plugin(&model.check_plugins);
+        let check = load_plugin(model);
         if let Ok((_, c, _)) = &check {
             self.choices = c.info.choices.iter().map(|x| x.default).collect();
         }
@@ -960,7 +962,9 @@ impl PhaseDistanceWindow {
             version: reports::REPORT_FILE_VERSION,
             id: name.to_owned(),
             check: CHECK_ID.into(),
-            title: CHECK_TITLE.into(),
+            title: self
+                .check()
+                .map_or(CHECK_TITLE.to_owned(), |c| c.info.title.clone()),
             time: editing.session.now().map_err(|e| e.to_string())?,
             user: editing.user.clone(),
             app: format!("OLS CAD {}", env!("CARGO_PKG_VERSION")),
@@ -1161,7 +1165,9 @@ impl PhaseDistanceWindow {
         let ran = matches!(self.job.result, Some(Ok(_))) && !self.job.running();
         ui.horizontal(|ui| {
             if self.save_name.is_empty() {
-                self.save_name = CHECK_TITLE.into();
+                self.save_name = self
+                    .check()
+                    .map_or(CHECK_TITLE.to_owned(), |c| c.info.title.clone());
             }
             ui.label("Save in the library of performed checks as");
             ui.add(egui::TextEdit::singleline(&mut self.save_name).desired_width(240.0));

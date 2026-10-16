@@ -11218,7 +11218,8 @@ fn lev_plugin(h: &mut Harness<'_, App>) -> bool {
     true
 }
 
-/// Checks › LeV / OLEI › Distance between conductors: the window opens with the
+/// Checks › LeV/OLEI › Distance between conductors (the menu the lev-ch
+/// plugin defines; none without it): the window opens with the
 /// shipped LeV values, checks the ticked case in the background (pairs
 /// worst first, every circuit), and a pair's span link selects the span
 /// and draws its worst station's line with d and z.
@@ -11229,14 +11230,31 @@ fn the_checks_menu_opens_the_phase_distance_window() {
         .with_size(egui::vec2(1600.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
+    // Without the plugin: no LeV submenu (the plugin defines it).
+    harness.get_by_label("Checks").click();
+    harness.run();
+    assert!(harness.query_by_label_contains("LeV").is_none());
+    assert!(
+        harness
+            .query_by_label_contains("Distance between")
+            .is_none()
+    );
+    harness.get_by_label("Checks").click();
+    harness.run();
     if !lev_plugin(&mut harness) {
         return;
     }
+    {
+        let m = &harness.state_mut().ready().unwrap().model;
+        assert_eq!(m.checks.len(), 1, "{:?}", m.check_problems);
+    }
     harness.get_by_label("Checks").click();
     harness.run();
-    harness.get_by_label_contains("LeV / OLEI").hover();
+    harness.get_by_label_contains("LeV/OLEI").hover();
     harness.run();
-    harness.get_by_label("Distance between conductors…").click();
+    harness
+        .get_by_label_contains("Distance between conductors")
+        .click();
     harness.run();
     // A page of its own, floating first (it may be docked).
     let at = harness
@@ -11368,7 +11386,7 @@ fn performed_checks_are_saved_and_run_again() {
         let reports = s.reports();
         assert_eq!(reports.len(), 1);
         let x = reports[0].clone();
-        assert_eq!(x.id, crate::phase_distance::CHECK_TITLE);
+        assert_eq!(x.id, "Distance between conductors (LeV)");
         assert_eq!(x.check, crate::phase_distance::CHECK_ID);
         assert_eq!(x.status, ols_session::reports::ReportStatus::Draft);
         assert!(x.summary.contains("pairs"), "{}", x.summary);

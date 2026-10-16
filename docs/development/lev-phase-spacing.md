@@ -10,12 +10,14 @@ for the speed comparison). The values file
 `ols_clearance::phase_distance`, the rules `lev-ch`'s
 `phase_distance.rs`, with tests worked by hand; rule 2.2.4 (phase
 spacers: z = k·√d_f + C₃ ≥ C₁, C₄ ≥ C₂ between systems, at least
-0.90 m; d_f the largest sag between the spacers — taken per conductor
-over its stretches between its spacer clamps and the span's clamps, an
-interpretation to confirm); the length
+0.90 m; d_f the largest sag between the spacers: each spacer taken as
+an attachment point, the sag of each stretch on either side of it (span
+clamp – spacer, spacer – spacer, spacer – span clamp) below that
+stretch's chord, the biggest counting *(decided)*; f stays the sag
+between the span's clamps, as without spacers *(decided)*); the length
 below z, nearby pairs and the faster search after the first run on an
 existing line; the Circuits table's insulation level, a column of the
-LeV plugin; the window, Checks › LeV / OLEI › Distance between
+LeV plugin; the window, Checks › LeV/OLEI (the plugin's menu) › Distance between
 conductors; the library of performed checks, Checks › Performed
 checks); the command line to come. Decisions marked
 *(decided)* were taken with the user; *(open)* ones are still to settle.

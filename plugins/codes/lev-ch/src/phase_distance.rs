@@ -11,7 +11,9 @@
 //!   between systems (2.2.3: the larger z of the two conductors);
 //! - 2.2.4, conductors joined by phase spacers: \\( z = k \sqrt{d_f} +
 //!   C_3 \ge C_1 \\) (C₄ ≥ C₂ between systems), at least 0.90 m; d_f the
-//!   largest sag between the spacers;
+//!   largest sag between the spacers (each spacer as an attachment point:
+//!   the sag of each stretch on either side of it, the biggest counts),
+//!   while f stays the sag between the span's clamps;
 //! - C grows by 14 % per 1000 m above 1000 m (the mean conductor height
 //!   of the span).
 
