@@ -60,9 +60,15 @@ pub struct AmpacityArgs {
     /// Duration of the transient, s.
     #[arg(long, default_value_t = 3600.0)]
     duration: f64,
-    /// Time step of the transient, s.
-    #[arg(long, default_value_t = ols_thermal::DEFAULT_TIME_STEP)]
-    time_step: f64,
+    /// Time step of the transient, s (default: the default values', else
+    /// 10 s).
+    #[arg(long)]
+    time_step: Option<f64>,
+    /// Default values (.olsdef, Criteria › Default values exported):
+    /// emissivity, absorptivity, roughness, albedo and time step where the
+    /// cable or the case gives none (default: the program's).
+    #[arg(long)]
+    defaults: Option<PathBuf>,
     /// Print the transient every this many seconds.
     #[arg(long, default_value_t = 300.0)]
     print_every: f64,
@@ -196,7 +202,18 @@ fn ampacity(a: &AmpacityArgs) -> Result<(), String> {
     let cable = library
         .get(&a.cable)
         .ok_or_else(|| format!("cable {} is not in {}", a.cable, library_path.display()))?;
-    let mut conductor = Conductor::from_cable(cable).map_err(|e| e.to_string())?;
+    let defaults = match &a.defaults {
+        Some(p) => std::fs::read_to_string(p)
+            .map_err(|e| format!("{}: {e}", p.display()))
+            .and_then(|t| {
+                ols_line::Defaults::parse(&t).map_err(|e| format!("{}: {e}", p.display()))
+            })?,
+        None => ols_line::Defaults::default(),
+    };
+    let time_step = a.time_step.unwrap_or(defaults.thermal_time_step);
+    let mut conductor = Conductor::from_cable(cable)
+        .map_err(|e| e.to_string())?
+        .with_defaults(&defaults);
     if let Some(mc) = a.heat_capacity {
         conductor.heat_capacity = vec![(mc, 0.0)];
     }
@@ -260,7 +277,7 @@ fn ampacity(a: &AmpacityArgs) -> Result<(), String> {
             println!(
                 "  heat capacity {:.0} J/(m·K) at 20 °C; time step {} s",
                 conductor.heat_capacity_at(20.0),
-                a.time_step
+                time_step
             );
             csv.push_str("case,time_s,temperature_c\n");
             for case in &cases {
@@ -276,7 +293,7 @@ fn ampacity(a: &AmpacityArgs) -> Result<(), String> {
                     start.temperature,
                     i,
                     a.duration,
-                    a.time_step,
+                    time_step,
                 )
                 .map_err(|e| format!("{}: {e}", case.name))?;
                 println!(
@@ -287,7 +304,7 @@ fn ampacity(a: &AmpacityArgs) -> Result<(), String> {
                 for (k, (time, t)) in steps.iter().enumerate() {
                     if *time >= next - 1e-9 || k + 1 == steps.len() {
                         println!("    {:>8.0} s {:>7.1} °C", time, t);
-                        next += a.print_every.max(a.time_step);
+                        next += a.print_every.max(time_step);
                     }
                     let _ = writeln!(csv, "{},{time},{t:.4}", csv_field(&case.name));
                 }
@@ -464,7 +481,9 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
             }
             None => row.push_str(",,,,"),
         }
-        let conductor = library.get(&s.cable).map(Conductor::from_cable);
+        let conductor = library
+            .get(&s.cable)
+            .map(|c| Conductor::from_cable(c).map(|c| c.with_defaults(&line.defaults)));
         for c in &ambient {
             let rating = match (limit, &conductor) {
                 (Some(t), Some(Ok(cond))) => ols_thermal::ampacity(method, cond, c, t)
@@ -573,7 +592,8 @@ mod tests {
             current,
             from_current,
             duration: 600.0,
-            time_step: 10.0,
+            time_step: None,
+            defaults: None,
             print_every: 300.0,
             heat_capacity: None,
             csv: Some(out.clone()),

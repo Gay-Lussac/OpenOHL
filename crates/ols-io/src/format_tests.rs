@@ -138,6 +138,8 @@ fn rich_line() -> Line {
     };
     line.solver.jumper_loads = ols_line::JumperLoads::Pull;
     line.defaults.spacer_compression = 8000.0;
+    line.defaults.thermal_albedo = 0.3;
+    line.defaults.clearance_search_margin = 7.0;
     line.sections[0].loads[0].distance = Some(30.0);
     for sec in &mut line.sections[..2] {
         sec.span_points.push(ols_line::SpanPoint {

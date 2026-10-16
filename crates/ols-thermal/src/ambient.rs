@@ -45,7 +45,7 @@ pub const AMBIENT_FILE_VERSION: u32 = 1;
 /// File extension of ambient case files.
 pub const AMBIENT_FILE_EXTENSION: &str = "olsta";
 /// Ground albedo (CIGRE) when a case gives none.
-pub const DEFAULT_ALBEDO: f64 = 0.1;
+pub const DEFAULT_ALBEDO: f64 = ols_line::DEFAULT_THERMAL[3];
 
 /// Where the solar heating comes from.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -91,8 +91,9 @@ pub struct Ambient {
     pub emissivity: Option<f64>,
     /// Solar absorptivity instead of the cable's.
     pub absorptivity: Option<f64>,
-    /// Ground albedo (CIGRE).
-    pub albedo: f64,
+    /// Ground albedo (CIGRE); none: the conductor's default (the
+    /// project's, [`crate::Conductor::with_defaults`]).
+    pub albedo: Option<f64>,
     /// Surface roughness (CIGRE) instead of the default.
     pub roughness: Option<f64>,
 }
@@ -110,7 +111,7 @@ impl Ambient {
             sun: Sun::Flux(0.0),
             emissivity: None,
             absorptivity: None,
-            albedo: DEFAULT_ALBEDO,
+            albedo: None,
             roughness: None,
         }
     }
@@ -309,7 +310,7 @@ impl CaseFile {
             sun,
             emissivity: self.emissivity,
             absorptivity: self.absorptivity,
-            albedo: self.albedo.unwrap_or(DEFAULT_ALBEDO),
+            albedo: self.albedo,
             roughness: self.roughness,
         })
     }

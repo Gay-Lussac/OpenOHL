@@ -449,7 +449,7 @@ impl SpacerForm {
                 a,
                 b,
                 compression: Some(model.line.defaults.spacer_compression),
-                stiffness: Some(ols_line::solve::DEFAULT_INSULATOR_STIFFNESS),
+                stiffness: Some(model.line.defaults.insulator_stiffness),
                 ..Spacer::default()
             },
             given_length: false,
@@ -582,7 +582,7 @@ pub fn spacer_ui(ui: &mut egui::Ui, f: &mut SpacerForm, model: &Model) {
             ui.label("stiffness EA");
             let mut ea = s
                 .stiffness
-                .unwrap_or(ols_line::solve::DEFAULT_INSULATOR_STIFFNESS);
+                .unwrap_or(model.line.defaults.insulator_stiffness);
             if ui
                 .add(
                     egui::DragValue::new(&mut ea)

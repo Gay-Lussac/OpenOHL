@@ -740,6 +740,11 @@ impl Calculation for ThermalSteady {
                 Some(_) => float_input(inputs, "roughness")?,
                 None => ols_thermal::DEFAULT_ROUGHNESS,
             },
+            defaults: [
+                ols_thermal::DEFAULT_EMISSIVITY,
+                ols_thermal::DEFAULT_ABSORPTIVITY,
+                ols_thermal::ambient::DEFAULT_ALBEDO,
+            ],
         };
         let ambient = inputs
             .get("ambient")

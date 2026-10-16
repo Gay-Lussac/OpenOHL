@@ -48,7 +48,7 @@ use ols_wirefe::catenary_element::default_element_budget;
 use ols_wirefe::{CableElement, CableProperties, Model, Node, TrussElement, default_fe_budget};
 
 use crate::rod::{Rod, RodHold, RodShape, RodString};
-use crate::solve::{DEFAULT_INSULATOR_STIFFNESS, SectionShape, p, v, wire_load_in_line_wind};
+use crate::solve::{SectionShape, p, v, wire_load_in_line_wind};
 use crate::{Jumper, Line, LineError, Point, SectionPoint};
 
 /// The estimated load each jumper hangs on its ends in weather case
@@ -320,12 +320,15 @@ pub fn estimated_bending_stiffness(cable: &Cable, factor: f64) -> f64 {
 }
 
 /// The bending stiffness a jumper is solved with, N·m²: its own, else the
-/// estimate from its cable with its factor.
-pub fn jumper_bending_stiffness(jumper: &Jumper, cable: &Cable) -> f64 {
+/// estimate from its cable with its factor (else the project's,
+/// `defaults`).
+pub fn jumper_bending_stiffness(jumper: &Jumper, cable: &Cable, defaults: &crate::Defaults) -> f64 {
     jumper.bending_stiffness.unwrap_or_else(|| {
         estimated_bending_stiffness(
             cable,
-            jumper.stiffness_factor.unwrap_or(DEFAULT_STIFFNESS_FACTOR),
+            jumper
+                .stiffness_factor
+                .unwrap_or(defaults.jumper_stiffness_factor),
         )
     })
 }
@@ -708,13 +711,14 @@ fn rod_ends(
     cable: &Cable,
     load: Vector3<f64>,
 ) -> Stiff {
-    let ei = jumper_bending_stiffness(jumper, cable);
+    let ei = jumper_bending_stiffness(jumper, cable, &line.defaults);
+    let angle = line.defaults.jumper_exit_angle_deg;
     Stiff {
         start: clamp_direction(
             line,
             shapes,
             &jumper.from,
-            jumper.angle_from_deg.unwrap_or(DEFAULT_TERMINAL_ANGLE_DEG),
+            jumper.angle_from_deg.unwrap_or(angle),
             load,
         ),
         // Arriving at the clamp: against the direction it holds.
@@ -722,7 +726,7 @@ fn rod_ends(
             line,
             shapes,
             &jumper.to,
-            jumper.angle_to_deg.unwrap_or(DEFAULT_TERMINAL_ANGLE_DEG),
+            jumper.angle_to_deg.unwrap_or(angle),
             load,
         )
         .map(|d| -d),
@@ -1060,7 +1064,7 @@ pub fn solve_jumper(
                 i: 2,
                 j: 3,
                 unstressed_length: s.length,
-                axial_stiffness: DEFAULT_INSULATOR_STIFFNESS,
+                axial_stiffness: line.defaults.insulator_stiffness,
                 tension_only: true,
                 // One subconductor of the bundle: its share of the weight.
                 weight: s.weight / f64::from(bundle),
@@ -1347,13 +1351,17 @@ mod tests {
         assert!((estimated_bending_stiffness(&cable, 1e-4) - 1e-4 * max).abs() < 1e-12);
         let cable = lib.get("acsr-drake-26-7").unwrap();
         let mut j = crate::tests::example().jumpers[0].clone();
+        let mut d = crate::Defaults::default();
         assert!(
-            (jumper_bending_stiffness(&j, cable) - DEFAULT_STIFFNESS_FACTOR * max).abs() < 1e-9
+            (jumper_bending_stiffness(&j, cable, &d) - DEFAULT_STIFFNESS_FACTOR * max).abs() < 1e-9
         );
+        // The project's factor where the jumper gives none.
+        d.jumper_stiffness_factor = 0.3;
+        assert!((jumper_bending_stiffness(&j, cable, &d) - 0.3 * max).abs() < 1e-9);
         j.stiffness_factor = Some(0.35);
-        assert!((jumper_bending_stiffness(&j, cable) - 0.35 * max).abs() < 1e-9);
+        assert!((jumper_bending_stiffness(&j, cable, &d) - 0.35 * max).abs() < 1e-9);
         j.bending_stiffness = Some(100.0);
-        assert_eq!(jumper_bending_stiffness(&j, cable), 100.0);
+        assert_eq!(jumper_bending_stiffness(&j, cable, &d), 100.0);
     }
 
     /// A bimetallic jumper lengthens like the line's cables: with the

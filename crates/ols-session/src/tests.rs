@@ -1285,6 +1285,8 @@ fn spacers_follow_their_sections() {
     // The default values.
     let d = ols_line::Defaults {
         spacer_compression: 8000.0,
+        insulator_stiffness: 4e7,
+        ..Default::default()
     };
     s.apply("ana", s.defaults_command(d)).unwrap();
     assert_eq!(s.line().defaults, d);

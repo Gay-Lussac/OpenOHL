@@ -97,7 +97,7 @@ Drake 795 kcmil 26/7 ACSR — IEEE 738-2012, 3 ambient cases
 - `--current 900` instead of `--max-temp`: the steady-state temperature;
 - `--current 1000 --from-current 500`: the temperature after switching from
   500 A (steady) to 1000 A, every `--print-every` s (300) for `--duration` s
-  (3600), in `--time-step` s steps (10); `--heat-capacity` J/(m·K) instead
+  (3600), in `--time-step` s steps (10, or the default values'); `--defaults FILE.olsdef` (Criteria › Default values exported): the emissivity, absorptivity, roughness, albedo and time step where the cable or the case gives none; `--heat-capacity` J/(m·K) instead
   of the estimate;
 - `--method cigre601` or `cigre207` (default `ieee738`); `--case NAME`
   (wildcards, repeatable) for some cases; `--csv FILE` for the results (the

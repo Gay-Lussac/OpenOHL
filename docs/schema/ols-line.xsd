@@ -514,10 +514,28 @@
         <xs:element name="defaults" minOccurs="0">
           <xs:annotation>
             <xs:documentation>The project's default values (Criteria › Default
-              values): spacer_compression, N (default 10000).</xs:documentation>
+              values), SI units, only those not the program's: what new
+              objects start with and what the calculations take where an
+              object, a cable, a case or a rule file gives no value
+              (ols_line::DEFAULT_FIELDS, `section_key`).</xs:documentation>
           </xs:annotation>
           <xs:complexType>
             <xs:attribute name="spacer_compression" type="xs:double" default="10000"/>
+            <xs:attribute name="jumper_exit_angle" type="xs:double" default="30"/>
+            <xs:attribute name="jumper_stiffness_factor" type="xs:double" default="0.2"/>
+            <xs:attribute name="jumper_clamp_length" type="xs:double" default="0.1"/>
+            <xs:attribute name="insulator_stiffness" type="xs:double" default="50000000"/>
+            <xs:attribute name="weather_air_density_factor" type="xs:double" default="0.613"/>
+            <xs:attribute name="thermal_emissivity" type="xs:double" default="0.8"/>
+            <xs:attribute name="thermal_absorptivity" type="xs:double" default="0.8"/>
+            <xs:attribute name="thermal_roughness" type="xs:double" default="0.1"/>
+            <xs:attribute name="thermal_albedo" type="xs:double" default="0.1"/>
+            <xs:attribute name="thermal_time_step" type="xs:double" default="10"/>
+            <xs:attribute name="clearance_wind_step" type="xs:double" default="50"/>
+            <xs:attribute name="clearance_vertical_band" type="xs:double" default="0.5"/>
+            <xs:attribute name="clearance_search_margin" type="xs:double" default="5"/>
+            <xs:attribute name="clearance_zone_width" type="xs:double" default="1"/>
+            <xs:attribute name="clearance_zone_depth" type="xs:double" default="0.2"/>
           </xs:complexType>
         </xs:element>
 

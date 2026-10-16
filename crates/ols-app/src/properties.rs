@@ -709,9 +709,9 @@ pub fn ui(
                             (Some(e), _) => format!("{e:.1} N·m² (set on the jumper)"),
                             (None, Some(c)) => format!(
                                 "{:.1} N·m² (estimated: {:.2} × the cable's solid-bar {:.0} N·m²{})",
-                                ols_line::jumper::jumper_bending_stiffness(j, c),
+                                ols_line::jumper::jumper_bending_stiffness(j, c, &line.defaults),
                                 j.stiffness_factor
-                                    .unwrap_or(ols_line::jumper::DEFAULT_STIFFNESS_FACTOR),
+                                    .unwrap_or(line.defaults.jumper_stiffness_factor),
                                 c.bending_stiffness_max(),
                                 c.bending_stiffness_min().map_or(String::new(), |m| format!(
                                     ", not below its strands slipping, {m:.0} N·m²"
@@ -721,7 +721,7 @@ pub fn ui(
                         },
                     ),
                     ("leaves its clamps", {
-                        let d = ols_line::jumper::DEFAULT_TERMINAL_ANGLE_DEG;
+                        let d = line.defaults.jumper_exit_angle_deg;
                         format!(
                             "{:.0}° / {:.0}° below the conductor",
                             j.angle_from_deg.unwrap_or(d),

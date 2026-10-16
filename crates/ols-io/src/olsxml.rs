@@ -809,12 +809,16 @@ pub fn to_xml(line: &Line) -> String {
         max_virtual_compression,
     } = bimetallic;
     if !defaults.is_default() {
-        let ols_line::Defaults { spacer_compression } = defaults;
-        let _ = writeln!(
-            out,
-            "  <defaults spacer_compression=\"{}\"/>",
-            num(*spacer_compression)
-        );
+        // The values not the program's, `section_key="value"` (SI).
+        let program = ols_line::Defaults::default();
+        out.push_str("  <defaults");
+        for f in ols_line::DEFAULT_FIELDS {
+            let v = (f.get)(defaults);
+            if v != (f.get)(&program) {
+                attr(&mut out, &format!("{}_{}", f.section, f.key), &num(v));
+            }
+        }
+        out.push_str("/>\n");
     }
     if !solver.is_default() {
         let ols_line::SolverOptions { jumper_loads } = solver;
@@ -1631,11 +1635,20 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         defaults: match root.child("defaults") {
             None => ols_line::Defaults::default(),
             Some(d) => {
-                check(d, &["spacer_compression"], &[])?;
-                ols_line::Defaults {
-                    spacer_compression: optional(d, "spacer_compression")?
-                        .unwrap_or(ols_line::DEFAULT_SPACER_COMPRESSION),
+                let names: Vec<String> = ols_line::DEFAULT_FIELDS
+                    .iter()
+                    .map(|f| format!("{}_{}", f.section, f.key))
+                    .collect();
+                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                check(d, &refs, &[])?;
+                let mut defaults = ols_line::Defaults::default();
+                for (f, name) in ols_line::DEFAULT_FIELDS.iter().zip(&names) {
+                    if let Some(v) = optional(d, name)? {
+                        (f.set)(&mut defaults, v);
+                    }
                 }
+                defaults.validate()?;
+                defaults
             }
         },
     };
