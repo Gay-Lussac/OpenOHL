@@ -590,6 +590,21 @@ const DASH_UNIT: f64 = 1.5;
 /// orange).
 const BALL_COLOR: [u8; 3] = [240, 110, 30];
 
+/// Every solved copy of section `section` drawn (its weather cases, both
+/// wind sides), with its case.
+fn drawn_copies<'a>(
+    model: &'a Model,
+    section: &str,
+    case: usize,
+) -> Vec<(usize, &'a crate::model::Solved)> {
+    model
+        .section_cases(section, case)
+        .into_iter()
+        .filter_map(|k| model.cases.get(k).map(|c| (k, c)))
+        .flat_map(|(k, c)| c.drawn().map(move |d| (k, d)))
+        .collect()
+}
+
 /// Colour of span points.
 const SPAN_POINT_COLOR: [u8; 3] = [90, 200, 230];
 
@@ -982,12 +997,33 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 Selection::Attachment { structure, set } => {
-                    // The strings holding it where they are drawn in the
-                    // case shown (as solved), else as given.
+                    // The strings holding it where they are drawn in every
+                    // case drawn (as solved), else as given; the copy
+                    // clicked (else the case shown) the strongest.
+                    let strong = model.selection_case.unwrap_or(case);
                     if let Some(st) = line.structure(structure)
                         && let Some(w) = st.wire_at_set(*set)
                     {
-                        let pieces = crate::selection::string_pieces(model, case);
+                        for k in crate::selection::drawn_cases(model, case) {
+                            if k == strong {
+                                continue;
+                            }
+                            let pieces = crate::selection::string_pieces(model, k);
+                            for &i in &st.component(&w.label).strings {
+                                let x = &st.strings[i];
+                                for (top, bottom) in pieces
+                                    .get(&(st.id.clone(), x.label.clone()))
+                                    .into_iter()
+                                    .flatten()
+                                {
+                                    s.polyline(&[*top, *bottom], hi, 1.5);
+                                }
+                            }
+                            for p in wire_drawn(st, w, &pieces) {
+                                s.point(p, hi, 7.0);
+                            }
+                        }
+                        let pieces = crate::selection::string_pieces(model, strong);
                         for &i in &st.component(&w.label).strings {
                             let x = &st.strings[i];
                             match pieces.get(&(st.id.clone(), x.label.clone())) {
@@ -1044,16 +1080,62 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                         s.point(b, hi, 9.0);
                     }
                 }
-                Selection::Point { .. } | Selection::SpanPoint { .. } => {
-                    if let Some(p) = selection.focus(model, case) {
+                Selection::Point { structure, label } => {
+                    // A wire point: where it hangs in every case drawn.
+                    let strong = model.selection_case.unwrap_or(case);
+                    if let Some(st) = line.structure(structure)
+                        && let Some(w) = st.wire(label)
+                    {
+                        for k in crate::selection::drawn_cases(model, case) {
+                            let pieces = crate::selection::string_pieces(model, k);
+                            for p in wire_drawn(st, w, &pieces) {
+                                s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
+                            }
+                        }
+                    } else if let Some(p) = selection.focus(model, case) {
                         s.point(p, hi, 12.0);
                     }
                 }
+                Selection::SpanPoint { section, label } => {
+                    // Every case its section is drawn in (both wind sides).
+                    let strong = model.selection_case.unwrap_or(case);
+                    for (k, solved) in drawn_copies(model, section, case) {
+                        let Some(p) = solved
+                            .shapes
+                            .iter()
+                            .find(|x| x.section == *section)
+                            .and_then(|x| x.span_points.iter().find(|(l, _)| l == label))
+                            .map(|(_, p)| *p)
+                        else {
+                            continue;
+                        };
+                        s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
+                    }
+                }
                 Selection::Spacer(id) => {
-                    if let Some([a, b]) = crate::selection::spacer_ends(model, case, id) {
-                        s.polyline(&[a, b], hi, 5.0);
-                        s.point(a, hi, 9.0);
-                        s.point(b, hi, 9.0);
+                    let strong = model.selection_case.unwrap_or(case);
+                    let held = line
+                        .spacers
+                        .iter()
+                        .find(|x| &x.id == id)
+                        .map(|x| x.a.section.clone());
+                    for (k, solved) in held
+                        .iter()
+                        .flat_map(|section| drawn_copies(model, section, case))
+                    {
+                        let Some(x) = solved
+                            .shapes
+                            .iter()
+                            .flat_map(|x| &x.spacers)
+                            .find(|x| &x.id == id)
+                        else {
+                            continue;
+                        };
+                        let [a, b] = x.ends;
+                        let main = k == strong;
+                        s.polyline(&[a, b], hi, if main { 5.0 } else { 2.5 });
+                        s.point(a, hi, if main { 9.0 } else { 6.0 });
+                        s.point(b, hi, if main { 9.0 } else { 6.0 });
                     }
                 }
                 Selection::AlignmentPoint { id } => {

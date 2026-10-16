@@ -11037,6 +11037,105 @@ fn a_span_is_picked_in_any_weather_case_drawn() {
     assert_eq!(r.model.selection_case, None);
 }
 
+/// Several weather cases drawn: span points, spacers and wire points are
+/// picked on any of their copies too (the case of the copy clicked
+/// reported), as spans are.
+#[test]
+fn span_objects_and_wire_points_are_picked_in_any_case_drawn() {
+    use crate::selection::{Snap, Snaps, pick_in_model_case};
+    let mut model = synthetic_project_with("pick-any-case", |l| {
+        let (a, b) = (l.sections[0].id.clone(), l.sections[1].id.clone());
+        for s in &mut l.sections[..2] {
+            s.span_points.push(ols_line::SpanPoint {
+                label: "M".into(),
+                span: 0,
+                at: ols_line::SpanPlace::at_fraction(0.5),
+                description: String::new(),
+            });
+        }
+        let end = |section: &str| ols_line::SpanPointRef {
+            section: section.into(),
+            point: "M".into(),
+        };
+        l.spacers.push(ols_line::Spacer {
+            id: "SP".into(),
+            a: end(&a),
+            b: end(&b),
+            weight: 100.0,
+            compression: Some(10_000.0),
+            ..Default::default()
+        });
+    });
+    model.shown_cases = vec![0, 2];
+    for k in 0..model.cases.len() {
+        model.ensure_solved(k);
+    }
+    let section = model.line.sections[0].id.clone();
+    let shape = |k: usize| {
+        model.cases[k]
+            .shapes
+            .iter()
+            .find(|s| s.section == section)
+            .unwrap()
+            .clone()
+    };
+    let (s0, s2) = (shape(0), shape(2));
+    let (p0, p2) = (s0.span_points[0].1, s2.span_points[0].1);
+    assert!((p0[2] - p2[2]).abs() > 0.5, "{p0:?} {p2:?}");
+    // Seen across the line (x, z on screen), 10 px per m.
+    let project = |p: [f64; 3]| Some([p[0] * 10.0, -p[2] * 10.0]);
+    let at = |p: [f64; 3]| project(p).unwrap();
+    let snaps = Snaps::default();
+    assert_eq!(
+        pick_in_model_case(&model, 0, &snaps, at(p2), 3.0, project),
+        (
+            Selection::SpanPoint {
+                section: section.clone(),
+                label: "M".into()
+            },
+            Some(2)
+        )
+    );
+    // The spacer, between its ends in the ice case.
+    let e = s2.spacers[0].ends;
+    let third = [0, 1, 2].map(|i| e[0][i] + (e[1][i] - e[0][i]) / 3.0);
+    assert_eq!(
+        pick_in_model_case(&model, 0, &snaps, at(third), 3.0, project).0,
+        Selection::Spacer("SP".into())
+    );
+    // A wire point where it hangs in a wind case (the clamp swinging
+    // most), seen along the line (y, z on screen).
+    let windy = (0..model.cases.len())
+        .max_by(|a, b| {
+            let p = |k: usize| model.cases[k].case.wind_pressure.si();
+            p(*a).total_cmp(&p(*b))
+        })
+        .unwrap();
+    assert!(model.cases[windy].case.wind_pressure.si() > 0.0);
+    model.shown_cases = vec![0, windy];
+    let side = |p: [f64; 3]| Some([p[1] * 10.0, -p[2] * 10.0]);
+    let wires = |k: usize| crate::selection::string_pieces(&model, k);
+    let (w0, ww) = (wires(0), wires(windy));
+    let apart = |a: [f64; 3], b: [f64; 3]| (a[1] - b[1]).hypot(a[2] - b[2]);
+    let (key, clamp, still) = ww
+        .iter()
+        .filter_map(|(key, v)| Some((key.clone(), v.last()?.1, w0.get(key)?.last()?.1)))
+        .max_by(|a, b| apart(a.1, a.2).total_cmp(&apart(b.1, b.2)))
+        .unwrap();
+    assert!(
+        apart(clamp, still) > 0.5,
+        "the clamp swings: {clamp:?} {still:?}"
+    );
+    let mut snaps = Snaps::default();
+    snaps.0.insert(Snap::Attachment);
+    let (picked, k) = pick_in_model_case(&model, 0, &snaps, side(clamp).unwrap(), 3.0, side);
+    assert!(
+        matches!(&picked, Selection::Attachment { structure, .. } if *structure == key.0),
+        "{picked:?}"
+    );
+    assert_eq!(k, Some(windy));
+}
+
 /// Labels: several weather cases drawn give one label per section (its
 /// first case); in 3D only those within the label distance of the eye
 /// are built.

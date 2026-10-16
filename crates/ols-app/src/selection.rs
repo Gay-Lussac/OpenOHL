@@ -418,6 +418,103 @@ pub fn string_pieces(model: &Model, case: usize) -> StringPieces {
     out
 }
 
+/// The wire points where the strings hold them in `pieces` (as given
+/// when not drawn): as attachments (with `tops`, the tops of the strings
+/// holding a set) and as labelled points, of the kinds switched on.
+fn wire_point_candidates(
+    model: &Model,
+    pieces: &StringPieces,
+    snaps: &Snaps,
+    tops: bool,
+) -> Vec<Candidate> {
+    let mut out = Vec::new();
+    for s in &model.line.structures {
+        if snaps.on(Snap::Attachment) {
+            // Every wire point and string top, for the set(s) it holds
+            // (the first one of a TAK's); a clamp where it is drawn.
+            for w in &s.wires {
+                let c = s.component(&w.label);
+                let Some(set) = w
+                    .set
+                    .or_else(|| c.wires.iter().find_map(|&i| s.wires[i].set))
+                else {
+                    continue;
+                };
+                let sel = Selection::Attachment {
+                    structure: s.id.clone(),
+                    set,
+                };
+                let mut drawn = false;
+                for x in s.strings_to(&w.label) {
+                    for (_, bottom) in pieces
+                        .get(&(s.id.clone(), x.label.clone()))
+                        .into_iter()
+                        .flatten()
+                    {
+                        out.push((sel.clone(), *bottom, *bottom));
+                        drawn = true;
+                    }
+                }
+                if !drawn && tops {
+                    out.push((sel.clone(), w.position, w.position));
+                }
+                if tops && w.set.is_some() {
+                    for x in s.strings_to(&w.label) {
+                        if let Some(top) = s.node(&x.top) {
+                            out.push((sel.clone(), top.position(), top.position()));
+                        }
+                    }
+                }
+            }
+        }
+        if snaps.on(Snap::Point) {
+            // Every structure point, and every wire point where it is
+            // drawn.
+            let sel = |label: &str| Selection::Point {
+                structure: s.id.clone(),
+                label: label.to_owned(),
+            };
+            if tops {
+                for p in &s.points {
+                    out.push((sel(&p.label), p.position, p.position));
+                }
+            }
+            for w in &s.wires {
+                let at = s.strings_to(&w.label).find_map(|x| {
+                    pieces
+                        .get(&(s.id.clone(), x.label.clone()))
+                        .and_then(|v| v.last().map(|(_, b)| *b))
+                });
+                match at {
+                    Some(at) => out.push((sel(&w.label), at, at)),
+                    None if tops => out.push((sel(&w.label), w.position, w.position)),
+                    None => {}
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The span points and spacers of `shape` (as solved in one case).
+fn span_object_candidates(shape: &ols_line::solve::SectionShape) -> Vec<Candidate> {
+    let mut out = Vec::new();
+    for (label, p) in &shape.span_points {
+        out.push((
+            Selection::SpanPoint {
+                section: shape.section.clone(),
+                label: label.clone(),
+            },
+            *p,
+            *p,
+        ));
+    }
+    for s in &shape.spacers {
+        out.push((Selection::Spacer(s.id.clone()), s.ends[0], s.ends[1]));
+    }
+    out
+}
+
 /// What can be clicked, of the kinds switched on: structures (every line
 /// they are drawn with but their strings), spans and jumpers (every
 /// piece), strings (all along them, where they are drawn: as solved in
@@ -469,68 +566,8 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
                 }
             }
         }
-        if snaps.on(Snap::Attachment) {
-            // Every wire point and string top, for the set(s) it holds
-            // (the first one of a TAK's); a clamp where it is drawn.
-            for w in &s.wires {
-                let c = s.component(&w.label);
-                let Some(set) = w
-                    .set
-                    .or_else(|| c.wires.iter().find_map(|&i| s.wires[i].set))
-                else {
-                    continue;
-                };
-                let sel = Selection::Attachment {
-                    structure: s.id.clone(),
-                    set,
-                };
-                let mut drawn = false;
-                for x in s.strings_to(&w.label) {
-                    for (_, bottom) in pieces
-                        .get(&(s.id.clone(), x.label.clone()))
-                        .into_iter()
-                        .flatten()
-                    {
-                        out.push((sel.clone(), *bottom, *bottom));
-                        drawn = true;
-                    }
-                }
-                if !drawn {
-                    out.push((sel.clone(), w.position, w.position));
-                }
-                if w.set.is_some() {
-                    for x in s.strings_to(&w.label) {
-                        if let Some(top) = s.node(&x.top) {
-                            out.push((sel.clone(), top.position(), top.position()));
-                        }
-                    }
-                }
-            }
-        }
     }
-    if snaps.on(Snap::Point) {
-        // Every structure point, and every wire point where it is drawn.
-        for s in &model.line.structures {
-            let sel = |label: &str| Selection::Point {
-                structure: s.id.clone(),
-                label: label.to_owned(),
-            };
-            for p in &s.points {
-                out.push((sel(&p.label), p.position, p.position));
-            }
-            for w in &s.wires {
-                let at = s
-                    .strings_to(&w.label)
-                    .find_map(|x| {
-                        pieces
-                            .get(&(s.id.clone(), x.label.clone()))
-                            .and_then(|v| v.last().map(|(_, b)| *b))
-                    })
-                    .unwrap_or(w.position);
-                out.push((sel(&w.label), at, at));
-            }
-        }
-    }
+    out.extend(wire_point_candidates(model, &pieces, snaps, true));
     if let Some(c) = model.cases.get(case) {
         if snaps.on(Snap::Span) {
             for shape in model
@@ -549,19 +586,7 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
                     }
                 }
                 // Its span points and the spacers it holds.
-                for (label, p) in &shape.span_points {
-                    out.push((
-                        Selection::SpanPoint {
-                            section: shape.section.clone(),
-                            label: label.clone(),
-                        },
-                        *p,
-                        *p,
-                    ));
-                }
-                for s in &shape.spacers {
-                    out.push((Selection::Spacer(s.id.clone()), s.ends[0], s.ends[1]));
-                }
+                out.extend(span_object_candidates(shape));
             }
         }
         if snaps.on(Snap::Jumper) {
@@ -621,6 +646,7 @@ fn other_case_candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<(Cand
                             out.push(((sel.clone(), w[0], w[1]), k));
                         }
                     }
+                    out.extend(span_object_candidates(shape).into_iter().map(|c| (c, k)));
                 }
             }
             if snaps.on(Snap::Jumper) && !(k == case && side == 0) && model.shown(case).contains(&k)
@@ -633,11 +659,20 @@ fn other_case_candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<(Cand
                 }
             }
         }
-        if strings && k != case {
-            for ((structure, label), pieces) in string_pieces(model, k) {
-                let sel = Selection::String { structure, label };
-                for (a, b) in pieces {
-                    out.push(((sel.clone(), a, b), k));
+        if k != case && (strings || snaps.on(Snap::Attachment)) {
+            let pieces = string_pieces(model, k);
+            // The wire points where they hang in this case.
+            out.extend(
+                wire_point_candidates(model, &pieces, snaps, false)
+                    .into_iter()
+                    .map(|c| (c, k)),
+            );
+            if strings {
+                for ((structure, label), pieces) in pieces {
+                    let sel = Selection::String { structure, label };
+                    for (a, b) in pieces {
+                        out.push(((sel.clone(), a, b), k));
+                    }
                 }
             }
         }
