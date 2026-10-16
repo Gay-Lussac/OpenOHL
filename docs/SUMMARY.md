@@ -64,6 +64,7 @@
 - [Data model map](development/data-model.md)
 - [LeV distance between conductors (spec)](development/lev-phase-spacing.md)
 - [Interphase spacers (proposal)](development/interphase-spacers.md)
+- [Points on the wires and their objects (proposal)](development/line-points-and-objects.md)
 - [Performance and time budgets](development/performance.md)
 - [Desktop app conventions](development/ui.md)
 - [Structure detail levels in checks](development/structure-detail.md)
