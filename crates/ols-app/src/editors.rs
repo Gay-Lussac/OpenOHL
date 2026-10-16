@@ -506,7 +506,7 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                         None => {
                             let mut k = j
                                 .stiffness_factor
-                                .unwrap_or(ols_line::jumper::DEFAULT_STIFFNESS_FACTOR);
+                                .unwrap_or(model.line.defaults.jumper_stiffness_factor);
                             ui.label("factor");
                             if ui
                                 .add(egui::DragValue::new(&mut k).speed(0.01).range(0.01..=1.0))
@@ -521,7 +521,11 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                                 ui.label(
                                     egui::RichText::new(format!(
                                         "{:.0} N·m²",
-                                        ols_line::jumper::jumper_bending_stiffness(j, c)
+                                        ols_line::jumper::jumper_bending_stiffness(
+                                            j,
+                                            c,
+                                            &model.line.defaults
+                                        )
                                     ))
                                     .weak(),
                                 );
@@ -530,7 +534,7 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                     }
                 });
                 ui.end_row();
-                let d = ols_line::jumper::DEFAULT_TERMINAL_ANGLE_DEG;
+                let d = model.line.defaults.jumper_exit_angle_deg;
                 for (name, angle) in [
                     ("leaves from at", &mut j.angle_from_deg),
                     ("leaves to at", &mut j.angle_to_deg),
@@ -759,6 +763,7 @@ fn clamps_ui(
         if j.supports.is_empty() {
             c.at = 0.5;
         }
+        c.clamp_length = model.line.defaults.jumper_clamp_length;
         j.supports.push(c);
     }
 }
@@ -4479,6 +4484,7 @@ pub fn new_jumper_through(
         .iter()
         .map(|(s, w)| {
             let mut c = ols_line::JumperClamp::new(w.clone(), 0.5);
+            c.clamp_length = model.line.defaults.jumper_clamp_length;
             if *s != from.structure {
                 c.structure = Some(s.clone());
             }

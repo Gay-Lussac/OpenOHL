@@ -221,9 +221,7 @@ impl Line {
                 let Some(length) = r.string_length(rx) else {
                     continue;
                 };
-                let stiffness = rx
-                    .stiffness
-                    .unwrap_or(crate::solve::DEFAULT_INSULATOR_STIFFNESS);
+                let stiffness = rx.stiffness.unwrap_or(self.defaults.insulator_stiffness);
                 let key = string_key(rx.strain, length, rx.weight, rx.wind_area, stiffness);
                 let id = match known.get(&key) {
                     Some(id) => id.clone(),

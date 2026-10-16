@@ -12152,3 +12152,69 @@ fn spacers_are_laid_between_span_points() {
     assert!(r.model.line.sections[1].span_points.is_empty());
     assert_eq!(r.model.line.sections[0].span_points.len(), 1);
 }
+
+/// Criteria › Default values: every value of the project, changed in the
+/// window and kept with OK (one command); the weather table's velocities
+/// from the project's Q where a case gives none, a vertical clearance
+/// window's zone from the project's width; the program's values are those
+/// of each part of OLS CAD.
+#[test]
+fn the_project_default_values_are_used() {
+    use crate::tables::TableKind;
+    let d = ols_line::Defaults::default();
+    assert_eq!(
+        d.jumper_exit_angle_deg,
+        ols_line::jumper::DEFAULT_TERMINAL_ANGLE_DEG
+    );
+    assert_eq!(
+        d.insulator_stiffness,
+        ols_line::solve::DEFAULT_INSULATOR_STIFFNESS
+    );
+    assert_eq!(
+        d.air_density_factor,
+        ols_weather::DEFAULT_AIR_DENSITY_FACTOR
+    );
+    assert_eq!(d.thermal_emissivity, ols_thermal::DEFAULT_EMISSIVITY);
+    assert_eq!(d.thermal_time_step, ols_thermal::DEFAULT_TIME_STEP);
+    assert_eq!(
+        d.clearance_search_margin,
+        ols_clearance::rules::DEFAULT_SEARCH_MARGIN
+    );
+    assert_eq!(d.clearance_zone_width, ols_clearance::zone::DEFAULT_WIDTH);
+    let model = synthetic_project("default-values");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut d = r.model.line.defaults;
+        d.air_density_factor = 0.5;
+        d.clearance_zone_width = 2.5;
+        r.defaults_window = Some((d, None));
+    }
+    harness.run();
+    harness.get_by_label("air density factor Q");
+    harness.get_by_label("OK").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.defaults_window.is_none());
+    assert_eq!(r.model.line.defaults.air_density_factor, 0.5);
+    let s = &r.model.editing.as_ref().unwrap().session;
+    assert_eq!(s.line().defaults.clearance_zone_width, 2.5);
+    // A weather case without its own Q: V = √(P / 0.5).
+    let rows = TableKind::WeatherCases.rows(&r.model, r.case);
+    let (k, w) = r
+        .model
+        .cases
+        .iter()
+        .map(|c| &c.case)
+        .enumerate()
+        .find(|(_, c)| c.air_density_factor.is_none() && c.wind_pressure.si() > 0.0)
+        .expect("a windy case without its own Q");
+    let v = (w.wind_pressure.si() / 0.5).sqrt();
+    assert_eq!(rows[k].cells[crate::tables::W_VELOCITY], format!("{v:.2}"));
+    // A vertical clearance window's zone.
+    r.vertical_clearances.show(&r.model);
+    assert_eq!(r.vertical_clearances.zone.width, 2.5);
+}

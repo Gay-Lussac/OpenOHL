@@ -422,7 +422,11 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ols_therm
                         .library
                         .get(&s.cable)
                         .ok_or_else(|| format!("cable {} not in the library", s.cable))
-                        .and_then(|c| Conductor::from_cable(c).map_err(|e| e.to_string()));
+                        .and_then(|c| {
+                            Conductor::from_cable(c)
+                                .map(|c| c.with_defaults(&model.line.defaults))
+                                .map_err(|e| e.to_string())
+                        });
                     for c in cases {
                         let (text, hover) = rating(w.method, &conductor, c, w.max_temperature);
                         ui.label(text).on_hover_text(hover);

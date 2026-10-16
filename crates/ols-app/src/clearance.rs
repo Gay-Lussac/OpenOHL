@@ -260,6 +260,9 @@ pub struct Clearances {
     pub auto: bool,
     /// The model changed since the last check started.
     pub stale: bool,
+    /// What the rules take where they give none (the project's default
+    /// values).
+    pub defaults: ols_clearance::rules::RuleDefaults,
     running: Option<Receiver<Result<Report, String>>>,
 }
 
@@ -282,9 +285,24 @@ impl Clearances {
     /// Chooses rule file `k` (reads it).
     pub fn choose(&mut self, k: usize) {
         self.chosen = Some(k);
-        self.rules = self.files.get(k).map(|p| RuleSet::load(p).map(|r| r.rules));
+        self.rules = self
+            .files
+            .get(k)
+            .map(|p| RuleSet::load_with(p, &self.defaults).map(|r| r.rules));
         self.report = None;
         self.stale = true;
+    }
+
+    /// The project's default values: the rules read again when they
+    /// changed.
+    pub fn set_defaults(&mut self, d: &ols_line::Defaults) {
+        let d = ols_clearance::rules::RuleDefaults::from(d);
+        if d != self.defaults {
+            self.defaults = d;
+            if let Some(k) = self.chosen {
+                self.choose(k);
+            }
+        }
     }
 
     /// Whether a check is running.

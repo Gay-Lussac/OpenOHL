@@ -141,15 +141,25 @@ impl WeatherCase {
         }
     }
 
-    /// Its air density factor Q, Pa/(m/s)².
+    /// Its air density factor Q, Pa/(m/s)² (none given: the program's).
     pub fn air_density_factor(&self) -> f64 {
-        self.air_density_factor
-            .unwrap_or(DEFAULT_AIR_DENSITY_FACTOR)
+        self.air_density_factor_or(DEFAULT_AIR_DENSITY_FACTOR)
+    }
+
+    /// Its air density factor Q, Pa/(m/s)², else `default` (the
+    /// project's).
+    pub fn air_density_factor_or(&self, default: f64) -> f64 {
+        self.air_density_factor.unwrap_or(default)
     }
 
     /// The wind velocity of its pressure, m/s: √(P / Q).
     pub fn wind_velocity(&self) -> f64 {
-        (self.wind_pressure.si() / self.air_density_factor())
+        self.wind_velocity_with(DEFAULT_AIR_DENSITY_FACTOR)
+    }
+
+    /// The wind velocity of its pressure, m/s, Q its own else `default`.
+    pub fn wind_velocity_with(&self, default: f64) -> f64 {
+        (self.wind_pressure.si() / self.air_density_factor_or(default))
             .max(0.0)
             .sqrt()
     }

@@ -205,7 +205,7 @@ fn marker(extras: &mut ViewerExtras, rule: &Rule, label: String, r: &WireResult)
 /// Loads everything the checks need, once.
 pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
     let mut rules = match o.rules {
-        Some(path) => RuleSet::load(path)?.rules,
+        Some(path) => RuleSet::load_with(path, &(&line.defaults).into())?.rules,
         None => Vec::new(),
     };
     if let Some(v) = o.clearance {

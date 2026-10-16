@@ -672,7 +672,7 @@ pub struct WindSteps {
 }
 
 /// Default step of the wind pressure, Pa.
-pub const DEFAULT_WIND_STEP: f64 = 50.0;
+pub const DEFAULT_WIND_STEP: f64 = ols_line::DEFAULT_CLEARANCE[0];
 
 impl Default for WindSteps {
     fn default() -> Self {
@@ -717,13 +717,58 @@ pub struct RuleSet {
 }
 
 /// Default horizontal band for vertical clearance to points, m.
-pub const DEFAULT_VERTICAL_BAND: f64 = 0.5;
+pub const DEFAULT_VERTICAL_BAND: f64 = ols_line::DEFAULT_CLEARANCE[1];
 /// Default search margin, m.
-pub const DEFAULT_SEARCH_MARGIN: f64 = 5.0;
+pub const DEFAULT_SEARCH_MARGIN: f64 = ols_line::DEFAULT_CLEARANCE[2];
+
+/// What a rule file's rules take where they give none: the program's
+/// ([`Default`]) or a project's default values.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RuleDefaults {
+    /// `[wind]` step, Pa.
+    pub wind_step: f64,
+    /// Vertical band to points, m.
+    pub vertical_band: f64,
+    /// Search margin, m.
+    pub search_margin: f64,
+}
+
+impl Default for RuleDefaults {
+    fn default() -> Self {
+        Self {
+            wind_step: DEFAULT_WIND_STEP,
+            vertical_band: DEFAULT_VERTICAL_BAND,
+            search_margin: DEFAULT_SEARCH_MARGIN,
+        }
+    }
+}
+
+impl From<&ols_line::Defaults> for RuleDefaults {
+    fn from(d: &ols_line::Defaults) -> Self {
+        Self {
+            wind_step: d.clearance_wind_step,
+            vertical_band: d.clearance_vertical_band,
+            search_margin: d.clearance_search_margin,
+        }
+    }
+}
 
 impl RuleSet {
-    /// Parses and checks a rule set.
+    /// Parses and checks a rule set (the program's defaults where a rule
+    /// gives none).
     pub fn parse(text: &str) -> Result<Self, String> {
+        Self::parse_with(text, &RuleDefaults::default())
+    }
+
+    /// Reads a rule file with a project's default values
+    /// ([`RuleSet::parse_with`]).
+    pub fn load_with(path: &Path, defaults: &RuleDefaults) -> Result<Self, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        Self::parse_with(&text, defaults).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    /// Parses and checks a rule set, `defaults` where a rule gives none.
+    pub fn parse_with(text: &str, defaults: &RuleDefaults) -> Result<Self, String> {
         let raw: RawRules = toml::from_str(text).map_err(|e| e.to_string())?;
         ols_core::files::check_header(
             raw.format.as_deref(),
@@ -808,7 +853,11 @@ impl RuleSet {
                 if r.voltages.iter().any(|v| !(v.is_finite() && *v >= 0.0)) {
                     return bad("voltages must be ≥ 0 kV");
                 }
-                let band = default_band(&target);
+                let band = if matches!(target, Target::Ground) {
+                    0.0
+                } else {
+                    defaults.vertical_band
+                };
                 Ok(Rule {
                     name: r.name,
                     target,
@@ -816,7 +865,7 @@ impl RuleSet {
                     radial,
                     pair_voltage,
                     vertical_band: r.vertical_band.map_or(band, |l| l.si()),
-                    search_margin: r.search_margin.map_or(DEFAULT_SEARCH_MARGIN, |l| l.si()),
+                    search_margin: r.search_margin.map_or(defaults.search_margin, |l| l.si()),
                     cases: r.cases,
                     case_pairs: r.case_pairs,
                     exclude_near_ends: r.exclude_near_ends.map_or(0.0, |l| l.si().max(0.0)),
@@ -831,7 +880,7 @@ impl RuleSet {
         let wind = raw
             .wind
             .map(|w| -> Result<WindSteps, String> {
-                let step = w.step.map_or(DEFAULT_WIND_STEP, |s| s.si());
+                let step = w.step.map_or(defaults.wind_step, |s| s.si());
                 if !(step.is_finite() && step > 0.0) {
                     return Err("[wind] step must be > 0 Pa".into());
                 }
@@ -1060,6 +1109,28 @@ impl Rule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A rule file read with a project's default values: its search
+    /// margin, vertical band and wind step where the file gives none.
+    #[test]
+    fn project_defaults_fill_what_a_rule_file_leaves_out() {
+        let text = "format = \"ols-clearance-rules\"\nversion = 1\nname = \"x\"\n\
+                    [wind]\nsteps = true\n\
+                    [[rule]]\nname = \"trees\"\ntarget = \"points\"\nclasses = [5]\nvertical = \"5 m\"\n";
+        let program = RuleSet::parse(text).unwrap();
+        assert_eq!(program.rules[0].search_margin, DEFAULT_SEARCH_MARGIN);
+        let d = RuleDefaults {
+            wind_step: 25.0,
+            vertical_band: 1.5,
+            search_margin: 8.0,
+        };
+        let mine = RuleSet::parse_with(text, &d).unwrap();
+        assert_eq!(mine.rules[0].search_margin, 8.0);
+        assert_eq!(mine.rules[0].vertical_band, 1.5);
+        assert_eq!(mine.wind.unwrap().step, 25.0);
+        let from_line = RuleDefaults::from(&ols_line::Defaults::default());
+        assert_eq!(from_line, RuleDefaults::default());
+    }
 
     #[test]
     fn parses_all_targets() {

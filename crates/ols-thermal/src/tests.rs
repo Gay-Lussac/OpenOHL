@@ -27,6 +27,7 @@ fn drake() -> Conductor {
         },
         heat_capacity: vec![(1066.0, 3.8e-4), (243.0, 1.0e-4)],
         roughness: 0.09,
+        defaults: [0.8, 0.8, 0.1],
     }
 }
 
@@ -238,4 +239,40 @@ fn methods_by_name() {
     assert_eq!(Method::parse("tb601").unwrap(), Method::Cigre601);
     assert_eq!(Method::parse("CIGRE 207").unwrap(), Method::Cigre207);
     assert!(Method::parse("ieee").is_err());
+}
+
+/// A project's default values: its roughness, and its emissivity,
+/// absorptivity and albedo where neither the cable nor the case gives
+/// them; the ampacity follows.
+#[test]
+fn the_project_defaults_are_used() {
+    let mut c = drake();
+    c.electrical.emissivity = None;
+    c.electrical.solar_absorptivity = None;
+    let a = example_ambient();
+    assert_eq!(c.emissivity(&a), DEFAULT_EMISSIVITY);
+    assert_eq!(c.albedo(&a), ambient::DEFAULT_ALBEDO);
+    let d = ols_line::Defaults {
+        thermal_emissivity: 0.5,
+        thermal_absorptivity: 0.3,
+        thermal_albedo: 0.25,
+        thermal_roughness: 0.05,
+        ..Default::default()
+    };
+    let p = c.clone().with_defaults(&d);
+    assert_eq!(
+        (
+            p.emissivity(&a),
+            p.absorptivity(&a),
+            p.albedo(&a),
+            p.roughness
+        ),
+        (0.5, 0.3, 0.25, 0.05)
+    );
+    // The case's own albedo wins.
+    let mut own = a.clone();
+    own.albedo = Some(0.6);
+    assert_eq!(p.albedo(&own), 0.6);
+    let i = |c: &Conductor| ampacity(Method::Ieee738, c, &a, 100.0).unwrap().current;
+    assert!((i(&p) - i(&c)).abs() > 1.0);
 }

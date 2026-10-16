@@ -4160,23 +4160,56 @@ fn defaults_window(ctx: &egui::Context, r: &mut Ready) {
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
-        .default_width(480.0)
+        .default_width(560.0)
         .show(ctx, |ui| {
             ui.label(
-                "What new objects start with in this project (objects already made keep \
-                 their values).",
+                "What new objects start with in this project, and what the calculations take \
+                 where an object, a cable, a weather or ambient case or a rule file gives no \
+                 value of its own. Display settings stay yours (View, Display options).",
             );
-            egui::Grid::new("defaults").num_columns(2).show(ui, |ui| {
-                ui.label("spacer compression limit")
-                    .on_hover_text("The compression a new spacer may take; beyond, it is flagged");
-                ui.add(
-                    egui::DragValue::new(&mut draft.spacer_compression)
-                        .speed(10.0)
-                        .range(0.0..=f64::MAX)
-                        .suffix(" N"),
-                );
-                ui.end_row();
-            });
+            egui::ScrollArea::vertical()
+                .max_height(420.0)
+                .show(ui, |ui| {
+                    egui::Grid::new("defaults")
+                        .num_columns(3)
+                        .striped(true)
+                        .show(ui, |ui| {
+                            let program = ols_line::Defaults::default();
+                            let mut section = "";
+                            for f in ols_line::DEFAULT_FIELDS {
+                                if f.section != section {
+                                    section = f.section;
+                                    ui.label(egui::RichText::new(section).strong());
+                                    ui.end_row();
+                                }
+                                ui.label(f.title).on_hover_text(f.help);
+                                let mut v = (f.get)(&draft);
+                                let high = if f.high.is_finite() { f.high } else { f64::MAX };
+                                let speed = (v.abs() * 0.01).max(0.001);
+                                let mut d = egui::DragValue::new(&mut v)
+                                    .speed(speed)
+                                    .range(f.low..=high)
+                                    .max_decimals(4);
+                                if !f.unit.is_empty() {
+                                    d = d.suffix(format!(" {}", f.unit));
+                                }
+                                if ui.add(d).on_hover_text(f.help).changed() {
+                                    (f.set)(&mut draft, v);
+                                }
+                                let p = (f.get)(&program);
+                                ui.label(
+                                    egui::RichText::new(if v == p {
+                                        "the program's".to_owned()
+                                    } else {
+                                        format!("program: {p}")
+                                    })
+                                    .small()
+                                    .weak(),
+                                );
+                                ui.end_row();
+                            }
+                        });
+                });
             if ui
                 .add_enabled(!draft.is_default(), egui::Button::new("Program's values"))
                 .on_hover_text("Back to the values OLS CAD starts with")
@@ -5363,6 +5396,7 @@ fn clearance_zone_out(r: &mut Ready, out: crate::clearance_zones::Out) {
 }
 
 fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
+    r.clearances.set_defaults(&r.model.line.defaults);
     // The check needs its weather case solved, and its ground.
     r.model.ensure_solved(r.case);
     r.model.ensure_check_ground();
@@ -5404,6 +5438,7 @@ fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
 /// The Clearances tab: rule file, the violations of the shown case (click
 /// one to go there).
 fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
+    r.clearances.set_defaults(&r.model.line.defaults);
     let c = &mut r.clearances;
     if c.files.is_empty() {
         ui.label("No rule file (.olsr) next to the model or in libraries/clearance-rules.");
@@ -5960,7 +5995,8 @@ fn menus(
         if ui
             .button("Default values…")
             .on_hover_text(
-                "What new objects start with in this project (a spacer's compression limit); \
+                "What new objects start with in this project and what the calculations take \
+                 where nothing else gives a value (jumpers, insulators, Q, thermal, clearances); \
                  exported and imported as a file",
             )
             .clicked()

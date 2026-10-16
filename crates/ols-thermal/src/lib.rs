@@ -56,15 +56,15 @@ pub use ambient::{Ambient, AmbientCases, Sun};
 pub use solar::{Atmosphere, SolarPosition};
 
 /// Emissivity used when neither the cable nor the ambient case gives one.
-pub const DEFAULT_EMISSIVITY: f64 = 0.8;
+pub const DEFAULT_EMISSIVITY: f64 = ols_line::DEFAULT_THERMAL[0];
 /// Solar absorptivity used when neither the cable nor the ambient case
 /// gives one.
-pub const DEFAULT_ABSORPTIVITY: f64 = 0.8;
+pub const DEFAULT_ABSORPTIVITY: f64 = ols_line::DEFAULT_THERMAL[1];
 /// Surface roughness \\( R_s \\) (CIGRE) when none is given: a stranded
 /// conductor with round outer wires (above 0.05).
-pub const DEFAULT_ROUGHNESS: f64 = 0.1;
+pub const DEFAULT_ROUGHNESS: f64 = ols_line::DEFAULT_THERMAL[2];
 /// Time step of [`transient`] by default, s.
-pub const DEFAULT_TIME_STEP: f64 = 10.0;
+pub const DEFAULT_TIME_STEP: f64 = ols_line::DEFAULT_THERMAL[4];
 
 /// The thermal rating method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -185,6 +185,10 @@ pub struct Conductor {
     /// Surface roughness \\( R_s = d / (2(D - d)) \\) of the outer wires
     /// (CIGRE).
     pub roughness: f64,
+    /// Emissivity, solar absorptivity and ground albedo where neither the
+    /// cable nor the ambient case gives them (the project's,
+    /// [`Conductor::with_defaults`]).
+    pub defaults: [f64; 3],
 }
 
 /// Specific heat at 20 °C, J/(kg·K), its temperature coefficient, 1/K, and
@@ -239,7 +243,29 @@ impl Conductor {
                 .map(|(m, (c, beta, _))| (m * scale * c, beta))
                 .collect(),
             roughness: DEFAULT_ROUGHNESS,
+            defaults: [
+                DEFAULT_EMISSIVITY,
+                DEFAULT_ABSORPTIVITY,
+                ambient::DEFAULT_ALBEDO,
+            ],
         })
+    }
+
+    /// With a project's default values: its roughness, and its emissivity,
+    /// absorptivity and albedo where the cable or the case gives none.
+    pub fn with_defaults(mut self, d: &ols_line::Defaults) -> Self {
+        self.roughness = d.thermal_roughness;
+        self.defaults = [
+            d.thermal_emissivity,
+            d.thermal_absorptivity,
+            d.thermal_albedo,
+        ];
+        self
+    }
+
+    /// Ground albedo for `ambient` (its own, else the default).
+    pub fn albedo(&self, ambient: &Ambient) -> f64 {
+        ambient.albedo.unwrap_or(self.defaults[2])
     }
 
     /// Whether the AC resistance is known at every temperature: at least
@@ -281,7 +307,7 @@ impl Conductor {
         ambient
             .emissivity
             .or(self.electrical.emissivity)
-            .unwrap_or(DEFAULT_EMISSIVITY)
+            .unwrap_or(self.defaults[0])
     }
 
     /// Solar absorptivity for `ambient`.
@@ -289,7 +315,7 @@ impl Conductor {
         ambient
             .absorptivity
             .or(self.electrical.solar_absorptivity)
-            .unwrap_or(DEFAULT_ABSORPTIVITY)
+            .unwrap_or(self.defaults[1])
     }
 }
 
@@ -343,8 +369,9 @@ pub fn solar_gain(method: Method, c: &Conductor, a: &Ambient) -> SolarGain {
                     let (beam, diffuse) = solar::cigre_irradiance(sun.altitude, a.elevation, ns);
                     let half_pi = std::f64::consts::FRAC_PI_2;
                     let sin_h = sun.altitude.to_radians().sin().max(0.0);
-                    beam * (sin_theta + half_pi * a.albedo * sin_h)
-                        + diffuse * half_pi * (1.0 + a.albedo)
+                    let albedo = c.albedo(a);
+                    beam * (sin_theta + half_pi * albedo * sin_h)
+                        + diffuse * half_pi * (1.0 + albedo)
                 }
             };
             SolarGain {

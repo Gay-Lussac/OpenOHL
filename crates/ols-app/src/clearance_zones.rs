@@ -134,12 +134,14 @@ impl ZoneWindow {
             return;
         }
         self.loaded = true;
+        // A new window's zone: the project's default values.
+        self.zone = Zone::with_defaults(self.zone.measure, &model.line.defaults);
         let file = self
             .file
             .get_or_insert_with(|| Self::project_file(&model.sources.file, self.zone.measure))
             .clone();
         if file.exists() {
-            match RuleSet::load(&file) {
+            match RuleSet::load_with(&file, &(&model.line.defaults).into()) {
                 Ok(set) => self.take(model, &set),
                 Err(e) => self.status = Some((e, true)),
             }
@@ -422,7 +424,7 @@ impl ZoneWindow {
                     .add_filter("Clearance rules", &["olsr"])
                     .pick_file()
             {
-                match RuleSet::load(&p) {
+                match RuleSet::load_with(&p, &(&model.line.defaults).into()) {
                     Ok(set) => {
                         self.take(model, &set);
                         self.dirty = true;
@@ -750,7 +752,7 @@ fn run(
     let started = Instant::now();
     // Points around the wires at every wind position, within reach.
     let reach = rules.iter().map(|r| r.distance).fold(0.0, f64::max)
-        + ols_clearance::rules::DEFAULT_SEARCH_MARGIN
+        + line.defaults.clearance_search_margin
         + zone.width
         + 1.0;
     let polylines: Vec<Vec<[f64; 2]>> = solved

@@ -403,7 +403,7 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                     length: structure.string_length(st).unwrap_or(0.0),
                     weight: st.weight / bundle,
                     wind_area: st.wind_area / bundle,
-                    stiffness: st.stiffness.unwrap_or(DEFAULT_INSULATOR_STIFFNESS),
+                    stiffness: st.stiffness.unwrap_or(line.defaults.insulator_stiffness),
                     compression: st.compression,
                 })
                 .collect();
@@ -2751,7 +2751,7 @@ pub fn solve_spacer_group(
                     point: s.a.point.clone(),
                     at,
                     length: lengths[&s.id],
-                    stiffness: s.stiffness.unwrap_or(DEFAULT_INSULATOR_STIFFNESS),
+                    stiffness: s.stiffness.unwrap_or(line.defaults.insulator_stiffness),
                     tension_only: s.compression.is_none(),
                     weight: s.weight,
                     wind,
@@ -4166,6 +4166,62 @@ mod spacer_tests {
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables"),
         )
         .unwrap()
+    }
+
+    /// The project's default values in the solve: a string without its
+    /// own EA takes the project's (a soft one lets the clamps down); a
+    /// jumper without its own exit angle the project's.
+    #[test]
+    fn the_project_defaults_are_solved_with() {
+        let lib = library();
+        let case = ols_weather::WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let mut line = crate::tests::example();
+        for s in &mut line.structures {
+            for x in &mut s.strings {
+                x.stiffness = None;
+            }
+        }
+        let low = |line: &Line| -> f64 {
+            solve_line(line, &lib, &case)
+                .into_iter()
+                .map(Result::unwrap)
+                .flat_map(|s| s.clamps.clone())
+                .map(|c| c[2])
+                .sum()
+        };
+        let stiff = low(&line);
+        line.defaults.insulator_stiffness = 5e5;
+        let soft = low(&line);
+        assert!(soft < stiff - 0.01, "{soft} {stiff}");
+        // A jumper's exit angle.
+        let mut line = crate::tests::example();
+        let j = line
+            .jumpers
+            .iter_mut()
+            .find(|j| j.angle_from_deg.is_none() && !j.rigid)
+            .expect("a jumper without its own angle");
+        let id = j.id.clone();
+        let shape = |line: &Line| {
+            let shapes: Vec<SectionShape> = solve_line(line, &lib, &case)
+                .into_iter()
+                .map(Result::unwrap)
+                .collect();
+            crate::jumper::solve_jumpers(line, &lib, &case, &shapes)
+                .into_iter()
+                .map(Result::unwrap)
+                .find(|x| x.jumper == id)
+                .unwrap()
+                .points
+        };
+        let at30 = shape(&line);
+        line.defaults.jumper_exit_angle_deg = 60.0;
+        let at60 = shape(&line);
+        let moved = at30
+            .iter()
+            .zip(&at60)
+            .map(|(a, b)| (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt())
+            .fold(0.0, f64::max);
+        assert!(moved > 0.01, "{moved}");
     }
 
     /// S1 and S2 (both T1–T2) with span points at mid-span and a spacer

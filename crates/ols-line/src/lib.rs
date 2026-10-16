@@ -857,28 +857,313 @@ pub struct Spacer {
 /// The default spacer compression limit, N.
 pub const DEFAULT_SPACER_COMPRESSION: f64 = 10_000.0;
 
-fn default_spacer_compression() -> f64 {
-    DEFAULT_SPACER_COMPRESSION
-}
+/// The program's thermal defaults (used by `ols_thermal`): emissivity,
+/// solar absorptivity, surface roughness, ground albedo, time step (s).
+pub const DEFAULT_THERMAL: [f64; 5] = [0.8, 0.8, 0.1, 0.1, 10.0];
+
+/// The program's clearance defaults (used by `ols_clearance`): wind step
+/// (Pa), vertical band (m), search margin (m), zone half width (m), zone
+/// slice depth (m).
+pub const DEFAULT_CLEARANCE: [f64; 5] = [50.0, 0.5, 5.0, 1.0, 0.2];
 
 /// The project's default values (Criteria › Default values): what new
-/// objects start with; exported and imported as a file
-/// ([`DEFAULTS_FILE_FORMAT`]).
+/// objects start with and what the calculations take where an object, a
+/// cable, a case or a rule file gives no value of its own; exported and
+/// imported as a file ([`DEFAULTS_FILE_FORMAT`]). Every value is listed
+/// in [`DEFAULT_FIELDS`].
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Defaults {
     /// A new spacer's compression limit, N.
-    #[serde(default = "default_spacer_compression")]
     pub spacer_compression: f64,
+    /// The angle a jumper leaves its clamps at, from its tension string,
+    /// turned towards the load, °.
+    pub jumper_exit_angle_deg: f64,
+    /// A jumper's estimated bending stiffness: this share of its cable's
+    /// solid-bar stiffness, 0–1.
+    pub jumper_stiffness_factor: f64,
+    /// A new jumper support clamp's length, m.
+    pub jumper_clamp_length: f64,
+    /// An insulator string's (or spacer's) axial stiffness EA, N.
+    pub insulator_stiffness: f64,
+    /// A weather case's air density factor Q (P = Q·V²), Pa/(m/s)².
+    pub air_density_factor: f64,
+    /// A conductor's emissivity (thermal rating).
+    pub thermal_emissivity: f64,
+    /// A conductor's solar absorptivity.
+    pub thermal_absorptivity: f64,
+    /// A conductor's surface roughness R_s (CIGRE).
+    pub thermal_roughness: f64,
+    /// The ground's albedo (CIGRE solar heating).
+    pub thermal_albedo: f64,
+    /// The time step of thermal transients, s.
+    pub thermal_time_step: f64,
+    /// Clearance windows: the step of the wind pressure, Pa.
+    pub clearance_wind_step: f64,
+    /// Clearances to points: the horizontal band of vertical clearances, m.
+    pub clearance_vertical_band: f64,
+    /// Clearances: the search margin around the wires, m.
+    pub clearance_search_margin: f64,
+    /// Vertical clearance zones: the half width across the line, m.
+    pub clearance_zone_width: f64,
+    /// Vertical clearance zones: the depth of a slice along the line, m.
+    pub clearance_zone_depth: f64,
 }
 
 impl Default for Defaults {
     fn default() -> Self {
+        let [emissivity, absorptivity, roughness, albedo, time_step] = DEFAULT_THERMAL;
+        let [wind_step, band, margin, width, depth] = DEFAULT_CLEARANCE;
         Self {
             spacer_compression: DEFAULT_SPACER_COMPRESSION,
+            jumper_exit_angle_deg: jumper::DEFAULT_TERMINAL_ANGLE_DEG,
+            jumper_stiffness_factor: jumper::DEFAULT_STIFFNESS_FACTOR,
+            jumper_clamp_length: DEFAULT_CLAMP_LENGTH,
+            insulator_stiffness: solve::DEFAULT_INSULATOR_STIFFNESS,
+            air_density_factor: ols_weather::DEFAULT_AIR_DENSITY_FACTOR,
+            thermal_emissivity: emissivity,
+            thermal_absorptivity: absorptivity,
+            thermal_roughness: roughness,
+            thermal_albedo: albedo,
+            thermal_time_step: time_step,
+            clearance_wind_step: wind_step,
+            clearance_vertical_band: band,
+            clearance_search_margin: margin,
+            clearance_zone_width: width,
+            clearance_zone_depth: depth,
         }
     }
 }
+
+/// One of the project's default values: where it is in the file, its
+/// unit, its range, in words; read and written through `get` / `set`.
+#[derive(Clone, Copy)]
+pub struct DefaultField {
+    /// Its section of the file (`[jumper]`).
+    pub section: &'static str,
+    /// Its key there.
+    pub key: &'static str,
+    /// Its unit in the file and the window (empty: a number).
+    pub unit: &'static str,
+    /// Lowest value; `low_open`: the lowest itself not allowed.
+    pub low: f64,
+    /// The lowest value is not allowed.
+    pub low_open: bool,
+    /// Highest value (allowed).
+    pub high: f64,
+    /// Title in the window.
+    pub title: &'static str,
+    /// What it is.
+    pub help: &'static str,
+    /// Reads it.
+    pub get: fn(&Defaults) -> f64,
+    /// Sets it.
+    pub set: fn(&mut Defaults, f64),
+}
+
+impl std::fmt::Debug for DefaultField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.section, self.key)
+    }
+}
+
+macro_rules! default_field {
+    ($section:literal, $key:literal, $field:ident, $unit:literal, $low:expr, $open:expr, $high:expr, $title:literal, $help:literal) => {
+        DefaultField {
+            section: $section,
+            key: $key,
+            unit: $unit,
+            low: $low,
+            low_open: $open,
+            high: $high,
+            title: $title,
+            help: $help,
+            get: |d| d.$field,
+            set: |d, v| d.$field = v,
+        }
+    };
+}
+
+/// Every default value of a project, in the order of the file and the
+/// window.
+pub const DEFAULT_FIELDS: &[DefaultField] = &[
+    default_field!(
+        "spacer",
+        "compression",
+        spacer_compression,
+        "N",
+        0.0,
+        false,
+        f64::INFINITY,
+        "spacer compression limit",
+        "The compression a new spacer may take; beyond, it is flagged"
+    ),
+    default_field!(
+        "jumper",
+        "exit_angle",
+        jumper_exit_angle_deg,
+        "°",
+        0.0,
+        false,
+        90.0,
+        "jumper exit angle",
+        "The angle a jumper leaves its clamps at, from its tension string, turned towards the load (a jumper giving none)"
+    ),
+    default_field!(
+        "jumper",
+        "stiffness_factor",
+        jumper_stiffness_factor,
+        "",
+        0.0,
+        true,
+        1.0,
+        "jumper stiffness factor",
+        "A jumper's estimated bending stiffness: this share of its cable's solid-bar stiffness (a jumper giving no EI nor factor)"
+    ),
+    default_field!(
+        "jumper",
+        "clamp_length",
+        jumper_clamp_length,
+        "m",
+        0.0,
+        true,
+        100.0,
+        "jumper support clamp length",
+        "The length a new support clamp of a jumper starts with"
+    ),
+    default_field!(
+        "insulator",
+        "stiffness",
+        insulator_stiffness,
+        "N",
+        0.0,
+        true,
+        f64::INFINITY,
+        "insulator stiffness EA",
+        "Axial stiffness of a string or a spacer giving none (nor its insulator)"
+    ),
+    default_field!(
+        "weather",
+        "air_density_factor",
+        air_density_factor,
+        "",
+        0.0,
+        true,
+        10.0,
+        "air density factor Q",
+        "P = Q·V², Pa/(m/s)², for a weather case giving none: its wind velocity from its pressure"
+    ),
+    default_field!(
+        "thermal",
+        "emissivity",
+        thermal_emissivity,
+        "",
+        0.0,
+        false,
+        1.0,
+        "emissivity",
+        "A conductor's emissivity, when neither its cable nor the ambient case gives one"
+    ),
+    default_field!(
+        "thermal",
+        "absorptivity",
+        thermal_absorptivity,
+        "",
+        0.0,
+        false,
+        1.0,
+        "solar absorptivity",
+        "A conductor's solar absorptivity, when neither its cable nor the ambient case gives one"
+    ),
+    default_field!(
+        "thermal",
+        "roughness",
+        thermal_roughness,
+        "",
+        0.0,
+        false,
+        10.0,
+        "surface roughness",
+        "A conductor's surface roughness R_s (CIGRE), when the ambient case gives none"
+    ),
+    default_field!(
+        "thermal",
+        "albedo",
+        thermal_albedo,
+        "",
+        0.0,
+        false,
+        1.0,
+        "ground albedo",
+        "The ground's albedo (CIGRE solar heating), when the ambient case gives none"
+    ),
+    default_field!(
+        "thermal",
+        "time_step",
+        thermal_time_step,
+        "s",
+        0.0,
+        true,
+        3600.0,
+        "transient time step",
+        "Time step of thermal transients"
+    ),
+    default_field!(
+        "clearance",
+        "wind_step",
+        clearance_wind_step,
+        "Pa",
+        0.0,
+        true,
+        10_000.0,
+        "wind pressure step",
+        "Clearance windows, stepped wind: the step of the wind pressure, when the rule file's [wind] gives none"
+    ),
+    default_field!(
+        "clearance",
+        "vertical_band",
+        clearance_vertical_band,
+        "m",
+        0.0,
+        false,
+        1000.0,
+        "vertical band",
+        "Vertical clearances to points: the horizontal band around the wire, when a rule gives none"
+    ),
+    default_field!(
+        "clearance",
+        "search_margin",
+        clearance_search_margin,
+        "m",
+        0.0,
+        false,
+        1000.0,
+        "search margin",
+        "Clearances: the margin around the wires the targets are searched in, when a rule gives none"
+    ),
+    default_field!(
+        "clearance",
+        "zone_width",
+        clearance_zone_width,
+        "m",
+        0.0,
+        true,
+        1000.0,
+        "zone half width",
+        "Vertical clearance windows: the zone's half width across the line a new window starts with"
+    ),
+    default_field!(
+        "clearance",
+        "zone_depth",
+        clearance_zone_depth,
+        "m",
+        0.0,
+        true,
+        1000.0,
+        "zone slice depth",
+        "Vertical clearance windows: the depth of a slice along the line a new window starts with"
+    ),
+];
 
 /// File format id of exported default values.
 pub const DEFAULTS_FILE_FORMAT: &str = "ols-defaults";
@@ -893,52 +1178,107 @@ impl Defaults {
         *self == Self::default()
     }
 
-    /// As a file (TOML).
+    /// As a file (TOML): every value, by section, in its unit, with what
+    /// it is.
     pub fn to_text(&self) -> String {
-        format!(
+        use std::fmt::Write as _;
+        let mut out = format!(
             "# Default values of an OLS CAD project (Criteria › Default values).\n\
-             format = \"{DEFAULTS_FILE_FORMAT}\"\nversion = {DEFAULTS_FILE_VERSION}\n\n\
-             [spacer]\n# Compression a new spacer may take.\ncompression = \"{} N\"\n",
-            self.spacer_compression
-        )
+             format = \"{DEFAULTS_FILE_FORMAT}\"\nversion = {DEFAULTS_FILE_VERSION}\n"
+        );
+        let mut section = "";
+        for f in DEFAULT_FIELDS {
+            if f.section != section {
+                section = f.section;
+                let _ = write!(out, "\n[{section}]\n");
+            }
+            let v = (f.get)(self);
+            let _ = writeln!(out, "# {}.", f.help);
+            if f.unit.is_empty() {
+                let _ = writeln!(out, "{} = {v:?}", f.key);
+            } else {
+                let _ = writeln!(out, "{} = \"{v} {}\"", f.key, f.unit);
+            }
+        }
+        out
     }
 
     /// Reads a file; values not given keep the program's defaults.
     pub fn parse(text: &str) -> Result<Self, String> {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Raw {
-            format: Option<String>,
-            version: Option<u32>,
-            #[serde(default)]
-            spacer: Option<RawSpacer>,
-        }
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct RawSpacer {
-            #[serde(default)]
-            compression: Option<ols_core::units::Force>,
-        }
-        let raw: Raw = toml::from_str(text).map_err(|e| e.to_string())?;
+        let table: toml::Table = text.parse().map_err(|e: toml::de::Error| e.to_string())?;
         ols_core::files::check_header(
-            raw.format.as_deref(),
-            raw.version,
+            table.get("format").and_then(|v| v.as_str()),
+            table
+                .get("version")
+                .and_then(toml::Value::as_integer)
+                .map(|v| v as u32),
             DEFAULTS_FILE_FORMAT,
             DEFAULTS_FILE_VERSION,
             "default values",
         )?;
         let mut d = Self::default();
-        if let Some(c) = raw.spacer.and_then(|s| s.compression) {
-            d.spacer_compression = c.si();
+        for (key, value) in &table {
+            if key == "format" || key == "version" {
+                continue;
+            }
+            let Some(section) = value.as_table() else {
+                return Err(format!("unknown key \"{key}\""));
+            };
+            for (k, v) in section {
+                let f = DEFAULT_FIELDS
+                    .iter()
+                    .find(|f| f.section == key && f.key == k)
+                    .ok_or_else(|| format!("unknown default value [{key}] {k}"))?;
+                let what = format!("[{key}] {k}");
+                let number = match v {
+                    toml::Value::Float(x) => *x,
+                    toml::Value::Integer(i) => *i as f64,
+                    toml::Value::String(s) => {
+                        use ols_core::units::{Force, Length, Stress};
+                        let as_unit = |v: &toml::Value| -> Option<f64> {
+                            match f.unit {
+                                "N" => v.clone().try_into::<Force>().ok().map(|x| x.si()),
+                                "m" => v.clone().try_into::<Length>().ok().map(|x| x.si()),
+                                "Pa" => v.clone().try_into::<Stress>().ok().map(|x| x.si()),
+                                _ => None,
+                            }
+                        };
+                        let t = s.trim();
+                        let plain = if f.unit.is_empty() {
+                            t
+                        } else {
+                            t.strip_suffix(f.unit).unwrap_or(t).trim_end()
+                        };
+                        match plain.parse::<f64>() {
+                            Ok(x) => x,
+                            Err(_) => as_unit(v).ok_or_else(|| {
+                                format!("{what}: \"{s}\" is not a number of {}", f.unit)
+                            })?,
+                        }
+                    }
+                    _ => return Err(format!("{what}: give a number")),
+                };
+                (f.set)(&mut d, number);
+            }
         }
         d.validate()?;
         Ok(d)
     }
 
-    /// The values hold.
+    /// The values hold (each in its range).
     pub fn validate(&self) -> Result<(), String> {
-        if !(self.spacer_compression.is_finite() && self.spacer_compression >= 0.0) {
-            return Err("the spacer compression limit must be ≥ 0".into());
+        for f in DEFAULT_FIELDS {
+            let v = (f.get)(self);
+            let low_ok = if f.low_open { v > f.low } else { v >= f.low };
+            if !(v.is_finite() && low_ok && v <= f.high) {
+                let low = if f.low_open { ">" } else { "≥" };
+                let high = if f.high.is_finite() {
+                    format!(" and ≤ {}", f.high)
+                } else {
+                    String::new()
+                };
+                return Err(format!("the {} must be {low} {}{high}", f.title, f.low));
+            }
         }
         Ok(())
     }
@@ -2015,6 +2355,48 @@ mod tests {
         .unwrap();
         assert_eq!(mine.spacer_compression, 8000.0);
         assert!(Defaults::parse("format = \"x\"").is_err());
+        // Every value: written in its unit, read back; prefixes read.
+        let mut all = Defaults::default();
+        for (k, f) in DEFAULT_FIELDS.iter().enumerate() {
+            let v = (f.get)(&all);
+            let changed = if f.high.is_finite() {
+                (v + f.high) / 2.0
+            } else {
+                v * 1.5
+            };
+            (f.set)(&mut all, if k % 2 == 0 { changed } else { v });
+        }
+        all.validate().unwrap();
+        let text = all.to_text();
+        assert!(text.contains("[clearance]") && text.contains("[thermal]"));
+        assert_eq!(Defaults::parse(&text).unwrap(), all);
+        let mine = Defaults::parse(
+            "format = \"ols-defaults\"\nversion = 1\n[insulator]\nstiffness = \"40000 kN\"\n\
+             [clearance]\nsearch_margin = \"3000 mm\"\nwind_step = \"0.1 kPa\"\n\
+             [thermal]\nalbedo = 0.2\n",
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                mine.insulator_stiffness,
+                mine.clearance_search_margin,
+                mine.clearance_wind_step
+            ),
+            (4e7, 3.0, 100.0)
+        );
+        assert_eq!(mine.thermal_albedo, 0.2);
+        assert_eq!(mine.jumper_exit_angle_deg, 30.0, "not given: the program's");
+        // Unknown keys and values out of range are refused.
+        for bad in [
+            "[jumper]\nexit_angle = 95",
+            "[jumper]\nstiffness_factor = 0",
+            "[thermal]\nemissivity = 1.5",
+            "[jumper]\nlength = 3",
+            "[nothing]\nx = 1",
+            "x = 1",
+        ] {
+            assert!(Defaults::parse(bad).is_err(), "{bad}");
+        }
     }
 
     pub(crate) fn example() -> Line {

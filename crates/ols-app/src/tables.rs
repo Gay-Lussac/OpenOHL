@@ -651,7 +651,7 @@ const W_NAME: usize = 1;
 const W_DESCRIPTION: usize = 2;
 const W_TAGS: usize = 3;
 const W_Q: usize = 4;
-const W_VELOCITY: usize = 5;
+pub(crate) const W_VELOCITY: usize = 5;
 const W_PRESSURE: usize = 6;
 const W_ICE: usize = 7;
 const W_ICE_DENSITY: usize = 8;
@@ -981,17 +981,20 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
                     set(
                         row,
                         9,
-                        f(ols_line::jumper::jumper_bending_stiffness(j, c), 1),
+                        f(
+                            ols_line::jumper::jumper_bending_stiffness(j, c, &line.defaults),
+                            1,
+                        ),
                     );
                 }
-                set(row, 10, f(ols_line::jumper::DEFAULT_STIFFNESS_FACTOR, 2));
-                let angle = f(ols_line::jumper::DEFAULT_TERMINAL_ANGLE_DEG, 1);
+                set(row, 10, f(line.defaults.jumper_stiffness_factor, 2));
+                let angle = f(line.defaults.jumper_exit_angle_deg, 1);
                 set(row, 11, angle.clone());
                 set(row, 12, angle);
             }
         }
         TableKind::WeatherCases => {
-            let q = f(ols_weather::DEFAULT_AIR_DENSITY_FACTOR, 3);
+            let q = f(model.line.defaults.air_density_factor, 3);
             for row in rows.iter_mut() {
                 set(row, W_Q, q.clone());
             }
@@ -1582,7 +1585,10 @@ impl TableKind {
                             c[W_DESCRIPTION] = w.description.clone();
                             c[W_TAGS] = w.tags.join(", ");
                             c[W_Q] = w.air_density_factor.map_or(String::new(), |q| f(q, 3));
-                            c[W_VELOCITY] = f(w.wind_velocity(), 2);
+                            c[W_VELOCITY] = f(
+                                w.wind_velocity_with(model.line.defaults.air_density_factor),
+                                2,
+                            );
                             c[W_PRESSURE] = f(w.wind_pressure.si(), 1);
                             c[W_ICE] = f(w.ice_thickness.si() * 1000.0, 1);
                             c[W_ICE_DENSITY] =
@@ -4047,7 +4053,7 @@ fn weather_file(
             set("air_density_factor", q.map(toml_edit::value));
         }
         let q = opt_num(&c.get(W_Q), &format!("{name} air density factor"))?
-            .unwrap_or(ols_weather::DEFAULT_AIR_DENSITY_FACTOR);
+            .unwrap_or(model.line.defaults.air_density_factor);
         if touched(W_PRESSURE) && (all || !c.changed(W_VELOCITY)) {
             set("wind_pressure", number(W_PRESSURE, "Pa")?);
         } else if c.changed(W_VELOCITY) || c.changed(W_Q) {
