@@ -218,6 +218,209 @@ pub struct SpreadStretch {
     pub label: String,
 }
 
+/// A shape as files give it, flat beside the object's other keys:
+/// `shape` and the sizes it takes.
+struct ShapeKeys {
+    shape: Option<String>,
+    diameter: Option<f64>,
+    length: Option<f64>,
+    axis: Option<Axis>,
+    along: Option<f64>,
+    across: Option<f64>,
+    height: Option<f64>,
+    wind_area: Option<f64>,
+    ice_area: Option<f64>,
+}
+
+impl ShapeKeys {
+    /// The shape (none given: none), its sizes required, others refused.
+    fn shape(&self) -> Result<Option<Shape>, String> {
+        let need = |v: Option<f64>, key: &str| {
+            v.ok_or_else(|| format!("a {} needs its {key}", self.shape.as_deref().unwrap_or("")))
+        };
+        let shape = match self.shape.as_deref() {
+            None => None,
+            Some("point") => Some(Shape::Point),
+            Some("sphere") => Some(Shape::Sphere {
+                diameter: need(self.diameter, "diameter")?,
+            }),
+            Some("cylinder") => Some(Shape::Cylinder {
+                diameter: need(self.diameter, "diameter")?,
+                length: need(self.length, "length")?,
+                axis: self.axis.unwrap_or_default(),
+            }),
+            Some("box") => Some(Shape::Box {
+                along: need(self.along, "along")?,
+                across: need(self.across, "across")?,
+                height: need(self.height, "height")?,
+            }),
+            Some("areas") => Some(Shape::Areas {
+                wind_area: need(self.wind_area, "wind_area")?,
+                ice_area: need(self.ice_area, "ice_area")?,
+            }),
+            Some(other) => {
+                return Err(format!(
+                    "shape \"{other}\" unknown (point, sphere, cylinder, box, areas)"
+                ));
+            }
+        };
+        // Sizes of another shape: a mistake said.
+        let taken: &[&str] = match self.shape.as_deref() {
+            Some("sphere") => &["diameter"],
+            Some("cylinder") => &["diameter", "length", "axis"],
+            Some("box") => &["along", "across", "height"],
+            Some("areas") => &["wind_area", "ice_area"],
+            _ => &[],
+        };
+        let given = [
+            ("diameter", self.diameter.is_some()),
+            ("length", self.length.is_some()),
+            ("axis", self.axis.is_some()),
+            ("along", self.along.is_some()),
+            ("across", self.across.is_some()),
+            ("height", self.height.is_some()),
+            ("wind_area", self.wind_area.is_some()),
+            ("ice_area", self.ice_area.is_some()),
+        ];
+        if let Some((key, _)) = given.iter().find(|(k, g)| *g && !taken.contains(k)) {
+            return Err(format!(
+                "{key} is not a size of a {} (shape = \"{}\")",
+                self.shape.as_deref().unwrap_or("point"),
+                self.shape.as_deref().unwrap_or("point")
+            ));
+        }
+        Ok(shape)
+    }
+}
+
+/// A [`LineObject`] as files give it (every key known).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LineObjectFile {
+    #[serde(default)]
+    kind: ObjectKind,
+    #[serde(default, rename = "type")]
+    type_id: Option<String>,
+    #[serde(default, deserialize_with = "si::de::<_, Force>")]
+    weight: f64,
+    #[serde(default)]
+    shape: Option<String>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    diameter: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    length: Option<f64>,
+    #[serde(default)]
+    axis: Option<Axis>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    along: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    across: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    height: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Area>")]
+    wind_area: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Area>")]
+    ice_area: Option<f64>,
+    #[serde(default)]
+    drag: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    clamp_length: Option<f64>,
+    #[serde(default)]
+    hold: Option<Hold>,
+}
+
+impl TryFrom<LineObjectFile> for LineObject {
+    type Error = String;
+    fn try_from(f: LineObjectFile) -> Result<Self, String> {
+        let keys = ShapeKeys {
+            shape: f.shape,
+            diameter: f.diameter,
+            length: f.length,
+            axis: f.axis,
+            along: f.along,
+            across: f.across,
+            height: f.height,
+            wind_area: f.wind_area,
+            ice_area: f.ice_area,
+        };
+        Ok(LineObject {
+            kind: f.kind,
+            type_id: f.type_id,
+            weight: f.weight,
+            shape: keys.shape()?.unwrap_or_default(),
+            drag: f.drag,
+            clamp_length: f.clamp_length,
+            hold: f.hold,
+        })
+    }
+}
+
+/// An [`ObjectType`] as files give it (every key known).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjectTypeFile {
+    id: String,
+    name: String,
+    #[serde(default)]
+    description: String,
+    kind: TypeKind,
+    #[serde(default, deserialize_with = "si::de::<_, Force>")]
+    weight: f64,
+    #[serde(default)]
+    shape: Option<String>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    diameter: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    length: Option<f64>,
+    #[serde(default)]
+    axis: Option<Axis>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    along: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    across: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    height: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Area>")]
+    wind_area: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Area>")]
+    ice_area: Option<f64>,
+    #[serde(default)]
+    drag: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, Length>")]
+    clamp_length: Option<f64>,
+    #[serde(default, deserialize_with = "si::de_opt::<_, ForcePerLength>")]
+    load: Option<f64>,
+}
+
+impl TryFrom<ObjectTypeFile> for ObjectType {
+    type Error = String;
+    fn try_from(f: ObjectTypeFile) -> Result<Self, String> {
+        let keys = ShapeKeys {
+            shape: f.shape,
+            diameter: f.diameter,
+            length: f.length,
+            axis: f.axis,
+            along: f.along,
+            across: f.across,
+            height: f.height,
+            wind_area: f.wind_area,
+            ice_area: f.ice_area,
+        };
+        let shape = keys.shape().map_err(|e| format!("type {}: {e}", f.id))?;
+        Ok(ObjectType {
+            id: f.id,
+            name: f.name,
+            description: f.description,
+            kind: f.kind,
+            weight: f.weight,
+            shape,
+            drag: f.drag,
+            clamp_length: f.clamp_length,
+            load: f.load,
+        })
+    }
+}
+
 /// What holds a clamp on a jumper up, making it a support: the strings of
 /// a structure to a wire point without a set (an I or a V), or one string
 /// from a fixed point. Written `{"strings": {"structure", "wire"}}` or
@@ -245,10 +448,11 @@ pub enum Hold {
     },
 }
 
-/// The object on a point (one per point).
+/// The object on a point (one per point). Read through
+/// [`LineObjectFile`]: a key it does not know is refused (a flattened
+/// shape would let it through).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-// (No deny_unknown_fields: serde does not check them with a flattened
-// shape.)
+#[serde(try_from = "LineObjectFile")]
 pub struct LineObject {
     /// Body or clamp.
     #[serde(default)]
@@ -356,10 +560,10 @@ pub struct SpreadObject {
 }
 
 /// A type of the library: a template for objects on points (a body, a
-/// clamp) or for spread objects.
+/// clamp) or for spread objects. Read through [`ObjectTypeFile`]: a key
+/// it does not know is refused.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// (No deny_unknown_fields: serde does not check them with a flattened
-// shape.)
+#[serde(try_from = "ObjectTypeFile")]
 pub struct ObjectType {
     /// Unique id.
     pub id: String,
@@ -713,5 +917,30 @@ load = "0.0125 kN/m"
             )
             .is_err()
         );
+    }
+
+    /// An object's keys are checked: a typo, a size of another shape, a
+    /// missing size are said.
+    #[test]
+    fn object_keys_are_checked() {
+        let read = |t: &str| serde_json::from_str::<super::LineObject>(t);
+        let o = read(r#"{"kind":"body","weight":5,"shape":"sphere","diameter":0.3}"#).unwrap();
+        assert_eq!(o.shape, Shape::Sphere { diameter: 0.3 });
+        assert_eq!(read(r#"{"kind":"clamp"}"#).unwrap().shape, Shape::Point);
+        let e = read(r#"{"kind":"body","wieght":5}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("wieght"), "{e}");
+        let e = read(r#"{"shape":"sphere","diameter":0.3,"length":1}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("length is not a size of a sphere"), "{e}");
+        let e = read(r#"{"shape":"box","along":1}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("needs its across"), "{e}");
+        // Written and read back.
+        let text = serde_json::to_string(&o).unwrap();
+        assert_eq!(read(&text).unwrap(), o);
     }
 }
