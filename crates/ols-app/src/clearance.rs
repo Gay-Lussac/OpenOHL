@@ -20,6 +20,7 @@ use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;
 use ols_terrain::Terrain;
 
+use crate::model::Model;
 use crate::selection::Selection;
 
 /// One clearance below its requirement.
@@ -226,17 +227,15 @@ pub fn run(input: &Input) -> Result<Report, String> {
     Ok(report)
 }
 
-/// Rule files to choose from: the one given, the `*.olsr` next to the
-/// model (rules come from the design code used: none are shipped).
-pub fn rule_files(model_file: &Path, given: Option<&Path>) -> Vec<PathBuf> {
+/// Rule files to choose from: the one given, then the project's clearance
+/// rules (`*.olsr`; next to a line file). Rules come from the design code
+/// used: none are shipped.
+pub fn rule_files(model: &Model, given: Option<&Path>) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = given.map(Path::to_path_buf).into_iter().collect();
-    let dirs = [ols_core::files::dir_of(model_file)];
-    for d in &dirs {
-        for p in ols_core::files::files_with_extension(d, ols_clearance::rules::RULE_FILE_EXTENSION)
-        {
-            if !out.iter().any(|q| q == &p) {
-                out.push(p);
-            }
+    for p in model.project_files("rules") {
+        // The project's copy of the file given: listed once.
+        if !out.iter().any(|q| q.file_name() == p.file_name()) {
+            out.push(p);
         }
     }
     out
@@ -267,8 +266,8 @@ pub struct Clearances {
 impl Clearances {
     /// Rule files for a model; one is chosen when it was given or is the
     /// only one.
-    pub fn new(model_file: &Path, given: Option<&Path>) -> Self {
-        let files = rule_files(model_file, given);
+    pub fn new(model: &Model, given: Option<&Path>) -> Self {
+        let files = rule_files(model, given);
         let chosen = (given.is_some() || files.len() == 1).then_some(0);
         let mut c = Self {
             files,
@@ -278,6 +277,27 @@ impl Clearances {
             c.choose(k);
         }
         c
+    }
+
+    /// The rule files listed again (another project line has its own):
+    /// the one chosen kept by name and read again, else the only one.
+    pub fn refresh(&mut self, model: &Model, given: Option<&Path>) {
+        let name = self
+            .chosen
+            .and_then(|k| self.files.get(k))
+            .and_then(|p| p.file_name())
+            .map(ToOwned::to_owned);
+        self.files = rule_files(model, given);
+        let k = name
+            .and_then(|n| self.files.iter().position(|p| p.file_name() == Some(&n)))
+            .or((self.files.len() == 1).then_some(0));
+        match k {
+            Some(k) => self.choose(k),
+            None => {
+                (self.chosen, self.rules, self.report) = (None, None, None);
+                self.stale = true;
+            }
+        }
     }
 
     /// Chooses rule file `k` (reads it).

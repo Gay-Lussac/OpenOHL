@@ -62,18 +62,13 @@ pub struct GallopingWindow {
 }
 
 impl GallopingWindow {
-    /// Opens the window: a parameter file next to the model, the case shown.
+    /// Opens the window: a parameter file of the project (next to a line
+    /// file), the case shown.
     pub fn show(&mut self, model: &Model, case: usize) {
         self.open = true;
         self.case = case;
         if self.file.is_none() {
-            let dir = ols_core::files::dir_of(&model.sources.file);
-            self.file = ols_core::files::files_with_extension(
-                &dir,
-                ols_clearance::galloping::GALLOPING_FILE_EXTENSION,
-            )
-            .into_iter()
-            .next();
+            self.file = model.project_files("galloping").into_iter().next();
         }
     }
 

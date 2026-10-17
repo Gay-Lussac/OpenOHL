@@ -2698,6 +2698,118 @@ fn the_project_keeps_its_libraries() {
     assert_solved_fully(&again);
 }
 
+/// Clearance rules, galloping, ambient cases, unit costs, poles and
+/// structure models next to the project are copied into it when it opens
+/// (poles and models from its structure folder, written next to the
+/// types); then the windows read the project's copies, a file saved goes
+/// into it, and each project line keeps its own.
+#[test]
+fn the_project_keeps_its_rules_costs_poles_and_models() {
+    let ex = root().join("examples/synthetic-line");
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-more-libraries", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(dir.join("Structures")).unwrap();
+    let beside = [
+        ("rules", "clearance-rules.olsr"),
+        ("galloping", "galloping-example.olsg"),
+        ("ambient", "thermal-ambient.olsta"),
+        ("costs", "unit-costs.olscost"),
+    ];
+    for (_, name) in beside {
+        std::fs::copy(ex.join(name), dir.join(name)).unwrap();
+    }
+    let structures = [
+        ("structures", "type-02.olss"),
+        ("femodels", "type-02-model.olsfe"),
+        ("poles", "steel-pole-30m.olsp"),
+    ];
+    for (_, name) in structures {
+        let to = dir.join("Structures").join(name);
+        std::fs::copy(ex.join("Structures").join(name), to).unwrap();
+    }
+    let file = dir.join("p.ols");
+    let line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    ols_session::Session::open(&file)
+        .unwrap()
+        .import(&line, "tester")
+        .unwrap();
+    let open = || {
+        model::load(
+            Sources {
+                file: file.clone(),
+                library: Some(root().join("libraries/cables")),
+                weather: Some(ex.join("weather-cases.olswc")),
+                point_budget: 1000,
+                corridor: 60.0,
+                user: Some("tester".into()),
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap()
+    };
+    let m = open();
+    let session = &m.editing.as_ref().unwrap().session;
+    for (kind, name) in beside.iter().chain(&structures) {
+        let files = session.library_files(kind).unwrap();
+        assert!(files.iter().any(|(n, _)| n == name), "{kind}: {files:?}");
+    }
+    let work = m.library_dir.clone().unwrap();
+    for (kind, name) in beside {
+        assert_eq!(m.project_files(kind), [work.join(kind).join(name)]);
+    }
+    // Next to the structure types that name them.
+    for (_, name) in structures {
+        assert!(work.join("structures").join(name).is_file(), "{name}");
+    }
+    drop(m);
+    // The files next to the project gone: the project's are read.
+    for (_, name) in beside {
+        std::fs::remove_file(dir.join(name)).unwrap();
+    }
+    std::fs::remove_dir_all(dir.join("Structures")).unwrap();
+    let mut m = open();
+    let work = m.library_dir.clone().unwrap();
+    assert_eq!(
+        m.project_files("costs"),
+        [work.join("costs").join("unit-costs.olscost")]
+    );
+    assert!(
+        work.join("structures")
+            .join("steel-pole-30m.olsp")
+            .is_file()
+    );
+    let r = crate::clearance::Clearances::new(&m, None);
+    assert_eq!(r.files, [work.join("rules").join("clearance-rules.olsr")]);
+    assert!(matches!(r.rules, Some(Ok(_))), "the only file chosen");
+    // A rule file saved in the working copy goes into the project.
+    let rules = std::fs::read_to_string(&r.files[0]).unwrap();
+    std::fs::write(work.join("rules").join("more.olsr"), &rules).unwrap();
+    m.store_libraries().unwrap();
+    let session = &mut m.editing.as_mut().unwrap().session;
+    assert_eq!(session.library_files("rules").unwrap().len(), 2);
+    // Each project line keeps its own.
+    session.create_line("tester", "phase 1", "main").unwrap();
+    m.switch_line("phase 1").unwrap();
+    let session = &mut m.editing.as_mut().unwrap().session;
+    let changed = format!("# phase 1\n{rules}");
+    session
+        .put_library_file("tester", "rules", "more.olsr", &changed)
+        .unwrap();
+    m.refresh_project_libraries().unwrap();
+    let read = |m: &model::Model| {
+        let w = m.library_dir.clone().unwrap();
+        std::fs::read_to_string(w.join("rules").join("more.olsr")).unwrap()
+    };
+    assert_eq!(read(&m), changed);
+    m.switch_line("main").unwrap();
+    assert_eq!(read(&m), rules, "main keeps its own");
+    let session = &m.editing.as_ref().unwrap().session;
+    let main = session.library_files("rules").unwrap();
+    assert!(main.iter().all(|(_, t)| !t.starts_with("# phase 1")));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Lines: new lines started from the one worked on, shown next to it (two
 /// ticked in a row: the menu stays open), worked on one at a time (each
 /// its own undo), brought up to date from the main line, submitted for

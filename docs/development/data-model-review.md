@@ -3,8 +3,8 @@
 A review of the data the program keeps — the line model (`ols-line`),
 the project file (`ols-session`), OLS XML and the library formats — after
 the points-and-objects work. It says what holds up, what is broken, and
-what is worth changing, most urgent first. §1, §2 and §4 are done
-(marked ✓; how, in [Done](#done)); §3 is done but 3.4 (open). The [data model
+what is worth changing, most urgent first. §1 to §4 are done
+(marked ✓; how, in [Done](#done)). The [data model
 map](data-model.md) describes the model as it is.
 
 ## What holds up
@@ -70,7 +70,7 @@ These change the line file (a new version, older files still read).
 | 3.1 ✓ | Span points, spreads and jumper points live **inside** their section / jumper row; structures hold their strings and wire points | undo is refused when another user changed the same section after; branch merges conflict on the whole list | fine for now (one designer per section); if parallel editing grows: merge lists by label, or make points their own rows |
 | 3.2 ✓ | **`meta` is one row** (name, crs, display, systems, creep cases, bimetallic, solver, defaults, circuit starts); puts carry no base version | two users editing different settings overwrite each other; undoing one setting is blocked by a later other one | split into rows (`systems`, `solver`, `defaults`, …) or check `version` on put |
 | 3.3 ✓ | **Library files** are shared by all project lines but versioned per branch; not logged, not undoable | editing a library on a phase line changes it for `main`; undo cannot bring it back | a `line` column, or log library edits as commands |
-| 3.4 | Clearance rules, galloping, thermal ambient, costs, poles, structure models are **files beside the project** | a project copied or bundled alone loses them; not versioned | store them as `library_file` kinds as the others |
+| 3.4 ✓ | Clearance rules, galloping, thermal ambient, costs, poles, structure models are **files beside the project** | a project copied or bundled alone loses them; not versioned | store them as `library_file` kinds as the others |
 | 3.5 ✓ | Rename = put under a new id + delete | history and report fingerprints see a removal and an addition | acceptable; a stable internal id only if history per object is wanted |
 | 3.6 ✓ | `replace_line` ignores the order of the replacing line | structure / section order not reproduced | pass `ord` |
 | 3.7 ✓ | Spacers, span points and jumper taps not in the spatial index | not found by area queries (server, web) | index spacers; jumpers' bounds with their taps |
@@ -155,6 +155,13 @@ Then §3:
   …); a change puts only the rows that differ, so two users keep both.
 - **3.3** library files are objects of each project line (`library`
   rows), changed by logged, undoable commands; schema 4.
+- **3.4** clearance rules, galloping, ambient cases, unit costs, poles
+  and structure models are library kinds (`rules`, `galloping`,
+  `ambient`, `costs`, `poles`, `femodels`): copied in from next to the
+  project (poles and models from its structure folder) when it opens,
+  read from the project after, kept per project line. The app's
+  windows read the project's copies; the clearance zone windows save
+  their rule files into it.
 - **3.5** kept: a rename is a put and a delete.
 - **3.6** `replace_line` keeps the replacing line's order.
 - **3.7** spacers in the spatial index; jumpers with their taps.
@@ -168,5 +175,4 @@ Then §3:
 1. ~~The fixes of §1~~ (done).
 2. ~~§2~~ (done, line file version 5).
 3. ~~§4~~ (done).
-4. ~~§3~~ (done but 3.4: the files beside the project as library
-   kinds).
+4. ~~§3~~ (done).

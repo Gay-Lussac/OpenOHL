@@ -416,10 +416,7 @@ impl Ready {
                 && model.can_edit().is_ok())
             .then(|| ("route 1".to_owned(), String::new())),
             menu_open: false,
-            clearances: crate::clearance::Clearances::new(
-                &model.sources.file,
-                model.sources.rules.as_deref(),
-            ),
+            clearances: crate::clearance::Clearances::new(&model, model.sources.rules.as_deref()),
             model,
         }
     }
@@ -2609,8 +2606,40 @@ impl Ready {
         }
         self.selection = Selection::None;
         self.clearances.stale = true;
+        self.project_files_changed();
         self.view3d.dirty.extend(Layer::ALL);
         self.refresh_views();
+    }
+
+    /// The project's files the windows read (clearance rules, galloping,
+    /// ambient cases, unit costs) chosen again: each project line has its
+    /// own.
+    fn project_files_changed(&mut self) {
+        let Some(work) = self.model.library_dir.clone() else {
+            return;
+        };
+        let ours =
+            |p: &Option<std::path::PathBuf>| p.as_ref().is_some_and(|p| p.starts_with(&work));
+        let first = |kind: &str| self.model.project_files(kind).into_iter().next();
+        if ours(&self.galloping.file) {
+            self.galloping.file = first("galloping");
+        }
+        if ours(&self.thermal.file) {
+            match first("ambient") {
+                Some(p) => self.thermal.choose(p),
+                None => (self.thermal.file, self.thermal.ambient) = (None, None),
+            }
+        }
+        if ours(&self.bom.cost_path) {
+            self.bom.cost_path = first("costs");
+        }
+        if ours(&self.spot.cost_path) {
+            self.spot.cost_path = first("costs");
+        }
+        self.clearances
+            .refresh(&self.model, self.model.sources.rules.as_deref());
+        self.vertical_clearances.line_changed(&self.model);
+        self.radial_clearances.line_changed(&self.model);
     }
 
     pub fn project_op(&mut self, what: &str, op: ols_server::Op) {

@@ -146,7 +146,8 @@ up to about a second per section and limit.
 
 **Checks › Thermal rating…** opens a window:
 
-- **Ambient cases** — the `.olsta` file next to the model is taken at once;
+- **Ambient cases** — the project's `.olsta` file (next to a line file) is
+  taken at once;
   *Choose…* for another; each case in a few words below.
 - **Method** and **maximum temperature** — the table shows at once the
   ampacity of every section in every ambient case (hover a value for the

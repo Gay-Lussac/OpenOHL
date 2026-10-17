@@ -8,7 +8,7 @@
 //! export. (The bill also counts structures, insulators and hardware;
 //! those parts are not offered yet.)
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 
 use eframe::egui;
@@ -44,21 +44,13 @@ pub struct BomWindow {
     status: String,
 }
 
-/// The first cost file next to the model's file.
-fn cost_file_near(file: &Path) -> Option<PathBuf> {
-    let dir = file.parent()?;
-    ols_core::files::files_with_extension(dir, ols_bom::cost::COST_FILE_EXTENSION)
-        .into_iter()
-        .next()
-}
-
 impl BomWindow {
-    /// Opens the window and computes (a cost file next to the model is
-    /// used until another is chosen).
+    /// Opens the window and computes (the project's cost file, next to a
+    /// line file, is used until another is chosen).
     pub fn open(&mut self, model: &Model, ctx: &egui::Context) {
         self.open = true;
         if self.cost_path.is_none() {
-            self.cost_path = cost_file_near(&model.sources.file);
+            self.cost_path = model.project_files("costs").into_iter().next();
         }
         self.start(model, ctx);
     }

@@ -117,7 +117,9 @@ interface project-types {
     record library-file {
         /// Library kind: "cables" (.olsw), "weather" (.olswc),
         /// "loadcases" (.olslc), "structures" (.olss), "insulators"
-        /// (.olsi).
+        /// (.olsi), "rules" (.olsr), "galloping" (.olsg), "ambient"
+        /// (.olsta), "costs" (.olscost), "poles" (.olsp), "femodels"
+        /// (.olsfe).
         kind: string,
         /// File name, with its extension.
         name: string,

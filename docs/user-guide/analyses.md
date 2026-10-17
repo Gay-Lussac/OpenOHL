@@ -59,7 +59,7 @@ CSV columns: case, method, both spans, distance, required, overlap, where
 (fraction of the span), both ellipses' axes, the first wire's position.
 
 In the desktop app: **Checks › Galloping ellipses…** — choose the parameter
-file (a `.olsg` next to the model is chosen first) and the weather case,
+file (the project's `.olsg`, or one next to a line file, is chosen first) and the weather case,
 then **Check**.
 
 ## Blowout and the right of way
