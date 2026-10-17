@@ -18,6 +18,8 @@
 //! weather cases where missing).
 //! The check runs on its own thread: the wind positions are solved, the
 //! LiDAR points read again from the point cloud around the wires.
+//! `ols zones` runs the same check without the window
+//! ([`ols_clearance::zone::run_zone_check`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,9 +28,7 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
-use ols_clearance::zone::{
-    self, Imported, Measure, WindState, Zone, ZoneReport, ZoneRule, ZoneTargets,
-};
+use ols_clearance::zone::{self, Imported, Measure, WindState, Zone, ZoneRule};
 use ols_clearance::{CheckScope, RuleSet, WindSides, WindSteps};
 use ols_core::budget::{Budget, CancelToken};
 use ols_line::condition::Method;
@@ -45,21 +45,7 @@ const TIME_BUDGET: Duration = Duration::from_secs(900);
 const LIST_HEIGHT: f32 = 220.0;
 
 /// What a check found.
-#[derive(Debug, Clone)]
-pub struct Report {
-    /// The rules checked.
-    pub rules: Vec<ZoneRule>,
-    /// The wind positions.
-    pub states: Vec<WindState>,
-    /// What was found.
-    pub zone: ZoneReport,
-    /// Sections that failed to solve.
-    pub failed: Vec<String>,
-    /// Time to solve the wind positions.
-    pub solving: Duration,
-    /// Time to check them.
-    pub checking: Duration,
-}
+pub type Report = zone::ZoneCheckResult;
 
 /// What the window asks of the application.
 #[derive(Debug, Default)]
@@ -1031,7 +1017,8 @@ impl ZoneWindow {
     }
 }
 
-/// The check, on its own thread.
+/// The check, on its own thread ([`zone::run_zone_check`]; the points
+/// read again from the point cloud around the wires).
 #[allow(clippy::too_many_arguments)]
 fn run(
     line: &ols_line::Line,
@@ -1046,123 +1033,36 @@ fn run(
     done: &AtomicUsize,
     cancel: &CancelToken,
 ) -> Result<Report, String> {
-    let mut sections = zone::sections_needed(line, &rules);
-    // The circuits chosen only.
-    if !check.circuits.is_empty() {
-        sections.retain(|id| {
-            line.sections
-                .iter()
-                .find(|s| &s.id == id)
-                .is_some_and(|s| check.takes_circuit(&s.circuit_name))
-        });
-        if sections.is_empty() {
-            return Err("no section of the rules' voltages in the circuits chosen".into());
-        }
-    }
-    // Every section by the method chosen.
-    let own;
-    let line = match check.method {
-        None => line,
-        Some(m) => {
-            let mut l = line.clone();
-            for s in &mut l.sections {
-                s.calculation = ols_line::condition::Calculation::of(s.calculation.condition(), m);
-            }
-            own = l;
-            &own
-        }
-    };
-    if let Some(on) = &scope {
-        sections.retain(|s| on.contains(s));
-        if sections.is_empty() {
-            return Err("no section of the rules' voltages on the route worked on".into());
-        }
-    }
     let budget = Budget::new()
         .time_limit(TIME_BUDGET)
         .cancel_token(cancel.clone());
-    let started = Instant::now();
-    let solved = zone::solve_states(
+    let read = |polylines: &[Vec<[f64; 2]>],
+                reach: f64,
+                classes: &[u8],
+                budget: &Budget,
+                visit: &mut dyn FnMut(f64, f64, f64, u8)| {
+        let spec = cloud.as_deref().unwrap_or_default();
+        ols_pointcloud::visit_around(spec, polylines, reach, classes, budget, visit).map(|_| ())
+    };
+    zone::run_zone_check(
         line,
         library,
-        &states,
-        &sections,
-        zone::jumpers_needed(&rules),
-        &budget,
-        done,
-    )?;
-    let solving = started.elapsed();
-    let started = Instant::now();
-    // Points around the wires at every wind position, within reach.
-    let reach = match zone.search {
-        Some(d) => d,
-        None => {
-            rules.iter().map(|r| r.distance).fold(0.0, f64::max)
-                + line.defaults.clearance_search_margin
-                + rules
-                    .iter()
-                    .filter_map(|r| r.width)
-                    .fold(zone.width, f64::max)
-                + 1.0
-        }
-    };
-    let polylines: Vec<Vec<[f64; 2]>> = solved
-        .shapes
-        .iter()
-        .flatten()
-        .flat_map(|s| &s.spans)
-        .map(|s| s.points.iter().map(|p| [p[0], p[1]]).collect())
-        .chain(
-            solved
-                .jumpers
-                .iter()
-                .flatten()
-                .map(|j| j.points.iter().map(|p| [p[0], p[1]]).collect()),
-        )
-        .collect();
-    let mut feed = |classes: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
-        let Some(spec) = &cloud else {
-            return Ok(());
-        };
-        let source = ols_pointcloud::open_source(spec)?;
-        let corridor = ols_lidar::Corridor::new(&polylines, reach);
-        source.visit(Some(&corridor), Some(classes), &budget, visit)?;
-        Ok(())
-    };
-    let report = zone::check_zones(
-        line,
-        &zone,
-        &rules,
-        &states,
-        &solved.shapes,
-        &solved.jumpers,
-        ZoneTargets {
-            ground: ground.as_deref(),
-            points: cloud.is_some().then_some(&mut feed as _),
-        },
-        &budget,
-    )?;
-    Ok(Report {
+        zone,
+        check,
         rules,
         states,
-        zone: report,
-        failed: solved.failed,
-        solving,
-        checking: started.elapsed(),
-    })
+        cloud.is_some().then_some(&read as _),
+        ground.as_deref(),
+        scope.as_ref(),
+        &budget,
+        done,
+    )
 }
 
 /// The nominal voltages of the line's sections, kV (0: earthed), lowest
 /// first.
 fn line_voltages(model: &Model) -> Vec<f64> {
-    let mut v: Vec<f64> = ols_clearance::voltages_of(&model.line)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|p| p.map_or(0.0, |p| p.nominal_kv))
-        .collect();
-    v.sort_by(f64::total_cmp);
-    v.dedup();
-    v
+    zone::line_voltages(&model.line)
 }
 
 /// "220 kV", "earthed (0 kV)".

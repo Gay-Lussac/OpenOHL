@@ -43,6 +43,7 @@ cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
 |---|---|---|
 | `ols sagtension` | sag-tension of one tension section from a job file | below |
 | `ols line` | solves a line file in 3D: clearances, structure loads, usage, exports | [Line files](line-file.md), [Terrain and ground clearance](terrain.md), [Load cases](loads.md) |
+| `ols zones` | vertical and radial clearances to the ground and LiDAR classes in the wind, by a rule file (the desktop clearance windows' check) | [Terrain and ground clearance](terrain.md#vertical-and-radial-clearances-without-the-window-ols-zones) |
 | `ols drawing` | plan and profile sheets and profile exports | [Drawings](drawings.md) |
 | `ols structures` | derive structure types; frame/truss and pole analysis | [Structure libraries](structure-library.md), [Structure analysis](structure-analysis.md) |
 | `ols code` | weather and load cases from a design-code plugin | [Design codes](design-codes.md) |

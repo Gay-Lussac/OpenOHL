@@ -612,13 +612,14 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   (kV of the wires checked; 0: earthed wires) and `wires` (`sections`,
   `jumpers` or `both`).
 - `[wind]` (optional): `steps`, `step` (Pa), `sides` — how the desktop
-  clearance windows step the wind up to each case's pressure; `ols line`
-  ignores it.
+  clearance windows and `ols zones` step the wind up to each case's
+  pressure; `ols line` ignores it.
 - `[check]` (optional, `CheckScope`): `circuits` (circuit names; empty:
   every circuit), `method` (`fe` / `rs`: every section solved by it;
   absent: each section's own), `search_distance` (m: LiDAR points
   farther from the wires are ignored) — what the desktop clearance
-  windows solve and read; `ols line` ignores it.
+  windows and `ols zones` solve and read (both through
+  `ols_clearance::zone::run_zone_check`); `ols line` ignores it.
 - The desktop Vertical and Radial clearance windows keep their rules next
   to the model, in `<model>.vertical-clearances.olsr` and
   `<model>.radial-clearances.olsr` (one `[[rule]]` per row and target

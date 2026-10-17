@@ -37,6 +37,7 @@ pub mod rules;
 pub mod vegetation;
 pub mod wirefit;
 pub mod zone;
+pub mod zone_run;
 
 pub use case::{
     CaseTargets, Outcome, RuleCheck, Skipped, applies, check_case, lowest, voltages_of,

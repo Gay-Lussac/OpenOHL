@@ -1,0 +1,631 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! `ols zones`: the check of the desktop application's **Vertical
+//! clearances…** and **Radial clearances…** windows without the window
+//! ([`ols_clearance::zone::run_zone_check`]): the zone, the rules, the
+//! wind and what is solved come from a rule file (`.olsr`, its `[check]`
+//! and `[wind]`), the targets from the project — its point cloud and its
+//! ground surface — or from files given.
+//!
+//! Exit status: 0 with no violation, 1 with violations, 2 on an error.
+
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::sync::atomic::AtomicUsize;
+use std::time::{Duration, Instant};
+
+use ols_clearance::zone::{self, Measure, Zone, ZoneCheckResult, ZoneFinding};
+use ols_clearance::{RuleSet, Target, WindSteps};
+use ols_core::budget::Budget;
+use ols_core::text::csv_field;
+use ols_terrain::Terrain;
+use ols_weather::WeatherCases;
+
+/// The project setting naming the weather case file used last (as the
+/// desktop application keeps it: a path, or the name of one of the
+/// project's own weather case files).
+const WEATHER_SETTING: &str = "app.weather";
+/// The project setting naming the surface the checks use.
+const CHECK_SURFACE_SETTING: &str = "app.check_surface";
+/// The project setting of earlier builds with the active surface (JSON).
+const SURFACES_SETTING: &str = "app.surfaces";
+
+/// Arguments of `ols zones`.
+#[derive(clap::Args)]
+pub struct ZonesArgs {
+    /// Line file (.ols.json) or project file (.ols).
+    pub file: PathBuf,
+    /// Clearance rules (.olsr): the rules of one measure (vertical or
+    /// radial) with ground or LiDAR class targets; its `[check]` (circuits,
+    /// method, search distance) and `[wind]` are used.
+    #[arg(long)]
+    pub rules: PathBuf,
+    /// The measure checked, when the rule file has both: vertical or
+    /// radial.
+    #[arg(long)]
+    pub measure: Option<String>,
+    /// Weather case file (.olswc) (default: the file of the same name as
+    /// the rule file, next to it or in a `weather` folder beside it — a
+    /// design code's preset; else the project's weather case file used
+    /// last).
+    #[arg(long)]
+    pub weather: Option<PathBuf>,
+    /// Weather case to check, by name (`*` and `?` wildcards; repeatable;
+    /// default: every case of the rules).
+    #[arg(long)]
+    pub case: Vec<String>,
+    /// Point cloud: a project file (`FILE.ols` or `FILE.ols#name`) or a
+    /// COPC file (`FILE.copc.laz`) (default: the project's own cloud, if
+    /// it holds one).
+    #[arg(long)]
+    pub cloud: Option<String>,
+    /// Read no point cloud (the ground only).
+    #[arg(long, conflicts_with = "cloud")]
+    pub no_cloud: bool,
+    /// Survey points (CSV / XYZ) for the ground surface (default: the
+    /// project's surface of the checks, else its active surface, else the
+    /// ground classes of the point cloud).
+    #[arg(long)]
+    pub terrain: Option<PathBuf>,
+    /// A terrain surface stored in the project, by name, as the ground.
+    #[arg(long, conflicts_with = "terrain")]
+    pub surface: Option<String>,
+    /// Class scheme (.olsc) of the LiDAR (default: the point cloud's own,
+    /// else ASPRS LAS 1.4): the classes of the rules' roles.
+    #[arg(long)]
+    pub lidar_classes: Option<PathBuf>,
+    /// Wire library: .olsw file or directory (default: the shipped
+    /// libraries/cables).
+    #[arg(long)]
+    pub library: Option<PathBuf>,
+    /// Structure type directory (.olss), for typed structures (default:
+    /// the `Structures` folder next to the line or project file).
+    #[arg(long)]
+    pub structures: Option<PathBuf>,
+    /// Insulator assembly library directory (.olsi) (default: the shipped
+    /// libraries/insulators).
+    #[arg(long)]
+    pub insulators: Option<PathBuf>,
+    /// LiDAR points farther from the wires are ignored, m (overrides the
+    /// rule file's `search_distance`).
+    #[arg(long)]
+    pub search_distance: Option<f64>,
+    /// Check only these circuits, by name (repeatable; `""`: sections
+    /// without one; overrides the rule file's `circuits`).
+    #[arg(long)]
+    pub circuits: Vec<String>,
+    /// Solve every section by this method: fe (finite elements) or rs
+    /// (ruling span) (overrides the rule file's `method`).
+    #[arg(long)]
+    pub method: Option<String>,
+    /// Write every finding (the violations, then each rule's lowest
+    /// clearance) as CSV.
+    #[arg(long)]
+    pub csv: Option<PathBuf>,
+    /// Stop after this many seconds (solving and reading the points).
+    #[arg(long, default_value_t = 600.0)]
+    pub time_limit: f64,
+}
+
+/// `ols zones`: 0 with no violation, 1 with violations, 2 on an error.
+pub fn command(args: &ZonesArgs) -> ExitCode {
+    match run(args) {
+        Ok(r) if r.violations() == 0 => ExitCode::SUCCESS,
+        Ok(_) => ExitCode::from(1),
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// The measure of a rule set's ground and point rules: the only one, or
+/// the one asked for.
+fn measure_of(set: &RuleSet, asked: Option<&str>) -> Result<Measure, String> {
+    let ours = set
+        .rules
+        .iter()
+        .filter(|r| matches!(r.target, Target::Ground | Target::Points { .. }));
+    let (mut vertical, mut radial) = (false, false);
+    for r in ours {
+        vertical |= r.vertical.is_some();
+        radial |= r.radial.is_some();
+    }
+    match asked {
+        Some("vertical") => Ok(Measure::Vertical),
+        Some("radial") => Ok(Measure::Radial),
+        Some(other) => Err(format!("--measure {other}: write vertical or radial")),
+        None => match (vertical, radial) {
+            (true, false) => Ok(Measure::Vertical),
+            (false, true) => Ok(Measure::Radial),
+            (true, true) => Err(
+                "the rule file has vertical and radial clearances: choose one with --measure \
+                 vertical or --measure radial"
+                    .into(),
+            ),
+            (false, false) => Err(
+                "the rule file has no vertical or radial clearance to the ground or to LiDAR \
+                 classes"
+                    .into(),
+            ),
+        },
+    }
+}
+
+/// Opens a project file (`None`: a line file).
+fn session_of(file: &Path) -> Result<Option<ols_session::Session>, String> {
+    if file.extension().is_none_or(|e| e != "ols") {
+        return Ok(None);
+    }
+    ols_session::Session::open(file)
+        .map(Some)
+        .map_err(|e| format!("{}: {e}", file.display()))
+}
+
+/// The weather cases: given, the preset's (same name as the rule file),
+/// else the project's used last; with where they come from.
+fn weather_cases(
+    args: &ZonesArgs,
+    session: Option<&ols_session::Session>,
+) -> Result<(WeatherCases, String), String> {
+    if let Some(p) = &args.weather {
+        return Ok((WeatherCases::load(p)?, p.display().to_string()));
+    }
+    let ext = ols_weather::WEATHER_FILE_EXTENSION;
+    if let (Some(dir), Some(stem)) = (args.rules.parent(), args.rules.file_stem()) {
+        let name = format!("{}.{ext}", stem.to_string_lossy());
+        for p in [dir.join(&name), dir.join("../weather").join(&name)] {
+            if p.is_file() {
+                return Ok((WeatherCases::load(&p)?, p.display().to_string()));
+            }
+        }
+    }
+    if let Some(s) = session
+        && let Ok(Some(used)) = s.setting(WEATHER_SETTING)
+    {
+        let p = PathBuf::from(&used);
+        if p.is_absolute() && p.is_file() {
+            return Ok((WeatherCases::load(&p)?, p.display().to_string()));
+        }
+        // One of the project's own weather case files.
+        let own = s.library_files("weather").map_err(|e| e.to_string())?;
+        if let Some((name, text)) = own.iter().find(|(n, _)| *n == used) {
+            let set = WeatherCases::parse(text).map_err(|e| format!("{name}: {e}"))?;
+            return Ok((set, format!("{name} (the project's)")));
+        }
+    }
+    Err("no weather case file: give --weather".into())
+}
+
+/// The point cloud: given, else the project's own (if it holds one).
+fn cloud_of(args: &ZonesArgs) -> Option<String> {
+    if args.no_cloud {
+        return None;
+    }
+    args.cloud.clone().or_else(|| {
+        let is_project = args.file.extension().is_some_and(|e| e == "ols");
+        let has = is_project
+            && ols_pointcloud::Store::open(&args.file)
+                .and_then(|s| s.clouds())
+                .is_ok_and(|c| !c.is_empty());
+        has.then(|| args.file.display().to_string())
+    })
+}
+
+/// A surface stored in the project.
+fn stored_surface(session: &ols_session::Session, name: &str) -> Result<Terrain, String> {
+    let (points, triangles) = session.surface(name).map_err(|e| format!("{name}: {e}"))?;
+    Terrain::from_mesh(points, triangles).map_err(|e| format!("{name}: {e}"))
+}
+
+/// The ground: survey points given, a surface named, the project's surface
+/// of the checks, its active surface, else built from the ground classes
+/// of the point cloud along the spans (as the desktop application does);
+/// with where it comes from.
+fn ground_of(
+    args: &ZonesArgs,
+    session: Option<&ols_session::Session>,
+    line: &ols_line::Line,
+    cloud: Option<&str>,
+    scheme: &ols_lidar::ClassScheme,
+    budget: &Budget,
+) -> Result<Option<(Terrain, String)>, String> {
+    if let Some(p) = &args.terrain {
+        let t = Terrain::load(p).map_err(|e| format!("{}: {e}", p.display()))?;
+        return Ok(Some((t, format!("survey file {}", p.display()))));
+    }
+    if let Some(name) = &args.surface {
+        let s = session.ok_or("--surface: a project file holds the surfaces")?;
+        return Ok(Some((stored_surface(s, name)?, format!("surface {name}"))));
+    }
+    if let Some(s) = session {
+        let check = s.setting(CHECK_SURFACE_SETTING).ok().flatten();
+        let active = || {
+            s.setting(SURFACES_SETTING)
+                .ok()
+                .flatten()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                .and_then(|v| v.get("active")?.as_str().map(str::to_owned))
+        };
+        if let Some(name) = check.or_else(active) {
+            return Ok(Some((stored_surface(s, &name)?, format!("surface {name}"))));
+        }
+    }
+    let Some(spec) = cloud else {
+        return Ok(None);
+    };
+    // The ground classes in a corridor along the spans: the lowest point
+    // per square metre, triangles of up to 50 m (the desktop
+    // application's LiDAR ground).
+    let classes = scheme.codes_with_role("ground");
+    if classes.is_empty() {
+        return Ok(None);
+    }
+    let source = ols_pointcloud::open_source(spec)?;
+    let corridor = ols_lidar::Corridor::along_spans(line, 60.0);
+    let mut lowest = ols_lidar::LowestPerCell::new(Some(1.0));
+    source.visit(
+        Some(&corridor),
+        Some(&classes),
+        budget,
+        &mut |x, y, z, _| lowest.add(x, y, z),
+    )?;
+    if lowest.points().len() < 3 {
+        return Ok(None);
+    }
+    let t = lowest.terrain(Some(50.0)).map_err(|e| e.to_string())?;
+    Ok(Some((t, format!("ground classes of {spec}"))))
+}
+
+/// Runs the check and prints its report (and writes the CSV).
+pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
+    use ols_core::files::shipped_library;
+    if !(args.time_limit.is_finite() && args.time_limit > 0.0) {
+        return Err("--time-limit must be > 0 s".into());
+    }
+    let limit = Duration::from_secs_f64(args.time_limit);
+    let budget = Budget::new().time_limit(limit);
+    let started = Instant::now();
+    let stopped = |e: String| {
+        if started.elapsed() >= limit {
+            format!(
+                "the check stopped at the time limit of {} s (--time-limit): {e}",
+                args.time_limit
+            )
+        } else {
+            e
+        }
+    };
+    let library = args
+        .library
+        .clone()
+        .unwrap_or_else(|| shipped_library("cables"));
+    let insulators = args
+        .insulators
+        .clone()
+        .unwrap_or_else(|| shipped_library("insulators"));
+    let structures = crate::project::structures_dir(&args.file, args.structures.as_deref());
+    let (mut line, _) = crate::project::load_resolved(&args.file, &structures, &insulators)?;
+    let library = ols_cables::Library::load(&library).map_err(|e| e.to_string())?;
+    let session = session_of(&args.file)?;
+
+    // The rules, their measure, zone, wind and check.
+    let set = RuleSet::load_with(&args.rules, &(&line.defaults).into())?;
+    let measure = measure_of(&set, args.measure.as_deref())?;
+    let cloud = cloud_of(args);
+    let scheme = match (
+        &args.lidar_classes,
+        cloud
+            .as_deref()
+            .and_then(|spec| ols_pointcloud::open_source(spec).ok()?.class_scheme()),
+    ) {
+        (Some(p), _) => ols_lidar::ClassScheme::load(p)?,
+        (None, Some(text)) => ols_lidar::ClassScheme::parse(&text)?,
+        (None, None) => ols_lidar::ClassScheme::asprs(),
+    };
+    let imported = zone::from_rule_set(
+        &set,
+        measure,
+        |role| scheme.codes_with_role(role),
+        &zone::line_voltages(&line),
+    );
+    if imported.rules.is_empty() {
+        return Err(format!(
+            "no {} rule to the ground or to LiDAR classes in {}{}",
+            measure.as_str(),
+            args.rules.display(),
+            if imported.notes.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", imported.notes.join("; "))
+            }
+        ));
+    }
+    let mut z = Zone::with_defaults(measure, &line.defaults);
+    if let Some(w) = imported.width {
+        z.width = w;
+    }
+    if let Some(d) = imported.depth {
+        z.depth = d;
+    }
+    let wind = imported.wind.unwrap_or_default();
+    let mut check = imported.check.clone().unwrap_or_default();
+    if let Some(d) = args.search_distance {
+        if !(d.is_finite() && d > 0.0) {
+            return Err("--search-distance must be > 0 m".into());
+        }
+        check.search_distance = Some(d);
+    }
+    if !args.circuits.is_empty() {
+        check.circuits = args.circuits.clone();
+    }
+    if let Some(m) = &args.method {
+        check.method =
+            Some(ols_clearance::rules::parse_method(m).map_err(|e| format!("--method {e}"))?);
+    }
+    z.search = check.search_distance;
+    let rules = imported.rules;
+
+    // The weather cases and the wind positions.
+    let (weather, weather_from) = weather_cases(args, session.as_ref())?;
+    line.set_weather_cases(&weather.cases);
+    let cases = weather.select(&args.case, &[])?;
+    let states = zone::wind_states(&cases, |n| rules.iter().any(|r| r.applies(n)), &wind);
+    if states.is_empty() {
+        return Err(format!(
+            "no weather case of the rules in {weather_from}{}",
+            if args.case.is_empty() {
+                ""
+            } else {
+                " (of those chosen with --case)"
+            }
+        ));
+    }
+
+    // The targets.
+    let wants_ground = rules.iter().any(|r| r.ground);
+    let wants_points = rules.iter().any(|r| !r.classes.is_empty());
+    let ground = if wants_ground {
+        ground_of(
+            args,
+            session.as_ref(),
+            &line,
+            cloud.as_deref(),
+            &scheme,
+            &budget,
+        )
+        .map_err(stopped)?
+    } else {
+        None
+    };
+    let cloud = cloud.filter(|_| wants_points);
+
+    println!(
+        "{} clearances: {} — {} rule row(s){}",
+        measure.as_str(),
+        if set.name.is_empty() {
+            args.rules.display().to_string()
+        } else {
+            format!("{} ({})", set.name, args.rules.display())
+        },
+        rules.len(),
+        describe_check(&z, &wind, &check)
+    );
+    for n in &imported.notes {
+        println!("  note: {n}");
+    }
+    println!(
+        "weather: {weather_from} — {} case(s), {} wind position(s)",
+        cases.len(),
+        states.len()
+    );
+    println!(
+        "ground: {}",
+        match (&ground, wants_ground) {
+            (Some((_, from)), _) => from.clone(),
+            (None, true) => "none (the ground rules find nothing)".into(),
+            (None, false) => "not needed".into(),
+        }
+    );
+    println!(
+        "points: {}",
+        match (&cloud, wants_points) {
+            (Some(spec), _) => spec.clone(),
+            (None, true) => "none (the class rules find nothing; give --cloud)".into(),
+            (None, false) => "not needed".into(),
+        }
+    );
+
+    let read = |polylines: &[Vec<[f64; 2]>],
+                reach: f64,
+                classes: &[u8],
+                budget: &Budget,
+                visit: &mut dyn FnMut(f64, f64, f64, u8)| {
+        let spec = cloud.as_deref().unwrap_or_default();
+        ols_pointcloud::visit_around(spec, polylines, reach, classes, budget, visit).map(|_| ())
+    };
+    let done = AtomicUsize::new(0);
+    let result = zone::run_zone_check(
+        &line,
+        &library,
+        z,
+        &check,
+        rules,
+        states,
+        cloud.is_some().then_some(&read as _),
+        ground.as_ref().map(|(t, _)| t),
+        None,
+        &budget,
+        &done,
+    )
+    .map_err(stopped)?;
+    print_report(&result, &scheme);
+    if let Some(out) = &args.csv {
+        std::fs::write(out, csv(&result, &scheme))
+            .map_err(|e| format!("{}: {e}", out.display()))?;
+        println!("findings written to {}", out.display());
+    }
+    Ok(result)
+}
+
+/// ", zone ±1.5 m in slices of 0.2 m, wind stepped by 50 Pa from both
+/// sides, circuits North, method fe, points within 30 m".
+fn describe_check(z: &Zone, wind: &WindSteps, check: &ols_clearance::CheckScope) -> String {
+    let mut parts = Vec::new();
+    if z.measure == Measure::Vertical {
+        parts.push(format!("zone ±{} m in slices of {} m", z.width, z.depth));
+    }
+    let sides = match wind.sides {
+        ols_clearance::WindSides::Both => "the left and the right",
+        ols_clearance::WindSides::Left => "the left",
+        ols_clearance::WindSides::Right => "the right",
+    };
+    parts.push(if wind.stepped {
+        format!("wind stepped by {} Pa from {sides}", wind.step)
+    } else {
+        format!("the cases' wind from {sides}")
+    });
+    if !check.circuits.is_empty() {
+        parts.push(format!("circuits {}", check.circuits.join(", ")));
+    }
+    if let Some(m) = check.method {
+        parts.push(format!("method {}", ols_clearance::rules::method_name(m)));
+    }
+    if let Some(d) = check.search_distance {
+        parts.push(format!("points within {d} m"));
+    }
+    format!("; {}", parts.join(", "))
+}
+
+/// "S1 span 2", "jumper T3".
+fn span_name(f: &ZoneFinding) -> String {
+    match f.section.strip_prefix("jumper:") {
+        Some(j) => format!("jumper {j}"),
+        None => format!("{} span {}", f.section, f.span + 1),
+    }
+}
+
+/// "ground", "class 5 High Vegetation".
+fn target_name(class: Option<u8>, scheme: &ols_lidar::ClassScheme) -> String {
+    match class {
+        None => "ground".into(),
+        Some(c) => match scheme.class(c) {
+            Some(d) => format!("class {c} {}", d.name),
+            None => format!("class {c}"),
+        },
+    }
+}
+
+/// The findings: the violations (worst first), then each rule's lowest
+/// clearance that keeps its requirement — `(status, finding)`.
+fn rows(r: &ZoneCheckResult) -> Vec<(&'static str, &ZoneFinding)> {
+    let mut out: Vec<(&'static str, &ZoneFinding)> =
+        r.zone.findings.iter().map(|f| ("violation", f)).collect();
+    out.extend(
+        r.zone
+            .lowest
+            .iter()
+            .flatten()
+            .filter(|f| f.distance >= f.required)
+            .map(|f| ("ok", f)),
+    );
+    out
+}
+
+/// The summary and the findings table.
+fn print_report(r: &ZoneCheckResult, scheme: &ols_lidar::ClassScheme) {
+    println!(
+        "solved {} section(s) in {} wind position(s) in {:.1?}; checked in {:.1?}; {} LiDAR \
+         points read",
+        r.sections.len(),
+        r.states.len(),
+        r.solving,
+        r.checking,
+        r.zone.points
+    );
+    for f in &r.failed {
+        println!("  not solved: {f}");
+    }
+    for n in &r.zone.notes {
+        println!("  note: {n}");
+    }
+    let n = r.violations();
+    println!("{n} span{} below a rule", if n == 1 { "" } else { "s" });
+    let rows = rows(r);
+    if rows.is_empty() {
+        println!("nothing within reach of the rules");
+        return;
+    }
+    println!(
+        "  {:<9} {:<28} {:<16} {:<44} {:<26} {:>9} {:>10} {:>8}",
+        "status", "rule", "span", "case & wind", "target", "found m", "required m", "count"
+    );
+    for (status, f) in rows {
+        let unit = match (f.class, f.count) {
+            (None, 1) => "piece",
+            (None, _) => "pieces",
+            (Some(_), 1) => "point",
+            (Some(_), _) => "points",
+        };
+        println!(
+            "  {:<9} {:<28} {:<16} {:<44} {:<26} {:>9.2} {:>10.2} {:>8}",
+            status,
+            r.rules[f.rule].name,
+            span_name(f),
+            r.states[f.state].describe(),
+            target_name(f.class, scheme),
+            f.distance,
+            f.required,
+            if status == "ok" {
+                String::new()
+            } else {
+                format!("{} {unit}", f.count)
+            }
+        );
+    }
+    for (k, low) in r.zone.lowest.iter().enumerate() {
+        if low.is_none() {
+            println!("  {}: nothing within reach", r.rules[k].name);
+        }
+    }
+}
+
+/// The CSV header of [`csv`].
+pub const CSV_HEADER: &str = "status,rule,section,span,case,wind_pa,wind_from,target,class,clearance_m,required_m,count,wire_x,wire_y,wire_z,target_x,target_y,target_z\n";
+
+/// Every finding as CSV: the violations, then each rule's lowest clearance
+/// that keeps its requirement (`status` ok).
+pub fn csv(r: &ZoneCheckResult, scheme: &ols_lidar::ClassScheme) -> String {
+    let mut out = String::from(CSV_HEADER);
+    for (status, f) in rows(r) {
+        let s = &r.states[f.state];
+        let (section, span) = match f.section.strip_prefix("jumper:") {
+            Some(j) => (format!("jumper {j}"), String::new()),
+            None => (f.section.clone(), (f.span + 1).to_string()),
+        };
+        let _ = writeln!(
+            out,
+            "{status},{},{},{span},{},{:.0},{},{},{},{:.3},{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
+            csv_field(&r.rules[f.rule].name),
+            csv_field(&section),
+            csv_field(&s.name),
+            s.pressure,
+            s.side.map_or("", |d| d.as_str()),
+            csv_field(&target_name(f.class, scheme)),
+            f.class.map_or(String::new(), |c| c.to_string()),
+            f.distance,
+            f.required,
+            f.count,
+            f.wire[0],
+            f.wire[1],
+            f.wire[2],
+            f.target[0],
+            f.target[1],
+            f.target[2],
+        );
+    }
+    out
+}
