@@ -505,16 +505,11 @@ pub fn wires(
                 let Some(at) = at else {
                     continue;
                 };
-                let (radius, color) = match &p.object {
-                    None => (0.25, dot),
-                    Some(o) if o.kind == ols_line::ObjectKind::Clamp => (0.15, steel),
-                    // A body without a size (a weight): not drawn.
-                    Some(o) if body_size(&o.shape) <= 0.0 => continue,
-                    Some(o) => (body_size(&o.shape) / 2.0, ball),
-                };
-                let mut s = Prim::new(at, sphere(at, radius), rgba(color, alpha), 0.0).at(0, 1);
-                s.filled = true;
-                out.push(s);
+                let along = shape
+                    .spans
+                    .get(p.span)
+                    .map_or([1.0, 0.0], |sp| chord_direction(&sp.points));
+                draw_point(out, at, along, p.object.as_ref(), [dot, steel, ball], alpha);
             }
             // The spacers it holds, red beyond their compression limit.
             for x in &shape.spacers {
@@ -547,6 +542,24 @@ pub fn wires(
             // Its support clamps: a short bar along it.
             let steel = tint.unwrap_or([205, 205, 210]);
             let def = line.jumpers.iter().find(|d| d.id == j.jumper);
+            // Its points and their objects.
+            for (label, at) in &j.point_positions {
+                let object = def
+                    .and_then(|d| d.points.iter().find(|p| &p.label == label))
+                    .and_then(|p| p.object.as_ref());
+                draw_point(
+                    out,
+                    *at,
+                    chord_direction(&j.points),
+                    object,
+                    [
+                        tint.unwrap_or(SPAN_POINT_COLOR),
+                        steel,
+                        tint.unwrap_or(BALL_COLOR),
+                    ],
+                    alpha,
+                );
+            }
             for (s, c) in j
                 .supports
                 .iter()
@@ -603,24 +616,147 @@ fn drawn_copies<'a>(
         .collect()
 }
 
-/// The size a body is drawn at, m (its largest dimension; given areas:
-/// a sphere's of that wind area).
-pub fn body_size(shape: &ols_line::Shape) -> f64 {
-    match *shape {
-        ols_line::Shape::Point => 0.0,
-        ols_line::Shape::Sphere { diameter } => diameter,
+/// A point on a wire at `at`, by its object: a body as a ball as big as
+/// it (none without a size), a clamp a small steel ball, a bare point a
+/// dot (`colors`: bare, clamp, body).
+fn draw_point(
+    out: &mut Vec<Prim>,
+    at: [f64; 3],
+    along: [f64; 2],
+    object: Option<&ols_line::LineObject>,
+    colors: [[u8; 3]; 3],
+    alpha: u8,
+) {
+    let (triangles, color) = match object {
+        None => (sphere(at, 0.25), colors[0]),
+        // A clamp: a short steel cylinder along the wire.
+        Some(o) if o.kind == ols_line::ObjectKind::Clamp => (
+            body_mesh(
+                &ols_line::Shape::Cylinder {
+                    diameter: 0.12,
+                    length: o.clamp_length.unwrap_or(0.2).max(0.1),
+                    axis: ols_line::Axis::Along,
+                },
+                at,
+                along,
+            ),
+            colors[1],
+        ),
+        Some(o) => (body_mesh(&o.shape, at, along), colors[2]),
+    };
+    if triangles.is_empty() {
+        return;
+    }
+    let mut s = Prim::new(at, triangles, rgba(color, alpha), 0.0).at(0, 1);
+    s.filled = true;
+    out.push(s);
+}
+
+/// The horizontal direction of a polyline's chord (along x without one).
+pub fn chord_direction(points: &[[f64; 3]]) -> [f64; 2] {
+    match (points.first(), points.last()) {
+        (Some(a), Some(b)) => {
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let n = d[0].hypot(d[1]);
+            if n > 0.0 {
+                [d[0] / n, d[1] / n]
+            } else {
+                [1.0, 0.0]
+            }
+        }
+        _ => [1.0, 0.0],
+    }
+}
+
+/// A body's solid as triangles facing out, at `at`, its axes along the
+/// wire (`along`, horizontal), across the line and up: a sphere, a
+/// cylinder (12 sides) along its axis, a box; given areas a sphere of the
+/// wind area; a point nothing.
+pub fn body_mesh(shape: &ols_line::Shape, at: [f64; 3], along: [f64; 2]) -> Vec<[f64; 3]> {
+    use std::f64::consts::PI;
+    let e1 = [along[0], along[1], 0.0];
+    let e2 = [-along[1], along[0], 0.0];
+    let e3 = [0.0, 0.0, 1.0];
+    let local =
+        |x: f64, y: f64, z: f64| [0, 1, 2].map(|k| at[k] + x * e1[k] + y * e2[k] + z * e3[k]);
+    let mut tris: Vec<[f64; 3]> = match *shape {
+        ols_line::Shape::Point => return Vec::new(),
+        ols_line::Shape::Sphere { diameter } if diameter > 0.0 => {
+            return sphere(at, diameter / 2.0);
+        }
+        ols_line::Shape::Areas { wind_area, .. } if wind_area > 0.0 => {
+            return sphere(at, (wind_area / PI).sqrt());
+        }
         ols_line::Shape::Cylinder {
-            diameter, length, ..
-        } => diameter.max(length),
+            diameter,
+            length,
+            axis,
+        } if diameter > 0.0 && length > 0.0 => {
+            let r = diameter / 2.0;
+            let h = length / 2.0;
+            // (along its axis, the two across it)
+            let place = |s: f64, u: f64, v: f64| match axis {
+                ols_line::Axis::Along => local(s, u, v),
+                ols_line::Axis::Across => local(u, s, v),
+                ols_line::Axis::Vertical => local(u, v, s),
+            };
+            let n = 12;
+            let ring = |s: f64, i: usize| {
+                let a = 2.0 * PI * i as f64 / n as f64;
+                place(s, r * a.cos(), r * a.sin())
+            };
+            let mut t = Vec::new();
+            for i in 0..n {
+                let (a0, a1, b0, b1) = (ring(-h, i), ring(-h, i + 1), ring(h, i), ring(h, i + 1));
+                t.extend([a0, a1, b1, a0, b1, b0]);
+                t.extend([place(-h, 0.0, 0.0), a1, a0]);
+                t.extend([place(h, 0.0, 0.0), b0, b1]);
+            }
+            t
+        }
         ols_line::Shape::Box {
             along,
             across,
             height,
-        } => along.max(across).max(height),
-        ols_line::Shape::Areas { wind_area, .. } => {
-            (4.0 * wind_area.max(0.0) / std::f64::consts::PI).sqrt()
+        } if along > 0.0 && across > 0.0 && height > 0.0 => {
+            let (x, y, z) = (along / 2.0, across / 2.0, height / 2.0);
+            let c = |i: usize| {
+                local(
+                    if i & 1 == 0 { -x } else { x },
+                    if i & 2 == 0 { -y } else { y },
+                    if i & 4 == 0 { -z } else { z },
+                )
+            };
+            let faces = [
+                [0, 1, 3, 2],
+                [4, 6, 7, 5],
+                [0, 4, 5, 1],
+                [2, 3, 7, 6],
+                [0, 2, 6, 4],
+                [1, 5, 7, 3],
+            ];
+            faces
+                .iter()
+                .flat_map(|f| [c(f[0]), c(f[1]), c(f[2]), c(f[0]), c(f[2]), c(f[3])])
+                .collect()
+        }
+        _ => return Vec::new(),
+    };
+    // Every triangle facing out (away from the centre).
+    for t in tris.as_chunks_mut::<3>().0 {
+        let u = [0, 1, 2].map(|k| t[1][k] - t[0][k]);
+        let v = [0, 1, 2].map(|k| t[2][k] - t[0][k]);
+        let n = [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ];
+        let m = [0, 1, 2].map(|k| (t[0][k] + t[1][k] + t[2][k]) / 3.0 - at[k]);
+        if n[0] * m[0] + n[1] * m[1] + n[2] * m[2] < 0.0 {
+            t.swap(1, 2);
         }
     }
+    tris
 }
 
 /// Colour of span points.
@@ -1128,6 +1264,26 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                             continue;
                         };
                         s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
+                    }
+                }
+                Selection::JumperPoint { jumper, label } => {
+                    // Every case drawn (both wind sides).
+                    let strong = model.selection_case.unwrap_or(case);
+                    for k in crate::selection::drawn_cases(model, case) {
+                        let Some(c) = model.cases.get(k) else {
+                            continue;
+                        };
+                        for solved in c.drawn() {
+                            if let Some(p) = solved
+                                .jumpers
+                                .iter()
+                                .find(|j| &j.jumper == jumper)
+                                .and_then(|j| j.point_positions.iter().find(|(l, _)| l == label))
+                                .map(|(_, p)| *p)
+                            {
+                                s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
+                            }
+                        }
                     }
                 }
                 Selection::Spacer(id) => {

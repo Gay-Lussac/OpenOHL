@@ -13,7 +13,14 @@ jumper points holding a clamp, hinged ends, jumpers solved level by
 level after what they hang on, the full loop by default and one
 calculation as an option (Criteria › Calculation options), the loads
 keyed by clamp, span point or jumper point, circuits and checks joined at
-taps, deletions and renames following. Next: the app (phase 4). Every point below is an engine change
+taps, deletions and renames following. Phase 4 done (the app): the Add on span tool on spans and jumpers
+(bare points, objects from templates or own values with advanced shape
+settings, spreads, regular spacing); jumper points selectable in every
+case drawn, with properties, drawing by shape, deletion taking what
+hangs on them; Add jumper from a clamp (a tap); spacer ends given the
+spacer clamp; the Span points and loads table with shapes and jumper
+points; the Point and spread load types table (templates and the
+project's own, kept as a project library file). Every point below is an engine change
 (data, solver, files).
 
 Decided with the user (2026-10-16): **one object per point**; objects

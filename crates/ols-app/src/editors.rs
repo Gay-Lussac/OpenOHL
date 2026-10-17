@@ -4541,6 +4541,55 @@ pub fn new_jumper(
     .map_err(|e| e.to_string())
 }
 
+/// A new jumper between two ends, one of them at least a tap (a clamp on
+/// a span point or a jumper point; the other a section end or a tap):
+/// its cable the section's it hangs on, given by its length, 3 % over the
+/// still-air distance between its ends.
+pub fn new_tap_jumper(
+    model: &Model,
+    from: (&SectionPoint, Option<&ols_line::Tap>),
+    to: (&SectionPoint, Option<&ols_line::Tap>),
+) -> Result<ols_line::Jumper, String> {
+    let line = &model.line;
+    if from.1.is_some() && from.1 == to.1 {
+        return Err("a jumper joins two different points".into());
+    }
+    let end = |e: (&SectionPoint, Option<&ols_line::Tap>)| {
+        ols_line::jumper::approximate_end(line, e.0, e.1, 0).ok_or_else(|| match e.1 {
+            Some(t) => format!("no place for the tap {}", t.text()),
+            None => format!("no wire point {} set {}", e.0.structure, e.0.set),
+        })
+    };
+    let (a, b) = (end(from)?, end(to)?);
+    let chord = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+    if chord < 0.1 {
+        return Err("its ends are less than 0.1 m apart".into());
+    }
+    let section = |e: (&SectionPoint, Option<&ols_line::Tap>)| match e.1 {
+        Some(t) => line.tap_section(t, 0),
+        None => line.sections.iter().find(|s| s.points.contains(e.0)),
+    };
+    let cable = section(from)
+        .or_else(|| section(to))
+        .map(|s| s.cable.clone())
+        .or_else(|| model.library.iter().next().map(|c| c.id.clone()))
+        .ok_or("no cable for the jumper")?;
+    let like = line.jumpers.last().map_or("J0", |j| j.id.as_str());
+    let id = next_id(line.jumpers.iter().map(|j| j.id.as_str()), like);
+    let mut j: ols_line::Jumper = serde_json::from_value(serde_json::json!({
+        "id": id,
+        "cable": cable,
+        "from": from.0,
+        "to": to.0,
+        "length": ((1.03 * chord) * 100.0).round() / 100.0,
+        "temperature": 15.0,
+    }))
+    .map_err(|e| e.to_string())?;
+    j.from_tap = from.1.cloned();
+    j.to_tap = to.1.cloned();
+    Ok(j)
+}
+
 /// The jumpers missing at structure `id`: between the ends of two
 /// sections there (their first or last point) of the same circuit and
 /// phase, where no jumper is yet. Also what could not be paired.

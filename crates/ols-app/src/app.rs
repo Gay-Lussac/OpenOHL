@@ -293,6 +293,9 @@ pub struct Ready {
     pub design_code: crate::codes::DesignCodeWindow,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ols_line::SectionPoint>,
+    /// Add jumper: the first end right-clicked when it is a tap (a clamp
+    /// on a span point or a jumper point).
+    pub jumper_tap: Option<ols_line::Tap>,
     /// Add string: the first span point right-clicked (a spacer).
     pub spacer_from: Option<ols_line::SpanPointRef>,
     /// Add jumper: the helping strings right-clicked after it, in order
@@ -393,6 +396,7 @@ impl Ready {
             design_code: Default::default(),
             jumper_from: None,
             spacer_from: None,
+            jumper_tap: None,
             jumper_via: Vec::new(),
             open_page: None,
             placed: None,
@@ -1274,6 +1278,9 @@ impl Ready {
         if self.hotbar.tool().picks_spans() {
             s.0.insert(crate::selection::Snap::Span);
         }
+        if self.hotbar.tool().picks_jumpers() {
+            s.0.insert(crate::selection::Snap::Jumper);
+        }
         if self.hotbar.tool().picks_alignment() {
             s.0.insert(crate::selection::Snap::AlignmentPoint);
         }
@@ -1412,7 +1419,7 @@ impl Ready {
                 self.editor = crate::editors::AlignmentForm::of(model, id).map(Form::Alignment);
                 self.select(target);
             }
-            (Tool::Edit, Selection::Jumper(id)) => {
+            (Tool::Edit, Selection::Jumper(id) | Selection::JumperPoint { jumper: id, .. }) => {
                 // Its window, as a section's (it frees the mouse).
                 self.editor =
                     crate::editors::JumperForm::of(model, id).map(|f| Form::Jumper(Box::new(f)));
@@ -1513,6 +1520,121 @@ impl Ready {
                             true,
                         ));
                     }
+                }
+            }
+            // A tap: a clamp on a span point or on a jumper point.
+            (Tool::AddJumper, Selection::SpanPoint { .. } | Selection::JumperPoint { .. }) => {
+                let (tap, object) = match &target {
+                    Selection::SpanPoint { section, label } => (
+                        ols_line::Tap::Span(ols_line::SpanPointRef {
+                            section: section.clone(),
+                            point: label.clone(),
+                        }),
+                        model
+                            .line
+                            .sections
+                            .iter()
+                            .find(|s| &s.id == section)
+                            .and_then(|s| s.span_points.iter().find(|p| &p.label == label))
+                            .and_then(|p| p.object.clone()),
+                    ),
+                    Selection::JumperPoint { jumper, label } => (
+                        ols_line::Tap::Jumper {
+                            jumper: jumper.clone(),
+                            point: label.clone(),
+                        },
+                        model
+                            .line
+                            .jumpers
+                            .iter()
+                            .find(|j| &j.id == jumper)
+                            .and_then(|j| j.points.iter().find(|p| &p.label == label))
+                            .and_then(|p| p.object.clone()),
+                    ),
+                    _ => unreachable!("matched"),
+                };
+                if !object.is_some_and(|o| o.kind == ols_line::ObjectKind::Clamp) {
+                    self.status = Some((
+                        format!(
+                            "Add jumper: {} holds no clamp — put a clamp object there (Add on span, object, a tap clamp template), then start the jumper from it",
+                            tap.text()
+                        ),
+                        true,
+                    ));
+                    return;
+                }
+                let none = ols_line::SectionPoint::new(String::new(), 0);
+                let first = match (self.jumper_from.take(), self.jumper_tap.take()) {
+                    (_, Some(t)) if t == tap => {
+                        self.status = Some(("Add jumper: cancelled".into(), false));
+                        return;
+                    }
+                    (_, Some(t)) => Some((none.clone(), Some(t))),
+                    (Some(p), None) => Some((p, None)),
+                    (None, None) => None,
+                };
+                match first {
+                    None => {
+                        self.status = Some((
+                            format!(
+                                "Add jumper from the tap {}: right-click its other end (a string, or another tap's clamp; the same one again or Escape: cancel)",
+                                tap.text()
+                            ),
+                            false,
+                        ));
+                        self.jumper_tap = Some(tap);
+                    }
+                    Some((p, t)) => {
+                        match crate::editors::new_tap_jumper(
+                            model,
+                            (&p, t.as_ref()),
+                            (&none, Some(&tap)),
+                        ) {
+                            Ok(j) => {
+                                let id = j.id.clone();
+                                if self.perform(crate::edit::Action::Command {
+                                    what: format!("added jumper {id} on the tap {}", tap.text()),
+                                    command: ols_session::Command::Put {
+                                        kind: ols_session::Kind::Jumper,
+                                        id: id.clone(),
+                                        value: serde_json::to_value(&j).expect("a jumper"),
+                                        ord: None,
+                                    },
+                                }) {
+                                    self.select(Selection::Jumper(id.clone()));
+                                    self.editor = crate::editors::JumperForm::of(&self.model, &id)
+                                        .map(|f| Form::Jumper(Box::new(f)));
+                                }
+                            }
+                            Err(e) => self.status = Some((e, true)),
+                        }
+                    }
+                }
+            }
+            (Tool::AddJumper, Selection::Attachment { structure, set })
+                if self.jumper_tap.is_some() =>
+            {
+                let p = ols_line::SectionPoint::new(structure.clone(), *set);
+                let tap = self.jumper_tap.take().expect("checked");
+                let none = ols_line::SectionPoint::new(String::new(), 0);
+                match crate::editors::new_tap_jumper(model, (&none, Some(&tap)), (&p, None)) {
+                    Ok(j) => {
+                        let id = j.id.clone();
+                        if self.perform(crate::edit::Action::Command {
+                            what: format!("added jumper {id} from the tap {}", tap.text()),
+                            command: ols_session::Command::Put {
+                                kind: ols_session::Kind::Jumper,
+                                id: id.clone(),
+                                value: serde_json::to_value(&j).expect("a jumper"),
+                                ord: None,
+                            },
+                        }) {
+                            self.select(Selection::Jumper(id.clone()));
+                            self.editor = crate::editors::JumperForm::of(&self.model, &id)
+                                .map(|f| Form::Jumper(Box::new(f)));
+                        }
+                    }
+                    Err(e) => self.status = Some((e, true)),
                 }
             }
             (Tool::AddJumper, Selection::Attachment { structure, set }) => {
@@ -1647,6 +1769,11 @@ impl Ready {
                         }
                     }
                 }
+            }
+            (Tool::OnSpan, Selection::Jumper(id)) => {
+                self.editor = crate::span_tool::SpanForm::on_jumper(model, self.case, id, u.on)
+                    .map(Form::Span);
+                self.select(target);
             }
             (Tool::OnSpan, Selection::Span { section, span }) => {
                 self.editor =
@@ -1884,9 +2011,32 @@ impl Ready {
             file,
             display,
             library,
+            project_library,
             ..
         } = changes;
         let mut done = true;
+        // A library file of the project (the load types).
+        if let Some((kind, name, text)) = project_library {
+            let result = match &self.model.editing {
+                Ok(e) => e
+                    .session
+                    .put_library_file(&e.user, &kind, &name, &text)
+                    .map_err(|e| e.to_string()),
+                Err(e) => Err(format!("read-only: {e}")),
+            };
+            match result {
+                Ok(()) => {
+                    self.status = Some((
+                        format!("{} saved in the project", kind.replace('-', " ")),
+                        false,
+                    ))
+                }
+                Err(e) => {
+                    self.status = Some((e, true));
+                    done = false;
+                }
+            }
+        }
         // The string library's files first (the commands use them).
         if let Some((first, _)) = library.first() {
             for (path, text) in &library {
@@ -3083,6 +3233,10 @@ impl Ready {
             Selection::None | Selection::LidarPoint(_) | Selection::SurveyPoint(_) => true,
             Selection::Structure(id) => line.structure(id).is_some(),
             Selection::Jumper(id) => line.jumpers.iter().any(|j| &j.id == id),
+            Selection::JumperPoint { jumper, label } => line
+                .jumpers
+                .iter()
+                .any(|j| &j.id == jumper && j.points.iter().any(|p| &p.label == label)),
             Selection::Span { section, span } => line
                 .sections
                 .iter()
@@ -3169,6 +3323,49 @@ fn delete_action(line: &ols_line::Line, target: &Selection) -> Option<crate::edi
         Selection::Span { section, .. } => del(Kind::Section, section),
         Selection::Jumper(id) => del(Kind::Jumper, id),
         Selection::Spacer(id) => del(Kind::Spacer, id),
+        // The jumper without it, and the jumpers hanging on it (a tap).
+        Selection::JumperPoint { jumper, label } => {
+            let mut j = line.jumpers.iter().find(|j| &j.id == jumper)?.clone();
+            j.points.retain(|p| &p.label != label);
+            let hanging: Vec<&ols_line::Jumper> = line
+                .jumpers
+                .iter()
+                .filter(|x| {
+                    [&x.from_tap, &x.to_tap].into_iter().flatten().any(|t| {
+                        matches!(t, ols_line::Tap::Jumper { jumper: h, point } if h == jumper && point == label)
+                    })
+                })
+                .collect();
+            let mut commands: Vec<ols_session::Command> = hanging
+                .iter()
+                .map(|x| ols_session::Command::Delete {
+                    kind: Kind::Jumper,
+                    id: x.id.clone(),
+                    confirm: true,
+                })
+                .collect();
+            commands.push(ols_session::Command::Put {
+                kind: Kind::Jumper,
+                id: j.id.clone(),
+                value: serde_json::to_value(&j).ok()?,
+                ord: None,
+            });
+            Action::Command {
+                what: if hanging.is_empty() {
+                    format!("deleted point {label} of jumper {jumper}")
+                } else {
+                    format!(
+                        "deleted point {label} of jumper {jumper} and the jumpers on it: {}",
+                        hanging
+                            .iter()
+                            .map(|x| x.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                },
+                command: ols_session::Command::Batch { commands },
+            }
+        }
         // The section without it, and the spacers clamped on it.
         Selection::SpanPoint { section, label } => {
             let mut s = line.sections.iter().find(|s| &s.id == section)?.clone();
@@ -3380,11 +3577,12 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         r.cancel_string_wire();
     }
     // A jumper being laid out (Add jumper): Escape gives it up.
-    if r.jumper_from.is_some()
+    if (r.jumper_from.is_some() || r.jumper_tap.is_some())
         && !windows
         && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {
         r.jumper_from = None;
+        r.jumper_tap = None;
         r.jumper_via.clear();
         r.status = Some(("Add jumper: cancelled".into(), false));
     }
@@ -5970,6 +6168,7 @@ fn menus(
         item(ui, Command::Table(TableKind::Sections), out);
         item(ui, Command::Table(TableKind::Jumpers), out);
         item(ui, Command::Table(TableKind::SpanObjects), out);
+        item(ui, Command::Table(TableKind::LoadTypes), out);
         item(ui, Command::Table(TableKind::Spacers), out);
         item(ui, Command::Table(TableKind::Systems), out);
         item(ui, Command::Table(TableKind::Circuits), out);

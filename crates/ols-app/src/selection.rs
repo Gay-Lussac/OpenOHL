@@ -65,6 +65,13 @@ pub enum Selection {
     },
     /// An interphase spacer, by id.
     Spacer(String),
+    /// A point along a jumper, by its jumper and label.
+    JumperPoint {
+        /// Jumper id.
+        jumper: String,
+        /// The point's label.
+        label: String,
+    },
     /// A LiDAR point shown (index in the model's points).
     LidarPoint(usize),
     /// A point of the ground surface (survey; index in its points).
@@ -92,10 +99,11 @@ pub fn on_span(
     at: [f64; 2],
     project: impl Fn([f64; 3]) -> Option<[f64; 2]>,
 ) -> Option<[f64; 3]> {
-    let Selection::Span { section, span } = target else {
-        return None;
+    let points = match target {
+        Selection::Span { section, span } => &model.shape(section, case)?.spans.get(*span)?.points,
+        Selection::Jumper(id) => &model.jumper_shape(id, case)?.points,
+        _ => return None,
     };
-    let points = &model.shape(section, case)?.spans.get(*span)?.points;
     let mut best: Option<(f64, [f64; 3])> = None;
     for w in points.windows(2) {
         let (Some(a), Some(b)) = (project(w[0]), project(w[1])) else {
@@ -242,6 +250,7 @@ impl Selection {
             Selection::Attachment { .. } | Selection::String { .. } => Snap::Attachment,
             Selection::Point { .. } => Snap::Point,
             Selection::SpanPoint { .. } | Selection::Spacer(_) => Snap::Span,
+            Selection::JumperPoint { .. } => Snap::Jumper,
             Selection::AlignmentPoint { .. } => Snap::AlignmentPoint,
             Selection::LidarPoint(_) => Snap::LidarPoint,
             Selection::SurveyPoint(_) => Snap::SurveyPoint,
@@ -260,6 +269,7 @@ impl Selection {
             Selection::Point { structure, label } => format!("{structure} point {label}"),
             Selection::SpanPoint { section, label } => format!("{section} span point {label}"),
             Selection::Spacer(id) => format!("spacer {id}"),
+            Selection::JumperPoint { jumper, label } => format!("jumper {jumper} point {label}"),
             Selection::AlignmentPoint { id } => {
                 format!("alignment point {id}")
             }
@@ -287,6 +297,12 @@ impl Selection {
                 .iter()
                 .find(|j| &j.jumper == id)
                 .map(|j| j.points[j.points.len() / 2]),
+            Selection::JumperPoint { jumper, label } => model
+                .jumper_shape(jumper, case)?
+                .point_positions
+                .iter()
+                .find(|(l, _)| l == label)
+                .map(|(_, p)| *p),
             Selection::Span { section, span } => model
                 .shape(section, case)?
                 .spans
@@ -496,6 +512,27 @@ fn wire_point_candidates(
     out
 }
 
+/// A solved jumper (its pieces) and its points.
+fn jumper_candidates(j: &ols_line::jumper::JumperShape) -> Vec<Candidate> {
+    let sel = Selection::Jumper(j.jumper.clone());
+    let mut out: Vec<Candidate> = j
+        .points
+        .windows(2)
+        .map(|w| (sel.clone(), w[0], w[1]))
+        .collect();
+    for (label, p) in &j.point_positions {
+        out.push((
+            Selection::JumperPoint {
+                jumper: j.jumper.clone(),
+                label: label.clone(),
+            },
+            *p,
+            *p,
+        ));
+    }
+    out
+}
+
 /// The span points and spacers of `shape` (as solved in one case).
 fn span_object_candidates(shape: &ols_line::solve::SectionShape) -> Vec<Candidate> {
     let mut out = Vec::new();
@@ -591,10 +628,7 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
         }
         if snaps.on(Snap::Jumper) {
             for j in &c.jumpers {
-                let sel = Selection::Jumper(j.jumper.clone());
-                for w in j.points.windows(2) {
-                    out.push((sel.clone(), w[0], w[1]));
-                }
+                out.extend(jumper_candidates(j));
             }
         }
     }
@@ -652,10 +686,7 @@ fn other_case_candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<(Cand
             if snaps.on(Snap::Jumper) && !(k == case && side == 0) && model.shown(case).contains(&k)
             {
                 for j in &solved.jumpers {
-                    let sel = Selection::Jumper(j.jumper.clone());
-                    for w in j.points.windows(2) {
-                        out.push(((sel.clone(), w[0], w[1]), k));
-                    }
+                    out.extend(jumper_candidates(j).into_iter().map(|c| (c, k)));
                 }
             }
         }
@@ -771,7 +802,7 @@ fn pick_scored_index(
                 Selection::String { .. } => 2.5,
                 // Points on the wire over the wire; a spacer over both
                 // wires it joins.
-                Selection::SpanPoint { .. } => 7.0,
+                Selection::SpanPoint { .. } | Selection::JumperPoint { .. } => 7.0,
                 Selection::Spacer(_) => 1.0,
                 _ => s.kind().map_or(0.0, Snap::priority),
             };
@@ -813,7 +844,7 @@ fn pick_scored(
                 Selection::String { .. } => 2.5,
                 // Points on the wire over the wire; a spacer over both
                 // wires it joins.
-                Selection::SpanPoint { .. } => 7.0,
+                Selection::SpanPoint { .. } | Selection::JumperPoint { .. } => 7.0,
                 Selection::Spacer(_) => 1.0,
                 _ => s.kind().map_or(0.0, Snap::priority),
             };

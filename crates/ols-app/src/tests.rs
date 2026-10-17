@@ -12257,3 +12257,273 @@ fn the_project_default_values_are_used() {
     r.vertical_clearances.show(&r.model);
     assert_eq!(r.vertical_clearances.zone.width, 2.5);
 }
+
+/// Points on a jumper: the span tool on a jumper puts a point with a tap
+/// clamp (a template) there; it is picked like any point; Add jumper from
+/// that clamp to a string makes a jumper on the tap (given by its length),
+/// solved; the table edits its shape (advanced: its own values then);
+/// deleting the point takes the jumper on it.
+#[test]
+fn a_jumper_starts_from_a_tap_on_another_jumper() {
+    use crate::editors::Form;
+    use crate::span_tool::SpanWhat;
+    use crate::tables::TableKind;
+    use crate::tools::Tool;
+    let model = synthetic_project("jumper-tap");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (host, end) = {
+        let r = harness.state_mut().ready().unwrap();
+        let j = &r.model.line.jumpers[0];
+        (j.id.clone(), j.from.clone())
+    };
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut f = crate::span_tool::SpanForm::on_jumper(&r.model, r.case, &host, None).unwrap();
+        f.what = SpanWhat::Load;
+        f.object = f.library.get("tap-clamp").unwrap().object().unwrap();
+        f.label = "K".into();
+        r.editor = Some(Form::Span(f));
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let point = Selection::JumperPoint {
+        jumper: host.clone(),
+        label: "K".into(),
+    };
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let j = &r.model.line.jumpers[0];
+        let p = j.points.iter().find(|p| p.label == "K").unwrap();
+        assert_eq!(p.object.as_ref().unwrap().kind, ols_line::ObjectKind::Clamp);
+        // Solved there, a candidate to click.
+        r.model.ensure_solved(r.case);
+        assert!(point.focus(&r.model, r.case).is_some());
+        let snaps = r.effective_snaps();
+        assert!(
+            crate::selection::candidates(&r.model, r.case, &snaps)
+                .iter()
+                .any(|c| c.0 == point)
+        );
+    }
+    // Add jumper: the clamp, then a string.
+    let n = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .jumpers
+        .len();
+    use_tool(&mut harness, Tool::AddJumper, point.clone(), None);
+    assert!(harness.state_mut().ready().unwrap().jumper_tap.is_some());
+    use_tool(
+        &mut harness,
+        Tool::AddJumper,
+        string_at(&end.structure, end.set),
+        None,
+    );
+    let tapped = {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.line.jumpers.len(), n + 1, "{:?}", r.status);
+        let j = r.model.line.jumpers.last().unwrap().clone();
+        assert!(
+            matches!(&j.from_tap, Some(ols_line::Tap::Jumper { jumper, point }) if *jumper == host && point == "K")
+        );
+        assert!(j.length.is_some() && j.sag.is_none());
+        r.model.ensure_solved(r.case);
+        assert!(r.model.jumper_shape(&j.id, r.case).is_some(), "solved");
+        j.id
+    };
+    // The table: its shape typed in.
+    let key = {
+        let r = harness.state_mut().ready().unwrap();
+        let k = r.model.line.jumpers[0]
+            .points
+            .iter()
+            .position(|p| p.label == "K")
+            .unwrap();
+        format!("{host}\tj\t{k}")
+    };
+    set_cell(&mut harness, TableKind::SpanObjects, &key, "shape", "box");
+    set_cell(&mut harness, TableKind::SpanObjects, &key, "size 1", "0.3");
+    apply_table(&mut harness, TableKind::SpanObjects, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let o = r.model.line.jumpers[0]
+            .points
+            .iter()
+            .find(|p| p.label == "K")
+            .unwrap()
+            .object
+            .clone()
+            .unwrap();
+        assert!(matches!(o.shape, ols_line::Shape::Box { along, .. } if along == 0.3));
+        assert_eq!(o.type_id, None, "its own values now");
+        assert_eq!(o.kind, ols_line::ObjectKind::Clamp);
+    }
+    // Deleting the point takes the jumper on it.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.hotbar.hold(Tool::Delete);
+        r.use_tool(crate::selection::Use {
+            target: point,
+            at: None,
+            on: None,
+        });
+    }
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(
+        r.model.line.jumpers.iter().all(|j| j.id != tapped),
+        "{:?}",
+        r.status
+    );
+    assert!(
+        r.model.line.jumpers[0]
+            .points
+            .iter()
+            .all(|p| p.label != "K")
+    );
+}
+
+/// Bodies drawn by their shape: a box and a cylinder as closed solids
+/// facing out, oriented along the wire; a point nothing.
+#[test]
+fn bodies_are_drawn_by_their_shape() {
+    use crate::scene::body_mesh;
+    let at = [10.0, 20.0, 30.0];
+    let solid = |s: &ols_line::Shape| {
+        let t = body_mesh(s, at, [0.0, 1.0]);
+        assert!(!t.is_empty() && t.len().is_multiple_of(3));
+        for tri in t.as_chunks::<3>().0 {
+            let u = [0, 1, 2].map(|k| tri[1][k] - tri[0][k]);
+            let v = [0, 1, 2].map(|k| tri[2][k] - tri[0][k]);
+            let n = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
+            let m = [0, 1, 2].map(|k| (tri[0][k] + tri[1][k] + tri[2][k]) / 3.0 - at[k]);
+            assert!(n[0] * m[0] + n[1] * m[1] + n[2] * m[2] >= -1e-12);
+        }
+        t
+    };
+    let b = solid(&ols_line::Shape::Box {
+        along: 2.0,
+        across: 0.5,
+        height: 0.3,
+    });
+    // Along the wire (y here): 2 m.
+    let ys = b.iter().map(|p| p[1] - at[1]);
+    let span = ys.clone().fold(f64::MIN, f64::max) - ys.fold(f64::MAX, f64::min);
+    assert!((span - 2.0).abs() < 1e-9, "{span}");
+    let c = solid(&ols_line::Shape::Cylinder {
+        diameter: 0.2,
+        length: 1.0,
+        axis: ols_line::Axis::Vertical,
+    });
+    let zs = c.iter().map(|p| p[2] - at[2]);
+    let h = zs.clone().fold(f64::MIN, f64::max) - zs.fold(f64::MAX, f64::min);
+    assert!((h - 1.0).abs() < 1e-9);
+    assert!(body_mesh(&ols_line::Shape::Point, at, [1.0, 0.0]).is_empty());
+}
+
+/// The point and spread load types: the templates listed; one changed
+/// becomes the project's own (kept in the project, used by the span
+/// tool); a new type added; the project's copy deleted brings the
+/// template back; a template cannot be deleted.
+#[test]
+fn load_types_are_the_templates_and_the_projects_own() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("load-types");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let col = |n: &str| TableKind::LoadTypes.column(n);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let rows = TableKind::LoadTypes.rows(&r.model, r.case);
+        let ball = rows.iter().find(|x| x.key == "marker-ball-600").unwrap();
+        assert_eq!(ball.cells[col("source")], "template");
+        assert_eq!(ball.cells[col("shape")], "sphere");
+    }
+    set_cell(
+        &mut harness,
+        TableKind::LoadTypes,
+        "marker-ball-600",
+        "weight N",
+        "80",
+    );
+    apply_table(&mut harness, TableKind::LoadTypes, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let lib = r.model.object_library();
+        assert_eq!(lib.get("marker-ball-600").unwrap().weight, 80.0);
+        let rows = TableKind::LoadTypes.rows(&r.model, r.case);
+        let ball = rows.iter().find(|x| x.key == "marker-ball-600").unwrap();
+        assert_eq!(ball.cells[col("source")], "project");
+        let files = r
+            .model
+            .editing
+            .as_ref()
+            .unwrap()
+            .session
+            .library_files("objects")
+            .unwrap();
+        assert_eq!(files.len(), 1);
+        // A new type.
+        let mut row = TableKind::LoadTypes.new_row(&r.model, r.case, &[]);
+        row.resize(TableKind::LoadTypes.columns().len(), String::new());
+        row[col("id")] = "lamp".into();
+        row[col("name")] = "Lamp".into();
+        row[col("kind")] = "body".into();
+        row[col("weight N")] = "60".into();
+        row[col("shape")] = "box".into();
+        row[col("size 1")] = "0.3".into();
+        row[col("size 2")] = "0.2".into();
+        row[col("size 3")] = "0.4".into();
+        r.tables
+            .entry(TableKind::LoadTypes)
+            .or_default()
+            .added
+            .push(row);
+    }
+    apply_table(&mut harness, TableKind::LoadTypes, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let lamp = r.model.object_library().get("lamp").cloned().unwrap();
+        assert!(matches!(lamp.shape, Some(ols_line::Shape::Box { height, .. }) if height == 0.4));
+        // The span tool offers it.
+        let s0 = r.model.line.sections[0].id.clone();
+        let f = crate::span_tool::SpanForm::new(&r.model, r.case, &s0, 0, None).unwrap();
+        assert!(f.library.get("lamp").is_some());
+        // A template cannot be deleted; the project's copy can.
+        r.tables
+            .entry(TableKind::LoadTypes)
+            .or_default()
+            .deleted
+            .insert("weight-50kg".into());
+    }
+    assert!(apply_table(&mut harness, TableKind::LoadTypes, false).is_err());
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let page = r.tables.entry(TableKind::LoadTypes).or_default();
+        page.clear();
+        page.deleted.insert("marker-ball-600".into());
+    }
+    apply_table(&mut harness, TableKind::LoadTypes, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(
+        r.model
+            .object_library()
+            .get("marker-ball-600")
+            .unwrap()
+            .weight,
+        70.0
+    );
+}

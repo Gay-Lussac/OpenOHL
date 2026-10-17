@@ -374,8 +374,18 @@ pub fn ui(
                     format!("{:.2} m", q[2]),
                 ));
             }
+            rows.extend(object_rows(p.object.as_ref()));
             let rows: Vec<(&str, String)> = rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
             grid(ui, "span-point", &rows);
+            let tap = ols_line::Tap::Span(ols_line::SpanPointRef {
+                section: section.clone(),
+                point: label.clone(),
+            });
+            for j in line.jumpers.iter().filter(|j| [&j.from_tap, &j.to_tap].into_iter().flatten().any(|t| *t == tap)) {
+                if ui.link(format!("jumper {} (on this tap)", j.id)).clicked() {
+                    next = Some(Selection::Jumper(j.id.clone()));
+                }
+            }
             for s in line.spacers.iter().filter(|s| {
                 [&s.a, &s.b]
                     .iter()
@@ -383,6 +393,41 @@ pub fn ui(
             }) {
                 if ui.link(format!("spacer {}", s.id)).clicked() {
                     next = Some(Selection::Spacer(s.id.clone()));
+                }
+            }
+        }
+        Selection::JumperPoint { jumper, label } => {
+            ui.heading(format!("jumper {jumper} point {label}"));
+            let Some(p) = line
+                .jumpers
+                .iter()
+                .find(|j| j.id == jumper)
+                .and_then(|j| j.points.iter().find(|p| p.label == label))
+            else {
+                ui.label("Not in the line any more.");
+                return;
+            };
+            if ui.link(format!("jumper {jumper}")).clicked() {
+                next = Some(Selection::Jumper(jumper.clone()));
+            }
+            description(ui, &p.description);
+            let mut rows = vec![("place".to_owned(), p.at.text())];
+            if let Some((_, q)) = model
+                .jumper_shape(&jumper, case)
+                .and_then(|s| s.point_positions.iter().find(|(l, _)| *l == label))
+            {
+                rows.push(("height (case shown)".to_owned(), format!("{:.2} m", q[2])));
+            }
+            rows.extend(object_rows(p.object.as_ref()));
+            let rows: Vec<(&str, String)> = rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
+            grid(ui, "jumper-point", &rows);
+            let tap = ols_line::Tap::Jumper {
+                jumper: jumper.clone(),
+                point: label.clone(),
+            };
+            for j in line.jumpers.iter().filter(|j| [&j.from_tap, &j.to_tap].into_iter().flatten().any(|t| *t == tap)) {
+                if ui.link(format!("jumper {} (on this tap)", j.id)).clicked() {
+                    next = Some(Selection::Jumper(j.id.clone()));
                 }
             }
         }
@@ -985,4 +1030,45 @@ fn case_name(name: &str, this: bool, clicked: bool) -> egui::RichText {
         (true, false) => egui::RichText::new(name).strong(),
         _ => egui::RichText::new(name),
     }
+}
+
+/// An object's values, as rows (none: a bare point).
+fn object_rows(o: Option<&ols_line::LineObject>) -> Vec<(String, String)> {
+    let Some(o) = o else {
+        return vec![("object".into(), "none (a bare point)".into())];
+    };
+    let mut rows = vec![
+        ("object".to_owned(), o.kind.as_str().to_owned()),
+        (
+            "type".to_owned(),
+            o.type_id.clone().unwrap_or_else(|| "own values".into()),
+        ),
+        ("weight".to_owned(), format!("{:.1} N", o.weight)),
+    ];
+    let shape = match o.shape {
+        ols_line::Shape::Point => "point (no wind, no ice)".to_owned(),
+        ols_line::Shape::Sphere { diameter } => format!("sphere, {diameter} m"),
+        ols_line::Shape::Cylinder {
+            diameter,
+            length,
+            axis,
+        } => format!("cylinder {diameter} × {length} m, {axis:?}").to_lowercase(),
+        ols_line::Shape::Box {
+            along,
+            across,
+            height,
+        } => format!("box {along} × {across} × {height} m"),
+        ols_line::Shape::Areas {
+            wind_area,
+            ice_area,
+        } => format!("wind {wind_area} m², ice {ice_area} m²"),
+    };
+    rows.push(("shape".to_owned(), shape));
+    if let Some(d) = o.drag {
+        rows.push(("drag".to_owned(), format!("{d}")));
+    }
+    if let Some(l) = o.clamp_length {
+        rows.push(("clamp length".to_owned(), format!("{l} m")));
+    }
+    rows
 }

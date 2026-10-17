@@ -61,6 +61,9 @@ pub enum TableKind {
     /// Span points, point loads and spread loads (added with the span
     /// tool).
     SpanObjects,
+    /// The point and spread load types (the shipped templates, the
+    /// project's own).
+    LoadTypes,
 }
 
 /// How a column is typed in.
@@ -355,39 +358,106 @@ const SPACERS: &[Column] = &[
 ];
 
 const SPAN_OBJECTS: &[Column] = &[
-    ("section", 90.0, Derived, "its section"),
-    ("span", 45.0, Derived, "span of the section (1 = first)"),
+    ("on", 100.0, Derived, "its section, or its jumper"),
+    (
+        "span",
+        45.0,
+        Derived,
+        "span of the section (1 = first; — on a jumper)",
+    ),
     (
         "kind",
-        90.0,
+        110.0,
         Derived,
-        "a bare point, a point with its object (body or clamp, its type), or a spread between two points",
+        "a bare point, a point with its object (body or clamp, its library type), or a spread between two points",
     ),
     (
         "label",
-        110.0,
+        90.0,
         Yes,
-        "label (a point's: fixed, spacers and spreads use it)",
+        "label (a point's: fixed, spacers, spreads and taps use it)",
     ),
     (
         "at",
-        100.0,
+        110.0,
         Yes,
-        "a point: where — a fraction (0.25), a distance from the back structure (120 m) or a station (st. 1520 m); a spread: the point it starts at",
+        "a point on a span: a fraction (0.25), a distance from the back structure (120 m) or a station (st. 1520 m); on a jumper: a fraction, a length along it (3 m along) or a distance from its from clamp (2.5 m); a spread: the point it starts at",
     ),
-    ("end", 100.0, Yes, "a spread: the point it ends at"),
+    ("end", 80.0, Yes, "a spread: the point it ends at"),
     (
         "load",
-        80.0,
+        70.0,
         Yes,
         "an object's weight, N; a spread's load, N/m",
     ),
     (
-        "diameter m",
-        80.0,
+        "shape",
+        70.0,
         Yes,
-        "a point load's body, taken as a sphere (0: a point)",
+        "an object's shape: point, sphere, cylinder, box or areas",
     ),
+    (
+        "size 1",
+        60.0,
+        Yes,
+        "sphere and cylinder: diameter, m; box: along, m; areas: wind area, m²",
+    ),
+    (
+        "size 2",
+        60.0,
+        Yes,
+        "cylinder: length, m; box: across, m; areas: ice surface, m²",
+    ),
+    ("size 3", 60.0, Yes, "box: height, m"),
+    (
+        "axis",
+        60.0,
+        Yes,
+        "a cylinder's axis: along (the wire), across (the line) or vertical",
+    ),
+    ("drag", 50.0, Yes, "drag coefficient (empty: 1)"),
+];
+
+const LOAD_TYPES: &[Column] = &[
+    ("id", 120.0, New, "unique id"),
+    (
+        "source",
+        70.0,
+        Derived,
+        "shipped template, or the project's own (a template changed here becomes the project's)",
+    ),
+    ("name", 150.0, Yes, "name shown"),
+    ("kind", 60.0, Yes, "body, clamp or spread"),
+    ("weight N", 70.0, Yes, "a body's or a clamp's weight"),
+    ("shape", 70.0, Yes, "point, sphere, cylinder, box or areas"),
+    (
+        "size 1",
+        60.0,
+        Yes,
+        "sphere and cylinder: diameter, m; box: along, m; areas: wind area, m²",
+    ),
+    (
+        "size 2",
+        60.0,
+        Yes,
+        "cylinder: length, m; box: across, m; areas: ice surface, m²",
+    ),
+    ("size 3", 60.0, Yes, "box: height, m"),
+    (
+        "axis",
+        60.0,
+        Yes,
+        "a cylinder's axis: along, across or vertical",
+    ),
+    ("drag", 50.0, Yes, "drag coefficient (empty: 1)"),
+    (
+        "clamp length m",
+        90.0,
+        Yes,
+        "a clamp's length along the wire",
+    ),
+    ("load N/m", 70.0, Yes, "a spread type's load"),
+    ("description", 200.0, Yes, "what it is"),
 ];
 
 const JUMPERS: &[Column] = &[
@@ -862,6 +932,8 @@ pub struct Changes {
     /// Insulator library files to write (path, text) or delete (path,
     /// None), before the commands.
     pub library: Vec<(PathBuf, Option<String>)>,
+    /// A library file of the project to write (kind, name, text).
+    pub project_library: Option<(String, String, String)>,
     /// Sections' display weather cases (none: the case shown).
     pub display: Vec<(String, Vec<usize>)>,
     /// What deletions take with them, to confirm.
@@ -1000,7 +1072,7 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
 
 impl TableKind {
     /// Every table (the Tables menu).
-    pub const ALL: [TableKind; 13] = [
+    pub const ALL: [TableKind; 14] = [
         TableKind::Structures,
         TableKind::Sections,
         TableKind::Strings,
@@ -1014,6 +1086,7 @@ impl TableKind {
         TableKind::WeatherCases,
         TableKind::Spacers,
         TableKind::SpanObjects,
+        TableKind::LoadTypes,
     ];
 
     /// Title of its page.
@@ -1031,6 +1104,7 @@ impl TableKind {
             TableKind::Routes => "Routes",
             TableKind::WeatherCases => "Weather cases",
             TableKind::Spacers => "Spacers",
+            TableKind::LoadTypes => "Point and spread load types",
             TableKind::SpanObjects => "Span points and loads",
         }
     }
@@ -1050,6 +1124,7 @@ impl TableKind {
             TableKind::Routes => "routes",
             TableKind::WeatherCases => "weather",
             TableKind::Spacers => "spacers",
+            TableKind::LoadTypes => "load_types",
             TableKind::SpanObjects => "span_objects",
         }
     }
@@ -1069,6 +1144,7 @@ impl TableKind {
             TableKind::Routes => ROUTES,
             TableKind::WeatherCases => WEATHER,
             TableKind::Spacers => SPACERS,
+            TableKind::LoadTypes => LOAD_TYPES,
             TableKind::SpanObjects => SPAN_OBJECTS,
         }
     }
@@ -1599,6 +1675,7 @@ impl TableKind {
                 })
                 .collect(),
             TableKind::Spacers => spacer_rows(model, case),
+            TableKind::LoadTypes => load_type_rows(model),
             TableKind::SpanObjects => span_object_rows(model),
         };
         defaults(self, model, case, &mut rows);
@@ -1729,6 +1806,11 @@ impl TableKind {
             }
             // Added with tools in the views.
             TableKind::Spacers | TableKind::SpanObjects => {}
+            TableKind::LoadTypes => {
+                cells[1] = "project".into();
+                cells[3] = "body".into();
+                cells[5] = "point".into();
+            }
         }
         cells
     }
@@ -1749,6 +1831,9 @@ impl TableKind {
         }
         if self == TableKind::Insulators {
             return insulator_changes(model, rows, page);
+        }
+        if self == TableKind::LoadTypes {
+            return load_type_changes(model, rows, page);
         }
         let stored = model
             .stored_line()
@@ -2247,7 +2332,7 @@ impl TableKind {
             }
             TableKind::Spacers => spacer_commands(stored, page, &existing, &mut out)?,
             TableKind::SpanObjects => span_object_commands(stored, page, &existing, &mut out)?,
-            TableKind::WeatherCases | TableKind::Insulators => {
+            TableKind::WeatherCases | TableKind::Insulators | TableKind::LoadTypes => {
                 unreachable!("written to its files")
             }
         }
@@ -5037,55 +5122,109 @@ fn spacer_commands<'a>(
     Ok(())
 }
 
-/// Key of a span object: section, kind (p, l, s) and index.
-fn span_object_key(section: &str, kind: char, k: usize) -> String {
-    format!("{section}\t{kind}\t{k}")
+/// Key of a span object: section (or jumper), kind (p: a span point, s:
+/// a spread, j: a jumper point) and index.
+fn span_object_key(on: &str, kind: char, k: usize) -> String {
+    format!("{on}\t{kind}\t{k}")
 }
 
-/// The span points, point loads and spread loads of the sections.
+/// An object's cells: load (weight), shape, sizes, axis, drag.
+fn object_cells(o: Option<&ols_line::LineObject>) -> [String; 7] {
+    let Some(o) = o else {
+        return Default::default();
+    };
+    let n = |x: f64| f(x, 3);
+    let (s1, s2, s3, axis) = match o.shape {
+        ols_line::Shape::Point => (String::new(), String::new(), String::new(), String::new()),
+        ols_line::Shape::Sphere { diameter } => {
+            (n(diameter), String::new(), String::new(), String::new())
+        }
+        ols_line::Shape::Cylinder {
+            diameter,
+            length,
+            axis,
+        } => (
+            n(diameter),
+            n(length),
+            String::new(),
+            match axis {
+                ols_line::Axis::Along => "along",
+                ols_line::Axis::Across => "across",
+                ols_line::Axis::Vertical => "vertical",
+            }
+            .to_owned(),
+        ),
+        ols_line::Shape::Box {
+            along,
+            across,
+            height,
+        } => (n(along), n(across), n(height), String::new()),
+        ols_line::Shape::Areas {
+            wind_area,
+            ice_area,
+        } => (n(wind_area), n(ice_area), String::new(), String::new()),
+    };
+    [
+        f(o.weight, 1),
+        o.shape.as_str().to_owned(),
+        s1,
+        s2,
+        s3,
+        axis,
+        o.drag.map_or(String::new(), |d| f(d, 2)),
+    ]
+}
+
+/// The kind cell of a point.
+fn point_kind(o: Option<&ols_line::LineObject>) -> String {
+    match o {
+        None => "point".into(),
+        Some(o) => format!(
+            "{} ({})",
+            o.kind.as_str(),
+            o.type_id.clone().unwrap_or_else(|| "own".into())
+        ),
+    }
+}
+
+/// The points and spreads of the sections, and the jumpers' points.
 fn span_object_rows(model: &Model) -> Vec<Row> {
     let mut rows = Vec::new();
+    let row = |on: &str,
+               kind: char,
+               k: usize,
+               span: String,
+               select: Selection,
+               head: [String; 4],
+               o: [String; 7]| {
+        let mut cells = vec![on.to_owned(), span];
+        cells.extend(head);
+        cells.extend(o);
+        Row {
+            defaulted: Vec::new(),
+            key: span_object_key(on, kind, k),
+            select,
+            cells,
+        }
+    };
     for s in &model.line.sections {
-        let row = |kind: char, k: usize, span: usize, select: Selection, cells: [String; 6]| {
-            let [a, b, c, d, e, g] = cells;
-            Row {
-                defaulted: Vec::new(),
-                key: span_object_key(&s.id, kind, k),
-                select,
-                cells: vec![s.id.clone(), (span + 1).to_string(), a, b, c, d, e, g],
-            }
-        };
-        let span_of = |span: usize| Selection::Span {
-            section: s.id.clone(),
-            span,
-        };
         for (k, p) in s.span_points.iter().enumerate() {
             rows.push(row(
+                &s.id,
                 'p',
                 k,
-                p.span,
+                (p.span + 1).to_string(),
                 Selection::SpanPoint {
                     section: s.id.clone(),
                     label: p.label.clone(),
                 },
                 [
-                    match &p.object {
-                        None => "point".into(),
-                        Some(o) => format!(
-                            "{} ({})",
-                            o.kind.as_str(),
-                            o.type_id.clone().unwrap_or_else(|| o.shape.as_str().into())
-                        ),
-                    },
+                    point_kind(p.object.as_ref()),
                     p.label.clone(),
                     p.at.text(),
                     String::new(),
-                    p.object.as_ref().map_or(String::new(), |o| f(o.weight, 1)),
-                    match p.object.as_ref().map(|o| o.shape) {
-                        Some(ols_line::Shape::Sphere { diameter }) => f(diameter, 3),
-                        _ => String::new(),
-                    },
                 ],
+                object_cells(p.object.as_ref()),
             ));
         }
         for (k, l) in s.spreads.iter().enumerate() {
@@ -5094,27 +5233,145 @@ fn span_object_rows(model: &Model) -> Vec<Row> {
                 .iter()
                 .find(|p| p.label == l.from)
                 .map_or(0, |p| p.span);
+            let mut o: [String; 7] = Default::default();
+            o[0] = f(l.load, 2);
             rows.push(row(
+                &s.id,
                 's',
                 k,
-                span,
-                span_of(span),
+                (span + 1).to_string(),
+                Selection::Span {
+                    section: s.id.clone(),
+                    span,
+                },
                 [
-                    "spread".into(),
+                    format!(
+                        "spread ({})",
+                        l.type_id.clone().unwrap_or_else(|| "own".into())
+                    ),
                     l.label.clone(),
                     l.from.clone(),
                     l.to.clone(),
-                    f(l.load, 2),
+                ],
+                o,
+            ));
+        }
+    }
+    for j in &model.line.jumpers {
+        for (k, p) in j.points.iter().enumerate() {
+            rows.push(row(
+                &j.id,
+                'j',
+                k,
+                "—".into(),
+                Selection::JumperPoint {
+                    jumper: j.id.clone(),
+                    label: p.label.clone(),
+                },
+                [
+                    point_kind(p.object.as_ref()),
+                    p.label.clone(),
+                    p.at.text(),
                     String::new(),
                 ],
+                object_cells(p.object.as_ref()),
             ));
         }
     }
     rows
 }
 
-/// The span objects table's changes: each section changed put once, after
-/// deleting the spacers clamped on the span points deleted.
+/// An object as its cells say (columns 6 to 12): the weight, the shape and
+/// its sizes, the axis, the drag; changed from its type: its own values.
+fn object_from_cells(o: &mut ols_line::LineObject, c: &Cells, name: &str) -> Result<(), String> {
+    let before = o.clone();
+    if let Some(w) = opt_num(&c.get(6), &format!("{name} weight"))? {
+        o.weight = w;
+    }
+    let size = |k: usize, d: f64| -> Result<f64, String> {
+        Ok(opt_num(&c.get(k), &format!("{name} size"))?.unwrap_or(d))
+    };
+    let shape = c.get(7).trim().to_lowercase();
+    o.shape = match shape.as_str() {
+        "" | "point" => ols_line::Shape::Point,
+        "sphere" => ols_line::Shape::Sphere {
+            diameter: size(8, 0.6)?,
+        },
+        "cylinder" => ols_line::Shape::Cylinder {
+            diameter: size(8, 0.25)?,
+            length: size(9, 0.6)?,
+            axis: match c.get(11).trim().to_lowercase().as_str() {
+                "" | "along" => ols_line::Axis::Along,
+                "across" => ols_line::Axis::Across,
+                "vertical" => ols_line::Axis::Vertical,
+                other => {
+                    return Err(format!(
+                        "{name}: axis \"{other}\": along, across or vertical"
+                    ));
+                }
+            },
+        },
+        "box" => ols_line::Shape::Box {
+            along: size(8, 0.3)?,
+            across: size(9, 0.2)?,
+            height: size(10, 0.4)?,
+        },
+        "areas" => ols_line::Shape::Areas {
+            wind_area: size(8, 0.1)?,
+            ice_area: size(9, 0.2)?,
+        },
+        other => {
+            return Err(format!(
+                "{name}: shape \"{other}\": point, sphere, cylinder, box or areas"
+            ));
+        }
+    };
+    o.drag = opt_num(&c.get(12), &format!("{name} drag"))?;
+    o.validate().map_err(|e| format!("{name}: {e}"))?;
+    if *o != before {
+        o.type_id = None;
+    }
+    Ok(())
+}
+
+/// A place on a jumper as written in the table ([`ols_line::JumperPlace::text`]):
+/// `0.25`, `3 m along` or `2.5 m` (from its `from` clamp).
+fn parse_jumper_place(text: &str) -> Result<ols_line::JumperPlace, String> {
+    let t = text.trim();
+    let bad = || {
+        format!(
+            "\"{text}\": write a fraction (0.25), a length along it (3 m along) or a distance from its from clamp (2.5 m)"
+        )
+    };
+    let number = |s: &str| s.trim().parse::<f64>().map_err(|_| bad());
+    if let Some(l) = t.strip_suffix("m along") {
+        return Ok(ols_line::JumperPlace {
+            length: Some(number(l)?),
+            ..Default::default()
+        });
+    }
+    let d = t
+        .strip_suffix("m from the clamp")
+        .or_else(|| t.strip_suffix('m'));
+    if let Some(d) = d {
+        return Ok(ols_line::JumperPlace {
+            distance: Some(number(d)?),
+            ..Default::default()
+        });
+    }
+    let x = number(t)?;
+    if !(0.0..=1.0).contains(&x) {
+        return Err(bad());
+    }
+    Ok(ols_line::JumperPlace {
+        fraction: x,
+        ..Default::default()
+    })
+}
+
+/// The span objects table's changes: each section (jumper) changed put
+/// once, after deleting the spacers clamped and the jumpers hanging on
+/// the points deleted.
 fn span_object_commands<'a>(
     stored: &ols_line::Line,
     page: &TablePage,
@@ -5133,58 +5390,73 @@ fn span_object_commands<'a>(
         }
     };
     let mut sections: BTreeMap<String, ols_line::Section> = BTreeMap::new();
+    let mut jumpers: BTreeMap<String, ols_line::Jumper> = BTreeMap::new();
     let mut gone: BTreeMap<String, BTreeSet<(char, usize)>> = BTreeMap::new();
-    let take =
-        |sections: &mut BTreeMap<String, ols_line::Section>, id: &str| -> Result<(), String> {
-            if !sections.contains_key(id) {
+    let take_section =
+        |m: &mut BTreeMap<String, ols_line::Section>, id: &str| -> Result<(), String> {
+            if !m.contains_key(id) {
                 let s = stored
                     .sections
                     .iter()
                     .find(|s| s.id == id)
                     .ok_or_else(|| format!("no section {id}"))?;
-                sections.insert(id.to_owned(), s.clone());
+                m.insert(id.to_owned(), s.clone());
+            }
+            Ok(())
+        };
+    let take_jumper =
+        |m: &mut BTreeMap<String, ols_line::Jumper>, id: &str| -> Result<(), String> {
+            if !m.contains_key(id) {
+                let j = stored
+                    .jumpers
+                    .iter()
+                    .find(|j| j.id == id)
+                    .ok_or_else(|| format!("no jumper {id}"))?;
+                m.insert(id.to_owned(), j.clone());
             }
             Ok(())
         };
     for key in page.edits.keys().filter(|k| !page.deleted.contains(*k)) {
         let (id, kind, k) = parse_key(key)?;
-        take(&mut sections, &id)?;
-        let s = sections.get_mut(&id).expect("taken");
         let c = existing(key)?;
         let name = format!("{id} {}", c.get(3).trim());
         match kind {
             'p' => {
+                take_section(&mut sections, &id)?;
+                let s = sections.get_mut(&id).expect("taken");
                 let p = s
                     .span_points
                     .get_mut(k)
                     .ok_or_else(|| format!("{name}: gone"))?;
                 if c.get(3).trim() != p.label {
                     return Err(format!(
-                        "span point {}: its label is fixed (spacers use it)",
+                        "point {}: its label is fixed (spacers, spreads and taps use it)",
                         p.label
                     ));
                 }
                 p.at = parse_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
                 if let Some(o) = &mut p.object {
-                    if let Some(w) = opt_num(&c.get(6), &format!("{name} weight"))? {
-                        o.weight = w;
-                    }
-                    let d = opt_num(&c.get(7), &format!("{name} diameter"))?;
-                    match (d, &mut o.shape) {
-                        (Some(d), ols_line::Shape::Sphere { diameter }) => *diameter = d,
-                        (Some(d), shape @ ols_line::Shape::Point) if d > 0.0 => {
-                            *shape = ols_line::Shape::Sphere { diameter: d };
-                        }
-                        (Some(d), _) if c.changed(7) && d > 0.0 => {
-                            return Err(format!(
-                                "{name}: its shape is not a sphere (change it in its window)"
-                            ));
-                        }
-                        _ => {}
-                    }
+                    object_from_cells(o, &c, &name)?;
+                }
+            }
+            'j' => {
+                take_jumper(&mut jumpers, &id)?;
+                let j = jumpers.get_mut(&id).expect("taken");
+                let p = j.points.get_mut(k).ok_or_else(|| format!("{name}: gone"))?;
+                if c.get(3).trim() != p.label {
+                    return Err(format!(
+                        "point {}: its label is fixed (taps use it)",
+                        p.label
+                    ));
+                }
+                p.at = parse_jumper_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
+                if let Some(o) = &mut p.object {
+                    object_from_cells(o, &c, &name)?;
                 }
             }
             _ => {
+                take_section(&mut sections, &id)?;
+                let s = sections.get_mut(&id).expect("taken");
                 let l = s
                     .spreads
                     .get_mut(k)
@@ -5192,18 +5464,53 @@ fn span_object_commands<'a>(
                 l.label = c.get(3).trim().to_owned();
                 l.from = c.get(4).trim().to_owned();
                 l.to = c.get(5).trim().to_owned();
-                l.load = num(&c.get(6), &format!("{name} load"))?;
+                let load = num(&c.get(6), &format!("{name} load"))?;
+                if load != l.load {
+                    l.type_id = None;
+                }
+                l.load = load;
             }
         }
     }
     for key in &page.deleted {
         let (id, kind, k) = parse_key(key)?;
-        take(&mut sections, &id)?;
-        gone.entry(id).or_default().insert((kind, k));
+        if kind == 'j' {
+            take_jumper(&mut jumpers, &id)?;
+        } else {
+            take_section(&mut sections, &id)?;
+        }
+        gone.entry(format!("{kind}{id}"))
+            .or_default()
+            .insert((kind, k));
     }
-    for (id, set) in &gone {
-        let s = sections.get_mut(id).expect("taken");
+    let mut hanging: BTreeSet<String> = BTreeSet::new();
+    for (tagged, set) in &gone {
+        let id = &tagged[1..];
         let keep = |kind: char, k: usize| !set.contains(&(kind, k));
+        if tagged.starts_with('j') {
+            let j = jumpers.get_mut(id).expect("taken");
+            let labels: Vec<String> = j
+                .points
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| !keep('j', *k))
+                .map(|(_, p)| p.label.clone())
+                .collect();
+            for x in stored.jumpers.iter().filter(|x| {
+                [&x.from_tap, &x.to_tap].into_iter().flatten().any(|t| {
+                    matches!(t, ols_line::Tap::Jumper { jumper, point } if jumper == id && labels.contains(point))
+                })
+            }) {
+                hanging.insert(x.id.clone());
+            }
+            let mut k = 0;
+            j.points.retain(|_| {
+                k += 1;
+                keep('j', k - 1)
+            });
+            continue;
+        }
+        let s = sections.get_mut(id).expect("taken");
         let labels: Vec<String> = s
             .span_points
             .iter()
@@ -5214,7 +5521,7 @@ fn span_object_commands<'a>(
         for x in stored.spacers.iter().filter(|x| {
             [&x.a, &x.b]
                 .iter()
-                .any(|e| &e.section == id && labels.contains(&e.point))
+                .any(|e| e.section == *id && labels.contains(&e.point))
         }) {
             out.takes.push(format!("spacer {}", x.id));
             out.commands.push((
@@ -5225,6 +5532,13 @@ fn span_object_commands<'a>(
                     confirm: true,
                 },
             ));
+        }
+        for x in stored.jumpers.iter().filter(|x| {
+            [&x.from_tap, &x.to_tap].into_iter().flatten().any(|t| {
+                matches!(t, ols_line::Tap::Span(r) if r.section == *id && labels.contains(&r.point))
+            })
+        }) {
+            hanging.insert(x.id.clone());
         }
         let mut k = 0;
         s.span_points.retain(|_| {
@@ -5238,13 +5552,36 @@ fn span_object_commands<'a>(
             keep('s', k - 1) && !labels.contains(&x.from) && !labels.contains(&x.to)
         });
     }
+    for id in hanging {
+        jumpers.remove(&id);
+        out.takes.push(format!("jumper {id} (on a tap)"));
+        out.commands.push((
+            format!("deleted jumper {id}"),
+            Command::Delete {
+                kind: Kind::Jumper,
+                id,
+                confirm: true,
+            },
+        ));
+    }
     for (id, s) in sections {
         out.commands.push((
-            format!("changed the span objects of section {id}"),
+            format!("changed the points and spreads of section {id}"),
             Command::Put {
                 kind: Kind::Section,
                 id,
                 value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
+                ord: None,
+            },
+        ));
+    }
+    for (id, j) in jumpers {
+        out.commands.push((
+            format!("changed the points of jumper {id}"),
+            Command::Put {
+                kind: Kind::Jumper,
+                id,
+                value: serde_json::to_value(&j).map_err(|e| e.to_string())?,
                 ord: None,
             },
         ));
@@ -5284,4 +5621,177 @@ fn parse_place(text: &str) -> Result<ols_line::SpanPlace, String> {
         ));
     }
     Ok(ols_line::SpanPlace::at_fraction(x))
+}
+
+/// The project's own point and spread load types (its library file).
+fn project_load_types(model: &Model) -> ols_line::ObjectLibrary {
+    model
+        .editing
+        .as_ref()
+        .ok()
+        .and_then(|e| {
+            e.session
+                .library_files(crate::model::Model::OBJECT_LIBRARY_KIND)
+                .ok()
+        })
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, text)| ols_line::ObjectLibrary::parse(&text).ok())
+        .reduce(|mut a, b| {
+            a.types.extend(b.types);
+            a
+        })
+        .unwrap_or_default()
+}
+
+/// The types to choose from, the project's marked.
+fn load_type_rows(model: &Model) -> Vec<Row> {
+    let own = project_load_types(model);
+    model
+        .object_library()
+        .types
+        .iter()
+        .map(|t| {
+            let o = t.object();
+            let mut c = object_cells(o.as_ref());
+            if t.kind == ols_line::TypeKind::Spread {
+                c = Default::default();
+            }
+            let mut cells = vec![
+                t.id.clone(),
+                if own.get(&t.id).is_some() {
+                    "project"
+                } else {
+                    "template"
+                }
+                .to_owned(),
+                t.name.clone(),
+                match t.kind {
+                    ols_line::TypeKind::Body => "body",
+                    ols_line::TypeKind::Clamp => "clamp",
+                    ols_line::TypeKind::Spread => "spread",
+                }
+                .to_owned(),
+            ];
+            cells.extend(c);
+            cells.push(t.clamp_length.map_or(String::new(), |l| f(l, 3)));
+            cells.push(t.load.map_or(String::new(), |l| f(l, 2)));
+            cells.push(t.description.clone());
+            Row {
+                defaulted: Vec::new(),
+                key: t.id.clone(),
+                select: Selection::None,
+                cells,
+            }
+        })
+        .collect()
+}
+
+/// A type as its cells say (columns as [`LOAD_TYPES`]).
+fn load_type_from_cells(c: &Cells, id: &str) -> Result<ols_line::ObjectType, String> {
+    let kind = match c.get(3).trim().to_lowercase().as_str() {
+        "body" => ols_line::TypeKind::Body,
+        "clamp" => ols_line::TypeKind::Clamp,
+        "spread" => ols_line::TypeKind::Spread,
+        other => {
+            return Err(format!(
+                "type {id}: kind \"{other}\": body, clamp or spread"
+            ));
+        }
+    };
+    // The object's columns, shifted to where object_from_cells reads them.
+    let shifted: Vec<String> = (0..13)
+        .map(|k| match k {
+            6..=12 => c.get(k - 2),
+            _ => String::new(),
+        })
+        .collect();
+    let mut o = ols_line::LineObject::default();
+    if kind != ols_line::TypeKind::Spread {
+        object_from_cells(
+            &mut o,
+            &Cells {
+                row: &shifted,
+                typed: None,
+                defaulted: &[],
+            },
+            &format!("type {id}"),
+        )?;
+    }
+    Ok(ols_line::ObjectType {
+        id: id.to_owned(),
+        name: c.get(2).trim().to_owned(),
+        description: c.get(13).trim().to_owned(),
+        kind,
+        weight: o.weight,
+        shape: (kind != ols_line::TypeKind::Spread && o.shape != ols_line::Shape::Point)
+            .then_some(o.shape),
+        drag: o.drag,
+        clamp_length: opt_num(&c.get(11), &format!("type {id} clamp length"))?,
+        load: if kind == ols_line::TypeKind::Spread {
+            Some(num(&c.get(12), &format!("type {id} load"))?)
+        } else {
+            None
+        },
+    })
+}
+
+/// The load types table's changes: the project's own types written to
+/// its library file (a template changed becomes the project's of its id;
+/// a project's type deleted brings its template back, if any).
+fn load_type_changes(model: &Model, rows: &[Row], page: &TablePage) -> Result<Changes, String> {
+    model.can_edit()?;
+    let mut own = project_load_types(model);
+    for key in &page.deleted {
+        if own.get(key).is_none() {
+            return Err(format!(
+                "type {key} is a shipped template: it stays (change it to make the project's own)"
+            ));
+        }
+        own.types.retain(|t| &t.id != key);
+    }
+    for (key, typed) in page
+        .edits
+        .iter()
+        .filter(|(k, _)| !page.deleted.contains(*k))
+    {
+        let row = rows
+            .iter()
+            .find(|r| &r.key == key)
+            .ok_or_else(|| format!("type {key} is gone"))?;
+        let c = Cells {
+            row: &row.cells,
+            typed: Some(typed),
+            defaulted: &row.defaulted,
+        };
+        let t = load_type_from_cells(&c, key)?;
+        own.types.retain(|x| x.id != t.id);
+        own.types.push(t);
+    }
+    for cells in &page.added {
+        let c = Cells {
+            row: cells,
+            typed: None,
+            defaulted: &[],
+        };
+        let id = c.get(0).trim().to_owned();
+        if id.is_empty() || model.object_library().get(&id).is_some() && own.get(&id).is_some() {
+            return Err(format!("a new type needs an id of its own ({id:?})"));
+        }
+        let t = load_type_from_cells(&c, &id)?;
+        own.types.retain(|x| x.id != t.id);
+        own.types.push(t);
+    }
+    if own.name.is_empty() {
+        own.name = "Project types".into();
+    }
+    own.validate()?;
+    Ok(Changes {
+        project_library: Some((
+            crate::model::Model::OBJECT_LIBRARY_KIND.to_owned(),
+            "project.olsload".to_owned(),
+            own.to_text(),
+        )),
+        ..Changes::default()
+    })
 }
