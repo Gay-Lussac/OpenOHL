@@ -308,7 +308,7 @@ impl Op {
                 | Command::AlignUnderStructures { route } => {
                     out.push((Kind::Route, route.clone()));
                 }
-                Command::RenameSystem { .. } => out.push((Kind::Meta, "line".into())),
+                Command::RenameSystem { .. } => out.push((Kind::Meta, "systems".into())),
                 Command::Batch { commands } => {
                     for c in commands {
                         if !of(c, out) {

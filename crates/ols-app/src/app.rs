@@ -4228,7 +4228,7 @@ fn crs_windows(ctx: &egui::Context, r: &mut Ready) {
             if let Ok(e) = &r.model.editing {
                 let mut line = e.session.line().clone();
                 line.crs = spec;
-                let command = ols_session::line_settings_put(&line, None);
+                let command = ols_session::line_settings_change(e.session.line(), &line);
                 r.perform(crate::edit::Action::Command {
                     what: "coordinate system".into(),
                     command,
@@ -5194,7 +5194,7 @@ fn angles_window(ctx: &egui::Context, r: &mut Ready) {
         if let Some(stored) = r.model.stored_line() {
             let mut line = stored.clone();
             line.display.ahead_deg = ahead.rem_euclid(360.0);
-            let command = ols_session::line_settings_put(&line, None);
+            let command = ols_session::line_settings_change(stored, &line);
             if r.perform(crate::edit::Action::Command {
                 what: format!("ahead at {:.0}° around structures", line.display.ahead_deg),
                 command,
