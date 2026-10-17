@@ -13,6 +13,19 @@ project file, `--library`, `--structures`, `--insulators`; and for weather
 cases `--weather FILE.olswc` with `--case NAME` / `--tag TAG` (repeatable;
 all cases without them).
 
+**Sections that do not solve.** A section or jumper that does not solve in
+a weather or load case is left out of what is computed from it there, and
+said so: the clearance checks list it as not solved; the structure loads
+and usage of every structure it ends at or hangs on are marked
+**incomplete** in that case — "not checked", never a pass (see
+[Incomplete structures](loads.md#structure-usage-capacity-checks)), also
+in the values handed to the structure application. In the desktop app the
+section is drawn in that case where it last was — its last solved shape in
+that case, else its shape in another weather case, else the straight
+chords between its wire points — as a **dashed red** line; hovering it in
+the plan says why, and a click on any of its copies selects the span, whose
+properties say why it did not solve and where the drawn shape comes from.
+
 ## Galloping ellipses (`.olsg`)
 
 ```bash

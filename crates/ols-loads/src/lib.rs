@@ -16,6 +16,11 @@
 //! attachment point, the force the wires and strings put on the structure:
 //! in the line's axes, and in the structure's (transverse to the right of
 //! the line, longitudinal ahead, vertical down), unfactored and factored.
+//! A section or jumper that does not solve in a case is listed per
+//! structure it ends at, hangs on or is held by ([`CaseLoads::missing`]):
+//! that structure's loads in that case are **incomplete** (they lack the
+//! wire's forces) and its usage checks say so
+//! ([`capacity::StructureUsage::status`]).
 //!
 //! ```toml
 //! format = "ols-load-cases"
@@ -254,6 +259,133 @@ pub struct CaseLoads {
     pub loads: Vec<AttachmentLoad>,
     /// Sections not solved, with why (their loads are missing).
     pub failed: Vec<String>,
+    /// Per structure, the sections ending at or hanging on it and the
+    /// jumpers held by its strings that did not solve in this case: their
+    /// forces are missing from its loads, which are therefore incomplete
+    /// (the loads given are those computed, nothing is made up for the
+    /// missing wires).
+    pub missing: Vec<MissingWire>,
+}
+
+impl CaseLoads {
+    /// The wires missing from the loads of structure `structure`.
+    pub fn missing_at<'a>(&'a self, structure: &'a str) -> impl Iterator<Item = &'a MissingWire> {
+        self.missing
+            .iter()
+            .filter(move |m| m.structure == structure)
+    }
+
+    /// Whether the loads of structure `structure` miss a wire's forces.
+    pub fn is_incomplete(&self, structure: &str) -> bool {
+        self.missing_at(structure).next().is_some()
+    }
+}
+
+/// What kind of wire a [`MissingWire`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WireKind {
+    /// A section (its spans between its structures).
+    Section,
+    /// A jumper held by a structure's strings.
+    Jumper,
+}
+
+impl WireKind {
+    /// In words.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Section => "section",
+            Self::Jumper => "jumper",
+        }
+    }
+}
+
+/// A section or jumper that did not solve in a load case, at one
+/// structure it ends at, hangs on or is held by: the structure's loads in
+/// that case lack its forces.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MissingWire {
+    /// The structure.
+    pub structure: String,
+    /// Section or jumper.
+    pub kind: WireKind,
+    /// Its id.
+    pub id: String,
+    /// Why it did not solve.
+    pub reason: String,
+}
+
+impl MissingWire {
+    /// `section S12 not solved (reason)`.
+    pub fn describe(&self) -> String {
+        format!(
+            "{} {} not solved ({})",
+            self.kind.as_str(),
+            self.id,
+            self.reason
+        )
+    }
+
+    /// `S12 not solved` (a jumper: `jumper J1 not solved`).
+    pub fn short(&self) -> String {
+        match self.kind {
+            WireKind::Section => format!("{} not solved", self.id),
+            WireKind::Jumper => format!("jumper {} not solved", self.id),
+        }
+    }
+}
+
+/// The structures a section of `line` ends at or hangs on, each once, in
+/// its order.
+pub fn section_structures(line: &Line, section: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    if let Some(s) = line.sections.iter().find(|s| s.id == section) {
+        for p in &s.points {
+            if !out.contains(&p.structure) {
+                out.push(p.structure.clone());
+            }
+        }
+    }
+    out
+}
+
+/// The structures whose strings hold jumper `jumper` of `line` (its
+/// support clamps), each once.
+pub fn jumper_structures(line: &Line, jumper: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    if let Some(j) = line.jumpers.iter().find(|j| j.id == jumper) {
+        for c in j.supports() {
+            let s = c
+                .structure
+                .clone()
+                .or_else(|| j.from.structure().map(str::to_owned))
+                .or_else(|| j.to.structure().map(str::to_owned));
+            if let Some(s) = s
+                && !out.contains(&s)
+            {
+                out.push(s);
+            }
+        }
+    }
+    out
+}
+
+/// The missing wires of a section or jumper `id` of `line` that did not
+/// solve, one per structure it ends at, hangs on or is held by.
+pub fn missing_wires(line: &Line, kind: WireKind, id: &str, reason: &str) -> Vec<MissingWire> {
+    let structures = match kind {
+        WireKind::Section => section_structures(line, id),
+        WireKind::Jumper => jumper_structures(line, id),
+    };
+    structures
+        .into_iter()
+        .map(|structure| MissingWire {
+            structure,
+            kind,
+            id: id.to_owned(),
+            reason: reason.to_owned(),
+        })
+        .collect()
 }
 
 /// The default exit clauses of one section solve.
@@ -302,6 +434,7 @@ pub fn structure_loads(
         // (structure, point) → load.
         let mut at: BTreeMap<(String, String), AttachmentLoad> = BTreeMap::new();
         let mut failed = Vec::new();
+        let mut missing = Vec::new();
         // Every section in the load case's condition, solved together where
         // they share strings.
         let mut solving = line.clone();
@@ -315,6 +448,12 @@ pub fn structure_loads(
                 Ok(shape) => shape,
                 Err(e) => {
                     failed.push(format!("{}: {e}", section.id));
+                    missing.extend(missing_wires(
+                        &line,
+                        WireKind::Section,
+                        &section.id,
+                        &e.to_string(),
+                    ));
                     continue;
                 }
             };
@@ -359,6 +498,12 @@ pub fn structure_loads(
                 Ok(shape) => shape,
                 Err(e) => {
                     failed.push(format!("jumper {}: {e}", j.id));
+                    missing.extend(missing_wires(
+                        &line,
+                        WireKind::Jumper,
+                        &j.id,
+                        &e.to_string(),
+                    ));
                     continue;
                 }
             };
@@ -394,6 +539,7 @@ pub fn structure_loads(
             case: case.clone(),
             loads: at.into_values().collect(),
             failed,
+            missing,
         });
     }
     Ok(out)

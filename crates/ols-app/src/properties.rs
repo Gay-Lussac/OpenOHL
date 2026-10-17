@@ -1143,7 +1143,20 @@ pub fn ui(
                     }
                 });
             });
-            if let Some(why) = model.cases.get(case).and_then(|c| {
+            // Not solved in the case of the copy clicked (else the one
+            // shown): why, and where its dashed red copy comes from.
+            let shown = model
+                .selection_case
+                .unwrap_or_else(|| model.section_case(&section, case));
+            if let Some(d) = model.unsolved_drawn(&section, shown, 0) {
+                crate::menu::error_label(
+                    ui,
+                    format!(
+                        "{section} not solved in {}: {} — drawn dashed red: {}",
+                        model.cases[shown].case.name, d.reason, d.from
+                    ),
+                );
+            } else if let Some(why) = model.cases.get(case).and_then(|c| {
                 c.failed
                     .iter()
                     .find(|f| f.starts_with(&format!("{section}:")))

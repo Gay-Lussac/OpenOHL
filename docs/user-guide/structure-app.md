@@ -74,8 +74,10 @@ ols-structure Structures/type-02.olss --structure T2 \
   `weather: <name>` with every factor 1 (none by default). They are
   computed as Checks › Structure loads does, in the background, and
   written beside the structure file as
-  `<name>.<structure>.line-values.json` (version 2: each case with its
-  source; version 1 files still read, their cases load cases). Until
+  `<name>.<structure>.line-values.json` (version 3: each case with its
+  source and, per case, the sections and jumpers at the structure that
+  did not solve; versions 1 and 2 still read — their cases load cases,
+  nothing missing). Until
   they are there the header says they are being computed; with no load
   case and no weather case ticked it says so and suggests ticking weather
   cases; a ticked case no longer in the line is named. When the line changes while the application is open
@@ -88,7 +90,15 @@ ols-structure Structures/type-02.olss --structure T2 \
   line's values for T2 are being computed…*; *The line gives no values
   for T7: the project has no load cases. Add them in the line
   application (Criteria › Load cases, or a design-code plugin)…*; a case
-  of the line without values (its sections not solved in it); opened
+  of the line without values (its sections not solved in it); a case
+  **incomplete** — *Case ice incomplete: section S12 not solved (why) —
+  the line's forces at T2 lack its wires…*: a section or jumper at this
+  structure did not solve in that case, so its forces are missing and the
+  values too low (that case's rows in the load table start their note
+  with *incomplete: S12 not solved*, Line values marks them in its
+  **complete** column, and **FE results** of the case read *not checked —
+  incomplete: S12 not solved*, the usage of the loads there are shown
+  only in brackets); opened
   alone, *No line values: open this from a placed structure (select it
   in the line, Properties › Edit…) to get its forces*, with the cases
   stored in the file from the line, if any.

@@ -802,6 +802,22 @@ looking ahead), `air_density_factor`, `ambient_temperature`.
 case name), `condition` (initial, creep, load, max sag), factors
 `vertical`, `transverse`, `longitudinal`, `strength`, `tags`.
 
+Results of `ols_loads::structure_loads` (derived, never stored):
+`CaseLoads` per load case — `case`, `loads` (`AttachmentLoad` per
+structure and point), `failed` (sections and jumpers not solved, in
+words) and `missing` (`MissingWire`: `structure`, `kind`
+`WireKind::Section`/`Jumper`, `id`, `reason` — one per structure a
+section not solved ends at or hangs on, or whose strings hold a jumper
+not solved: that structure's loads in that case are **incomplete**;
+`CaseLoads::missing_at`, `is_incomplete`). The usage
+(`ols_loads::capacity`, `CaseUsage` → `StructureUsage`) carries the
+same per structure (`StructureUsage::missing`), marks each `Check` from
+such loads `incomplete: true`, and `StructureUsage::status()` gives
+`UsageStatus::{NotChecked, Incomplete, Pass, Over}` — `Incomplete`
+whenever a wire is missing, whatever the usage. The usage CSV
+(`usage_csv`, `ols line --usage-csv`) ends with an `incomplete` column:
+`incomplete: section S12 not solved (why); …`, empty when complete.
+
 ### Structure load cases (`[[load_case]]`, `.olsslc`)
 
 The structure application's recipes
@@ -853,7 +869,7 @@ member whose section is not in the library has no area).
 
 **Line-values file** (`<stem>.<placed structure>.line-values.json`
 beside the structure file, `ols_structure_loads::PlacedValues`, JSON,
-`format = "ols-structure-line-values"`, version 2; version 1 files are
+`format = "ols-structure-line-values"`, version 3; versions 1 and 2 are
 read too): what the line application hands to the structure application
 for **Edit…** on a placed structure — `structure` (placed structure id),
 `line` (project line, or the line file's name), `structure_type`,
@@ -863,10 +879,18 @@ chosen, then the weather cases chosen on their own, `weather: <name>`),
 `weather_case`, `ols_structure_loads::CaseSource`; absent in version 1:
 every case a load case), `values` (`LineValues`), `others`
 (`OtherPlace`: the other placed structures of the type with their
-`LineValues`), `note` (why there are no values: being computed, no load
-case and no weather case chosen; sections not solved; chosen cases no
-longer in the line). Derived data, rewritten
-when the line changes; never stored in the project.
+`LineValues`; each also with its `missing`), `note` (why there are no
+values: being computed, no load case and no weather case chosen;
+sections not solved; chosen cases no longer in the line), `missing`
+(version 3, absent when empty or in older files: per case the sections
+and jumpers at this placed structure that did not solve,
+`ols_structure_loads::MissingWire` — `case`, `kind` `"section"` or
+`"jumper"`, `id`, `reason`; filled by
+`ols_structure_link::missing_wires` from `CaseLoads::missing`; the
+structure application marks those cases incomplete:
+`PlacedValues::incomplete(case)` → `incomplete: S12 not solved`).
+Derived data, rewritten when the line changes; never stored in the
+project.
 
 ### Structure exports (IFC, SAF, CSV)
 

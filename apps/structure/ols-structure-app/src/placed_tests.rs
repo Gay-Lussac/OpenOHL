@@ -12,8 +12,8 @@ use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use ols_structure_loads::{
-    LinePoint, LineQuantity, LineValue, LineValues, LoadRow, OtherPlace, PlacedValues, Source,
-    line_values_path, overrides_path,
+    LinePoint, LineQuantity, LineValue, LineValues, LoadRow, MissingWire, OtherPlace, PlacedValues,
+    Source, line_values_path, overrides_path,
 };
 
 use crate::app::StructureApp;
@@ -68,6 +68,7 @@ fn write(path: &Path, wind: [f64; 3]) {
     v.others = vec![OtherPlace {
         structure: "T4".into(),
         values: values([1000.0, 0.0, 2000.0]),
+        missing: Vec::new(),
     }];
     v.save(path).unwrap();
 }
@@ -323,5 +324,76 @@ fn the_line_forces_are_the_table_and_are_stored_in_the_file() {
     let text = h.state().file.as_ref().unwrap().text();
     assert!(text.contains("1700.0 N"), "{text}");
     assert!(!text.contains("1500.0 N"), "{text}");
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}
+
+/// The line could not solve section S3 in the ice case: the line-values
+/// file lists it for that case. The status block says the case is
+/// incomplete, the case's rows of the load table and of Line values are
+/// marked "incomplete: S3 not solved" (the wind case's not), and the FE
+/// results of the case are marked incomplete — not checked.
+#[test]
+fn a_case_with_a_wire_not_solved_is_marked_incomplete() {
+    let path = copy_of("incomplete");
+    let at = line_values_path(&path, "T2");
+    let mut v = PlacedValues::pending("T2", "test line", "type-02", "");
+    v.note = None;
+    v.cases = vec!["wind".into(), "ice".into()];
+    v.values = values([1500.0, -200.0, 6000.0]);
+    v.missing = vec![MissingWire {
+        case: "ice".into(),
+        kind: "section".into(),
+        id: "S3".into(),
+        reason: "did not converge".into(),
+    }];
+    v.save(&at).unwrap();
+    let mut h = harness(&path, &at);
+    menu(&mut h, "Load cases", "Load table…");
+    h.get_by_label_contains("Case ice incomplete: section S3 not solved (did not converge)");
+    refresh(&mut h);
+    let rows = h.state().loads.table().rows.clone();
+    let line_rows: Vec<&LoadRow> = rows.iter().filter(|r| r.source == Source::Line).collect();
+    assert!(!line_rows.is_empty());
+    for r in line_rows {
+        assert_eq!(
+            r.note.starts_with("incomplete: S3 not solved"),
+            r.case == "ice",
+            "{r:?}"
+        );
+    }
+    assert_eq!(
+        h.state().loads.incomplete("ice").as_deref(),
+        Some("incomplete: S3 not solved")
+    );
+    assert_eq!(h.state().loads.incomplete("wind (line)"), None);
+    // Line values: the ice rows marked (once per point).
+    h.state_mut().focus(Panel::InTheLine);
+    h.run();
+    assert_eq!(
+        h.get_all_by_label("incomplete: S3 not solved").count(),
+        2,
+        "A1 and A11 in ice"
+    );
+    h.get_by_label_contains("Case ice incomplete");
+    // FE results of the ice case: marked, not a plain pass.
+    menu(&mut h, "Results", "FE results…");
+    h.state_mut().results.case = "ice".into();
+    h.run();
+    h.get_by_label("▶ Run").click();
+    let started = std::time::Instant::now();
+    loop {
+        h.step();
+        if !h.state().results.running() {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(60),
+            "no result in 60 s"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    h.run();
+    h.get_by_label("not checked — incomplete: S3 not solved");
+    h.get_by_label_contains("ice: incomplete: S3 not solved — the line's forces lack that wire");
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }

@@ -13819,3 +13819,142 @@ fn replace_structure_maps_wire_points_and_lists_what_goes() {
     );
     assert_eq!(r.model.line.jumpers.len(), 1);
 }
+
+/// A section that stops solving (after creep, with no creep case) is
+/// drawn in each case in its last solved shape, dashed red, and a click
+/// on that copy picks its span (the copy's case remembered); a section
+/// never solved anywhere is drawn as the straight chords.
+#[test]
+fn a_section_not_solved_is_drawn_dashed_where_it_was() {
+    use crate::scene::{Layer, UNSOLVED_COLOR, prims};
+    use crate::selection::{Snaps, pick_in_model_case};
+    use ols_line::condition::Calculation;
+    let mut m = synthetic();
+    let before = m.cases[0]
+        .shapes
+        .iter()
+        .find(|s| s.section == "S1")
+        .unwrap()
+        .clone();
+    m.line.sections[0].calculation = Calculation::CREEP_RS;
+    let (line, library) = (m.line.clone(), m.library.clone());
+    for c in &mut m.cases {
+        c.update(&line, &library, &["S1".to_owned()]);
+    }
+    let c = &m.cases[0];
+    assert!(c.shapes.iter().all(|s| s.section != "S1"));
+    assert_eq!(c.unsolved.len(), 1, "{:?}", c.unsolved);
+    assert_eq!(c.unsolved[0].0, "S1");
+    let d = m.unsolved_drawn("S1", 0, 0).unwrap();
+    assert!(d.from.contains("last solved"), "{}", d.from);
+    assert!(d.reason.contains("Creep-Stretch"), "{}", d.reason);
+    assert_eq!(d.spans[0], before.spans[0].points);
+    // Drawn: red dashes (more pieces than the span has points apart).
+    let red: Vec<_> = prims(&m, Layer::Wires, 0)
+        .into_iter()
+        .filter(|p| p.color[..3] == UNSOLVED_COLOR)
+        .collect();
+    assert!(red.len() > before.spans.len() * 2, "{}", red.len());
+    // Solved ones are not.
+    assert!(m.unsolved_drawn("S2", 0, 0).is_none());
+    // A click on the dashed copy (seen from above) picks its span.
+    let pts = &d.spans[1];
+    let mid = pts[pts.len() / 2];
+    let (picked, _) = pick_in_model_case(&m, 0, &Snaps::default(), [mid[0], mid[1]], 0.5, |p| {
+        Some([p[0], p[1]])
+    });
+    assert_eq!(
+        picked,
+        Selection::Span {
+            section: "S1".into(),
+            span: 1
+        }
+    );
+    // Shown in two cases: each copy drawn and picked, with its case.
+    m.shown_cases = vec![0, 1];
+    let d1 = m.unsolved_drawn("S1", 1, 0).unwrap();
+    let mid1 = d1.spans[1][d1.spans[1].len() / 2];
+    let (picked, k) = pick_in_model_case(&m, 0, &Snaps::default(), [mid1[0], mid1[1]], 0.05, |p| {
+        Some([p[0], p[1]])
+    });
+    assert!(matches!(picked, Selection::Span { ref section, .. } if section == "S1"));
+    if d1.spans[1] != d.spans[1] {
+        assert_eq!(k, Some(1));
+    }
+    // Solved from scratch in every case (nothing before): the chords.
+    for k in 0..m.cases.len() {
+        m.cases[k] = model::Solved::new(&m.line, &m.library, m.cases[k].case.clone());
+    }
+    let d = m.unsolved_drawn("S1", 0, 0).unwrap();
+    assert!(d.from.contains("chords"), "{}", d.from);
+    assert!(d.spans.iter().all(|s| s.len() == 2));
+}
+
+/// Checks › Structure loads with the ice case (after creep) not solved:
+/// the Usage page shows the structures as "not checked" in ice (grey,
+/// the sections not solved named), and coloured by usage they are
+/// marked so in the views.
+#[test]
+fn the_usage_page_shows_structures_not_checked() {
+    use crate::loads::UsageMark;
+    let model = synthetic_project("incomplete");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.get_by_label("Checks").click();
+    harness.run();
+    harness.get_by_label("Compute structure loads").click();
+    run_until(&mut harness, |a| {
+        let r = a.ready().unwrap();
+        r.loads.poll();
+        r.loads.results.is_some()
+    });
+    harness.step();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let results = r.loads.results.as_ref().unwrap().as_ref().unwrap();
+        let ice = results.iter().position(|c| c.case.name == "ice").unwrap();
+        assert!(
+            results[ice].is_incomplete("T1"),
+            "{:?}",
+            results[ice].failed
+        );
+        assert!(!results[0].is_incomplete("T1"));
+        // The usage of ice: T1 incomplete, the everyday case's not.
+        assert!(
+            r.loads.usage[ice]
+                .structures
+                .iter()
+                .all(|s| s.is_incomplete())
+        );
+        assert!(
+            r.loads.usage[0]
+                .structures
+                .iter()
+                .all(|s| !s.is_incomplete())
+        );
+        r.loads.show_usage = true;
+        r.loads.usage_case = ice + 1;
+    }
+    harness.step();
+    harness.step();
+    assert!(harness.query_all_by_label("not checked").next().is_some());
+    assert!(
+        harness
+            .query_all_by_label_contains("not checked: S1 not solved, S2 not solved in ice")
+            .next()
+            .is_some()
+    );
+    // Coloured by usage: incomplete, the legend's neutral colour.
+    harness.get_by_label("Colour structures by usage").click();
+    harness.step();
+    harness.step();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.loads.colour_structures);
+    assert_eq!(r.model.usage_marks.get("T1"), Some(&UsageMark::Incomplete));
+    assert_eq!(
+        UsageMark::Incomplete.label(),
+        "not checked: a wire not solved"
+    );
+}

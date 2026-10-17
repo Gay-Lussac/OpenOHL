@@ -350,3 +350,45 @@ t = "5 mm"
             .is_some_and(|m| m.starts_with("no area"))
     }));
 }
+
+/// A section that does not solve (its cable not in the library): the
+/// line-values file of a structure it hangs on carries, per case, the
+/// section missing (through JSON and back) — the structure application
+/// marks those cases incomplete — and that of a structure it does not
+/// touch carries nothing; the other places of the type carry theirs.
+#[test]
+fn the_line_values_file_lists_the_wires_not_solved() {
+    let (mut line, library, weather, cases) = example();
+    for s in line.sections.iter_mut().filter(|s| s.id == "S3") {
+        s.cable = "no-such-cable".into();
+    }
+    let loads = ols_loads::structure_loads(
+        &line,
+        &library,
+        &weather,
+        &cases.cases,
+        &ols_wirefe::default_fe_budget(),
+    )
+    .unwrap();
+    // T3: S3 starts there.
+    let t3 = placed_values(&loads, &[], &[], &line, "T3", "synthetic");
+    assert_eq!(t3.missing.len(), 3, "{:?}", t3.missing);
+    for (m, case) in t3.missing.iter().zip(["everyday", "wind", "ice"]) {
+        assert_eq!(
+            (m.case.as_str(), m.kind.as_str(), m.id.as_str()),
+            (case, "section", "S3")
+        );
+        assert!(!m.reason.is_empty());
+        assert_eq!(
+            t3.incomplete(case).as_deref(),
+            Some("incomplete: S3 not solved")
+        );
+    }
+    let back = PlacedValues::parse(&t3.to_json()).unwrap();
+    assert_eq!(back, t3);
+    // T2: only S1 and S2, solved.
+    let t2 = placed_values(&loads, &[], &[], &line, "T2", "synthetic");
+    assert!(t2.missing.is_empty(), "{:?}", t2.missing);
+    assert!(t2.others.iter().all(|o| o.missing.is_empty()));
+    assert_eq!(t2.incomplete("ice"), None);
+}

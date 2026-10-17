@@ -146,6 +146,18 @@ impl ViewPrefsStore {
     }
 }
 
+/// A section not solved in a weather case, drawn in its place (dashed
+/// red): [`Model::unsolved_drawn`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnsolvedDrawn {
+    /// Each span's points (a span without both wire points: empty).
+    pub spans: Vec<Vec<[f64; 3]>>,
+    /// Where the shape comes from, in words.
+    pub from: String,
+    /// Why it did not solve.
+    pub reason: String,
+}
+
 /// One solved weather case.
 #[derive(Debug, Clone)]
 pub struct Solved {
@@ -157,6 +169,12 @@ pub struct Solved {
     pub jumpers: Vec<JumperShape>,
     /// Sections or jumpers that failed, with why.
     pub failed: Vec<String>,
+    /// Sections not solved in this case: (id, why).
+    pub unsolved: Vec<(String, String)>,
+    /// The shape of each section of [`Solved::unsolved`] from before it
+    /// stopped solving (a previous solve of this case), when there was
+    /// one: drawn dashed red in its place ([`Model::unsolved_drawn`]).
+    pub last_solved: std::collections::BTreeMap<String, SectionShape>,
     /// Subconductors joined up at the clamps (yokes), for drawing.
     pub bundles: ols_line::bundles::BundleLines,
     /// The solution kept for re-solving only what an edit touches.
@@ -259,6 +277,29 @@ impl Solved {
         Self::from_live(line, case, live)
     }
 
+    /// A new solution of the same case replacing `old`: the sections not
+    /// solved in this one that `old` had a shape for (solved, or kept from
+    /// before) keep that shape ([`Solved::last_solved`]); its mirror the
+    /// same from `old`'s mirror.
+    pub fn inherit(&mut self, old: &Solved) {
+        for (id, _) in &self.unsolved {
+            if self.last_solved.contains_key(id) {
+                continue;
+            }
+            let shape = old
+                .shapes
+                .iter()
+                .find(|s| &s.section == id)
+                .or_else(|| old.last_solved.get(id));
+            if let Some(shape) = shape {
+                self.last_solved.insert(id.clone(), shape.clone());
+            }
+        }
+        if let (Some(m), Some(o)) = (self.mirror.as_deref_mut(), old.mirror.as_deref()) {
+            m.inherit(o);
+        }
+    }
+
     /// `case`, not solved yet (nothing drawn, nothing failed).
     pub fn pending(case: WeatherCase) -> Self {
         Self {
@@ -267,6 +308,8 @@ impl Solved {
             shapes: Vec::new(),
             jumpers: Vec::new(),
             failed: Vec::new(),
+            unsolved: Vec::new(),
+            last_solved: Default::default(),
             bundles: Default::default(),
             ready: false,
             mirror: None,
@@ -284,6 +327,8 @@ impl Solved {
             shapes: Vec::new(),
             jumpers: Vec::new(),
             failed: Vec::new(),
+            unsolved: Vec::new(),
+            last_solved: Default::default(),
             bundles: Default::default(),
             live,
             ready: true,
@@ -294,7 +339,23 @@ impl Solved {
     }
 
     fn refresh(&mut self, line: &Line) {
+        // The shapes as they were: kept for the sections that stop solving.
+        let mut before = std::mem::take(&mut self.last_solved);
+        for shape in std::mem::take(&mut self.shapes) {
+            before.insert(shape.section.clone(), shape);
+        }
         self.shapes = self.live.shapes(line);
+        self.unsolved = self
+            .live
+            .results(line)
+            .into_iter()
+            .filter_map(|(id, r)| r.as_ref().err().map(|e| (id.to_owned(), e.to_string())))
+            .collect();
+        self.last_solved = self
+            .unsolved
+            .iter()
+            .filter_map(|(id, _)| before.remove(id).map(|shape| (id.clone(), shape)))
+            .collect();
         self.jumpers = self.live.jumper_shapes(line);
         self.failed = self
             .live
@@ -448,6 +509,10 @@ pub struct Model {
     /// and it is not the one shown (highlighted in the views and the
     /// properties); `None`: the case shown.
     pub selection_case: Option<usize>,
+    /// The structures coloured by usage in the plan and 3D views
+    /// (Checks › Structure loads › Usage, Colour structures by usage); empty:
+    /// not coloured.
+    pub usage_marks: std::collections::BTreeMap<String, crate::loads::UsageMark>,
     /// Project lines shown next to the line worked on (Versions menu).
     pub other_lines: Vec<OtherLine>,
     /// Project lines another user changed since the last frame (server
@@ -1242,8 +1307,9 @@ impl Model {
         let mut keep = Vec::new();
         for (k, v, rx) in std::mem::take(&mut self.solving) {
             match rx.try_recv() {
-                Ok(s) if v == version && k < self.cases.len() => {
+                Ok(mut s) if v == version && k < self.cases.len() => {
                     done.push(s.case.name.clone());
+                    s.inherit(&self.cases[k]);
                     self.cases[k] = s;
                 }
                 Ok(_) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
@@ -1260,7 +1326,8 @@ impl Model {
         if let Some(c) = self.cases.get(k)
             && !c.solved_for(self.wind)
         {
-            let s = Solved::with_wind(&self.line, &self.library, c.case.clone(), self.wind);
+            let mut s = Solved::with_wind(&self.line, &self.library, c.case.clone(), self.wind);
+            s.inherit(c);
             self.solving.retain(|(j, _, _)| *j != k);
             self.cases[k] = s;
         }
@@ -1358,6 +1425,64 @@ impl Model {
             .find(|j| j.jumper == id)
     }
 
+    /// Section `section` not solved in weather case `k` (the case's
+    /// primary side, or its mirror `side` 1), drawn where it was: its
+    /// spans' points, where they come from, why it did not solve. The
+    /// shape is its last solved one in this case ([`Solved::last_solved`]),
+    /// else its shape in another weather case solved, else the straight
+    /// chords between its wire points. None: solved (or not a section).
+    pub fn unsolved_drawn(&self, section: &str, k: usize, side: usize) -> Option<UnsolvedDrawn> {
+        let solved = self.cases.get(k)?.drawn().nth(side)?;
+        let reason = solved
+            .unsolved
+            .iter()
+            .find(|(id, _)| id == section)?
+            .1
+            .clone();
+        let spans = |shape: &SectionShape| -> Vec<Vec<[f64; 3]>> {
+            shape.spans.iter().map(|s| s.points.clone()).collect()
+        };
+        if let Some(shape) = solved.last_solved.get(section) {
+            return Some(UnsolvedDrawn {
+                spans: spans(shape),
+                from: "its last solved shape in this case".into(),
+                reason,
+            });
+        }
+        for (_, c) in self.cases.iter().enumerate().filter(|(j, _)| *j != k) {
+            if let Some(shape) = c
+                .shapes
+                .iter()
+                .chain(c.last_solved.values())
+                .find(|s| s.section == section)
+            {
+                return Some(UnsolvedDrawn {
+                    spans: spans(shape),
+                    from: format!("its shape in weather case {}", c.case.name),
+                    reason,
+                });
+            }
+        }
+        let sec = self.line.sections.iter().find(|s| s.id == section)?;
+        let at: Vec<Option<[f64; 3]>> = sec
+            .points
+            .iter()
+            .map(|p| self.line.wire_point(p).map(|w| w.position))
+            .collect();
+        let chords = at
+            .windows(2)
+            .map(|w| match (w[0], w[1]) {
+                (Some(a), Some(b)) => vec![a, b],
+                _ => Vec::new(),
+            })
+            .collect();
+        Some(UnsolvedDrawn {
+            spans: chords,
+            from: "the straight chords between its wire points (never solved)".into(),
+            reason,
+        })
+    }
+
     /// Section `section` as shown (its display case, else `case`).
     pub fn shape(&self, section: &str, case: usize) -> Option<&SectionShape> {
         self.cases
@@ -1401,6 +1526,26 @@ impl Model {
                     .collect::<Vec<_>>()
             })
             .collect()
+    }
+
+    /// Every section not solved in a weather case it is drawn in (both
+    /// wind sides), drawn in its place ([`Model::unsolved_drawn`]): the
+    /// section, the case, the drawing.
+    pub fn unsolved_shown(&self, case: usize) -> Vec<(String, usize, UnsolvedDrawn)> {
+        let mut out = Vec::new();
+        for s in &self.line.sections {
+            for k in self.section_cases(&s.id, case) {
+                let Some(c) = self.cases.get(k) else {
+                    continue;
+                };
+                for side in 0..c.drawn().count() {
+                    if let Some(d) = self.unsolved_drawn(&s.id, k, side) {
+                        out.push((s.id.clone(), k, d));
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// The project's session (edited, or read only for a viewer).
@@ -1599,13 +1744,19 @@ impl Model {
             .collect();
         self.solving.clear();
         self.line_version += 1;
+        let old = std::mem::take(&mut self.cases);
         self.cases = cases
             .into_iter()
             .enumerate()
             .map(|(k, mut c)| {
                 c.wind_from = self.wind.primary();
                 if k == 0 || was.contains(&c.name) {
-                    Solved::with_wind(&line, &library, c, self.wind)
+                    let mut s = Solved::with_wind(&line, &library, c, self.wind);
+                    // Sections that stop solving keep their last shape.
+                    if let Some(o) = old.iter().find(|o| o.case.name == s.case.name) {
+                        s.inherit(o);
+                    }
+                    s
                 } else {
                     Solved::pending(c)
                 }
@@ -2056,6 +2207,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         display_cases: Default::default(),
         shown_cases: vec![0],
         selection_case: None,
+        usage_marks: Default::default(),
         other_lines: Vec::new(),
         lines_changed: Vec::new(),
         hidden_classes,

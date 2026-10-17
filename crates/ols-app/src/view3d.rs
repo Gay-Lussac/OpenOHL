@@ -663,6 +663,10 @@ impl View3d {
             );
             painter.galley(at, galley, egui::Color32::WHITE);
         }
+        // Structures coloured by usage: the legend.
+        if !model.usage_marks.is_empty() {
+            crate::loads::paint_usage_legend(&painter, rect);
+        }
         // Label of the selection.
         if let Some(f) = selection.focus(model, case)
             && let Some((q, _)) = camera.project(f, size)

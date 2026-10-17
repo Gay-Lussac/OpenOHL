@@ -9,14 +9,19 @@
 //! a click goes to the structure; CSV export. **Usage**: how much of its
 //! capacity each structure uses (its type's allowable spans and loads,
 //! structure model and pole, [`ols_loads::capacity`]), the governing load
-//! case or one case, worst first.
+//! case or one case, worst first. A structure whose loads in a case lack
+//! a section or jumper that did not solve there is **incomplete**: its
+//! rows are greyed, "not checked: S12 not solved in ice", never a pass.
+//! **Colour structures by usage** colours them in the plan and 3D views
+//! ([`UsageMark`], with a legend): incomplete ones in a neutral colour,
+//! "not checked".
 
 use std::sync::mpsc::{Receiver, channel};
 use std::time::Instant;
 
 use eframe::egui;
 use ols_loads::CaseLoads;
-use ols_loads::capacity::{CaseUsage, StructureUsage};
+use ols_loads::capacity::{CaseUsage, StructureUsage, UsageStatus};
 
 use crate::model::Model;
 
@@ -27,6 +32,105 @@ type Finished = (Outcome, Vec<CaseUsage>);
 
 /// Usage at or above this share is shown as a warning (orange).
 const NEAR_FULL: f64 = 0.9;
+
+/// Colour of what is not checked because a wire did not solve (grey).
+const INCOMPLETE: egui::Color32 = egui::Color32::from_rgb(150, 156, 170);
+
+/// How a structure is coloured by usage in the plan and 3D views.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageMark {
+    /// Below 90 %.
+    Within,
+    /// From 90 % to 100 %.
+    Near,
+    /// Over 100 % (or not allowed).
+    Over,
+    /// Not checked: a section or jumper at it did not solve (its loads
+    /// are incomplete).
+    Incomplete,
+    /// Nothing to check against (no type, no capacity).
+    Unchecked,
+}
+
+impl UsageMark {
+    /// Every mark, in the legend's order.
+    pub const ALL: [UsageMark; 5] = [
+        UsageMark::Within,
+        UsageMark::Near,
+        UsageMark::Over,
+        UsageMark::Incomplete,
+        UsageMark::Unchecked,
+    ];
+
+    /// The mark of a structure's usage (in one case, or its governing one).
+    pub fn of(s: &StructureUsage) -> Self {
+        match s.status() {
+            UsageStatus::Incomplete => Self::Incomplete,
+            UsageStatus::NotChecked => Self::Unchecked,
+            UsageStatus::Over => Self::Over,
+            UsageStatus::Pass => match s.governing() {
+                Some(g) if g.usage >= NEAR_FULL => Self::Near,
+                _ => Self::Within,
+            },
+        }
+    }
+
+    /// Its colour.
+    pub fn color(self) -> [u8; 3] {
+        match self {
+            Self::Within => [110, 200, 120],
+            Self::Near => [255, 170, 60],
+            Self::Over => [235, 70, 60],
+            Self::Incomplete => [150, 156, 170],
+            Self::Unchecked => [95, 100, 110],
+        }
+    }
+
+    /// In the legend.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Within => "below 90 %",
+            Self::Near => "90 – 100 %",
+            Self::Over => "over 100 %",
+            Self::Incomplete => "not checked: a wire not solved",
+            Self::Unchecked => "no capacity to check",
+        }
+    }
+}
+
+/// The legend of the colours by usage, at the bottom right of `rect`.
+pub fn paint_usage_legend(painter: &egui::Painter, rect: egui::Rect) {
+    let font = egui::FontId::proportional(11.0);
+    let row = 15.0;
+    let width = 190.0;
+    let height = row * UsageMark::ALL.len() as f32 + 22.0;
+    let at = rect.right_bottom() + egui::vec2(-8.0 - width, -8.0 - height);
+    let frame = egui::Rect::from_min_size(at, egui::vec2(width, height));
+    painter.rect_filled(frame, 4.0, egui::Color32::from_black_alpha(170));
+    painter.text(
+        at + egui::vec2(6.0, 4.0),
+        egui::Align2::LEFT_TOP,
+        "structures by usage",
+        font.clone(),
+        egui::Color32::WHITE,
+    );
+    for (k, m) in UsageMark::ALL.iter().enumerate() {
+        let y = at.y + 20.0 + row * k as f32;
+        let [r, g, b] = m.color();
+        painter.circle_filled(
+            egui::pos2(at.x + 12.0, y + 6.0),
+            4.5,
+            egui::Color32::from_rgb(r, g, b),
+        );
+        painter.text(
+            egui::pos2(at.x + 22.0, y),
+            egui::Align2::LEFT_TOP,
+            m.label(),
+            font.clone(),
+            egui::Color32::WHITE,
+        );
+    }
+}
 
 /// The Structure loads page.
 #[derive(Default)]
@@ -50,12 +154,51 @@ pub struct LoadsPage {
     pub unfactored: bool,
     /// The usage's load case: 0 the governing one, k + 1 case k.
     pub usage_case: usize,
+    /// The structures coloured by usage in the plan and 3D views (the
+    /// usage's load case).
+    pub colour_structures: bool,
 }
 
 impl LoadsPage {
     /// Whether a computation runs.
     pub fn running(&self) -> bool {
         self.running.is_some()
+    }
+
+    /// The colour of each structure by usage in the usage's load case (the
+    /// governing one: incomplete in any case is incomplete), when
+    /// colouring by usage is on (else none).
+    pub fn usage_marks(&self) -> std::collections::BTreeMap<String, UsageMark> {
+        let mut out = std::collections::BTreeMap::new();
+        if !self.colour_structures {
+            return out;
+        }
+        match self.usage_case {
+            0 => {
+                for c in &self.usage {
+                    for s in &c.structures {
+                        out.entry(s.structure.clone())
+                            .or_insert(UsageMark::Unchecked);
+                    }
+                }
+                for (_, s) in ols_loads::capacity::governing(&self.usage) {
+                    out.insert(s.structure.clone(), UsageMark::of(s));
+                }
+                for c in &self.usage {
+                    for s in c.structures.iter().filter(|s| s.is_incomplete()) {
+                        out.insert(s.structure.clone(), UsageMark::Incomplete);
+                    }
+                }
+            }
+            k => {
+                if let Some(c) = self.usage.get(k - 1) {
+                    for s in &c.structures {
+                        out.insert(s.structure.clone(), UsageMark::of(s));
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Computes the loads of the model as it is now (in the background).
@@ -103,6 +246,7 @@ impl LoadsPage {
                 if let Some(on) = &scope {
                     for c in loads.iter_mut() {
                         c.loads.retain(|l| on.contains(&l.structure));
+                        c.missing.retain(|m| on.contains(&m.structure));
                     }
                 }
             }
@@ -221,13 +365,24 @@ impl LoadsPage {
             let incomplete: Vec<String> = results
                 .iter()
                 .filter(|r| !r.failed.is_empty())
-                .map(|r| format!("{} ({} sections)", r.case.name, r.failed.len()))
+                .map(|r| {
+                    let mut at: Vec<&str> =
+                        r.missing.iter().map(|m| m.structure.as_str()).collect();
+                    at.dedup();
+                    format!(
+                        "{} ({} sections or jumpers; incomplete at {} structures)",
+                        r.case.name,
+                        r.failed.len(),
+                        at.len()
+                    )
+                })
                 .collect();
             if !incomplete.is_empty() {
                 ui.colored_label(
                     egui::Color32::LIGHT_RED,
                     format!(
-                        "sections not solved in: {} — their loads are missing (see Loads)",
+                        "not solved in: {} — the structures they hang on are not checked there \
+                         (grey); see Loads",
                         incomplete.join(", ")
                     ),
                 );
@@ -284,8 +439,33 @@ impl LoadsPage {
             ))
             .small(),
         );
-        for f in &r.failed {
-            crate::menu::error_label(ui, format!("not solved: {f}"));
+        if !r.failed.is_empty() {
+            // In a box of its own height, scrolled: a long list stays small.
+            egui::ScrollArea::vertical()
+                .id_salt("loads-not-solved")
+                .max_height(90.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    for f in &r.failed {
+                        crate::menu::error_label(ui, format!("not solved: {f}"));
+                    }
+                    // The structures whose loads lack them.
+                    let mut by: std::collections::BTreeMap<&str, Vec<String>> =
+                        std::collections::BTreeMap::new();
+                    for m in &r.missing {
+                        by.entry(m.structure.as_str()).or_default().push(m.short());
+                    }
+                    for (s, wires) in by {
+                        ui.colored_label(
+                            INCOMPLETE,
+                            format!(
+                                "{s}: incomplete — not checked: {} in {}",
+                                wires.join(", "),
+                                r.case.name
+                            ),
+                        );
+                    }
+                });
         }
         let filter = self.filter.trim().to_lowercase();
         egui::ScrollArea::vertical()
@@ -316,11 +496,14 @@ impl LoadsPage {
                             })
                             .take(5000)
                         {
-                            if ui
-                                .link(&l.structure)
-                                .on_hover_text("Go to this structure")
-                                .clicked()
-                            {
+                            let missing: Vec<String> =
+                                r.missing_at(&l.structure).map(|m| m.short()).collect();
+                            let link = if missing.is_empty() {
+                                ui.link(&l.structure)
+                            } else {
+                                ui.link(egui::RichText::new(&l.structure).color(INCOMPLETE))
+                            };
+                            if link.on_hover_text("Go to this structure").clicked() {
                                 go = Some(l.structure.clone());
                             }
                             ui.label(&l.label);
@@ -338,7 +521,18 @@ impl LoadsPage {
                                     egui::RichText::new(format!("{:.2}", x / 1000.0)).monospace(),
                                 );
                             }
-                            ui.label(l.sections.join(", "));
+                            if missing.is_empty() {
+                                ui.label(l.sections.join(", "));
+                            } else {
+                                ui.colored_label(
+                                    INCOMPLETE,
+                                    format!(
+                                        "{} — incomplete: {}",
+                                        l.sections.join(", "),
+                                        missing.join(", ")
+                                    ),
+                                );
+                            }
                             ui.end_row();
                         }
                     });
@@ -350,7 +544,7 @@ impl LoadsPage {
     fn usage_ui(&mut self, ui: &mut egui::Ui, names: &[String]) -> Option<String> {
         let mut go = None;
         // Load case: 0 = the governing one of each structure, k + 1 = case k.
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let shown = match self.usage_case {
                 0 => "governing (every case)".to_owned(),
                 k => names.get(k - 1).cloned().unwrap_or_default(),
@@ -378,6 +572,12 @@ impl LoadsPage {
             {
                 log::warn!("{}: {e}", path.display());
             }
+            ui.checkbox(&mut self.colour_structures, "Colour structures by usage")
+                .on_hover_text(
+                    "The structures coloured in the plan and 3D views by their usage in the \
+                     load case chosen here (a legend in the views); those not checked because a \
+                     wire at them did not solve in a neutral colour",
+                );
         });
         let rows: Vec<(&str, &StructureUsage)> = match self.usage_case {
             0 => ols_loads::capacity::governing(&self.usage),
@@ -391,14 +591,64 @@ impl LoadsPage {
                 v
             }),
         };
-        let checked = rows.iter().filter(|r| r.1.governing().is_some()).count();
+        // Incomplete: in the case shown, or (governing) in any case — with
+        // the cases and the wires not solved.
+        let not_checked = |s: &StructureUsage| -> Option<String> {
+            match self.usage_case {
+                0 => {
+                    let cases = ols_loads::capacity::incomplete_cases(&self.usage, &s.structure);
+                    (!cases.is_empty()).then(|| {
+                        let mut wires: Vec<String> = Vec::new();
+                        for (_, u) in &cases {
+                            for m in &u.missing {
+                                let w = m.short();
+                                if !wires.contains(&w) {
+                                    wires.push(w);
+                                }
+                            }
+                        }
+                        format!(
+                            "not checked: {} in {}",
+                            wires.join(", "),
+                            cases.iter().map(|c| c.0).collect::<Vec<_>>().join(", ")
+                        )
+                    })
+                }
+                k => s.is_incomplete().then(|| {
+                    format!(
+                        "{} in {}",
+                        s.not_checked_text(),
+                        names.get(k - 1).map_or("", String::as_str)
+                    )
+                }),
+            }
+        };
+        let checked = rows
+            .iter()
+            .filter(|r| r.1.governing().is_some() && not_checked(r.1).is_none())
+            .count();
         let over = rows
             .iter()
             .filter(|r| r.1.governing().is_some_and(|g| g.usage > 1.0))
             .count();
+        let incomplete: Vec<&StructureUsage> = match self.usage_case {
+            0 => {
+                let mut seen = std::collections::BTreeSet::new();
+                self.usage
+                    .iter()
+                    .flat_map(|c| c.structures.iter())
+                    .filter(|s| s.is_incomplete() && seen.insert(s.structure.clone()))
+                    .collect()
+            }
+            k => self.usage.get(k - 1).map_or_else(Vec::new, |c| {
+                c.structures.iter().filter(|s| s.is_incomplete()).collect()
+            }),
+        };
         ui.label(
             egui::RichText::new(format!(
-                "{checked} structures checked, {over} over 100 %{}",
+                "{checked} structures checked, {over} over 100 %, {} not checked (a wire not \
+                 solved){}",
+                incomplete.len(),
                 if checked == 0 {
                     " — give the structure types a [capacity] (allowable spans, \
                      allowable loads) to check them"
@@ -465,6 +715,18 @@ impl LoadsPage {
                             ui.strong(h);
                         }
                         ui.end_row();
+                        let listed: std::collections::BTreeSet<&str> = rows
+                            .iter()
+                            .filter(|r| r.1.governing().is_some())
+                            .map(|r| r.1.structure.as_str())
+                            .chain(unchecked.iter().map(|s| s.structure.as_str()))
+                            .collect();
+                        // Incomplete without any check: listed too.
+                        let extra: Vec<(&str, &StructureUsage)> = incomplete
+                            .iter()
+                            .filter(|s| !listed.contains(s.structure.as_str()))
+                            .map(|s| ("", *s))
+                            .collect();
                         let shown = rows
                             .iter()
                             .filter(|r| r.1.governing().is_some())
@@ -475,6 +737,7 @@ impl LoadsPage {
                                     .collect::<Vec<_>>()
                                     .iter(),
                             )
+                            .chain(extra.iter())
                             .filter(|r| {
                                 filter.is_empty() || r.1.structure.to_lowercase().contains(&filter)
                             })
@@ -482,23 +745,58 @@ impl LoadsPage {
                             .cloned()
                             .collect::<Vec<_>>();
                         for (case, s) in shown {
+                            let not = not_checked(s);
+                            // Incomplete: grey, "not checked", the usage
+                            // of the loads there are only on hover.
+                            let grey = |t: egui::RichText| {
+                                if not.is_some() {
+                                    t.color(INCOMPLETE).italics()
+                                } else {
+                                    t
+                                }
+                            };
                             if ui
-                                .link(&s.structure)
+                                .link(grey(egui::RichText::new(&s.structure)))
                                 .on_hover_text("Go to this structure")
                                 .clicked()
                             {
                                 go = Some(s.structure.clone());
                             }
-                            ui.label(s.structure_type.as_deref().unwrap_or("—"));
+                            ui.label(grey(egui::RichText::new(
+                                s.structure_type.as_deref().unwrap_or("—"),
+                            )));
                             let g = s.governing();
-                            ui.label(pct(g));
-                            ui.label(pct(s.spans.as_ref()));
-                            ui.label(pct(s.loads.as_ref()));
-                            ui.label(pct(s.fe.as_ref()));
-                            ui.label(pct(s.pole.as_ref()));
-                            match g {
-                                Some(g) => ui.label(&g.governs),
-                                None => ui.label(egui::RichText::new(s.notes.join("; ")).weak()),
+                            if not.is_some() {
+                                let r = ui.label(
+                                    egui::RichText::new("not checked")
+                                        .color(INCOMPLETE)
+                                        .italics(),
+                                );
+                                if let Some(g) = g {
+                                    r.on_hover_text(format!(
+                                        "{:.0} % from the loads there are (a wire is missing)",
+                                        g.usage * 100.0
+                                    ));
+                                }
+                                for c in [&s.spans, &s.loads, &s.fe, &s.pole] {
+                                    ui.label(
+                                        egui::RichText::new(if c.is_some() { "?" } else { "—" })
+                                            .color(INCOMPLETE),
+                                    );
+                                }
+                            } else {
+                                ui.label(pct(g));
+                                ui.label(pct(s.spans.as_ref()));
+                                ui.label(pct(s.loads.as_ref()));
+                                ui.label(pct(s.fe.as_ref()));
+                                ui.label(pct(s.pole.as_ref()));
+                            }
+                            match (&not, g) {
+                                (Some(text), _) => ui.colored_label(INCOMPLETE, text),
+                                (None, Some(g)) => ui.label(&g.governs),
+                                (None, None) => {
+                                    ui.label(egui::RichText::new(s.notes.join("; ")).weak())
+                                }
                             };
                             ui.label(case);
                             ui.label(format!("{:.1}", s.line_angle_deg));

@@ -68,8 +68,8 @@ mod recipe;
 mod table;
 
 pub use placed::{
-    CaseSource, Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION, OtherPlace,
-    PlacedValues, file_part, line_values_path, overrides_path,
+    CaseSource, Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION, MissingWire,
+    OtherPlace, PlacedValues, file_part, incomplete_text, line_values_path, overrides_path,
 };
 pub use recipe::{
     Direction, LineQuantity, LoadCaseRecipe, LoadRecipe, MODEL_CASE, Pick,

@@ -307,7 +307,14 @@ pub fn structures(
             .as_ref()
             .is_some_and(|s| !s.structures.contains(&st.id));
         let pick = |c: [u8; 4]| if faded { FADED } else { c };
-        let steel = pick(tint.map_or([215, 215, 220, 255], |c| rgba(c, 230)));
+        // Coloured by usage (Checks › Structure loads › Usage): the steel.
+        let by_usage = tint
+            .is_none()
+            .then(|| model.usage_marks.get(&st.id))
+            .flatten()
+            .map(|m| rgba(m.color(), 255));
+        let steel =
+            pick(by_usage.unwrap_or_else(|| tint.map_or([215, 215, 220, 255], |c| rgba(c, 230))));
         let blue = pick(tint.map_or([120, 180, 255, 255], |c| rgba(c, 230)));
         let at = st.position;
         let lattice = !st.members.is_empty();
@@ -426,12 +433,32 @@ pub fn wires(
     let scope = model.scope();
     let fade = |faded: bool, c: [u8; 4]| if faded { FADED } else { c };
     // Both wind sides shown: each case's mirror drawn with it.
-    for (k, solved) in cases
+    for (k, side, solved) in cases
         .iter()
         .enumerate()
-        .flat_map(|(k, c)| c.drawn().map(move |d| (k, d)))
+        .flat_map(|(k, c)| c.drawn().enumerate().map(move |(side, d)| (k, side, d)))
     {
         let this_case = shown == model.shown(case).contains(&k);
+        // Sections not solved in this case (the working line): dashed red
+        // where they were last solved (else another case's shape, else
+        // their chords).
+        if tint.is_none() {
+            for (id, _) in &solved.unsolved {
+                if shown != model.section_cases(id, case).contains(&k) {
+                    continue;
+                }
+                let Some(drawn) = model.unsolved_drawn(id, k, side) else {
+                    continue;
+                };
+                let col = rgba(UNSOLVED_COLOR, alpha);
+                for points in drawn.spans.iter().filter(|p| p.len() > 1) {
+                    let at = middle(points);
+                    for d in crate::wire_style::dashes(points, &UNSOLVED_DASHES, DASH_UNIT) {
+                        out.push(Prim::new(at, d, col, 2.0).at(0, 2));
+                    }
+                }
+            }
+        }
         for shape in &solved.shapes {
             if shown != model.section_cases(&shape.section, case).contains(&k) {
                 continue;
@@ -602,6 +629,13 @@ pub fn wires(
 
 /// Length of a unit of the phases' line codes in 3D, m.
 const DASH_UNIT: f64 = 1.5;
+
+/// Colour of a section not solved in a weather case, drawn in its place
+/// ([`Model::unsolved_drawn`]): red, dashed ([`UNSOLVED_DASHES`]).
+pub const UNSOLVED_COLOR: [u8; 3] = [235, 50, 50];
+
+/// The dashes of a section not solved (units on, off).
+pub const UNSOLVED_DASHES: [f64; 2] = [3.0, 2.0];
 
 /// Colour of marker balls and other bodies on the wires (aviation
 /// orange).
@@ -1329,6 +1363,16 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                                 .find(|x| x.section == *section)
                                 .and_then(|x| x.spans.get(*span))
                             else {
+                                // Not solved in this case: its copy drawn
+                                // dashed in its place, highlighted too.
+                                if let Some(points) = model
+                                    .unsolved_drawn(section, k, side)
+                                    .and_then(|d| d.spans.get(*span).cloned())
+                                    .filter(|p| p.len() > 1)
+                                {
+                                    let main = k == strong && side == 0;
+                                    s.polyline(&points, hi, if main { 5.0 } else { 2.5 });
+                                }
                                 continue;
                             };
                             let lines = match solved.bundles.spans.get(&(section.clone(), *span)) {

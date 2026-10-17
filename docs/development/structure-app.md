@@ -45,10 +45,15 @@ structure app: reads the JSON when its mtime changes (twice a second):
 ```
 
 - The JSON is `ols_structure_loads::PlacedValues` (format
-  `ols-structure-line-values`, version 1): the structure, the line, its
-  type, the line's load cases, the values (`LineValues`), the other
-  places of the same type with theirs, and a note (no values yet, no
-  load case file, sections a case did not solve).
+  `ols-structure-line-values`, version 3): the structure, the line, its
+  type, the line's cases and their sources (version 2), the values
+  (`LineValues`), the other places of the same type with theirs, a note
+  (no values yet, no load case file, sections a case did not solve) and
+  `missing` (version 3): per case, the sections and jumpers at the
+  structure that did not solve (`MissingWire`). The application marks
+  such a case incomplete in the status block, on its load-table rows
+  (note `incomplete: S12 not solved`), in Line values and in FE results
+  (`LoadCasesTab::incomplete`). Older versions still read.
 - One structure application per structure file: Edit… on another place
   of the same type while one is open is refused with a message.
 - Outside a project (a plain line file) both files are written next to
