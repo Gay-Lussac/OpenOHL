@@ -5,8 +5,10 @@ one object each (bodies by shape, clamps), spread objects between two
 points, the library (`.olsload`) with its templates, older files' point
 and spread loads read into points and objects (same forces), OLS XML and
 the XSD; the solve takes the span points' objects and the spreads.
-Next: loads of every shape on jumper points (phase 2), taps (phase 3),
-the app (phase 4). Every point below is an engine change
+Phase 2 done: objects on jumper points load the jumper (the rod model,
+loads held nowhere), their points reported solved, the clamps carrying
+them (pull, or the estimate shared by position; rigid jumpers by
+position). Next: taps (phase 3), the app (phase 4). Every point below is an engine change
 (data, solver, files).
 
 Decided with the user (2026-10-16): **one object per point**; objects

@@ -98,6 +98,25 @@ For Drake 26/7 (composite \\( E \\approx 73.9 \\) GPa, \\( d = 28.14 \\) mm, 26 
 | \\( 0.2\\, EI_{max} \\) (default) | 455 |
 | \\( EI_{min} \\) | 37 |
 
+## Objects on a jumper
+
+A jumper's labelled points ([points and objects](../development/line-points-and-objects.md))
+are placed by a share of its length from `from`, a length along it, or a
+horizontal distance from `from`'s clamp. An object on one (a body, a
+clamp) loads the jumper there: its weight and ice down, the wind on it
+across the line from the case's side (`LineObject::forces`), each
+subconductor its share. A jumper with objects is solved with the rod
+(as with support clamps): each object is a load held nowhere, on the
+piece covering its place; its stiffness, ends and support clamps as
+otherwise. Its points are reported where they are solved
+(`JumperShape::point_positions`). The sections at its ends carry it with
+either option: the pull (its end forces include the objects), or the
+estimate (an object between an end and the first support shared between
+them by where it is; without supports between the two ends; between
+supports, none). A rigid jumper shares each object between its ends by
+where it is. A jumper given by its sag is cut without its objects
+(fitted afterwards, as spacers on spans).
+
 ## Rigid jumpers
 
 A jumper given `rigid` is a tube or bar: the straight member between its two solved clamps, in every weather case. It has no length or sag of its own and no thermal change. Its tension is not computed, because the members holding it carry it. It is drawn, and checked for clearances, along that straight line, and it can never be taut. The PLS-CADD jumpers marked rigid are read this way.
