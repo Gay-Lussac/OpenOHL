@@ -12,8 +12,8 @@
 //!   heights at least, and the cross-section shape (round, or a regular
 //!   polygon with its number of sides);
 //! - **level 3**: the engineering the pole check needs — the material, the
-//!   strength (fibre stress, moment capacity or a capacity table), and for
-//!   a steel pole its wall (typed, or a section of the section library).
+//!   strength (fibre stress, moment capacity or a capacity table), and
+//!   its wall thickness (typed, or a section of the section library).
 //!
 //! ```toml
 //! [pole]
@@ -254,11 +254,8 @@ impl InlinePole {
                 "pole: no strength (fibre stress, moment capacity or a capacity table)".into(),
             );
         }
-        if self.material.as_deref() == Some("steel")
-            && self.wall.is_none()
-            && self.section.is_none()
-        {
-            out.push("pole: no wall (a steel pole: its wall, or a section)".into());
+        if self.wall.is_none() && self.section.is_none() {
+            out.push("pole: no wall thickness (its wall, or a section)".into());
         }
         out
     }
