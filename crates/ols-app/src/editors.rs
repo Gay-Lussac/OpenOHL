@@ -2774,7 +2774,12 @@ impl Form {
             Form::Section(f) => format!("Section {}", f.id),
             Form::Alignment(f) => format!("Alignment point {}", f.id),
             Form::Jumper(f) => format!("Jumper {}", f.jumper.id),
-            Form::Span(f) => format!("On span {} of {}", f.span + 1, f.section),
+            Form::Span(f) => match (&f.editing, &f.jumper) {
+                (Some(l), Some(j)) => format!("Point {l} of jumper {j}"),
+                (Some(l), None) => format!("Point {l} of {}, span {}", f.section, f.span + 1),
+                (None, Some(j)) => format!("On jumper {j}"),
+                (None, None) => format!("On span {} of {}", f.span + 1, f.section),
+            },
             Form::Spacer(f) if f.new => "Add spacer".into(),
             Form::Spacer(f) => format!("Spacer {}", f.spacer.id),
         }

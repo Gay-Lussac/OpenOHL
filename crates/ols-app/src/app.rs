@@ -1419,7 +1419,20 @@ impl Ready {
                 self.editor = crate::editors::AlignmentForm::of(model, id).map(Form::Alignment);
                 self.select(target);
             }
-            (Tool::Edit, Selection::Jumper(id) | Selection::JumperPoint { jumper: id, .. }) => {
+            // A point: its own window (place, label, object).
+            (Tool::Edit, Selection::JumperPoint { jumper, label }) => {
+                self.editor =
+                    crate::span_tool::SpanForm::edit_point(model, self.case, jumper, true, label)
+                        .map(Form::Span);
+                self.select(target);
+            }
+            (Tool::Edit, Selection::SpanPoint { section, label }) => {
+                self.editor =
+                    crate::span_tool::SpanForm::edit_point(model, self.case, section, false, label)
+                        .map(Form::Span);
+                self.select(target);
+            }
+            (Tool::Edit, Selection::Jumper(id)) => {
                 // Its window, as a section's (it frees the mouse).
                 self.editor =
                     crate::editors::JumperForm::of(model, id).map(|f| Form::Jumper(Box::new(f)));
@@ -1810,10 +1823,7 @@ impl Ready {
                 }
                 self.select(target);
             }
-            (
-                Tool::Edit,
-                Selection::Span { section, .. } | Selection::SpanPoint { section, .. },
-            ) => {
+            (Tool::Edit, Selection::Span { section, .. }) => {
                 self.editor = SectionForm::of(model, section).map(Form::Section);
                 self.select(target);
             }
