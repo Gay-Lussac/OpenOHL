@@ -136,13 +136,23 @@ pub fn changed_since(then: &LineState, now: &LineState) -> Changed {
     out
 }
 
+fn report_format() -> String {
+    REPORT_FILE_FORMAT.to_owned()
+}
+
+fn first_version() -> u32 {
+    1
+}
+
 /// A performed check.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckReport {
-    /// [`REPORT_FILE_FORMAT`].
+    /// [`REPORT_FILE_FORMAT`] (optional in files, as every header).
+    #[serde(default = "report_format")]
     pub format: String,
-    /// [`REPORT_FILE_VERSION`].
+    /// [`REPORT_FILE_VERSION`] (none: the first).
+    #[serde(default = "first_version")]
     pub version: u32,
     /// Its name: unique among the line's reports.
     pub id: String,
@@ -179,18 +189,13 @@ impl CheckReport {
     /// Reads an exported report.
     pub fn parse(text: &str) -> Result<Self, String> {
         let r: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;
-        if r.format != REPORT_FILE_FORMAT {
-            return Err(format!(
-                "not a check report (format \"{}\", expected \"{REPORT_FILE_FORMAT}\")",
-                r.format
-            ));
-        }
-        if r.version > REPORT_FILE_VERSION {
-            return Err(format!(
-                "check report version {} is newer than this program reads ({REPORT_FILE_VERSION})",
-                r.version
-            ));
-        }
+        ols_core::files::check_header(
+            Some(&r.format),
+            Some(r.version),
+            REPORT_FILE_FORMAT,
+            REPORT_FILE_VERSION,
+            "check report",
+        )?;
         if r.id.trim().is_empty() {
             return Err("a check report needs a name".into());
         }

@@ -1816,12 +1816,13 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     // Older versions are read into the current one; newer ones refused.
     // A document without a version is of the first one.
     let version: u32 = optional(root, "version")?.unwrap_or(1);
-    if version > ols_line::LINE_FILE_VERSION {
-        return Err(format!(
-            "version {version} is newer than supported ({})",
-            ols_line::LINE_FILE_VERSION
-        ));
-    }
+    ols_core::files::check_header(
+        root.attr("format"),
+        Some(version),
+        ols_line::LINE_FILE_FORMAT,
+        ols_line::LINE_FILE_VERSION,
+        "OLS XML line",
+    )?;
     let mut line = Line {
         format: owned(root, "format").unwrap_or_else(|| ols_line::LINE_FILE_FORMAT.into()),
         version,

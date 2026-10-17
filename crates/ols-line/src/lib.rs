@@ -2896,18 +2896,14 @@ impl Line {
     pub fn validate(&self) -> Result<(), LineError> {
         let invalid = |m: String| Err(LineError::Invalid(m));
         self.bimetallic.validate().map_err(LineError::Invalid)?;
-        if self.format != LINE_FILE_FORMAT {
-            return invalid(format!(
-                "format \"{}\" is not \"{LINE_FILE_FORMAT}\"",
-                self.format
-            ));
-        }
-        if self.version > LINE_FILE_VERSION {
-            return invalid(format!(
-                "version {} is newer than supported ({LINE_FILE_VERSION})",
-                self.version
-            ));
-        }
+        ols_core::files::check_header(
+            Some(&self.format),
+            Some(self.version),
+            LINE_FILE_FORMAT,
+            LINE_FILE_VERSION,
+            "line file",
+        )
+        .map_err(LineError::Invalid)?;
         if !(0.0..360.0).contains(&self.display.ahead_deg) {
             return invalid(format!(
                 "display: the angle ahead {} must be from 0 to 360°",

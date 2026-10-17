@@ -659,16 +659,14 @@ impl Library {
             message,
         };
         let file: LibraryFile = toml::from_str(text).map_err(|e| library_error(e.to_string()))?;
-        if let Some(format) = file.format.as_deref().filter(|f| *f != WIRE_FILE_FORMAT) {
-            return Err(library_error(format!(
-                "format \"{format}\" is not \"{WIRE_FILE_FORMAT}\""
-            )));
-        }
-        if let Some(version) = file.version.filter(|v| *v > WIRE_FILE_VERSION) {
-            return Err(library_error(format!(
-                "wire library version {version} is newer than supported ({WIRE_FILE_VERSION}); update OLS CAD"
-            )));
-        }
+        ols_core::files::check_header(
+            file.format.as_deref(),
+            file.version,
+            WIRE_FILE_FORMAT,
+            WIRE_FILE_VERSION,
+            "wire library",
+        )
+        .map_err(library_error)?;
         for cable in file.cable {
             cable.validate()?;
             if self.cables.contains_key(&cable.id) {

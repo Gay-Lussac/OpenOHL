@@ -8839,12 +8839,9 @@ fn palettes_export_and_import() {
     assert_eq!(Palette::load(&Memory::default()), Palette::default());
     // Refused.
     let e = Palette::parse("format = \"ols-colours\"\nversion = 1\n").unwrap_err();
-    assert!(e.contains("not a colour palette"), "{e}");
-    assert!(
-        Palette::parse("version = 1\n")
-            .unwrap_err()
-            .contains("format")
-    );
+    assert!(e.contains("is not \"ols-colors\""), "{e}");
+    // The header optional, as every format's.
+    assert_eq!(Palette::parse("version = 1\n").unwrap(), Vec::new());
     assert!(
         Palette::parse("format = \"ols-colors\"\nversion = 9\n")
             .unwrap_err()

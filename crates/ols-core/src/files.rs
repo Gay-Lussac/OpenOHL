@@ -7,9 +7,11 @@
 
 use std::path::{Path, PathBuf};
 
-/// Checks a file's optional `format` and `version` header: the format must
-/// be `expected` and the version at most `supported`. `what` names the
-/// kind of file in the message ("rule", "weather case", …).
+/// Checks a file's `format` and `version` header — the one policy of every
+/// OLS CAD format: both optional; the format, given, must be `expected`;
+/// any version up to `supported` is read (older ones converted by the
+/// reader), a newer one refused. `what` names the kind of file in the
+/// message ("rule", "weather case", …).
 pub fn check_header(
     format: Option<&str>,
     version: Option<u32>,
@@ -22,7 +24,8 @@ pub fn check_header(
     }
     if version.is_some_and(|v| v > supported) {
         return Err(format!(
-            "{what} format version newer than supported ({supported})"
+            "{what} format version {} newer than supported ({supported}): written by a newer OLS CAD",
+            version.unwrap_or_default()
         ));
     }
     Ok(())
@@ -83,7 +86,7 @@ mod tests {
         );
         assert_eq!(
             check_header(None, Some(2), "ols-x", 1, "x").unwrap_err(),
-            "x format version newer than supported (1)"
+            "x format version 2 newer than supported (1): written by a newer OLS CAD"
         );
     }
 
