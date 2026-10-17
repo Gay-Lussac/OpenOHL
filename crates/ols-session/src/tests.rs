@@ -1292,3 +1292,135 @@ fn spacers_follow_their_sections() {
     s.apply("ana", s.defaults_command(d)).unwrap();
     assert_eq!(s.line().defaults, d);
 }
+
+/// Jumpers on taps follow what they hang on: a section renamed, a jumper
+/// renamed; deleting a section or a jumper lists them and takes them.
+#[test]
+fn tapped_jumpers_follow_what_they_hang_on() {
+    let (_p, mut s) = project("taps");
+    let mut line = s.export();
+    let s1 = line.sections[0].id.clone();
+    line.sections[0].span_points.push(ols_line::SpanPoint {
+        label: "TAP".into(),
+        span: 0,
+        at: ols_line::SpanPlace::at_fraction(0.4),
+        description: String::new(),
+        object: Some(ols_line::LineObject::clamp(30.0)),
+    });
+    let host = line.jumpers[0].id.clone();
+    line.jumpers[0].points.push(ols_line::JumperPoint {
+        label: "K".into(),
+        at: ols_line::JumperPlace {
+            fraction: 0.5,
+            ..Default::default()
+        },
+        description: String::new(),
+        object: Some(ols_line::LineObject::clamp(20.0)),
+    });
+    let mut a = line.jumpers[0].clone();
+    a.id = "JA".into();
+    a.points.clear();
+    a.supports.clear();
+    a.support = None;
+    a.sag = None;
+    a.length = Some(12.0);
+    a.from_tap = Some(ols_line::Tap::Span(ols_line::SpanPointRef {
+        section: s1.clone(),
+        point: "TAP".into(),
+    }));
+    let mut b = a.clone();
+    b.id = "JB".into();
+    b.from_tap = Some(ols_line::Tap::Jumper {
+        jumper: host.clone(),
+        point: "K".into(),
+    });
+    line.jumpers.push(a);
+    line.jumpers.push(b);
+    s.apply(
+        "ana",
+        Command::ReplaceLine {
+            line: Box::new(line),
+        },
+    )
+    .unwrap();
+    s.apply(
+        "ana",
+        Command::Rename {
+            kind: Kind::Section,
+            id: s1.clone(),
+            new_id: "S1x".into(),
+        },
+    )
+    .unwrap();
+    let tap_of = |s: &Session, id: &str| {
+        s.line()
+            .jumpers
+            .iter()
+            .find(|j| j.id == id)
+            .unwrap()
+            .from_tap
+            .clone()
+    };
+    assert!(matches!(tap_of(&s, "JA"), Some(ols_line::Tap::Span(r)) if r.section == "S1x"));
+    s.apply(
+        "ana",
+        Command::Rename {
+            kind: Kind::Jumper,
+            id: host.clone(),
+            new_id: "Jhost".into(),
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(tap_of(&s, "JB"), Some(ols_line::Tap::Jumper { jumper, .. }) if jumper == "Jhost")
+    );
+    // Deleting the host jumper: asked, JB listed and gone with it.
+    let err = s
+        .apply(
+            "ana",
+            Command::Delete {
+                kind: Kind::Jumper,
+                id: "Jhost".into(),
+                confirm: false,
+            },
+        )
+        .unwrap_err();
+    let SessionError::NeedsConfirmation(impact) = &err else {
+        panic!("{err}");
+    };
+    assert_eq!(impact.jumpers, ["JB"]);
+    s.apply(
+        "ana",
+        Command::Delete {
+            kind: Kind::Jumper,
+            id: "Jhost".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert!(
+        s.line()
+            .jumpers
+            .iter()
+            .all(|j| j.id != "JB" && j.id != "Jhost")
+    );
+    // Deleting the section: JA with it.
+    let err = s
+        .apply(
+            "ana",
+            Command::Delete {
+                kind: Kind::Section,
+                id: "S1x".into(),
+                confirm: false,
+            },
+        )
+        .unwrap_err();
+    let SessionError::NeedsConfirmation(impact) = &err else {
+        panic!("{err}");
+    };
+    assert!(
+        impact.jumpers.contains(&"JA".to_owned()),
+        "{:?}",
+        impact.jumpers
+    );
+}

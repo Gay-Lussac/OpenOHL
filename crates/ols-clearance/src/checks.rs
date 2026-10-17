@@ -158,14 +158,27 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
                 bundle: section.map_or(Vec::new(), |s| s.bundle_offsets()),
                 points: span.points.clone(),
                 ends: section.map_or(Vec::new(), |s| {
-                    s.points.iter().skip(k).take(2).map(key).collect()
+                    let mut e: Vec<String> = s.points.iter().skip(k).take(2).map(key).collect();
+                    // Its clamps: where taps join jumpers to it.
+                    e.extend(
+                        s.span_points
+                            .iter()
+                            .filter(|p| p.span == k && is_clamp(&p.object))
+                            .map(|p| {
+                                tap_key(&ols_line::Tap::Span(ols_line::SpanPointRef {
+                                    section: s.id.clone(),
+                                    point: p.label.clone(),
+                                }))
+                            }),
+                    );
+                    e
                 }),
             });
         }
     }
     for j in jumpers {
         let def = line.jumpers.iter().find(|d| d.id == j.jumper);
-        let from = def.and_then(|d| line.sections.iter().find(|s| s.points.contains(&d.from)));
+        let from = def.and_then(|d| line.jumper_section(d));
         wires.push(Wire {
             section: format!("jumper:{}", j.jumper),
             span: 0,
@@ -174,10 +187,39 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
             potential: from.and_then(|s| potential(&s.id)),
             bundle: def.map_or(Vec::new(), |d| line.jumper_bundle(d).offsets()),
             points: j.points.clone(),
-            ends: def.map_or(Vec::new(), |d| vec![key(&d.from), key(&d.to)]),
+            ends: def.map_or(Vec::new(), |d| {
+                let end = |p: &ols_line::SectionPoint, t: &Option<ols_line::Tap>| match t {
+                    None => key(p),
+                    Some(t) => tap_key(t),
+                };
+                let mut e = vec![end(&d.from, &d.from_tap), end(&d.to, &d.to_tap)];
+                // Its clamps: where jumpers hanging on it join it.
+                e.extend(d.points.iter().filter(|p| is_clamp(&p.object)).map(|p| {
+                    tap_key(&ols_line::Tap::Jumper {
+                        jumper: d.id.clone(),
+                        point: p.label.clone(),
+                    })
+                }));
+                e
+            }),
         });
     }
     wires
+}
+
+/// A clamp object (taps join jumpers there).
+fn is_clamp(o: &Option<ols_line::LineObject>) -> bool {
+    o.as_ref()
+        .is_some_and(|o| o.kind == ols_line::ObjectKind::Clamp)
+}
+
+/// The end key of a tap: a wire with a clamp there and a jumper on it
+/// share it (connected).
+fn tap_key(t: &ols_line::Tap) -> String {
+    match t {
+        ols_line::Tap::Span(r) => format!("tap:{}:{}", r.section, r.point),
+        ols_line::Tap::Jumper { jumper, point } => format!("tap:jumper:{jumper}:{point}"),
+    }
 }
 
 /// The structure of an attachment key `structure:set:phase`.

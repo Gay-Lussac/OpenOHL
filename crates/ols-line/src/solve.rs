@@ -557,7 +557,7 @@ pub struct Coupling {
     /// (the whole bundle's, N, a force; [`crate::jumper::end_loads`], as
     /// the line's [`crate::JumperLoads`] says). None: from the jumpers,
     /// each taken as of this section's cable.
-    pub jumpers: Option<std::collections::BTreeMap<crate::SectionPoint, [f64; 3]>>,
+    pub jumpers: Option<JumperLoadMap>,
     /// The spacers this section holds as bars to fixed points (the other
     /// sections' span points), and the spacers' forces on its span points
     /// ([`solve_spacer_group`]).
@@ -1962,7 +1962,7 @@ fn solve_fe(
     };
     let bundle = f64::from(section.bundle.max(1));
     for (h, point) in loaded.iter_mut().zip(&section.points) {
-        if let (Some(f), At::Free(i)) = (jumpers.get(point), h.clamp) {
+        if let (Some(f), At::Free(i)) = (jumpers.get(&LoadAt::Clamp(point.clone())), h.clamp) {
             h.free[i].2 += Vector3::new(f[0], f[1], f[2]) / bundle;
         }
     }
@@ -1996,8 +1996,16 @@ fn solve_fe(
     if !section.stringing.clipped() && reference.lengths.len() > 1 {
         reference = rolled(section, &loaded, &reference, cable, case, budget)?;
     }
-    // The spacers it holds and is pulled by (its subconductor's share).
-    let extras = Extras::of(&coupling.spacers, bundle);
+    // The spacers it holds and is pulled by (its subconductor's share),
+    // and the jumpers hanging on taps on its span points.
+    let mut extras = Extras::of(&coupling.spacers, bundle);
+    for (at, f) in jumpers.iter() {
+        if let LoadAt::Span(r) = at
+            && r.section == section.id
+        {
+            extras.pulls.push((r.point.clone(), v(*f) / bundle));
+        }
+    }
     let (mut built, mut solution) = solve_built(
         section,
         &loaded,
@@ -2341,7 +2349,7 @@ pub fn solve_line_with(
 ) -> Vec<Result<SectionShape, LineError>> {
     let estimate = crate::jumper::end_loads(line, case, |id| library.get(id));
     let mut results = solve_sections_with(line, library, case, budget, &estimate);
-    if line.solver.jumper_loads == crate::JumperLoads::Pull {
+    if needs_pull(line) {
         jumper_pull(
             line,
             library,
@@ -2355,8 +2363,51 @@ pub fn solve_line_with(
     results
 }
 
-/// Jumper loads on clamps, by section point (the whole bundle's, N).
-pub type JumperLoadMap = std::collections::BTreeMap<crate::SectionPoint, [f64; 3]>;
+/// Where a jumper's end loads what it hangs on: a section's clamp (its
+/// section point), a span point (a tap on a span), or another jumper's
+/// point (a tap on a jumper: the jumper's id, the point's label).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LoadAt {
+    /// A clamp of the sections through a section point.
+    Clamp(crate::SectionPoint),
+    /// A span point.
+    Span(crate::SpanPointRef),
+    /// A point of a jumper.
+    Jumper(String, String),
+}
+
+impl LoadAt {
+    /// Where the end of a jumper at `point` (or its tap) loads.
+    pub fn of(point: &crate::SectionPoint, tap: Option<&crate::Tap>) -> Self {
+        match tap {
+            None => Self::Clamp(point.clone()),
+            Some(crate::Tap::Span(r)) => Self::Span(r.clone()),
+            Some(crate::Tap::Jumper { jumper, point }) => {
+                Self::Jumper(jumper.clone(), point.clone())
+            }
+        }
+    }
+
+    /// A tap's (not a section clamp).
+    pub fn is_tap(&self) -> bool {
+        !matches!(self, Self::Clamp(_))
+    }
+}
+
+/// Whether the jumpers' own forces are put back on what they hang on, in
+/// passes: the jumper pull option (clamps), or taps solved with the full
+/// loop.
+pub fn needs_pull(line: &Line) -> bool {
+    line.solver.jumper_loads == crate::JumperLoads::Pull
+        || (line.solver.taps == crate::TapLoads::Loop
+            && line
+                .jumpers
+                .iter()
+                .any(|j| j.from_tap.is_some() || j.to_tap.is_some()))
+}
+
+/// Jumper loads on what they hang on (the whole bundle's, N).
+pub type JumperLoadMap = std::collections::BTreeMap<LoadAt, [f64; 3]>;
 
 /// Every section, the jumpers' loads `jumpers` on their clamps, spread
 /// over the cores (sections are independent finite-element models);
@@ -2420,48 +2471,69 @@ pub fn jumper_pull(
             .iter()
             .filter_map(|r| r.as_ref().ok().cloned())
             .collect();
-        let solved = crate::jumper::solve_jumpers(line, library, case, &shapes);
-        // The pull on each clamp: the sum of its jumpers', where all of
-        // them solved; else the estimate.
+        let solved = crate::jumper::solve_jumpers_with(line, library, case, &shapes, &used);
+        // The pull on each clamp or tap: the sum of its jumpers', where all
+        // of them solved; else the estimate. Clamps pulled with the jumper
+        // pull option, taps with the full loop.
+        let pull_clamps = line.solver.jumper_loads == crate::JumperLoads::Pull;
+        let pull_taps = line.solver.taps == crate::TapLoads::Loop;
         let mut next = estimate.clone();
-        let mut failed: std::collections::BTreeSet<&crate::SectionPoint> = Default::default();
+        let mut failed: std::collections::BTreeSet<LoadAt> = Default::default();
         let mut pulled: JumperLoadMap = Default::default();
         for (j, r) in line.jumpers.iter().zip(&solved) {
+            let ends = [
+                LoadAt::of(&j.from, j.from_tap.as_ref()),
+                LoadAt::of(&j.to, j.to_tap.as_ref()),
+            ];
             match r {
                 Ok(s) => {
-                    for (p, f) in [(&j.from, s.end_forces[0]), (&j.to, s.end_forces[1])] {
-                        let e = pulled.entry(p.clone()).or_insert([0.0; 3]);
+                    for (p, f) in ends.into_iter().zip(s.end_forces) {
+                        let e = pulled.entry(p).or_insert([0.0; 3]);
                         for c in 0..3 {
                             e[c] += f[c];
                         }
                     }
                 }
-                Err(_) => {
-                    failed.insert(&j.from);
-                    failed.insert(&j.to);
-                }
+                Err(_) => failed.extend(ends),
             }
         }
         for (p, f) in pulled {
-            if !failed.contains(&p) {
+            let wanted = if p.is_tap() { pull_taps } else { pull_clamps };
+            if wanted && !failed.contains(&p) {
                 next.insert(p, f);
             }
         }
-        // The sections whose clamps' loads changed.
-        let moved = |p: &crate::SectionPoint| {
+        // What changed: the sections whose clamps' or span points' loads
+        // did; a jumper's points' (then solved again in the next pass).
+        let moved = |p: &LoadAt| {
             let a = v(next.get(p).copied().unwrap_or([0.0; 3]));
             let b = v(used.get(p).copied().unwrap_or([0.0; 3]));
             (a - b).norm() > 0.5_f64.max(1e-4 * a.norm())
         };
+        let changed: Vec<&LoadAt> = next
+            .keys()
+            .chain(used.keys())
+            .filter(|p| moved(p))
+            .collect();
         let again: Vec<usize> = line
             .sections
             .iter()
             .enumerate()
-            .filter(|(_, s)| s.points.iter().any(moved))
+            .filter(|(_, s)| {
+                changed.iter().any(|p| match p {
+                    LoadAt::Clamp(q) => s.points.contains(q),
+                    LoadAt::Span(r) => r.section == s.id,
+                    LoadAt::Jumper(..) => false,
+                })
+            })
             .map(|(k, _)| k)
             .collect();
+        let on_jumpers = changed.iter().any(|p| matches!(p, LoadAt::Jumper(..)));
         used = next;
         if again.is_empty() {
+            if on_jumpers {
+                continue;
+            }
             return used;
         }
         let coupling = Coupling {

@@ -296,13 +296,20 @@ pub fn conductor_paths(line: &Line) -> Vec<Vec<String>> {
         }
     }
     for j in &line.jumpers {
-        let key = |p: &crate::SectionPoint| (p.structure.clone(), p.set);
-        let (f, t) = (key(&j.from), key(&j.to));
-        let first = |k: &(String, u32)| {
-            at.get(&(k.0.as_str(), k.1))
-                .and_then(|v| v.first().copied())
+        // Each end's section: at its section point, or that a tap hangs on
+        // (a tap joins the jumper to its wire).
+        let end = |p: &crate::SectionPoint, tap: Option<&crate::Tap>| match tap {
+            None => at
+                .get(&(p.structure.as_str(), p.set))
+                .and_then(|v| v.first().copied()),
+            Some(t) => line
+                .tap_section(t, 0)
+                .and_then(|s| line.sections.iter().position(|x| x.id == s.id)),
         };
-        if let (Some(a), Some(b)) = (first(&f), first(&t)) {
+        if let (Some(a), Some(b)) = (
+            end(&j.from, j.from_tap.as_ref()),
+            end(&j.to, j.to_tap.as_ref()),
+        ) {
             union(a, b);
         }
     }
@@ -375,7 +382,12 @@ pub fn circuits(line: &Line) -> Vec<Circuit> {
                     .push((w[0].clone(), e));
             }
         }
-        for j in &line.jumpers {
+        // (A jumper on a tap branches off: not a link of the path.)
+        for j in line
+            .jumpers
+            .iter()
+            .filter(|j| j.from_tap.is_none() && j.to_tap.is_none())
+        {
             if next.contains_key(&j.from) && next.contains_key(&j.to) {
                 let e = Edge::Jumper(j.id.clone());
                 next.get_mut(&j.from)

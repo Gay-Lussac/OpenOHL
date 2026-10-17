@@ -1662,6 +1662,22 @@ impl Session {
                                 out.push(put(Kind::Spacer, &s.id.clone(), &s));
                             }
                         }
+                        // And the jumpers hanging on taps on it.
+                        for j in &self.line.jumpers {
+                            let mut j = j.clone();
+                            let mut changed = false;
+                            for t in [&mut j.from_tap, &mut j.to_tap].into_iter().flatten() {
+                                if let ols_line::Tap::Span(r) = t
+                                    && r.section == id
+                                {
+                                    r.section = new_id.clone();
+                                    changed = true;
+                                }
+                            }
+                            if changed {
+                                out.push(put(Kind::Jumper, &j.id.clone(), &j));
+                            }
+                        }
                     }
                     // A route renamed: its alignments and the structures
                     // giving it follow.
@@ -1696,7 +1712,26 @@ impl Session {
                             }
                         }
                     }
-                    Kind::Jumper | Kind::Spacer => {}
+                    // A jumper renamed: the jumpers hanging on taps on its
+                    // points follow.
+                    Kind::Jumper => {
+                        for j in &self.line.jumpers {
+                            let mut j = j.clone();
+                            let mut changed = false;
+                            for t in [&mut j.from_tap, &mut j.to_tap].into_iter().flatten() {
+                                if let ols_line::Tap::Jumper { jumper, .. } = t
+                                    && *jumper == id
+                                {
+                                    *jumper = new_id.clone();
+                                    changed = true;
+                                }
+                            }
+                            if changed {
+                                out.push(put(Kind::Jumper, &j.id.clone(), &j));
+                            }
+                        }
+                    }
+                    Kind::Spacer => {}
                     other => {
                         return Err(refused(format!(
                             "a {} is not renamed this way",
@@ -2027,13 +2062,18 @@ impl Session {
                     .iter()
                     .find(|s| s.id == id)
                     .ok_or_else(|| refused(format!("no section {id}")))?;
-                impact.jumpers = self
+                let at_ends: Vec<String> = self
                     .line
                     .jumpers
                     .iter()
-                    .filter(|j| sec.points.contains(&j.from) || sec.points.contains(&j.to))
+                    .filter(|j| {
+                        (j.from_tap.is_none() && sec.points.contains(&j.from))
+                            || (j.to_tap.is_none() && sec.points.contains(&j.to))
+                    })
                     .map(|j| j.id.clone())
                     .collect();
+                // With the jumpers hanging on taps on it (and on those).
+                impact.jumpers = self.jumpers_hanging(id, &at_ends);
             }
             Kind::Route => {
                 if !self.line.routes.iter().any(|r| r.id == id) {
@@ -2073,6 +2113,12 @@ impl Session {
                 if !self.line.jumpers.iter().any(|j| j.id == id) {
                     return Err(refused(format!("no jumper {id}")));
                 }
+                // The jumpers hanging on taps on its points (and on those).
+                impact.jumpers = self
+                    .jumpers_hanging("", &[id.to_owned()])
+                    .into_iter()
+                    .filter(|j| j != id)
+                    .collect();
             }
             Kind::Report | Kind::Spacer => {
                 if !self.objects.contains_key(&(kind, id.to_owned())) {
@@ -2182,6 +2228,40 @@ impl Session {
     }
 
     /// The spacers on any of `sections`.
+    /// `jumpers` and the jumpers hanging on taps on section `section`'s
+    /// span points or on their points, and so on — those hanging first
+    /// (deleted before what they hang on).
+    fn jumpers_hanging(&self, section: &str, jumpers: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = jumpers.to_vec();
+        let mut k = 0;
+        let hangs_on = |j: &ols_line::Jumper, ids: &[String]| {
+            [&j.from_tap, &j.to_tap]
+                .into_iter()
+                .flatten()
+                .any(|t| match t {
+                    ols_line::Tap::Span(r) => r.section == section,
+                    ols_line::Tap::Jumper { jumper, .. } => ids.contains(jumper),
+                })
+        };
+        loop {
+            let more: Vec<String> = self
+                .line
+                .jumpers
+                .iter()
+                .filter(|j| !out.contains(&j.id) && hangs_on(j, &out))
+                .map(|j| j.id.clone())
+                .collect();
+            if more.is_empty() || k > self.line.jumpers.len() {
+                break;
+            }
+            out.extend(more);
+            k += 1;
+        }
+        // Those hanging first.
+        out.reverse();
+        out
+    }
+
     fn spacers_on(&self, sections: &[String]) -> Vec<String> {
         self.line
             .spacers

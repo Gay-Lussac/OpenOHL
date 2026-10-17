@@ -8,7 +8,12 @@ the XSD; the solve takes the span points' objects and the spreads.
 Phase 2 done: objects on jumper points load the jumper (the rod model,
 loads held nowhere), their points reported solved, the clamps carrying
 them (pull, or the estimate shared by position; rigid jumpers by
-position). Next: taps (phase 3), the app (phase 4). Every point below is an engine change
+position). Phase 3 done: taps (`Jumper::from_tap` / `to_tap`) on span points and
+jumper points holding a clamp, hinged ends, jumpers solved level by
+level after what they hang on, the full loop by default and one
+calculation as an option (Criteria › Calculation options), the loads
+keyed by clamp, span point or jumper point, circuits and checks joined at
+taps, deletions and renames following. Next: the app (phase 4). Every point below is an engine change
 (data, solver, files).
 
 Decided with the user (2026-10-16): **one object per point**; objects

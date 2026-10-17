@@ -500,6 +500,23 @@
                   <xs:attributeGroup ref="ols:xyz"/>
                 </xs:complexType>
               </xs:element>
+              <!-- A tap end (instead of `from` / `to`): a clamp on a span
+                   point (section, point) or on another jumper's point
+                   (jumper, point). -->
+              <xs:element name="from_tap" minOccurs="0">
+                <xs:complexType>
+                  <xs:attribute name="section" type="xs:string"/>
+                  <xs:attribute name="jumper" type="xs:string"/>
+                  <xs:attribute name="point" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="to_tap" minOccurs="0">
+                <xs:complexType>
+                  <xs:attribute name="section" type="xs:string"/>
+                  <xs:attribute name="jumper" type="xs:string"/>
+                  <xs:attribute name="point" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
               <!-- Support clamps, in order from `from`: each on the strings to a
                    wire point without a set (structure: default the `from` end's). -->
               <xs:element name="clamp" minOccurs="0" maxOccurs="unbounded">
@@ -643,6 +660,15 @@
                 <xs:restriction base="xs:string">
                   <xs:enumeration value="estimate"/>
                   <xs:enumeration value="pull"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <!-- Jumpers on taps: the full loop (default) or one calculation. -->
+            <xs:attribute name="taps" default="loop">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="loop"/>
+                  <xs:enumeration value="once"/>
                 </xs:restriction>
               </xs:simpleType>
             </xs:attribute>

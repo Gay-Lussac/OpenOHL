@@ -49,7 +49,7 @@ pub struct SolvedLine {
     /// The jumpers' loads on the clamps the sections were solved with (the
     /// estimate, or their last pull): a section whose jumpers load it
     /// otherwise now is solved again.
-    jumper_weights: BTreeMap<crate::SectionPoint, [f64; 3]>,
+    jumper_weights: crate::solve::JumperLoadMap,
 }
 
 /// What a jumper's solution depends on: itself, the sections at its ends,
@@ -66,12 +66,18 @@ struct JumperInputs {
 impl JumperInputs {
     fn of(line: &Line, jumper: &Jumper) -> Self {
         let ends = |p: &crate::SectionPoint| *p == jumper.from || *p == jumper.to;
+        // The sections its taps hang on (and so the jumpers too).
+        let hosts: Vec<String> = [&jumper.from_tap, &jumper.to_tap]
+            .into_iter()
+            .flatten()
+            .filter_map(|t| line.tap_section(t, 0).map(|s| s.id.clone()))
+            .collect();
         Self {
             jumper: jumper.clone(),
             sections: line
                 .sections
                 .iter()
-                .filter(|s| s.points.iter().any(ends))
+                .filter(|s| s.points.iter().any(ends) || hosts.contains(&s.id))
                 .cloned()
                 .collect(),
             structures: line
@@ -181,7 +187,7 @@ impl SolvedLine {
         // calculation options) is solved again. Pulling: the last pulls
         // where there are some (the passes below settle them again).
         let estimate = crate::jumper::end_loads(line, &self.case, |id| library.get(id));
-        let pull = line.solver.jumper_loads == crate::JumperLoads::Pull;
+        let pull = crate::solve::needs_pull(line);
         let mut weights = estimate.clone();
         if pull {
             for (p, f) in &self.jumper_weights {
@@ -194,10 +200,16 @@ impl SolvedLine {
             .sections
             .iter()
             .filter(|section| {
+                let differs =
+                    |k: &crate::solve::LoadAt| weights.get(k) != self.jumper_weights.get(k);
                 section
                     .points
                     .iter()
-                    .any(|p| weights.get(p) != self.jumper_weights.get(p))
+                    .any(|p| differs(&crate::solve::LoadAt::Clamp(p.clone())))
+                    || weights.keys().chain(self.jumper_weights.keys()).any(|k| {
+                        matches!(k, crate::solve::LoadAt::Span(r) if r.section == section.id)
+                            && differs(k)
+                    })
             })
             .map(|s| s.id.as_str())
             .collect();
@@ -334,14 +346,32 @@ impl SolvedLine {
             }
             inputs.insert(j.id.clone(), now);
         }
-        // Those to solve again, over the cores.
+        // Those to solve again, over the cores; with taps every jumper, in
+        // their order (a jumper on another's point after it, with the
+        // loads it puts there).
         let case = &self.case;
-        let solved = in_parallel(&stale, |j| {
-            solve_one_jumper(line, library, case, &shapes, j)
-        });
-        update.jumpers = stale.len();
-        for (j, r) in stale.iter().zip(solved) {
-            jumpers.insert(j.id.clone(), r);
+        let taps = line
+            .jumpers
+            .iter()
+            .any(|j| j.from_tap.is_some() || j.to_tap.is_some());
+        if taps {
+            let all = crate::jumper::solve_jumpers_with(
+                line,
+                library,
+                case,
+                &shapes,
+                &self.jumper_weights,
+            );
+            update.jumpers = all.len();
+            jumpers = line.jumpers.iter().map(|j| j.id.clone()).zip(all).collect();
+        } else {
+            let solved = in_parallel(&stale, |j| {
+                solve_one_jumper(line, library, case, &shapes, j)
+            });
+            update.jumpers = stale.len();
+            for (j, r) in stale.iter().zip(solved) {
+                jumpers.insert(j.id.clone(), r);
+            }
         }
         self.jumpers = jumpers;
         self.jumper_inputs = inputs;

@@ -668,6 +668,8 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         angle_from_deg,
         angle_to_deg,
         points,
+        from_tap,
+        to_tap,
         color,
         bundle,
         bundle_spacing,
@@ -697,6 +699,23 @@ fn write_jumper(out: &mut String, j: &Jumper) {
     out.push_str(">\n");
     section_point(out, "from", from, "    ");
     section_point(out, "to", to, "    ");
+    for (name, tap) in [("from_tap", from_tap), ("to_tap", to_tap)] {
+        match tap {
+            None => {}
+            Some(ols_line::Tap::Span(r)) => {
+                let _ = write!(out, "    <{name}");
+                attr(out, "section", &r.section);
+                attr(out, "point", &r.point);
+                out.push_str("/>\n");
+            }
+            Some(ols_line::Tap::Jumper { jumper, point }) => {
+                let _ = write!(out, "    <{name}");
+                attr(out, "jumper", jumper);
+                attr(out, "point", point);
+                out.push_str("/>\n");
+            }
+        }
+    }
     if let Some(JumperSupport {
         point,
         length,
@@ -925,9 +944,12 @@ pub fn to_xml(line: &Line) -> String {
         out.push_str("/>\n");
     }
     if !solver.is_default() {
-        let ols_line::SolverOptions { jumper_loads } = solver;
+        let ols_line::SolverOptions { jumper_loads, taps } = solver;
         out.push_str("  <solver");
         attr(&mut out, "jumper_loads", jumper_loads.as_str());
+        if !taps.is_default() {
+            attr(&mut out, "taps", taps.as_str());
+        }
         out.push_str("/>\n");
     }
     if !bimetallic.is_default() {
@@ -1480,8 +1502,29 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             "bundle_rotation_deg",
             "description",
         ],
-        &["from", "to", "support", "clamp", "jumper_point", "field"],
+        &[
+            "from",
+            "to",
+            "from_tap",
+            "to_tap",
+            "support",
+            "clamp",
+            "jumper_point",
+            "field",
+        ],
     )?;
+    let tap = |name: &str| -> Result<Option<ols_line::Tap>, String> {
+        let Some(t) = e.child(name) else {
+            return Ok(None);
+        };
+        check(t, &["section", "jumper", "point"], &[])?;
+        let point = text(t, "point")?.to_owned();
+        Ok(Some(match (owned(t, "section"), owned(t, "jumper")) {
+            (Some(section), None) => ols_line::Tap::Span(ols_line::SpanPointRef { section, point }),
+            (None, Some(jumper)) => ols_line::Tap::Jumper { jumper, point },
+            _ => return Err(format!("<{name}>: give a section or a jumper")),
+        }))
+    };
     let points = e
         .children_named("jumper_point")
         .map(|p| {
@@ -1548,6 +1591,8 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         angle_from_deg: optional(e, "angle_from_deg")?,
         angle_to_deg: optional(e, "angle_to_deg")?,
         points,
+        from_tap: tap("from_tap")?,
+        to_tap: tap("to_tap")?,
         color: owned(e, "color"),
         bundle: optional(e, "bundle")?,
         bundle_spacing: optional(e, "bundle_spacing")?,
@@ -1702,13 +1747,18 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     let solver = match root.child("solver") {
         None => ols_line::SolverOptions::default(),
         Some(s) => {
-            check(s, &["jumper_loads"], &[])?;
+            check(s, &["jumper_loads", "taps"], &[])?;
             let jumper_loads = match owned(s, "jumper_loads") {
                 None => ols_line::JumperLoads::default(),
                 Some(t) => ols_line::JumperLoads::parse(&t)
                     .ok_or_else(|| format!("solver jumper_loads \"{t}\": estimate or pull"))?,
             };
-            ols_line::SolverOptions { jumper_loads }
+            let taps = match owned(s, "taps") {
+                None => ols_line::TapLoads::default(),
+                Some(t) => ols_line::TapLoads::parse(&t)
+                    .ok_or_else(|| format!("solver taps \"{t}\": loop or once"))?,
+            };
+            ols_line::SolverOptions { jumper_loads, taps }
         }
     };
     let bimetallic = match root.child("bimetallic") {
