@@ -309,8 +309,8 @@ pub enum Action {
         /// Confirmed.
         confirm: bool,
     },
-    /// Open structure type `id` in the pylon workspace (no edit by
-    /// itself).
+    /// Open structure type `id` on the structure screen (its basics:
+    /// points, strings, wire points and sets; no edit by itself).
     EditType {
         /// Structure type.
         id: String,
@@ -326,6 +326,13 @@ pub enum Action {
     /// Open structure `id` (one without a type) in the pylon editor (no
     /// edit by itself).
     EditStructure {
+        /// Structure.
+        id: String,
+    },
+    /// Structure `id` (one without a type) in the structure application:
+    /// it has no file, so its structure screen asks for a type id to make
+    /// it one, then opens that (no edit by itself).
+    MakeFileAndEdit {
         /// Structure.
         id: String,
     },

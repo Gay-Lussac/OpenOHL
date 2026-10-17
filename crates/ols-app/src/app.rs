@@ -1247,6 +1247,9 @@ impl TabViewer for Viewer<'_> {
                         r.set_case(k);
                     }
                     Some(crate::tables::TableAction::Replace(id)) => r.start_replace(&id),
+                    Some(crate::tables::TableAction::EditInStructureApp(id)) => {
+                        r.edit_structure_in_app(&id);
+                    }
                     Some(crate::tables::TableAction::ShowCase(_)) | None => {}
                 }
                 None
@@ -1437,7 +1440,7 @@ impl Ready {
                 }
             }
             // Its pylon: the type in the pylon workspace, a structure
-            // without a type in the structure editor (as Edit pylon… in
+            // without a type in the structure editor (as Strings and points… in
             // Properties).
             (Tool::Edit, Selection::Structure(id)) => {
                 let (id, typed) = (
@@ -2804,7 +2807,15 @@ impl Ready {
     pub fn edit_in_structure_app(&mut self, id: &str, placed: Option<&str>) {
         match crate::structure_app::prepare_edit(&self.model, id, placed) {
             Ok((path, placed)) => self.launch_structure_app(&path, id, placed),
-            Err(e) => self.status = Some((e, true)),
+            Err(e) => {
+                log::info!("structure application: {e}");
+                self.structure_apps.reports.push(crate::structure_app::Report {
+                    title: "The structure application was not started".into(),
+                    text: format!("{e}: the structure type's file was not read (Structures › Structure library)."),
+                    error: true,
+                });
+                self.status = Some((e, true));
+            }
         }
     }
 
@@ -2908,6 +2919,39 @@ impl Ready {
         }
     }
 
+    /// **Edit…** on structure `id` (from Properties, the Structures
+    /// table): its type in the structure application with the loads of
+    /// this place; one without a type has no file to open there: its
+    /// structure screen, asking to make it a structure file first.
+    pub fn edit_structure_in_app(&mut self, id: &str) {
+        let typed = self
+            .model
+            .line
+            .structure(id)
+            .and_then(|s| s.structure_type.clone());
+        match typed {
+            Some(t) => self.edit_in_structure_app(&t, Some(id)),
+            None => self.make_file_and_edit(id),
+        }
+    }
+
+    /// Structure `id` without a type: its structure screen, with the
+    /// type id asked for — saved, used and opened in the structure
+    /// application.
+    pub fn make_file_and_edit(&mut self, id: &str) {
+        log::info!("structure application: {id} has no structure file, make it one first");
+        self.edit_structure(id);
+        if let Some(p) = self.placed.as_mut().filter(|p| p.id == id) {
+            p.ask_file_and_edit();
+            self.status = Some((
+                format!(
+                    "{id} has no structure file: give it a type id and press Save, use and edit"
+                ),
+                false,
+            ));
+        }
+    }
+
     /// Opens structure `id` (one without a type) in the pylon editor.
     pub fn edit_structure(&mut self, id: &str) {
         if self
@@ -2937,7 +2981,7 @@ impl Ready {
         let Some(mut p) = self.placed.take() else {
             ui.label(
                 "No structure open. Select a structure without a type and press \
-                 Edit pylon… in Properties.",
+                 Strings and points… in Properties.",
             );
             return;
         };
@@ -2957,15 +3001,21 @@ impl Ready {
                 }
                 Err(e) => p.message = Some((e, true)),
             },
-            Some(PlacedAction::MakeType(type_id)) => match self.make_type(&p, &stored, &type_id) {
-                Ok(()) => {
-                    self.status = Some((format!("{} has type {type_id} now", p.id), false));
-                    self.placed = None;
-                    self.edit_type(&type_id);
-                    return;
+            Some(PlacedAction::MakeType { id: type_id, edit }) => {
+                match self.make_type(&p, &stored, &type_id) {
+                    Ok(()) => {
+                        log::info!("structure {} made structure type {type_id}", p.id);
+                        self.status = Some((format!("{} has type {type_id} now", p.id), false));
+                        self.placed = None;
+                        self.edit_type(&type_id);
+                        if edit {
+                            self.edit_in_structure_app(&type_id, Some(&p.id));
+                        }
+                        return;
+                    }
+                    Err(e) => p.message = Some((e, true)),
                 }
-                Err(e) => p.message = Some((e, true)),
-            },
+            }
             None => {}
         }
         if let Some(req) = request {
@@ -2981,6 +3031,9 @@ impl Ready {
         use crate::library::{LibraryKind, PageAction};
         use crate::type_workspace::Request;
         match req {
+            // Taken by the page (the file as saved) or the structure
+            // without a type (a file first).
+            Request::EditInStructureApp => {}
             Request::OpenInsulators => {
                 self.open_page = Some((Tab::Library(LibraryKind::Insulators), None));
             }
@@ -3363,6 +3416,10 @@ impl Ready {
             }
             Action::EditStructure { id } => {
                 self.edit_structure(&id);
+                return true;
+            }
+            Action::MakeFileAndEdit { id } => {
+                self.make_file_and_edit(&id);
                 return true;
             }
             Action::ReplaceStructure { id } => {
@@ -7381,6 +7438,7 @@ impl eframe::App for App {
                 ready.remote_frame();
                 ready.solving_frame(ui.ctx());
                 ready.structure_apps_frame(ui.ctx());
+                crate::structure_app::report_window(ui.ctx(), &mut ready.structure_apps);
                 history_window(ui.ctx(), ready);
                 crate::versions::window(ui.ctx(), ready);
                 goto_key(ui.ctx(), ready);

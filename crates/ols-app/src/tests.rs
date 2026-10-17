@@ -8706,12 +8706,18 @@ fn the_start_screen_opens_the_plugin_manager() {
     h.get_by_label("Plugin manager");
 }
 
-/// A structure's "Edit pylon…" opens its type in the pylon workspace: the
-/// level from its content, the structures using it, the tables; a joint
-/// added goes into the file as edited (not saved).
+/// A structure's "Strings and points…" (as the Edit tool) opens its type
+/// on the structure screen: the tables on the left of the pylon's 3D
+/// view (about 45/55), only the basics — attachment points, insulators,
+/// wire points, set points; no joints or members — the level and the
+/// structures using it. An attachment point added goes into the file as
+/// edited (not saved); then "Edit in the structure application…" asks to
+/// save first, and once the file is as saved it starts the application on
+/// the type's file.
 #[test]
-fn the_pylon_workspace_shows_and_edits_a_type() {
+fn the_structure_screen_shows_the_basics_left_of_the_pylon() {
     use crate::library::LibraryKind;
+    use crate::type_workspace::{EDIT_IN_APP, VIEW_LABEL};
     let gpu = ols_render::headless_device().is_ok();
     assert!(
         gpu || std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
@@ -8739,34 +8745,145 @@ fn the_pylon_workspace_shows_and_edits_a_type() {
     harness.run();
     harness.state_mut().ready().unwrap().selection = Selection::Structure("T2".into());
     harness.run();
-    harness.get_by_label("Edit pylon…").click();
+    harness
+        .get_by_label(crate::properties::STRINGS_AND_POINTS)
+        .click();
     harness.run();
     harness.run();
     harness.get_by_label("Level 3 — full design");
     harness.get_by_label("used by 2 structures of the line (they follow when saved)");
-    harness.get_by_label("Joints");
+    // The basics, and nothing of the body but its drawing.
+    for sheet in [
+        "Attachment points",
+        "Insulators",
+        "Wire points",
+        "Set points",
+    ] {
+        assert!(
+            harness.query_all_by_label(sheet).next().is_some(),
+            "{sheet}"
+        );
+    }
+    for gone in [
+        "Joints",
+        "Members",
+        "Add joint",
+        "Member",
+        "Point here",
+        "support",
+    ] {
+        assert!(harness.query_by_label(gone).is_none(), "{gone} is shown");
+    }
+    harness.get_by_label_contains("Body: 46 joint(s), 178 member(s)");
+    // Tables left, the view right.
+    let tab = harness.get_by_label("Attachment points").rect();
+    let header = harness.get_by_label("attachment point").rect();
+    let view = harness.get_by_label(VIEW_LABEL).rect();
+    assert!(tab.right() < view.left() && header.right() < view.left());
+    let tables = view.left() - tab.left();
+    let share = tables / (view.right() - tab.left());
+    assert!((0.35..0.55).contains(&share), "tables take {share}");
+    assert!(view.width() > 400.0 && view.height() > 300.0, "{view:?}");
     if gpu && let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
         let image = harness.render().unwrap();
-        let path = PathBuf::from(dir).join("ols-cad-pylon-workspace.png");
+        let path = PathBuf::from(dir).join("ols-cad-structure-screen.png");
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
     }
-    // A joint above the one picked.
+    // An attachment point beside A1.
     {
         let r = harness.state_mut().ready().unwrap();
+        r.structure_apps.dry_run = Some(Vec::new());
         let page = r.libraries.get_mut(&LibraryKind::StructureTypes).unwrap();
-        page.workspace.selected = vec![crate::type_workspace::Handle::Joint("A1".into())];
+        page.workspace.selected = vec![crate::type_workspace::Handle::Point("A1".into())];
     }
-    harness.get_by_label("Add joint").click();
+    harness.get_by_label("+ Attachment point").click();
+    harness.run();
+    let path = {
+        let r = harness.state_mut().ready().unwrap();
+        let page = &r.libraries[&LibraryKind::StructureTypes];
+        assert!(page.dirty());
+        let text = page.text().unwrap();
+        assert_eq!(text.matches("[[point]]").count(), 3, "{text}");
+        assert!(page.error.is_none(), "{:?}", page.error);
+        page.file.clone().unwrap()
+    };
+    // Not with changes: the application edits the file as saved.
+    harness.get_by_label(EDIT_IN_APP).click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.structure_apps.dry_run.as_deref(), Some(&[][..]));
+        let page = r.libraries.get_mut(&LibraryKind::StructureTypes).unwrap();
+        let (m, error) = page.message.clone().unwrap();
+        assert!(error && m.starts_with("Save or discard"), "{m}");
+        // Discarded.
+        page.open(&path);
+    }
+    harness.run();
+    harness.get_by_label(EDIT_IN_APP).click();
     harness.run();
     let r = harness.state_mut().ready().unwrap();
-    let page = &r.libraries[&LibraryKind::StructureTypes];
-    assert!(page.dirty());
-    let text = page.text().unwrap();
+    let launched = r.structure_apps.dry_run.clone().unwrap();
+    assert_eq!(launched.len(), 1, "{:?}", r.status);
+    assert_eq!(launched[0][0], path.as_os_str());
+    assert!(launched[0].iter().any(|a| a == "--insulators"));
+    assert!(!launched[0].iter().any(|a| a == "--structure"));
+}
+
+/// Edit… on a structure without a type: it has no file for the
+/// structure application, so its structure screen asks for a type id
+/// (Make it a structure file and edit it); Save, use and edit makes it a
+/// structure type of the project, the structure takes it, and the
+/// structure application is started on that file with the loads of this
+/// place.
+#[test]
+fn edit_on_a_structure_without_a_file_makes_one_first() {
+    use crate::placed_editor::MAKE_FILE_AND_EDIT;
+    let model = synthetic_project("make-file-and-edit");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.selection = Selection::Structure("T3".into());
+        r.structure_apps.dry_run = Some(Vec::new());
+    }
+    harness.run();
+    harness.get_by_label("Edit…").click();
+    harness.run();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let p = r.placed.as_ref().expect("its structure screen");
+        assert_eq!((p.id.as_str(), p.then_edit), ("T3", true));
+        assert_eq!(p.type_id.as_deref(), Some("T3"));
+        assert_eq!(r.structure_apps.dry_run.as_deref(), Some(&[][..]));
+        r.placed.as_mut().unwrap().type_id = Some("t3-pylon".into());
+    }
+    // The screen's own button (no plain Edit in the structure application
+    // there: there is no file yet).
+    harness.get_by_label(MAKE_FILE_AND_EDIT);
     assert!(
-        text.contains("point = [\"6.000 m\", \"0.000 m\", \"31.000 m\"]"),
-        "{text}"
+        harness
+            .query_by_label(crate::type_workspace::EDIT_IN_APP)
+            .is_none()
     );
-    assert!(page.error.is_none(), "{:?}", page.error);
+    harness.get_by_label("Save, use and edit").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.placed.is_none(), "{:?}", r.status);
+    let s = r.model.line.structure("T3").unwrap();
+    assert_eq!(s.structure_type.as_deref(), Some("t3-pylon"));
+    let launched = r.structure_apps.dry_run.clone().unwrap();
+    assert_eq!(launched.len(), 1, "{:?}", r.status);
+    let args: Vec<String> = launched[0]
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    assert!(args[0].ends_with("t3-pylon.olss"), "{args:?}");
+    let k = args.iter().position(|a| a == "--structure").unwrap();
+    assert_eq!(args[k + 1], "T3");
 }
 
 /// A colour typed in the Sections table goes on every section of its
@@ -9663,7 +9780,7 @@ fn a_structure_type_opens_on_its_own() {
     }
 }
 
-/// A structure without a type opens in the pylon editor ("Edit pylon…"):
+/// A structure without a type opens on its structure screen ("Strings and points…"):
 /// as it is, its items read back unchanged; a point moved goes on the
 /// structure on Apply (one command); "Make it a type…" saves it as a
 /// structure type of the project and the structure takes it.
@@ -9676,7 +9793,9 @@ fn a_structure_without_a_type_is_edited_in_the_pylon_editor() {
     harness.run();
     harness.state_mut().ready().unwrap().selection = Selection::Structure("T3".into());
     harness.run();
-    harness.get_by_label("Edit pylon…").click();
+    harness
+        .get_by_label(crate::properties::STRINGS_AND_POINTS)
+        .click();
     harness.run();
     harness.run();
     harness.get_by_label("its own points, wire points and strings, in its axes");
@@ -10608,7 +10727,7 @@ fn a_string_hung_elsewhere_keeps_its_length() {
     assert!(f.move_top(legs[0], &low).is_err());
 }
 
-/// Edit on a structure opens its pylon (as Edit pylon… in Properties):
+/// Edit on a structure opens its structure screen (as Strings and points…):
 /// one without a type in the structure editor; its placement window is
 /// Placement… in Properties.
 #[test]

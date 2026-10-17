@@ -80,7 +80,7 @@ mod tests;
 /// OLS CAD (Open Line System Computer Assisted Design) — view and edit a
 /// line model in 3D, plan and profile.
 #[derive(Parser)]
-#[command(name = "ols-cad", version)]
+#[command(name = "ols-cad", version = crate::structure_app::VERSION)]
 struct Args {
     /// Line file (.ols.json) or project file (.ols); none: the start page
     /// (File › New project, Open).

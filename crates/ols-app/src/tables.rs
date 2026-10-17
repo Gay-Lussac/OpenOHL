@@ -4354,6 +4354,9 @@ pub enum TableAction {
     ShowCase(usize),
     /// Replace structure `id` (Replace structure, [`crate::replace`]).
     Replace(String),
+    /// Open this structure in the structure application (one without a
+    /// type: made a structure file first).
+    EditInStructureApp(String),
 }
 
 impl TablePage {
@@ -4928,7 +4931,8 @@ impl TablePage {
                                     TableKind::WeatherCases => "Show this weather case",
                                     TableKind::Structures => {
                                         "Select it and bring the views to it (right-click: \
-                                         Replace structure…)"
+                                         Replace structure…, Edit in the structure \
+                                         application…)"
                                     }
                                     _ => "Select it and bring the views to it",
                                 });
@@ -4949,6 +4953,17 @@ impl TablePage {
                                         .clicked()
                                     {
                                         action = Some(TableAction::Replace(id.clone()));
+                                        ui.close();
+                                    }
+                                    if ui
+                                        .button(crate::type_workspace::EDIT_IN_APP)
+                                        .on_hover_text(
+                                            "Its structure type in the structure application                                              (its own window), with the loads of this place;                                              one without a type is made a structure file first",
+                                        )
+                                        .clicked()
+                                    {
+                                        action =
+                                            Some(TableAction::EditInStructureApp(id.clone()));
                                         ui.close();
                                     }
                                 });

@@ -18,6 +18,11 @@
 //! ols-structure Structures/type-02.olss --structure T2 \
 //!     --line-values Structures/type-02.T2.line-values.json --sections Sections
 //! ```
+//!
+//! `ols-structure --version` prints the version and the build id (the git
+//! commit it was built from), e.g. `ols-structure 0.0.1 (build
+//! 1a2b3c4d5e6f)`: the line application checks it before it starts this
+//! program.
 
 mod app;
 mod body_tab;
@@ -47,10 +52,21 @@ mod pole_extension_ui_tests;
 #[cfg(test)]
 mod tests;
 
+/// The version `--version` prints: the workspace version and the build id
+/// (the git commit built from). The line application compares it with its
+/// own before it starts this program: a different one means the two were
+/// built from different code.
+pub const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (build ",
+    env!("OLS_BUILD_ID"),
+    ")"
+);
+
 /// OLS CAD structure application: a structure file (.olss) in 3D and in
 /// tables, every edit undoable.
 #[derive(Parser)]
-#[command(name = "ols-structure", version)]
+#[command(name = "ols-structure", version = VERSION)]
 struct Args {
     /// Structure file (.olss); none: open one from the window.
     file: Option<PathBuf>,
@@ -117,5 +133,24 @@ fn main() -> std::process::ExitCode {
             eprintln!("error: {e}");
             std::process::ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use clap::Parser;
+
+    /// `--version` prints the version and the build id (the line
+    /// application compares it with its own).
+    #[test]
+    fn the_version_names_the_build() {
+        let Err(e) = super::Args::try_parse_from(["ols-structure", "--version"]) else {
+            panic!("--version parsed as a run");
+        };
+        assert_eq!(e.kind(), clap::error::ErrorKind::DisplayVersion);
+        let text = e.to_string();
+        assert_eq!(text.trim(), format!("ols-structure {}", super::VERSION));
+        assert!(super::VERSION.starts_with(env!("CARGO_PKG_VERSION")));
+        assert!(super::VERSION.contains("(build "));
     }
 }

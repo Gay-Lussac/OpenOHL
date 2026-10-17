@@ -21,13 +21,21 @@
 //! `<stem>.<structure>.loads.csv` and are kept in the project (library
 //! kind `loads`, beside the structure types) when they change. The
 //! project's section library goes along as `--sections`.
+//!
+//! What goes wrong is shown in a window ([`report_window`]) and logged:
+//! the program not found (where it was looked for, how to build it); of
+//! another build (`ols-structure --version` compared with [`VERSION`]: a
+//! warning, started anyway); stopped with an error (its error output,
+//! read on a thread of its own).
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
+use eframe::egui;
 use ols_loads::CaseLoads;
 use ols_structure_loads::PlacedValues;
 
@@ -35,6 +43,31 @@ use crate::model::Model;
 
 /// The structure application's program name.
 pub const PROGRAM: &str = "ols-structure";
+
+/// This program's version: the workspace version and the build id (the
+/// git commit built from, `build.rs`), as `--version` prints it. The
+/// structure application's (`ols-structure --version`) is compared with
+/// it before it is started.
+pub const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (build ",
+    env!("OLS_BUILD_ID"),
+    ")"
+);
+
+/// The environment variable naming the structure application's program
+/// (looked at before the folders, [`find`]).
+pub const PROGRAM_ENV: &str = "OLS_STRUCTURE_APP";
+
+/// How the structure application is built.
+pub const BUILD: &str = "cargo build --release -p ols-structure-app";
+
+/// How both applications are built from the same code.
+pub const BUILD_BOTH: &str = "cargo build --release -p ols-app -p ols-structure-app";
+
+/// A structure application that stops this soon after its start did not
+/// start (its error output says why).
+const EARLY: Duration = Duration::from_secs(5);
 
 /// How often the files are looked at.
 const POLL: Duration = Duration::from_millis(500);
@@ -231,11 +264,10 @@ pub enum Change {
     Loads(PathBuf, String),
 }
 
-/// The program `name` (with the platform's suffix): next to `exe_dir`
-/// (the running program's folder, or the folder above it: tests run from
-/// `target/debug/deps`), else in a folder of `path` (the `PATH`).
-pub fn find_in(exe_dir: Option<&Path>, path: Option<OsString>, name: &str) -> Option<PathBuf> {
-    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+/// The folders the program is looked for in: next to `exe_dir` (the
+/// running program's folder, and the folder above it: tests run from
+/// `target/debug/deps`), then the folders of `path` (the `PATH`).
+pub fn places(exe_dir: Option<&Path>, path: Option<OsString>) -> Vec<PathBuf> {
     let near = exe_dir
         .into_iter()
         .flat_map(|d| [Some(d.to_path_buf()), d.parent().map(Path::to_path_buf)])
@@ -244,28 +276,207 @@ pub fn find_in(exe_dir: Option<&Path>, path: Option<OsString>, name: &str) -> Op
         .iter()
         .flat_map(std::env::split_paths)
         .collect::<Vec<_>>();
-    near.chain(on_path)
+    near.chain(on_path).collect()
+}
+
+/// The program `name` (with the platform's suffix) in the first of
+/// [`places`] that has it.
+pub fn find_in(exe_dir: Option<&Path>, path: Option<OsString>, name: &str) -> Option<PathBuf> {
+    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    places(exe_dir, path)
+        .into_iter()
         .map(|d| d.join(&file))
         .find(|p| p.is_file())
 }
 
-/// The structure application: next to this program, else on the `PATH`.
+/// The structure application: the program [`PROGRAM_ENV`] names, else
+/// next to this program, else on the `PATH`. Not found: where it was
+/// looked for and how to build it.
 pub fn find() -> Result<PathBuf, String> {
+    if let Some(p) = std::env::var_os(PROGRAM_ENV).filter(|p| !p.is_empty()) {
+        let p = PathBuf::from(p);
+        return if p.is_file() {
+            Ok(p)
+        } else {
+            Err(format!(
+                "{PROGRAM_ENV} names {}, but there is no such file.\n\nBuild the structure \
+                 application (in the OLS CAD folder):\n    {BUILD}\nor unset {PROGRAM_ENV}.",
+                p.display()
+            ))
+        };
+    }
     let exe = std::env::current_exe().ok();
-    find_in(
-        exe.as_deref().and_then(Path::parent),
-        std::env::var_os("PATH"),
-        PROGRAM,
+    let dir = exe.as_deref().and_then(Path::parent);
+    let path = std::env::var_os("PATH");
+    find_in(dir, path.clone(), PROGRAM).ok_or_else(|| not_found(&places(dir, path)))
+}
+
+/// Why the structure application was not found: where it was looked for,
+/// how to build it.
+pub fn not_found(places: &[PathBuf]) -> String {
+    let file = format!("{PROGRAM}{}", std::env::consts::EXE_SUFFIX);
+    let list: Vec<String> = places
+        .iter()
+        .map(|d| format!("    {}", d.display()))
+        .collect();
+    format!(
+        "The structure application ({file}) was not found.\n\nLooked in:\n{}\n\nBuild it (in \
+         the OLS CAD folder):\n    {BUILD}\nIt is then next to ols-cad (target/release). Or set \
+         {PROGRAM_ENV} to its path.",
+        list.join("\n")
     )
-    .ok_or_else(|| {
-        format!(
-            "the structure application ({PROGRAM}) was found neither next to {} nor on the \
-             PATH: install it next to ols-cad (cargo build -p ols-structure-app builds it)",
-            exe.as_deref()
-                .and_then(Path::parent)
-                .map_or("this program".into(), |d| d.display().to_string())
-        )
-    })
+}
+
+/// What `program --version` prints after the program's name (e.g.
+/// `0.0.1 (build 1a2b3c4d5e6f)`); waited for 3 s at most.
+pub fn version_of(program: &Path) -> Result<String, String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(program)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("{}: {e}", program.display()))?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "{} --version did not answer within 3 s",
+                    program.display()
+                ));
+            }
+            Err(e) => return Err(format!("{}: {e}", program.display())),
+        }
+    };
+    let mut out = String::new();
+    if let Some(mut o) = child.stdout.take() {
+        let _ = o.read_to_string(&mut out);
+    }
+    if !status.success() {
+        return Err(format!("{} --version: {status}", program.display()));
+    }
+    let line = out.lines().next().unwrap_or("").trim();
+    Ok(line
+        .strip_prefix(PROGRAM)
+        .map_or(line, str::trim)
+        .to_owned())
+}
+
+/// The warning when the structure application (its version `theirs`, as
+/// [`version_of`] reads it) is not of this program's build; none when
+/// they match, or when the build id is not known on either side and the
+/// version numbers match.
+pub fn version_warning(program: &Path, theirs: &str) -> Option<String> {
+    if theirs == VERSION {
+        return None;
+    }
+    let number = |v: &str| v.split_whitespace().next().unwrap_or("").to_owned();
+    let unknown = |v: &str| v.contains("(build unknown)");
+    if (unknown(theirs) || unknown(VERSION)) && number(theirs) == number(VERSION) {
+        return None;
+    }
+    Some(format!(
+        "The structure application is from another build: rebuild both (in the OLS CAD \
+         folder):\n    {BUILD_BOTH}\n\nThis program (ols-cad): {VERSION}\nThe structure \
+         application ({}): {}\n\nIt was started anyway; what it saves may not read the same \
+         here.",
+        program.display(),
+        if theirs.is_empty() {
+            "no version"
+        } else {
+            theirs
+        }
+    ))
+}
+
+/// A report of the structure application: shown in a window of its own
+/// (the text in a box of fixed height) until closed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Report {
+    /// The window's title.
+    pub title: String,
+    /// What happened.
+    pub text: String,
+    /// An error (else a warning).
+    pub error: bool,
+}
+
+/// The structure application's error output, read on a thread of its own
+/// (so the pipe never fills and nothing waits for it): each line passed
+/// on to this program's error output, the last ones kept.
+struct Stderr {
+    text: Arc<Mutex<String>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+/// The most of the error output kept, bytes.
+const STDERR_KEPT: usize = 64 * 1024;
+
+impl Stderr {
+    fn read(pipe: impl std::io::Read + Send + 'static) -> Self {
+        use std::io::BufRead;
+        let text = Arc::new(Mutex::new(String::new()));
+        let kept = Arc::clone(&text);
+        let thread = std::thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(pipe);
+            let mut line = Vec::new();
+            loop {
+                line.clear();
+                match reader.read_until(b'\n', &mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {
+                        let l = String::from_utf8_lossy(&line);
+                        eprint!("{l}");
+                        if let Ok(mut t) = kept.lock() {
+                            t.push_str(&l);
+                            if t.len() > STDERR_KEPT {
+                                let mut cut = t.len() - STDERR_KEPT;
+                                while !t.is_char_boundary(cut) {
+                                    cut += 1;
+                                }
+                                t.drain(..cut);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        Self {
+            text,
+            thread: Some(thread),
+        }
+    }
+
+    /// What was read (the program has ended: the rest is waited for a
+    /// moment at most).
+    fn finish(&mut self) -> String {
+        if let Some(t) = self.thread.take() {
+            let until = Instant::now() + Duration::from_millis(300);
+            while !t.is_finished() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            if t.is_finished() {
+                let _ = t.join();
+            }
+        }
+        self.text.lock().map(|t| t.clone()).unwrap_or_default()
+    }
+}
+
+/// A structure application started.
+struct Running {
+    child: Child,
+    started: Instant,
+    stderr: Option<Stderr>,
 }
 
 /// A structure file being edited in the structure application.
@@ -275,7 +486,7 @@ struct Watched {
     /// The structure's id (for messages).
     id: String,
     /// The application, while it runs.
-    child: Option<Child>,
+    child: Option<Running>,
     /// The file's time and text when last read.
     modified: Option<SystemTime>,
     text: String,
@@ -298,6 +509,17 @@ pub struct StructureApps {
     seen: Option<(u64, Instant)>,
     /// A computation of the values running: what went wrong, when done.
     computing: Option<Receiver<Vec<String>>>,
+    /// The program started (none: [`find`] it).
+    pub program: Option<PathBuf>,
+    /// The programs whose version was checked (path, time of the file).
+    checked: Vec<(PathBuf, Option<SystemTime>)>,
+    /// What went wrong (or is worth a warning), shown in windows until
+    /// closed ([`report_window`]).
+    pub reports: Vec<Report>,
+    /// Tests: the arguments of each launch, recorded instead of starting
+    /// the program.
+    #[cfg(test)]
+    pub dry_run: Option<Vec<Vec<OsString>>>,
 }
 
 impl StructureApps {
@@ -306,7 +528,10 @@ impl StructureApps {
     /// section library `sections` and, on a placed structure, its line
     /// values (`placed`: the file prepared first, [`Placed::prepare`]);
     /// the files are watched from now on. One already running on the file
-    /// is not started again.
+    /// is not started again. Not found, or not started: a report too
+    /// ([`StructureApps::reports`]); of another build: a warning, started
+    /// anyway. Its error output is read, and shown when it stops with an
+    /// error.
     pub fn launch(
         &mut self,
         path: &Path,
@@ -320,8 +545,9 @@ impl StructureApps {
             w.path == path
                 && w.child
                     .as_mut()
-                    .is_some_and(|c| c.try_wait().ok().flatten().is_none())
+                    .is_some_and(|c| c.child.try_wait().ok().flatten().is_none())
         }) {
+            log::info!("structure {id} is open in the structure application already");
             return Err(format!(
                 "structure {id} is open in the structure application already"
             ));
@@ -329,19 +555,73 @@ impl StructureApps {
         if let Some(p) = &placed {
             p.prepare()?;
         }
-        let program = find()?;
-        let child = std::process::Command::new(&program)
-            .args(arguments(
-                path,
-                insulators,
-                ahead,
-                sections,
-                placed.as_ref(),
-            ))
-            .spawn()
-            .map_err(|e| format!("{}: {e}", program.display()))?;
+        let args = arguments(path, insulators, ahead, sections, placed.as_ref());
+        #[cfg(test)]
+        if let Some(dry) = &mut self.dry_run {
+            dry.push(args);
+            return Ok(());
+        }
+        let program = match self.program.clone().map_or_else(find, Ok) {
+            Ok(p) => p,
+            Err(e) => {
+                log::info!("structure application not found: {e}");
+                self.reports.push(Report {
+                    title: "The structure application was not found".into(),
+                    text: e,
+                    error: true,
+                });
+                return Err(format!(
+                    "the structure application ({PROGRAM}) was not found: {BUILD}"
+                ));
+            }
+        };
+        if program.is_file() {
+            self.check_version(&program);
+        }
+        let shown: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        log::info!(
+            "starting the structure application: {} {}",
+            program.display(),
+            shown.join(" ")
+        );
+        let spawned = std::process::Command::new(&program)
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+        let mut child = match spawned {
+            Ok(c) => c,
+            Err(e) => {
+                let text = format!(
+                    "{} could not be started: {e}\n\nArguments: {}\n\nBuild it again (in the \
+                     OLS CAD folder):\n    {BUILD}",
+                    program.display(),
+                    shown.join(" ")
+                );
+                log::info!("{text}");
+                self.reports.push(Report {
+                    title: "The structure application did not start".into(),
+                    text,
+                    error: true,
+                });
+                return Err(format!("{}: {e}", program.display()));
+            }
+        };
+        let stderr = child.stderr.take().map(Stderr::read);
         let fresh = placed.is_some();
-        self.watch(path, id, Some(child), placed);
+        self.watch_running(
+            path,
+            id,
+            Some(Running {
+                child,
+                started: Instant::now(),
+                stderr,
+            }),
+            placed,
+        );
         if fresh {
             // Computed for the new place at the next look.
             self.values_version = None;
@@ -350,9 +630,58 @@ impl StructureApps {
         Ok(())
     }
 
+    /// Once per program file (until it is built again): its version
+    /// compared with this program's; another build is a warning.
+    fn check_version(&mut self, program: &Path) {
+        let modified = std::fs::metadata(program).and_then(|m| m.modified()).ok();
+        let key = (program.to_path_buf(), modified);
+        if self.checked.contains(&key) {
+            return;
+        }
+        self.checked.push(key);
+        let warning = match version_of(program) {
+            Ok(v) => {
+                log::info!("structure application {}: {v}", program.display());
+                version_warning(program, &v)
+            }
+            Err(e) => {
+                log::info!("structure application version: {e}");
+                Some(format!(
+                    "Its version could not be read ({e}): it may be an older build. Rebuild both \
+                     (in the OLS CAD folder):\n    {BUILD_BOTH}\n\nIt was started anyway."
+                ))
+            }
+        };
+        if let Some(text) = warning {
+            log::info!("structure application of another build (here {VERSION})");
+            self.reports.push(Report {
+                title: "The structure application is from another build".into(),
+                text,
+                error: false,
+            });
+        }
+    }
+
     /// Watches `path` (structure `id`, `placed`: the placed structure),
-    /// edited by `child` (none: by someone else).
+    /// edited by `child` (none: by someone else). Tests: the file saved
+    /// elsewhere.
+    #[cfg(test)]
     pub fn watch(&mut self, path: &Path, id: &str, child: Option<Child>, placed: Option<Placed>) {
+        let running = child.map(|child| Running {
+            child,
+            started: Instant::now(),
+            stderr: None,
+        });
+        self.watch_running(path, id, running, placed);
+    }
+
+    fn watch_running(
+        &mut self,
+        path: &Path,
+        id: &str,
+        child: Option<Running>,
+        placed: Option<Placed>,
+    ) {
         let (modified, text) = read(path);
         let at = placed.as_ref().map_or_else(
             || ols_structure_loads::overrides_path(path, None),
@@ -418,10 +747,34 @@ impl StructureApps {
                 }
             }
         }
-        self.watched.retain_mut(|w| match &mut w.child {
-            Some(c) => c.try_wait().ok().flatten().is_none(),
-            None => true,
+        let mut reports = Vec::new();
+        self.watched.retain_mut(|w| {
+            let Some(r) = &mut w.child else {
+                return true;
+            };
+            let status = match r.child.try_wait() {
+                Ok(None) => return true,
+                Ok(Some(s)) => s,
+                Err(e) => {
+                    log::info!("structure application on {}: {e}", w.id);
+                    return false;
+                }
+            };
+            let after = r.started.elapsed();
+            let stderr = r.stderr.as_mut().map(Stderr::finish).unwrap_or_default();
+            if status.success() {
+                log::info!("structure application on {} closed", w.id);
+            } else {
+                log::info!(
+                    "structure application on {} stopped after {:.1} s: {status}",
+                    w.id,
+                    after.as_secs_f64()
+                );
+                reports.push(stopped(&w.id, &status.to_string(), after, &stderr));
+            }
+            false
         });
+        self.reports.extend(reports);
         changed
     }
 
@@ -468,6 +821,85 @@ impl StructureApps {
         });
         self.computing = Some(rx);
         out
+    }
+}
+
+/// The report of a structure application (on structure `id`) that stopped
+/// with `status` after `after`, with its error output `stderr`.
+pub fn stopped(id: &str, status: &str, after: Duration, stderr: &str) -> Report {
+    let early = after < EARLY;
+    let mut text = format!(
+        "The structure application on {id} stopped {} ({status}).",
+        if early {
+            format!("right after it started ({:.1} s)", after.as_secs_f64())
+        } else {
+            format!("after {:.0} s", after.as_secs_f64())
+        }
+    );
+    if stderr.trim().is_empty() {
+        text.push_str("\n\nIt wrote no error output.");
+    } else {
+        text.push_str("\n\nIts error output:\n");
+        text.push_str(stderr.trim_end());
+    }
+    if early {
+        text.push_str(&format!(
+            "\n\nAn older build may not read the file: rebuild both (in the OLS CAD \
+             folder):\n    {BUILD_BOTH}"
+        ));
+    }
+    Report {
+        title: if early {
+            "The structure application did not start".into()
+        } else {
+            "The structure application stopped with an error".into()
+        },
+        text,
+        error: true,
+    }
+}
+
+/// The reports of `apps`, a window each (the text in a box of fixed
+/// height, selectable to copy), until closed.
+pub fn report_window(ctx: &egui::Context, apps: &mut StructureApps) {
+    let mut close = None;
+    for (k, r) in apps.reports.iter().enumerate() {
+        let mut open = true;
+        egui::Window::new(&r.title)
+            .id(egui::Id::new(("structure-app-report", k)))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(560.0)
+            .show(ctx, |ui| {
+                let color = if r.error {
+                    egui::Color32::LIGHT_RED
+                } else {
+                    egui::Color32::YELLOW
+                };
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt(("structure-app-report-text", k))
+                        .max_height(crate::menu::TEXT_BOX_HEIGHT)
+                        .min_scrolled_height(crate::menu::TEXT_BOX_HEIGHT)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(&r.text).color(color))
+                                    .selectable(true),
+                            );
+                        });
+                });
+                if ui.button("Close").clicked() {
+                    close = Some(k);
+                }
+            });
+        if !open {
+            close = Some(k);
+        }
+    }
+    if let Some(k) = close {
+        apps.reports.remove(k);
     }
 }
 
@@ -547,11 +979,40 @@ mod tests {
             .with_size(egui::vec2(1500.0, 950.0))
             .build_eframe(|_| App::with_model(model, None));
         harness.run();
-        harness.state_mut().ready().unwrap().selection = Selection::Structure("T2".into());
+        {
+            let r = harness.state_mut().ready().unwrap();
+            r.selection = Selection::Structure("T2".into());
+            // The arguments recorded (the program is not started).
+            r.structure_apps.dry_run = Some(Vec::new());
+        }
         harness.run();
-        // The button is there (not pressed: it would start the program).
-        harness.get_by_label("Edit…");
+        harness.get_by_label("Edit…").click();
+        harness.run();
         let path = structures.join("type-02.olss");
+        {
+            let r = harness.state_mut().ready().unwrap();
+            let launched = r.structure_apps.dry_run.take().unwrap();
+            assert_eq!(launched.len(), 1, "{:?}", r.status);
+            let args: Vec<String> = launched[0]
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            assert_eq!(args[0], path.to_string_lossy());
+            let after = |flag: &str| {
+                let k = args.iter().position(|a| a == flag).unwrap();
+                args[k + 1].clone()
+            };
+            assert_eq!(after("--structure"), "T2");
+            assert_eq!(
+                after("--line-values"),
+                structures
+                    .join("type-02.T2.line-values.json")
+                    .to_string_lossy()
+            );
+            assert_eq!(after("--ahead"), "0");
+            assert!(args.iter().any(|a| a == "--insulators"));
+            assert!(args.iter().any(|a| a == "--sections"));
+        }
         let name = |h: &mut Harness<'_, App>| {
             let r = h.state_mut().ready().unwrap();
             let types = &r.model.types.as_ref().unwrap().0;
@@ -686,6 +1147,106 @@ mod tests {
         assert_eq!(
             apps.poll(),
             [Change::Loads(placed.overrides.clone(), "T2".into())]
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Not found: the report says where it was looked for and how to build
+    /// it. Another build: a warning with the command building both; the
+    /// same build (or unknown builds of the same version): none.
+    #[test]
+    fn not_found_and_another_build_say_what_to_do() {
+        let places = [PathBuf::from("/a/bin"), PathBuf::from("/b")];
+        let text = not_found(&places);
+        assert!(text.contains("    /a/bin\n    /b"), "{text}");
+        assert!(text.contains(BUILD) && text.contains(PROGRAM_ENV), "{text}");
+        let program = Path::new("/x/ols-structure");
+        assert_eq!(version_warning(program, VERSION), None);
+        let w = version_warning(program, "0.0.0 (build other)").unwrap();
+        assert!(
+            w.contains(BUILD_BOTH) && w.contains("0.0.0 (build other)"),
+            "{w}"
+        );
+        assert!(version_warning(program, "").is_some());
+        let number = env!("CARGO_PKG_VERSION");
+        assert_eq!(
+            version_warning(program, &format!("{number} (build unknown)")),
+            None
+        );
+        assert!(VERSION.starts_with(number) && VERSION.contains("(build "));
+    }
+
+    /// A program that answers `--version` with another build, then stops
+    /// at once with an error: started anyway with a warning, and its error
+    /// output shown in an error window (a box of fixed height) until
+    /// closed. A program that is not there: a report too.
+    #[cfg(unix)]
+    #[test]
+    fn a_program_that_fails_shows_its_error_output() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("ols-cad-fake-app-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let program = dir.join("ols-structure");
+        std::fs::write(
+            &program,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--version\" ]; then echo 'ols-structure 0.0.0 (build other)'; exit 0; fi\n\
+             echo \"error: cannot read $1: unknown field pole\" >&2\n\
+             exit 1\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let file = dir.join("p.olss");
+        std::fs::write(&file, "id = \"p\"\n").unwrap();
+        let mut apps = StructureApps {
+            program: Some(program.clone()),
+            ..StructureApps::default()
+        };
+        assert_eq!(version_of(&program).unwrap(), "0.0.0 (build other)");
+        apps.launch(&file, "p", None, 0.0, None, None).unwrap();
+        // The warning at once (started anyway).
+        assert_eq!(apps.reports.len(), 1);
+        assert!(!apps.reports[0].error);
+        assert!(apps.reports[0].text.contains(BUILD_BOTH));
+        // It stops: the error window, with its error output.
+        let until = Instant::now() + Duration::from_secs(20);
+        while apps.reports.len() < 2 && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(100));
+            apps.poll();
+        }
+        let r = apps.reports.last().unwrap().clone();
+        assert!(r.error, "{r:?}");
+        assert_eq!(r.title, "The structure application did not start");
+        assert!(r.text.contains("cannot read"), "{}", r.text);
+        assert!(r.text.contains("unknown field pole"), "{}", r.text);
+        assert!(!apps.active());
+        // Shown, and closed.
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(
+                |ui, apps: &mut StructureApps| report_window(ui.ctx(), apps),
+                apps,
+            );
+        harness.run();
+        harness.get_by_label_contains("unknown field pole");
+        assert_eq!(
+            harness.query_all_by_label_contains("rebuild both").count(),
+            2
+        );
+        assert_eq!(harness.query_all_by_label("Close").count(), 2);
+        harness.query_all_by_label("Close").next().unwrap().click();
+        harness.run();
+        assert_eq!(harness.state().reports.len(), 1);
+        // Not there: why, in a report.
+        let mut apps = StructureApps {
+            program: Some(dir.join("gone")),
+            ..StructureApps::default()
+        };
+        assert!(apps.launch(&file, "p", None, 0.0, None, None).is_err());
+        assert!(
+            apps.reports
+                .iter()
+                .any(|r| r.error && r.text.contains(BUILD))
         );
         std::fs::remove_dir_all(&dir).ok();
     }

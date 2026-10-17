@@ -241,6 +241,12 @@ const STRUCTURE: &[Field] = &[
     ("source", "\"\"", "where the values come from"),
 ];
 
+/// The parts of a structure type shown in the line application's fields:
+/// its points, wire points and strings (and version 1 attachments). The
+/// body and the design (joints, members, sections, materials, generators,
+/// pole, extensions, load cases…) are edited in the structure application.
+const STRUCTURE_BASICS: &[&str] = &["point", "wire", "string", "attachment"];
+
 const ATTACHMENT: &[Field] = &[
     ("set", "1", "set (cross-arm) number"),
     ("phase", "1", "phase number in the set"),
@@ -447,20 +453,18 @@ impl LibraryKind {
     /// Arrays of tables a table at `context` can get.
     fn arrays(self, context: &str) -> &'static [&'static str] {
         match (self, context) {
-            (LibraryKind::StructureTypes, "") => &[
-                "point",
-                "wire",
-                "string",
-                "extension",
-                "node",
-                "member",
-                "material",
-                "section",
-                "body",
-                "attachment",
-            ],
+            (LibraryKind::StructureTypes, "") => STRUCTURE_BASICS,
             _ => &[],
         }
+    }
+
+    /// Whether the top-level array or table `key` is shown in the fields
+    /// (a structure type's body and design are edited in the structure
+    /// application, not here).
+    fn shows(self, context: &str, key: &str) -> bool {
+        self != LibraryKind::StructureTypes
+            || !context.is_empty()
+            || STRUCTURE_BASICS.contains(&key)
     }
 
     /// Where its files are, as the model uses them.
@@ -710,6 +714,30 @@ impl LibraryPage {
     /// Whether there are unsaved changes.
     pub fn dirty(&self) -> bool {
         self.text().is_some_and(|t| t != self.saved)
+    }
+
+    /// **Edit in the structure application…** asked (on the page or on its
+    /// pylon): the file, as saved; with changes here, why not.
+    fn edit_in_app(&mut self) -> Option<PageAction> {
+        if self.workspace.request != Some(crate::type_workspace::Request::EditInStructureApp) {
+            return None;
+        }
+        self.workspace.request = None;
+        if self.dirty() {
+            log::info!("structure application: the page has unsaved changes");
+            self.message = Some((
+                "Save or discard the changes here first: the structure application edits the \
+                 file as saved"
+                    .into(),
+                true,
+            ));
+            return None;
+        }
+        let Some(f) = self.file.clone() else {
+            self.message = Some(("no structure file open".into(), true));
+            return None;
+        };
+        Some(PageAction::EditInStructureApp(f))
     }
 
     fn check(&mut self) {
@@ -1049,28 +1077,32 @@ impl LibraryPage {
         if kind == LibraryKind::StructureTypes {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.workspace.on, false, "Fields")
-                    .on_hover_text("Every field of the file");
+                    .on_hover_text("The file's fields: its name, points, wire points and strings");
                 ui.selectable_value(&mut self.workspace.on, true, "Pylon")
                     .on_hover_text(
-                        "The pylon in its own axes: joints, members, points, wire points and \
-                         strings, in 3D and in tables",
+                        "The structure in its own axes: tables of its attachment points, \
+                         strings, wire points and sets on the left, the pylon in 3D on the right",
                     );
                 ui.separator();
                 let dirty = self.dirty();
-                if let Some(f) = &self.file
-                    && !self.standalone
+                if !self.workspace.on
                     && ui
-                        .add_enabled(!dirty, egui::Button::new("Edit…"))
+                        .add_enabled(
+                            !dirty,
+                            egui::Button::new(crate::type_workspace::EDIT_IN_APP),
+                        )
                         .on_hover_text(
                             "Open this structure in the structure application (its own \
-                             window); saved there, the line follows",
+                             window: the body and the design); saved there, the line follows",
                         )
                         .on_disabled_hover_text("Save or discard the changes here first")
                         .clicked()
                 {
-                    action = Some(PageAction::EditInStructureApp(f.clone()));
+                    self.workspace.request =
+                        Some(crate::type_workspace::Request::EditInStructureApp);
                 }
             });
+            action = action.or(self.edit_in_app());
             if self.workspace.on {
                 let id = self.workspace.shown().map(|t| t.id.clone());
                 let used_by = cx.line.map(|l| {
@@ -1098,7 +1130,7 @@ impl LibraryPage {
                     self.buffers.clear();
                     self.check();
                 }
-                return action;
+                return action.or(self.edit_in_app());
             }
         }
         match kind.items_key() {
@@ -1715,7 +1747,7 @@ fn table_ui(
     };
     let subs: Vec<String> = keys
         .iter()
-        .filter(|k| matches!(table.get(k), Some(Item::Table(_))))
+        .filter(|k| matches!(table.get(k), Some(Item::Table(_))) && kind.shows(context, k))
         .cloned()
         .collect();
     for k in subs {
@@ -1775,9 +1807,28 @@ fn table_ui(
     // Arrays of tables (a structure type's points, strings, joints, …).
     let mut arrays: Vec<String> = keys
         .iter()
-        .filter(|k| matches!(table.get(k), Some(Item::ArrayOfTables(_))))
+        .filter(|k| matches!(table.get(k), Some(Item::ArrayOfTables(_))) && kind.shows(context, k))
         .cloned()
         .collect();
+    let hidden: Vec<&String> = keys
+        .iter()
+        .filter(|k| !table.get(k).is_some_and(Item::is_value) && !kind.shows(context, k))
+        .collect();
+    if !hidden.is_empty() {
+        ui.label(
+            egui::RichText::new(format!(
+                "Also in the file, edited in the structure application ({}): {}",
+                crate::type_workspace::EDIT_IN_APP,
+                hidden
+                    .iter()
+                    .map(|k| k.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+            .small()
+            .weak(),
+        );
+    }
     for a in kind.arrays(context) {
         if !arrays.iter().any(|x| x == a) {
             arrays.push((*a).to_owned());

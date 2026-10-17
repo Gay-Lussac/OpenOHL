@@ -3,11 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! A structure type file (`.olss`) opened on its own (`ols-cad
-//! pylon.olss`, File › Open): the structure editor of the Structure types
-//! page — its pylon in 3D and in tables, every field of the file — the
-//! whole window, without a line. The insulator assemblies next to the
-//! file (and in an `Insulators` folder there) are those its strings may
-//! take.
+//! pylon.olss`, File › Open): the structure screen of the Structure types
+//! page — its attachment points, strings, wire points and sets in tables
+//! beside its pylon in 3D — the whole window, without a line. Its body and
+//! design: Edit in the structure application…. The insulator assemblies
+//! next to the file (and in an `Insulators` folder there) are those its
+//! strings may take.
 
 use std::path::{Path, PathBuf};
 
@@ -15,7 +16,7 @@ use eframe::egui;
 use eframe::egui_wgpu;
 use ols_structures::{InsulatorLibrary, LibraryItem};
 
-use crate::library::{LibraryKind, LibraryPage, PageContext};
+use crate::library::{LibraryKind, LibraryPage, PageAction, PageContext};
 use crate::model::Sources;
 
 /// A structure type file opened on its own.
@@ -26,6 +27,9 @@ pub struct StructureDesk {
     pub page: LibraryPage,
     sources: Sources,
     insulators: InsulatorLibrary,
+    /// The structure application started on the file (Edit in the
+    /// structure application…).
+    pub apps: crate::structure_app::StructureApps,
 }
 
 impl StructureDesk {
@@ -58,6 +62,7 @@ impl StructureDesk {
             page,
             sources,
             insulators,
+            apps: Default::default(),
         })
     }
 
@@ -106,10 +111,60 @@ impl StructureDesk {
                 ahead: *ahead,
             };
             // A file saved or opened from the page: this one is shown.
-            let _ = self.page.ui(ui, &self.sources, cx);
+            let action = self.page.ui(ui, &self.sources, cx);
             if let Some(f) = &self.page.file {
                 self.path.clone_from(f);
             }
+            if let Some(PageAction::EditInStructureApp(path)) = action {
+                self.edit_in_app(&path, *ahead);
+            }
         });
+        self.apps_frame(ui.ctx());
+    }
+
+    /// The structure application on `path` (the insulators: those beside
+    /// the file, as here).
+    pub fn edit_in_app(&mut self, path: &Path, ahead: f64) {
+        let id = path
+            .file_stem()
+            .map_or(String::new(), |s| s.to_string_lossy().into_owned());
+        self.page.message = Some(match self.apps.launch(path, &id, None, ahead, None, None) {
+            Ok(()) => (
+                format!(
+                    "{id} opened in the structure application: saved there, it is read again here"
+                ),
+                false,
+            ),
+            Err(e) => (e, true),
+        });
+    }
+
+    /// Each frame: the file saved in the structure application read again
+    /// (when there are no changes here); its reports shown.
+    fn apps_frame(&mut self, ctx: &egui::Context) {
+        if self.apps.active() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+            for c in self.apps.poll() {
+                if let crate::structure_app::Change::Structure(path, id) = c
+                    && path == self.path
+                {
+                    self.page.message = Some(if self.page.dirty() {
+                        (
+                            format!(
+                                "{id} was saved in the structure application; this page has changes of its own (Discard to see the saved file)"
+                            ),
+                            true,
+                        )
+                    } else {
+                        self.page.open(&path);
+                        (
+                            format!("{id} saved in the structure application: read again"),
+                            false,
+                        )
+                    });
+                }
+            }
+        }
+        crate::structure_app::report_window(ctx, &mut self.apps);
     }
 }
