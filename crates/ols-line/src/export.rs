@@ -172,7 +172,7 @@ pub fn viewer_html_with(
             |s| line.section_color(s),
         );
         let label = section.map_or_else(String::new, |s| {
-            let text = format!("{} {}", s.circuit, s.phase_label);
+            let text = format!("{} {}", s.circuit_name, s.phase_label);
             match text.trim() {
                 "" => format!("section {}", s.id),
                 t => t.to_owned(),

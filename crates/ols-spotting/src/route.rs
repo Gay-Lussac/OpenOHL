@@ -325,7 +325,7 @@ pub fn spotted_line(
             description: Default::default(),
             id: format!("W{set}"),
             cable: options.cable.clone(),
-            circuit: String::new(),
+            circuit_name: String::new(),
             phase_label: String::new(),
             system: None,
             bundle: 1,

@@ -2025,9 +2025,11 @@ pub struct Section {
     pub id: String,
     /// Cable id in the wire libraries (`.olsw`).
     pub cable: String,
-    /// Circuit name.
-    #[serde(default)]
-    pub circuit: String,
+    /// The name of the circuit it is part of (all its sections give the
+    /// same; the circuits themselves are traced, [`electrical::circuits`]).
+    /// Files before version 5: `circuit`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub circuit_name: String,
     /// Phase label.
     #[serde(default)]
     pub phase_label: String,
@@ -2089,8 +2091,8 @@ struct SectionFile {
     description: String,
     id: String,
     cable: String,
-    #[serde(default)]
-    circuit: String,
+    #[serde(default, alias = "circuit")]
+    circuit_name: String,
     #[serde(default)]
     phase_label: String,
     #[serde(default)]
@@ -2125,7 +2127,7 @@ impl From<SectionFile> for Section {
             description: f.description,
             id: f.id,
             cable: f.cable,
-            circuit: f.circuit,
+            circuit_name: f.circuit_name,
             phase_label: f.phase_label,
             system: f.system,
             bundle: f.bundle,
@@ -3429,7 +3431,7 @@ mod tests {
         assert_eq!(serde_json::from_str::<Line>(&text).unwrap(), line);
         // A ruling-span section refuses its spacer.
         let mut rs = line.clone();
-        rs.sections[0].calculation = condition::Calculation::InitialRs;
+        rs.sections[0].calculation = condition::Calculation::INITIAL_RS;
         assert!(
             rs.validate()
                 .unwrap_err()

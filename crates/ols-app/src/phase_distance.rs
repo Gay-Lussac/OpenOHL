@@ -444,7 +444,7 @@ fn circuit_names(model: &Model) -> Vec<String> {
         .line
         .sections
         .iter()
-        .map(|s| s.circuit.clone())
+        .map(|s| s.circuit_name.clone())
         .collect();
     v.sort();
     v.dedup();
@@ -463,7 +463,9 @@ fn levels(model: &Model, key: &str, default: &str) -> BTreeMap<String, String> {
             .get(key)
             .map(|v| v.trim().to_ascii_lowercase())
             .unwrap_or_else(|| default.to_owned());
-        let e = out.entry(s.circuit.clone()).or_insert_with(|| v.clone());
+        let e = out
+            .entry(s.circuit_name.clone())
+            .or_insert_with(|| v.clone());
         if v > *e {
             *e = v;
         }
@@ -1528,7 +1530,7 @@ impl PhaseDistanceWindow {
                                     let sections: Vec<&ols_line::Section> = line
                                         .sections
                                         .iter()
-                                        .filter(|s| &s.circuit == name)
+                                        .filter(|s| &s.circuit_name == name)
                                         .collect();
                                     let kv = sections
                                         .iter()

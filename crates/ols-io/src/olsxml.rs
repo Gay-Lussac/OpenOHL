@@ -460,7 +460,7 @@ fn write_section(out: &mut String, s: &Section) {
         description,
         id,
         cable,
-        circuit,
+        circuit_name,
         phase_label,
         system,
         bundle,
@@ -478,7 +478,7 @@ fn write_section(out: &mut String, s: &Section) {
     attr(out, "id", id);
     nonempty(out, "description", description);
     attr(out, "cable", cable);
-    nonempty(out, "circuit", circuit);
+    nonempty(out, "circuit_name", circuit_name);
     nonempty(out, "phase_label", phase_label);
     opt_text(out, "system", system.as_deref());
     let _ = write!(out, " bundle=\"{bundle}\"");
@@ -1344,6 +1344,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
         &[
             "id",
             "cable",
+            "circuit_name",
             "circuit",
             "phase_label",
             "system",
@@ -1373,7 +1374,10 @@ fn read_section(e: &Element) -> Result<Section, String> {
         description: owned(e, "description").unwrap_or_default(),
         id: text(e, "id")?.to_owned(),
         cable: text(e, "cable")?.to_owned(),
-        circuit: owned(e, "circuit").unwrap_or_default(),
+        // (Files before version 5: `circuit`.)
+        circuit_name: owned(e, "circuit_name")
+            .or_else(|| owned(e, "circuit"))
+            .unwrap_or_default(),
         phase_label: owned(e, "phase_label").unwrap_or_default(),
         system: owned(e, "system"),
         bundle: optional(e, "bundle")?.unwrap_or(1),

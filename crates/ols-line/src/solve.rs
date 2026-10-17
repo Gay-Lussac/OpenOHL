@@ -3766,18 +3766,19 @@ mod tests {
     fn calculations_have_names() {
         use crate::condition::{Calculation, Condition, Method};
         for c in Calculation::ALL {
-            assert_eq!(Calculation::parse(c.label()), Some(c));
+            assert_eq!(Calculation::parse(&c.label()), Some(c));
+            assert_eq!(Calculation::parse(&c.name()), Some(c));
             let json = serde_json::to_string(&c).unwrap();
             assert_eq!(serde_json::from_str::<Calculation>(&json).unwrap(), c);
         }
         assert_eq!(
             Calculation::parse("max sag fe"),
-            Some(Calculation::MaxSagFe)
+            Some(Calculation::MAX_SAG_FE)
         );
-        assert_eq!(Calculation::CreepRs.condition(), Condition::Creep);
-        assert_eq!(Calculation::CreepRs.method(), Method::Rs);
+        assert_eq!(Calculation::CREEP_RS.condition(), Condition::Creep);
+        assert_eq!(Calculation::CREEP_RS.method(), Method::Rs);
         assert_eq!(
-            serde_json::to_string(&Calculation::CreepRs).unwrap(),
+            serde_json::to_string(&Calculation::CREEP_RS).unwrap(),
             "\"creep-rs\""
         );
         assert!(Calculation::default().is_default());
@@ -3844,9 +3845,9 @@ mod tests {
         let budget = default_fe_budget();
         for t in [15.0, 60.0] {
             let case = WeatherCase::still("t", Temperature::from_celsius(t));
-            line.sections[0].calculation = Calculation::InitialFe;
+            line.sections[0].calculation = Calculation::INITIAL_FE;
             let fe = solve_section(&line, &line.sections[0], cable, &case, &budget).unwrap();
-            line.sections[0].calculation = Calculation::InitialRs;
+            line.sections[0].calculation = Calculation::INITIAL_RS;
             let rs = solve_section(&line, &line.sections[0], cable, &case, &budget).unwrap();
             let (a, b) = (max_sag(&fe), max_sag(&rs));
             // Within 2 %: the FE strings swing to even out the spans'
@@ -3860,7 +3861,7 @@ mod tests {
         // Wind blows the RS spans sideways.
         let mut windy = WeatherCase::still("w", Temperature::from_celsius(15.0));
         windy.wind_pressure = Stress::from_pascals(500.0);
-        line.sections[0].calculation = Calculation::InitialRs;
+        line.sections[0].calculation = Calculation::INITIAL_RS;
         let calm = solve_section(
             &line,
             &line.sections[0],
@@ -3890,7 +3891,7 @@ mod tests {
             max_sag(&solve_section(line, &line.sections[0], cable, &hot, &budget).unwrap())
         };
         let mut less = vec![];
-        for calculation in [Calculation::InitialRs, Calculation::InitialFe] {
+        for calculation in [Calculation::INITIAL_RS, Calculation::INITIAL_FE] {
             let mut cable = lib.get("acsr-drake-26-7").unwrap().clone();
             let mut line = crate::tests::example();
             line.sections[0].clear_point_loads();
@@ -3939,9 +3940,9 @@ mod tests {
         line.creep_stretch.creep_case = Some("everyday".into());
         line.set_weather_cases(std::slice::from_ref(&every));
         let budget = default_fe_budget();
-        line.sections[0].calculation = Calculation::CreepFe;
+        line.sections[0].calculation = Calculation::CREEP_FE;
         let crept = solve_section(&line, &line.sections[0], &cable, &every, &budget).unwrap();
-        line.sections[0].calculation = Calculation::InitialFe;
+        line.sections[0].calculation = Calculation::INITIAL_FE;
         let warm = solve_section(
             &line,
             &line.sections[0],
@@ -4007,8 +4008,8 @@ mod tests {
         };
         for t in [-20.0, 15.0, 60.0] {
             let (fe, rs) = (
-                sag(&line, Calculation::InitialFe, t),
-                sag(&line, Calculation::InitialRs, t),
+                sag(&line, Calculation::INITIAL_FE, t),
+                sag(&line, Calculation::INITIAL_RS, t),
             );
             // Tensions within 0.1 %, sags within 1 cm (the methods measure
             // sag on slightly different chords: 5 mm here at stringing too).
@@ -4041,7 +4042,7 @@ mod tests {
         let mut ice = WeatherCase::still("heavy ice", Temperature::from_celsius(-5.0));
         ice.ice_thickness = ols_core::units::Length::from_millimeters(15.0);
         // Without criteria: said so.
-        line.sections[0].calculation = Calculation::CreepFe;
+        line.sections[0].calculation = Calculation::CREEP_FE;
         let e = solve_section(&line, &line.sections[0], cable, &every, &budget).unwrap_err();
         assert!(e.to_string().contains("Creep-Stretch"), "{e}");
         line.creep_stretch.creep_case = Some("everyday".into());
@@ -4075,16 +4076,16 @@ mod tests {
         };
         for (initial, creep, load, max) in [
             (
-                Calculation::InitialFe,
-                Calculation::CreepFe,
-                Calculation::LoadFe,
-                Calculation::MaxSagFe,
+                Calculation::INITIAL_FE,
+                Calculation::CREEP_FE,
+                Calculation::LOAD_FE,
+                Calculation::MAX_SAG_FE,
             ),
             (
-                Calculation::InitialRs,
-                Calculation::CreepRs,
-                Calculation::LoadRs,
-                Calculation::MaxSagRs,
+                Calculation::INITIAL_RS,
+                Calculation::CREEP_RS,
+                Calculation::LOAD_RS,
+                Calculation::MAX_SAG_RS,
             ),
         ] {
             let (i, c, l, m) = (sag(initial), sag(creep), sag(load), sag(max));

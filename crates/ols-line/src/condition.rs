@@ -41,41 +41,92 @@ pub enum Method {
     Fe,
 }
 
-/// How a section is solved: a condition and a method (8 choices).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Calculation {
-    /// Initial, ruling span.
-    InitialRs,
-    /// After creep, ruling span.
-    CreepRs,
-    /// After load, ruling span.
-    LoadRs,
-    /// Max sag of creep and load, ruling span.
-    MaxSagRs,
-    /// Initial, finite elements (the default).
-    #[default]
-    InitialFe,
-    /// After creep, finite elements.
-    CreepFe,
-    /// After load, finite elements.
-    LoadFe,
-    /// Max sag of creep and load, finite elements.
-    MaxSagFe,
+impl Condition {
+    /// Every condition, in the order of the lists.
+    pub const ALL: [Condition; 4] = [
+        Condition::Initial,
+        Condition::Creep,
+        Condition::Load,
+        Condition::MaxSag,
+    ];
+
+    /// Its name in files (`max-sag`) and in lists (`Max Sag`).
+    fn names(self) -> (&'static str, &'static str) {
+        match self {
+            Condition::Initial => ("initial", "Initial"),
+            Condition::Creep => ("creep", "Creep"),
+            Condition::Load => ("load", "Load"),
+            Condition::MaxSag => ("max-sag", "Max Sag"),
+        }
+    }
+}
+
+impl Method {
+    /// Every method, in the order of the lists.
+    pub const ALL: [Method; 2] = [Method::Rs, Method::Fe];
+
+    /// Its name in files (`fe`) and in lists (`FE`).
+    fn names(self) -> (&'static str, &'static str) {
+        match self {
+            Method::Rs => ("rs", "RS"),
+            Method::Fe => ("fe", "FE"),
+        }
+    }
+}
+
+/// How a section is solved: a condition and a method. Written by its name,
+/// condition and method joined (`creep-fe`, `max-sag-rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Calculation {
+    /// The cable's condition.
+    pub condition: Condition,
+    /// The method.
+    pub method: Method,
+}
+
+impl Default for Calculation {
+    /// Initial, finite elements.
+    fn default() -> Self {
+        Self::INITIAL_FE
+    }
 }
 
 impl Calculation {
-    /// Every calculation, in the order of the lists.
+    /// Initial, ruling span.
+    pub const INITIAL_RS: Self = Self::of(Condition::Initial, Method::Rs);
+    /// After creep, ruling span.
+    pub const CREEP_RS: Self = Self::of(Condition::Creep, Method::Rs);
+    /// After load, ruling span.
+    pub const LOAD_RS: Self = Self::of(Condition::Load, Method::Rs);
+    /// Max sag of creep and load, ruling span.
+    pub const MAX_SAG_RS: Self = Self::of(Condition::MaxSag, Method::Rs);
+    /// Initial, finite elements (the default).
+    pub const INITIAL_FE: Self = Self::of(Condition::Initial, Method::Fe);
+    /// After creep, finite elements.
+    pub const CREEP_FE: Self = Self::of(Condition::Creep, Method::Fe);
+    /// After load, finite elements.
+    pub const LOAD_FE: Self = Self::of(Condition::Load, Method::Fe);
+    /// Max sag of creep and load, finite elements.
+    pub const MAX_SAG_FE: Self = Self::of(Condition::MaxSag, Method::Fe);
+
+    /// Every calculation, in the order of the lists (by method, then
+    /// condition).
     pub const ALL: [Calculation; 8] = [
-        Calculation::InitialRs,
-        Calculation::CreepRs,
-        Calculation::LoadRs,
-        Calculation::MaxSagRs,
-        Calculation::InitialFe,
-        Calculation::CreepFe,
-        Calculation::LoadFe,
-        Calculation::MaxSagFe,
+        Self::INITIAL_RS,
+        Self::CREEP_RS,
+        Self::LOAD_RS,
+        Self::MAX_SAG_RS,
+        Self::INITIAL_FE,
+        Self::CREEP_FE,
+        Self::LOAD_FE,
+        Self::MAX_SAG_FE,
     ];
+
+    /// `condition` by `method`.
+    pub const fn of(condition: Condition, method: Method) -> Self {
+        Self { condition, method }
+    }
 
     /// Whether it is the default (Initial FE).
     pub fn is_default(&self) -> bool {
@@ -84,44 +135,42 @@ impl Calculation {
 
     /// Its condition.
     pub fn condition(self) -> Condition {
-        match self {
-            Calculation::InitialRs | Calculation::InitialFe => Condition::Initial,
-            Calculation::CreepRs | Calculation::CreepFe => Condition::Creep,
-            Calculation::LoadRs | Calculation::LoadFe => Condition::Load,
-            Calculation::MaxSagRs | Calculation::MaxSagFe => Condition::MaxSag,
-        }
+        self.condition
     }
 
     /// Its method.
     pub fn method(self) -> Method {
-        match self {
-            Calculation::InitialRs
-            | Calculation::CreepRs
-            | Calculation::LoadRs
-            | Calculation::MaxSagRs => Method::Rs,
-            _ => Method::Fe,
-        }
+        self.method
     }
 
     /// Its name in lists, e.g. `Creep RS`.
-    pub fn label(self) -> &'static str {
-        match self {
-            Calculation::InitialRs => "Initial RS",
-            Calculation::CreepRs => "Creep RS",
-            Calculation::LoadRs => "Load RS",
-            Calculation::MaxSagRs => "Max Sag RS",
-            Calculation::InitialFe => "Initial FE",
-            Calculation::CreepFe => "Creep FE",
-            Calculation::LoadFe => "Load FE",
-            Calculation::MaxSagFe => "Max Sag FE",
-        }
+    pub fn label(self) -> String {
+        format!("{} {}", self.condition.names().1, self.method.names().1)
     }
 
-    /// From its name (case and spaces ignored).
+    /// Its name in files, e.g. `creep-rs`.
+    pub fn name(self) -> String {
+        format!("{}-{}", self.condition.names().0, self.method.names().0)
+    }
+
+    /// From its name or label (case, spaces, `-` and `_` ignored).
     pub fn parse(text: &str) -> Option<Self> {
         let key = |t: &str| t.to_lowercase().replace([' ', '-', '_'], "");
         let k = key(text);
-        Self::ALL.into_iter().find(|c| key(c.label()) == k)
+        Self::ALL.into_iter().find(|c| key(&c.label()) == k)
+    }
+}
+
+impl TryFrom<String> for Calculation {
+    type Error = String;
+    fn try_from(text: String) -> Result<Self, String> {
+        Self::parse(&text).ok_or_else(|| format!("calculation \"{text}\" unknown"))
+    }
+}
+
+impl From<Calculation> for String {
+    fn from(c: Calculation) -> String {
+        c.name()
     }
 }
 

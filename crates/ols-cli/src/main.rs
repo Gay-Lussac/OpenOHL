@@ -1503,7 +1503,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                         println!(
                             "  {:<12} {:<22} {:>5} {:>12.2} {:>8.2} m {:>6}",
                             section.id,
-                            format!("{} {}", section.circuit, section.phase_label),
+                            format!("{} {}", section.circuit_name, section.phase_label),
                             shape.spans.len(),
                             max_t / 1e3,
                             max_sag,

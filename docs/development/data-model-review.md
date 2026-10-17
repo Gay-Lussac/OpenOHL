@@ -58,8 +58,8 @@ These change the line file (a new version, older files still read).
 | 2.7 ✓ | **Legacy types still public**: `SpanLoad` (with its own `forces`, a copy of `LineObject::forces`), `SpreadLoad` (also the solver's working form), `Line.alignment`, `Route.legacy_*` | two load formulas to keep equal; legacy fields reach `validate` | keep them in the `*File` reading types only; the solver reads `SpreadObject` |
 | 2.8 ✓ | **Defaults as positional arrays** (`DEFAULT_THERMAL`, `DEFAULT_CLEARANCE` indexed by number in `ols-thermal`, `ols-clearance`); a few literals (insulator EA 5·10⁷ in `ols-structures`, the clamp length 0.1 used by serde while the app uses the project default) | a reordered array changes results silently | named constants or small structs; one place per default |
 | 2.9 ✓ | **`Display.phase_colors` keyed by phase label** only | `L1` of two systems always the same colour | keep (by system colours exist), or key by system + label |
-| 2.10 | **`Section.circuit`** (free text) beside the derived circuits | two meanings of "circuit" | rename to `circuit_name` / a description, or drop |
-| 2.11 | **`Calculation`** lists condition × method by hand (kebab-case, the only one) | each new condition or method is many edits | `{condition, method}`; read the old names |
+| 2.10 ✓ | **`Section.circuit`** (free text) beside the derived circuits | two meanings of "circuit" | rename to `circuit_name` / a description, or drop |
+| 2.11 ✓ | **`Calculation`** lists condition × method by hand (kebab-case, the only one) | each new condition or method is many edits | `{condition, method}`; read the old names |
 | 2.12 ✓ | **Line file version** not raised for points and objects (still 4) | an older program refuses a new file with "unknown field" rather than "newer version" | raise to 5 with the next format change |
 
 ## 3. The project file

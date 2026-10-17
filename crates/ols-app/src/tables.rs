@@ -1488,7 +1488,7 @@ impl TableKind {
                         cells: vec![
                             s.id.clone(),
                             s.cable.clone(),
-                            s.circuit.clone(),
+                            s.circuit_name.clone(),
                             s.phase_label.clone(),
                             s.system.clone().unwrap_or_default(),
                             s.bundle.to_string(),
@@ -1749,8 +1749,7 @@ impl TableKind {
                 cells[6] = f(like.spacing, 3);
                 let col = |n: &str| TableKind::Sections.column(n);
                 cells[col("status")] = "in the blocks".into();
-                cells[col("calculation")] =
-                    ols_line::condition::Calculation::default().label().into();
+                cells[col("calculation")] = ols_line::condition::Calculation::default().label();
                 cells[col("condition")] = "tension".into();
                 cells[col("value")] = "20".into();
                 cells[col("temp °C")] = "15".into();
@@ -2010,7 +2009,7 @@ impl TableKind {
                         let mut taking = Vec::new();
                         for s in stored.sections.iter().filter(|s| {
                             s.id != *key
-                                && s.circuit == form.circuit
+                                && s.circuit_name == form.circuit
                                 && !by_hand.contains(&s.id)
                                 && s.color != form.color
                         }) {
@@ -2855,7 +2854,7 @@ fn circuit_rows(line: &ols_line::Line) -> Vec<Row> {
                     }),
                 cells: vec![
                     format!("C{}", k + 1),
-                    common(&|s| s.circuit.clone()),
+                    common(&|s| s.circuit_name.clone()),
                     common(&|s| s.phase_label.clone()),
                     common(&|s| s.system.clone().unwrap_or_default()),
                     list(&c.starts),
@@ -2970,7 +2969,7 @@ fn circuit_commands(
             };
             let before = sec.clone();
             if let Some(n) = &name {
-                sec.circuit = n.clone();
+                sec.circuit_name = n.clone();
             }
             if let Some(p) = &phase {
                 sec.phase_label = p.clone();

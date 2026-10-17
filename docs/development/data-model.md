@@ -123,7 +123,7 @@ files](../user-guide/line-file.md).
 | Field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `format` | string | — | `"ols-line"` | — |
-| `version` | u32 | — | file version (now 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points; versions 1–4 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
+| `version` | u32 | — | file version (now 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–4 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
 | `name` | string | — | line name | — |
 | `crs` | string | — | coordinate reference system, e.g. an EPSG code (informative) | — |
 | `routes` | `[Route]` | — | routes: paths of the line, made of alignments | — |
@@ -289,7 +289,7 @@ once resolved every structure is checked in full (`check_strings`).
 | `id` | string | — | unique id | — |
 | `description` | string | — | free text | — |
 | `cable` | string | — | cable | `.olsw` cable `id` |
-| `circuit` | string | — | circuit name (free label) | — |
+| `circuit_name` | string | — | the name of the circuit it is part of (its sections give the same; the circuits themselves are traced, `electrical::circuits`); files before version 5: `circuit` | — |
 | `phase_label` | string | — | phase label, e.g. `L1` | `SystemPhase.label`, `Display.phase_colors` key |
 | `system` | string? | — | system this conductor path carries; given once per path, the other sections of the path follow; none on the whole path: earthed | `System.id` |
 | `bundle` | u32 | — | subconductors (1: single wire) | — |
@@ -300,7 +300,7 @@ once resolved every structure is checked in full (`check_strings`).
 | `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place — `fraction` (horizontal, from the back point), `distance` (m) or `station` (m, of the line along the alignment both structures stand on, turned into a fraction when solved, `Line::section_with_fractions`; with no alignment through both, at the back point) — one of them, `{"distance": 30}` (`SpanPlace` enum; files before version 5 giving several are read with a station over a distance over the fraction), each with its `object` (one per point: a body or a clamp, `objects::LineObject`) or bare (a spread's end); nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers and spreads name them |
 | `spreads` | `[SpreadObject]` | N/m | objects spread between two points of one span: `from`, `to` (point labels), `type` (library id), `load` (downward, N/m of conductor, whole bundle); on the wire pieces they cover (FE) | point labels |
 | `color` | string? | — | `#rrggbb`, overrides the phase colour | — |
-| `calculation` | `Calculation` | — | condition and method, kebab-case (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
+| `calculation` | `Calculation` | — | `{condition, method}` (`condition::Condition` × `Method`), written by its name: condition and method joined (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
 
 `SectionPoint { structure, set }` names the wire point with set `set` on
 structure `structure`. Spans are between consecutive points.

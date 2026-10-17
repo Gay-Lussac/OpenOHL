@@ -146,7 +146,7 @@ impl StyleCache {
         for s in &line.sections {
             (
                 &s.id,
-                &s.circuit,
+                &s.circuit_name,
                 &s.phase_label,
                 &s.system,
                 &s.color,
