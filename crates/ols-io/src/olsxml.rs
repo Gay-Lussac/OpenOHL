@@ -17,8 +17,8 @@ use ols_line::condition::{Calculation, CreepStretch};
 use ols_line::electrical::{System, SystemKind, SystemPhase};
 use ols_line::{
     Alignment, AlignmentPoint, AttachmentV1, Display, InsulatorString, Jumper, JumperClamp,
-    JumperSupport, Line, OldPoint, Point, Route, Section, SectionPoint, SpanLoad, Stringing,
-    Structure, StructurePoint, WirePoint,
+    JumperSupport, Line, OldPoint, Point, Route, Section, SectionPoint, Stringing, Structure,
+    StructurePoint, WirePoint,
 };
 
 use crate::xml::{Element, attribute as attr};
@@ -1427,7 +1427,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
     };
     // Older documents: point and spread loads of their own, read into
     // points with objects.
-    let loads: Vec<SpanLoad> = e
+    let loads: Vec<ols_line::legacy::SpanLoad> = e
         .children_named("load")
         .map(|l| {
             check(
@@ -1446,7 +1446,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
                 ],
                 &[],
             )?;
-            Ok(SpanLoad {
+            Ok(ols_line::legacy::SpanLoad {
                 span: number(l, "span")?,
                 fraction: optional(l, "fraction")?.unwrap_or(0.0),
                 vertical: number(l, "vertical")?,
@@ -1463,7 +1463,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
     for l in &loads {
         section.add_point_load(l);
     }
-    let spread: Vec<ols_line::SpreadLoad> = e
+    let spread: Vec<ols_line::legacy::SpreadLoad> = e
         .children_named("spread_load")
         .map(|l| {
             check(
@@ -1481,7 +1481,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
                 ],
                 &[],
             )?;
-            Ok(ols_line::SpreadLoad {
+            Ok(ols_line::legacy::SpreadLoad {
                 span: number(l, "span")?,
                 start: read_place(l, "start_")?,
                 end: read_place(l, "end_")?,

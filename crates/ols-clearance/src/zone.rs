@@ -46,9 +46,9 @@ use crate::rules::{
 use ols_line::jumper::JumperShape;
 
 /// Default half width of the vertical zone, m.
-pub const DEFAULT_WIDTH: f64 = ols_line::DEFAULT_CLEARANCE[3];
+pub const DEFAULT_WIDTH: f64 = ols_line::Defaults::PROGRAM.clearance_zone_width;
 /// Default depth of the slices of the vertical zone, m.
-pub const DEFAULT_DEPTH: f64 = ols_line::DEFAULT_CLEARANCE[4];
+pub const DEFAULT_DEPTH: f64 = ols_line::Defaults::PROGRAM.clearance_zone_depth;
 /// Most wind pressures per case and side (the step is made larger).
 pub const MAX_STEPS: usize = 200;
 

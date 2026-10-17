@@ -191,6 +191,22 @@ impl Shape {
     }
 }
 
+/// A spread object as a load between the places of its points
+/// ([`crate::Section::spread_loads`]): what the solve and the drawing take.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SpreadStretch {
+    /// Span index (0 = first span of the section).
+    pub span: usize,
+    /// Where it starts.
+    pub start: crate::SpanPlace,
+    /// Where it ends.
+    pub end: crate::SpanPlace,
+    /// Downward load, N per metre of conductor (the whole bundle's).
+    pub load: f64,
+    /// Its label.
+    pub label: String,
+}
+
 /// What holds a clamp on a jumper up, making it a support: the strings of
 /// a structure to a wire point without a set (an I or a V), or one string
 /// from a fixed point. Written `{"strings": {"structure", "wire"}}` or
@@ -617,16 +633,7 @@ mod legacy_tests {
         let written = serde_json::to_string(&s).unwrap();
         assert!(!written.contains("\"loads\"") && !written.contains("spread_loads"));
         assert_eq!(serde_json::from_str::<crate::Section>(&written).unwrap(), s);
-        // The same forces as the old point load.
-        let old: crate::SpanLoad = serde_json::from_value(
-            serde_json::json!({"span": 0, "vertical": 70.0, "diameter": 0.6}),
-        )
-        .unwrap();
-        let mut iced =
-            ols_weather::WeatherCase::still("c", ols_core::units::Temperature::from_celsius(0.0));
-        iced.ice_thickness = ols_core::units::Length::from_millimeters(12.0);
-        iced.wind_pressure = ols_core::units::Stress::from_pascals(300.0);
-        assert_eq!(o.forces(&iced, 0.03), old.forces(&iced, 0.03));
+        // (Its forces: as the old point load's, `a_marker_ball_takes_wind_and_ice`.)
         // The example line (older form) reads.
         assert!(example.sections[0].objects().next().is_some());
     }

@@ -672,7 +672,7 @@ pub struct WindSteps {
 }
 
 /// Default step of the wind pressure, Pa.
-pub const DEFAULT_WIND_STEP: f64 = ols_line::DEFAULT_CLEARANCE[0];
+pub const DEFAULT_WIND_STEP: f64 = ols_line::Defaults::PROGRAM.clearance_wind_step;
 
 impl Default for WindSteps {
     fn default() -> Self {
@@ -717,9 +717,9 @@ pub struct RuleSet {
 }
 
 /// Default horizontal band for vertical clearance to points, m.
-pub const DEFAULT_VERTICAL_BAND: f64 = ols_line::DEFAULT_CLEARANCE[1];
+pub const DEFAULT_VERTICAL_BAND: f64 = ols_line::Defaults::PROGRAM.clearance_vertical_band;
 /// Default search margin, m.
-pub const DEFAULT_SEARCH_MARGIN: f64 = ols_line::DEFAULT_CLEARANCE[2];
+pub const DEFAULT_SEARCH_MARGIN: f64 = ols_line::Defaults::PROGRAM.clearance_search_margin;
 
 /// What a rule file's rules take where they give none: the program's
 /// ([`Default`]) or a project's default values.

@@ -45,7 +45,7 @@ pub const AMBIENT_FILE_VERSION: u32 = 1;
 /// File extension of ambient case files.
 pub const AMBIENT_FILE_EXTENSION: &str = "olsta";
 /// Ground albedo (CIGRE) when a case gives none.
-pub const DEFAULT_ALBEDO: f64 = ols_line::DEFAULT_THERMAL[3];
+pub const DEFAULT_ALBEDO: f64 = ols_line::Defaults::PROGRAM.thermal_albedo;
 
 /// Where the solar heating comes from.
 #[derive(Debug, Clone, Copy, PartialEq)]

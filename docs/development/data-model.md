@@ -133,7 +133,7 @@ files](../user-guide/line-file.md).
 | `sections` | `[Section]` | — | wire sections | structures + sets |
 | `jumpers` | `[Jumper]` | — | jumpers between wire points | structures + sets |
 | `spacers` | `[Spacer]` | m, N | interphase spacers: an insulator between span points of two sections of one span (`a`, `b`: section id + span point label, each point holding a clamp object — required; files before give bare ends a clamp of no weight, `Line::clamp_spacer_ends`; insulator label or weight, wind area, stiffness; `length` (none: the still-air distance at stringing); `compression` limit, N, from the project defaults when made; both sections by finite elements, ruling span refused); solved by `solve::solve_spacer_group` (the sections joined, in turn, Aitken's relaxation), reported on the section at `a` (`SectionShape::spacers`: ends, axial force, slack, over its limit) | sections + span point labels |
-| `defaults` | `Defaults` | N | the project's default values (Criteria › Default values; `ols_line::DEFAULT_FIELDS`): what new objects start with and what the calculations take where nothing else gives a value — `spacer_compression` (10 000 N), `jumper_exit_angle_deg` (30°), `jumper_stiffness_factor` (0.2), `jumper_clamp_length` (0.1 m, new clamps), `insulator_stiffness` (EA 5·10⁷ N), `air_density_factor` (Q 0.613), `thermal_emissivity` / `_absorptivity` (0.8), `thermal_roughness` (0.1), `thermal_albedo` (0.1), `thermal_time_step` (10 s), `clearance_wind_step` (50 Pa), `clearance_vertical_band` (0.5 m), `clearance_search_margin` (5 m), `clearance_zone_width` / `_depth` (1 m / 0.2 m, new windows); exported / imported as `.olsdef` (`ols-defaults`, TOML, sections `[spacer]`, `[jumper]`, `[insulator]`, `[weather]`, `[thermal]`, `[clearance]`, values in their units); OLS XML `<defaults section_key=…>` (only those not the program's). Display settings stay per user | — |
+| `defaults` | `Defaults` | N | the project's default values (Criteria › Default values; `ols_line::DEFAULT_FIELDS`; the program's in `Defaults::PROGRAM`, the one place they are given — `ols_thermal` and `ols_clearance` take theirs from it): what new objects start with and what the calculations take where nothing else gives a value — `spacer_compression` (10 000 N), `jumper_exit_angle_deg` (30°), `jumper_stiffness_factor` (0.2), `jumper_clamp_length` (0.1 m, new clamps), `insulator_stiffness` (EA 5·10⁷ N), `air_density_factor` (Q 0.613), `thermal_emissivity` / `_absorptivity` (0.8), `thermal_roughness` (0.1), `thermal_albedo` (0.1), `thermal_time_step` (10 s), `clearance_wind_step` (50 Pa), `clearance_vertical_band` (0.5 m), `clearance_search_margin` (5 m), `clearance_zone_width` / `_depth` (1 m / 0.2 m, new windows); exported / imported as `.olsdef` (`ols-defaults`, TOML, sections `[spacer]`, `[jumper]`, `[insulator]`, `[weather]`, `[thermal]`, `[clearance]`, values in their units); OLS XML `<defaults section_key=…>` (only those not the program's). Display settings stay per user | — |
 | `systems` | `[System]` | — | electrical systems | — |
 | `display` | `Display` | — | phase colours, `ahead_deg` | phase labels |
 | `creep_stretch` | `CreepStretch` | — | weather cases for creep / load stretch | weather case **names** |
@@ -329,8 +329,8 @@ other shapes' surfaces), the wind on its iced projected area across the
 line, times its drag.
 
 Older files (and OLS XML `<load>`, `<spread_load>`) gave point loads
-(`loads`: `SpanLoad` — `span`, place, `vertical`, `label`, `diameter`,
-`drag`, `wind_area`, `ice_area`) and spread loads (`spread_loads`:
+(`loads`: `legacy::SpanLoad` — `span`, place, `vertical`, `label`, `diameter`,
+`drag`, `wind_area`, `ice_area`) and spread loads (`spread_loads`: `legacy::SpreadLoad`,
 `span`, `start`, `end`, `load`, `label`): read into a point `L1`, `L2`…
 holding a body (a sphere of the diameter, or the given areas; the label
 its description), and into two bare points `S1`, `S2`… with a spread

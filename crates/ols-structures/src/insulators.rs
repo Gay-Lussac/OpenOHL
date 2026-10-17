@@ -35,8 +35,12 @@ pub const INSULATOR_FILE_FORMAT: &str = "ols-insulator";
 /// Newest format version read.
 pub const INSULATOR_FILE_VERSION: u32 = 1;
 
+/// An insulator's axial stiffness EA when it gives none, N (the line's
+/// default too: `ols_line::solve::DEFAULT_INSULATOR_STIFFNESS`).
+pub const DEFAULT_AXIAL_STIFFNESS: f64 = 5e7;
+
 fn default_stiffness() -> Force {
-    Force::from_newtons(5e7)
+    Force::from_newtons(DEFAULT_AXIAL_STIFFNESS)
 }
 
 /// Kind of assembly.

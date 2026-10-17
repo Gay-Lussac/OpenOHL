@@ -33,6 +33,7 @@ pub mod electrical;
 pub mod export;
 pub mod incremental;
 pub mod jumper;
+pub mod legacy;
 pub mod library;
 pub mod objects;
 mod rod;
@@ -53,6 +54,8 @@ use std::fmt;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+
+use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ols-line";
@@ -1430,25 +1433,6 @@ pub struct SpanPoint {
     pub object: Option<LineObject>,
 }
 
-/// A load spread along part of a span (e.g. a heated stretch, a cable
-/// tray, a wire carrying another): downward, N/m of the conductor between
-/// two places, on the whole bundle.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SpreadLoad {
-    /// Span index (0 = first span of the section).
-    pub span: usize,
-    /// Where it starts.
-    pub start: SpanPlace,
-    /// Where it ends.
-    pub end: SpanPlace,
-    /// Downward load, N per metre of conductor (the whole bundle's).
-    pub load: f64,
-    /// Label.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub label: String,
-}
-
 /// A span point of a section, by the section's id and the point's label.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1503,15 +1487,6 @@ pub struct Spacer {
 /// The default spacer compression limit, N.
 pub const DEFAULT_SPACER_COMPRESSION: f64 = 10_000.0;
 
-/// The program's thermal defaults (used by `ols_thermal`): emissivity,
-/// solar absorptivity, surface roughness, ground albedo, time step (s).
-pub const DEFAULT_THERMAL: [f64; 5] = [0.8, 0.8, 0.1, 0.1, 10.0];
-
-/// The program's clearance defaults (used by `ols_clearance`): wind step
-/// (Pa), vertical band (m), search margin (m), zone half width (m), zone
-/// slice depth (m).
-pub const DEFAULT_CLEARANCE: [f64; 5] = [50.0, 0.5, 5.0, 1.0, 0.2];
-
 /// The project's default values (Criteria › Default values): what new
 /// objects start with and what the calculations take where an object, a
 /// cable, a case or a rule file gives no value of its own; exported and
@@ -1556,28 +1531,32 @@ pub struct Defaults {
     pub clearance_zone_depth: f64,
 }
 
+impl Defaults {
+    /// The program's values (the one place they are given; `ols_thermal`
+    /// and `ols_clearance` take theirs from here).
+    pub const PROGRAM: Self = Self {
+        spacer_compression: DEFAULT_SPACER_COMPRESSION,
+        jumper_exit_angle_deg: jumper::DEFAULT_TERMINAL_ANGLE_DEG,
+        jumper_stiffness_factor: jumper::DEFAULT_STIFFNESS_FACTOR,
+        jumper_clamp_length: DEFAULT_CLAMP_LENGTH,
+        insulator_stiffness: solve::DEFAULT_INSULATOR_STIFFNESS,
+        air_density_factor: ols_weather::DEFAULT_AIR_DENSITY_FACTOR,
+        thermal_emissivity: 0.8,
+        thermal_absorptivity: 0.8,
+        thermal_roughness: 0.1,
+        thermal_albedo: 0.1,
+        thermal_time_step: 10.0,
+        clearance_wind_step: 50.0,
+        clearance_vertical_band: 0.5,
+        clearance_search_margin: 5.0,
+        clearance_zone_width: 1.0,
+        clearance_zone_depth: 0.2,
+    };
+}
+
 impl Default for Defaults {
     fn default() -> Self {
-        let [emissivity, absorptivity, roughness, albedo, time_step] = DEFAULT_THERMAL;
-        let [wind_step, band, margin, width, depth] = DEFAULT_CLEARANCE;
-        Self {
-            spacer_compression: DEFAULT_SPACER_COMPRESSION,
-            jumper_exit_angle_deg: jumper::DEFAULT_TERMINAL_ANGLE_DEG,
-            jumper_stiffness_factor: jumper::DEFAULT_STIFFNESS_FACTOR,
-            jumper_clamp_length: DEFAULT_CLAMP_LENGTH,
-            insulator_stiffness: solve::DEFAULT_INSULATOR_STIFFNESS,
-            air_density_factor: ols_weather::DEFAULT_AIR_DENSITY_FACTOR,
-            thermal_emissivity: emissivity,
-            thermal_absorptivity: absorptivity,
-            thermal_roughness: roughness,
-            thermal_albedo: albedo,
-            thermal_time_step: time_step,
-            clearance_wind_step: wind_step,
-            clearance_vertical_band: band,
-            clearance_search_margin: margin,
-            clearance_zone_width: width,
-            clearance_zone_depth: depth,
-        }
+        Self::PROGRAM
     }
 }
 
@@ -1930,109 +1909,8 @@ impl Defaults {
     }
 }
 
-/// A point load in a span: its weight, and as a body of some size (a
-/// marker ball, an obstruction light) the wind on it and the ice it takes.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SpanLoad {
-    /// Span index (0 = first span of the section).
-    pub span: usize,
-    /// Horizontal fraction of the span from its back point, 0–1.
-    #[serde(default)]
-    pub fraction: f64,
-    /// Horizontal distance from the span's back point, m: given, it is
-    /// the place (the fraction is not used).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub distance: Option<f64>,
-    /// Station of the line, m: given, it is the place.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub station: Option<f64>,
-    /// Downward force, N: on the whole bundle (shared between its
-    /// subconductors).
-    pub vertical: f64,
-    /// Label, e.g. `"marker ball"`.
-    #[serde(default)]
-    pub label: String,
-    /// Diameter of the body, m, taken as a sphere: its wind area
-    /// \\( \pi D^2/4 \\) and its surface for the ice. 0: a point, no wind
-    /// nor ice (unless given as areas).
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub diameter: f64,
-    /// Drag coefficient of the body (none: 1).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub drag: Option<f64>,
-    /// Wind area, m², instead of the sphere's (bare, without ice).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wind_area: Option<f64>,
-    /// Surface taking the ice, m², instead of the sphere's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ice_area: Option<f64>,
-}
-
-impl SpanLoad {
-    /// Its place along the span.
-    pub fn place(&self) -> SpanPlace {
-        SpanPlace::from_parts(self.fraction, self.distance, self.station)
-    }
-
-    /// Downward and horizontal forces, N, on the whole bundle in a case,
-    /// on a wire of bare diameter `wire_diameter` (m). The ice is the
-    /// wire's radial ice, t, on the body's surface: on a sphere of
-    /// diameter D a shell of \\( \pi/6\,((D+2t)^3 - D^3) \\), on a given
-    /// surface S a layer S·t. The wind blows on the iced area: the
-    /// sphere's \\( \pi (D+2t)^2/4 \\), a given area A grown as a sphere's
-    /// of that area. A case with an ice load but no density has no
-    /// thickness: the body takes no ice.
-    pub fn forces(&self, case: &ols_weather::WeatherCase, wire_diameter: f64) -> [f64; 2] {
-        use std::f64::consts::PI;
-        let (t, rho) = case
-            .radial_ice(ols_core::units::Length::from_si(wire_diameter))
-            .map_or((0.0, 0.0), |(t, rho)| (t.si(), rho.si()));
-        let d = self.diameter.max(0.0);
-        let ice_volume = match self.ice_area {
-            Some(s) => s.max(0.0) * t,
-            None if d > 0.0 => PI / 6.0 * ((d + 2.0 * t).powi(3) - d.powi(3)),
-            None => 0.0,
-        };
-        let vertical = self.vertical + ice_volume * rho * ols_core::units::STANDARD_GRAVITY;
-        // The body's (bare) projected diameter.
-        let bare = match self.wind_area {
-            Some(a) => (4.0 * a.max(0.0) / PI).sqrt(),
-            None => d,
-        };
-        let wind_area = if bare > 0.0 {
-            PI / 4.0 * (bare + 2.0 * t).powi(2)
-        } else {
-            0.0
-        };
-        let horizontal = case.wind_pressure.si() * self.drag.unwrap_or(1.0) * wind_area;
-        [vertical, horizontal]
-    }
-}
-
-fn is_zero(x: &f64) -> bool {
+pub(crate) fn is_zero(x: &f64) -> bool {
     *x == 0.0
-}
-
-impl SpanLoad {
-    /// The object it is: a body, a sphere of its diameter (a point
-    /// without one), or of its given areas.
-    pub fn object(&self) -> LineObject {
-        use std::f64::consts::PI;
-        let d = self.diameter.max(0.0);
-        let shape = match (self.wind_area, self.ice_area) {
-            (None, None) if d > 0.0 => Shape::Sphere { diameter: d },
-            (None, None) => Shape::Point,
-            (w, i) => Shape::Areas {
-                wind_area: w.unwrap_or(PI / 4.0 * d * d),
-                ice_area: i.unwrap_or(PI * d * d),
-            },
-        };
-        LineObject {
-            drag: self.drag,
-            ..LineObject::body(self.vertical, shape)
-        }
-    }
 }
 
 /// `prefix` and the first number not a label of `taken`.
@@ -2118,13 +1996,13 @@ impl Section {
     /// Its spread objects as loads between the places of their points
     /// (those whose points are not on one span left out: the validation
     /// refuses them).
-    pub fn spread_loads(&self) -> Vec<SpreadLoad> {
+    pub fn spread_loads(&self) -> Vec<objects::SpreadStretch> {
         self.spreads
             .iter()
             .filter_map(|s| {
                 let p = |l: &str| self.span_points.iter().find(|p| p.label == l);
                 let (a, b) = (p(&s.from)?, p(&s.to)?);
-                (a.span == b.span).then(|| SpreadLoad {
+                (a.span == b.span).then(|| objects::SpreadStretch {
                     span: a.span,
                     start: a.at,
                     end: b.at,
@@ -3686,8 +3564,9 @@ mod tests {
         Line::load(&path).unwrap()
     }
 
-    /// A 0.6 m marker ball: its weight in still air, the wind on its
-    /// (iced) circle, the ice shell on its sphere.
+    /// A 0.6 m marker ball as older files gave it (a point load), read as
+    /// a body: its weight in still air, the wind on its (iced) circle, the
+    /// ice shell on its sphere.
     #[test]
     fn a_marker_ball_takes_wind_and_ice() {
         use ols_core::units::{Density, Length, Stress, Temperature};
@@ -3699,30 +3578,30 @@ mod tests {
             ..Default::default()
         };
         let still = ols_weather::WeatherCase::still("still", Temperature::from_celsius(15.0));
-        assert_eq!(ball.forces(&still, 0.025), [55.0, 0.0]);
+        assert_eq!(ball.object().forces(&still, 0.025), [55.0, 0.0]);
         let wind = ols_weather::WeatherCase {
             wind_pressure: Stress::from_pascals(650.0),
             ..still.clone()
         };
-        let [down, across] = ball.forces(&wind, 0.025);
+        let [down, across] = ball.object().forces(&wind, 0.025);
         close(down, 55.0);
         close(across, 650.0 * PI * 0.09); // ≈ 184 N
         let half = SpanLoad {
             drag: Some(0.5),
             ..ball.clone()
         };
-        close(half.forces(&wind, 0.025)[1], across / 2.0);
+        close(half.object().forces(&wind, 0.025)[1], across / 2.0);
         let given = SpanLoad {
             wind_area: Some(0.1),
             ..ball.clone()
         };
-        close(given.forces(&wind, 0.025)[1], 65.0);
+        close(given.object().forces(&wind, 0.025)[1], 65.0);
         let ice = ols_weather::WeatherCase {
             ice_thickness: Length::from_millimeters(10.0),
             ice_density: Some(Density::from_kilograms_per_cubic_meter(900.0)),
             ..wind
         };
-        let [down, across] = ball.forces(&ice, 0.025);
+        let [down, across] = ball.object().forces(&ice, 0.025);
         let shell = PI / 6.0 * (0.62f64.powi(3) - 0.6f64.powi(3));
         close(
             down,
@@ -3734,7 +3613,7 @@ mod tests {
             ..ball.clone()
         };
         close(
-            surface.forces(&ice, 0.025)[0],
+            surface.object().forces(&ice, 0.025)[0],
             55.0 + 2.0 * 0.01 * 900.0 * ols_core::units::STANDARD_GRAVITY,
         );
         // A point without a size: its weight only.
@@ -3742,7 +3621,7 @@ mod tests {
             vertical: 55.0,
             ..Default::default()
         };
-        assert_eq!(point.forces(&ice, 0.025), [55.0, 0.0]);
+        assert_eq!(point.object().forces(&ice, 0.025), [55.0, 0.0]);
         // Negative sizes are refused.
         let mut line = example();
         line.sections[0].objects_mut().next().unwrap().shape = Shape::Sphere { diameter: -1.0 };
