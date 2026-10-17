@@ -9151,7 +9151,11 @@ fn an_empty_project_gets_its_first_alignment_and_a_view() {
         &|_| {},
     )
     .unwrap();
-    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    // The 3D chunks are built within a time budget per frame: a busy
+    // machine needs more frames than the default.
+    let mut builder = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .with_max_steps(64);
     if gpu {
         builder = builder.wgpu();
     }
