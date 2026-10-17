@@ -45,7 +45,8 @@ pub use checks::{Hit, PairMode, PairResult, PointCheck, Wire, WireResult, WireSe
 pub use envelope::{Envelope, EnvelopeEntry};
 pub use rules::Wires;
 pub use rules::{
-    CircuitFilter, PairVoltage, Required, Requirement, Rule, RuleSet, Target, WindSides, WindSteps,
+    CheckScope, CircuitFilter, PairVoltage, Required, Requirement, Rule, RuleSet, Target,
+    WindSides, WindSteps,
 };
 pub use zone::{Measure, Zone, ZoneFinding, ZoneReport, ZoneRule};
 
@@ -149,12 +150,12 @@ mod tests {
         let mut low = line.clone();
         for s in &mut low.sections {
             s.fields
-                .insert("lev-ch.insulation_level".into(), "low".into());
+                .insert("example.insulation_level".into(), "low".into());
         }
         let cs_low = conductors(&low, &shapes, &library);
         assert!(
             cs_low.iter().all(
-                |c| c.fields.get("lev-ch.insulation_level").map(String::as_str) == Some("low")
+                |c| c.fields.get("example.insulation_level").map(String::as_str) == Some("low")
             )
         );
         assert!(cs.iter().all(|c| c.diameter_mm > 5.0 && c.mass_kg_m > 0.1));

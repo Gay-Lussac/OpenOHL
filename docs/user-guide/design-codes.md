@@ -6,7 +6,8 @@ the cases the code asks for, the wind pressures and ice loads computed
 the way the code computes them, the partial and combination factors put
 on the vertical, transverse and longitudinal loads, and the strength
 factor. The plugin also returns **notes**: what it computed, assumed or
-left out.
+left out, and may give **clearance presets** for the Vertical and Radial
+clearances windows ([below](#clearance-presets)).
 
 **OLS CAD ships no code tables.** Standards are copyrighted, and their
 values change with editions and national annexes. Each plugin implements
@@ -25,7 +26,6 @@ its parameter file keys:
 | Plugin | Code | Parameter units |
 | --- | --- | --- |
 | `en50341` | EN 50341-1 general approach, with a national annex (NNA) overlay | SI |
-| `lev-ch` | Swiss Leitungsverordnung (LeV / OLEI, SR 734.31) | SI |
 | `iec60826` | IEC 60826 (reliability-based) | SI |
 | `nesc` | NESC (ANSI C2) Rule 250 | US customary |
 | `csa-c22-3` | CSA C22.3 No. 1 | SI |
@@ -56,12 +56,26 @@ other cases. Combined wind and ice is generated twice: ice dominant
 dominant (\\( \gamma_I\psi_I \\), \\( \gamma_W \\)). The strength factor
 is \\( 1/\gamma_M \\).
 
-### Swiss LeV
+A plugin for the Swiss Leitungsverordnung (LeV / OLEI, SR 734.31) exists
+separately; it is not part of the public code.
 
-The additional (ice / snow) load per metre is base + per-mm × the
-reference conductor diameter, from the altitude zone of the site; wind,
-the reduced combination of both and a minimum temperature case follow.
-Loads are not factored; the strength factor is 1 / safety factor.
+## Clearance presets
+
+A design-code plugin may also return **clearance presets**: for the
+**Vertical clearances** or the **Radial clearances** window, a rule file
+(`.olsr`: the rules — LiDAR classes, voltages, distances, the vertical
+zone's half width per rule —, the wind steps and sides, the circuits,
+the calculation method and the distance beyond which LiDAR points are
+ignored) and the weather cases its rules name (`.olswc`). OLS CAD checks
+them like any such file (each rule's weather cases among the preset's),
+and writes each as `<plugin>-<name>.olsr` among the project's rule files
+and `<plugin>-<name>.olswc` among its weather case files (next to a line
+file; `ols code generate`: next to the weather case file). In a window,
+**Load preset…** takes one in a click: its rules replace the window's,
+its weather cases missing from the model are added to it; you can change
+everything afterwards (see [Vertical and radial
+clearances](desktop-app.md#vertical-and-radial-clearances)). The plugins
+in `plugins/codes` give none.
 
 ## From the command line
 
@@ -75,8 +89,8 @@ ols line line.ols.json --weather my-line.olswc --load-cases my-line.olslc --load
 ```
 
 `generate` checks both files as OLS CAD reads them (and that each load
-case names one of the weather cases) before writing them, and prints the
-notes.
+case names one of the weather cases) before writing them, writes the
+clearance presets next to the weather case file, and prints the notes.
 
 ## In the desktop application
 
@@ -92,7 +106,9 @@ The two files (named as given, default the plugin's name) go into the
 project's libraries — kept in the project file like any library file —
 or next to a line file; a file of that name is replaced. The model then
 uses them: the weather cases are solved, and Structure loads uses the
-load cases. The code's notes are shown in the window.
+load cases. The code's clearance presets go into the project's rule and
+weather case files (for the clearance windows' Load preset…). The code's
+notes are shown in the window.
 
 ## What is not generated yet
 
@@ -103,4 +119,4 @@ maintenance loads; wind on structures by the code's own method (the
 structure loads apply each weather case's wind pressure to the structure
 types' height bands, see [Load cases](loads.md)); the NESC constant k (the notes give
 its value to add by hand); per-wire ice loads that depend on the conductor
-diameter (LeV: one reference diameter per parameter file).
+diameter (one reference diameter per parameter file).

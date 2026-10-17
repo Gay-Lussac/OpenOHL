@@ -168,11 +168,21 @@ pub fn targets(r: &Ready, base: &str) -> (PathBuf, PathBuf) {
 }
 
 /// Writes generated cases as `base`.olswc / .olslc (see [`targets`]),
-/// keeps them in the project and uses them for the model (the libraries
-/// read again, the cases solved). Returns what was done.
+/// and the clearance presets as `<plugin>-<name>`.olsr / .olswc (the
+/// project's rule files and weather case files, else next to the line
+/// file); keeps them in the project and uses the cases for the model (the
+/// libraries read again, the cases solved). Returns what was done.
 pub fn apply(r: &mut Ready, g: &Generated, base: &str) -> Result<String, String> {
     let (weather, loads) = targets(r, base);
     g.write(&weather, &loads)?;
+    let weather_dir = weather
+        .parent()
+        .map_or_else(PathBuf::new, Path::to_path_buf);
+    let rules_dir = match (&r.model.library_dir, &r.model.editing) {
+        (Some(work), Ok(_)) => work.join("rules"),
+        _ => weather_dir.clone(),
+    };
+    let presets = g.write_presets(&rules_dir, &weather_dir)?;
     r.model.sources.load_cases = Some(loads);
     r.library_saved(
         LibraryKind::WeatherCases,
@@ -183,7 +193,7 @@ pub fn apply(r: &mut Ready, g: &Generated, base: &str) -> Result<String, String>
     }
     // Structure loads computed before used the old cases.
     r.loads.results = None;
-    Ok(format!(
+    let mut done = format!(
         "{}: {} weather cases and {} load cases in {} — used for the model",
         g.plugin,
         g.weather.cases.len(),
@@ -191,7 +201,21 @@ pub fn apply(r: &mut Ready, g: &Generated, base: &str) -> Result<String, String>
         weather
             .file_name()
             .map_or(String::new(), |n| n.to_string_lossy().into_owned())
-    ))
+    );
+    if !presets.is_empty() {
+        let names: Vec<String> = presets
+            .iter()
+            .map(|(p, _)| {
+                p.file_name()
+                    .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+            })
+            .collect();
+        done.push_str(&format!(
+            "; clearance presets {} (Vertical / Radial clearances… › Load preset…)",
+            names.join(", ")
+        ));
+    }
+    Ok(done)
 }
 
 /// The window, when open.

@@ -7,7 +7,8 @@
 //! desktop application.
 //!
 //! - **Vertical** ([`Measure::Vertical`]): the zone straight under the
-//!   wire is `width` wide on each side across the line (in plan) and cut
+//!   wire is `width` wide on each side across the line (in plan; a rule
+//!   may give its own, [`ZoneRule::width`]) and cut
 //!   along the line in slices `depth` deep. A target in the zone is
 //!   compared with the wire's lowest point over its slice (its highest for
 //!   a target above the wire): the clearance is that height difference.
@@ -40,8 +41,8 @@ use ols_weather::{WeatherCase, WindSide};
 
 use crate::checks::{Hit, PointCheck, Wire, WireSet, checked_parts, ground_check, wires_of};
 use crate::rules::{
-    CircuitFilter, DEFAULT_SEARCH_MARGIN, PairVoltage, Requirement, Rule, RuleSet, Target,
-    WindSteps, Wires, default_band,
+    CheckScope, CircuitFilter, DEFAULT_SEARCH_MARGIN, PairVoltage, Requirement, Rule, RuleSet,
+    Target, WindSteps, Wires, default_band,
 };
 use ols_line::jumper::JumperShape;
 
@@ -80,6 +81,9 @@ pub struct Zone {
     pub width: f64,
     /// Vertical: depth of a slice along the line, m.
     pub depth: f64,
+    /// LiDAR points farther from the wires are ignored, m (`None`: as far
+    /// as the rules reach).
+    pub search: Option<f64>,
 }
 
 impl Zone {
@@ -89,6 +93,7 @@ impl Zone {
             measure,
             width: DEFAULT_WIDTH,
             depth: DEFAULT_DEPTH,
+            search: None,
         }
     }
 
@@ -98,6 +103,7 @@ impl Zone {
             measure,
             width: d.clearance_zone_width,
             depth: d.clearance_zone_depth,
+            search: None,
         }
     }
 }
@@ -120,6 +126,9 @@ pub struct ZoneRule {
     pub ground: bool,
     /// The wires checked: the sections' spans, the jumpers or both.
     pub wires: Wires,
+    /// Vertical: its own half width of the zone across the line, m
+    /// (`None`: the window's, [`Zone::width`]).
+    pub width: Option<f64>,
 }
 
 impl ZoneRule {
@@ -143,7 +152,7 @@ impl ZoneRule {
                 radial: if vertical { None } else { required },
                 pair_voltage: PairVoltage::Higher,
                 vertical_band: if vertical {
-                    zone.width
+                    self.width.unwrap_or(zone.width)
                 } else {
                     default_band(&target)
                 },
@@ -173,12 +182,25 @@ impl ZoneRule {
     }
 }
 
-/// A rule file of a window's rules, its zone and its wind.
-pub fn to_rule_set(name: &str, zone: &Zone, wind: &WindSteps, rules: &[ZoneRule]) -> RuleSet {
+/// A rule file of a window's rules, its zone, its wind and what it
+/// solves (`check`, with the zone's search distance: written when it
+/// changes something).
+pub fn to_rule_set(
+    name: &str,
+    zone: &Zone,
+    wind: &WindSteps,
+    check: &CheckScope,
+    rules: &[ZoneRule],
+) -> RuleSet {
     RuleSet {
         name: name.to_owned(),
         rules: rules.iter().flat_map(|r| r.to_rules(zone)).collect(),
         wind: Some(*wind),
+        check: Some(CheckScope {
+            search_distance: zone.search,
+            ..check.clone()
+        })
+        .filter(|c| !c.is_empty()),
     }
 }
 
@@ -193,6 +215,8 @@ pub struct Imported {
     pub depth: Option<f64>,
     /// The wind of the file.
     pub wind: Option<WindSteps>,
+    /// What the file's window solves (`[check]`).
+    pub check: Option<CheckScope>,
     /// Rules left out or changed, and why.
     pub notes: Vec<String>,
 }
@@ -211,6 +235,7 @@ pub fn from_rule_set(
 ) -> Imported {
     let mut out = Imported {
         wind: set.wind,
+        check: set.check.clone(),
         ..Imported::default()
     };
     for rule in &set.rules {
@@ -275,6 +300,11 @@ pub fn from_rule_set(
             out.width = Some(rule.vertical_band);
             out.depth = Some(rule.vertical_depth);
         }
+        // A vertical rule's own half width: one other than the window's
+        // (the first rule's).
+        let width = (measure == Measure::Vertical)
+            .then_some(rule.vertical_band)
+            .filter(|w| out.width.is_some_and(|z| (z - w).abs() > 1e-9));
         for (voltage, distance) in rows {
             let row = ZoneRule {
                 name: rule.name.clone(),
@@ -284,6 +314,7 @@ pub fn from_rule_set(
                 classes: classes.clone(),
                 ground: matches!(rule.target, Target::Ground),
                 wires: rule.wires,
+                width,
             };
             // The ground half of a row written as two rules.
             if let Some(last) = out.rules.last_mut()
@@ -297,6 +328,7 @@ pub fn from_rule_set(
                     last.distance,
                     last.wires,
                 ) == (&row.name, row.voltage, &row.cases, row.distance, row.wires)
+                && last.width == row.width
             {
                 last.ground = true;
                 continue;
@@ -706,7 +738,11 @@ pub fn check_zones(
         for c in classes {
             wanted[*c as usize] = true;
         }
-        let reach = rules[p.rule].distance + p.def.search_margin;
+        // The index reaches the zone's edge too, not beyond the search
+        // distance.
+        let reach = (rules[p.rule].distance + p.def.search_margin)
+            .max(p.def.vertical_band)
+            .min(zone.search.unwrap_or(f64::INFINITY));
         let set = WireSet::new(p.wires.clone(), reach);
         let group: Vec<usize> = p.meta.iter().map(|m| m.1).collect();
         p.points = Some(PointCheck::new(&p.def, classes, &set).grouped(group));
@@ -864,6 +900,7 @@ mod tests {
             classes: classes.to_vec(),
             ground: false,
             wires: Wires::Both,
+            width: None,
         }
     }
 
@@ -1117,6 +1154,19 @@ mod tests {
             &[beside],
         );
         assert!((s1(&r).unwrap().distance - 13f64.sqrt()).abs() < 0.05);
+        // Points beyond the search distance are ignored.
+        let near = Zone {
+            search: Some(2.0),
+            ..Zone::new(Measure::Radial)
+        };
+        let (_, r) = check(
+            &near,
+            &rules,
+            std::slice::from_ref(&still),
+            &wind,
+            &[beside],
+        );
+        assert!(s1(&r).is_none());
         let (_, v) = check(
             &Zone::new(Measure::Vertical),
             &rules,
@@ -1133,6 +1183,19 @@ mod tests {
         let (_, v) = check(
             &wide,
             &rules,
+            std::slice::from_ref(&still),
+            &wind,
+            &[beside],
+        );
+        assert!(s1(&v).is_some());
+        // So does a rule's own width in the narrow zone.
+        let own = [ZoneRule {
+            width: Some(2.5),
+            ..rules[0].clone()
+        }];
+        let (_, v) = check(
+            &Zone::new(Measure::Vertical),
+            &own,
             std::slice::from_ref(&still),
             &wind,
             &[beside],
@@ -1187,6 +1250,7 @@ mod tests {
             measure: Measure::Vertical,
             width: 1.5,
             depth: 0.3,
+            search: Some(30.0),
         };
         let wind = WindSteps {
             stepped: true,
@@ -1202,6 +1266,7 @@ mod tests {
                 classes: vec![5, 6],
                 ground: true,
                 wires: Wires::Both,
+                width: None,
             },
             ZoneRule {
                 name: "Ground points".into(),
@@ -1211,6 +1276,8 @@ mod tests {
                 classes: vec![2],
                 ground: false,
                 wires: Wires::Sections,
+                // Its own half width.
+                width: Some(4.0),
             },
             ZoneRule {
                 name: "Terrain, earth wires".into(),
@@ -1220,17 +1287,45 @@ mod tests {
                 classes: Vec::new(),
                 ground: true,
                 wires: Wires::Jumpers,
+                width: None,
             },
         ];
-        let set = to_rule_set("Window rules", &zone, &wind, &rows);
+        let scope = CheckScope {
+            circuits: vec!["North".into(), String::new()],
+            method: Some(ols_line::condition::Method::Fe),
+            search_distance: None,
+        };
+        let set = to_rule_set("Window rules", &zone, &wind, &scope, &rows);
         assert_eq!(set.rules.len(), 4);
+        assert_eq!(set.rules[2].vertical_band, 4.0);
+        assert_eq!(set.rules[3].vertical_band, 1.5);
         let text = set.to_toml();
+        assert!(
+            text.contains(
+                "[check]\ncircuits = [\"North\", \"\"]\nmethod = \"fe\"\nsearch_distance = \"30 m\""
+            ),
+            "{text}"
+        );
         let back = RuleSet::parse(&text).unwrap();
         assert_eq!(back, set, "{text}");
         let imported = from_rule_set(&back, Measure::Vertical, |_| Vec::new(), &[]);
         assert_eq!(imported.rules, rows);
         assert_eq!((imported.width, imported.depth), (Some(1.5), Some(0.3)));
         assert_eq!(imported.wind, Some(wind));
+        assert_eq!(
+            imported.check,
+            Some(CheckScope {
+                search_distance: Some(30.0),
+                ..scope
+            })
+        );
+        // Nothing to say: no [check].
+        let near = Zone {
+            search: None,
+            ..zone
+        };
+        let plain = to_rule_set("w", &near, &wind, &CheckScope::default(), &rows);
+        assert!(plain.check.is_none() && !plain.to_toml().contains("[check]"));
         assert!(imported.notes.is_empty(), "{:?}", imported.notes);
         // The radial window finds no radial clearance in it.
         let radial = from_rule_set(&back, Measure::Radial, |_| Vec::new(), &[]);

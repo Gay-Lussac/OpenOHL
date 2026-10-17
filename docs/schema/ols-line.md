@@ -75,7 +75,7 @@ The names are those of the line file:
   </jumper>
   <!-- structures, sections, jumpers, systems, alignments and routes may
        hold the values of plugins' table columns, last inside them:
-       <field key="lev-ch.insulation_level" value="low"/> -->
+       <field key="code.insulation_level" value="low"/> -->
   <!-- files before version 5, read and converted: in <section>, <load span fraction|distance|station vertical
        label diameter drag wind_area ice_area/> (a point with a body) and <spread_load span start_… end_… load
        label/> (two points and a spread); in <jumper>, <support length weight fraction x y z/> and <clamp structure

@@ -3,7 +3,8 @@
 //
 // A design-code plugin turns the user's parameter file (TOML, every value
 // taken from the standard and its national annex by the user) into weather
-// cases and load cases. OLS CAD ships no code tables.
+// cases and load cases, and may give presets of the clearance windows.
+// OLS CAD ships no code tables.
 
 /// Types of design-code plugins.
 interface code-types {
@@ -20,6 +21,32 @@ interface code-types {
         parameters-template: string,
     }
 
+    /// The clearance window a preset is for.
+    enum clearance-measure {
+        /// Vertical clearances… (the zone under the wire).
+        vertical,
+        /// Radial clearances… (the direct 3D distance).
+        radial,
+    }
+
+    /// A preset of a clearance window (Vertical clearances…, Radial
+    /// clearances…): its rules and the weather cases they name, loaded in
+    /// one click; the user may change both afterwards.
+    record clearance-preset {
+        /// Name, unique among the plugin's presets (e.g. "vertical").
+        name: string,
+        /// The window it is for.
+        measure: clearance-measure,
+        /// The rules, as a clearance rule file (.olsr, TOML, format
+        /// `ols-clearance-rules`), with its `[wind]` and `[check]` tables
+        /// (the wind steps and sides, the circuits, the calculation
+        /// method, the search distance).
+        rules: string,
+        /// The weather cases its rules name, as a weather case file
+        /// (.olswc, TOML).
+        weather-cases: string,
+    }
+
     /// What a design code generated from a parameter file.
     record generated {
         /// Weather cases, as a weather case file (.olswc, TOML).
@@ -29,12 +56,14 @@ interface code-types {
         load-cases: string,
         /// What was generated, assumed or left out (shown to the user).
         notes: list<string>,
+        /// Presets of the clearance windows (none: an empty list).
+        clearance-presets: list<clearance-preset>,
     }
 }
 
 /// World of design-code plugins (extension point `design-code`).
 world code-plugin {
-    use code-types.{code-info, generated};
+    use code-types.{code-info, generated, clearance-preset, clearance-measure};
 
     /// Describes the plugin and its parameter file.
     export describe: func() -> code-info;

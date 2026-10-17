@@ -2,7 +2,7 @@
 name = "hello-python"
 version = "0.1.0"
 description = "Example Python plugin: prints a span table in US units"
-sdk = "0.1"
+sdk = "0.2"
 tier = "python"
 entry = "hello.py"
 extension-points = []

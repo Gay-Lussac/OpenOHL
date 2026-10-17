@@ -2,7 +2,7 @@
 name = "en50341"
 version = "0.1.0"
 description = "EN 50341-1 (general approach) + national annex: weather and load cases from your parameter file"
-sdk = "0.1"
+sdk = "0.2"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/en50341.wasm"
 extension-points = ["design-code"]

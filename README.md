@@ -19,7 +19,7 @@ OLS CAD covers terrain and LiDAR, conductor sag-tension, finite-element wire sys
 - **Line model**: routes, structure and insulator libraries, sections, jumpers, electrical systems, incremental re-solving.
 - **Terrain and LiDAR**: survey points and TINs, LAS/LAZ and COPC, point clouds stored in the project with levels of detail, ground classification, vegetation encroachment, as-built wire fitting.
 - **Clearances**: vertical and radial, to the ground, LiDAR classes, other lines and the line's own wires, by voltage; envelopes over weather cases; galloping ellipses and blowout against the right of way.
-- **Loads and structures**: load cases, design-code plugins (EN 50341, LeV, IEC 60826, NESC, CSA C22.3, ASCE MOP 74, GO 95; the code parameters are your own data), structure loads, capacity checks, frame/truss finite elements and pole checks.
+- **Loads and structures**: load cases, design-code plugins (EN 50341, IEC 60826, NESC, CSA C22.3, ASCE MOP 74, GO 95; the code parameters are your own data), structure loads, capacity checks, frame/truss finite elements and pole checks.
 - **More engineering**: thermal rating (IEEE 738, CIGRE TB 601 / 207, clearance-limited temperature), optimum structure spotting, bill of materials and cost estimate.
 - **Drawings and exchange**: plan and profile sheets (SVG, DXF, PDF, PNG); OLS XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC, KML/KMZ, CSV, XLSX; file-format and project plugins.
 - **Projects and collaboration**: a SQLite project file with an operation log and per-user undo, git-like versions (branches, merges, reviews, edit grants), a server mode for several users and a browser client.

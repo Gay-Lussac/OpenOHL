@@ -67,6 +67,13 @@
 //!   depth, the wire taken at its lowest over each slice.
 //! - `[wind]` (`steps`, `step`, `sides`): how the desktop clearance windows
 //!   apply the wind ([`WindSteps`]); `ols line` ignores it.
+//! - `[check]` (`circuits`, `method`, `search_distance`): what the
+//!   desktop clearance windows solve and read ([`CheckScope`]): only the
+//!   circuits named (by circuit name; default every circuit), every
+//!   section by this calculation method (`"fe"` finite elements, `"rs"`
+//!   ruling span; default each section's own), LiDAR points only within
+//!   `search_distance` of the wires (default: as far as the rules reach);
+//!   `ols line` ignores it.
 //!
 //! ## Clearances by voltage
 //!
@@ -97,6 +104,7 @@
 use std::path::Path;
 
 use ols_core::units::{Length, Stress};
+use ols_line::condition::Method;
 use ols_line::electrical::Potential;
 use serde::Deserialize;
 
@@ -598,8 +606,21 @@ struct RawRules {
     name: String,
     #[serde(default)]
     wind: Option<RawWind>,
+    #[serde(default)]
+    check: Option<RawCheck>,
     #[serde(rename = "rule", default)]
     rules: Vec<RawRule>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCheck {
+    #[serde(default)]
+    circuits: Vec<String>,
+    #[serde(default)]
+    method: Option<String>,
+    #[serde(default)]
+    search_distance: Option<Length>,
 }
 
 #[derive(Deserialize)]
@@ -714,6 +735,54 @@ pub struct RuleSet {
     /// How the clearance windows of the desktop application apply the
     /// wind (`[wind]`).
     pub wind: Option<WindSteps>,
+    /// What the clearance windows of the desktop application solve
+    /// (`[check]`).
+    pub check: Option<CheckScope>,
+}
+
+/// What a desktop clearance window solves (`[check]` of a rule file).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CheckScope {
+    /// The circuits checked, by circuit name (`""`: the sections without
+    /// one); empty: every circuit.
+    pub circuits: Vec<String>,
+    /// Every section solved by this method (its own condition kept);
+    /// `None`: each section's own calculation.
+    pub method: Option<Method>,
+    /// LiDAR points farther from the wires are ignored, m (`None`: as
+    /// far as the rules reach).
+    pub search_distance: Option<f64>,
+}
+
+impl CheckScope {
+    /// Whether it changes nothing (every circuit, each section's method).
+    pub fn is_empty(&self) -> bool {
+        self.circuits.is_empty() && self.method.is_none() && self.search_distance.is_none()
+    }
+
+    /// Whether a section of circuit `name` is checked.
+    pub fn takes_circuit(&self, name: &str) -> bool {
+        self.circuits.is_empty() || self.circuits.iter().any(|c| c == name)
+    }
+}
+
+/// A calculation method's name in rule files (`fe`, `rs`).
+pub fn method_name(m: Method) -> &'static str {
+    match m {
+        Method::Fe => "fe",
+        Method::Rs => "rs",
+    }
+}
+
+/// A calculation method from its name in rule files.
+pub fn parse_method(text: &str) -> Result<Method, String> {
+    match text.trim().to_lowercase().as_str() {
+        "fe" => Ok(Method::Fe),
+        "rs" => Ok(Method::Rs),
+        other => Err(format!(
+            "method \"{other}\": use fe (finite elements) or rs (ruling span)"
+        )),
+    }
 }
 
 /// Default horizontal band for vertical clearance to points, m.
@@ -894,10 +963,30 @@ impl RuleSet {
                 })
             })
             .transpose()?;
+        let check = raw
+            .check
+            .map(|c| -> Result<CheckScope, String> {
+                let search_distance = c.search_distance.map(|l| l.si());
+                if search_distance.is_some_and(|d| !(d.is_finite() && d > 0.0)) {
+                    return Err("[check] search_distance must be > 0 m".into());
+                }
+                Ok(CheckScope {
+                    search_distance,
+                    circuits: c.circuits,
+                    method: c
+                        .method
+                        .as_deref()
+                        .map(parse_method)
+                        .transpose()
+                        .map_err(|e| format!("[check] {e}"))?,
+                })
+            })
+            .transpose()?;
         Ok(Self {
             name: raw.name,
             rules,
             wind,
+            check,
         })
     }
 
@@ -929,6 +1018,7 @@ impl RuleSet {
                 vertical_depth: 0.0,
             }],
             wind: None,
+            check: None,
         }
     }
 
@@ -948,6 +1038,22 @@ impl RuleSet {
                 w.step,
                 w.sides.as_str()
             );
+        }
+        if let Some(c) = self.check.as_ref().filter(|c| !c.is_empty()) {
+            t.push_str("\n# What the desktop clearance windows solve (ols line: every circuit, each section's method).\n[check]\n");
+            if !c.circuits.is_empty() {
+                let _ = writeln!(
+                    t,
+                    "circuits = {}",
+                    list(c.circuits.iter().map(|n| quoted(n)))
+                );
+            }
+            if let Some(m) = c.method {
+                let _ = writeln!(t, "method = \"{}\"", method_name(m));
+            }
+            if let Some(d) = c.search_distance {
+                let _ = writeln!(t, "search_distance = {}", length(d));
+            }
         }
         for r in &self.rules {
             t.push_str(&r.to_toml());

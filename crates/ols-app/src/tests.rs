@@ -1200,6 +1200,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             classes: Vec::new(),
             ground: true,
             wires: ols_clearance::Wires::Sections,
+            width: None,
         });
     }
     harness.run();
@@ -5763,6 +5764,78 @@ fn design_code_cases_go_into_the_project() {
         let files = session.library_files(kind).unwrap();
         assert!(files.iter().any(|(n, _)| n == name), "{kind}: {name}");
     }
+}
+
+/// A design code's clearance presets: written into the project's rule
+/// and weather case files when it generates; the Vertical clearances
+/// window lists the vertical one, Load preset takes its rules (with their
+/// own half widths), its circuits, method and search distance, and adds
+/// its weather cases missing from the model to the model's weather cases.
+#[test]
+fn design_code_clearance_presets_load_into_the_window() {
+    use ols_plugins::{ClearanceMeasure, ClearancePreset};
+    let mut r = crate::app::Ready::new(synthetic_project("clearance-preset"));
+    let w = "format = \"ols-weather-cases\"\nversion = 1\n[[case]]\nname = \"a\"\ntemperature = \"5 °C\"\n";
+    let l = "format = \"ols-load-cases\"\nversion = 1\n[[case]]\nname = \"x\"\nweather = \"a\"\n";
+    let hot = "format = \"ols-weather-cases\"\nversion = 1\nname = \"p\"\n\
+               [[case]]\nname = \"Preset 80 °C\"\ntemperature = \"80 °C\"\n";
+    let rules = "format = \"ols-clearance-rules\"\nversion = 1\nname = \"Code vertical\"\n\
+                 [wind]\nsteps = false\nsides = \"both\"\n\
+                 [check]\nmethod = \"fe\"\nsearch_distance = \"30 m\"\n\
+                 [[rule]]\nname = \"roads\"\ntarget = \"points\"\nclasses = [11]\n\
+                 vertical = \"7.5 m\"\nvertical_band = \"1 m\"\nvoltages = [220.0]\ncases = [\"Preset 80 °C\"]\n\
+                 [[rule]]\nname = \"water\"\ntarget = \"points\"\nclasses = [9]\n\
+                 vertical = \"6 m\"\nvertical_band = \"3 m\"\nvoltages = [220.0]\ncases = [\"Preset 80 °C\"]\n";
+    let g = ols_io::codes::Generated::check(
+        "code",
+        w.into(),
+        l.into(),
+        vec![],
+        vec![ClearancePreset {
+            name: "vertical".into(),
+            measure: ClearanceMeasure::Vertical,
+            rules: rules.into(),
+            weather_cases: hot.into(),
+        }],
+    )
+    .unwrap();
+    // Written next to the generated cases' files in the project.
+    let work = r.model.library_dir.clone().unwrap();
+    let report = crate::codes::apply(&mut r, &g, "code").unwrap();
+    assert!(report.contains("code-vertical.olsr"), "{report}");
+    assert!(work.join("rules/code-vertical.olsr").is_file());
+    assert!(work.join("weather/code-vertical.olswc").is_file());
+    // The model's cases are the generated ones ("a"): the preset's is
+    // missing.
+    assert!(!r.model.cases.iter().any(|c| c.case.name == "Preset 80 °C"));
+    let mut win = crate::clearance_zones::ZoneWindow::new(ols_clearance::Measure::Vertical);
+    win.show(&r.model);
+    let presets = win.presets(&r.model);
+    assert_eq!(presets.len(), 1, "{presets:?}");
+    assert_eq!(presets[0].0, "Code vertical");
+    // The radial window has none.
+    let radial = crate::clearance_zones::ZoneWindow::new(ols_clearance::Measure::Radial);
+    assert!(radial.presets(&r.model).is_empty());
+    let mut out = crate::clearance_zones::Out::default();
+    win.load_preset(&r.model, &presets[0].1, &presets[0].2, &mut out);
+    assert_eq!(win.rules.len(), 2);
+    // The first rule's half width is the window's, the other keeps its own.
+    assert_eq!(win.zone.width, 1.0);
+    assert_eq!((win.rules[0].width, win.rules[1].width), (None, Some(3.0)));
+    assert_eq!(win.zone.search, Some(30.0));
+    assert_eq!(win.check.method, Some(ols_line::condition::Method::Fe));
+    assert!(out.weather_saved.is_some());
+    crate::app::clearance_zone_out(&mut r, out);
+    assert!(
+        r.model.cases.iter().any(|c| c.case.name == "Preset 80 °C"),
+        "{:?}",
+        r.status
+    );
+    assert!(r.model.cases.iter().any(|c| c.case.name == "a"));
+    // Kept: the window's rule file says it again.
+    let text = win.rule_set().to_toml();
+    assert!(text.contains("search_distance = \"30 m\""), "{text}");
+    assert!(text.contains("vertical_band = \"3 m\""), "{text}");
 }
 
 /// Criteria › Design code… opens the window; without plugins it says how
@@ -11720,8 +11793,8 @@ fn labels_are_one_per_section_and_near_only() {
     );
 }
 
-/// Plugin columns: the LeV plugin's insulation level in the circuits
-/// table — its default shown where not set; a value chosen goes to the
+/// Plugin columns: a plugin's insulation level in the circuits table
+/// (an invented column) — its default shown where not set; a value chosen goes to the
 /// circuit's sections in one command; one not among its values refused.
 /// Without the plugin the column still shows (unused) and the values stay,
 /// through other edits and an OLS XML round trip.
@@ -11733,20 +11806,20 @@ fn plugin_columns_in_tables() {
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    let lev = PluginColumn {
+    let column = PluginColumn {
         table: "circuits".into(),
-        key: "lev-ch.insulation_level".into(),
+        key: "example.insulation_level".into(),
         title: "insulation level".into(),
         help: String::new(),
         values: vec!["low".into(), "high".into()],
         default: Some("high".into()),
-        plugin: "lev-ch 0.1.0".into(),
+        plugin: "example 0.1.0".into(),
         in_use: true,
     };
     let own = TableKind::Circuits.columns().len();
     let key = {
         let r = harness.state_mut().ready().unwrap();
-        r.model.plugin_columns = vec![lev.clone()];
+        r.model.plugin_columns = vec![column.clone()];
         let rows = TableKind::Circuits.rows(&r.model, 0);
         let x = rows.iter().find(|x| x.cells[6].contains("S3")).unwrap();
         assert_eq!(x.cells[own], "high");
@@ -11780,7 +11853,7 @@ fn plugin_columns_in_tables() {
             .unwrap();
         for id in &c.sections {
             let s = line.sections.iter().find(|s| &s.id == id).unwrap();
-            assert_eq!(s.fields.get(&lev.key).map(String::as_str), Some("low"));
+            assert_eq!(s.fields.get(&column.key).map(String::as_str), Some("low"));
         }
         let others = line
             .sections
@@ -11821,7 +11894,7 @@ fn plugin_columns_in_tables() {
         r.model.plugin_columns.clear();
         let cols = TableKind::Sections.plugin_columns(&r.model);
         assert_eq!(cols.len(), 1);
-        assert!(!cols[0].in_use && cols[0].key == lev.key);
+        assert!(!cols[0].in_use && cols[0].key == column.key);
         let rows = TableKind::Sections.rows(&r.model, 0);
         let s3 = rows.iter().find(|x| x.key == "S3").unwrap();
         assert_eq!(s3.cells[n], "low");
@@ -11838,21 +11911,28 @@ fn plugin_columns_in_tables() {
     let r = harness.state_mut().ready().unwrap();
     let s3 = r.model.line.sections.iter().find(|s| s.id == "S3").unwrap();
     assert_eq!(s3.description, "kept its level");
-    assert_eq!(s3.fields.get(&lev.key).map(String::as_str), Some("low"));
+    assert_eq!(s3.fields.get(&column.key).map(String::as_str), Some("low"));
     // The OLS XML keeps them.
     let back = ols_io::olsxml::from_xml(&ols_io::olsxml::to_xml(&r.model.line)).unwrap();
     for id in &ids {
         let s = back.sections.iter().find(|s| &s.id == id).unwrap();
-        assert_eq!(s.fields.get(&lev.key).map(String::as_str), Some("low"));
+        assert_eq!(s.fields.get(&column.key).map(String::as_str), Some("low"));
     }
 }
 
-/// The lev-ch plugin in use (`plugins/codes`), when built: whether it is
-/// (not built: the test is skipped, unless the plugin tests are required).
+/// The Swiss LeV plugin in use, when this checkout has it (kept apart
+/// from the public code, at `local-data/plugins/lev-ch`) and it is built:
+/// whether it is. Without the folder the test is skipped (even when the
+/// plugin tests are required); with it, not built: skipped unless they
+/// are.
 fn lev_plugin(h: &mut Harness<'_, App>) -> bool {
-    let codes = root().join("plugins/codes");
-    let built = codes
-        .join("lev-ch/target/wasm32-wasip2/release/lev_ch.wasm")
+    let dir = root().join("local-data/plugins/lev-ch");
+    if !dir.is_dir() {
+        eprintln!("skipping: no local-data/plugins/lev-ch");
+        return false;
+    }
+    let built = dir
+        .join("target/wasm32-wasip2/release/lev_ch.wasm")
         .is_file();
     assert!(
         built || std::env::var_os("OLS_REQUIRE_PLUGIN_TESTS").is_none(),
@@ -11863,7 +11943,7 @@ fn lev_plugin(h: &mut Harness<'_, App>) -> bool {
     }
     let app = h.state_mut();
     app.plugins = crate::plugins::Plugins::load(None, None);
-    app.plugins.folders = vec![codes];
+    app.plugins.folders = vec![dir];
     app.plugins.refresh();
     h.run();
     true

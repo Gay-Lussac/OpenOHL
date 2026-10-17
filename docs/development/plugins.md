@@ -9,7 +9,7 @@ Every plugin has an `ols-plugin.toml` manifest:
 name = "hello-wasm"
 version = "0.1.0"
 description = "Example plugin"
-sdk = "0.1"                 # plugin interface version targeted
+sdk = "0.2"                 # plugin interface version targeted
 tier = "wasm"               # "wasm" or "python"
 entry = "target/wasm32-wasip2/release/hello_wasm.wasm"
 extension-points = []
@@ -36,13 +36,13 @@ default = "high"           # shown, dimmed, where not set
 ```
 
 The values are kept on the objects, in their `fields` under
-`plugin.name` (here `lev-ch.insulation_level`; a circuit's on all its
+`plugin.name` (e.g. `code.insulation_level`; a circuit's on all its
 sections), saved with the project and in OLS XML (`<field key value>`).
 The plugin, or the check that belongs to it, reads them there. Without
 the plugin, a project keeps the values and the tables still show them
-in a column marked "(unused)", typed like text. The Swiss LeV plugin
-declares the circuits' insulation level this way (the distance between
-conductors reads it).
+in a column marked "(unused)", typed like text. A check plugin can
+declare a circuit's value its check needs this way (e.g. an insulation
+level read by the distance between conductors).
 
 ## WebAssembly plugins
 
@@ -117,20 +117,36 @@ extension-points = ["design-code"]
 - `generate(parameters)` reads the user's parameter file (TOML text) and
   returns **generated**: `weather-cases` (an `.olswc` file's text),
   `load-cases` (an `.olslc` file's text, each case naming one of those
-  weather cases) and `notes` (what was computed, assumed or left out). A
-  wrong file is an error string, shown to the user.
+  weather cases), `notes` (what was computed, assumed or left out) and
+  `clearance-presets` (may be empty). A wrong file is an error string,
+  shown to the user.
+- A **clearance preset** (`clearance-preset`) fills in a clearance window
+  in one click: its `name` (unique among the plugin's), its `measure`
+  (`vertical` or `radial`: the window), its `rules` — a clearance rule
+  file's text (`.olsr`, format `ols-clearance-rules`: the rules with
+  their classes, voltages, distances and, vertical, `vertical_band` (the
+  zone's half width of each rule); `[wind]` steps and sides; `[check]`
+  circuits, calculation `method` and `search_distance`) — and its
+  `weather-cases`, an `.olswc` file's text with the cases its rules name.
 
-The host (`ols_io::codes`, `WasmHost::load_code`) checks both files as
-OLS CAD reads them before anything is written; `ols code generate` and
-Criteria › Design code write them. A plugin ships **no values of the
+The host (`ols_io::codes`, `WasmHost::load_code`) checks the files as
+OLS CAD reads them before anything is written — each preset's rule file
+read (an error names it, `<plugin>-<name>.olsr`), a rule of its
+measure, every weather case its rules name among its own, the names
+unique; `ols code generate` and Criteria › Design code write them (the
+presets as `<plugin>-<name>.olsr` and `.olswc`, in the project among
+its rule and weather case files). Plugin interface version 0.2 (`sdk =
+"0.2"`) brought the presets: a plugin built for 0.1 must be rebuilt. A plugin ships **no values of the
 standard**: it implements the code's method, every number comes from the
 parameter file, and the template's numbers are invented placeholders,
 marked as such.
 
 `plugins/codes/*` are such plugins (EN 50341 with a national annex overlay,
-Swiss LeV, IEC 60826, NESC, CSA C22.3, ASCE MOP 74, GO 95); they share
+IEC 60826, NESC, CSA C22.3, ASCE MOP 74, GO 95); they share
 `plugins/codes/common` (reading parameter files, writing the case files,
-the `code_plugin!` macro implementing the world). See
+writing clearance presets — `Preset`, `RuleFile` —, the `code_plugin!`
+macro implementing the world). A plugin for the Swiss LeV exists
+separately; it is not part of the public code. See
 [Design codes](../user-guide/design-codes.md).
 
 ## Check plugins
@@ -167,14 +183,13 @@ geometry, and fast), the code's numbers and its formulas stay out of it.
 The host (`ols_io::checks`, `WasmHost::load_check`) measures
 (`ols_clearance::phase_distance`), calls the plugin once per pair, one
 instance per core (`WasmHost::another_check`, compiled once), and keeps
-each pair's worst station and the length below. The `lev-ch` plugin runs
-the LeV distance between conductors (Annex 6, 2.2.1 and, with phase
-spacers, 2.2.4); its values are the law's (Swiss legislation is not
-protected by copyright), in `plugins/codes/lev-ch/phase-distance.olspd`.
-On an existing line (930 conductors, 5593 pairs) it takes about as long
-as the same computation built into OLS CAD (0.8 s against 0.65–0.9 s;
-with nearby pairs, 10 475, 0.9 s against 0.65–0.7 s), plus about 0.3 s
-to load the plugin once.
+each pair's worst station and the length below — see [Distance between
+conductors: the core's part](phase-distance-check.md). A Swiss LeV
+plugin (kept apart from the public code) runs such a check. On an
+existing line (930 conductors, 5593 pairs) a plugin's check takes about
+as long as the same computation built into OLS CAD (0.8 s against
+0.65–0.9 s; with nearby pairs, 10 475, 0.9 s against 0.65–0.7 s), plus
+about 0.3 s to load the plugin once.
 
 ## Python plugins
 

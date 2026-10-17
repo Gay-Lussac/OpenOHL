@@ -173,9 +173,9 @@ text`, the values of the table columns plugins add (`[[column]]` in a
 plugin's manifest, [Writing plugins](plugins.md#table-columns)). Empty
 maps are not written. Kept with the object through every edit, written
 to OLS XML as `<field key value>`; shown (unused) where the plugin is not
-installed. A circuit's values are on all its sections. Known keys:
-`lev-ch.insulation_level` (`low` / `high`, the circuits' LeV insulation
-level, read by `ols_clearance::phase_distance`).
+installed. A circuit's values are on all its sections. A check plugin
+reads its own (`ols_clearance::phase_distance` passes the sections'
+values to it).
 
 ### Route, Alignment and AlignmentPoint (`route.rs`)
 
@@ -576,32 +576,24 @@ cases, unit costs and galloping parameters as library files (below).
 
 ### Phase distance codes (`.olspd`)
 
-`ols-phase-distance`, version 1, read and written by the **lev-ch
-plugin** (`plugins/codes/lev-ch/src/phase_distance.rs`; OLS CAD only
-measures, `ols_clearance::phase_distance`, and keeps a project's edited
-copy as a library file of kind `phase-distance`): a
-code's values for the distance between conductors in the span,
-\( z = k\sqrt{f + l_k} + C \) — `[[voltage]]` rows (`kv`: up to this
-nominal voltage; `c1` within one electrical system and towards earth,
-`c2` between systems, optional `c3`, `c4` the same with wind: one value,
-or two — the low and the high insulation level; optional `c1_bil_kv`,
-`c2_bil_kv`: the lightning impulse withstand voltage each value is
-for), `[[diagram]]`s (`name`, `wind_pressure`, `line =
-[{ w_max, k0, k90 }]`: k linear in the system angle per swing class
-w = d/q), `[altitude]` (`from`, `per_1000_m`). The Swiss LeV's values:
-`plugins/codes/lev-ch/phase-distance.olspd` (shipped in the plugin). The check pairs conductors
+`ols-phase-distance`, version 1: a check plugin's values for the
+distance between conductors in the span, read and written by the
+plugin (its layout is the plugin's; a Swiss LeV plugin, kept apart from
+the public code, defines one). OLS CAD only measures
+(`ols_clearance::phase_distance`) and keeps a project's edited copy as
+a library file of kind `phase-distance`. The check pairs conductors
 between the same two structures (and, when asked, nearby conductors
 elsewhere within a distance) and takes l_k from the strings at their
 ends (I: its length; V, tension, clamped: 0; the string below a V: its
-length; a TAK: its suspension string's), and each circuit's insulation
-level from its sections' `lev-ch.insulation_level` (not set: high); the
-settings (diagram, station spacing, circuits ticked, nearby pairs and
-their distance) are not in the file. Results per pair: the worst
-station (points, where along each conductor, d, z and its terms) and
-the length of conductor below z; conductors joined by spacers in the
-span: each one's largest sag between its clamps, and the plugin's rule
-2.2.4. A run's parameters keep the plugin's name and version and its
-choices. See [the specification](lev-phase-spacing.md).
+length; a TAK: its suspension string's), and the plugin columns of
+their sections; the settings (the plugin's choices, station spacing,
+circuits ticked, nearby pairs and their distance) are not in the file.
+Results per pair: the worst station (points, where along each
+conductor, d, the required distance and the plugin's values) and the
+length of conductor below it; conductors joined by spacers in the
+span: each one's largest sag between its clamps. A run's parameters
+keep the plugin's name and version and its choices. See [Distance
+between conductors: the core's part](phase-distance-check.md).
 
 ### Clearance rules (`.olsr`)
 
@@ -617,11 +609,23 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - `[wind]` (optional): `steps`, `step` (Pa), `sides` — how the desktop
   clearance windows step the wind up to each case's pressure; `ols line`
   ignores it.
+- `[check]` (optional, `CheckScope`): `circuits` (circuit names; empty:
+  every circuit), `method` (`fe` / `rs`: every section solved by it;
+  absent: each section's own), `search_distance` (m: LiDAR points
+  farther from the wires are ignored) — what the desktop clearance
+  windows solve and read; `ols line` ignores it.
 - The desktop Vertical and Radial clearance windows keep their rules next
   to the model, in `<model>.vertical-clearances.olsr` and
   `<model>.radial-clearances.olsr` (one `[[rule]]` per row and target
-  kind). Rules refer to LiDAR classes by number (`.olsc` schemes) and to
-  weather cases by name.
+  kind). A window row (`ols_clearance::zone::ZoneRule`) has an optional
+  `width` of its own (the vertical zone's half width, written as the
+  rule's `vertical_band`; none: the window's `Zone.width`); the window's
+  `Zone.search` is `[check] search_distance`. Rules refer to LiDAR
+  classes by number (`.olsc` schemes) and to weather cases by name.
+- **Clearance presets** of design-code plugins are such rule files,
+  `<plugin>-<name>.olsr` among the project's rule files, each with a
+  weather case file of the same name among its weather case files (the
+  cases its rules name); the windows' Load preset… lists them.
 
 ### Structure type (`.olss`)
 
@@ -861,11 +865,12 @@ took part), `status` (`draft`, `checked`, `approved`), `note`, `state`
 (the line state: `line`, `seq` — its last log entry — and `objects`, a
 SHA-256 per object `kind:id` and project library file
 `library:kind/name`, compared with now to say what changed since),
-`summary`, `parameters` and `results` (check-specific JSON). The LeV
-distance between conductors keeps as parameters the values file's name,
-text and SHA-256, the diagram, spacing, nearby pairs, the circuits, the
-weather cases with their values and each circuit's insulation level;
-as results the counts and the pairs below z or within 1 m of it.
+`summary`, `parameters` and `results` (check-specific JSON). The
+distance between conductors keeps as parameters the plugin's name and
+version, the values file's name, text and SHA-256, the plugin's
+choices, spacing, nearby pairs, the circuits, the weather cases with
+their values and each circuit's plugin-column values; as results the
+counts and the pairs below the required distance or within 1 m of it.
 
 ### Commands (the only way to change a project)
 
@@ -930,7 +935,7 @@ above**.
 | `io-plugin` import | file bytes, options (`into`: a line file to update) | a **line file** JSON, validated by the host like any line file |
 | `terrain-plugin` (`terrain`) | file bytes | surfaces: `name`, `points` (x, y, z flat, m), `triangles` (indices) |
 | `project-plugin` (`project`) | file bytes | `project { line: <line file JSON>, libraries: [{kind, name, text}], notes }`; `kind` as in `library_file` |
-| `code-plugin` (`design-code`) | a parameter file (TOML text) | `generated { weather-cases: <.olswc text>, load-cases: <.olslc text>, notes }` |
+| `code-plugin` (`design-code`) | a parameter file (TOML text) | `generated { weather-cases: <.olswc text>, load-cases: <.olslc text>, notes, clearance-presets: [{ name, measure: vertical / radial, rules: <.olsr text>, weather-cases: <.olswc text> }] }` (interface 0.2) |
 | `check-plugin` / `code-check-plugin` (`check`) | `checks()`: nothing; `value-tables` / `edit-value`: a values file's text (e.g. `.olspd`); `evaluate`: the values, the user's choices, a `conductor-pair` (same system / span, kV, plugin column values, altitude, diameters, masses, spacer sags) and per station 6 numbers (distance, system angle, both local sags, both string lengths) | the check list (id, title, menu; the app's Checks menu is built from it); tables; the edited file; per station the required distance and the check's own values, the rule applied |
 
 So a plugin that writes a line follows the line file rules on this page:

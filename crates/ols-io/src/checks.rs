@@ -177,14 +177,21 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
-    /// The lev-ch plugin runs the distance between conductors on the
-    /// synthetic line at 10 °C: its values and choices listed, its tables
-    /// edited through it; the pairs as measured, required by it (2.2.1);
-    /// two conductors joined by a spacer: 2.2.4. Skipped when not built
-    /// (unless the plugin tests are required).
+    /// The Swiss LeV plugin (kept apart from the public code, at
+    /// `local-data/plugins/lev-ch` when this checkout has it) runs the
+    /// distance between conductors on the synthetic line at 10 °C: its
+    /// values and choices listed, its tables edited through it; the pairs
+    /// as measured, required by it (2.2.1); two conductors joined by a
+    /// spacer: 2.2.4. Skipped without the folder (even when the plugin
+    /// tests are required); with it, skipped when not built unless they
+    /// are.
     #[test]
     fn the_lev_plugin_checks_the_distance_between_conductors() {
-        let dir = root().join("plugins/codes/lev-ch");
+        let dir = root().join("local-data/plugins/lev-ch");
+        if !dir.is_dir() {
+            eprintln!("skipping: no local-data/plugins/lev-ch");
+            return;
+        }
         let built = dir
             .join("target/wasm32-wasip2/release/lev_ch.wasm")
             .is_file();
@@ -196,7 +203,7 @@ mod tests {
             return;
         }
         let host = WasmHost::new().unwrap();
-        let (checks, problems) = list(&host, &[root().join("plugins/codes")]);
+        let (checks, problems) = list(&host, std::slice::from_ref(&dir));
         assert!(problems.is_empty(), "{problems:?}");
         let check = checks.iter().find(|c| c.info.id == PHASE_DISTANCE).unwrap();
         assert!(check.plugin.starts_with("lev-ch "));

@@ -92,61 +92,55 @@ radial = { by_voltage = [[0, "2 m"], [245, "3.5 m"]] }
 case_pairs = [["glaze ice", "everyday"]]
 ```
 
-## Distance between conductors in the span (Swiss LeV)
+## Distance between conductors in the span (check plugins)
 
-The Swiss ordinance's still-air distance between two conductors of a
-span (LeV Annex 6, 2.2.1): \( z = k\sqrt{f + l_k} + C \), with f the local
-sag, l_k from the strings at the conductors' ends, k by the system angle
-and swing class (diagram 2.4.2 or 2.4.3), C by voltage (C₁ within one
-electrical system and towards earth, C₂ between different systems; at
-220 and 380 kV the line of the circuit's insulation level, each value
-for its lightning impulse withstand voltage), +14 % per 1000 m above 1000 m. Conductors
-joined by phase spacers in the span (2.2.4): \( z = k\sqrt{d_f} + C_3 \)
-(C₄ between systems), at least C₁ (C₂) and at least 0.90 m, d_f the
-largest sag between the spacers. The values and the rules are the
-**lev-ch plugin**'s (it must be in use: Plugins › Plugin manager); OLS
-CAD measures the conductors. The method and the decisions behind it:
-[the specification](../development/lev-phase-spacing.md).
+Some codes require a distance between two conductors of a span that
+depends on where along it one looks — on the local sag, the suspension
+strings, the angle between the conductors, the voltages (e.g. the Swiss
+ordinance's still-air distance, LeV Annex 6, 2.2). OLS CAD **measures**
+the conductors; the values and the rules are a **check plugin**'s (it
+must be in use: Plugins › Plugin manager). A plugin for the Swiss LeV
+exists separately; it is not part of the public code. What is measured
+and how: [the core's part](../development/phase-distance-check.md).
 
-In the desktop app, with the lev-ch plugin in use (the plugin defines
-the menu: without it, it is not there): **Checks › LeV/OLEI › Distance between
-conductors…** — a values file (else the project's copy, else the
-plugin's), the k diagram, the weather cases (the
-still-air 10 °C ones ticked first; each checked on its own), the
+In the desktop app, with such a plugin in use (the plugin defines the
+menu: without it, it is not there), its entry in the Checks menu (e.g.
+**Checks › LeV/OLEI › Distance between conductors…**) opens the check's
+window: a values file (else the project's copy, else the plugin's), the
+plugin's choices, the weather cases (each checked on its own), the
 circuits (ticked in a list, select all / none), the station spacing
 (1 m), and nearby spans (conductors not between the same two
 structures, within a distance). The page opens floating; drag its tab
-onto a panel (next to Properties, for example) to dock it. **Circuits
-checked and their insulation level** lists the ticked circuits with
-their voltage and level (low or high row of Table 2.4.1; not set: high),
-chosen there for all the circuit's sections — the same value as the
-Electrical circuits table's column (LeV plugin). **Check** runs in the background; the pairs come worst first: the
-two spans and circuits, C₁ or C₂, kV, d, z, d − z, the length of
-conductor below z, and at the worst station f, l_k, β, k and C and the
-rule (2.2.1, or 2.2.4 with spacers), with a
-note when it is at a clamp (f ≈ 0) or on a nearby span. Clicking a span,
-or d, z or d − z, selects the span, shows the result's weather case and
-draws the worst station's line in the 3D view, labelled with d and z;
-the line goes when the window is closed (or a new run starts). **Export CSV…** writes every pair with the points. Below
-the settings, the window explains the computation ("How it is
-computed") and shows the **values used** as tables, for transparency:
-C₁ and C₂ by nominal voltage (low and high rows), the k lines of each
-diagram by swing class, the altitude rule, and where they come from
-(the plugin's, a file chosen, a saved report, or the project's copy),
-as the plugin shows them. They are locked; an **admin** of the project
-may **Edit values** (a cell at a time, checked by the plugin) and
-**Save in the project**: the project's copy of the file (headed with who
-edited it and when), used by every run on the project and kept in each
-report; **Back to the plugin's** removes the copy. **Choose a values
-file…** uses another `.olspd` instead.
+onto a panel (next to Properties, for example) to dock it. When the
+plugin needs a value per circuit (a plugin column, e.g. an insulation
+level), **Circuits checked** lists the ticked circuits with their
+voltage and that value, chosen there for all the circuit's sections —
+the same value as the Electrical circuits table's column. **Check** runs
+in the background; the pairs come worst first: the two spans and
+circuits, kV, d, the required distance, the margin, the length of
+conductor below it, and at the worst station the measured values, the
+plugin's own and the rule it applied, with a note when it is at a clamp
+or on a nearby span. Clicking a span, or a distance, selects the span,
+shows the result's weather case and draws the worst station's line in
+the 3D view, labelled with d and the required distance; the line goes
+when the window is closed (or a new run starts). **Export CSV…** writes
+every pair with the points. Below the settings, the window explains the
+computation (the plugin's "How it is computed") and shows the **values
+used** as tables, for transparency, and where they come from (the
+plugin's, a file chosen, a saved report, or the project's copy). They
+are locked; an **admin** of the project may **Edit values** (a cell at a
+time, checked by the plugin) and **Save in the project**: the project's
+copy of the file (headed with who edited it and when), used by every
+run on the project and kept in each report; **Back to the plugin's**
+removes the copy. **Choose a values file…** uses another one instead.
 
 **Save** keeps the run in the [library of performed
 checks](#the-library-of-performed-checks) under a name: its parameters
-(the values file's text included), the pairs below z and within 1 m of
-it, the counts. Opened again it shows its results and whether the line
-changed since (*stale*); **Check** runs it again with its parameters,
-shows each pair against the saved run (new, fixed, worse, better) and
-asks whether to replace the saved report.
+(the values file's text included), the pairs below the required
+distance and within 1 m of it, the counts. Opened again it shows its
+results and whether the line changed since (*stale*); **Check** runs it
+again with its parameters, shows each pair against the saved run (new,
+fixed, worse, better) and asks whether to replace the saved report.
 
 ## The library of performed checks
 

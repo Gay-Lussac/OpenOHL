@@ -2,7 +2,7 @@
 name = "csa-c22-3"
 version = "0.1.0"
 description = "CSA C22.3 No. 1: loading zone and construction grade cases from your parameter file"
-sdk = "0.1"
+sdk = "0.2"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/csa_c22_3.wasm"
 extension-points = ["design-code"]
