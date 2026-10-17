@@ -25,8 +25,7 @@ pub struct Sources {
     /// Wire library (file or directory); default: `*.olsw` next to the
     /// file, else `libraries/cables`.
     pub library: Option<PathBuf>,
-    /// Pylon files; default: `Structures/` next to the file, else
-    /// `libraries/structures`.
+    /// Pylon files; default: `Structures/` next to the file.
     pub structures: Option<PathBuf>,
     /// Insulator library.
     pub insulators: Option<PathBuf>,
@@ -558,16 +557,12 @@ fn editing(
 }
 
 /// The structure types' directory: given, else `Structures/` next to the
-/// model, else `libraries/structures`.
+/// model (types belong to a project: none are shipped).
 pub fn structures_dir(sources: &Sources) -> PathBuf {
-    sources.structures.clone().unwrap_or_else(|| {
-        let local = dir_of(&sources.file).join("Structures");
-        if local.is_dir() {
-            local
-        } else {
-            shipped_library("structures")
-        }
-    })
+    sources
+        .structures
+        .clone()
+        .unwrap_or_else(|| dir_of(&sources.file).join("Structures"))
 }
 
 /// The insulator assemblies' directory.

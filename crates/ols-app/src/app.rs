@@ -5725,7 +5725,7 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     r.clearances.set_defaults(&r.model.line.defaults);
     let c = &mut r.clearances;
     if c.files.is_empty() {
-        ui.label("No rule file (.olsr) next to the model or in libraries/clearance-rules.");
+        ui.label("No rule file (.olsr) next to the model: write one for the design code you use (see Clearance rules in the user guide), or open one.");
         ui.label(egui::RichText::new("Start with --rules FILE.olsr.").small());
         return;
     }

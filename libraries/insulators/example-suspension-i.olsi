@@ -1,0 +1,14 @@
+# OLS CAD insulator assembly (.olsi): an EXAMPLE to start from.
+# Typical values for a 220 kV composite I-string, not manufacturer data:
+# check every value against the data sheet of the assembly you use, and
+# make your own files (Structures › String library).
+format = "ols-insulator"
+version = 1
+id = "example-220-i"
+name = "Example 220 kV I-string (typical values)"
+kind = "suspension"
+source = "OLS CAD example, typical values"
+length = "2.8 m"
+weight = "450 N"
+axial_stiffness = "5e7 N"
+wind_area = "0.25 m²"

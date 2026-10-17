@@ -31,7 +31,7 @@ ols spot examples/synthetic-line/synthetic-line-typed.ols.json --route main \
 |---|---|---|
 | `--route` | the first route | Route id (`ols line FILE --stations` lists them). |
 | `--terrain` | | Survey points (CSV / XYZ). |
-| `--types` | `Structures/` next to the line, else `libraries/structures` | Candidates: the types the cost file prices. |
+| `--types` | `Structures/` next to the line | Candidates: the types the cost file prices. |
 | `--insulators`, `--library` | shipped libraries | Insulator assemblies, wire library. |
 | `--cost` | | Unit costs. |
 | `--cable`, `--tension` | | Cable id; horizontal tension in kN in the design condition. |

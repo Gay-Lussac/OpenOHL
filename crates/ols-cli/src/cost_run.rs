@@ -20,7 +20,7 @@ pub struct BomArgs {
     #[arg(long)]
     library: Option<PathBuf>,
     /// Structure type directory (.olss) (default: the `Structures` folder
-    /// next to the line, else libraries/structures).
+    /// next to the line).
     #[arg(long)]
     structures: Option<PathBuf>,
     /// Insulator assembly library directory (.olsi) (default: the shipped
@@ -101,14 +101,9 @@ pub struct SpotArgs {
 }
 
 fn structure_dir(file: &Path, given: Option<&PathBuf>) -> PathBuf {
-    given.cloned().unwrap_or_else(|| {
-        let local = file.parent().unwrap_or(Path::new(".")).join("Structures");
-        if local.is_dir() {
-            local
-        } else {
-            shipped_library("structures")
-        }
-    })
+    given
+        .cloned()
+        .unwrap_or_else(|| file.parent().unwrap_or(Path::new(".")).join("Structures"))
 }
 
 fn libraries(

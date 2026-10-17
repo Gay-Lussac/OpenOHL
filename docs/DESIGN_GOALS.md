@@ -178,7 +178,7 @@ One rule for every deletion: when an object takes others with it, the deletion i
 
 ## 10. Structure library (`.olss`)
 
-Each **structure type** (pylon, pole, portal…) is a file of its own (`*.olss`, "OLS structure", TOML) in a structure library directory (default `libraries/structures/`), so it can be reused, shared and version-controlled individually.
+Each **structure type** (pylon, pole, portal…) is a file of its own (`*.olss`, "OLS structure", TOML) in a structure library directory (default the project's `Structures/` folder), so it can be reused, shared and version-controlled individually.
 
 - **Local axes**: origin at the ground centre, x transverse, y along the line (ahead), z up.
 - **Attachments**: set, phase, label, the insulator attachment point (local), the default insulator assembly (from the insulator library), and for strain sets the side (`ahead` / `back`).

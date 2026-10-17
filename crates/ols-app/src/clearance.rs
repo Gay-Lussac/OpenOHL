@@ -227,13 +227,10 @@ pub fn run(input: &Input) -> Result<Report, String> {
 }
 
 /// Rule files to choose from: the one given, the `*.olsr` next to the
-/// model, those in the shipped `libraries/clearance-rules`.
+/// model (rules come from the design code used: none are shipped).
 pub fn rule_files(model_file: &Path, given: Option<&Path>) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = given.map(Path::to_path_buf).into_iter().collect();
-    let dirs = [
-        ols_core::files::dir_of(model_file),
-        ols_core::files::shipped_library("clearance-rules"),
-    ];
+    let dirs = [ols_core::files::dir_of(model_file)];
     for d in &dirs {
         for p in ols_core::files::files_with_extension(d, ols_clearance::rules::RULE_FILE_EXTENSION)
         {
