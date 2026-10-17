@@ -59,7 +59,8 @@ The names are those of the line file:
     </span_point>
     <span_point label="P1" span="2" fraction="0.2"/>   <!-- bare: a spread's end -->
     <span_point label="P2" span="2" fraction="0.4"/>
-    <spread label="heated" from="P1" to="P2" type="heated-stretch" load="12.5"/>  <!-- N/m -->
+    <spread label="heated" from="P1" to="P2" type="heated-stretch" load="12.5"/>  <!-- N/m, the whole bundle's;
+                                                  per_subconductor="true": on each subconductor -->
   </section>
   <jumper id="…" cable="…" length="…" sag="…" temperature="15" bending_stiffness="…" stiffness_factor="…"
           angle_from_deg="…" angle_to_deg="…" color="…" bundle="…" bundle_spacing="…"

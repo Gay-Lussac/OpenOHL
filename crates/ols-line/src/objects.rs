@@ -212,10 +212,13 @@ pub struct SpreadStretch {
     pub start: crate::SpanPlace,
     /// Where it ends.
     pub end: crate::SpanPlace,
-    /// Downward load, N per metre of conductor (the whole bundle's).
+    /// Downward load, N per metre of conductor (the whole bundle's: a
+    /// load given on each subconductor times the bundle).
     pub load: f64,
     /// Its label.
     pub label: String,
+    /// Its index in the section's spread objects.
+    pub index: usize,
 }
 
 /// A shape as files give it, flat beside the object's other keys:
@@ -390,6 +393,8 @@ struct ObjectTypeFile {
     clamp_length: Option<f64>,
     #[serde(default, deserialize_with = "si::de_opt::<_, ForcePerLength>")]
     load: Option<f64>,
+    #[serde(default)]
+    per_subconductor: bool,
 }
 
 impl TryFrom<ObjectTypeFile> for ObjectType {
@@ -417,6 +422,7 @@ impl TryFrom<ObjectTypeFile> for ObjectType {
             drag: f.drag,
             clamp_length: f.clamp_length,
             load: f.load,
+            per_subconductor: f.per_subconductor,
         })
     }
 }
@@ -540,7 +546,8 @@ impl LineObject {
 
 /// A load spread along a stretch of a span between two of its points
 /// (e.g. a heated stretch, a cable lashed on): downward, N/m of the
-/// conductor, on the whole bundle.
+/// conductor, on the whole bundle (shared by its subconductors) or on
+/// each subconductor (`per_subconductor`).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpreadObject {
@@ -554,9 +561,26 @@ pub struct SpreadObject {
     /// The library type it was taken from.
     #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
     pub type_id: Option<String>,
-    /// Downward load, N per metre of conductor (the whole bundle's).
+    /// Downward load, N per metre of conductor: the whole bundle's, or
+    /// each subconductor's (`per_subconductor`).
     #[serde(deserialize_with = "si::de::<_, ForcePerLength>")]
     pub load: f64,
+    /// The load is on each subconductor of a bundle (the whole bundle
+    /// carrying `load` × bundle), not once on the whole bundle. A single
+    /// wire: the same.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub per_subconductor: bool,
+}
+
+impl SpreadObject {
+    /// Its load on the whole bundle of `bundle` subconductors, N/m.
+    pub fn bundle_load(&self, bundle: u32) -> f64 {
+        if self.per_subconductor {
+            self.load * f64::from(bundle.max(1))
+        } else {
+            self.load
+        }
+    }
 }
 
 /// A type of the library: a template for objects on points (a body, a
@@ -597,6 +621,10 @@ pub struct ObjectType {
         deserialize_with = "si::de_opt::<_, ForcePerLength>"
     )]
     pub load: Option<f64>,
+    /// A spread type's load is on each subconductor of a bundle (else
+    /// once on the whole bundle).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub per_subconductor: bool,
 }
 
 /// What a library type makes.
@@ -700,6 +728,9 @@ impl ObjectLibrary {
             }
             let bad = |m: String| format!("type {}: {m}", t.id);
             match t.object() {
+                Some(_) if t.per_subconductor => {
+                    return Err(bad("per_subconductor is for spread types".into()));
+                }
                 Some(o) => o.validate().map_err(bad)?,
                 None => {
                     if !t.load.is_some_and(|l| l.is_finite() && l >= 0.0) {
@@ -864,6 +895,43 @@ mod legacy_tests {
         // (Its forces: as the old point load's, `a_marker_ball_takes_wind_and_ice`.)
         // The example line (older form) reads.
         assert!(example.sections[0].objects().next().is_some());
+    }
+
+    /// `per_subconductor` is written only when set, and read back.
+    #[test]
+    fn per_subconductor_is_an_optional_key() {
+        let mut s = super::SpreadObject {
+            from: "A".into(),
+            to: "B".into(),
+            load: 5.0,
+            ..Default::default()
+        };
+        let text = serde_json::to_string(&s).unwrap();
+        assert!(!text.contains("per_subconductor"), "{text}");
+        s.per_subconductor = true;
+        let text = serde_json::to_string(&s).unwrap();
+        assert!(text.contains("\"per_subconductor\":true"), "{text}");
+        assert_eq!(
+            serde_json::from_str::<super::SpreadObject>(&text).unwrap(),
+            s
+        );
+    }
+
+    /// A spread type may say its load is on each subconductor; a body
+    /// type may not.
+    #[test]
+    fn a_spread_type_may_be_per_subconductor() {
+        let head = "format = \"ols-point-spread-loads\"\nversion = 1\n[[type]]\nid = \"x\"\nname = \"x\"\n";
+        let lib = super::ObjectLibrary::parse(&format!(
+            "{head}kind = \"spread\"\nload = 3.0\nper_subconductor = true"
+        ))
+        .unwrap();
+        assert!(lib.types[0].per_subconductor);
+        assert_eq!(super::ObjectLibrary::parse(&lib.to_text()).unwrap(), lib);
+        assert!(
+            super::ObjectLibrary::parse(&format!("{head}kind = \"body\"\nper_subconductor = true"))
+                .is_err()
+        );
     }
 
     /// Library values may carry their unit; plain numbers are SI.

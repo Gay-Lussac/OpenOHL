@@ -78,6 +78,11 @@ pub struct SpanForm {
     pub per_metre: f64,
     /// A spread's library type.
     pub spread_type: Option<String>,
+    /// A spread's load is on each subconductor of the bundle (else once
+    /// on the whole bundle).
+    pub per_subconductor: bool,
+    /// Subconductors of the span's bundle (1: a single wire).
+    pub bundle: u32,
     /// The types to choose from (the project's library).
     pub library: ObjectLibrary,
     /// An existing point changed (its label), instead of points added.
@@ -113,6 +118,8 @@ impl SpanForm {
             advanced: false,
             per_metre: 10.0,
             spread_type: None,
+            per_subconductor: false,
+            bundle: 1,
             library,
             editing: None,
         }
@@ -281,6 +288,7 @@ impl SpanForm {
         Some(Self {
             section: section.to_owned(),
             span,
+            bundle: s.bundle.max(1),
             stations: line.span_stations(&w[0].structure, &w[1].structure),
             ..Self::base(model, horizontal, from, &taken)
         })
@@ -477,10 +485,17 @@ impl SpanForm {
                 to: b.clone(),
                 type_id: self.spread_type.clone(),
                 load: self.per_metre,
+                per_subconductor: self.per_subconductor,
             });
             format!(
-                "a spread of {} N/m from {a} to {b} on section {}",
-                self.per_metre, s.id
+                "a spread of {} N/m{} from {a} to {b} on section {}",
+                self.per_metre,
+                if self.per_subconductor {
+                    " on each subconductor"
+                } else {
+                    ""
+                },
+                s.id
             )
         } else {
             let labels = self.labels(&taken, ds.len())?;
@@ -700,7 +715,11 @@ pub fn object_ui(
                     ui.label("axis");
                     ui.horizontal(|ui| {
                         ui.radio_value(axis, ols_line::Axis::Along, "along the wire");
-                        ui.radio_value(axis, ols_line::Axis::Across, "across the line");
+                        ui.radio_value(axis, ols_line::Axis::Across, "across the line")
+                            .on_hover_text(
+                                "A clamp on a bundle: drawn joining its subconductors (its \
+                                 length as given for the wind and the ice)",
+                            );
                         ui.radio_value(axis, ols_line::Axis::Vertical, "vertical");
                     });
                     ui.end_row();
@@ -873,13 +892,15 @@ pub fn span_ui(ui: &mut egui::Ui, f: &mut SpanForm) {
                             )
                             .clicked()
                         {
-                            chosen = Some((t.id.clone(), t.load.unwrap_or(0.0)));
+                            chosen =
+                                Some((t.id.clone(), t.load.unwrap_or(0.0), t.per_subconductor));
                         }
                     }
                 });
-            if let Some((id, load)) = chosen {
+            if let Some((id, load, each)) = chosen {
                 f.spread_type = Some(id);
                 f.per_metre = load;
+                f.per_subconductor = each;
             }
             ui.end_row();
             ui.label("load");
@@ -889,12 +910,43 @@ pub fn span_ui(ui: &mut egui::Ui, f: &mut SpanForm) {
                         .speed(0.1)
                         .suffix(" N/m"),
                 )
-                .on_hover_text("Downward, per metre of conductor, on the whole bundle")
+                .on_hover_text(if f.per_subconductor {
+                    "Downward, per metre of conductor, on each subconductor"
+                } else {
+                    "Downward, per metre of conductor, on the whole bundle"
+                })
                 .changed()
             {
                 f.spread_type = None;
             }
             ui.end_row();
+            ui.label("load on");
+            let before = f.per_subconductor;
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut f.per_subconductor, false, "the whole bundle")
+                    .on_hover_text(
+                        "Once on the bundle: its subconductors share it (each carries the load ÷ \
+                         the bundle)",
+                    );
+                ui.radio_value(&mut f.per_subconductor, true, "each subconductor")
+                    .on_hover_text(
+                        "On every cable of the bundle: the bundle carries the load × the bundle",
+                    );
+            });
+            if f.per_subconductor != before {
+                f.spread_type = None;
+            }
+            ui.end_row();
+            if f.bundle > 1 {
+                ui.label("whole bundle");
+                let total = if f.per_subconductor {
+                    f.per_metre * f64::from(f.bundle)
+                } else {
+                    f.per_metre
+                };
+                ui.label(format!("{total:.2} N/m ({} subconductors)", f.bundle));
+                ui.end_row();
+            }
         }
     });
     (f.from, f.to) = (from, to);

@@ -217,6 +217,19 @@ fn rich_line() -> Line {
         load: 12.5,
         label: "tray".into(),
     });
+    // A spread on each subconductor.
+    line.sections[0].add_spread_load(&ols_line::legacy::SpreadLoad {
+        span: 0,
+        start: ols_line::SpanPlace::at_fraction(0.6),
+        end: ols_line::SpanPlace::at_fraction(0.7),
+        load: 4.0,
+        label: "lashed".into(),
+    });
+    line.sections[0]
+        .spreads
+        .last_mut()
+        .unwrap()
+        .per_subconductor = true;
     line.spacers.push(ols_line::Spacer {
         id: "SP1".into(),
         description: "interphase".into(),
@@ -325,6 +338,12 @@ fn ols_xml_round_trips_every_line() {
     ];
     for line in lines {
         let xml = olsxml::to_xml(&line);
+        let each = line
+            .sections
+            .iter()
+            .flat_map(|s| &s.spreads)
+            .any(|s| s.per_subconductor);
+        assert_eq!(xml.contains("per_subconductor=\"true\""), each);
         let back = olsxml::from_xml(&xml).unwrap();
         assert_eq!(back, line);
         assert_eq!(back.to_json(), line.to_json());
@@ -387,6 +406,8 @@ fn xsd_lists_every_element_written() {
     for n in used {
         assert!(names.contains(&n), "<{n}> not in the schema");
     }
+    // Attributes added since: declared too.
+    assert!(xsd.contains("name=\"per_subconductor\""));
 }
 
 #[test]

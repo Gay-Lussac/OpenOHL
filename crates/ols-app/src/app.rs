@@ -196,6 +196,9 @@ pub struct Ready {
     /// The Delete tool on an alignment point on several alignments: the
     /// point and its alignments, ticked to take it off.
     pub point_delete: Option<(String, Vec<(String, bool)>)>,
+    /// A deletion of a spread, or of a point a spread ends on, waiting
+    /// for the choice of what goes with it.
+    pub spread_delete: Option<SpreadDelete>,
     /// The strings are being taken into the library (its own command must
     /// not start it again).
     cataloguing: bool,
@@ -348,6 +351,7 @@ impl Ready {
             popup_serial: 0,
             popup_open: false,
             point_delete: None,
+            spread_delete: None,
             cataloguing: false,
             popup_opened: None,
             popup_fresh: false,
@@ -1325,6 +1329,7 @@ impl Ready {
             self.coord_dialog.clone(),
             self.move_dialog.clone(),
             self.point_delete.clone(),
+            self.spread_delete.clone(),
         );
         self.use_tool_at(u);
         log::info!(
@@ -1342,6 +1347,7 @@ impl Ready {
             || (self.coord_dialog.is_some() && self.coord_dialog != before.2)
             || (self.move_dialog.is_some() && self.move_dialog != before.3)
             || (self.point_delete.is_some() && self.point_delete != before.4)
+            || (self.spread_delete.is_some() && self.spread_delete != before.5)
         {
             self.popup_open = false;
         }
@@ -1375,6 +1381,17 @@ impl Ready {
             self.status = Some((format!("{}: read-only — {why}", tool.name()), true));
             return;
         }
+        // A spread is deleted as itself; the other tools act on its span
+        // (adding on it where the wire was clicked, editing its section).
+        let target = match target {
+            Selection::Spread { section, index } if tool != Tool::Delete => {
+                match spread_span(&self.model.line, &section, index) {
+                    Some(span) => Selection::Span { section, span },
+                    None => Selection::Spread { section, index },
+                }
+            }
+            t => t,
+        };
         use crate::editors::{Form, SectionForm, StringForm, StructureForm};
         let model = &self.model;
         match (tool, &target) {
@@ -1392,9 +1409,9 @@ impl Ready {
                 self.select(target);
             }
             (Tool::Delete, _) => {
-                if let Some(action) = delete_action(&self.model.line, &target) {
-                    self.select(target);
-                    self.perform(action);
+                if deletable(&self.model.line, &target) {
+                    self.select(target.clone());
+                    self.delete_object(&target);
                 } else {
                     self.hint(tool);
                 }
@@ -3274,7 +3291,50 @@ impl Ready {
                 .sections
                 .iter()
                 .any(|s| &s.id == section && s.span_points.iter().any(|p| &p.label == label)),
+            Selection::Spread { section, index } => line
+                .sections
+                .iter()
+                .any(|s| &s.id == section && *index < s.spreads.len()),
             Selection::Spacer(id) => line.spacers.iter().any(|s| &s.id == id),
+        }
+    }
+
+    /// Deletes `target` (as the Delete tool, Delete selected): a spread,
+    /// or a point a spread ends on, asks first what goes with it (the
+    /// spread window); anything else is deleted (a confirmation when it
+    /// takes more). False: nothing to delete.
+    pub fn delete_object(&mut self, target: &Selection) -> bool {
+        let line = &self.model.line;
+        let ask = match target {
+            Selection::Spread { section, index } => Some(SpreadDelete {
+                section: section.clone(),
+                spread: Some(*index),
+                point: None,
+            }),
+            Selection::SpanPoint { section, label }
+                if line
+                    .sections
+                    .iter()
+                    .any(|s| &s.id == section && !s.spreads_at(label).is_empty()) =>
+            {
+                Some(SpreadDelete {
+                    section: section.clone(),
+                    spread: None,
+                    point: Some(label.clone()),
+                })
+            }
+            _ => None,
+        };
+        if let Some(ask) = ask {
+            self.spread_delete = Some(ask);
+            return true;
+        }
+        match delete_action(line, target) {
+            Some(action) => {
+                self.perform(action);
+                true
+            }
+            None => false,
         }
     }
 
@@ -3331,6 +3391,142 @@ impl Ready {
             self.plan.centre_on(f);
         }
     }
+}
+
+/// A deletion touching spread objects, asked first
+/// ([`spread_delete_window`]): spread `spread` of section `section` (with
+/// its points or not), or its point `point` with the spreads ending on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpreadDelete {
+    /// Section id.
+    pub section: String,
+    /// The spread deleted (its index).
+    pub spread: Option<usize>,
+    /// The point deleted (the end of spreads).
+    pub point: Option<String>,
+}
+
+/// The span spread `index` of section `section` lies on (that of its
+/// first point).
+pub(crate) fn spread_span(line: &ols_line::Line, section: &str, index: usize) -> Option<usize> {
+    let s = line.sections.iter().find(|s| s.id == section)?;
+    let l = s.spreads.get(index)?;
+    s.span_points
+        .iter()
+        .find(|p| p.label == l.from)
+        .map(|p| p.span)
+}
+
+/// Whether `target` can be deleted ([`Ready::delete_object`]).
+fn deletable(line: &ols_line::Line, target: &Selection) -> bool {
+    matches!(target, Selection::Spread { .. }) || delete_action(line, target).is_some()
+}
+
+/// What keeps span point `label` of section `sec` when spread `but`
+/// goes: its object, the other spreads on it, the spacers clamped on it,
+/// the jumpers on it (a tap). Empty: a bare point nothing else uses.
+fn point_uses(
+    line: &ols_line::Line,
+    sec: &ols_line::Section,
+    label: &str,
+    but: usize,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(o) = sec
+        .span_points
+        .iter()
+        .find(|p| p.label == label)
+        .and_then(|p| p.object.as_ref())
+    {
+        out.push(format!("holds a {}", o.kind.as_str()));
+    }
+    for k in sec.spreads_at(label).into_iter().filter(|k| *k != but) {
+        out.push(format!(
+            "ends spread {}",
+            crate::properties::spread_name(sec, k)
+        ));
+    }
+    for x in line.spacers.iter().filter(|x| {
+        [&x.a, &x.b]
+            .iter()
+            .any(|e| e.section == sec.id && e.point == label)
+    }) {
+        out.push(format!("spacer {}", x.id));
+    }
+    for j in line.jumpers.iter().filter(|j| {
+        j.taps()
+            .any(|t| matches!(t, ols_line::Tap::Span(r) if r.section == sec.id && r.point == label))
+    }) {
+        out.push(format!("jumper {} (a tap)", j.id));
+    }
+    out
+}
+
+/// The deletion of span points `points` and spreads `spreads` (indices)
+/// of section `section`, with the spacers clamped on those points: one
+/// command.
+fn span_delete_action(
+    line: &ols_line::Line,
+    section: &str,
+    points: &[String],
+    spreads: &[usize],
+) -> Option<crate::edit::Action> {
+    use ols_session::Kind;
+    let mut s = line.sections.iter().find(|s| s.id == section)?.clone();
+    let names: Vec<String> = spreads
+        .iter()
+        .map(|k| crate::properties::spread_name(&s, *k))
+        .collect();
+    s.span_points.retain(|p| !points.contains(&p.label));
+    let mut k = 0;
+    s.spreads.retain(|_| {
+        k += 1;
+        !spreads.contains(&(k - 1))
+    });
+    let spacers: Vec<&ols_line::Spacer> = line
+        .spacers
+        .iter()
+        .filter(|x| {
+            [&x.a, &x.b]
+                .iter()
+                .any(|e| e.section == section && points.contains(&e.point))
+        })
+        .collect();
+    let mut commands: Vec<ols_session::Command> = spacers
+        .iter()
+        .map(|x| ols_session::Command::Delete {
+            kind: Kind::Spacer,
+            id: x.id.clone(),
+            confirm: true,
+        })
+        .collect();
+    commands.push(ols_session::Command::Put {
+        kind: Kind::Section,
+        id: section.to_owned(),
+        value: serde_json::to_value(&s).ok()?,
+        ord: None,
+    });
+    let mut what = Vec::new();
+    if !points.is_empty() {
+        what.push(format!("span point(s) {}", points.join(", ")));
+    }
+    if !names.is_empty() {
+        what.push(format!("spread(s) {}", names.join(", ")));
+    }
+    if !spacers.is_empty() {
+        what.push(format!(
+            "spacers {}",
+            spacers
+                .iter()
+                .map(|x| x.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    Some(crate::edit::Action::Command {
+        what: format!("deleted {} of {section}", what.join(" and ")),
+        command: ols_session::Command::Batch { commands },
+    })
 }
 
 /// The deletion of a right-clicked object: a structure, a string, a span's
@@ -3391,48 +3587,10 @@ fn delete_action(line: &ols_line::Line, target: &Selection) -> Option<crate::edi
                 command: ols_session::Command::Batch { commands },
             }
         }
-        // The section without it, and the spacers clamped on it.
+        // The section without it, and the spacers clamped on it (a
+        // spread's end: asked first, [`Ready::delete_object`]).
         Selection::SpanPoint { section, label } => {
-            let mut s = line.sections.iter().find(|s| &s.id == section)?.clone();
-            s.span_points.retain(|p| &p.label != label);
-            let spacers: Vec<&ols_line::Spacer> = line
-                .spacers
-                .iter()
-                .filter(|x| {
-                    [&x.a, &x.b]
-                        .iter()
-                        .any(|e| &e.section == section && &e.point == label)
-                })
-                .collect();
-            let mut commands: Vec<ols_session::Command> = spacers
-                .iter()
-                .map(|x| ols_session::Command::Delete {
-                    kind: Kind::Spacer,
-                    id: x.id.clone(),
-                    confirm: true,
-                })
-                .collect();
-            commands.push(ols_session::Command::Put {
-                kind: Kind::Section,
-                id: section.clone(),
-                value: serde_json::to_value(&s).ok()?,
-                ord: None,
-            });
-            Action::Command {
-                what: if spacers.is_empty() {
-                    format!("deleted span point {label} of {section}")
-                } else {
-                    format!(
-                        "deleted span point {label} of {section} and spacers {}",
-                        spacers
-                            .iter()
-                            .map(|x| x.id.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                },
-                command: ols_session::Command::Batch { commands },
-            }
+            span_delete_action(line, section, std::slice::from_ref(label), &[])?
         }
         Selection::Attachment { structure, set } => Action::DeleteAttachment {
             structure: structure.clone(),
@@ -3499,6 +3657,7 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         || r.route_choice.is_some()
         || r.move_dialog.is_some()
         || r.point_delete.is_some()
+        || r.spread_delete.is_some()
         || r.confirm.is_some()
         || r.editor.is_some()
         || r.display_window.is_some()
@@ -3716,11 +3875,9 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         if let Some(k) = slot {
             r.hotbar.active = k;
         }
-        if delete
-            && editable
-            && let Some(action) = delete_action(&r.model.line, &r.selection)
-        {
-            r.perform(action);
+        if delete && editable {
+            let target = r.selection.clone();
+            r.delete_object(&target);
         }
     }
     // Captured mouse: the wheel (without Ctrl) scrolls the hotbar, wheel
@@ -3930,6 +4087,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     goto_window(ctx, r);
     move_window(ctx, r);
     point_delete_window(ctx, r);
+    spread_delete_window(ctx, r);
     first_steps_window(ctx, r);
     alignment_windows(ctx, r);
     editor_window(ctx, r, rs);
@@ -5531,6 +5689,164 @@ fn point_delete_window(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
+/// The window of a deletion touching spreads: a spread deleted alone or
+/// with its points (those bare and used by nothing else), or a point a
+/// spread ends on deleted with its spreads (a spread needs both its
+/// points); what goes listed, Escape (Cancel) closes it.
+fn spread_delete_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(ask) = r.spread_delete.clone() else {
+        return;
+    };
+    let line = r.model.stored_line().unwrap_or(&r.model.line).clone();
+    let Some(sec) = line.sections.iter().find(|s| s.id == ask.section) else {
+        r.spread_delete = None;
+        return;
+    };
+    let section = sec.id.clone();
+    // None: still open; Some(None): cancelled; Some(Some(..)): the points
+    // and spreads to delete.
+    let mut chosen: Option<Option<(Vec<String>, Vec<usize>)>> = None;
+    let spread_text = |k: usize| {
+        sec.spreads.get(k).map_or_else(String::new, |l| {
+            format!(
+                "{} from {} to {} ({} N/m{})",
+                crate::properties::spread_name(sec, k),
+                l.from,
+                l.to,
+                l.load,
+                if l.per_subconductor {
+                    " on each subconductor"
+                } else {
+                    ""
+                }
+            )
+        })
+    };
+    match (&ask.spread, &ask.point) {
+        (Some(k), _) => {
+            let Some(l) = sec.spreads.get(*k) else {
+                r.spread_delete = None;
+                return;
+            };
+            let ends: Vec<(String, Vec<String>)> = [&l.from, &l.to]
+                .into_iter()
+                .map(|p| (p.clone(), point_uses(&line, sec, p, *k)))
+                .collect();
+            let free: Vec<String> = ends
+                .iter()
+                .filter(|(_, uses)| uses.is_empty())
+                .map(|(p, _)| p.clone())
+                .collect();
+            let title = format!("Delete spread {}?", crate::properties::spread_name(sec, *k));
+            tool_window(r, "spread-delete", title).show(ctx, |ui| {
+                ui.label(format!("Spread {} of section {section}.", spread_text(*k)));
+                ui.label("Its points:");
+                egui::ScrollArea::vertical()
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        for (p, uses) in &ends {
+                            let text = if uses.is_empty() {
+                                format!("  {p}: bare, nothing else uses it")
+                            } else {
+                                format!("  {p}: stays — {}", uses.join("; "))
+                            };
+                            ui.label(egui::RichText::new(text).small());
+                        }
+                    });
+                ui.label("It is one log entry: undo brings everything back.");
+                ui.horizontal(|ui| {
+                    if ui
+                        .button("Spread only")
+                        .on_hover_text("Its points stay (bare points on the span)")
+                        .clicked()
+                    {
+                        chosen = Some(Some((Vec::new(), vec![*k])));
+                    }
+                    if ui
+                        .add_enabled(!free.is_empty(), egui::Button::new("Spread and its points"))
+                        .on_hover_text(format!(
+                            "Its points deleted too: {} (a point that holds an object or is \
+                             used by something else stays)",
+                            free.join(", ")
+                        ))
+                        .on_disabled_hover_text(
+                            "Both its points hold an object or are used by something else",
+                        )
+                        .clicked()
+                    {
+                        chosen = Some(Some((free.clone(), vec![*k])));
+                    }
+                    if ui.button("Cancel").clicked() {
+                        chosen = Some(None);
+                    }
+                });
+            });
+        }
+        (None, Some(p)) => {
+            let spreads = sec.spreads_at(p);
+            let spacers: Vec<String> = line
+                .spacers
+                .iter()
+                .filter(|x| {
+                    [&x.a, &x.b]
+                        .iter()
+                        .any(|e| e.section == section && &e.point == p)
+                })
+                .map(|x| x.id.clone())
+                .collect();
+            tool_window(r, "spread-delete", format!("Delete span point {p}?")).show(ctx, |ui| {
+                ui.label(format!(
+                    "Span point {p} of section {section} ends {} spread(s): a spread needs both \
+                     its points. Delete the point and the whole spread(s)?",
+                    spreads.len()
+                ));
+                ui.label("This also deletes:");
+                egui::ScrollArea::vertical()
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        for k in &spreads {
+                            ui.label(
+                                egui::RichText::new(format!("  spread {}", spread_text(*k)))
+                                    .small(),
+                            );
+                        }
+                        for x in &spacers {
+                            ui.label(egui::RichText::new(format!("  spacer {x}")).small());
+                        }
+                    });
+                ui.label(
+                    "Their other points stay. It is one log entry: undo brings everything back.",
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("Delete the point and its spreads").clicked() {
+                        chosen = Some(Some((vec![p.clone()], spreads.clone())));
+                    }
+                    if ui.button("Cancel").clicked() {
+                        chosen = Some(None);
+                    }
+                });
+            });
+        }
+        (None, None) => {
+            r.spread_delete = None;
+            return;
+        }
+    }
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        chosen = Some(None);
+    }
+    match chosen {
+        Some(Some((points, spreads))) => {
+            r.spread_delete = None;
+            if let Some(action) = span_delete_action(&line, &section, &points, &spreads) {
+                r.perform(action);
+            }
+        }
+        Some(None) => r.spread_delete = None,
+        None => {}
+    }
+}
+
 /// The "Move structure" window: E, N, z (or on the ground), previewed
 /// live; Apply (Enter) moves it with one command, Cancel (Escape) puts it
 /// back.
@@ -6562,8 +6878,9 @@ fn run_command(
         }
         Command::ClearSelection => r.select(Selection::None),
         Command::DeleteSelected => {
-            if editable && let Some(a) = delete_action(&r.model.line, &r.selection) {
-                r.perform(a);
+            if editable {
+                let target = r.selection.clone();
+                r.delete_object(&target);
             }
         }
         Command::GoTo => {

@@ -1992,6 +1992,7 @@ impl Section {
             to: ends[1].clone(),
             type_id: None,
             load: l.load,
+            per_subconductor: false,
         });
     }
 
@@ -2018,23 +2019,37 @@ impl Section {
             .filter_map(|p| p.object.as_ref().map(|o| (p, o)))
     }
 
-    /// Its spread objects as loads between the places of their points
-    /// (those whose points are not on one span left out: the validation
-    /// refuses them).
+    /// Its spread objects as loads between the places of their points,
+    /// each on the whole bundle ([`SpreadObject::bundle_load`]: a load
+    /// on each subconductor times the bundle); those whose points are not
+    /// on one span left out (the validation refuses them).
     pub fn spread_loads(&self) -> Vec<objects::SpreadStretch> {
         self.spreads
             .iter()
-            .filter_map(|s| {
+            .enumerate()
+            .filter_map(|(index, s)| {
                 let p = |l: &str| self.span_points.iter().find(|p| p.label == l);
                 let (a, b) = (p(&s.from)?, p(&s.to)?);
                 (a.span == b.span).then(|| objects::SpreadStretch {
                     span: a.span,
                     start: a.at,
                     end: b.at,
-                    load: s.load,
+                    load: s.bundle_load(self.bundle),
                     label: s.label.clone(),
+                    index,
                 })
             })
+            .collect()
+    }
+
+    /// The indices of its spread objects starting or ending at point
+    /// `label`.
+    pub fn spreads_at(&self, label: &str) -> Vec<usize> {
+        self.spreads
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.from == label || s.to == label)
+            .map(|(k, _)| k)
             .collect()
     }
 }

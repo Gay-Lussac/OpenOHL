@@ -317,7 +317,7 @@ once resolved every structure is checked in full (`check_strings`).
 | `points` | `[SectionPoint]` | — | attachment points in line order; first and last are strain points | structure id + set |
 | `stringing` | `Stringing` | — | how it is strung (below) | — |
 | `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place — `fraction` (horizontal, from the back point), `distance` (m) or `station` (m, of the line along the alignment both structures stand on, turned into a fraction when solved, `Line::section_with_fractions`; with no alignment through both, at the back point) — one of them, `{"distance": 30}` (`SpanPlace` enum; files before version 5 giving several are read with a station over a distance over the fraction), each with its `object` (one per point: a body or a clamp, `objects::LineObject`) or bare (a spread's end); nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers and spreads name them |
-| `spreads` | `[SpreadObject]` | N/m | objects spread between two points of one span: `from`, `to` (point labels), `type` (library id), `load` (downward, N/m of conductor, whole bundle); on the wire pieces they cover (FE) | point labels |
+| `spreads` | `[SpreadObject]` | N/m | objects spread between two points of one span: `from`, `to` (point labels), `type` (library id), `load` (downward, N/m of conductor: the whole bundle's, shared by its subconductors), `per_subconductor` (optional, default false, written only when true: `load` is on each subconductor, the bundle carrying `load` × `bundle`, `SpreadObject::bundle_load`); on the wire pieces they cover (FE; `Section::spread_loads` gives each as the whole bundle's, the model of one subconductor takes its share) | point labels |
 | `color` | string? | — | `#rrggbb`, overrides the phase colour | — |
 | `calculation` | `Calculation` | — | `{condition, method}` (`condition::Condition` × `Method`), written by its name: condition and method joined (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
 
@@ -345,7 +345,11 @@ structure default the jumper's `from`) or `{"string": {"point", "length",
 "weight"}}` (one tension-only string from a fixed point). Loads in a case (`LineObject::forces`): weight,
 the wire's radial ice on its surface (a sphere's shell; a layer on the
 other shapes' surfaces), the wind on its iced projected area across the
-line, times its drag.
+line, times its drag. A clamp's shape is drawn as given — a cylinder
+across the line on a bundle joining its subconductors (drawn only) — and
+takes wind and ice as a body's of that shape and size; without a shape
+(`point`) it is drawn as a short cylinder along the wire, its
+`clamp_length`, and takes no wind nor ice.
 
 Older files (and OLS XML `<load>`, `<spread_load>`) gave point loads
 (`loads`: `legacy::SpanLoad` — `span`, place, `vertical`, `label`, `diameter`,
@@ -360,7 +364,8 @@ between them; written in the new form.
 `ols-point-spread-loads`, version 1 (`objects::ObjectLibrary`): `name`
 and `[[type]]`s — `id`, `name`, `description`, `kind` (`body`, `clamp`,
 `spread`), `weight`, the shape as on objects, `drag`, `clamp_length`, a
-spread type's `load` (N/m); sizes, weights, lengths and loads with their
+spread type's `load` (N/m) and `per_subconductor` (optional, spread types
+only: its load on each subconductor); sizes, weights, lengths and loads with their
 unit (`"600 mm"`, `"70 N"`, `"12.5 N/m"`) or plain SI numbers. Shipped templates (typical values, to check):
 `libraries/objects/templates.olsload`. A project's own types are a project library file
 of kind `objects` (`project.olsload`), over the templates of the same
@@ -503,7 +508,7 @@ of it is one log entry, undone together.
 | Structure | its own items; every **section** through it (and their spacers); every **jumper** at it, held by its strings (a support), or at a point of those sections, and the jumpers on **taps** of those sections (and those hanging on them); alignment points tied to it are **detached** (they stay in place) |
 | Wire point with a set (`delete_attachment`) | its strings and the set-less wire points only it uses (own items removed; a type's items added to `omit_sets`); the sections through it (and their spacers); the jumpers at it or at those sections, and those on taps of those sections (as for a structure) |
 | Section | its spacers; the jumpers at any of its points; the jumpers on taps on its span points, and those hanging on them (`jumpers_hanging`, those hanging first) |
-| Span point, jumper point | edited inside its section / jumper (a `put`): a point a spacer, spread or tap uses cannot be removed alone (validation refuses; the table takes them with it); relabelled with `rename_point` (`Line::relabel_point`: its spreads, spacers and taps follow; the Span points table uses it too) |
+| Span point, jumper point | edited inside its section / jumper (a `put`): a point a spacer, spread or tap uses cannot be removed alone (validation refuses; the table takes them with it; the app's Delete asks for a spread's end whether to delete its whole spread, and for a spread whether to delete its bare points too); relabelled with `rename_point` (`Line::relabel_point`: its spreads, spacers and taps follow; the Span points table uses it too) |
 | Spacer | nothing else |
 | Route | its alignments on no other route; it is taken out of the alignments, points and structures that stay |
 | Alignment (also: its last point) | its points (asked first) |

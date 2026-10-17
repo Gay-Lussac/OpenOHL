@@ -416,6 +416,12 @@ const SPAN_OBJECTS: &[Column] = &[
         "a cylinder's axis: along (the wire), across (the line) or vertical",
     ),
     ("drag", 50.0, Yes, "drag coefficient (empty: 1)"),
+    (
+        "load on",
+        70.0,
+        Yes,
+        "a spread's load: on the whole bundle (bundle, empty) or on each subconductor (each)",
+    ),
 ];
 
 const LOAD_TYPES: &[Column] = &[
@@ -458,6 +464,12 @@ const LOAD_TYPES: &[Column] = &[
     ),
     ("load N/m", 70.0, Yes, "a spread type's load"),
     ("description", 200.0, Yes, "what it is"),
+    (
+        "load on",
+        70.0,
+        Yes,
+        "a spread type's load: on the whole bundle (bundle, empty) or on each subconductor (each)",
+    ),
 ];
 
 const JUMPERS: &[Column] = &[
@@ -5174,6 +5186,23 @@ fn spacer_commands<'a>(
     Ok(())
 }
 
+/// A spread's "load on" cell: on the whole bundle or each subconductor.
+fn load_on_text(per_subconductor: bool) -> String {
+    if per_subconductor { "each" } else { "bundle" }.to_owned()
+}
+
+/// A "load on" cell read: `bundle` (or empty) on the whole bundle, `each`
+/// on each subconductor.
+fn parse_load_on(text: &str) -> Result<bool, String> {
+    match text.trim().to_lowercase().as_str() {
+        "" | "bundle" | "whole bundle" => Ok(false),
+        "each" | "each subconductor" | "subconductor" => Ok(true),
+        other => Err(format!(
+            "load on \"{other}\": bundle (the whole bundle) or each (each subconductor)"
+        )),
+    }
+}
+
 /// Key of a span object: section (or jumper), kind (p: a span point, s:
 /// a spread, j: a jumper point) and index.
 fn span_object_key(on: &str, kind: char, k: usize) -> String {
@@ -5248,10 +5277,12 @@ fn span_object_rows(model: &Model) -> Vec<Row> {
                span: String,
                select: Selection,
                head: [String; 4],
-               o: [String; 7]| {
+               o: [String; 7],
+               load_on: String| {
         let mut cells = vec![on.to_owned(), span];
         cells.extend(head);
         cells.extend(o);
+        cells.push(load_on);
         Row {
             defaulted: Vec::new(),
             key: span_object_key(on, kind, k),
@@ -5277,6 +5308,7 @@ fn span_object_rows(model: &Model) -> Vec<Row> {
                     String::new(),
                 ],
                 object_cells(p.object.as_ref()),
+                String::new(),
             ));
         }
         for (k, l) in s.spreads.iter().enumerate() {
@@ -5292,9 +5324,9 @@ fn span_object_rows(model: &Model) -> Vec<Row> {
                 's',
                 k,
                 (span + 1).to_string(),
-                Selection::Span {
+                Selection::Spread {
                     section: s.id.clone(),
-                    span,
+                    index: k,
                 },
                 [
                     format!(
@@ -5306,6 +5338,7 @@ fn span_object_rows(model: &Model) -> Vec<Row> {
                     l.to.clone(),
                 ],
                 o,
+                load_on_text(l.per_subconductor),
             ));
         }
     }
@@ -5327,6 +5360,7 @@ fn span_object_rows(model: &Model) -> Vec<Row> {
                     String::new(),
                 ],
                 object_cells(p.object.as_ref()),
+                String::new(),
             ));
         }
     }
@@ -5523,10 +5557,12 @@ fn span_object_commands<'a>(
                 l.from = c.get(4).trim().to_owned();
                 l.to = c.get(5).trim().to_owned();
                 let load = num(&c.get(6), &format!("{name} load"))?;
-                if load != l.load {
+                let each = parse_load_on(&c.get(13)).map_err(|e| format!("{name}: {e}"))?;
+                if load != l.load || each != l.per_subconductor {
                     l.type_id = None;
                 }
                 l.load = load;
+                l.per_subconductor = each;
             }
         }
     }
@@ -5759,6 +5795,11 @@ fn load_type_rows(model: &Model) -> Vec<Row> {
             cells.push(t.clamp_length.map_or(String::new(), |l| f(l, 3)));
             cells.push(t.load.map_or(String::new(), |l| f(l, 2)));
             cells.push(t.description.clone());
+            cells.push(if t.kind == ols_line::TypeKind::Spread {
+                load_on_text(t.per_subconductor)
+            } else {
+                String::new()
+            });
             Row {
                 defaulted: Vec::new(),
                 key: t.id.clone(),
@@ -5815,6 +5856,8 @@ fn load_type_from_cells(c: &Cells, id: &str) -> Result<ols_line::ObjectType, Str
         } else {
             None
         },
+        per_subconductor: kind == ols_line::TypeKind::Spread
+            && parse_load_on(&c.get(14)).map_err(|e| format!("type {id}: {e}"))?,
     })
 }
 
