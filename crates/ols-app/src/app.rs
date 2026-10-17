@@ -280,6 +280,9 @@ pub struct Ready {
     pub bimetallic_window: Option<ols_cables::BimetallicModel>,
     /// Criteria › Calculation options (a draft while open).
     pub solver_window: Option<ols_line::SolverOptions>,
+    /// A jumper joining two different circuits, waiting for the user
+    /// ([`crate::circuit_join`]).
+    pub circuit_join: Option<crate::circuit_join::CircuitJoin>,
     /// Criteria › Default values: the values being changed, and what the
     /// last export or import said (an error: true).
     pub defaults_window: Option<(ols_line::Defaults, Option<(String, bool)>)>,
@@ -389,6 +392,7 @@ impl Ready {
             creep_stretch_window: None,
             bimetallic_window: None,
             solver_window: None,
+            circuit_join: None,
             defaults_window: None,
             crs: Default::default(),
             backgrounds: Default::default(),
@@ -1603,20 +1607,9 @@ impl Ready {
                             ols_line::JumperEnd::tap(tap.clone()),
                         ) {
                             Ok(j) => {
-                                let id = j.id.clone();
-                                if self.perform(crate::edit::Action::Command {
-                                    what: format!("added jumper {id} on the tap {}", tap.text()),
-                                    command: ols_session::Command::Put {
-                                        kind: ols_session::Kind::Jumper,
-                                        id: id.clone(),
-                                        value: serde_json::to_value(&j).expect("a jumper"),
-                                        ord: None,
-                                    },
-                                }) {
-                                    self.select(Selection::Jumper(id.clone()));
-                                    self.editor = crate::editors::JumperForm::of(&self.model, &id)
-                                        .map(|f| Form::Jumper(Box::new(f)));
-                                }
+                                let what =
+                                    format!("added jumper {} on the tap {}", j.id, tap.text());
+                                self.add_jumper(j, what, true);
                             }
                             Err(e) => self.status = Some((e, true)),
                         }
@@ -1634,20 +1627,8 @@ impl Ready {
                     ols_line::JumperEnd::Wire(p),
                 ) {
                     Ok(j) => {
-                        let id = j.id.clone();
-                        if self.perform(crate::edit::Action::Command {
-                            what: format!("added jumper {id} from the tap {}", tap.text()),
-                            command: ols_session::Command::Put {
-                                kind: ols_session::Kind::Jumper,
-                                id: id.clone(),
-                                value: serde_json::to_value(&j).expect("a jumper"),
-                                ord: None,
-                            },
-                        }) {
-                            self.select(Selection::Jumper(id.clone()));
-                            self.editor = crate::editors::JumperForm::of(&self.model, &id)
-                                .map(|f| Form::Jumper(Box::new(f)));
-                        }
+                        let what = format!("added jumper {} from the tap {}", j.id, tap.text());
+                        self.add_jumper(j, what, true);
                     }
                     Err(e) => self.status = Some((e, true)),
                 }
@@ -1690,42 +1671,21 @@ impl Ready {
                         let via = std::mem::take(&mut self.jumper_via);
                         match crate::editors::new_jumper_through(model, &from, &p, &via) {
                             Ok(j) => {
-                                let id = j.id.clone();
-                                if self.perform(crate::edit::Action::Command {
-                                    what: format!(
-                                        "added jumper {id} through {} suspension strings",
-                                        via.len()
-                                    ),
-                                    command: ols_session::Command::Put {
-                                        kind: ols_session::Kind::Jumper,
-                                        id: id.clone(),
-                                        value: serde_json::to_value(&j).expect("a jumper"),
-                                        ord: None,
-                                    },
-                                }) {
-                                    self.select(Selection::Jumper(id.clone()));
-                                    // Its window: the lengths between its clamps.
-                                    self.editor = crate::editors::JumperForm::of(&self.model, &id)
-                                        .map(|f| Form::Jumper(Box::new(f)));
-                                }
+                                let what = format!(
+                                    "added jumper {} through {} suspension strings",
+                                    j.id,
+                                    via.len()
+                                );
+                                // Its window: the lengths between its clamps.
+                                self.add_jumper(j, what, true);
                             }
                             Err(e) => self.status = Some((e, true)),
                         }
                     }
                     Some(from) => match crate::editors::new_jumper(model, &from, &p, &[]) {
                         Ok(j) => {
-                            let id = j.id.clone();
-                            if self.perform(crate::edit::Action::Command {
-                                what: format!("added jumper {id}"),
-                                command: ols_session::Command::Put {
-                                    kind: ols_session::Kind::Jumper,
-                                    id: id.clone(),
-                                    value: serde_json::to_value(&j).expect("a jumper"),
-                                    ord: None,
-                                },
-                            }) {
-                                self.select(Selection::Jumper(id));
-                            }
+                            let what = format!("added jumper {}", j.id);
+                            self.add_jumper(j, what, false);
                         }
                         Err(e) => self.status = Some((e, true)),
                     },
@@ -2947,6 +2907,48 @@ impl Ready {
         }
     }
 
+    /// Adds jumper `j` (`what`: the change in words; `open_editor`: its
+    /// window after). A jumper between two different circuits waits for
+    /// the user first ([`crate::circuit_join`]).
+    pub fn add_jumper(&mut self, j: ols_line::Jumper, what: String, open_editor: bool) {
+        if let Some(join) =
+            crate::circuit_join::CircuitJoin::check(&self.model, &j, &what, open_editor)
+        {
+            self.status = Some((
+                format!(
+                    "Add jumper: {} joins two different circuits — choose in the window",
+                    j.id
+                ),
+                false,
+            ));
+            self.circuit_join = Some(join);
+            return;
+        }
+        let id = j.id.clone();
+        let command = ols_session::Command::Put {
+            kind: ols_session::Kind::Jumper,
+            id: id.clone(),
+            value: serde_json::to_value(&j).expect("a jumper"),
+            ord: None,
+        };
+        self.jumper_added(
+            id,
+            crate::edit::Action::Command { what, command },
+            open_editor,
+        );
+    }
+
+    /// Performs the adding of jumper `id`, selects it, opens its window.
+    fn jumper_added(&mut self, id: String, action: crate::edit::Action, open_editor: bool) {
+        if self.perform(action) {
+            self.select(Selection::Jumper(id.clone()));
+            if open_editor {
+                self.editor = crate::editors::JumperForm::of(&self.model, &id)
+                    .map(|f| crate::editors::Form::Jumper(Box::new(f)));
+            }
+        }
+    }
+
     pub fn perform(&mut self, action: crate::edit::Action) -> bool {
         use crate::edit::Action;
         // The strings an edit puts without a library label are taken into
@@ -3935,6 +3937,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     creep_stretch_window(ctx, r);
     bimetallic_window(ctx, r);
     solver_window(ctx, r);
+    circuit_join_window(ctx, r);
     defaults_window(ctx, r);
     crs_windows(ctx, r);
     if r.backgrounds.show(ctx, &r.model) {
@@ -4512,6 +4515,33 @@ fn defaults_window(ctx: &egui::Context, r: &mut Ready) {
     }
     if open && !ok && !cancel {
         r.defaults_window = Some((draft, message));
+    }
+}
+
+/// A jumper joining two different circuits: the user is told, compares
+/// them and chooses the one that stays ([`crate::circuit_join`]).
+fn circuit_join_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(mut join) = r.circuit_join.take() else {
+        return;
+    };
+    match crate::circuit_join::window(ctx, &mut join) {
+        crate::circuit_join::Outcome::Open => r.circuit_join = Some(join),
+        crate::circuit_join::Outcome::Cancel => {
+            r.status = Some((
+                format!("Add jumper {}: cancelled, nothing changed", join.jumper.id),
+                false,
+            ));
+        }
+        crate::circuit_join::Outcome::Join => match join.command(&r.model) {
+            Ok(command) => {
+                let action = crate::edit::Action::Command {
+                    what: join.what(),
+                    command,
+                };
+                r.jumper_added(join.jumper.id.clone(), action, join.open_editor);
+            }
+            Err(e) => r.status = Some((e, true)),
+        },
     }
 }
 

@@ -22,6 +22,7 @@ mod backgrounds;
 mod bom;
 mod check_library;
 mod chunks;
+mod circuit_join;
 mod class_colors;
 mod clearance;
 mod clearance_zones;
