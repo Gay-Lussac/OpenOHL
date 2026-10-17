@@ -522,6 +522,7 @@ fn write_section(out: &mut String, s: &Section) {
             to,
             type_id,
             load,
+            per_subconductor,
         } = s;
         out.push_str("    <spread");
         nonempty(out, "label", label);
@@ -529,6 +530,9 @@ fn write_section(out: &mut String, s: &Section) {
         attr(out, "to", to);
         opt_text(out, "type", type_id.as_deref());
         attr(out, "load", &num(*load));
+        if *per_subconductor {
+            attr(out, "per_subconductor", "true");
+        }
         out.push_str("/>\n");
     }
     write_fields(out, fields);
@@ -1418,13 +1422,24 @@ fn read_section(e: &Element) -> Result<Section, String> {
         spreads: e
             .children_named("spread")
             .map(|s| {
-                check(s, &["label", "from", "to", "type", "load"], &[])?;
+                check(
+                    s,
+                    &["label", "from", "to", "type", "load", "per_subconductor"],
+                    &[],
+                )?;
                 Ok(ols_line::SpreadObject {
                     label: owned(s, "label").unwrap_or_default(),
                     from: text(s, "from")?.to_owned(),
                     to: text(s, "to")?.to_owned(),
                     type_id: owned(s, "type"),
                     load: number(s, "load")?,
+                    per_subconductor: match s.attr("per_subconductor") {
+                        None | Some("false") | Some("0") => false,
+                        Some("true") | Some("1") => true,
+                        Some(o) => {
+                            return Err(format!("per_subconductor=\"{o}\": true or false"));
+                        }
+                    },
                 })
             })
             .collect::<Result<_, String>>()?,

@@ -491,7 +491,9 @@
                 <xs:annotation>
                   <xs:documentation>An object spread between two points of one
                     span (from, to: their labels): downward, N per metre of
-                    conductor (the whole bundle's).</xs:documentation>
+                    conductor — the whole bundle's, or each subconductor's
+                    when per_subconductor (the bundle carrying load ×
+                    bundle).</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="label" type="xs:string"/>
@@ -499,6 +501,7 @@
                   <xs:attribute name="to" type="xs:string" use="required"/>
                   <xs:attribute name="type" type="xs:string"/>
                   <xs:attribute name="load" type="xs:double" use="required"/>
+                  <xs:attribute name="per_subconductor" type="xs:boolean" default="false"/>
                 </xs:complexType>
               </xs:element>
               <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>

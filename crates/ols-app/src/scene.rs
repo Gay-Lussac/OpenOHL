@@ -480,15 +480,8 @@ pub fn wires(
             };
             // Spread objects: the stretch of wire they lie on.
             let spread = tint.unwrap_or(BALL_COLOR);
-            for l in def.iter().flat_map(|sec| sec.spread_loads()) {
-                let Some(points) = shape.spans.get(l.span).map(|sp| &sp.points) else {
-                    continue;
-                };
-                let h = plan_length(points);
-                let stretch = between(points, l.start.fraction_of(h), l.end.fraction_of(h));
-                if stretch.len() > 1 {
-                    out.push(Prim::new(stretch[0], stretch, rgba(spread, alpha), 5.0).at(0, 1));
-                }
+            for (_, stretch) in def.iter().flat_map(|sec| spreads_drawn(sec, shape)) {
+                out.push(Prim::new(stretch[0], stretch, rgba(spread, alpha), 5.0).at(0, 1));
             }
             // Span points (as solved, else where they are given): their
             // bodies to size (a ball as big as the body), clamps in
@@ -505,11 +498,23 @@ pub fn wires(
                 let Some(at) = at else {
                     continue;
                 };
-                let along = shape
-                    .spans
-                    .get(p.span)
-                    .map_or([1.0, 0.0], |sp| chord_direction(&sp.points));
-                draw_point(out, at, along, p.object.as_ref(), [dot, steel, ball], alpha);
+                let points = shape.spans.get(p.span).map(|sp| sp.points.as_slice());
+                let along = points.map_or([1.0, 0.0], chord_direction);
+                // Its subconductors there (a clamp across a bundle joins
+                // them).
+                let subs = match (def.as_ref(), points) {
+                    (Some(sec), Some(points)) => subconductors_at(sec, points, at),
+                    _ => Vec::new(),
+                };
+                draw_point(
+                    out,
+                    at,
+                    along,
+                    p.object.as_ref(),
+                    &subs,
+                    [dot, steel, ball],
+                    alpha,
+                );
             }
             // The spacers it holds, red beyond their compression limit.
             for x in &shape.spacers {
@@ -552,6 +557,7 @@ pub fn wires(
                     *at,
                     chord_direction(&j.points),
                     object,
+                    &[],
                     [
                         tint.unwrap_or(SPAN_POINT_COLOR),
                         steel,
@@ -616,14 +622,147 @@ fn drawn_copies<'a>(
         .collect()
 }
 
+/// The spread objects of section `sec` (its places resolved,
+/// [`ols_line::Line::section_with_fractions`]) on its solved `shape`: each
+/// one's index and the stretch of wire it lies on.
+pub fn spreads_drawn(
+    sec: &ols_line::Section,
+    shape: &ols_line::solve::SectionShape,
+) -> Vec<(usize, Vec<[f64; 3]>)> {
+    sec.spread_loads()
+        .into_iter()
+        .filter_map(|l| {
+            let points = &shape.spans.get(l.span)?.points;
+            let h = plan_length(points);
+            let stretch = between(points, l.start.fraction_of(h), l.end.fraction_of(h));
+            (stretch.len() > 1).then_some((l.index, stretch))
+        })
+        .collect()
+}
+
+/// Where the subconductors of section `sec`'s bundle are at the point
+/// `at` of a span's centre line `points` (none for a single wire or a
+/// bundle without a spacing): around it in the plane across the wire
+/// there ([`ols_line::Section::bundle_offsets`]).
+pub fn subconductors_at(
+    sec: &ols_line::Section,
+    points: &[[f64; 3]],
+    at: [f64; 3],
+) -> Vec<[f64; 3]> {
+    let offsets = sec.bundle_offsets();
+    if offsets.len() < 2 {
+        return Vec::new();
+    }
+    // The wire's direction there: the piece nearest to it.
+    let near = points.windows(2).min_by(|a, b| {
+        let d = |w: &[[f64; 3]]| {
+            let m = [0, 1, 2].map(|k| 0.5 * (w[0][k] + w[1][k]) - at[k]);
+            m[0] * m[0] + m[1] * m[1] + m[2] * m[2]
+        };
+        d(a).total_cmp(&d(b))
+    });
+    let Some(w) = near else {
+        return Vec::new();
+    };
+    offsets
+        .into_iter()
+        .map(|o| ols_line::bundle_point(at, w[0], w[1], o))
+        .collect()
+}
+
+/// A rod of diameter `d` from `a` to `b` (12 sides, its ends closed) as
+/// triangles facing out.
+pub fn rod_mesh(a: [f64; 3], b: [f64; 3], d: f64) -> Vec<[f64; 3]> {
+    use std::f64::consts::PI;
+    let v = [0, 1, 2].map(|k| b[k] - a[k]);
+    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if len <= 0.0 || d <= 0.0 {
+        return Vec::new();
+    }
+    let u = v.map(|x| x / len);
+    let cross = |x: [f64; 3], y: [f64; 3]| {
+        [
+            x[1] * y[2] - x[2] * y[1],
+            x[2] * y[0] - x[0] * y[2],
+            x[0] * y[1] - x[1] * y[0],
+        ]
+    };
+    // p, q across it, p × q = u: the rings wound to face out.
+    let p = {
+        let c = cross(u, [0.0, 0.0, 1.0]);
+        let n = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
+        if n > 1e-9 {
+            c.map(|x| x / n)
+        } else {
+            [1.0, 0.0, 0.0]
+        }
+    };
+    let q = cross(u, p);
+    let r = d / 2.0;
+    let n = 12;
+    let ring = |c: [f64; 3], i: usize| {
+        let t = 2.0 * PI * i as f64 / n as f64;
+        [0, 1, 2].map(|k| c[k] + r * (t.cos() * p[k] + t.sin() * q[k]))
+    };
+    let mut t = Vec::new();
+    for i in 0..n {
+        let (a0, a1, b0, b1) = (ring(a, i), ring(a, i + 1), ring(b, i), ring(b, i + 1));
+        t.extend([a0, a1, b1, a0, b1, b0]);
+        t.extend([a, a1, a0]);
+        t.extend([b, b0, b1]);
+    }
+    t
+}
+
+/// A clamp's solid: its own shape when given; a cylinder across the line
+/// on a bundle (`subs`: its subconductors there) bars joining the
+/// subconductors, as it holds them all (a ring of them for three or more);
+/// else a short cylinder along the wire, its clamp length. Drawn only: its
+/// forces take its shape as given ([`ols_line::LineObject::forces`]).
+fn clamp_mesh(
+    o: &ols_line::LineObject,
+    at: [f64; 3],
+    along: [f64; 2],
+    subs: &[[f64; 3]],
+) -> Vec<[f64; 3]> {
+    if let ols_line::Shape::Cylinder {
+        diameter,
+        axis: ols_line::Axis::Across,
+        ..
+    } = o.shape
+        && subs.len() >= 2
+        && diameter > 0.0
+    {
+        let edges = if subs.len() == 2 { 1 } else { subs.len() };
+        return (0..edges)
+            .flat_map(|k| rod_mesh(subs[k], subs[(k + 1) % subs.len()], diameter))
+            .collect();
+    }
+    let own = body_mesh(&o.shape, at, along);
+    if !own.is_empty() {
+        return own;
+    }
+    body_mesh(
+        &ols_line::Shape::Cylinder {
+            diameter: 0.12,
+            length: o.clamp_length.unwrap_or(0.2).max(0.1),
+            axis: ols_line::Axis::Along,
+        },
+        at,
+        along,
+    )
+}
+
 /// A point on a wire at `at`, by its object: a body to its shape and size
-/// (none without a size), a clamp a short steel cylinder, a bare point a
-/// small cross marker — a mark, not a body (`colors`: bare, clamp, body).
+/// (none without a size), a clamp in steel ([`clamp_mesh`]; `subs`: the
+/// subconductors there, on a bundle), a bare point a small cross marker —
+/// a mark, not a body (`colors`: bare, clamp, body).
 fn draw_point(
     out: &mut Vec<Prim>,
     at: [f64; 3],
     along: [f64; 2],
     object: Option<&ols_line::LineObject>,
+    subs: &[[f64; 3]],
     colors: [[u8; 3]; 3],
     alpha: u8,
 ) {
@@ -650,19 +789,11 @@ fn draw_point(
             }
             return;
         }
-        // A clamp: a short steel cylinder along the wire.
-        Some(o) if o.kind == ols_line::ObjectKind::Clamp => (
-            body_mesh(
-                &ols_line::Shape::Cylinder {
-                    diameter: 0.12,
-                    length: o.clamp_length.unwrap_or(0.2).max(0.1),
-                    axis: ols_line::Axis::Along,
-                },
-                at,
-                along,
-            ),
-            colors[1],
-        ),
+        // A clamp: steel, its own shape or a short cylinder along the
+        // wire.
+        Some(o) if o.kind == ols_line::ObjectKind::Clamp => {
+            (clamp_mesh(o, at, along, subs), colors[1])
+        }
         Some(o) => (body_mesh(&o.shape, at, along), colors[2]),
     };
     if triangles.is_empty() {
@@ -897,6 +1028,73 @@ fn spheres_face_out_and_are_lit_from_above() {
         .unwrap();
     let c = [200, 100, 50, 255];
     assert!(lit(top, c)[0] > lit(bottom, c)[0]);
+}
+
+/// A clamp as drawn: without a shape a short cylinder along the wire; its
+/// own cylinder across the line alone as given, on a bundle joining the
+/// subconductors (a ring of bars on three); a rod's triangles face out.
+#[cfg(test)]
+#[test]
+fn clamps_are_drawn_to_their_shape_and_across_a_bundle() {
+    let extent = |t: &[[f64; 3]], k: usize| {
+        let (lo, hi) = t.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+            (lo.min(p[k]), hi.max(p[k]))
+        });
+        hi - lo
+    };
+    let at = [0.0, 0.0, 10.0];
+    let along = [1.0, 0.0];
+    // No shape: along (x here), its clamp length.
+    let mut clamp = ols_line::LineObject::clamp(20.0);
+    clamp.clamp_length = Some(0.25);
+    let plain = clamp_mesh(&clamp, at, along, &[]);
+    assert!((extent(&plain, 0) - 0.25).abs() < 1e-9);
+    // Its own cylinder across (y): its length.
+    clamp.shape = ols_line::Shape::Cylinder {
+        diameter: 0.06,
+        length: 0.3,
+        axis: ols_line::Axis::Across,
+    };
+    let own = clamp_mesh(&clamp, at, along, &[]);
+    assert!((extent(&own, 1) - 0.3).abs() < 1e-9 && extent(&own, 0) < 0.07);
+    // A 2-bundle 0.4 m apart: one bar between its subconductors.
+    let line = ols_line::Line::load(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+    )
+    .unwrap();
+    let mut sec = line.sections[0].clone();
+    (sec.bundle, sec.bundle_spacing, sec.bundle_rotation_deg) = (2, Some(0.4), None);
+    let wire = [[-50.0, 0.0, 10.0], [50.0, 0.0, 10.0]];
+    let subs = subconductors_at(&sec, &wire, at);
+    assert_eq!(subs.len(), 2);
+    let d = [0, 1, 2].map(|k| subs[1][k] - subs[0][k]);
+    assert!(((d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() - 0.4).abs() < 1e-9);
+    let bar = clamp_mesh(&clamp, at, along, &subs);
+    assert!(
+        (extent(&bar, 1) - 0.4).abs() < 1e-6 && extent(&bar, 0) < 0.07,
+        "{}",
+        extent(&bar, 1)
+    );
+    // A 3-bundle: three bars, a ring through its subconductors.
+    sec.bundle = 3;
+    let subs = subconductors_at(&sec, &wire, at);
+    assert_eq!(clamp_mesh(&clamp, at, along, &subs).len(), 3 * bar.len());
+    // A single wire: no subconductors, the cylinder as given.
+    (sec.bundle, sec.bundle_spacing) = (1, None);
+    assert!(subconductors_at(&sec, &wire, at).is_empty());
+    // A rod's triangles face away from its axis.
+    for t in rod_mesh([0.0; 3], [0.0, 0.0, 1.0], 0.2).as_chunks::<3>().0 {
+        let u = [0, 1, 2].map(|k| t[1][k] - t[0][k]);
+        let v = [0, 1, 2].map(|k| t[2][k] - t[0][k]);
+        let n = [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ];
+        let c = [0, 1, 2].map(|k| (t[0][k] + t[1][k] + t[2][k]) / 3.0 - [0.0, 0.0, 0.5][k]);
+        assert!((0..3).map(|k| n[k] * c[k]).sum::<f64>() > 0.0);
+    }
 }
 
 /// A filled triangle's shade: its colour lit from the north-west, above,
@@ -1285,6 +1483,32 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                             continue;
                         };
                         s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
+                    }
+                }
+                Selection::Spread { section, index } => {
+                    // Its stretch in every case its section is drawn in
+                    // (both wind sides), the copy clicked the strongest.
+                    let strong = model.selection_case.unwrap_or(case);
+                    let def = line
+                        .sections
+                        .iter()
+                        .find(|x| x.id == *section)
+                        .map(|x| line.section_with_fractions(x));
+                    for (k, solved) in drawn_copies(model, section, case) {
+                        let Some(stretch) = def.as_ref().and_then(|def| {
+                            let shape = solved.shapes.iter().find(|x| x.section == *section)?;
+                            spreads_drawn(def, shape)
+                                .into_iter()
+                                .find(|(i, _)| i == index)
+                                .map(|(_, s)| s)
+                        }) else {
+                            continue;
+                        };
+                        let main = k == strong;
+                        s.polyline(&stretch, hi, if main { 6.0 } else { 3.0 });
+                        for p in [stretch[0], stretch[stretch.len() - 1]] {
+                            s.point(p, hi, if main { 9.0 } else { 6.0 });
+                        }
                     }
                 }
                 Selection::JumperPoint { jumper, label } => {

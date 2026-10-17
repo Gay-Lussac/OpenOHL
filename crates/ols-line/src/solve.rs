@@ -4303,6 +4303,40 @@ mod span_tests {
             span.sag
         );
     }
+
+    /// A spread on each subconductor of a 2-bundle carries twice the load
+    /// of one on the whole bundle: it hangs as a whole-bundle spread of
+    /// twice the load, lower than the one of the same load.
+    #[test]
+    fn a_spread_on_each_subconductor_carries_the_bundle_times_its_load() {
+        let lib = library();
+        let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let mut base = crate::tests::example();
+        base.jumpers.clear();
+        base.sections[0].bundle = 2;
+        base.sections[0].bundle_spacing = Some(0.4);
+        let with = |load: f64, per_subconductor: bool| {
+            let mut l = base.clone();
+            l.sections[0].add_spread_load(&crate::legacy::SpreadLoad {
+                span: 0,
+                start: crate::SpanPlace::at_fraction(0.0),
+                end: crate::SpanPlace::at_fraction(1.0),
+                load,
+                label: String::new(),
+            });
+            l.sections[0].spreads[0].per_subconductor = per_subconductor;
+            l.validate().unwrap();
+            assert_eq!(
+                l.sections[0].spread_loads()[0].load,
+                if per_subconductor { 2.0 * load } else { load }
+            );
+            solve_line(&l, &lib, &case)[0].clone().unwrap().spans[0].sag
+        };
+        let q = 20.0;
+        let (whole, each, twice) = (with(q, false), with(q, true), with(2.0 * q, false));
+        assert!(each > whole + 0.01, "{each} {whole}");
+        assert!((each - twice).abs() < 1e-6, "{each} {twice}");
+    }
 }
 
 #[cfg(test)]

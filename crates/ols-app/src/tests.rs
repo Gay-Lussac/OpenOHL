@@ -11271,6 +11271,206 @@ fn span_objects_and_wire_points_are_picked_in_any_case_drawn() {
     assert_eq!(k, Some(windy));
 }
 
+/// Spread objects: picked all along their stretch on any weather case
+/// drawn (the case of the copy clicked reported), highlighted on every
+/// copy, listed in the table (selecting the spread, its load on each
+/// subconductor said). The Delete tool asks what goes with them: a spread
+/// with its bare points, a spread alone (its points stay), and a point a
+/// spread ends on with its spreads (the clamp on the other end stays);
+/// Cancel leaves everything. The span tool puts a spread on each
+/// subconductor.
+#[test]
+fn spreads_are_picked_and_deleted_with_or_without_their_points() {
+    use crate::selection::{Snaps, pick_in_model_case};
+    use crate::span_tool::SpanWhat;
+    use crate::tables::TableKind;
+    use crate::tools::Tool;
+    let mut model = synthetic_project_with("spreads", |l| {
+        let s = &mut l.sections[0];
+        for (label, f, clamp) in [
+            ("XA", 0.4, false),
+            ("XB", 0.6, false),
+            ("XC", 0.65, true),
+            ("XD", 0.7, false),
+            ("XE", 0.75, false),
+            ("XF", 0.85, false),
+        ] {
+            s.span_points.push(ols_line::SpanPoint {
+                label: label.into(),
+                span: 0,
+                at: ols_line::SpanPlace::at_fraction(f),
+                description: String::new(),
+                object: clamp.then(|| ols_line::LineObject::clamp(20.0)),
+            });
+        }
+        for (label, from, to, each) in [
+            ("AB", "XA", "XB", false),
+            ("CD", "XC", "XD", true),
+            ("EF", "XE", "XF", false),
+        ] {
+            s.spreads.push(ols_line::SpreadObject {
+                label: label.into(),
+                from: from.into(),
+                to: to.into(),
+                load: 10.0,
+                per_subconductor: each,
+                ..Default::default()
+            });
+        }
+    });
+    model.shown_cases = vec![0, 1];
+    for k in 0..model.cases.len() {
+        model.ensure_solved(k);
+    }
+    let section = model.line.sections[0].id.clone();
+    let index = |line: &ols_line::Line, label: &str| {
+        line.sections[0]
+            .spreads
+            .iter()
+            .position(|s| s.label == label)
+    };
+    let ab = index(&model.line, "AB").unwrap();
+    let spread = |index: usize| Selection::Spread {
+        section: section.clone(),
+        index,
+    };
+    // Picked on its copy in the hot case (sagging lower), along its
+    // stretch.
+    let def = model.line.section_with_fractions(&model.line.sections[0]);
+    let stretch = |k: usize| {
+        let shape = model.cases[k]
+            .shapes
+            .iter()
+            .find(|s| s.section == section)
+            .unwrap();
+        crate::scene::spreads_drawn(&def, shape)
+            .into_iter()
+            .find(|(i, _)| *i == ab)
+            .unwrap()
+            .1
+    };
+    assert!(crate::selection::spread_stretch(&model, 0, &section, ab).is_some());
+    let (s0, s2) = (stretch(0), stretch(1));
+    let (m0, m2) = (s0[s0.len() / 2], s2[s2.len() / 2]);
+    assert!((m0[2] - m2[2]).abs() > 0.5, "{m0:?} {m2:?}");
+    let project = |p: [f64; 3]| Some([p[0] * 10.0, -p[2] * 10.0]);
+    let at = |p: [f64; 3]| project(p).unwrap();
+    assert_eq!(
+        pick_in_model_case(&model, 0, &Snaps::default(), at(m2), 3.0, project),
+        (spread(ab), Some(1))
+    );
+    assert_eq!(
+        pick_in_model_case(&model, 0, &Snaps::default(), at(m0), 3.0, project),
+        (spread(ab), None)
+    );
+    // Highlighted on every copy drawn: its stretch and its ends.
+    let hi = crate::scene::layer(&model, crate::scene::Layer::Selection, 0, &spread(ab));
+    let (lines, points, _) = hi.counts();
+    assert!(lines > 0 && points >= 4, "{lines} {points}");
+    // The table's row selects it; the load on each subconductor said.
+    let rows = TableKind::SpanObjects.rows(&model, 0);
+    let cd = index(&model.line, "CD").unwrap();
+    let row = rows
+        .iter()
+        .find(|r| r.select == spread(cd))
+        .expect("a row for the spread");
+    assert_eq!(row.cells[TableKind::SpanObjects.column("load on")], "each");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // The other tools act on its span: Add on span opens there.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.hotbar.hold(Tool::OnSpan);
+        r.use_tool(crate::selection::Use {
+            target: spread(ab),
+            at: None,
+            on: None,
+        });
+        assert!(
+            matches!(&r.editor, Some(crate::editors::Form::Span(f)) if f.span == 0 && f.section == section),
+            "{:?}",
+            r.status
+        );
+        r.editor = None;
+    }
+    harness.run();
+    let line = |h: &mut Harness<'_, App>| h.state_mut().ready().unwrap().model.line.clone();
+    let has_point =
+        |l: &ols_line::Line, p: &str| l.sections[0].span_points.iter().any(|x| x.label == p);
+    // EF with its points: both bare, both go.
+    let ef = index(&line(&mut harness), "EF").unwrap();
+    use_tool(&mut harness, Tool::Delete, spread(ef), None);
+    assert!(harness.state_mut().ready().unwrap().spread_delete.is_some());
+    harness.get_by_label("Spread and its points").click();
+    harness.run();
+    {
+        let l = line(&mut harness);
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.spread_delete.is_none(), "{:?}", r.status);
+        assert!(index(&l, "EF").is_none());
+        assert!(!has_point(&l, "XE") && !has_point(&l, "XF"));
+    }
+    // AB alone: its points stay.
+    let ab = index(&line(&mut harness), "AB").unwrap();
+    use_tool(&mut harness, Tool::Delete, spread(ab), None);
+    harness.get_by_label("Spread only").click();
+    harness.run();
+    {
+        let l = line(&mut harness);
+        assert!(index(&l, "AB").is_none());
+        assert!(has_point(&l, "XA") && has_point(&l, "XB"));
+    }
+    // A point CD ends on: asked; Cancel leaves it.
+    let xd = Selection::SpanPoint {
+        section: section.clone(),
+        label: "XD".into(),
+    };
+    use_tool(&mut harness, Tool::Delete, xd.clone(), None);
+    assert!(harness.state_mut().ready().unwrap().spread_delete.is_some());
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    {
+        let l = line(&mut harness);
+        assert!(harness.state_mut().ready().unwrap().spread_delete.is_none());
+        assert!(index(&l, "CD").is_some() && has_point(&l, "XD"));
+    }
+    // As Delete selected: the point and its spread go, the clamp on the
+    // spread's other end stays.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.select(xd.clone());
+        assert!(r.delete_object(&xd));
+    }
+    harness.run();
+    harness
+        .get_by_label("Delete the point and its spreads")
+        .click();
+    harness.run();
+    {
+        let l = line(&mut harness);
+        assert!(index(&l, "CD").is_none());
+        assert!(!has_point(&l, "XD") && has_point(&l, "XC"));
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.selection, Selection::None);
+        l.validate().unwrap();
+    }
+    // The span tool: a spread on each subconductor.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut f = crate::span_tool::SpanForm::new(&r.model, r.case, &section, 0, None).unwrap();
+        f.what = SpanWhat::Spread;
+        (f.from, f.to, f.per_metre, f.per_subconductor) = (10.0, 30.0, 8.0, true);
+        r.editor = Some(crate::editors::Form::Span(f));
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let l = line(&mut harness);
+    let last = l.sections[0].spreads.last().unwrap();
+    assert!(last.per_subconductor && last.load == 8.0, "{last:?}");
+}
+
 /// Labels: several weather cases drawn give one label per section (its
 /// first case); in 3D only those within the label distance of the eye
 /// are built.

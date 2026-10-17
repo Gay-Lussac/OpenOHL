@@ -400,6 +400,89 @@ pub fn ui(
                     next = Some(Selection::Spacer(s.id.clone()));
                 }
             }
+            // The spreads it ends.
+            if let Some(sec) = line.sections.iter().find(|s| s.id == section) {
+                for k in sec.spreads_at(&label) {
+                    if ui
+                        .link(format!("spread {} (it ends here)", spread_name(sec, k)))
+                        .clicked()
+                    {
+                        next = Some(Selection::Spread {
+                            section: section.clone(),
+                            index: k,
+                        });
+                    }
+                }
+            }
+        }
+        Selection::Spread { section, index } => {
+            let Some(sec) = line.sections.iter().find(|s| s.id == section) else {
+                ui.label("Not in the line any more.");
+                return;
+            };
+            let Some(l) = sec.spreads.get(index) else {
+                ui.label("Not in the line any more.");
+                return;
+            };
+            ui.heading(format!("{section} spread {}", spread_name(sec, index)));
+            let span = sec
+                .span_points
+                .iter()
+                .find(|p| p.label == l.from)
+                .map(|p| p.span);
+            if let Some(span) = span
+                && ui.link(format!("section {section}, span {}", span + 1)).clicked()
+            {
+                next = Some(Selection::Span {
+                    section: section.clone(),
+                    span,
+                });
+            }
+            for (end, point) in [("from", &l.from), ("to", &l.to)] {
+                if ui.link(format!("{end} span point {point}")).clicked() {
+                    next = Some(Selection::SpanPoint {
+                        section: section.clone(),
+                        label: point.clone(),
+                    });
+                }
+            }
+            let bundle = sec.bundle.max(1);
+            let mut rows = vec![
+                ("load", format!("{:.2} N/m", l.load)),
+                (
+                    "on",
+                    if l.per_subconductor {
+                        "each subconductor".to_owned()
+                    } else {
+                        "the whole bundle".to_owned()
+                    },
+                ),
+                (
+                    "type",
+                    l.type_id.clone().unwrap_or_else(|| "own values".into()),
+                ),
+            ];
+            if bundle > 1 {
+                rows.push((
+                    "whole bundle",
+                    format!("{:.2} N/m ({bundle} subconductors)", l.bundle_load(bundle)),
+                ));
+            }
+            if let Some(stretch) = crate::selection::spread_stretch(model, case, &section, index) {
+                let length: f64 = stretch
+                    .windows(2)
+                    .map(|w| {
+                        let d = [0, 1, 2].map(|k| w[1][k] - w[0][k]);
+                        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                    })
+                    .sum();
+                rows.push(("length (case shown)", format!("{length:.2} m")));
+                rows.push((
+                    "load in all (case shown)",
+                    format!("{:.0} N", l.bundle_load(bundle) * length),
+                ));
+            }
+            grid(ui, "spread", &rows);
         }
         Selection::JumperPoint { jumper, label } => {
             ui.heading(format!("jumper {jumper} point {label}"));
@@ -1065,6 +1148,15 @@ fn case_name(name: &str, this: bool, clicked: bool) -> egui::RichText {
         (true, false) => egui::RichText::new(name).strong(),
         _ => egui::RichText::new(name),
     }
+}
+
+/// A spread's name: its label, else its number in the section.
+pub fn spread_name(sec: &ols_line::Section, k: usize) -> String {
+    sec.spreads
+        .get(k)
+        .map(|l| l.label.trim())
+        .filter(|l| !l.is_empty())
+        .map_or_else(|| format!("#{}", k + 1), str::to_owned)
 }
 
 /// An object's values, as rows (none: a bare point).

@@ -63,6 +63,14 @@ pub enum Selection {
         /// The span point's label.
         label: String,
     },
+    /// A spread object on a span, by its section and its index among
+    /// the section's spreads (their labels may be empty).
+    Spread {
+        /// Section id.
+        section: String,
+        /// Index in the section's spreads.
+        index: usize,
+    },
     /// An interphase spacer, by id.
     Spacer(String),
     /// A point along a jumper, by its jumper and label.
@@ -102,6 +110,12 @@ pub fn on_span(
     let points = match target {
         Selection::Span { section, span } => &model.shape(section, case)?.spans.get(*span)?.points,
         Selection::Jumper(id) => &model.jumper_shape(id, case)?.points,
+        // A spread: on the span it lies on (the tools other than Delete
+        // act on that span).
+        Selection::Spread { section, index } => {
+            let span = crate::app::spread_span(&model.line, section, *index)?;
+            &model.shape(section, case)?.spans.get(span)?.points
+        }
         _ => return None,
     };
     let mut best: Option<(f64, [f64; 3])> = None;
@@ -249,7 +263,9 @@ impl Selection {
             Selection::Span { .. } => Snap::Span,
             Selection::Attachment { .. } | Selection::String { .. } => Snap::Attachment,
             Selection::Point { .. } => Snap::Point,
-            Selection::SpanPoint { .. } | Selection::Spacer(_) => Snap::Span,
+            Selection::SpanPoint { .. } | Selection::Spread { .. } | Selection::Spacer(_) => {
+                Snap::Span
+            }
             Selection::JumperPoint { .. } => Snap::Jumper,
             Selection::AlignmentPoint { .. } => Snap::AlignmentPoint,
             Selection::LidarPoint(_) => Snap::LidarPoint,
@@ -268,6 +284,7 @@ impl Selection {
             Selection::String { structure, label } => format!("{structure} string {label}"),
             Selection::Point { structure, label } => format!("{structure} point {label}"),
             Selection::SpanPoint { section, label } => format!("{section} span point {label}"),
+            Selection::Spread { section, index } => format!("{section} spread {}", index + 1),
             Selection::Spacer(id) => format!("spacer {id}"),
             Selection::JumperPoint { jumper, label } => format!("jumper {jumper} point {label}"),
             Selection::AlignmentPoint { id } => {
@@ -334,6 +351,10 @@ impl Selection {
                 .iter()
                 .find(|(l, _)| l == label)
                 .map(|(_, p)| *p),
+            Selection::Spread { section, index } => {
+                let stretch = spread_stretch(model, case, section, *index)?;
+                Some(stretch[stretch.len() / 2])
+            }
             Selection::Spacer(id) => {
                 spacer_ends(model, case, id).map(|[a, b]| [0, 1, 2].map(|k| 0.5 * (a[k] + b[k])))
             }
@@ -341,6 +362,22 @@ impl Selection {
             Selection::LidarPoint(_) | Selection::SurveyPoint(_) => position(model, self),
         }
     }
+}
+
+/// The stretch of wire spread `index` of section `section` lies on, as
+/// solved in weather case `case`.
+pub fn spread_stretch(
+    model: &Model,
+    case: usize,
+    section: &str,
+    index: usize,
+) -> Option<Vec<[f64; 3]>> {
+    let shape = model.shape(section, case)?;
+    let sec = model.line.sections.iter().find(|s| s.id == section)?;
+    crate::scene::spreads_drawn(&model.line.section_with_fractions(sec), shape)
+        .into_iter()
+        .find(|(k, _)| *k == index)
+        .map(|(_, s)| s)
 }
 
 /// A spacer's ends as solved in weather case `case` (reported by the
@@ -533,9 +570,22 @@ fn jumper_candidates(j: &ols_line::jumper::JumperShape) -> Vec<Candidate> {
     out
 }
 
-/// The span points and spacers of `shape` (as solved in one case).
-fn span_object_candidates(shape: &ols_line::solve::SectionShape) -> Vec<Candidate> {
+/// The span points, spread objects (all along their stretch) and spacers
+/// of `shape` (as solved in one case).
+fn span_object_candidates(model: &Model, shape: &ols_line::solve::SectionShape) -> Vec<Candidate> {
     let mut out = Vec::new();
+    if let Some(sec) = model.line.sections.iter().find(|s| s.id == shape.section) {
+        let sec = model.line.section_with_fractions(sec);
+        for (index, stretch) in crate::scene::spreads_drawn(&sec, shape) {
+            let sel = Selection::Spread {
+                section: shape.section.clone(),
+                index,
+            };
+            for w in stretch.windows(2) {
+                out.push((sel.clone(), w[0], w[1]));
+            }
+        }
+    }
     for (label, p) in &shape.span_points {
         out.push((
             Selection::SpanPoint {
@@ -623,7 +673,7 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
                     }
                 }
                 // Its span points and the spacers it holds.
-                out.extend(span_object_candidates(shape));
+                out.extend(span_object_candidates(model, shape));
             }
         }
         if snaps.on(Snap::Jumper) {
@@ -680,7 +730,11 @@ fn other_case_candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<(Cand
                             out.push(((sel.clone(), w[0], w[1]), k));
                         }
                     }
-                    out.extend(span_object_candidates(shape).into_iter().map(|c| (c, k)));
+                    out.extend(
+                        span_object_candidates(model, shape)
+                            .into_iter()
+                            .map(|c| (c, k)),
+                    );
                 }
             }
             if snaps.on(Snap::Jumper) && !(k == case && side == 0) && model.shown(case).contains(&k)
@@ -803,6 +857,8 @@ fn pick_scored_index(
                 // Points on the wire over the wire; a spacer over both
                 // wires it joins.
                 Selection::SpanPoint { .. } | Selection::JumperPoint { .. } => 7.0,
+                // A spread over the wire it lies on, under its points.
+                Selection::Spread { .. } => 2.0,
                 Selection::Spacer(_) => 1.0,
                 _ => s.kind().map_or(0.0, Snap::priority),
             };
@@ -845,6 +901,8 @@ fn pick_scored(
                 // Points on the wire over the wire; a spacer over both
                 // wires it joins.
                 Selection::SpanPoint { .. } | Selection::JumperPoint { .. } => 7.0,
+                // A spread over the wire it lies on, under its points.
+                Selection::Spread { .. } => 2.0,
                 Selection::Spacer(_) => 1.0,
                 _ => s.kind().map_or(0.0, Snap::priority),
             };
