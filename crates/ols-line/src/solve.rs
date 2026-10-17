@@ -2483,7 +2483,10 @@ pub fn jumper_pull(
             let ends = [LoadAt::of(&j.from), LoadAt::of(&j.to)];
             match r {
                 Ok(s) => {
-                    for (p, f) in ends.into_iter().zip(s.end_forces) {
+                    let chained = crate::jumper::chained_pulls(line, s)
+                        .into_iter()
+                        .map(|(p, f)| (LoadAt::Clamp(p), f));
+                    for (p, f) in ends.into_iter().zip(s.end_forces).chain(chained) {
                         let e = pulled.entry(p).or_insert([0.0; 3]);
                         for c in 0..3 {
                             e[c] += f[c];

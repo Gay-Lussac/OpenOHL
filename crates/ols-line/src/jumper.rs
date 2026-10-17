@@ -156,6 +156,57 @@ pub fn end_loads<'a>(
                 e[i] += q[i] * length * share * bundle + ends[k][i];
             }
         }
+        // Helping strings hanging from a section's clamp (below its
+        // string): that clamp carries their share of the jumper (half of
+        // the stretches either side of their clamp) and their weight.
+        let supports = j.supports();
+        for (k, c) in supports.iter().enumerate() {
+            let prev = if k == 0 { 0.0 } else { supports[k - 1].at };
+            let next = supports.get(k + 1).map_or(1.0, |n| n.at);
+            let share = (next - prev) / 2.0;
+            let Some(structure) = line.structure(c.structure_id(j)) else {
+                continue;
+            };
+            let Ok((_, strings)) = crate::clamp_strings(structure, &c.wire) else {
+                continue;
+            };
+            let n = strings.len() as f64;
+            for s in &strings {
+                if let Some(p) = crate::chained_top(line, structure, s) {
+                    let e = out.entry(LoadAt::Clamp(p)).or_insert([0.0; 3]);
+                    for i in 0..3 {
+                        e[i] += q[i] * length * share * bundle / n;
+                    }
+                    e[2] -= s.weight;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The pull of `jumper`'s helping strings hanging from sections' clamps
+/// (below their strings), as solved in `shape`: on each such clamp, the
+/// string's force along it towards the jumper's clamp and half its
+/// weight (the whole bundle's, N).
+pub fn chained_pulls(line: &Line, shape: &JumperShape) -> Vec<(SectionPoint, [f64; 3])> {
+    let mut out = Vec::new();
+    for sup in &shape.supports {
+        let Some(structure) = line.structure(&sup.structure) else {
+            continue;
+        };
+        for st in &sup.strings {
+            let Some(s) = structure.strings.iter().find(|s| s.label == st.label) else {
+                continue;
+            };
+            let Some(p) = crate::chained_top(line, structure, s) else {
+                continue;
+            };
+            let d = v(sup.clamp) - v(st.top);
+            let dir = if d.norm() > 0.0 { d / d.norm() } else { d };
+            let f = dir * st.force - Vector3::new(0.0, 0.0, s.weight / 2.0);
+            out.push((p, [f.x, f.y, f.z]));
+        }
     }
     out
 }
@@ -971,6 +1022,7 @@ fn rod_ends(
 fn clamp_holds(
     line: &Line,
     jumper: &Jumper,
+    shapes: &[SectionShape],
     bundle: u32,
     wind: Vector3<f64>,
 ) -> Result<Vec<ClampHold>, String> {
@@ -990,7 +1042,7 @@ fn clamp_holds(
             let mut push = Vector3::zeros();
             let mut held = Vec::with_capacity(strings.len());
             for s in strings {
-                let top = structure.point(&s.top).map(|p| v(p.position));
+                let top = string_top(line, shapes, structure, s);
                 let length = structure.string_length(s);
                 let (Some(top), Some(length)) = (top, length) else {
                     return Err(format!("support clamp {n}: string {} has no top", s.label));
@@ -1015,10 +1067,29 @@ fn clamp_holds(
         .collect()
 }
 
+/// Where a helping string's top is in the case of `shapes`: a structure
+/// point; below another string, where that wire point is solved (a
+/// section's clamp), else where it is in still air.
+fn string_top(
+    line: &Line,
+    shapes: &[SectionShape],
+    structure: &crate::Structure,
+    s: &crate::InsulatorString,
+) -> Option<Vector3<f64>> {
+    match structure.point(&s.top) {
+        Some(p) => Some(v(p.position)),
+        None => match crate::chained_top(line, structure, s) {
+            Some(p) => end_position(line, shapes, &p).ok(),
+            None => structure.wire(&s.top).map(|w| v(w.position)),
+        },
+    }
+}
+
 /// The support shapes of a solved rod: the clamps, or the support string.
 fn support_shapes(
     line: &Line,
     jumper: &Jumper,
+    shapes: &[SectionShape],
     shape: &RodShape,
     bundle: u32,
 ) -> Vec<JumperSupportShape> {
@@ -1055,7 +1126,7 @@ fn support_shapes(
                         .zip(&h.forces)
                         .map(|(x, f)| JumperStringShape {
                             label: x.label.clone(),
-                            top: st.point(&x.top).map_or([0.0; 3], |q| q.position),
+                            top: string_top(line, shapes, st, x).map_or([0.0; 3], p),
                             force: f * scale,
                         })
                         .collect()
@@ -1290,7 +1361,7 @@ pub fn solve_jumper_in(
                     Vector3::new(-a[1], a[0], 0.0)
                         * (case.wind_pressure.si() * case.wind_from.to_left())
                 });
-                Held::Clamps(clamp_holds(line, jumper, bundle, wind).map_err(invalid)?)
+                Held::Clamps(clamp_holds(line, jumper, shapes, bundle, wind).map_err(invalid)?)
             }
             None => Held::Free,
         };
@@ -1310,7 +1381,7 @@ pub fn solve_jumper_in(
             low_point: p(low),
             max_tension: shape.max_tension,
             end_forces: shape.end_forces.map(|f| p(f * f64::from(bundle))),
-            supports: support_shapes(line, jumper, &shape, bundle),
+            supports: support_shapes(line, jumper, shapes, &shape, bundle),
             point_positions: point_positions(jumper, &shape.points, l0),
         });
     }
@@ -2689,6 +2760,93 @@ mod tests {
         (line, free)
     }
 
+    /// A helping string hanging below the conductor's suspension clamp
+    /// (S1 at T3): its top is where that clamp is solved, and S1 carries
+    /// it — its weight and its share of the jumper.
+    #[test]
+    fn a_helping_string_hangs_below_a_conductors_clamp() {
+        use crate::{InsulatorString, JumperClamp, WirePoint};
+        // A clamp at 0.9 of the jumper's length (near its end at S1's
+        // clamp), on a 0.6 m string from S1's wire point at T3.
+        let build = |chained: bool| {
+            let mut line = crate::tests::example();
+            let (_, free) = solve_all(&line, &still(15.0));
+            let free = &free[0];
+            line.jumpers[0].sag = None;
+            line.jumpers[0].length = Some(free.unstressed_length);
+            let t3 = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+            let conductor = t3.wires.iter().find(|w| w.set == Some(1)).unwrap().clone();
+            // 0.6 m below S1's clamp: the string lifts the jumper there.
+            let at = [
+                conductor.position[0],
+                conductor.position[1],
+                conductor.position[2] - 0.6,
+            ];
+            t3.wires.push(WirePoint {
+                description: Default::default(),
+                label: "JW".into(),
+                position: at,
+                set: None,
+                weight: 0.0,
+            });
+            if chained {
+                t3.strings.push(InsulatorString {
+                    label: "S-JW".into(),
+                    top: conductor.label.clone(),
+                    wire: "JW".into(),
+                    weight: 100.0,
+                    ..Default::default()
+                });
+            } else {
+                // The same from a structure point where the clamp is.
+                t3.points.push(crate::StructurePoint {
+                    description: Default::default(),
+                    label: "P-JW".into(),
+                    position: conductor.position,
+                });
+                t3.strings.push(InsulatorString {
+                    label: "S-JW".into(),
+                    top: "P-JW".into(),
+                    wire: "JW".into(),
+                    weight: 100.0,
+                    ..Default::default()
+                });
+            }
+            line.place_strings().unwrap();
+            line.jumpers[0].edit_supports(|c| c.push(JumperClamp::new("JW", 0.9)));
+            line.validate().unwrap();
+            line
+        };
+        let line = build(true);
+        let plain = build(false);
+        let case = still(15.0);
+        let (shapes, jumpers) = solve_all(&line, &case);
+        let s1 = shapes.iter().find(|x| x.section == "S1").unwrap();
+        let clamp = end_position(&line, &shapes, &crate::SectionPoint::new("T3", 1)).unwrap();
+        let top = v(jumpers[0].supports[0].strings[0].top);
+        assert!((top - clamp).norm() < 1e-9, "{top} {clamp}");
+        assert!(jumpers[0].supports[0].strings[0].force > 0.0);
+        // The estimate on S1's clamp at T3: more than without the string
+        // (its 100 N and its share of the jumper).
+        let lib = library();
+        let on = |l: &Line| {
+            end_loads(l, &case, |id| lib.get(id))
+                [&crate::solve::LoadAt::Clamp(crate::SectionPoint::new("T3", 1))][2]
+        };
+        assert!(
+            on(&line) < on(&plain) - 100.0,
+            "{} {}",
+            on(&line),
+            on(&plain)
+        );
+        assert!(!s1.spans.is_empty());
+        // The pull: solved too.
+        let mut pulled = line.clone();
+        pulled.solver.jumper_loads = crate::JumperLoads::Pull;
+        let (_, j) = solve_all(&pulled, &case);
+        assert!(!crate::jumper::chained_pulls(&pulled, &j[0]).is_empty());
+    }
+
     /// The clamp's piece in a solved jumper: straight through, its length
     /// as given, its middle the clamp. The angle between the directions
     /// in and out, radians.
@@ -2930,9 +3088,15 @@ mod tests {
             })
             .contains("3 strings")
         );
-        // Hanging below another string.
+        // Hanging below another string: accepted (its top where that
+        // string's wire point is in still air, no section clamped there).
+        let ok = |f: &dyn Fn(&mut Line)| {
+            let mut l = line.clone();
+            f(&mut l);
+            l.validate()
+        };
         assert!(
-            err(&|l| {
+            ok(&|l| {
                 let st = t3(l);
                 let jw = st.wire("JW").unwrap().position;
                 st.wires.push(WirePoint {
@@ -2950,7 +3114,7 @@ mod tests {
                 });
                 l.jumpers[0].edit_supports(|c| c[0].wire = "JX".into());
             })
-            .contains("not a structure point")
+            .is_ok()
         );
     }
 }
