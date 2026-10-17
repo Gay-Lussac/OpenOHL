@@ -160,6 +160,10 @@ drag = 3.0         # drag (force) coefficient
 
 Each band: bottom and top above the ground, projected area, drag coefficient (from the structure's design or the code used; e.g. about 2.8–3.2 for lattice faces, 0.7–1.2 for round poles). The structure loads add pressure × drag × area per band in every load case with wind ([Structure loads](loads.md#structure-loads)).
 
+### Load cases of the structure
+
+`[[load_case]]` tables hold the structure's own load cases: recipes saying how the line's loads act on it, for the structure application ([Structure load cases](structure-load-cases.md)). The line run does not read them.
+
 ## Simple pylon files
 
 How much string detail is worth modelling depends on the pylon. A **simple pylon file** gives each string's length and weight in the pylon itself — no insulator library needed:

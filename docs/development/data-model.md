@@ -62,8 +62,10 @@ All examples on this page are invented (structures `T1`, `T2`, sections
    .olslc load cases                                                       └─────┘
                                                         TypeString.insulator ─► .olsi id
    .olss StructureType: point[], wire[], string[], extension[], node[], member[],
-                        section[], material[], load[], capacity, wind, model ─► .olsfe,
-                        pole ─► .olsp, template (built from ─► .olspt)
+                        section[], material[], load[], load_case[], capacity, wind,
+                        model ─► .olsfe, pole ─► .olsp, template (built from ─► .olspt)
+   .olsslc structure load cases (load_case[]; structure application) ─► labels of
+                        .olss points, sets, member ids; line_case ─► LoadCase.name
    .olspt PylonTemplate: parameter[], attachment[] (slot, across, up),
                         earth[], strings ─► builds a level-1 .olss
    .olssec SectionLibrary: material[], section[] (shape, dimensions,
@@ -103,7 +105,8 @@ refused ("written by a newer OLS CAD") — one check for all,
 reports and colour palettes too; plugins' own files, as `.olspd`, the
 same way). A key a format does not know is refused, naming it (a typo is
 said, not left out); `crates/ols-cli/tests/format_typos.rs` checks every
-library format. Objects on points are read through `LineObjectFile` /
+library format (the structure application's in
+`apps/structure/ols-structure-tests/tests/format_typos.rs`). Objects on points are read through `LineObjectFile` /
 `ObjectTypeFile` for that (a flattened shape would let keys through), a
 size of another shape or a missing size said too.
 
@@ -552,6 +555,7 @@ One directory per kind; TOML with units in the values. Each item has an
 | `WeatherCases` | `.olswc` | `ols-weather-cases` | several (`[[case]]`) | `ols_weather::WeatherCase` | [Weather cases](../user-guide/weather.md) |
 | `LoadCases` | `.olslc` | `ols-load-cases` | several (`[[case]]`) | `ols_loads::LoadCase` | [Load cases](../user-guide/loads.md) |
 | (section library: shipped `libraries/sections`; not in the project file or the app yet) | `.olssec` | `ols-sections` | several (`[[section]]`, `[[material]]`) | `ols_sections::Section`, `ols_sections::Material` (crate `ols-sections`) | [Section library](../user-guide/section-library.md) |
+| (structure application; not a library kind yet) | `.olsslc` | `ols-structure-load-cases` | several (`[[load_case]]`) | `ols_structure_loads::LoadCaseRecipe` | [Structure load cases](../user-guide/structure-load-cases.md) |
 
 Other data files: structure models `.olsfe` (`ols-structure-model`) and
 poles `.olsp` (`ols-pole`) next to the `.olss`
@@ -631,7 +635,8 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |
 | `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?` | m | pylon joints (detail 2–3) |
 | `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`), `reference?`, `roll?`, `k?`, `pretension?` | — | pylon members |
-| `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check |
+| `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` |
+| `[[load_case]]` | tables (`load_cases`, kept unread by the core) | N, Pa | the structure's load-case recipes, read by the structure application (`ols-structure-loads`; below) |
 | `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
 | `wind` | `band[]`: `from`, `to`, `area`, `drag` | m, m² | wind on the structure itself |
 | `model` | path? | — | separate `.olsfe` model, relative to this file |
@@ -709,6 +714,31 @@ looking ahead), `air_density_factor`, `ambient_temperature`.
 `LoadCase` (`ols-loads`): `name`, `description`, `weather` (a weather
 case name), `condition` (initial, creep, load, max sag), factors
 `vertical`, `transverse`, `longitudinal`, `strength`, `tags`.
+
+### Structure load cases (`[[load_case]]`, `.olsslc`)
+
+The structure application's recipes
+(`apps/structure/ols-structure-loads`, [crates](structure-app.md)): in a
+`.olss` as `[[load_case]]` (the core keeps them as raw tables,
+`StructureType::load_cases`), or on their own in a `.olsslc` file
+(`format = "ols-structure-load-cases"`, version 1). Full reference:
+[Structure load cases](../user-guide/structure-load-cases.md).
+
+| Item | Fields | Refers to |
+|---|---|---|
+| `LoadCaseRecipe` (`[[load_case]]`) | `name`, `description`, `line_case`, `strength`, `self_weight`, `load[]` | `line_case` ─► a line `LoadCase.name` |
+| `LoadRecipe` (`[[load_case.load]]`) | what: `what` (`LineQuantity`) **or** `value` (N) **or** `pressure` (Pa); how: `line_case`, `factor`, `one_sided`, `side`, `direction` (structure axes); where: `points` (`"all"` or labels), `sets`, `phases`, **or** `members` (`"all"` or ids); `note` | point / wire point labels, sets, phase labels (from the line), member ids of the `.olss` |
+
+Evaluated (`evaluate`) with `LineValues` (per point: sets, phases; values
+per line load case, point or set and quantity) into a `LoadTable`
+(rows: `case`, `load`, `at` point/member/joint, `label`, `force`
+transverse/longitudinal/vertical down N, `source` recipe/line/typed,
+`evaluated`, `missing`, `note`). The table is a result, not stored in
+the structure file; typed values (`Override`) will be kept with the
+placed structure in the line (format to decide). `[[load]]` is read as
+case `model` (joints). CSV of the table and the recipes; XLSX later.
+`ols-structure-link` fills `LineValues` from `ols_loads::structure_loads`
+(the six force values; tensions, wire wind and ice not yet).
 
 ## Where data lives
 

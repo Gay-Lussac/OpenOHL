@@ -5,7 +5,9 @@
 //! Every library format refuses a key it does not know (a typo is said,
 //! not silently left out): each shipped or example file reads as it is,
 //! and is refused with a mistyped key added at its top and in its first
-//! item.
+//! item. The structure application's formats (`[[load_case]]`, `.olsslc`)
+//! are checked in `apps/structure/ols-structure-tests` (core crates do not
+//! depend on the application's).
 
 use std::path::{Path, PathBuf};
 

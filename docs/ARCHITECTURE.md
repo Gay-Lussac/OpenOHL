@@ -36,7 +36,7 @@
 
 ## Modules
 
-Every module is a Rust crate under `crates/` (the workspace's members):
+Every core module is a Rust crate under `crates/` (workspace members, with `apps/structure/*`):
 
 | Crate | Responsibility |
 |---|---|
@@ -70,6 +70,16 @@ Every module is a Rust crate under `crates/` (the workspace's members):
 | `ols-app` | Desktop application `ols-cad` (egui, ADR-0009): 3D, plan, profile, properties, tools, tables, library editors, checks, Python console, plugin manager |
 | `ols-cli` | The `ols` command-line tool |
 | `ols-py` | Python bindings (PyO3, `import ols`) for scripts and Python plugins |
+
+The structure application (`apps/structure/`, [its crates](development/structure-app.md))
+is kept apart from the core: its crates depend on core crates, never the
+other way round, and its tests run on their own.
+
+| Crate | Responsibility |
+|---|---|
+| `ols-structure-loads` | A structure's load-case recipes (`[[load_case]]`, `.olsslc`), their evaluation into the load table, CSV of both; plain data, no line |
+| `ols-structure-link` | Where the application meets the core: the line's structure loads as line values, a table case as finite-element loads (later the section library and saving back) |
+| `ols-structure-tests` | Tests of the application with the core (test-only) |
 
 ## Session & collaboration
 

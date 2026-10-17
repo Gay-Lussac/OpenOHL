@@ -1278,3 +1278,50 @@ force = ["4 kN", "0 kN", "-9 kN"]
 [[load]]
 node = "A2"
 force = ["4 kN", "0 kN", "-9 kN"]
+
+# The structure's own load cases (recipes; invented, NOT from a design
+# code): each load says what the line gives at the placed structure, how
+# it acts and where. The structure application evaluates them with the
+# loads of each placed structure (T2, T4) into its load table; the
+# [[load]] tables above are its case "model".
+[[load_case]]
+name = "wind"
+description = "the line's wind case, factored as in the line"
+line_case = "wind"
+
+[[load_case.load]]
+what = "transverse_factored"
+points = "all"
+
+[[load_case.load]]
+what = "longitudinal_factored"
+points = "all"
+
+[[load_case.load]]
+what = "vertical_factored"
+points = "all"
+
+[[load_case]]
+name = "ice, unbalanced"
+description = "the ice case's vertical loads × 1.3, and 2 kN along the line at set 1"
+line_case = "ice"
+strength = 0.9
+
+[[load_case.load]]
+what = "vertical"
+factor = 1.3
+points = "all"
+
+[[load_case.load]]
+value = "2 kN"
+direction = "y"
+sets = [1]
+
+[[load_case]]
+name = "body wind"
+description = "a pressure on the members' area (areas come with the section library)"
+
+[[load_case.load]]
+pressure = "0.6 kPa"
+direction = "x"
+members = "all"

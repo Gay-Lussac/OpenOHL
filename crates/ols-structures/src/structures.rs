@@ -782,6 +782,10 @@ pub struct StructureType {
     /// The model's own load case (read by `ols_structures_fe`).
     #[serde(rename = "load", default)]
     pub loads: Vec<toml::Table>,
+    /// Load-case recipes (read by the structure application,
+    /// `ols-structure-loads`).
+    #[serde(rename = "load_case", default)]
+    pub load_cases: Vec<toml::Table>,
     /// What it can carry (structure checks).
     #[serde(default)]
     pub capacity: Option<Capacity>,

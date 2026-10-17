@@ -1,0 +1,48 @@
+# Synthetic example structure load cases (NOT taken from any design
+# code): recipes on their own, as exported from a structure and imported
+# into another. Values are invented; they only show the format.
+format = "ols-structure-load-cases"
+version = 1
+name = "Synthetic example structure load cases"
+
+[[load_case]]
+name = "everyday"
+description = "the wires' loads in still air, as the line gives them"
+line_case = "everyday"
+
+[[load_case.load]]
+what = "transverse"
+points = "all"
+
+[[load_case.load]]
+what = "longitudinal"
+points = "all"
+
+[[load_case.load]]
+what = "vertical"
+points = "all"
+
+[[load_case]]
+name = "one-sided pull"
+description = "40 % of the largest tension on one side, at set 1 only"
+line_case = "everyday"
+
+[[load_case.load]]
+what = "vertical"
+points = "all"
+
+[[load_case.load]]
+what = "tension_max"
+one_sided = "40 %"
+side = "ahead"
+sets = [1]
+
+[[load_case]]
+name = "construction"
+description = "a load of the case itself: 1.5 kN down at every point"
+self_weight = 1.1
+
+[[load_case.load]]
+value = "1.5 kN"
+direction = "-z"
+points = "all"
