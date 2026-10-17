@@ -54,6 +54,28 @@ cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2
 cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
 ```
 
+`ols plugin info DIR` works for a plugin of any world: it loads the
+plugin in the world of each extension point its manifest lists
+(`design-code`: `code-plugin`, `io`, `terrain`, `project`, `check`; none
+of these: the minimal `plugin` world) and prints its `describe` (a check
+plugin, which has none, by its manifest), the world, the extension
+points, tier, interface version and entry file, then what else it
+offers: its formats (id, description, extension, importer or exporter),
+its checks, or the length of a design code's parameter template.
+
+```text
+name         geojson
+version      0.1.0
+description  GeoJSON export (structures, wires) and import (structures)
+world        io-plugin
+extensions   io
+tier         wasm
+sdk          0.2
+entry        plugins/examples/geojson/target/wasm32-wasip2/release/geojson.wasm
+  format geojson: Structures and wires as GeoJSON features (line CRS) (.geojson, exporter)
+  format geojson-structures: Structures from GeoJSON Point features (.geojson, importer)
+```
+
 Plugins run sandboxed — no file system, network, environment variables or standard I/O — with **exit clauses** on every call: a time limit (default 5 s; a runaway plugin is interrupted and reported as a timeout) and a memory cap (default 256 MiB). `plugins/tests/runaway` is a deliberately endless plugin used to test this.
 
 ## File-format plugins
