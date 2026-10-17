@@ -160,21 +160,29 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] Placement: the type's z = 0 may be any reference level (usually under the lowest crossarm); `foot` gives the level of its feet, so the placed pylon stands with its feet on the ground, raised by the structure's `height_adjust` (foundations); extensions lengthen the body below the reference level
 - [x] One file per pylon (`.olss`): joints and members in the type itself (sticks), level 3 adds sections, materials, supports and member kinds (truss / frame / cable) to the same members; `.olsfe` models still read. The level is **derived from the content** (1 stick figure → 2 lattice outline as soon as there are members → 3 as soon as every member has a section and material and there are supports); the marker follows
 - [x] String points as joints or as a fraction along a member, so strings follow the members
-- [ ] Symmetry (optional): members and joints copied about x, y or both
+- [ ] Symmetry (optional, decided 2026-10-17): members and joints copied about x, y or both, to ease building
 - [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view still to come)*
 - [ ] Level 2 and 3 drawn with their members in 3D and on plan & profile sheets
+- [ ] **Replace structure** tool: a new structure put in place of another, with its strings; wire points (sets) that match are rewired automatically, for the others the user says which goes where; with no match the replacement still runs after the model shows what will be removed and the user confirms
 - [ ] PLS-TOWER geometry from PLS XML (joints, members, sections) into levels 2 and 3 (local importer)
 - [ ] Level 2 from LiDAR: a plugin (later); the classes holding pylons chosen by the user from all classes, as in the display options
 - [ ] Clearances to the structure body: none for level 1 (LiDAR points only, separate topic); levels 2 and 3 computed — **the tests are to be defined with the project owner**
+- [ ] **Structure application** (decided 2026-10-17, [spec](docs/development/structure-building.md)): a separate program on the same workspace crates, started from an **Edit** button on a structure in the line application or by opening a `.olss`; its own tabs (geometry, body, design, load cases, results, use in the line)
+- [ ] Levels as decided: 1 attachment points only (stick figure, not verifiable); 2 the real geometry (maximum loads as data, no code check); 3 every part and joint detail, computed (FE) and code-checked (e.g. SIA 263). **Poles** the same: 1 points without body, 2 outside lines, 3 detailed engineering. `[[body]]` polylines give level 2 only in 3D. Capacities derived only at level 3
+- [ ] **Load-case recipes** per structure: which line value, factor, one-sided share, on which points or members, surface loads (wind, snow); evaluated by the core with the line's values at each placed structure; the loads in a table, editable, exported and imported
+- [ ] **Section library**: a project library kind the structures refer to (not copied), exported and imported
+- [ ] Structure exports: IFC (member solids), Tekla, RFEM; PLS-TOWER later
+- [ ] Code checks of members and joints as plugins (e.g. SIA 263), interface agreed with the project owner first
 - [ ] **Fully integrated structure editors with a 3D preview** for every detail level (1 stick figure, 2 sticks of the pylon, 3 full design), all in one window: geometry, members, sections, materials, supports, strings and wire points, the type's use in the line, checks — lattice towers and **poles of wood, steel (and concrete)** alike (poles today: `.olsp` files edited as text)
 
 ## Structure–line interaction — levels of computation
-*Agreed with the project owner (2026-10-10): how far the line and its structures are computed together, chosen per run.*
+*Agreed with the project owner (2026-10-10), levels defined 2026-10-17 as in PLS-CADD: how far the line and its structures are computed together, chosen per run.*
 
-- [ ] **Level 1** — one way: the line solved on rigid structures, the conductors' forces put on the structures, every structure checked once, and stop (today's structure loads and usage)
-- [ ] **Levels 2 and 3** — in between (to be defined with the project owner: e.g. the structures' deflection under the line's loads applied once and the line solved again; each structure as a stiffness at its attachment points in the line solve)
-- [ ] **Level 4** — fully coupled: the structures' deformations and the line's forces on them iterated until both converge (displacements and forces between passes below tolerances; exit clauses, damping, reports of what did not converge)
-- [ ] The level chosen per run (app, CLI, load cases), shown with every result; the structure detail each level needs (stiffness from level 3 models, poles from their `.olsp`, simple springs for stick figures)
+- [x] **Level 1** — ruling span: sections sagged by the ruling span method on rigid structures
+- [x] **Level 2** — FE of the wires on rigid structures (`ols-wirefe`, what OLS CAD has today); the conductors' forces put on the structures, every structure checked once *(today's structure loads and usage)*
+- [ ] **Level 3** — FE of the wires with a linear stiffness matrix at each structure's suspension points, derived from the structure (level 3 structures only)
+- [ ] **Level 4** — the full solve: structures and line iterated until both converge (displacements and forces between passes below tolerances; exit clauses, damping, reports of what did not converge)
+- [ ] The level chosen per run (app, CLI, load cases), shown with every result; a structure below level 3 is rigid at levels 3 and 4, and the result says so
 
 ## Foundations
 - [ ] A **foundations module**: foundation types per structure (pad and chimney, piles, rock anchors, pole embedment…), their data in their own library files, the loads from the structure checks (Level 1 and up) on them, checks by the user's code parameters (uplift, compression, overturning, sliding), bill of materials and costs; the structure's `height_adjust` linked to the foundation's reveal
