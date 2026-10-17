@@ -176,13 +176,15 @@ All of these form the key the cut is kept under, so a change to any of them recu
 
 An edit re-solves its own sections. A jumper is solved again only if one of these changed: the jumper itself, a section at its ends (or such a section was re-solved), or a structure it hangs on. Every other jumper keeps its solution. The result is the same as solving everything again; the tests check this after each kind of edit.
 
-## When a jumper fails
+## Taut jumpers
 
-- **Taut.** The clamps end up at least as far apart as the jumper's unstressed length in that weather case: \\( |B - A| \ge L_0\,(1 - 10^{-5}) \\) (a jumper's stretch at its tension is ~10⁻⁶; a 4 m jumper with 2 cm of sag still has ~7·10⁻⁵; the same floor bounds the cut from a sag). The jumper's pull holding the clamps back is not modelled, because sections are solved first. So the jumper is reported as *taut* in that case, instead of being drawn at hundreds of kN. This is decided from the length and the clamps' distance alone, before the rod is solved. The clamps' exit angles and the bending stiffness play no part in it. Two situations lead there:
+- **Taut.** The clamps end up at least as far apart as the jumper's unstressed length in that weather case: \\( |B - A| \ge L_0\,(1 - 10^{-5}) \\) (a jumper's stretch at its tension is ~10⁻⁶; a 4 m jumper with 2 cm of sag still has ~7·10⁻⁵; the same floor bounds the cut from a sag). This is decided from the length and the clamps' distance alone, before the rod is solved. The jumper is then solved as an elastic catenary between its clamps (its bending stiffness, small beside its tension, left out): stretched, at a tension \\( T \approx EA\,(|B-A| - L_0)/L_0 \\). Its pull holds the clamps back: the sections at its ends are solved again with the jumper's end forces on their clamps, whatever the jumper option (the estimate means nothing for a taut jumper), the step relaxed with Aitken's method (the coupling is stiff: a small move of a clamp changes the pull much), up to 40 passes, until the loads change less than 0.5 N. Its largest tension is compared with the cable's rated tensile strength (`JumperShape::strength_use`). With helping strings or points along it, a taut jumper is not solved (said so). Two situations lead there:
   - **Wind.** Free strain strings swing their clamps apart.
   - **Cold, on a nearly straight jumper.** A jumper with little slack loses it from both sides when it is cold. Its length shrinks with the temperature, and the dead-end clamps move apart as the colder, tighter sections pull their strain strings straighter. For example, a 4.2 m jumper given a 10 cm sag at 15 °C is only \\( \approx 8s^2/3c = 6 \\) mm longer than its chord. At −20 °C it is 3 mm shorter, and its clamps are a few millimetres further apart, so it is taut.
 
   A jumper that is really a stiff bar (a rigid or tubular jumper) has no slack to lose, so it should not be modelled as a cable with a token sag. Give it `rigid` (below): it is then the straight member between its clamps and is never taut.
+## When a jumper fails
+
 - **A section at an end not solved.** The jumper's ends are the solved clamps of the sections through them. When one of those sections fails in a weather case, the jumper fails too and names it, rather than hanging between the attachments' data points.
 - **Ends less than 0.1 m apart horizontally.** A vertical jumper is not supported yet.
 - **A support string out of reach.** A string's top is farther from either end than the jumper's length to its clamp plus the string's length.

@@ -823,7 +823,7 @@ pub fn ui(
                 egui::Grid::new("jumper-cases")
                     .striped(true)
                     .show(ui, |ui| {
-                        for h in ["case", "length (m)", "sag (m)", "max T (N)", "low z (m)"] {
+                        for h in ["case", "length (m)", "sag (m)", "max T (N)", "of RTS", "low z (m)"] {
                             ui.label(egui::RichText::new(h).small());
                         }
                         ui.end_row();
@@ -837,6 +837,25 @@ pub fn ui(
                                     ui.label(format!("{:.3}", js.unstressed_length));
                                     ui.label(format!("{:.3}", js.sag));
                                     ui.label(format!("{:.0}", js.max_tension));
+                                    // Taut: stretched between its clamps;
+                                    // over the cable's strength: red.
+                                    let used = format!(
+                                        "{:.0} %{}",
+                                        js.strength_use * 100.0,
+                                        if js.taut { " taut" } else { "" }
+                                    );
+                                    let text = egui::RichText::new(used);
+                                    if js.strength_use > 1.0 {
+                                        crate::menu::error_label(ui, text.text().to_owned());
+                                    } else if js.taut {
+                                        ui.label(text.color(ui.visuals().warn_fg_color))
+                                            .on_hover_text(
+                                                "Taut: shorter than its clamps' distance — \
+                                                 stretched, its pull holding the clamps back",
+                                            );
+                                    } else {
+                                        ui.label(text);
+                                    }
                                     ui.label(format!("{:.2}", js.low_point[2]));
                                 }
                                 None => {

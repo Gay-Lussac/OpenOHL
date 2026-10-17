@@ -2349,7 +2349,7 @@ pub fn solve_line_with(
 ) -> Vec<Result<SectionShape, LineError>> {
     let estimate = crate::jumper::end_loads(line, case, |id| library.get(id));
     let mut results = solve_sections_with(line, library, case, budget, &estimate);
-    if needs_pull(line) {
+    if needs_pull(line) || may_be_taut(line, &results) {
         jumper_pull(
             line,
             library,
@@ -2405,6 +2405,30 @@ pub fn needs_pull(line: &Line) -> bool {
             && line.jumpers.iter().any(crate::Jumper::on_tap))
 }
 
+/// Whether a jumper may be taut between the clamps solved in `results`
+/// (its cut length short of their distance, within 0.5 %): its pull is
+/// then put back on them whatever the jumper option ([`jumper_pull`]).
+pub fn may_be_taut(line: &Line, results: &[Result<SectionShape, LineError>]) -> bool {
+    let shapes: Vec<&SectionShape> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+    line.jumpers.iter().any(|j| {
+        let Some(length) = j.length.filter(|_| !j.rigid) else {
+            return false;
+        };
+        let at = |e: &crate::JumperEnd| {
+            let p = e.point()?;
+            shapes.iter().find_map(|s| {
+                let sec = line.sections.iter().find(|x| x.id == s.section)?;
+                let k = sec.points.iter().position(|q| q == p)?;
+                s.clamps.get(k).map(|c| v(*c))
+            })
+        };
+        match (at(&j.from), at(&j.to)) {
+            (Some(a), Some(b)) => (b - a).norm() > 0.995 * length,
+            _ => false,
+        }
+    })
+}
+
 /// Jumper loads on what they hang on (the whole bundle's, N).
 pub type JumperLoadMap = std::collections::BTreeMap<LoadAt, [f64; 3]>;
 
@@ -2440,6 +2464,10 @@ fn solve_sections_with(
 /// three).
 pub const JUMPER_PULL_PASSES: usize = 8;
 
+/// Passes at most with a taut jumper: its pull on the clamps relaxed
+/// ([`jumper_pull`]).
+pub const TAUT_PULL_PASSES: usize = 40;
+
 /// The jumpers' own pull on the clamps ([`crate::JumperLoads::Pull`]):
 /// the jumpers solved between the solved clamps, the force each exerts
 /// on its clamps ([`crate::jumper::JumperShape::end_forces`]) put on the
@@ -2465,7 +2493,15 @@ pub fn jumper_pull(
         return used;
     }
     let groups = coupled_groups(line);
-    for _ in 0..JUMPER_PULL_PASSES {
+    // Taut jumpers' pull on their clamps, relaxed (a stiff coupling):
+    // Aitken's step from the last two residuals.
+    let mut omega = 0.3_f64;
+    let mut last_r: Option<Vec<Vector3<f64>>> = None;
+    let mut taut_seen = false;
+    for pass in 0..TAUT_PULL_PASSES {
+        if pass >= JUMPER_PULL_PASSES && !taut_seen {
+            break;
+        }
         let shapes: Vec<SectionShape> = results
             .iter()
             .filter_map(|r| r.as_ref().ok().cloned())
@@ -2479,8 +2515,16 @@ pub fn jumper_pull(
         let mut next = estimate.clone();
         let mut failed: std::collections::BTreeSet<LoadAt> = Default::default();
         let mut pulled: JumperLoadMap = Default::default();
+        // The clamps of taut jumpers: always pulled.
+        let mut taut: std::collections::BTreeSet<LoadAt> = Default::default();
         for (j, r) in line.jumpers.iter().zip(&solved) {
             let ends = [LoadAt::of(&j.from), LoadAt::of(&j.to)];
+            if let Ok(s) = r
+                && s.taut
+            {
+                taut.extend(ends.iter().cloned());
+                taut_seen = true;
+            }
             match r {
                 Ok(s) => {
                     let chained = crate::jumper::chained_pulls(line, s)
@@ -2496,9 +2540,37 @@ pub fn jumper_pull(
                 Err(_) => failed.extend(ends),
             }
         }
+        // Taut clamps relaxed: from the loads used, a step of `omega` of
+        // the residual.
+        let keys: Vec<LoadAt> = taut
+            .iter()
+            .filter(|p| !failed.contains(p))
+            .cloned()
+            .collect();
+        let r: Vec<Vector3<f64>> = keys
+            .iter()
+            .map(|p| {
+                let g = v(pulled.get(p).copied().unwrap_or([0.0; 3]));
+                g - v(used.get(p).copied().unwrap_or([0.0; 3]))
+            })
+            .collect();
+        if let Some(prev) = &last_r
+            && prev.len() == r.len()
+        {
+            let dr: Vec<Vector3<f64>> = r.iter().zip(prev).map(|(a, b)| a - b).collect();
+            let den: f64 = dr.iter().map(|x| x.norm_squared()).sum();
+            if den > 0.0 {
+                let num: f64 = prev.iter().zip(&dr).map(|(a, b)| a.dot(b)).sum();
+                omega = (-omega * num / den).clamp(0.02, 1.0);
+            }
+        }
+        last_r = Some(r.clone());
         for (p, f) in pulled {
             let wanted = if p.is_tap() { pull_taps } else { pull_clamps };
-            if wanted && !failed.contains(&p) {
+            if let Some(k) = keys.iter().position(|q| *q == p) {
+                let u = v(used.get(&p).copied().unwrap_or([0.0; 3])) + r[k] * omega;
+                next.insert(p, [u.x, u.y, u.z]);
+            } else if wanted && !failed.contains(&p) {
                 next.insert(p, f);
             }
         }
