@@ -18,6 +18,7 @@ ols-structures.workspace = true
 ols-structure-edit.workspace = true
 ols-structure-loads.workspace = true
 ols-structure-link.workspace = true
+ols-structure-export.workspace = true
 ols-render.workspace = true
 eframe.workspace = true
 clap.workspace = true
