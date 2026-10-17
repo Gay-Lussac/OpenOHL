@@ -1059,8 +1059,8 @@ mod tests {
 
     /// A jumper's helping string on a typed structure, hanging from a
     /// point its type gives: accepted as stored (checked once merged); on
-    /// a structure without a type, or from another string's wire point,
-    /// refused.
+    /// a structure without a type refused; from another string's wire
+    /// point accepted (a string below a string).
     #[test]
     fn a_helping_string_may_hang_from_a_type_point() {
         let mut t = structure(&[]);
@@ -1087,7 +1087,9 @@ mod tests {
         t.structure_type = Some("T".into());
         crate::clamp_strings(&t, "JH").unwrap();
         t.strings[0].top = "N".into();
+        crate::clamp_strings(&t, "JH").unwrap();
+        t.strings[0].top = "JH".into();
         let why = crate::clamp_strings(&t, "JH").unwrap_err();
-        assert!(why.contains("strings below other strings"), "{why}");
+        assert!(why.contains("its own wire point"), "{why}");
     }
 }

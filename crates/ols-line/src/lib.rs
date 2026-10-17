@@ -815,8 +815,10 @@ impl JumperClamp {
 }
 
 /// The strings holding a jumper's support clamp: the clamp's wire point
-/// and its strings, each from a structure point (one: an I; two: a V).
-/// An error says what is wrong with the clamp's wire point.
+/// and its strings (one: an I; two: a V), each from a structure point or
+/// from another string's wire point (a string below a string: its top is
+/// where that wire point is solved, [`chained_top`]). An error says what
+/// is wrong with the clamp's wire point.
 pub fn clamp_strings<'a>(
     structure: &'a Structure,
     wire: &str,
@@ -852,14 +854,19 @@ pub fn clamp_strings<'a>(
     let from_type = |s: &InsulatorString| {
         structure.structure_type.is_some() && structure.node(&s.top).is_none()
     };
-    if let Some(s) = strings
-        .iter()
-        .find(|s| structure.point(&s.top).is_none() && !from_type(s))
-    {
+    if let Some(s) = strings.iter().find(|s| {
+        structure.point(&s.top).is_none() && structure.wire(&s.top).is_none() && !from_type(s)
+    }) {
         return Err(format!(
-            "string {} to wire point {wire} on structure {id} hangs from \"{}\", not a structure point: \
-             strings below other strings do not hold jumper clamps yet",
+            "string {} to wire point {wire} on structure {id} hangs from \"{}\": no such point \
+             or wire point",
             s.label, s.top
+        ));
+    }
+    if let Some(s) = strings.iter().find(|s| s.top == wire) {
+        return Err(format!(
+            "string {} on structure {id} hangs from its own wire point {wire}",
+            s.label
         ));
     }
     if structure.strings.iter().any(|s| s.top == wire) {
@@ -868,6 +875,24 @@ pub fn clamp_strings<'a>(
         ));
     }
     Ok((w, strings))
+}
+
+/// The wire point with a set a string hangs from, when it hangs below
+/// another string at a wire point where a section is clamped (a jumper's
+/// helping string under a conductor's suspension clamp): that section's
+/// clamp carries the string's pull. None from a structure point, or from a
+/// wire point no section is clamped at.
+pub fn chained_top(
+    line: &Line,
+    structure: &Structure,
+    string: &InsulatorString,
+) -> Option<SectionPoint> {
+    let set = structure.wire(&string.top)?.set?;
+    let p = SectionPoint::new(structure.id.clone(), set);
+    line.sections
+        .iter()
+        .any(|s| s.points.contains(&p))
+        .then_some(p)
 }
 
 /// Default wire colours by phase number (1, 2, 3, then repeating); phase 0
