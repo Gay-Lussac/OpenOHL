@@ -99,7 +99,11 @@ version up to the program's is read (older ones converted), a newer one
 refused ("written by a newer OLS CAD") — one check for all,
 `ols_core::files::check_header` (the line file and OLS XML, check
 reports and colour palettes too; plugins' own files, as `.olspd`, the
-same way).
+same way). A key a format does not know is refused, naming it (a typo is
+said, not left out); `crates/ols-cli/tests/format_typos.rs` checks every
+library format. Objects on points are read through `LineObjectFile` /
+`ObjectTypeFile` for that (a flattened shape would let keys through), a
+size of another shape or a missing size said too.
 
 ### Coordinates and angles
 
