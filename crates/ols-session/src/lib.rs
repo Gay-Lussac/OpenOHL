@@ -1068,9 +1068,27 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
     out.into_iter().collect()
 }
 
-/// Library files of the `library_file` table (schema 3 and before: one
-/// set for all project lines) made `library` objects of every project
-/// line, then the table emptied. Nothing to do once done.
+/// Upgrade steps of older project files that come before the current
+/// tables are made, in schema order. A new file has none of them. Each
+/// step looks for what it changes, so a file of an in-between build (its
+/// schema number already raised) is upgraded too, and a done step does
+/// nothing; the steps after the tables are [`lines::migrate_descriptions`]
+/// (schema 3) and [`migrate_library_files`] (schema 4).
+fn upgrade_before_tables(conn: &Connection) -> Result<(), SessionError> {
+    // Schema 1, before its first release: the log's note column.
+    let has_note: bool = conn
+        .prepare("SELECT 1 FROM pragma_table_info('oplog') WHERE name = 'note'")?
+        .exists([])?;
+    if !has_note {
+        conn.execute("ALTER TABLE oplog ADD COLUMN note TEXT", [])?;
+    }
+    // Schema 3: every project line has its own objects, log and index.
+    lines::migrate(conn)
+}
+
+/// Schema 4: library files of the `library_file` table (schema 3 and
+/// before: one set for all project lines) made `library` objects of every
+/// project line, then the table dropped. Nothing to do once done.
 fn migrate_library_files(conn: &Connection) -> Result<(), SessionError> {
     let exists = conn
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'library_file'")?
@@ -1082,9 +1100,6 @@ fn migrate_library_files(conn: &Connection) -> Result<(), SessionError> {
         .prepare("SELECT kind, name, text FROM library_file ORDER BY kind, name")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<Result<_, _>>()?;
-    if files.is_empty() {
-        return Ok(());
-    }
     let mut lines: Vec<String> = conn
         .prepare("SELECT DISTINCT line FROM model_object")?
         .query_map([], |r| r.get(0))?
@@ -1111,7 +1126,7 @@ fn migrate_library_files(conn: &Connection) -> Result<(), SessionError> {
             )?;
         }
     }
-    tx.execute("DELETE FROM library_file", [])?;
+    tx.execute("DROP TABLE library_file", [])?;
     tx.commit()?;
     Ok(())
 }
@@ -1155,30 +1170,19 @@ impl Session {
                  user TEXT NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL, inverse TEXT NOT NULL,
                  objects TEXT NOT NULL, sections TEXT NOT NULL,
                  undoes INTEGER, undone_by INTEGER, note TEXT,
-                 line TEXT NOT NULL DEFAULT 'main');
-             CREATE TABLE IF NOT EXISTS line_snapshot (
-                 name TEXT PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                 user TEXT NOT NULL, note TEXT NOT NULL, json TEXT NOT NULL);
-             CREATE TABLE IF NOT EXISTS library_file (
-                 kind TEXT NOT NULL, name TEXT NOT NULL,
-                 time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                 user TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY (kind, name));",
+                 line TEXT NOT NULL DEFAULT 'main');",
         )?;
-        // Added within schema 1 before its first release: add the column to
-        // project files made by earlier builds.
-        let has_note: bool = conn
-            .prepare("SELECT 1 FROM pragma_table_info('oplog') WHERE name = 'note'")?
-            .exists([])?;
-        if !has_note {
-            conn.execute("ALTER TABLE oplog ADD COLUMN note TEXT", [])?;
+        // Steps of older files, before the tables they need are made.
+        if has_meta {
+            upgrade_before_tables(&conn)?;
         }
-        // Schema 3: every project line has its own objects, log and index.
-        lines::migrate(&conn)?;
         conn.execute_batch(spatial::SCHEMA)?;
         conn.execute_batch(surfaces::SCHEMA)?;
         conn.execute_batch(versions::SCHEMA)?;
         conn.execute_batch(collab::SCHEMA)?;
-        lines::migrate_descriptions(&conn)?;
+        if has_meta {
+            lines::migrate_descriptions(&conn)?;
+        }
         // The chunk grid is fixed when the project is created.
         let grid_size: Option<String> = conn
             .query_row(
@@ -1233,9 +1237,9 @@ impl Session {
             }
         }
         versions::init(&conn)?;
-        // Schema 4: library files of the shared `library_file` table become
-        // objects of every project line (each line had them).
-        migrate_library_files(&conn)?;
+        if has_meta {
+            migrate_library_files(&conn)?;
+        }
         let mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>> = BTreeMap::new();
         {
             let mut stmt =

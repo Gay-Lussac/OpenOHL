@@ -1021,11 +1021,44 @@ fn library_files_of_schema_3_become_each_lines() {
         s.library_files("cables").unwrap(),
         vec![("old.olsw".to_owned(), "x = 1".to_owned())]
     );
+    assert!(!has_table(&path, "library_file"));
+}
+
+fn has_table(path: &std::path::Path, name: &str) -> bool {
+    Connection::open(path)
+        .unwrap()
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1")
+        .unwrap()
+        .exists([name])
+        .unwrap()
+}
+
+/// A new project file has only the current tables, with every column a
+/// migration would add.
+#[test]
+fn a_new_project_has_no_tables_of_older_schemas() {
+    let (path, s) = project("fresh");
+    drop(s);
+    assert!(!has_table(&path, "library_file"));
+    assert!(!has_table(&path, "line_snapshot"));
     let c = Connection::open(&path).unwrap();
-    let left: i64 = c
-        .query_row("SELECT COUNT(*) FROM library_file", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(left, 0);
+    for (table, column) in [
+        ("oplog", "note"),
+        ("oplog", "line"),
+        ("model_object", "line"),
+        ("vc_ref", "description"),
+    ] {
+        let has: bool = c
+            .prepare("SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2")
+            .unwrap()
+            .exists([table, column])
+            .unwrap();
+        assert!(has, "{table}.{column}");
+    }
+    drop(c);
+    // Opening again changes nothing.
+    Session::open(&path).unwrap();
+    assert!(!has_table(&path, "line_snapshot"));
 }
 
 #[test]
