@@ -69,6 +69,7 @@
 - [Performance and time budgets](development/performance.md)
 - [Desktop app conventions](development/ui.md)
 - [Structure detail levels in checks](development/structure-detail.md)
+- [Building structures, levels 1 to 3 (draft)](development/structure-building.md)
 
 # Validation
 
