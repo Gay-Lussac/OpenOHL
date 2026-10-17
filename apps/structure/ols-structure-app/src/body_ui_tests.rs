@@ -2,25 +2,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The Body tab driven as a user would (egui_kittest): a generator
+//! The Body panels driven as a user would (egui_kittest): a generator
 //! previewed and applied in one undo step, crossarms on it, a group set
 //! on members picked with Shift + click.
 
 use egui_kittest::kittest::Queryable;
 use ols_structure_edit::Handle;
 
-use crate::app::{Sheet, Tab};
-use crate::tests::{copy_of, harness};
+use crate::layout::Panel;
+use crate::tests::{copy_of, harness, menu};
 
 #[test]
 fn a_body_is_generated_grouped_and_undone() {
     let path = copy_of("type-01.olss", "body");
     let mut h = harness(&path);
-    h.get_by_label("Body").click();
-    h.run();
-    h.get_by_label("Generators").click();
-    h.run();
-    assert_eq!(h.state().sheets[1], Sheet::Generators);
+    menu(&mut h, "Body", "Generators…");
+    assert_eq!(h.state_mut().focused(), Some(Panel::Generators));
     h.get_by_label("legs and panels").click();
     h.run();
     // Four X panels with horizontals up to the points (30 m): previewed.
@@ -49,8 +46,7 @@ fn a_body_is_generated_grouped_and_undone() {
     assert_eq!(t.members.len(), 72);
     assert!(t.points.iter().all(|p| p.node.is_some()));
     // Two members picked (the second with Shift), a group set on them.
-    h.state_mut().sheets[1] = Sheet::Members;
-    h.run();
+    menu(&mut h, "Body", "Members…");
     h.get_by_label("body-M1").click();
     h.run();
     h.get_by_label("body-M2")
@@ -76,9 +72,7 @@ fn a_body_is_generated_grouped_and_undone() {
         .collect();
     assert_eq!(grouped, ["body-M1", "body-M2"]);
     // Design › Groups lists it.
-    h.state_mut().tab = Tab::Design;
-    h.state_mut().sheets[2] = Sheet::Groups;
-    h.run();
+    menu(&mut h, "Design", "Groups…");
     h.get_by_label("main-leg");
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }

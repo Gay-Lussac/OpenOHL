@@ -172,7 +172,7 @@ made_by = "body"                     # written by generator body: a rebuild repl
 - **Crossarms** start on the body face on the point's side (its outermost joints at a level): the lower root at the highest level at or below the point, the upper root at the next level up (a point at the top of the body: the top and the level below). *Triangular*: four chords to one tip at the point. *Rectangular*: a bottom tip at the point, a top tip above it, a vertical and two diagonals (a point at the top of the body: the point is the top tip, the bottom tip one level down). A peak rises from the body's top level, not from the arms' tips.
 - **Rebuild** replaces only what the generator made: a joint or member it makes again (same id) keeps what was set on it (section, kind, group, support…); one it no longer makes goes, unless a member made by hand, another generator's member or a point uses it — then it stays, as made by hand, and is reported. Hand-made joints and members are never touched.
 - **Groups**: there is no table of groups; a group is the members naming it. A section set for a group is written on each of its members, so the finite-element model and the level read the members only (the FE model leaves `group` and `made_by` out).
-- **Symmetry**: joints are matched by position (within 1 mm); see [the Body tab](structure-app.md#the-body-tab).
+- **Symmetry**: joints are matched by position (within 1 mm); see [the Body panels](structure-app.md#the-body-panels).
 
 ### Poles
 

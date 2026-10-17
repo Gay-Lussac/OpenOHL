@@ -49,7 +49,7 @@ pub struct View {
     /// The scene needs building.
     dirty: bool,
     drag: Option<Move>,
-    /// A tab's drawing over the structure (loads, results), by its key.
+    /// A panel's drawing over the structure (loads, results), by its key.
     overlay: Option<(u64, GpuScene)>,
 }
 
@@ -67,7 +67,7 @@ pub struct ViewInput<'a> {
     pub ahead: f64,
     /// What the last action did (or why not: `true`).
     pub message: &'a mut Option<(String, bool)>,
-    /// A tab's drawing over the structure (loads, results) and its key
+    /// A panel's drawing over the structure (loads, results) and its key
     /// (built again when the key changes).
     pub overlay: Option<(u64, Scene)>,
     /// What a generator would build: lines drawn over the structure.

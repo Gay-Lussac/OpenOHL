@@ -49,8 +49,9 @@ pub use geometry::{
 };
 pub use groups::{Group, groups, set_group, set_group_kind, set_group_section};
 pub use load_cases::{
-    CASE_FIELDS, CaseText, LOAD_FIELDS, add_load, add_load_case, load_cases, merge_load_cases,
-    remove_load, remove_load_case, set_load_case_field, set_load_field,
+    CASE_FIELDS, CaseText, GivenCase, LINE_CASE_LOADS, LOAD_FIELDS, add_load, add_load_case,
+    load_cases, merge_load_cases, remove_load, remove_load_case, set_load_case_field,
+    set_load_field, store_given_cases, take_line_load_cases,
 };
 pub use missing::{Missing, Need, Place, missing, next_level};
 pub use rebuild::{Report, apply, rebuild, rebuild_all, remove_generator};

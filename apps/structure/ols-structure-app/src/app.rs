@@ -2,9 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The window: the File and Edit menus, the header (the level and what
-//! the next one lacks), the 3D view on top and the tabs underneath.
+//! The window of OLS Structure: the menus at the top (File, Edit, View,
+//! then Geometry, Body, Design, Load cases, Results, In the line, Help),
+//! the panels under them (docked, movable, closable: [`crate::layout`]),
+//! the last message at the bottom.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -19,54 +22,15 @@ use ols_structures::InsulatorLibrary;
 /// How often the line-values file is looked at.
 const VALUES_POLL: Duration = Duration::from_millis(500);
 
+use egui_dock::{DockArea, DockState};
+
+use crate::layout::{Area, Panel};
 use crate::load_cases_tab::LoadCasesTab;
 use crate::results_tab::ResultsTab;
 use crate::view::{View, ViewInput};
 
-/// The tabs under the view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Tab {
-    /// Level 1: points, insulators, wire points, sets, the file's fields.
-    #[default]
-    Geometry,
-    /// Level 2: joints and members.
-    Body,
-    /// Level 3: supports, sections per member, sections, materials.
-    Design,
-    /// Load-case recipes and the load table.
-    LoadCases,
-    /// The finite-element results per case.
-    Results,
-    /// The line's values at the placed structure, per point and case.
-    InTheLine,
-}
-
-impl Tab {
-    /// Every tab, in order.
-    pub const ALL: [Tab; 6] = [
-        Tab::Geometry,
-        Tab::Body,
-        Tab::Design,
-        Tab::LoadCases,
-        Tab::Results,
-        Tab::InTheLine,
-    ];
-
-    /// Its name.
-    pub fn name(self) -> &'static str {
-        match self {
-            Tab::Geometry => "Geometry",
-            Tab::Body => "Body",
-            Tab::Design => "Design",
-            Tab::LoadCases => "Load cases",
-            Tab::Results => "Results",
-            Tab::InTheLine => "In the line",
-        }
-    }
-}
-
-/// The table shown in a tab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A table of a panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Sheet {
     /// The file's own fields: name, height, foot, extensions.
     Structure,
@@ -82,9 +46,9 @@ pub enum Sheet {
     Joints,
     /// Members.
     Members,
-    /// Body generators (Body tab).
+    /// Body generators.
     Generators,
-    /// Member groups: a section and kind per group (Design tab).
+    /// Member groups: a section and kind per group.
     Groups,
     /// Supports of the joints.
     Supports,
@@ -94,11 +58,11 @@ pub enum Sheet {
     Sections,
     /// Materials.
     Materials,
-    /// The pole's outline (Body tab).
+    /// The pole's outline.
     Pole,
-    /// The pole's design (Design tab).
+    /// The pole's design.
     PoleDesign,
-    /// Height extensions, their pieces and legs (Body tab).
+    /// Height extensions, their pieces and legs.
     Extensions,
 }
 
@@ -114,10 +78,20 @@ pub struct StructureApp {
     pub insulators: InsulatorLibrary,
     /// The angle that means ahead (the compass).
     pub ahead: f64,
-    /// The tab shown.
-    pub tab: Tab,
-    /// The table shown in each tab.
-    pub sheets: [Sheet; 3],
+    /// The menu worked in: the one of the panel last focused (the loads
+    /// or the results are drawn over the structure while it is theirs).
+    pub area: Area,
+    /// The table shown in each panel with several.
+    pub sheets: HashMap<Panel, Sheet>,
+    /// The panels and where they are.
+    pub dock: DockState<Panel>,
+    /// A panel to bring to the front after the panels are drawn (a link
+    /// clicked in one of them).
+    pub focus_request: Option<Panel>,
+    /// The panels drawn in the last frame.
+    pub panels_drawn: Vec<Panel>,
+    /// Help › About is open.
+    pub about: bool,
     /// Picked, in order (two joints: a member between them).
     pub selected: Vec<Handle>,
     /// A row to bring into view (an item of the header clicked).
@@ -174,8 +148,12 @@ impl StructureApp {
             insulators_dir: None,
             insulators: InsulatorLibrary::default(),
             ahead: 0.0,
-            tab: Tab::default(),
-            sheets: [Sheet::Points, Sheet::Joints, Sheet::Supports],
+            area: Area::default(),
+            sheets: HashMap::new(),
+            dock: crate::layout::default_dock(),
+            focus_request: None,
+            panels_drawn: Vec::new(),
+            about: false,
             selected: Vec::new(),
             scroll_to: None,
             grid: 0.05,
@@ -225,11 +203,11 @@ impl StructureApp {
                         Err(e) => log::warn!("insulators: {e}"),
                     }
                 }
-                // The level decides the tab: where the work is.
-                self.tab = match f.structure().detail().level() {
-                    1 => Tab::Geometry,
-                    2 => Tab::Body,
-                    _ => Tab::Design,
+                // The level decides the panel in front: where the work is.
+                let area = match f.structure().detail().level() {
+                    1 => Area::Geometry,
+                    2 => Area::Body,
+                    _ => Area::Design,
                 };
                 self.file = Some(f);
                 self.open_error = None;
@@ -254,6 +232,16 @@ impl StructureApp {
                 self.body = Default::default();
                 self.pole = Default::default();
                 self.ext = Default::default();
+                // A pole: its own panels.
+                let pole = self
+                    .file
+                    .as_ref()
+                    .is_some_and(|f| crate::pole_panel::has_pole(f.structure()));
+                self.focus(match area {
+                    Area::Body if pole => Panel::Pole,
+                    Area::Design if pole => Panel::PoleDesign,
+                    _ => area.first_panel(),
+                });
             }
             Err(e) => self.open_error = Some(e),
         }
@@ -306,6 +294,12 @@ impl StructureApp {
         }
     }
 
+    /// In the line › Read the line's values again: now.
+    pub fn reload_line_values(&mut self) {
+        self.values_seen = None;
+        self.poll_line_values();
+    }
+
     /// Unsaved changes (of the file, or loads typed in the load table).
     pub fn dirty(&self) -> bool {
         self.file.as_ref().is_some_and(StructureFile::dirty) || self.loads.overrides_dirty
@@ -335,7 +329,7 @@ impl StructureApp {
     }
 
     /// Save as: a file chosen.
-    fn save_as(&mut self) {
+    pub(crate) fn save_as(&mut self) {
         let name = self
             .file
             .as_ref()
@@ -444,115 +438,6 @@ impl StructureApp {
         }
     }
 
-    fn menu(&mut self, ui: &mut egui::Ui) {
-        egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("File", |ui| {
-                let dirty = self.dirty();
-                if ui
-                    .add_enabled(!dirty, egui::Button::new("Open…"))
-                    .on_disabled_hover_text("Save or undo the changes first")
-                    .clicked()
-                {
-                    ui.close();
-                    if let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Structure", &["olss"])
-                        .pick_file()
-                    {
-                        self.open_chosen(&p);
-                    }
-                }
-                let has = self.file.is_some();
-                if ui
-                    .add_enabled(dirty, egui::Button::new("Save").shortcut_text("Ctrl+S"))
-                    .clicked()
-                {
-                    ui.close();
-                    self.save(None);
-                }
-                if ui
-                    .add_enabled(
-                        has,
-                        egui::Button::new("Save as…").shortcut_text("Ctrl+Shift+S"),
-                    )
-                    .clicked()
-                {
-                    ui.close();
-                    self.save_as();
-                }
-                ui.separator();
-                self.export_menu(ui);
-                ui.separator();
-                if ui.button("Quit").clicked() {
-                    ui.close();
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            });
-            ui.menu_button("Edit", |ui| {
-                let (u, r) = self.file.as_ref().map_or((None, None), |f| {
-                    (
-                        f.undo_name().map(str::to_owned),
-                        f.redo_name().map(str::to_owned),
-                    )
-                });
-                let label = |w: &str, n: &Option<String>| {
-                    n.as_ref().map_or(w.to_owned(), |n| format!("{w} {n}"))
-                };
-                if ui
-                    .add_enabled(
-                        u.is_some(),
-                        egui::Button::new(label("Undo", &u)).shortcut_text("Ctrl+Z"),
-                    )
-                    .clicked()
-                {
-                    ui.close();
-                    self.undo();
-                }
-                if ui
-                    .add_enabled(
-                        r.is_some(),
-                        egui::Button::new(label("Redo", &r)).shortcut_text("Ctrl+Shift+Z"),
-                    )
-                    .clicked()
-                {
-                    ui.close();
-                    self.redo();
-                }
-            });
-            ui.separator();
-            let undo_tip = self
-                .file
-                .as_ref()
-                .and_then(|f| f.undo_name())
-                .map_or("Nothing to undo".to_owned(), |w| {
-                    format!("Undo {w} (Ctrl+Z)")
-                });
-            let can_undo = self.file.as_ref().is_some_and(|f| f.undo_name().is_some());
-            if ui
-                .add_enabled(can_undo, egui::Button::new("⟲ Undo"))
-                .on_hover_text(&undo_tip)
-                .on_disabled_hover_text(&undo_tip)
-                .clicked()
-            {
-                self.undo();
-            }
-            let can_redo = self.file.as_ref().is_some_and(|f| f.redo_name().is_some());
-            if ui
-                .add_enabled(can_redo, egui::Button::new("⟳ Redo"))
-                .on_hover_text("Make again what was undone (Ctrl+Shift+Z)")
-                .clicked()
-            {
-                self.redo();
-            }
-            if ui
-                .add_enabled(self.dirty(), egui::Button::new("Save"))
-                .on_hover_text("Save the file (Ctrl+S)")
-                .clicked()
-            {
-                self.save(None);
-            }
-        });
-    }
-
     /// The header: file, level and what the next level lacks (each item
     /// picks its row), the advice folded, the last message.
     fn header(&mut self, ui: &mut egui::Ui) {
@@ -589,7 +474,7 @@ impl StructureApp {
                 error_label(ui, e.as_str());
             }
             if open_tab {
-                self.tab = Tab::InTheLine;
+                self.focus_request = Some(Panel::InTheLine);
             }
         }
         let next = next_level(d);
@@ -636,52 +521,92 @@ impl StructureApp {
         if let Some(e) = f.error() {
             error_label(ui, format!("the file as edited does not read: {e}"));
         }
-        if let Some((m, error)) = &self.message {
-            let text = egui::RichText::new(m).small();
-            if *error {
-                error_label(ui, text);
-            } else {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, text);
-            }
-        }
         if let Some(m) = go {
             self.go_to(&m);
         }
     }
 
-    /// An item of the header clicked: its tab and table, its row picked.
+    /// An item of the header clicked: its panel (opened if closed) and
+    /// table, its row picked.
     pub fn go_to(&mut self, m: &Missing) {
-        let (tab, sheet) = match (m.need, m.place) {
-            (Need::Level, Place::Members) if m.target.is_some() => (Tab::Design, Sheet::Design),
-            (_, Place::Members) => (Tab::Body, Sheet::Members),
-            (Need::Level, Place::Joints) => (Tab::Design, Sheet::Supports),
-            (_, Place::Joints) => (Tab::Body, Sheet::Joints),
-            (_, Place::Points) => (Tab::Geometry, Sheet::Points),
-            (_, Place::Sections) => (Tab::Design, Sheet::Sections),
+        let sheet = match (m.need, m.place) {
+            (Need::Level, Place::Members) if m.target.is_some() => Sheet::Design,
+            (_, Place::Members) => Sheet::Members,
+            (Need::Level, Place::Joints) => Sheet::Supports,
+            (_, Place::Joints) => Sheet::Joints,
+            (_, Place::Points) => Sheet::Points,
+            (_, Place::Sections) => Sheet::Sections,
             (Need::Level, Place::Pole)
                 if self
                     .file
                     .as_ref()
                     .is_some_and(|f| f.structure().detail().level() >= 2) =>
             {
-                (Tab::Design, Sheet::PoleDesign)
+                Sheet::PoleDesign
             }
-            (_, Place::Pole) => (Tab::Body, Sheet::Pole),
-            (_, Place::Extensions) => (Tab::Body, Sheet::Extensions),
+            (_, Place::Pole) => Sheet::Pole,
+            (_, Place::Extensions) => Sheet::Extensions,
         };
-        self.tab = tab;
-        self.sheets[tab_index(tab)] = sheet;
+        let panel = Panel::of_sheet(sheet);
+        self.sheets.insert(panel, sheet);
+        self.focus_request = Some(panel);
         if let Some(h) = &m.target {
             self.selected = vec![h.clone()];
             self.scroll_to = Some(h.clone());
         }
     }
 
+    /// Brings `panel` to the front (opened where it belongs if closed);
+    /// its menu becomes the one worked in.
+    pub fn focus(&mut self, panel: Panel) {
+        crate::layout::open_panel(&mut self.dock, panel);
+        if let Some(a) = panel.area() {
+            self.area = a;
+        }
+    }
+
+    /// `panel` is open (in front or behind another).
+    pub fn is_open(&self, panel: Panel) -> bool {
+        self.dock.find_tab(&panel).is_some()
+    }
+
+    /// The panel in front in the leaf last clicked or opened.
+    pub fn focused(&mut self) -> Option<Panel> {
+        crate::layout::focused(&mut self.dock)
+    }
+
+    /// The table shown in `panel` (its first when none was chosen).
+    pub fn sheet(&self, panel: Panel) -> Option<Sheet> {
+        let sheets = panel.sheets();
+        self.sheets
+            .get(&panel)
+            .copied()
+            .filter(|s| sheets.iter().any(|x| x.0 == *s))
+            .or(sheets.first().map(|s| s.0))
+    }
+
+    /// The panels as kept from the last run (none kept, or not read: the
+    /// default arrangement).
+    pub fn restore(&mut self, storage: Option<&dyn eframe::Storage>) {
+        if let Some(dock) =
+            storage.and_then(|s| eframe::get_value::<DockState<Panel>>(s, crate::layout::DOCK_KEY))
+        {
+            self.dock = dock;
+        }
+    }
+
+    /// View › Reset layout: the default arrangement.
+    pub fn reset_layout(&mut self) {
+        self.dock = crate::layout::default_dock();
+        let panel = self.area.first_panel();
+        crate::layout::open_panel(&mut self.dock, panel);
+    }
+
     /// The window without a file.
     fn empty(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             ui.add_space(80.0);
-            ui.heading("OLS CAD — structure");
+            ui.heading("OLS Structure");
             ui.label("A structure file (.olss): its points and insulators, its body, its design.");
             ui.add_space(12.0);
             if ui.button("Open a structure file…").clicked()
@@ -701,7 +626,7 @@ impl StructureApp {
     fn title(&mut self, ctx: &egui::Context) {
         let title = match &self.file {
             Some(f) => format!(
-                "{}{} — OLS CAD structure",
+                "OLS Structure — {}{}",
                 if f.dirty() { "* " } else { "" },
                 f.path()
                     .and_then(Path::file_name)
@@ -709,21 +634,12 @@ impl StructureApp {
                         .to_string_lossy()
                         .into_owned())
             ),
-            None => "OLS CAD structure".into(),
+            None => "OLS Structure".into(),
         };
         if title != self.title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.title = title;
         }
-    }
-}
-
-/// The index of a tab with tables.
-pub fn tab_index(tab: Tab) -> usize {
-    match tab {
-        Tab::Geometry => 0,
-        Tab::Body => 1,
-        _ => 2,
     }
 }
 
@@ -747,6 +663,10 @@ pub fn error_label(ui: &mut egui::Ui, text: impl Into<egui::RichText>) {
 }
 
 impl eframe::App for StructureApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, crate::layout::DOCK_KEY, &self.dock);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.keys(&ctx);
@@ -762,26 +682,79 @@ impl eframe::App for StructureApp {
         {
             f.end();
         }
-        egui::Panel::top("menu").show(ui, |ui| {
-            self.menu(ui);
-            self.header(ui);
-        });
+        self.results.poll();
+        egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
+        self.status_bar(ui);
+        self.windows(&ctx);
         if self.file.is_none() {
             egui::CentralPanel::default().show(ui, |ui| self.empty(ui));
             return;
         }
-        egui::Panel::bottom("tabs")
-            .resizable(true)
-            .default_size(340.0)
+        // The generator's preview is drawn while its panel is.
+        if !self.panels_drawn.contains(&Panel::Generators) {
+            self.body.preview.clear();
+        }
+        let before = (self.body.preview_stamp(), self.area);
+        let mut dock = std::mem::replace(&mut self.dock, DockState::new(Vec::new()));
+        let mut viewer = crate::layout::Viewer {
+            app: self,
+            drawn: Vec::new(),
+        };
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    for tab in Tab::ALL {
-                        ui.selectable_value(&mut self.tab, tab, tab.name());
-                    }
-                });
-                ui.separator();
-                self.tab_ui(ui);
+                DockArea::new(&mut dock)
+                    .show_close_buttons(true)
+                    .show_leaf_close_all_buttons(false)
+                    .show_inside(ui, &mut viewer);
             });
+        self.panels_drawn = viewer.drawn;
+        self.dock = dock;
+        if let Some(p) = self.focus_request.take() {
+            self.focus(p);
+        } else if let Some(a) = self.focused().and_then(Panel::area) {
+            self.area = a;
+        }
+        // The view drew before a panel changed what it shows: again.
+        if before != (self.body.preview_stamp(), self.area) {
+            ctx.request_repaint();
+        }
+    }
+}
+
+impl StructureApp {
+    /// The last message, at the bottom of the window.
+    fn status_bar(&mut self, ui: &mut egui::Ui) {
+        let Some((m, error)) = &self.message else {
+            return;
+        };
+        let (m, error) = (m.clone(), *error);
+        egui::Panel::bottom("status").show(ui, |ui| {
+            let text = egui::RichText::new(m).small();
+            if error {
+                error_label(ui, text);
+            } else {
+                ui.colored_label(egui::Color32::LIGHT_GREEN, text);
+            }
+        });
+    }
+
+    /// One panel's content.
+    pub fn panel_ui(&mut self, ui: &mut egui::Ui, panel: Panel) {
+        match panel {
+            Panel::Level => self.header(ui),
+            Panel::View3d => self.view_ui(ui),
+            Panel::LoadRecipes => self.load_recipes_ui(ui),
+            Panel::LoadTable => self.load_table_ui(ui),
+            Panel::Results => self.results_ui(ui),
+            Panel::InTheLine => self.in_the_line_ui(ui),
+            _ => self.sheet_panel(ui, panel),
+        }
+    }
+
+    /// The 3D view, with the loads or the results of the menu worked in
+    /// drawn over the structure.
+    fn view_ui(&mut self, ui: &mut egui::Ui) {
         let Some(f) = &mut self.file else {
             return;
         };
@@ -800,37 +773,28 @@ impl eframe::App for StructureApp {
             self.view.redraw();
             self.drawn = Some(key);
         }
-        let rs = self.rs.clone();
-        // The tab's drawing over the structure: loads, or results.
-        self.results.poll();
-        let overlay = match self.tab {
-            Tab::LoadCases => self.loads.overlay(&g),
-            Tab::Results => self.results.overlay(),
+        if std::mem::take(&mut self.view_fit) {
+            self.view.fit();
+        }
+        let overlay = match self.area {
+            Area::LoadCases => self.loads.overlay(&g),
+            Area::Results => self.results.overlay(),
             _ => None,
         };
-        egui::CentralPanel::default().show(ui, |ui| {
-            self.view.ui(
-                ui,
-                rs.as_ref(),
-                f,
-                ViewInput {
-                    g: &g,
-                    foot: t.foot_level(),
-                    selected: &mut self.selected,
-                    grid: self.grid,
-                    ahead: self.ahead,
-                    message: &mut self.message,
-                    overlay,
-                    preview: &self.body.preview,
-                },
-            );
-        });
-    }
-}
-
-impl StructureApp {
-    /// Fits the view to the whole structure.
-    pub fn fit(&mut self) {
-        self.view.fit();
+        self.view.ui(
+            ui,
+            self.rs.as_ref(),
+            f,
+            ViewInput {
+                g: &g,
+                foot: t.foot_level(),
+                selected: &mut self.selected,
+                grid: self.grid,
+                ahead: self.ahead,
+                message: &mut self.message,
+                overlay,
+                preview: &self.body.preview,
+            },
+        );
     }
 }

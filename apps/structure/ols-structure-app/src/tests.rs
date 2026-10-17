@@ -11,7 +11,8 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use ols_structure_edit::Handle;
 
-use crate::app::{Sheet, StructureApp, Tab};
+use crate::app::StructureApp;
+use crate::layout::{Area, Panel};
 
 /// A copy of example structure `name` in a folder of its own.
 pub(crate) fn copy_of(name: &str, tag: &str) -> PathBuf {
@@ -45,7 +46,15 @@ pub(crate) fn harness(path: &Path) -> Harness<'static, StructureApp> {
     h
 }
 
-/// A full design opens on the Design tab with its level; a joint added
+/// Clicks menu `top`, then its entry `entry`.
+pub(crate) fn menu(h: &mut Harness<'static, StructureApp>, top: &str, entry: &str) {
+    h.get_by_label(top).click();
+    h.run();
+    h.get_by_label(entry).click();
+    h.run();
+}
+
+/// A full design opens on the Design panels with its level; a joint added
 /// (Body) is one undo step, undone with Ctrl+Z, made again with Redo, and
 /// Save writes it to the file.
 #[test]
@@ -53,11 +62,12 @@ fn a_structure_is_edited_undone_and_saved() {
     let path = copy_of("type-02.olss", "edit");
     let mut h = harness(&path);
     h.get_by_label("Level 3 — full design");
-    assert_eq!(h.state().tab, Tab::Design);
+    assert_eq!(h.state().area, Area::Design);
+    assert_eq!(h.state_mut().focused(), Some(Panel::Supports));
     // The X-braces cross without a joint: advice, not a lack.
     h.get_by_label("advice (40)");
-    h.get_by_label("Body").click();
-    h.run();
+    menu(&mut h, "Body", "Joints…");
+    assert_eq!(h.state().area, Area::Body);
     h.state_mut().selected = vec![Handle::Joint("A1".into())];
     h.run();
     h.get_by_label("Add joint").click();
@@ -88,7 +98,7 @@ fn a_structure_is_edited_undone_and_saved() {
 }
 
 /// A stick figure: level 1, and for level 2 what it lacks; the item
-/// clicked opens the Body tab's members.
+/// clicked brings the Members panel to the front.
 #[test]
 fn the_header_names_what_the_next_level_lacks() {
     let path = copy_of("type-01.olss", "level");
@@ -98,12 +108,12 @@ fn the_header_names_what_the_next_level_lacks() {
     h.get_by_label("no member: add joints and members (Body), or a 3D [[body]]")
         .click();
     h.run_steps(3);
-    assert_eq!(h.state().tab, Tab::Body);
-    assert_eq!(h.state().sheets[1], Sheet::Members);
+    assert_eq!(h.state().area, Area::Body);
+    assert_eq!(h.state_mut().focused(), Some(Panel::Members));
     // The placeholders say what comes.
-    h.get_by_label("Results").click();
-    h.run();
-    assert_eq!(h.state().tab, Tab::Results);
+    menu(&mut h, "Results", "FE results…");
+    assert_eq!(h.state().area, Area::Results);
+    h.get_by_label_contains("Results need level 3");
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 

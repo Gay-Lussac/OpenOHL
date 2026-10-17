@@ -60,9 +60,10 @@ line's default) the same structure gives the same bytes in every format.
 | load table rows (`ols_structure_loads::LoadTable`) | per case: a point's load at the joint carrying it, or **at its place along the member** (a `[[point]]` with `member`, `at`); a joint's load; a member's surface load as a **uniform load** (total ÷ length); right, ahead, down → x, y, −z |
 | recipe `self_weight` | the case's self-weight factor (case `model`: `[analysis] self_weight`) |
 
-In the structure application the load table is the Load cases tab's:
-for a placed structure the line's values at that place and the values
-typed over the table. The command-line tool (and the application for a
+In the structure application the load table is the Load table panel's:
+for a placed structure the line's forces at that place (its cases first,
+then the recipes evaluated with the line's values) and the values typed
+over the table. The command-line tool (and the application for a
 structure opened on its own) takes the file's recipes evaluated without
 line values — rows needing a line value are left out and counted in a
 note; surface loads on the members' areas from the section library

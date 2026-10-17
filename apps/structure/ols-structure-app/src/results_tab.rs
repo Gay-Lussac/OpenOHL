@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The Results tab: the cases of the load table solved by the
-//! finite-element model (through `ols-structure-link`, on a thread of its
+//! The FE results panel (Results menu): the cases of the load table
+//! solved by the finite-element model (through `ols-structure-link`, on a thread of its
 //! own, each case under a time budget), and per case the largest
 //! displacement, Σ loads against Σ reactions, the reactions, the members'
 //! forces and usage and the governing member; in the view the deformed
@@ -35,7 +35,7 @@ const NEAR_FULL: f64 = 0.9;
 /// the model does not read.
 pub type Run = Result<Vec<CaseRun>, String>;
 
-/// The state of the Results tab.
+/// The state of the FE results panel.
 pub struct ResultsTab {
     /// The case to run (empty: every case).
     pub case: String,
@@ -208,7 +208,73 @@ impl ResultsTab {
 }
 
 impl StructureApp {
-    /// The Results tab.
+    /// A run can start: level 3, a case in the load table, none running.
+    pub fn can_run_results(&mut self) -> bool {
+        let Some(f) = &self.file else {
+            return false;
+        };
+        if f.structure().detail() != Detail::Design || self.results.running() {
+            return false;
+        }
+        self.loads.refresh(f);
+        !self.loads.table().cases().is_empty()
+    }
+
+    /// Results › Run (and ▶ Run): solves the case chosen (or every case) of
+    /// the load table on its own thread; false when it cannot start.
+    pub fn run_results(&mut self, ctx: &egui::Context) -> bool {
+        if !self.can_run_results() {
+            return false;
+        }
+        let Some(f) = &self.file else {
+            return false;
+        };
+        let t = f.structure();
+        let table = self.loads.table().clone();
+        let key = self.loads.key();
+        let run: Vec<CaseToRun> = table
+            .cases()
+            .into_iter()
+            .filter(|c| self.results.case.is_empty() || *c == self.results.case)
+            .map(|c| {
+                let recipe = self
+                    .loads
+                    .recipes()
+                    .ok()
+                    .and_then(|r| r.iter().find(|r| r.name == c));
+                CaseToRun {
+                    name: c.to_owned(),
+                    strength: recipe.map_or(1.0, |r| r.strength),
+                    self_weight: recipe.map_or(1.0, |r| r.self_weight),
+                }
+            })
+            .collect();
+        let structure = t.clone();
+        let text = f.text();
+        let dir = f.path().and_then(Path::parent).map(Path::to_path_buf);
+        let sections = self.loads.sections.clone();
+        self.results.start(ctx, key, move |budget| {
+            analyse_cases(
+                &structure,
+                &text,
+                dir.as_deref(),
+                &sections,
+                &table,
+                &run,
+                budget,
+            )
+        });
+        true
+    }
+
+    /// Results › Cancel: stops the run going on.
+    pub fn cancel_results(&mut self) {
+        if let Some((_, _, cancel)) = &self.results.running {
+            cancel.cancel();
+        }
+    }
+
+    /// The FE results panel.
     pub fn results_ui(&mut self, ui: &mut egui::Ui) {
         self.results.poll();
         let Some(f) = &self.file else {
@@ -230,6 +296,7 @@ impl StructureApp {
             self.results.case.clear();
         }
         let ctx = ui.ctx().clone();
+        let mut run_now = false;
         ui.horizontal_wrapped(|ui| {
             ui.label("Case:");
             let text = if self.results.case.is_empty() {
@@ -256,37 +323,7 @@ impl StructureApp {
                 .on_disabled_hover_text("No case in the load table, or a run is going on")
                 .clicked()
             {
-                let run: Vec<CaseToRun> = cases
-                    .iter()
-                    .filter(|c| self.results.case.is_empty() || **c == self.results.case)
-                    .map(|c| {
-                        let recipe = self
-                            .loads
-                            .recipes()
-                            .ok()
-                            .and_then(|r| r.iter().find(|r| &r.name == c));
-                        CaseToRun {
-                            name: c.clone(),
-                            strength: recipe.map_or(1.0, |r| r.strength),
-                            self_weight: recipe.map_or(1.0, |r| r.self_weight),
-                        }
-                    })
-                    .collect();
-                let structure = t.clone();
-                let text = f.text();
-                let dir = f.path().and_then(Path::parent).map(Path::to_path_buf);
-                let sections = self.loads.sections.clone();
-                self.results.start(&ctx, key, move |budget| {
-                    analyse_cases(
-                        &structure,
-                        &text,
-                        dir.as_deref(),
-                        &sections,
-                        &table,
-                        &run,
-                        budget,
-                    )
-                });
+                run_now = true;
             }
             if let Some((started, _, cancel)) = &self.results.running {
                 ui.spinner();
@@ -302,6 +339,9 @@ impl StructureApp {
                 );
             }
         });
+        if run_now {
+            self.run_results(&ctx);
+        }
         let stale = self.results.results.is_some() && self.results.ran_on != key;
         if stale {
             ui.colored_label(

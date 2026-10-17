@@ -425,6 +425,108 @@ pub fn merge_load_cases(doc: &mut DocumentMut, text: &str) -> Result<(usize, usi
     Ok((added, replaced))
 }
 
+/// The loads a case taken from the line has: the line's factored
+/// transverse, longitudinal and vertical loads at every point.
+pub const LINE_CASE_LOADS: [&str; 3] = [
+    "transverse_factored",
+    "longitudinal_factored",
+    "vertical_factored",
+];
+
+/// One recipe per line load case in `line_cases`, named after it, taking
+/// that case's factored transverse, longitudinal and vertical loads at
+/// every point ([`LINE_CASE_LOADS`]); a case whose name a recipe has
+/// already is left as it is. The names of the recipes written.
+pub fn take_line_load_cases(doc: &mut DocumentMut, line_cases: &[String]) -> Vec<String> {
+    let mut written = Vec::new();
+    for case in line_cases {
+        let case = case.trim();
+        if case.is_empty() || names(doc).iter().any(|n| n == case) {
+            continue;
+        }
+        let (k, name) = add_load_case(doc, case);
+        let c = case_mut(doc, k).expect("added above");
+        c.insert(
+            "description",
+            toml_edit::value(format!("the line's case {case}, factored as in the line")),
+        );
+        c.insert("line_case", toml_edit::value(case));
+        let mut loads = ArrayOfTables::new();
+        for what in LINE_CASE_LOADS {
+            let mut t = Table::new();
+            t.insert("what", toml_edit::value(what));
+            t.insert("points", toml_edit::value("all"));
+            loads.push(t);
+        }
+        c.insert("load", Item::ArrayOfTables(loads));
+        written.push(name);
+    }
+    written
+}
+
+/// A case of given forces to store in the file: the line's forces at
+/// each point, written as values of the case itself (the file then needs
+/// no line).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GivenCase {
+    /// The case's name in the file.
+    pub name: String,
+    /// The line's load case the forces come from.
+    pub line_case: String,
+    /// Where they come from (line, place, date): the case's description.
+    pub description: String,
+    /// Per point (or wire point) label: transverse (right), longitudinal
+    /// (ahead), vertical (down), N.
+    pub forces: Vec<(String, [f64; 3])>,
+}
+
+/// The directions of the three components in a recipe: right, ahead,
+/// down.
+const GIVEN_DIRECTIONS: [&str; 3] = ["x", "y", "-z"];
+
+/// Writes `cases` into the file as `[[load_case]]` tables of given values
+/// (one load per point and non-zero component: `value`, `direction`,
+/// `points`); a case with the name of one there replaces it (in its
+/// place), the others are added. How many were added and replaced.
+pub fn store_given_cases(
+    doc: &mut DocumentMut,
+    cases: &[GivenCase],
+) -> Result<(usize, usize), String> {
+    let mut out = DocumentMut::new();
+    let mut tables = ArrayOfTables::new();
+    for c in cases {
+        let mut t = Table::new();
+        t.insert("name", toml_edit::value(c.name.clone()));
+        if !c.description.is_empty() {
+            t.insert("description", toml_edit::value(c.description.clone()));
+        }
+        if !c.line_case.is_empty() {
+            t.insert("line_case", toml_edit::value(c.line_case.clone()));
+        }
+        let mut loads = ArrayOfTables::new();
+        for (label, f) in &c.forces {
+            for (v, direction) in f.iter().zip(GIVEN_DIRECTIONS) {
+                if v.abs() < 1e-9 {
+                    continue;
+                }
+                let mut l = Table::new();
+                l.insert("value", toml_edit::value(format!("{:.1} N", v)));
+                l.insert("direction", toml_edit::value(direction));
+                let mut points = Array::new();
+                points.push(label.as_str());
+                l.insert("points", toml_edit::value(points));
+                loads.push(l);
+            }
+        }
+        if !loads.is_empty() {
+            t.insert("load", Item::ArrayOfTables(loads));
+        }
+        tables.push(t);
+    }
+    out.insert("load_case", Item::ArrayOfTables(tables));
+    merge_load_cases(doc, &out.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -599,5 +701,86 @@ points = "all"
         assert_eq!(t.load_cases[2]["name"].as_str(), Some("construction"));
         assert_eq!(t.wires.len(), 1);
         assert!(merge_load_cases(&mut d, "not [toml").is_err());
+    }
+
+    /// The line's cases taken as they are: one recipe each, its three
+    /// factored loads at every point; a case there already is kept.
+    #[test]
+    fn the_line_cases_are_taken_as_they_are() {
+        let mut d: DocumentMut = "id = \"P\"\nname = \"p\"\nkind = \"lattice\"\n"
+            .parse()
+            .unwrap();
+        let written = take_line_load_cases(
+            &mut d,
+            &["everyday".to_owned(), "wind".to_owned(), " ".to_owned()],
+        );
+        assert_eq!(written, ["everyday", "wind"]);
+        let cases = load_cases(&d);
+        assert_eq!(cases.len(), 2);
+        assert_eq!(cases[1].get("line_case"), "wind");
+        assert_eq!(cases[1].loads.len(), 3);
+        for (l, what) in LINE_CASE_LOADS.iter().enumerate() {
+            assert_eq!(cases[1].load(l, "what"), *what);
+            assert_eq!(cases[1].load(l, "points"), "all");
+        }
+        let t = reads(&d);
+        assert_eq!(t.load_cases.len(), 2);
+        // Taken again: nothing new; a case of the file's own stays.
+        let mut d = doc();
+        assert_eq!(
+            take_line_load_cases(
+                &mut d,
+                &["wind".to_owned(), "ice".to_owned(), "x".to_owned()]
+            ),
+            ["x"]
+        );
+        assert_eq!(load_cases(&d)[0].loads.len(), 1);
+        assert!(take_line_load_cases(&mut d, &["x".to_owned()]).is_empty());
+    }
+
+    /// The line's forces stored as given values: one load per point and
+    /// component, read back as written; stored again, a case of the same
+    /// name is replaced in its place.
+    #[test]
+    fn given_cases_are_stored_and_replaced() {
+        let mut d = doc();
+        let wind = GivenCase {
+            name: "wind".into(),
+            line_case: "wind".into(),
+            description: "stored from the line".into(),
+            forces: vec![
+                ("A1".into(), [1500.0, 0.0, 6000.0]),
+                ("A11".into(), [-1500.5, 200.0, 0.0]),
+            ],
+        };
+        let everyday = GivenCase {
+            name: "everyday".into(),
+            line_case: "everyday".into(),
+            forces: vec![("A1".into(), [0.0, 0.0, 4000.0])],
+            ..Default::default()
+        };
+        assert_eq!(
+            store_given_cases(&mut d, &[wind.clone(), everyday]),
+            Ok((1, 1))
+        );
+        let cases = load_cases(&d);
+        assert_eq!(cases[0].get("name"), "wind");
+        assert_eq!(cases[0].get("description"), "stored from the line");
+        assert_eq!(cases[0].loads.len(), 4);
+        assert_eq!(cases[0].load(0, "value"), "1500.0 N");
+        assert_eq!(cases[0].load(1, "direction"), "-z");
+        assert_eq!(cases[0].load(2, "value"), "-1500.5 N");
+        assert_eq!(cases[0].load(3, "points"), "A11");
+        assert_eq!(cases[2].get("name"), "everyday");
+        let t = reads(&d);
+        assert_eq!(t.load_cases.len(), 3);
+        // Again with other values: replaced, nothing added.
+        let mut again = wind;
+        again.forces = vec![("A1".into(), [100.0, 0.0, 0.0])];
+        assert_eq!(store_given_cases(&mut d, &[again]), Ok((0, 1)));
+        let cases = load_cases(&d);
+        assert_eq!(cases.len(), 3);
+        assert_eq!(cases[0].loads.len(), 1);
+        assert!(d.to_string().contains("# The cases (a comment kept)."));
     }
 }

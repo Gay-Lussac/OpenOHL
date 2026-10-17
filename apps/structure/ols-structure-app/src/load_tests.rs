@@ -2,7 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The Load cases and Results tabs driven as a user would (egui_kittest).
+//! The Load recipes, Load table and FE results panels driven as a user
+//! would (egui_kittest).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -12,8 +13,9 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use ols_structure_loads::{At, LoadRow, Source};
 
-use crate::app::{StructureApp, Tab};
-use crate::load_cases_tab::LoadSheet;
+use crate::app::StructureApp;
+use crate::layout::{Area, Panel};
+use crate::tests::menu;
 
 /// A copy of example structure `name` in a folder of its own.
 fn copy_of(name: &str, tag: &str) -> PathBuf {
@@ -73,9 +75,8 @@ fn a_load_row_is_added_and_undone() {
     let path = copy_of("type-02.olss", "add");
     let mut h = harness(&path);
     let before = h.state().file.as_ref().unwrap().text();
-    h.get_by_label("Load cases").click();
-    h.run();
-    assert_eq!(h.state().tab, Tab::LoadCases);
+    menu(&mut h, "Load cases", "Load recipes…");
+    assert_eq!(h.state().area, Area::LoadCases);
     assert_eq!(loads_of(&h, 0), 3);
     h.get_by_label("+ Load").click();
     h.run();
@@ -114,11 +115,8 @@ fn a_load_row_is_added_and_undone() {
 fn opened_alone_the_line_values_are_missing() {
     let path = copy_of("type-02.olss", "alone");
     let mut h = harness(&path);
-    h.get_by_label("Load cases").click();
-    h.run();
-    h.get_by_label("Load table").click();
-    h.run();
-    assert_eq!(h.state().loads.sheet, LoadSheet::Table);
+    menu(&mut h, "Load cases", "Load table…");
+    assert_eq!(h.state_mut().focused(), Some(Panel::LoadTable));
     let r = row(&h, "wind", 1, "A1");
     assert_eq!(
         r.missing.as_deref(),
@@ -131,7 +129,7 @@ fn opened_alone_the_line_values_are_missing() {
             .collect::<Vec<_>>()
             .is_empty()
     );
-    h.get_by_label_contains("Opened on its own");
+    h.get_by_label_contains("No line values: open this from a placed structure");
     // A value of the case needs no line.
     let r = row(&h, "ice, unbalanced", 2, "A1");
     assert_eq!((r.force, r.source), ([0.0, 2000.0, 0.0], Source::Recipe));
@@ -144,8 +142,7 @@ fn opened_alone_the_line_values_are_missing() {
 fn a_typed_value_is_kept_after_evaluating_again() {
     let path = copy_of("type-02.olss", "typed");
     let mut h = harness(&path);
-    h.get_by_label("Load cases").click();
-    h.run();
+    menu(&mut h, "Load cases", "Load recipes…");
     let r = row(&h, "wind", 1, "A1");
     h.state_mut().loads.type_value(&r, [3000.0, 0.0, 0.0]);
     h.run();
@@ -178,8 +175,7 @@ fn a_typed_value_is_kept_after_evaluating_again() {
     );
     // Opened again: the value is back.
     let mut h = harness(&path);
-    h.get_by_label("Load cases").click();
-    h.run();
+    menu(&mut h, "Load cases", "Load recipes…");
     let back = row(&h, "wind", 1, "A1");
     assert_eq!(
         (back.force, back.source),
@@ -197,8 +193,7 @@ fn a_typed_value_is_kept_after_evaluating_again() {
 fn the_table_goes_out_and_back_as_csv() {
     let path = copy_of("type-02.olss", "csv");
     let mut h = harness(&path);
-    h.get_by_label("Load cases").click();
-    h.run();
+    menu(&mut h, "Load cases", "Load recipes…");
     let r = row(&h, "ice, unbalanced", 1, "A11");
     h.state_mut().loads.type_value(&r, [0.0, 0.0, 7000.0]);
     let own = LoadRow {
@@ -233,14 +228,13 @@ fn the_table_goes_out_and_back_as_csv() {
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
-/// A typed case solved in the Results tab: the loads in equilibrium with
+/// A typed case solved in the FE results panel: the loads in equilibrium with
 /// the reactions, the usage shown.
 #[test]
 fn results_of_a_typed_case() {
     let path = copy_of("type-02.olss", "results");
     let mut h = harness(&path);
-    h.get_by_label("Load cases").click();
-    h.run();
+    menu(&mut h, "Load cases", "Load recipes…");
     for (label, force) in [
         ("A1", [4000.0, 1000.0, 9000.0]),
         ("A11", [4000.0, 0.0, 9000.0]),
@@ -260,8 +254,7 @@ fn results_of_a_typed_case() {
         h.state_mut().loads.type_value(&own, force);
     }
     h.run();
-    h.get_by_label("Results").click();
-    h.run();
+    menu(&mut h, "Results", "FE results…");
     h.state_mut().results.case = "typed".into();
     h.run();
     h.get_by_label("▶ Run").click();

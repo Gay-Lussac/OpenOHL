@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The Body tab's own tools: the symmetry option and Make symmetric, the
-//! member group of the members picked, the Members table with its group
-//! column and filter; and the Design tab's Groups table (a section and
-//! kind per group). The generators are in [`crate::generators_ui`].
+//! The Joints and Members panels' own tools: the symmetry option and
+//! Make symmetric, the member group of the members picked, the Members
+//! table with its group column and filter; and the Groups panel (Design
+//! menu: a section and kind per group). The generators are in [`crate::generators_ui`].
 
 use eframe::egui;
 use ols_structure_edit::body::{set_symmetry, symmetry_option};
@@ -18,7 +18,7 @@ use crate::app::StructureApp;
 use crate::generators_ui::Form;
 use crate::tables::row;
 
-/// The Body tab's state between frames.
+/// The Body panels' state between frames.
 #[derive(Default)]
 pub struct BodyState {
     /// What the generator being edited would build: lines in the view.
@@ -63,8 +63,47 @@ fn picked_members(selected: &[Handle]) -> Vec<String> {
         .collect()
 }
 
+/// The symmetry option set to `chosen` (one edit).
+fn set_symmetry_of(
+    f: &mut ols_structure_edit::StructureFile,
+    chosen: Option<Mirror>,
+    message: &mut Option<(String, bool)>,
+) {
+    f.edit("symmetry", |doc, _| set_symmetry(doc, chosen));
+    *message = Some((
+        format!("symmetry: {}", chosen.map_or("none", Mirror::name)),
+        false,
+    ));
+}
+
+/// Every joint and member given the mirror images it lacks (one edit).
+fn make_symmetric_of(
+    f: &mut ols_structure_edit::StructureFile,
+    message: &mut Option<(String, bool)>,
+) {
+    let (j, m) = f.edit("make symmetric", edit::symmetry::make_symmetric);
+    *message = Some((
+        format!("made symmetric: {j} joint(s) and {m} member(s) added"),
+        false,
+    ));
+}
+
 impl StructureApp {
-    /// The second row of the Body tab's tools: symmetry, Make symmetric,
+    /// Body › Symmetry: the option set.
+    pub fn set_symmetry(&mut self, chosen: Option<Mirror>) {
+        if let Some(f) = &mut self.file {
+            set_symmetry_of(f, chosen, &mut self.message);
+        }
+    }
+
+    /// Body › Make symmetric.
+    pub fn make_symmetric(&mut self) {
+        if let Some(f) = &mut self.file {
+            make_symmetric_of(f, &mut self.message);
+        }
+    }
+
+    /// The second row of the Joints and Members panels' tools: symmetry, Make symmetric,
     /// the group of the members picked.
     pub(crate) fn body_tools(&mut self, ui: &mut egui::Ui, t: &StructureType) {
         let Some(f) = &mut self.file else {
@@ -87,14 +126,7 @@ impl StructureApp {
                     }
                 });
             if chosen != now {
-                f.edit("symmetry", |doc, _| set_symmetry(doc, chosen));
-                self.message = Some((
-                    format!(
-                        "symmetry: {}",
-                        chosen.map_or("none", Mirror::name)
-                    ),
-                    false,
-                ));
+                set_symmetry_of(f, chosen, &mut self.message);
             }
             if ui
                 .add_enabled(now.is_some(), egui::Button::new("Make symmetric"))
@@ -102,11 +134,7 @@ impl StructureApp {
                 .on_disabled_hover_text("Choose a symmetry first")
                 .clicked()
             {
-                let (j, m) = f.edit("make symmetric", edit::symmetry::make_symmetric);
-                self.message = Some((
-                    format!("made symmetric: {j} joint(s) and {m} member(s) added"),
-                    false,
-                ));
+                make_symmetric_of(f, &mut self.message);
             }
             ui.separator();
             let members = picked_members(&self.selected);

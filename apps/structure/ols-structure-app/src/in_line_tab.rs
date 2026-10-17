@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The In the line tab: the values the line gives at the placed structure
-//! (from its line-values file, `--line-values`), per point and case, and
-//! the other places of the same structure file with their governing
-//! values.
+//! The Line values panel (In the line menu): the status of the line's
+//! values, the values the line gives at the placed structure (from its
+//! line-values file, `--line-values`), per point and case, and the other
+//! places of the same structure file with their governing values.
 
 use eframe::egui;
 use ols_structure_loads::{LineQuantity, LineValues};
@@ -50,8 +50,12 @@ fn kn(v: Option<f64>) -> String {
 }
 
 impl StructureApp {
-    /// The In the line tab.
+    /// The Line values panel (In the line menu).
     pub fn in_the_line_ui(&mut self, ui: &mut egui::Ui) {
+        if let Some(f) = &self.file {
+            self.loads.refresh(f);
+        }
+        self.line_status_ui(ui);
         let Some(title) = self.loads.placed_title() else {
             ui.label(
                 "Opened on its own: no line. From the line application, Edit… on a placed \
@@ -84,9 +88,6 @@ impl StructureApp {
             ui.label("Waiting for the line's values.");
             return;
         };
-        if let Some(note) = &info.note {
-            ui.label(egui::RichText::new(note).weak());
-        }
         let values = &info.values;
         let cases = cases_of(values, &info.cases);
         if values.points.is_empty() {
