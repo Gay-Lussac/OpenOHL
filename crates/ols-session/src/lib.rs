@@ -62,8 +62,34 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Schema version of the session tables.
-pub const SCHEMA_VERSION: u32 = 3;
+/// Schema version of the session tables: 4 keeps library files as
+/// objects of each project line (before, a `library_file` table shared by
+/// all lines).
+pub const SCHEMA_VERSION: u32 = 4;
+
+/// The object id of library file `name` of `kind`.
+pub(crate) fn library_id(kind: &str, name: &str) -> String {
+    format!("{kind}/{name}")
+}
+
+/// The object of library file `name` of `kind`.
+pub(crate) fn library_value(kind: &str, name: &str, text: &str) -> Value {
+    serde_json::json!({
+        "id": library_id(kind, name),
+        "kind": kind,
+        "name": name,
+        "text": text,
+    })
+}
+
+/// A library object's kind, name and text.
+pub(crate) fn library_entry(v: &Value) -> Option<(String, String, String)> {
+    Some((
+        v.get("kind")?.as_str()?.to_owned(),
+        v.get("name")?.as_str()?.to_owned(),
+        v.get("text")?.as_str()?.to_owned(),
+    ))
+}
 
 /// Errors of a session.
 #[derive(Debug, Clone, PartialEq)]
@@ -257,6 +283,10 @@ pub enum Kind {
     Report,
     /// An interphase spacer (between span points of two sections).
     Spacer,
+    /// A library file kept with the project line (cables, structure types,
+    /// insulators, weather cases, …): id `kind/name`, its text; not part of
+    /// the line itself ([`Session::library_files`]).
+    Library,
 }
 
 impl Kind {
@@ -272,6 +302,7 @@ impl Kind {
             Self::Jumper => "jumper",
             Self::Report => "report",
             Self::Spacer => "spacer",
+            Self::Library => "library",
         }
     }
 
@@ -286,6 +317,7 @@ impl Kind {
             "jumper" => Self::Jumper,
             "report" => Self::Report,
             "spacer" => Self::Spacer,
+            "library" => Self::Library,
             other => return Err(SessionError::Store(format!("unknown object kind {other}"))),
         })
     }
@@ -956,7 +988,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
                 .jumpers
                 .push(serde_json::from_value::<Jumper>(v).map_err(parse_err)?),
             // Kept with the line, not part of it.
-            Kind::Report => {}
+            Kind::Report | Kind::Library => {}
             Kind::Spacer => line
                 .spacers
                 .push(serde_json::from_value::<ols_line::Spacer>(v).map_err(parse_err)?),
@@ -1028,11 +1060,60 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
                 | Kind::Route
                 | Kind::Alignment
                 | Kind::AlignmentPoint
-                | Kind::Report => {}
+                | Kind::Report
+                | Kind::Library => {}
             }
         }
     }
     out.into_iter().collect()
+}
+
+/// Library files of the `library_file` table (schema 3 and before: one
+/// set for all project lines) made `library` objects of every project
+/// line, then the table emptied. Nothing to do once done.
+fn migrate_library_files(conn: &Connection) -> Result<(), SessionError> {
+    let exists = conn
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'library_file'")?
+        .exists([])?;
+    if !exists {
+        return Ok(());
+    }
+    let files: Vec<(String, String, String)> = conn
+        .prepare("SELECT kind, name, text FROM library_file ORDER BY kind, name")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    if files.is_empty() {
+        return Ok(());
+    }
+    let mut lines: Vec<String> = conn
+        .prepare("SELECT DISTINCT line FROM model_object")?
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    if !lines.iter().any(|l| l == versions::MAIN) {
+        lines.push(versions::MAIN.to_owned());
+    }
+    let tx = conn.unchecked_transaction()?;
+    for line in &lines {
+        for (k, (kind, name, text)) in files.iter().enumerate() {
+            // Names that were refused when put are left out.
+            if kind.is_empty() || kind.contains('/') || !safe_file_name(name) {
+                continue;
+            }
+            tx.execute(
+                "INSERT OR IGNORE INTO model_object (line, kind, id, ord, version, json)
+                 VALUES (?1, 'library', ?2, ?3, 1, ?4)",
+                params![
+                    line,
+                    library_id(kind, name),
+                    k as i64,
+                    library_value(kind, name, text).to_string()
+                ],
+            )?;
+        }
+    }
+    tx.execute("DELETE FROM library_file", [])?;
+    tx.commit()?;
+    Ok(())
 }
 
 impl Session {
@@ -1152,6 +1233,9 @@ impl Session {
             }
         }
         versions::init(&conn)?;
+        // Schema 4: library files of the shared `library_file` table become
+        // objects of every project line (each line had them).
+        migrate_library_files(&conn)?;
         let mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>> = BTreeMap::new();
         {
             let mut stmt =
@@ -1228,10 +1312,11 @@ impl Session {
                         },
                     );
                 }
-                // Objects the upgrade left out.
+                // Objects the upgrade left out (not the line's reports and
+                // library files: kept with it, not part of the line).
                 let gone: Vec<(Kind, String)> = objects
                     .keys()
-                    .filter(|k| !keys.contains(*k))
+                    .filter(|k| !keys.contains(*k) && !matches!(k.0, Kind::Report | Kind::Library))
                     .cloned()
                     .collect();
                 for (kind, id) in gone {
@@ -1326,21 +1411,26 @@ impl Session {
         Ok(())
     }
 
-    /// The library files kept in the project of one kind (e.g. `cables`,
-    /// `structures`, `insulators`, `weather`): file name and text, by name.
+    /// The library files kept with the current project line of one kind
+    /// (e.g. `cables`, `structures`, `insulators`, `weather`): file name and
+    /// text, by name.
     pub fn library_files(&self, kind: &str) -> Result<Vec<(String, String)>, SessionError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT name, text FROM library_file WHERE kind = ?1 ORDER BY name")?;
-        let rows = stmt.query_map(params![kind], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        let mut out: Vec<(String, String)> = self
+            .objects
+            .iter()
+            .filter(|((k, _), _)| *k == Kind::Library)
+            .filter_map(|(_, o)| library_entry(&o.value))
+            .filter(|(k, _, _)| k == kind)
+            .map(|(_, name, text)| (name, text))
+            .collect();
+        out.sort();
+        Ok(out)
     }
 
-    /// Keeps library file `name` of `kind` in the project (replacing one
-    /// of that name). Libraries are part of the project, not of the line:
-    /// not logged, not undone.
+    /// Keeps library file `name` of `kind` with the current project line
+    /// (replacing one of that name): a logged command, undone as any.
     pub fn put_library_file(
-        &self,
+        &mut self,
         user: &str,
         kind: &str,
         name: &str,
@@ -1348,32 +1438,108 @@ impl Session {
     ) -> Result<(), SessionError> {
         self.require(user, Role::Designer)?;
         self.check_library_edit(user)?;
-        if kind.is_empty() || !safe_file_name(name) {
+        if kind.is_empty() || kind.contains('/') || !safe_file_name(name) {
             return Err(refused(format!(
                 "library file \"{name}\" of \"{kind}\": bad name"
             )));
         }
-        self.conn.execute(
-            "INSERT INTO library_file (kind, name, user, text) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(kind, name) DO UPDATE SET text = excluded.text, user = excluded.user,
-                 time = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-            params![kind, name, user, text],
+        let id = library_id(kind, name);
+        let value = library_value(kind, name, text);
+        if self
+            .objects
+            .get(&(Kind::Library, id.clone()))
+            .is_some_and(|o| o.value == value)
+        {
+            return Ok(());
+        }
+        self.apply(
+            user,
+            Command::Put {
+                kind: Kind::Library,
+                id,
+                value,
+                ord: None,
+            },
         )?;
         Ok(())
     }
 
-    /// Removes library file `name` of `kind` from the project.
+    /// Keeps library files with the current project line as one log entry
+    /// of kind `library` — what a program does on its own (files next to
+    /// the project copied in when it opens, an older form converted):
+    /// in the history, not undone by the user's Undo. Each change: kind,
+    /// name and text (`None`: removed).
+    pub fn keep_library_files(
+        &mut self,
+        user: &str,
+        changes: &[(String, String, Option<String>)],
+    ) -> Result<(), SessionError> {
+        self.require(user, Role::Designer)?;
+        self.check_library_edit(user)?;
+        let mut commands = Vec::new();
+        for (kind, name, text) in changes {
+            if kind.is_empty() || kind.contains('/') || !safe_file_name(name) {
+                return Err(refused(format!(
+                    "library file \"{name}\" of \"{kind}\": bad name"
+                )));
+            }
+            let id = library_id(kind, name);
+            let current = self.objects.get(&(Kind::Library, id.clone()));
+            match text {
+                Some(t) => {
+                    let value = library_value(kind, name, t);
+                    if current.is_none_or(|o| o.value != value) {
+                        commands.push(Command::Put {
+                            kind: Kind::Library,
+                            id,
+                            value,
+                            ord: None,
+                        });
+                    }
+                }
+                None if current.is_some() => commands.push(Command::Delete {
+                    kind: Kind::Library,
+                    id,
+                    confirm: false,
+                }),
+                None => {}
+            }
+        }
+        if commands.is_empty() {
+            return Ok(());
+        }
+        self.apply_as(
+            user,
+            Command::Batch { commands },
+            "library",
+            None,
+            false,
+            true,
+        )?;
+        Ok(())
+    }
+
+    /// Removes library file `name` of `kind` from the current project
+    /// line (a logged command).
     pub fn delete_library_file(
-        &self,
+        &mut self,
         user: &str,
         kind: &str,
         name: &str,
     ) -> Result<(), SessionError> {
         self.require(user, Role::Designer)?;
         self.check_library_edit(user)?;
-        self.conn.execute(
-            "DELETE FROM library_file WHERE kind = ?1 AND name = ?2",
-            params![kind, name],
+        let id = library_id(kind, name);
+        if !self.objects.contains_key(&(Kind::Library, id.clone())) {
+            return Ok(());
+        }
+        self.apply(
+            user,
+            Command::Delete {
+                kind: Kind::Library,
+                id,
+                confirm: false,
+            },
         )?;
         Ok(())
     }
@@ -2059,7 +2225,9 @@ impl Session {
                     new.iter().map(|(k, id, _)| (*k, id.clone())).collect();
                 for (k, id) in self.objects.keys() {
                     // The reports stay: they are not part of the line.
-                    if *k != Kind::Report && !keep.contains(&(*k, id.clone())) {
+                    if !matches!(k, Kind::Report | Kind::Library)
+                        && !keep.contains(&(*k, id.clone()))
+                    {
                         out.push(Command::Delete {
                             kind: *k,
                             id: id.clone(),
@@ -2314,7 +2482,7 @@ impl Session {
                     .filter(|j| j != id)
                     .collect();
             }
-            Kind::Report | Kind::Spacer => {
+            Kind::Report | Kind::Spacer | Kind::Library => {
                 if !self.objects.contains_key(&(kind, id.to_owned())) {
                     return Err(refused(format!("no {} {id}", kind.as_str())));
                 }

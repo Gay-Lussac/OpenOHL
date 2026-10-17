@@ -965,7 +965,7 @@ fn settings_are_kept_with_the_project() {
 
 #[test]
 fn library_files_are_kept_in_the_project() {
-    let (path, s) = project("libraries");
+    let (path, mut s) = project("libraries");
     assert!(s.library_files("cables").unwrap().is_empty());
     s.put_library_file("ben", "cables", "a.olsw", "x = 1")
         .unwrap();
@@ -982,7 +982,7 @@ fn library_files_are_kept_in_the_project() {
             .is_err()
     );
     drop(s);
-    let s = Session::open(&path).unwrap();
+    let mut s = Session::open(&path).unwrap();
     assert_eq!(
         s.library_files("cables").unwrap(),
         vec![
@@ -993,6 +993,39 @@ fn library_files_are_kept_in_the_project() {
     s.delete_library_file("ben", "cables", "a.olsw").unwrap();
     assert_eq!(s.library_files("cables").unwrap().len(), 1);
     assert_eq!(s.library_files("weather").unwrap().len(), 1);
+    // Logged: undone as any change.
+    s.undo("ben").unwrap();
+    assert_eq!(s.library_files("cables").unwrap().len(), 2);
+}
+
+/// A project of schema 3 kept its library files in one table for all its
+/// lines: each line gets them as objects when it opens.
+#[test]
+fn library_files_of_schema_3_become_each_lines() {
+    let (path, s) = project("libraries-3");
+    drop(s);
+    {
+        let c = Connection::open(&path).unwrap();
+        c.execute_batch(
+            "CREATE TABLE IF NOT EXISTS library_file (
+                 kind TEXT NOT NULL, name TEXT NOT NULL,
+                 time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                 user TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY (kind, name));
+             INSERT INTO library_file (kind, name, user, text) VALUES ('cables', 'old.olsw', 'ana', 'x = 1');
+             UPDATE ols_meta SET value = '3' WHERE key = 'session_schema';",
+        )
+        .unwrap();
+    }
+    let s = Session::open(&path).unwrap();
+    assert_eq!(
+        s.library_files("cables").unwrap(),
+        vec![("old.olsw".to_owned(), "x = 1".to_owned())]
+    );
+    let c = Connection::open(&path).unwrap();
+    let left: i64 = c
+        .query_row("SELECT COUNT(*) FROM library_file", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(left, 0);
 }
 
 #[test]
@@ -1758,4 +1791,24 @@ fn settings_changed_by_two_users_are_both_kept() {
     let read = meta_of(&objects).unwrap().unwrap();
     assert_eq!(read.name, "old form");
     assert_eq!(read.solver.jumper_loads, ols_line::JumperLoads::Pull);
+}
+
+/// A project still to be upgraded to alignment points keeps its library
+/// files when it opens (the upgrade rewrites the line's objects only).
+#[test]
+fn the_routes_upgrade_keeps_library_files() {
+    let (path, mut s) = project("upgrade-libraries");
+    s.put_library_file("ana", "cables", "a.olsw", "x = 1")
+        .unwrap();
+    drop(s);
+    {
+        let c = Connection::open(&path).unwrap();
+        c.execute("DELETE FROM ols_meta WHERE key = 'alignment_points'", [])
+            .unwrap();
+    }
+    let s = Session::open(&path).unwrap();
+    assert_eq!(
+        s.library_files("cables").unwrap(),
+        vec![("a.olsw".to_owned(), "x = 1".to_owned())]
+    );
 }

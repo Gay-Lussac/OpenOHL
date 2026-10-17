@@ -830,14 +830,17 @@ fn the_move_tool_and_the_hotbar() {
             p[0] + 5.0
         );
         let log = r.model.editing.as_ref().unwrap().session.log().unwrap();
-        assert_eq!(log.len(), 1, "only the import so far");
+        // (The library files copied in when it opened: the program's.)
+        let edits = log.iter().filter(|e| e.kind != "library").count();
+        assert_eq!(edits, 1, "only the import so far");
     }
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.move_dialog.is_none());
         let log = r.model.editing.as_ref().unwrap().session.log().unwrap();
-        assert_eq!(log.len(), 2, "one move command");
+        let edits = log.iter().filter(|e| e.kind != "library").count();
+        assert_eq!(edits, 2, "one move command");
         assert_eq!(
             r.model.line.structure("T6").unwrap().position[0],
             p[0] + 5.0
@@ -7923,16 +7926,29 @@ fn a_circuit_keeps_one_name_and_phase() {
 /// nothing is written outside the folder chosen.
 #[test]
 fn exported_libraries_stay_in_their_folder() {
-    let model = synthetic_project("export-names");
+    let mut model = synthetic_project("export-names");
     let file = model.sources.file.clone();
-    {
-        let db = rusqlite::Connection::open(&file).unwrap();
-        db.execute(
-            "INSERT INTO library_file (kind, name, user, text) VALUES ('cables', '../escaped.olsw', 'tester', 'x')",
-            [],
+    // Put as an object directly (the session's own checks bypassed).
+    model
+        .editing
+        .as_mut()
+        .unwrap()
+        .session
+        .apply(
+            "tester",
+            ols_session::Command::Put {
+                kind: ols_session::Kind::Library,
+                id: "cables/../escaped.olsw".into(),
+                value: serde_json::json!({
+                    "id": "cables/../escaped.olsw",
+                    "kind": "cables",
+                    "name": "../escaped.olsw",
+                    "text": "x"
+                }),
+                ord: None,
+            },
         )
         .unwrap();
-    }
     let dir = file.parent().unwrap().join("export");
     let err = model.export_libraries(&dir).unwrap_err();
     assert!(err.contains("not a plain file name"), "{err}");

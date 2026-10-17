@@ -654,13 +654,7 @@ impl Session {
             .ok_or_else(|| refused(format!("no project line \"{from}\"")))?
             .objects;
         let ours = self.working_state()?;
-        let theirs = State {
-            objects: theirs_objects
-                .iter()
-                .map(|(k, o)| (k.clone(), (o.ord, o.value.clone())))
-                .collect(),
-            libraries: ours.libraries.clone(),
-        };
+        let theirs = State::of_objects(theirs_objects);
         let base = match (
             self.branch_revision(&self.current)?,
             self.branch_revision(from)?,
@@ -745,11 +739,7 @@ impl Session {
         let Some(rev) = self.branch_revision(name)? else {
             return Ok(!objects.is_empty());
         };
-        let mut state = self.working_state()?;
-        state.objects = objects
-            .iter()
-            .map(|(k, o)| (k.clone(), (o.ord, o.value.clone())))
-            .collect();
+        let state = State::of_objects(objects);
         Ok(state_hash(&state) != self.revision(&rev)?.tree)
     }
 

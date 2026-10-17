@@ -344,6 +344,10 @@ pub struct PhaseDistanceWindow {
     /// The values shown as tables, for their text.
     tables: Option<(String, Result<Vec<ValueTable>, String>)>,
     values_error: Option<String>,
+    /// The project's copy of a values file to keep (`Some` text) or
+    /// remove (`None`), done by [`PhaseDistanceWindow::apply_values`]
+    /// after the window (a logged change of the project).
+    pending_values: Option<(String, Option<String>)>,
     /// The line's state against the saved report's, for this line version.
     since: Option<(u64, String, bool)>,
     job: Job<Report>,
@@ -372,6 +376,7 @@ impl Default for PhaseDistanceWindow {
             plugin: None,
             tables: None,
             values_error: None,
+            pending_values: None,
             since: None,
             job: Job::default(),
         }
@@ -514,14 +519,14 @@ fn is_admin(model: &Model) -> bool {
 
 /// Keeps `text` as the project's copy of values file `name` (admins),
 /// headed by who edited it when.
-fn save_values(model: &Model, name: &str, text: &str) -> Result<(), String> {
-    let e = model
-        .editing
-        .as_ref()
-        .map_err(|e| format!("read-only: {e}"))?;
+fn save_values(model: &mut Model, name: &str, text: &str) -> Result<(), String> {
     if !is_admin(model) {
         return Err("only an admin of the project may change the values".into());
     }
+    let e = model
+        .editing
+        .as_mut()
+        .map_err(|e| format!("read-only: {e}"))?;
     let time = e.session.now().map_err(|e| e.to_string())?;
     let body: String = text
         .lines()
@@ -538,14 +543,14 @@ fn save_values(model: &Model, name: &str, text: &str) -> Result<(), String> {
 }
 
 /// Removes the project's copy of values file `name` (admins).
-fn reset_values(model: &Model, name: &str) -> Result<(), String> {
-    let e = model
-        .editing
-        .as_ref()
-        .map_err(|e| format!("read-only: {e}"))?;
+fn reset_values(model: &mut Model, name: &str) -> Result<(), String> {
     if !is_admin(model) {
         return Err("only an admin of the project may change the values".into());
     }
+    let e = model
+        .editing
+        .as_mut()
+        .map_err(|e| format!("read-only: {e}"))?;
     e.session
         .delete_library_file(&e.user, VALUES_KIND, name)
         .map_err(|e| e.to_string())
@@ -612,6 +617,29 @@ fn value_tables_ui(
 }
 
 impl PhaseDistanceWindow {
+    /// Keeps or removes the project's copy of the values chosen in the
+    /// window (a change of the project, logged).
+    pub fn apply_values(&mut self, model: &mut Model) {
+        let Some((name, text)) = self.pending_values.take() else {
+            return;
+        };
+        let saving = text.is_some();
+        let result = match text {
+            Some(t) => save_values(model, &name, &t),
+            None => reset_values(model, &name),
+        };
+        match result {
+            Ok(()) if saving => {
+                self.editing = None;
+                self.values = None;
+                self.file = None;
+                self.values_error = None;
+            }
+            Ok(()) => self.values_error = None,
+            Err(e) => self.values_error = Some(e),
+        }
+    }
+
     /// Opens the window: the still-air 10 °C cases ticked when none is.
     pub fn show(&mut self, model: &Model) {
         self.open = true;
@@ -1293,7 +1321,7 @@ impl PhaseDistanceWindow {
                                 )
                                 .clicked()
                         {
-                            self.values_error = reset_values(model, &name).err();
+                            self.pending_values = Some((name.clone(), None));
                         }
                     }
                 });
@@ -1305,15 +1333,7 @@ impl PhaseDistanceWindow {
                         );
                         if ui.button("Save in the project").clicked() {
                             let edited = self.editing.clone().unwrap_or_default();
-                            match save_values(model, &name, &edited) {
-                                Ok(()) => {
-                                    self.editing = None;
-                                    self.values = None;
-                                    self.file = None;
-                                    self.values_error = None;
-                                }
-                                Err(e) => self.values_error = Some(e),
-                            }
+                            self.pending_values = Some((name.clone(), Some(edited)));
                         }
                         if ui.button("Cancel").clicked() {
                             self.editing = None;

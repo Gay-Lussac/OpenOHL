@@ -83,6 +83,18 @@ impl Model {
         applied: Applied,
         started: Instant,
     ) -> Result<String, EditError> {
+        // A library file changed (an undo, a redo): its working copy and
+        // the libraries read again, the line with them.
+        if applied
+            .objects
+            .iter()
+            .any(|(k, _)| *k == ols_session::Kind::Library)
+        {
+            return self
+                .refresh_project_libraries()
+                .map(|m| format!("{what} (log entry {}): {m}", applied.seq))
+                .map_err(EditError::Refused);
+        }
         let line = self.session_line()?;
         // Other creep-stretch weather cases (Criteria › Creep-Stretch, or
         // its undo): every section after creep or load changes.

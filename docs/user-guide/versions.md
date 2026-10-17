@@ -3,7 +3,7 @@
 A project file (`.ols`) keeps its own version history, like source code in
 git (DESIGN_GOALS §7, [ADR-0010](../adr/0010-version-control.md)):
 
-- a **revision** records the line and the project's library files as they
+- a **revision** records the line and its library files as they
   are, with author, time and a message ("Raised T12 by 3 m for the road
   crossing");
 - **branches** hold design alternatives and what-if scenarios; `main` is the
@@ -197,5 +197,8 @@ copy reconnects.
   approved one.
 - **Rights** (admins): grants listed, revoked, made.
 
-When a merge changes library files (shared by every line), the project is
-opened again to read them.
+Each project line has its own library files (a new line starts with
+those of the line it is made from): a library changed on one line leaves
+the others as they are, and a library change is undone like any other.
+When a merge or a change of line brings other library files, they are read
+again.

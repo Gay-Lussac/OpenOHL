@@ -1168,6 +1168,7 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::PhaseDistance => {
                 let out = r.phase_distance.ui(ui, &r.model);
+                r.phase_distance.apply_values(&mut r.model);
                 r.phase_distance_out(out);
                 None
             }
@@ -1993,7 +1994,7 @@ impl Ready {
         let mut done = true;
         // A library file of the project (the load types).
         if let Some((kind, name, text)) = project_library {
-            let result = match &self.model.editing {
+            let result = match &mut self.model.editing {
                 Ok(e) => e
                     .session
                     .put_library_file(&e.user, &kind, &name, &text)

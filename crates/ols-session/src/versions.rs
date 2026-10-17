@@ -101,6 +101,27 @@ pub struct State {
 }
 
 impl State {
+    /// The state of a project line's objects: its library files apart
+    /// (by kind and name), as revisions keep them.
+    pub(crate) fn of_objects(objects: &BTreeMap<(Kind, String), crate::Object>) -> Self {
+        let mut state = State {
+            objects: objects
+                .iter()
+                .filter(|((k, _), _)| *k != Kind::Library)
+                .map(|(k, o)| (k.clone(), (o.ord, o.value.clone())))
+                .collect(),
+            libraries: BTreeMap::new(),
+        };
+        for ((k, _), o) in objects {
+            if *k == Kind::Library
+                && let Some((kind, name, text)) = crate::library_entry(&o.value)
+            {
+                state.libraries.insert((kind, name), text);
+            }
+        }
+        state
+    }
+
     /// The line of this state, validated.
     pub fn line(&self) -> Result<Line, SessionError> {
         let objects: BTreeMap<(Kind, String), Object> = self
@@ -929,29 +950,7 @@ impl Session {
 
     /// The working state: the session's line and the library files.
     pub fn working_state(&self) -> Result<State, SessionError> {
-        let mut state = State {
-            objects: self
-                .objects
-                .iter()
-                .map(|(k, o)| (k.clone(), (o.ord, o.value.clone())))
-                .collect(),
-            libraries: BTreeMap::new(),
-        };
-        let mut stmt = self
-            .conn
-            .prepare("SELECT kind, name, text FROM library_file")?;
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })?;
-        for row in rows {
-            let (kind, name, text) = row?;
-            state.libraries.insert((kind, name), text);
-        }
-        Ok(state)
+        Ok(State::of_objects(&self.objects))
     }
 
     /// The state of revision `id`. Reads one blob per object (about
@@ -1485,8 +1484,27 @@ impl Session {
         note: &str,
     ) -> Result<(Option<Applied>, bool), SessionError> {
         target.line()?;
+        // Names from a revision (a bundle, another copy of the project) are
+        // file names when exported: plain ones only, as put_library_file.
+        if let Some((kind, name)) = target.libraries.keys().find(|(kind, name)| {
+            kind.is_empty() || kind.contains('/') || !crate::safe_file_name(name)
+        }) {
+            return Err(refused(format!(
+                "library file \"{name}\" of \"{kind}\": bad name"
+            )));
+        }
+        let changed = self.working_state()?.libraries != target.libraries;
+        // The line's objects and its library files, in one command.
+        let mut wanted = target.objects.clone();
+        for (k, ((kind, name), text)) in target.libraries.iter().enumerate() {
+            wanted.insert(
+                (Kind::Library, crate::library_id(kind, name)),
+                (k as i64, crate::library_value(kind, name, text)),
+            );
+        }
+        let target_objects = &wanted;
         let mut prims = Vec::new();
-        for (key, (ord, value)) in &target.objects {
+        for (key, (ord, value)) in target_objects {
             match self.objects.get(key) {
                 Some(o) if o.value == *value && o.ord == *ord => {}
                 _ => prims.push(Command::Put {
@@ -1498,7 +1516,7 @@ impl Session {
             }
         }
         for key in self.objects.keys() {
-            if !target.objects.contains_key(key) {
+            if !target_objects.contains_key(key) {
                 prims.push(Command::Delete {
                     kind: key.0,
                     id: key.1.clone(),
@@ -1523,41 +1541,6 @@ impl Session {
             )?;
             Some(a)
         };
-        let current = self.working_state()?.libraries;
-        let changed = current != target.libraries;
-        // Names from a revision (a bundle, another copy of the project) are
-        // file names when exported: plain ones only, as put_library_file.
-        if let Some((kind, name)) = target
-            .libraries
-            .keys()
-            .find(|(kind, name)| kind.is_empty() || !crate::safe_file_name(name))
-        {
-            return Err(refused(format!(
-                "library file \"{name}\" of \"{kind}\": bad name"
-            )));
-        }
-        if changed {
-            let tx = self.conn.unchecked_transaction()?;
-            for (kind, name) in current.keys() {
-                if !target.libraries.contains_key(&(kind.clone(), name.clone())) {
-                    tx.execute(
-                        "DELETE FROM library_file WHERE kind = ?1 AND name = ?2",
-                        params![kind, name],
-                    )?;
-                }
-            }
-            for ((kind, name), text) in &target.libraries {
-                if current.get(&(kind.clone(), name.clone())) != Some(text) {
-                    tx.execute(
-                        "INSERT INTO library_file (kind, name, user, text) VALUES (?1, ?2, ?3, ?4)
-                         ON CONFLICT(kind, name) DO UPDATE SET text = excluded.text, user = excluded.user,
-                             time = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-                        params![kind, name, user, text],
-                    )?;
-                }
-            }
-            tx.commit()?;
-        }
         Ok((applied, changed))
     }
 
