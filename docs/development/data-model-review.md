@@ -3,8 +3,9 @@
 A review of the data the program keeps — the line model (`ols-line`),
 the project file (`ols-session`), OLS XML and the library formats — after
 the points-and-objects work. It says what holds up, what is broken, and
-what is worth changing, most urgent first. Nothing here has been changed
-yet; the [data model map](data-model.md) describes the model as it is.
+what is worth changing, most urgent first. §1 and §2 are done (marked ✓;
+how, in [Done](#done)); §3 and §4 are open. The [data model
+map](data-model.md) describes the model as it is.
 
 ## What holds up
 
@@ -86,10 +87,49 @@ These change the line file (a new version, older files still read).
 | 4.5 | **Shipped libraries**: the app looks for `libraries/structures`, `libraries/insulators`, `libraries/clearance-rules`, which do not exist; an empty `libraries/phase-distance` is left over | ship small synthetic examples or drop the lookups |
 | 4.6 | **Examples and schemas lag**: the synthetic line files are version 2; the XSD namespace says 1 while its `version` is the line file's (4); `.olsfe` has no example; JSON Schema only for `.olsw` | rewrite the examples at the current version; say in the XSD that `version` follows the line file |
 
+## Done
+
+On 2026-10-17, each step its own commit, the line file now version 5:
+
+- **§1** all seven fixed, as proposed.
+- **2.1** `JumperEnd` (a wire point or a tap) for `from` / `to`; version 4
+  `from_tap` / `to_tap` read.
+- **2.2** spans stay referenced by index, moved in one place:
+  `Section::set_points` (span points, the sagged span, clipped lengths),
+  used by the section editor. Naming spans by their back structure was
+  left: it breaks when a structure is put in a span the same way, and the
+  index stays the simplest form for files.
+- **2.3** supports are jumper points holding a clamp with a `hold` (a
+  structure's strings, or a string from a point); `Jumper::supports()` /
+  `support()` give the solver what it took before (results unchanged).
+  The solver still has its two paths (a string from a point, a structure's
+  strings): the placement is one, the mechanics differ.
+- **2.4** `SpanPlace` / `JumperPlace` are enums; several keys in older
+  files read by the old priority.
+- **2.5** a spacer's ends must hold a clamp; bare ends of older files get
+  a clamp of no weight when read.
+- **2.6** `rename_point` (session) / `Line::relabel_point`; the Span
+  points table relabels with it.
+- **2.7** `SpanLoad` / `SpreadLoad` moved to `ols_line::legacy` (read
+  only); the working form is `objects::SpreadStretch`. `Line.alignment`
+  and `Route.legacy_*` stay where they are: turning them into routes needs
+  the whole line (`Line::upgrade_routes`), not one route's file form.
+- **2.8** `Defaults::PROGRAM` by name; one insulator EA constant.
+- **2.9** kept: colours by phase label, by system through the system's
+  own colour.
+- **2.10** `Section.circuit` → `circuit_name` (`circuit` still read).
+- **2.11** `Calculation { condition, method }`, written as before.
+- **2.12** version 5.
+
+Found on the way and fixed: turning a jumper along its circuit now turns
+all its points' places (only its supports were turned, and a tap end
+stayed at its old end); the clearance check took every clamp on a span as
+a tap (a spacer's clamp would have hidden the wire near it).
+
 ## Suggested order
 
-1. The fixes of §1 (one commit each, tests first) — no format change.
-2. Decide §2.1–2.4 together (jumper ends, spans, supports, places): one
-   line file version 5, older files read; the solver and the app adapt.
-3. §4.1 units in `.olsload`, §4.2–4.3 header and typo policy.
+1. ~~The fixes of §1~~ (done).
+2. ~~§2~~ (done, line file version 5).
+3. §4.1 units in `.olsload`, §4.2–4.3 header and typo policy; §4.6 the
+   examples rewritten at version 5.
 4. §3.2–3.4 when several people work on one project at once.
