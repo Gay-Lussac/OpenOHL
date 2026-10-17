@@ -47,9 +47,66 @@ here, the line follows ([desktop application](desktop-app.md#the-pylon-workspace
 | **Geometry** (level 1) | Attachment points, Insulators (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, description), Wire points (counterweight), Set points, Structure (name, height, feet, height extensions) | **+ Point**, **I** and **V** presets for the points picked, **Delete…** (lists what goes with it first) |
 | **Body** (level 2) | Joints (x, y, z), Members (ends, length) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…** |
 | **Design** (level 3) | Supports (**Support the feet** pins the lowest joints), Members (section, kind, buckling factor k), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
-| **Load cases** | to come: the load-case recipes of the structure and the load table per placed structure ([Structure load cases](structure-load-cases.md)) | — |
-| **Results** | to come: the FE and pole checks per load case, deformed shape, usage colours, report | — |
+| **Load cases** (any level) | **Recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.olsslc` or CSV), **Import / Export table…** (CSV); the case shown drawn as arrows (**m per kN**) |
+| **Results** (level 3) | Per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage | **▶ Run** (one case or every case), **Cancel**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line** | to come: the places using the structure and their loads | — |
+
+## Load cases
+
+The **Recipes** part edits the structure's `[[load_case]]` tables
+([Structure load cases](structure-load-cases.md)): pick the case under
+**Recipe**, type its fields, and one row per load (`what`, `side` and
+`direction` are chosen from a list; a value takes its unit, `2 kN` or
+`0.6 kPa`, a plain number is N or Pa; lists are separated by `;`). A
+field is written when it is left (Enter, Tab or a click elsewhere), each
+change one undo step. When the recipes do not read, the reason is shown
+in red and the table below keeps the cases that read.
+
+**Import recipes…** takes the cases of a `.olsslc` or CSV file: a case
+with the name of one in the structure replaces it, the others are added
+(one undo step). **Export recipes…** writes them as `.olsslc` or CSV.
+
+The **Load table** part shows the recipes evaluated: per case (or every
+case) and per point, member or joint, the transverse, longitudinal and
+vertical load in kN, where it comes from (`line`, `recipe`, `typed`)
+and why a row has no value. Opened on its own, the structure has no
+line: every load taking a line value shows **no line value**. Type the
+values (drag or click a number), or **Import table…** a CSV with the
+table's columns (from **Export table…**, another program or a client's
+load tree): what it has beyond the evaluation becomes typed values.
+
+**Typed values** stay when the recipes change and the table is
+evaluated again; ⟲ takes one back. They are not part of the structure
+file: **Save** writes them beside it as `<name>.loads.csv` (for
+`type-02.olss`: `type-02.loads.csv`, the table's CSV with the typed rows
+only), and opening the file reads them again. Unsaved typed values count
+as unsaved changes.
+
+**Arrows** draws the loads of the case shown in the view, ending at
+their point (a member's at its middle), **m per kN** long.
+
+## Results
+
+At level 3 (every member with a section and a support, or a `model =
+"….olsfe"`) **▶ Run** solves the cases of the load table with the
+finite-element model: the case chosen, or every case. Rows without a
+value are left out (and said); the case's strength factor and
+self-weight factor come from its recipe (1 for `model` and typed cases).
+The run goes on in the background: the window stays usable, **Cancel**
+stops it, and each case has at most 30 s and 200 iterations — a case
+that does not solve says why (a mechanism, unstable under compression,
+or the limit reached with the forces still out of balance).
+
+For each case: the **governing** member (usage in % and what governs),
+the **largest displacement**, **Σ loads** (the table's and the
+self-weight) against **Σ reactions** with the out-of-balance, the
+solver's iterations, the **reactions** per support and every member's
+axial force and usage, most used first. In the view the members are
+coloured by usage — red above 100 %, orange from 90 %, green below, grey
+without a capacity —, the deformed shape is drawn **Deformed ×** larger
+(set from the largest displacement when a run ends) and the reactions
+as the loads on the foundations. Results of an earlier file or table are
+marked; run again.
 
 ## Undo, saving, closing
 
@@ -58,7 +115,7 @@ Every change is one edit of the file, undone with **Ctrl+Z** (⌘Z) or
 menu names the edit. A value dragged in a table, or a point dragged in
 the view, is one step. Comments and the order of the file are kept.
 
-**Save** (Ctrl+S) writes the file; **Save as…** (Ctrl+Shift+S) another
+**Save** (Ctrl+S) writes the file (and the typed loads beside it); **Save as…** (Ctrl+Shift+S) another
 one, which is then the file edited. A file that does not read (the error
 is shown in red) is not saved. Closing the window with unsaved changes
 asks first: **Save and close**, **Close without saving** or **Cancel**.

@@ -397,3 +397,57 @@ fn the_table_round_trips_through_csv_and_json() {
         assert!(e.contains(says), "{says}: {e}");
     }
 }
+
+#[test]
+fn a_table_read_back_types_only_what_differs() {
+    let f = StructureLoadCases::parse(RECIPES).unwrap();
+    let evaluated = evaluate(&f.cases, &structure(), &line());
+    // As evaluated: nothing typed.
+    assert!(evaluated.overrides_over(&evaluated).is_empty());
+    let typed = vec![
+        Override {
+            case: "unbalanced".into(),
+            load: Some(1),
+            at: At::Point,
+            label: "S".into(),
+            force: [0.0, 0.0, 15_000.0],
+        },
+        Override {
+            case: "client".into(),
+            load: None,
+            at: At::Point,
+            label: "E".into(),
+            force: [1.0, 2.0, 3.0],
+        },
+        // Over the model case's row.
+        Override {
+            case: MODEL_CASE.into(),
+            load: Some(1),
+            at: At::Joint,
+            label: "b".into(),
+            force: [1.0, 0.0, 0.0],
+        },
+    ];
+    let mut t = evaluated.clone();
+    t.apply(&typed);
+    // Written as CSV and read back: the same overrides, the same table.
+    let back = LoadTable::from_csv(&t.to_csv()).unwrap();
+    let mut over = back.overrides_over(&evaluated);
+    over.sort_by(|a, b| a.case.cmp(&b.case));
+    let mut want = typed.clone();
+    want.sort_by(|a, b| a.case.cmp(&b.case));
+    assert_eq!(over, want);
+    let mut again = evaluated.clone();
+    again.apply(&back.overrides_over(&evaluated));
+    assert_eq!(again, t);
+    // Kept as a table of typed rows.
+    let kept = Override::table(&typed);
+    assert!(kept.rows.iter().all(|r| r.source == Source::Typed));
+    let read: Vec<Override> = LoadTable::from_csv(&kept.to_csv())
+        .unwrap()
+        .rows
+        .iter()
+        .map(Override::of)
+        .collect();
+    assert_eq!(read, typed);
+}

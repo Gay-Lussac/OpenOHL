@@ -14,6 +14,8 @@ use ols_structure_edit::{
 };
 use ols_structures::InsulatorLibrary;
 
+use crate::load_cases_tab::LoadCasesTab;
+use crate::results_tab::ResultsTab;
 use crate::view::{View, ViewInput};
 
 /// The tabs under the view.
@@ -26,9 +28,9 @@ pub enum Tab {
     Body,
     /// Level 3: supports, sections per member, sections, materials.
     Design,
-    /// Load cases (to come).
+    /// Load-case recipes and the load table.
     LoadCases,
-    /// Results (to come).
+    /// The finite-element results per case.
     Results,
     /// The places using the structure in a line (to come).
     InTheLine,
@@ -121,6 +123,10 @@ pub struct StructureApp {
     close_now: bool,
     /// Fit the view to the structure (Fit clicked).
     pub view_fit: bool,
+    /// The Load cases tab.
+    pub loads: LoadCasesTab,
+    /// The Results tab.
+    pub results: ResultsTab,
     view: View,
     rs: Option<egui_wgpu::RenderState>,
     /// What the view drew last (drawn again when it changes).
@@ -150,6 +156,8 @@ impl StructureApp {
             closing: false,
             close_now: false,
             view_fit: false,
+            loads: LoadCasesTab::default(),
+            results: ResultsTab::default(),
             view: View::default(),
             rs,
             drawn: None,
@@ -194,14 +202,18 @@ impl StructureApp {
                 self.buffers.clear();
                 self.view = View::default();
                 self.drawn = None;
+                self.results = ResultsTab::default();
+                if let Err(e) = self.loads.opened(path) {
+                    self.message = Some((format!("typed loads not read: {e}"), true));
+                }
             }
             Err(e) => self.open_error = Some(e),
         }
     }
 
-    /// Unsaved changes.
+    /// Unsaved changes (of the file, or loads typed in the load table).
     pub fn dirty(&self) -> bool {
-        self.file.as_ref().is_some_and(StructureFile::dirty)
+        self.file.as_ref().is_some_and(StructureFile::dirty) || self.loads.overrides_dirty
     }
 
     /// Saves (to `to`: Save as).
@@ -211,7 +223,13 @@ impl StructureApp {
         };
         match f.save(to) {
             Ok(p) => {
-                self.message = Some((format!("saved {}", p.display()), false));
+                self.message = Some(match self.loads.saved(&p) {
+                    Ok(()) => (format!("saved {}", p.display()), false),
+                    Err(e) => (
+                        format!("saved {}, but not the typed loads: {e}", p.display()),
+                        true,
+                    ),
+                });
                 true
             }
             Err(e) => {
@@ -647,6 +665,13 @@ impl eframe::App for StructureApp {
             self.drawn = Some(key);
         }
         let rs = self.rs.clone();
+        // The tab's drawing over the structure: loads, or results.
+        self.results.poll();
+        let overlay = match self.tab {
+            Tab::LoadCases => self.loads.overlay(&g),
+            Tab::Results => self.results.overlay(),
+            _ => None,
+        };
         egui::CentralPanel::default().show(ui, |ui| {
             self.view.ui(
                 ui,
@@ -659,6 +684,7 @@ impl eframe::App for StructureApp {
                     grid: self.grid,
                     ahead: self.ahead,
                     message: &mut self.message,
+                    overlay,
                 },
             );
         });

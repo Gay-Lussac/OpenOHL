@@ -3833,6 +3833,8 @@ dependencies = [
  "ols-core",
  "ols-render",
  "ols-structure-edit",
+ "ols-structure-link",
+ "ols-structure-loads",
  "ols-structures",
  "rfd",
  "toml_edit",
@@ -3851,9 +3853,11 @@ dependencies = [
 name = "ols-structure-link"
 version = "0.0.1"
 dependencies = [
+ "ols-core",
  "ols-line",
  "ols-loads",
  "ols-structure-loads",
+ "ols-structures",
  "ols-structures-fe",
 ]
 

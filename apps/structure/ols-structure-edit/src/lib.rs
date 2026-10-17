@@ -8,7 +8,8 @@
 //! comments and layout are kept), a file with an undo and redo of whole
 //! edits ([`StructureFile`]), the positions of what is drawn and picked
 //! ([`Geometry`]), and what a structure still lacks for each level
-//! ([`missing()`]).
+//! ([`missing()`]); the edits of its load-case recipes
+//! ([`load_cases`](mod@load_cases)).
 //!
 //! Axes are the structure's own: x right of the line, y ahead, z up,
 //! 0;0 at the centre.
@@ -16,6 +17,7 @@
 pub mod edits;
 pub mod file;
 pub mod geometry;
+pub mod load_cases;
 pub mod missing;
 
 pub use edits::{
@@ -27,6 +29,10 @@ pub use edits::{
 };
 pub use file::StructureFile;
 pub use geometry::{Geometry, Handle, compass_radius, geometry, pick, polar, position};
+pub use load_cases::{
+    CASE_FIELDS, CaseText, LOAD_FIELDS, add_load, add_load_case, load_cases, merge_load_cases,
+    remove_load, remove_load_case, set_load_case_field, set_load_field,
+};
 pub use missing::{Missing, Need, Place, missing, next_level};
 
 #[cfg(test)]

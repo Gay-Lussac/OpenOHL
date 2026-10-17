@@ -666,6 +666,10 @@ member —, no `[[section]]`, no supported joint) and advice
 none, members crossing within 1 mm away from their ends without a
 joint); each item names its row (`Handle`) or its table (`Place`). It
 reads the structure only; `detail()` stays the source of the level.
+The recipes are edited by place (`load_cases`, `add_load_case`,
+`add_load`, `set_load_case_field`, `set_load_field`, `remove_load`,
+`remove_load_case`; `merge_load_cases` takes the cases of a `.olsslc`
+text: same name replaces, others are added).
 
 Placed into a line, a type becomes `PlacedStrings { points, strings,
 wires }` (global coordinates) that `Line::resolve` merges with the
@@ -761,11 +765,18 @@ per line load case, point or set and quantity) into a `LoadTable`
 (rows: `case`, `load`, `at` point/member/joint, `label`, `force`
 transverse/longitudinal/vertical down N, `source` recipe/line/typed,
 `evaluated`, `missing`, `note`). The table is a result, not stored in
-the structure file; typed values (`Override`) will be kept with the
-placed structure in the line (format to decide). `[[load]]` is read as
-case `model` (joints). CSV of the table and the recipes; XLSX later.
-`ols-structure-link` fills `LineValues` from `ols_loads::structure_loads`
-(the six force values; tensions, wire wind and ice not yet).
+the structure file. Typed values (`Override`: case, load, at, label,
+force) are kept by the structure application beside the structure file
+as **`<stem>.loads.csv`** (the table's CSV, typed rows only), written on
+Save and read on open; with the placed structure in the line once the
+application is started from a project. A table read back (CSV) types
+what it has beyond the evaluation (`LoadTable::overrides_over`).
+`[[load]]` is read as case `model` (joints). CSV of the table and the
+recipes; XLSX later. `ols-structure-link` fills `LineValues` from
+`ols_loads::structure_loads` (the six force values; tensions, wire wind
+and ice not yet) and solves table cases on the structure's model
+(`analyse_cases` → `CaseResult`: joints with displacements, members with
+axial force and usage, reactions, Σ loads and Σ reactions).
 
 ## Where data lives
 

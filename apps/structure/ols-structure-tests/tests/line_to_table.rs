@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use ols_line::Line;
 use ols_loads::{CaseLoads, LoadCases};
-use ols_structure_link::{fe_loads, line_values};
+use ols_structure_link::{CaseToRun, analyse_cases, fe_loads, line_values};
 use ols_structure_loads::{
     At, LineQuantity, LoadRow, LoadTable, MODEL_CASE, Source, StructureLoadCases, evaluate,
     evaluate_with_areas,
@@ -220,4 +220,73 @@ fn the_table_loads_the_model_as_the_line_run_does() {
             .unwrap_err()
             .contains("nowhere")
     );
+}
+
+/// Every case of the table solved through the link: the loads in
+/// equilibrium with the reactions, the "wind" case's usage as the line
+/// run's, the rows without a value said.
+#[test]
+fn the_cases_of_the_table_are_solved_through_the_link() {
+    let (line, loads) = solved();
+    let values = line_values(&loads, &line, "T2");
+    let path = ex().join("Structures/type-02.olss");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let structure = type_02();
+    let recipes = StructureLoadCases::from_structure(&structure).unwrap();
+    let table = evaluate(&recipes, &structure, &values);
+    let mut cases: Vec<CaseToRun> = recipes
+        .iter()
+        .map(|c| CaseToRun {
+            name: c.name.clone(),
+            strength: c.strength,
+            self_weight: c.self_weight,
+        })
+        .collect();
+    cases.push(CaseToRun {
+        name: MODEL_CASE.into(),
+        strength: 1.0,
+        self_weight: 1.0,
+    });
+    let budget = ols_structures_fe::default_budget();
+    let results = analyse_cases(&structure, &text, path.parent(), &table, &cases, &budget).unwrap();
+    assert_eq!(results.len(), 4);
+    let model = Model::load(&path).unwrap();
+    for (name, r) in &results {
+        let r = r.as_ref().unwrap_or_else(|e| panic!("{name}: {e}"));
+        // Σ loads + Σ reactions = 0 (the self-weight included).
+        let scale = r.load_sum.iter().map(|x| x.abs()).fold(1.0, f64::max);
+        assert!(r.imbalance() < 1e-6 * scale, "{name}: {r:?}");
+        assert!(
+            r.load_sum[2] < -model.weight() * 0.99,
+            "{name}: {:?}",
+            r.load_sum
+        );
+        assert_eq!(r.members.len(), model.members.len());
+        assert_eq!(r.reactions.len(), 4);
+        assert!(r.governing().is_some());
+        assert!(r.largest_displacement().unwrap().1 > 0.0);
+    }
+    // "wind": the same worst usage as the line run's check.
+    let wind = results[0].1.as_ref().unwrap();
+    let mut direct = Loads {
+        nodal: Vec::new(),
+        self_weight: 1.0,
+    };
+    for p in ["A1", "A11"] {
+        let f = at_t2(&loads, "wind", p).factored;
+        direct
+            .nodal
+            .extend(model.point_loads(p, [f[0], f[1], -f[2]]).unwrap());
+    }
+    let (_, b) = ols_structures_fe::analyse(&model, &direct, 1.0, &budget).unwrap();
+    let worst = b.iter().filter_map(|m| m.usage).fold(0.0_f64, f64::max);
+    assert!((wind.governing().unwrap().usage.unwrap() - worst).abs() < 1e-9);
+    // "body wind" has no areas: its rows are said, only the weight acts.
+    let body = results[2].1.as_ref().unwrap();
+    assert!(
+        body.notes[0].contains("without a value"),
+        "{:?}",
+        body.notes
+    );
+    assert!(body.load_sum[0].abs() < 1e-9);
 }
