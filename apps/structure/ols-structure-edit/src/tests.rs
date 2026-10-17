@@ -511,8 +511,9 @@ fn advice_on_points_and_joints() {
             "joint N4 is on no member",
         ]
     );
-    // Level 3 lacks sections (each member) and the [[section]]s.
-    assert_eq!(level_items(&m).len(), 3, "{m:?}");
+    // Level 3 lacks a section on each member (from the section library
+    // or the file's own [[section]]s).
+    assert_eq!(level_items(&m).len(), 2, "{m:?}");
 }
 
 /// Two members crossing in space without a joint, and two that only

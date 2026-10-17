@@ -101,13 +101,6 @@ pub fn missing(t: &StructureType, level: u8) -> Vec<Missing> {
                     Place::Members,
                 ));
             }
-            if t.sections.is_empty() {
-                out.push(Missing::level(
-                    "no [[section]]: add the sections and their materials (Design)",
-                    None,
-                    Place::Sections,
-                ));
-            }
             if !t.nodes.iter().any(|n| n.support.is_some()) {
                 out.push(Missing::level(
                     "no supported joint: a support on the feet (Design)",
