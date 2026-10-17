@@ -197,6 +197,9 @@ pub struct Ready {
     popup_serial: u64,
     /// A tool window is open.
     popup_open: bool,
+    /// A page or the structure screen opened from a tool in the 3D view:
+    /// a captured mouse is freed in the next frame ([`popups`]).
+    release_mouse: bool,
     /// Replace structure: the picker or the mapping window, when open.
     pub replace: Option<crate::replace::Replace>,
     /// The Delete tool on an alignment point on several alignments: the
@@ -360,6 +363,7 @@ impl Ready {
             popup_at: egui::pos2(400.0, 200.0),
             popup_serial: 0,
             popup_open: false,
+            release_mouse: false,
             replace: None,
             point_delete: None,
             spread_delete: None,
@@ -1455,6 +1459,8 @@ impl Ready {
                     Some(t) => self.edit_type(&t),
                     None => self.edit_structure(&id),
                 }
+                // The page or the structure screen needs the cursor.
+                self.release_mouse = true;
             }
             (Tool::Edit, Selection::Attachment { structure, set }) => {
                 self.editor = StringForm::of(model, structure, *set).map(Form::String);
@@ -3912,6 +3918,10 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         }
     }
     r.menu_open = menu;
+    if std::mem::take(&mut r.release_mouse) && r.view3d.captured {
+        log::info!("a page opened from the 3D view: the mouse is freed");
+        crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
+    }
     r.popup_fresh = r.popup_opened == Some(ctx.cumulative_frame_nr());
     let open = r.goto.is_some()
         || r.coord_dialog.is_some()

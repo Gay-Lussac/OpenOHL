@@ -996,6 +996,60 @@ fn tools_act_on_a_right_click_only() {
     assert!(r.model.line.structure("T3").is_some(), "not deleted");
 }
 
+/// First person, the Edit tool on a structure: its page (or structure
+/// screen) opens and the mouse is freed (it stayed locked to the view).
+#[test]
+fn the_edit_tool_frees_the_mouse() {
+    use crate::tools::Tool;
+    if ols_render::headless_device().is_err() {
+        assert!(
+            std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU"
+        );
+        return;
+    }
+    let model = synthetic_project("edit-frees");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.view3d.controls = crate::controls::Controls::by_name("minecraft").unwrap();
+    }
+    let at = egui::pos2(620.0, 300.0);
+    let click = |h: &mut Harness<'_, App>, button| {
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        h.run();
+    };
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(at));
+    harness.run();
+    click(&mut harness, egui::PointerButton::Primary); // captures
+    assert!(harness.state_mut().ready().unwrap().view3d.captured);
+    // The Edit tool used on T3 (as a right-click on it reports).
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::Structure("T3".into()),
+        None,
+    );
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.selection, Selection::Structure("T3".into()));
+    assert!(!r.view3d.captured, "the page frees the mouse");
+}
+
 fn clearance_input(m: &model::Model, rules: Vec<ols_clearance::Rule>) -> crate::clearance::Input {
     crate::clearance::Input {
         line: m.line.clone(),
