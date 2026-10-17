@@ -119,10 +119,26 @@ pub fn end_loads<'a>(
         } else {
             (first / 2.0, (1.0 - last) / 2.0)
         };
-        for (p, share) in [(&j.from, from), (&j.to, to)] {
+        // Its objects: shared between the end and its first support (the
+        // other end without supports) by where they are.
+        let mut ends = [Vector3::zeros(); 2];
+        for (f, load) in object_loads(j, c, case, length, d.xy().norm(), along) {
+            let (to_from, to_to) = if at.is_empty() {
+                (1.0 - f, f)
+            } else if f < first {
+                ((first - f) / first.max(1e-9), 0.0)
+            } else if f > last {
+                (0.0, (f - last) / (1.0 - last).max(1e-9))
+            } else {
+                (0.0, 0.0)
+            };
+            ends[0] += load * to_from;
+            ends[1] += load * to_to;
+        }
+        for (k, (p, share)) in [(&j.from, from), (&j.to, to)].into_iter().enumerate() {
             let e = out.entry(p.clone()).or_insert([0.0; 3]);
-            for k in 0..3 {
-                e[k] += q[k] * length * share * bundle;
+            for i in 0..3 {
+                e[i] += q[i] * length * share * bundle + ends[k][i];
             }
         }
     }
@@ -152,6 +168,78 @@ pub struct JumperShape {
     /// Where it is held: its support clamps in order from `from`, or its
     /// support string (one, without structure and wire point).
     pub supports: Vec<JumperSupportShape>,
+    /// Its labelled points ([`crate::JumperPoint`]) where they are.
+    pub point_positions: Vec<(String, Point)>,
+}
+
+/// The share of its length from `from` a jumper point is at: a fraction;
+/// a length along it over the jumper's `length`; a distance along the line
+/// over its ends' horizontal distance `horizontal`.
+pub fn place_fraction(at: &crate::JumperPlace, length: f64, horizontal: f64) -> f64 {
+    let f = match (at.distance, at.length) {
+        (Some(d), _) if horizontal > 0.0 => d / horizontal,
+        (None, Some(l)) if length > 0.0 => l / length,
+        (Some(_) | None, _) => at.fraction,
+    };
+    f.clamp(0.0, 1.0)
+}
+
+/// The point of `points` (a polyline) at share `f` of its length.
+fn at_share(points: &[Vector3<f64>], f: f64) -> Vector3<f64> {
+    let total: f64 = points.windows(2).map(|w| (w[1] - w[0]).norm()).sum();
+    let mut left = f.clamp(0.0, 1.0) * total;
+    for w in points.windows(2) {
+        let l = (w[1] - w[0]).norm();
+        if left <= l && l > 0.0 {
+            return w[0] + (w[1] - w[0]) * (left / l);
+        }
+        left -= l;
+    }
+    points.last().copied().unwrap_or_default()
+}
+
+/// The labelled points of `jumper` on its solved polyline.
+fn point_positions(jumper: &Jumper, points: &[Vector3<f64>], length: f64) -> Vec<(String, Point)> {
+    let (Some(a), Some(b)) = (points.first(), points.last()) else {
+        return Vec::new();
+    };
+    let horizontal = (b - a).xy().norm();
+    jumper
+        .points
+        .iter()
+        .map(|q| {
+            let f = place_fraction(&q.at, length, horizontal);
+            (q.label.clone(), p(at_share(points, f)))
+        })
+        .collect()
+}
+
+/// The loads of `jumper`'s objects in `case` (the whole bundle's, N), at
+/// their shares of its length: weight and ice down, the wind across the
+/// line from the case's side (`along`: the line's direction there).
+fn object_loads(
+    jumper: &Jumper,
+    cable: &Cable,
+    case: &WeatherCase,
+    length: f64,
+    horizontal: f64,
+    along: Option<[f64; 2]>,
+) -> Vec<(f64, Vector3<f64>)> {
+    let left = along.map_or(Vector3::zeros(), |a| {
+        Vector3::new(-a[1], a[0], 0.0) * case.wind_from.to_left()
+    });
+    jumper
+        .points
+        .iter()
+        .filter_map(|q| {
+            let o = q.object.as_ref()?;
+            let [down, across] = o.forces(case, cable.diameter.si());
+            Some((
+                place_fraction(&q.at, length, horizontal),
+                left * across - Vector3::new(0.0, 0.0, down),
+            ))
+        })
+        .collect()
 }
 
 /// A solved support of a jumper: the clamp and the strings holding it.
@@ -541,6 +629,7 @@ impl Stiff {
     /// Solves the rod of `length` under `load` between `a` and `b` (held
     /// as `held` says), starting from the hinged catenary; if that does
     /// not converge, the bending stiffness is brought in in steps.
+    #[allow(clippy::too_many_arguments)]
     fn solve(
         &self,
         a: Vector3<f64>,
@@ -549,6 +638,7 @@ impl Stiff {
         load: Vector3<f64>,
         held: &Held,
         ea: f64,
+        objects: &[(f64, Vector3<f64>)],
     ) -> Result<RodShape, String> {
         let props = CableProperties {
             unstressed_length: length,
@@ -596,6 +686,32 @@ impl Stiff {
                 (pieces, holds, nodes)
             }
         };
+        // The objects: loads held nowhere, at their shares of the length
+        // (on the piece covering it).
+        let mut holds = holds;
+        let mut run = 0.0;
+        let starts: Vec<f64> = pieces
+            .iter()
+            .map(|l| {
+                let s = run;
+                run += l;
+                s
+            })
+            .collect();
+        for (f, w) in objects {
+            let s = (f * length).clamp(0.0, length);
+            let k = starts
+                .iter()
+                .rposition(|x| *x <= s)
+                .unwrap_or(0)
+                .min(pieces.len() - 1);
+            holds.push(RodHold {
+                piece: k,
+                offset: ((s - starts[k]) / pieces[k]).clamp(0.0, 1.0),
+                load: *w,
+                strings: Vec::new(),
+            });
+        }
         let mut start: Vec<Vector3<f64>> = nodes.windows(2).map(|w| w[1] - w[0]).collect();
         let rod = |ei: f64| Rod {
             a,
@@ -643,7 +759,15 @@ fn stiff_length_for_sag(
 ) -> Result<f64, String> {
     let chord = (b - a).norm();
     let f = |l0: f64| -> Result<f64, String> {
-        let shape = stiff.solve(a, b, l0, still.load, &Held::Free, still.axial_stiffness)?;
+        let shape = stiff.solve(
+            a,
+            b,
+            l0,
+            still.load,
+            &Held::Free,
+            still.axial_stiffness,
+            &[],
+        )?;
         Ok(sag_below_chord(&shape.points, a, b) - sag)
     };
     let (mut lo, mut hi) = (chord * (1.0 + TAUT), hinged);
@@ -907,14 +1031,22 @@ pub fn solve_jumper(
             * d.norm()
             * f64::from(line.jumper_bundle(jumper).count.max(1))
             / 2.0;
+        // Its objects shared between the ends by where they are.
+        let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
+        let mut ends = [Vector3::new(0.0, 0.0, -half); 2];
+        for (f, w) in object_loads(jumper, cable, case, d.norm(), d.xy().norm(), along) {
+            ends[0] += w * (1.0 - f);
+            ends[1] += w * f;
+        }
         return Ok(JumperShape {
             jumper: jumper.id.clone(),
             sag: 0.0,
+            point_positions: point_positions(jumper, &points, d.norm()),
             points: points.iter().map(|q| p(*q)).collect(),
             unstressed_length: d.norm(),
             low_point: p(low),
             max_tension: 0.0,
-            end_forces: [[0.0, 0.0, -half]; 2],
+            end_forces: ends.map(p),
             supports: Vec::new(),
         });
     }
@@ -962,12 +1094,21 @@ pub fn solve_jumper(
             d.norm()
         )));
     }
-    // Support clamps: always the rod (they keep it straight through them
-    // whatever its stiffness).
-    let stiff = if jumper.supports.is_empty() {
-        stiff
-    } else {
+    // Its objects, per subconductor.
+    let objects: Vec<(f64, Vector3<f64>)> =
+        object_loads(jumper, cable, case, l0, d.xy().norm(), along)
+            .into_iter()
+            .map(|(f, w)| (f, w / f64::from(bundle)))
+            .collect();
+    // Support clamps and objects: always the rod (it keeps the jumper
+    // straight through its clamps whatever its stiffness, and takes
+    // loads at points).
+    let stiff = if !jumper.supports.is_empty() {
         Some(rod_ends(line, jumper, shapes, cable, load))
+    } else if !objects.is_empty() {
+        stiff.or_else(|| Some(rod_ends(line, jumper, shapes, cable, load)))
+    } else {
+        stiff
     };
     if let Some(stiff) = &stiff {
         // Half the string's weight per wire on the jumper.
@@ -992,7 +1133,9 @@ pub fn solve_jumper(
             }
             None => Held::Free,
         };
-        let shape = stiff.solve(a, b, l0, load, &held, ea).map_err(invalid)?;
+        let shape = stiff
+            .solve(a, b, l0, load, &held, ea, &objects)
+            .map_err(invalid)?;
         let low = *shape
             .points
             .iter()
@@ -1007,6 +1150,7 @@ pub fn solve_jumper(
             max_tension: shape.max_tension,
             end_forces: shape.end_forces.map(|f| p(f * f64::from(bundle))),
             supports: support_shapes(line, jumper, &shape, bundle),
+            point_positions: point_positions(jumper, &shape.points, l0),
         });
     }
     // The pull at an end: its tension there along the jumper.
@@ -1127,6 +1271,7 @@ pub fn solve_jumper(
     Ok(JumperShape {
         jumper: jumper.id.clone(),
         sag: sag_below_chord(&points, a, b),
+        point_positions: point_positions(jumper, &points, l0),
         points: points.iter().map(|q| p(*q)).collect(),
         unstressed_length: l0,
         low_point: p(low),
@@ -1735,6 +1880,96 @@ mod tests {
     /// their horizontal parts cancel), the sections and jumpers settle in
     /// a few passes, the clamps elsewhere than with the estimate; read
     /// back from the line file.
+    #[test]
+    fn a_body_on_a_jumper_hangs_on_it() {
+        let lib = library();
+        let calm = still(15.0);
+        let mut line = crate::tests::example();
+        let j = line.jumpers[0].clone();
+        let (_, bare) = solve_all(&line, &calm);
+        line.jumpers[0].points.push(crate::JumperPoint {
+            label: "B".into(),
+            at: crate::JumperPlace {
+                fraction: 0.5,
+                ..Default::default()
+            },
+            description: String::new(),
+            object: Some(crate::LineObject::body(
+                200.0,
+                crate::Shape::Sphere { diameter: 0.3 },
+            )),
+        });
+        line.validate().unwrap();
+        let (_, loaded) = solve_all(&line, &calm);
+        let (b, l) = (&bare[0], &loaded[0]);
+        // Its point reported, lower than the bare jumper there.
+        let at = l.point_positions[0].1;
+        assert_eq!(l.point_positions[0].0, "B");
+        let low = |s: &JumperShape| s.points.iter().map(|q| q[2]).fold(f64::MAX, f64::min);
+        // A nearly taut, inextensible jumper: the body pulls it tighter
+        // rather than lower; its point below its ends.
+        assert!(
+            l.max_tension > 2.0 * b.max_tension,
+            "{} {}",
+            l.max_tension,
+            b.max_tension
+        );
+        assert!(low(l) <= low(b) + 1e-9);
+        assert!(at[2] < l.points[0][2].min(l.points.last().unwrap()[2]));
+        // Its clamps carry its weight more (the pull).
+        let down = |s: &JumperShape| -(s.end_forces[0][2] + s.end_forces[1][2]);
+        assert!(
+            ((down(l) - down(b)) - 200.0).abs() < 0.05 * 200.0,
+            "{} {}",
+            down(l),
+            down(b)
+        );
+        // The estimate: half on each end without supports.
+        let est = |line: &Line| end_loads(line, &calm, |id| lib.get(id));
+        let bare_line = crate::tests::example();
+        let more = est(&line)[&j.from][2] - est(&bare_line)[&j.from][2];
+        assert!((more + 100.0).abs() < 1.0, "{more}");
+        // A rigid jumper shares it by where it is.
+        let mut rigid = line.clone();
+        rigid.jumpers[0].rigid = true;
+        rigid.jumpers[0].points[0].at.fraction = 0.25;
+        let (_, r) = solve_all(&rigid, &calm);
+        let mut plain = rigid.clone();
+        plain.jumpers[0].points.clear();
+        let (_, p0) = solve_all(&plain, &calm);
+        let extra = |k: usize| p0[0].end_forces[k][2] - r[0].end_forces[k][2];
+        // (Within the change of its own weight: the body's estimate on the
+        // sections moves their clamps a little.)
+        assert!((extra(0) - 150.0).abs() < 0.5 && (extra(1) - 50.0).abs() < 0.5);
+        // By a length along it.
+        assert!(
+            (place_fraction(
+                &crate::JumperPlace {
+                    fraction: 0.0,
+                    length: Some(2.0),
+                    distance: None
+                },
+                8.0,
+                6.0
+            ) - 0.25)
+                .abs()
+                < 1e-12
+        );
+        assert!(
+            (place_fraction(
+                &crate::JumperPlace {
+                    fraction: 0.0,
+                    length: Some(2.0),
+                    distance: Some(3.0)
+                },
+                8.0,
+                6.0
+            ) - 0.5)
+                .abs()
+                < 1e-12
+        );
+    }
+
     #[test]
     fn the_jumpers_pull_on_the_clamps_as_an_option() {
         use crate::JumperLoads;
