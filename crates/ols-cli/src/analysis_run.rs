@@ -33,7 +33,7 @@ pub struct ModelArgs {
     #[arg(long)]
     pub library: Option<PathBuf>,
     /// Structure type directory (.olss) for typed structures (default: the
-    /// `Structures` folder next to the line, else libraries/structures).
+    /// `Structures` folder next to the line).
     #[arg(long)]
     pub structures: Option<PathBuf>,
     /// Insulator assembly library directory (.olsi).
@@ -229,14 +229,7 @@ fn load(m: &ModelArgs) -> Result<(Line, ols_cables::Library), String> {
     if line.structures.iter().any(|s| s.structure_type.is_some()) {
         let dir = match &m.structures {
             Some(d) => d.clone(),
-            None => {
-                let local = m.file.parent().unwrap_or(Path::new(".")).join("Structures");
-                if local.is_dir() {
-                    local
-                } else {
-                    shipped_library("structures")
-                }
-            }
+            None => m.file.parent().unwrap_or(Path::new(".")).join("Structures"),
         };
         let insulators = m
             .insulators

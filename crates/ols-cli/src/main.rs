@@ -200,8 +200,7 @@ struct LineArgs {
     #[arg(long)]
     library: Option<PathBuf>,
     /// Structure type directory (.olss pylon files), for typed structures
-    /// (default: the `Structures` folder next to the line or project file,
-    /// else libraries/structures).
+    /// (default: the `Structures` folder next to the line or project file).
     #[arg(long)]
     structures: Option<PathBuf>,
     /// Insulator assembly library directory (.olsi) (default: the shipped
@@ -1243,17 +1242,10 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
     // shared library.
     let structure_dir: &std::path::Path = &match structure_dir_arg {
         Some(d) => d.clone(),
-        None => {
-            let local = file
-                .parent()
-                .unwrap_or(std::path::Path::new("."))
-                .join("Structures");
-            if local.is_dir() {
-                local
-            } else {
-                shipped_library("structures")
-            }
-        }
+        None => file
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join("Structures"),
     };
 
     let run = || -> Result<(), String> {

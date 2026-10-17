@@ -35,6 +35,21 @@ fn formats() -> Vec<(&'static str, Parse)> {
                 .map(drop)
                 .map_err(|e| e.to_string())
         }),
+        ("libraries/insulators/example-v-string.olsi", |t| {
+            ols_structures::insulators::InsulatorAssembly::parse(Path::new("x.olsi"), t)
+                .map(drop)
+                .map_err(|e| e.to_string())
+        }),
+        ("libraries/insulators/example-strain.olsi", |t| {
+            ols_structures::insulators::InsulatorAssembly::parse(Path::new("x.olsi"), t)
+                .map(drop)
+                .map_err(|e| e.to_string())
+        }),
+        ("libraries/insulators/example-suspension-i.olsi", |t| {
+            ols_structures::insulators::InsulatorAssembly::parse(Path::new("x.olsi"), t)
+                .map(drop)
+                .map_err(|e| e.to_string())
+        }),
         ("examples/synthetic-line/Structures/type-01.olss", |t| {
             ols_structures::structures::StructureType::parse(Path::new("x.olss"), t)
                 .map(drop)

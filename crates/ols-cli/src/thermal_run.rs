@@ -90,7 +90,7 @@ pub struct LimitArgs {
     #[arg(long)]
     library: Option<PathBuf>,
     /// Structure type directory (default: the `Structures` folder next to
-    /// the line, else libraries/structures).
+    /// the line).
     #[arg(long)]
     structures: Option<PathBuf>,
     /// Insulator library directory (default: libraries/insulators).
@@ -332,14 +332,10 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
         .insulators
         .clone()
         .unwrap_or_else(|| shipped_library("insulators"));
-    let structures = a.structures.clone().unwrap_or_else(|| {
-        let local = ols_core::files::dir_of(&a.file).join("Structures");
-        if local.is_dir() {
-            local
-        } else {
-            shipped_library("structures")
-        }
-    });
+    let structures = a
+        .structures
+        .clone()
+        .unwrap_or_else(|| ols_core::files::dir_of(&a.file).join("Structures"));
     if line.structures.iter().any(|s| s.structure_type.is_some()) {
         let types =
             ols_structures::StructureLibrary::load_dir(&structures).map_err(|e| e.to_string())?;
