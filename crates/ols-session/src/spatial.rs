@@ -85,9 +85,13 @@ pub fn object_bounds(line: &Line) -> BTreeMap<(Kind, String), Bounds> {
         put(Kind::Section, &s.id, pts);
     }
     for j in &line.jumpers {
+        // Its ends: wire points, and taps where they are.
         let mut pts: Vec<Point> = [&j.from, &j.to]
             .into_iter()
-            .filter_map(|p| clamp_point(line, p))
+            .filter_map(|e| match e.point() {
+                Some(p) => clamp_point(line, p),
+                None => ols_line::jumper::approximate_end(line, e, 0),
+            })
             .collect();
         pts.extend(j.support.iter().map(|s| s.point));
         // Its support clamps, where their wire points hang.

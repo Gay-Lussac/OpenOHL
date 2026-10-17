@@ -204,7 +204,9 @@ pub(crate) fn positions(line: &Line) -> BTreeMap<Key, Key> {
         out.entry(lo.clone()).or_insert(lo);
     };
     for j in &line.jumpers {
-        let (a, b) = (key(&j.from), key(&j.to));
+        let (Some(a), Some(b)) = (j.from.point().map(key), j.to.point().map(key)) else {
+            continue;
+        };
         if a.0 != b.0 || a == b || !ends.contains(&a) || !ends.contains(&b) {
             continue;
         }

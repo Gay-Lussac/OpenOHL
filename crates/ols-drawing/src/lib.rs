@@ -294,13 +294,13 @@ pub fn build(
         let Some(def) = line.jumpers.iter().find(|d| d.id == j.jumper) else {
             continue;
         };
-        if route.structures.contains(&def.from.structure)
-            || route.structures.contains(&def.to.structure)
+        if [&def.from, &def.to]
+            .into_iter()
+            .flat_map(|e| line.end_structures(e))
+            .any(|s| route.structures.contains(&s))
         {
             let color = def.color.clone().unwrap_or_else(|| {
-                line.sections
-                    .iter()
-                    .find(|s| s.points.contains(&def.from))
+                line.jumper_section(def)
                     .map_or(ols_line::NEUTRAL_COLOR.to_owned(), |s| {
                         line.section_color(s)
                     })

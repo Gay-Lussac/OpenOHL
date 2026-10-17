@@ -188,11 +188,11 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
             bundle: def.map_or(Vec::new(), |d| line.jumper_bundle(d).offsets()),
             points: j.points.clone(),
             ends: def.map_or(Vec::new(), |d| {
-                let end = |p: &ols_line::SectionPoint, t: &Option<ols_line::Tap>| match t {
-                    None => key(p),
-                    Some(t) => tap_key(t),
+                let end = |e: &ols_line::JumperEnd| match e {
+                    ols_line::JumperEnd::Wire(p) => key(p),
+                    ols_line::JumperEnd::Tap { tap } => tap_key(tap),
                 };
-                let mut e = vec![end(&d.from, &d.from_tap), end(&d.to, &d.to_tap)];
+                let mut e = vec![end(&d.from), end(&d.to)];
                 // Its clamps: where jumpers hanging on it join it.
                 e.extend(d.points.iter().filter(|p| is_clamp(&p.object)).map(|p| {
                     tap_key(&ols_line::Tap::Jumper {

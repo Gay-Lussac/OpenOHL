@@ -56,8 +56,12 @@ use serde::{Deserialize, Serialize};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ols-line";
-/// Latest line file version.
-pub const LINE_FILE_VERSION: u32 = 4;
+/// Latest line file version: 5 writes a jumper's tap end as its `from` /
+/// `to` ([`JumperEnd`]) and a place with one key ([`SpanPlace`],
+/// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
+/// alignments, 2 structures as points and strings. Older files are read
+/// into the current form.
+pub const LINE_FILE_VERSION: u32 = 5;
 
 fn default_format() -> String {
     LINE_FILE_FORMAT.to_owned()
@@ -293,7 +297,7 @@ pub type Fields = std::collections::BTreeMap<String, String>;
 /// another (solved clamp positions when the points belong to sections).
 /// Its cut length is given, or follows from a sag in still air.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "JumperFile")]
 pub struct Jumper {
     /// What it is, in words (free text).
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -302,10 +306,10 @@ pub struct Jumper {
     pub id: String,
     /// Cable id in the wire libraries.
     pub cable: String,
-    /// First end.
-    pub from: SectionPoint,
+    /// First end: a section's wire point, or a tap.
+    pub from: JumperEnd,
     /// Second end.
-    pub to: SectionPoint,
+    pub to: JumperEnd,
     /// Unstressed (cut) length, m, at `temperature`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length: Option<f64>,
@@ -359,13 +363,6 @@ pub struct Jumper {
     /// or bare.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<JumperPoint>,
-    /// Its `from` end is a tap (a clamp on a span or another jumper):
-    /// `from` is then not used.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from_tap: Option<Tap>,
-    /// Its `to` end is a tap.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_tap: Option<Tap>,
     /// Display colour (`#rrggbb`); default: the colour of the section at
     /// `from`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -386,6 +383,220 @@ pub struct Jumper {
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
     pub fields: Fields,
+}
+
+/// One end of a jumper: a section's wire point (structure + set), written
+/// `{"structure": "T3", "set": 2}`, or a tap (a clamp object on a span
+/// point or another jumper's point), written `{"tap": {"span": …}}`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum JumperEnd {
+    /// A section's wire point.
+    Wire(SectionPoint),
+    /// A tap.
+    Tap {
+        /// Where.
+        tap: Tap,
+    },
+}
+
+impl JumperEnd {
+    /// At the wire point with set `set` of structure `structure`.
+    pub fn wire(structure: impl Into<String>, set: u32) -> Self {
+        Self::Wire(SectionPoint::new(structure, set))
+    }
+
+    /// On tap `tap`.
+    pub fn tap(tap: Tap) -> Self {
+        Self::Tap { tap }
+    }
+
+    /// Its wire point, if at one.
+    pub fn point(&self) -> Option<&SectionPoint> {
+        match self {
+            Self::Wire(p) => Some(p),
+            Self::Tap { .. } => None,
+        }
+    }
+
+    /// Its tap, if on one.
+    pub fn as_tap(&self) -> Option<&Tap> {
+        match self {
+            Self::Tap { tap } => Some(tap),
+            Self::Wire(_) => None,
+        }
+    }
+
+    /// Whether it is at wire point `p`.
+    pub fn is_at(&self, p: &SectionPoint) -> bool {
+        self.point() == Some(p)
+    }
+
+    /// Its wire point, to change.
+    pub fn point_mut(&mut self) -> Option<&mut SectionPoint> {
+        match self {
+            Self::Wire(p) => Some(p),
+            Self::Tap { .. } => None,
+        }
+    }
+
+    /// Its tap, to change.
+    pub fn tap_mut(&mut self) -> Option<&mut Tap> {
+        match self {
+            Self::Tap { tap } => Some(tap),
+            Self::Wire(_) => None,
+        }
+    }
+
+    /// The structure of its wire point (none on a tap).
+    pub fn structure(&self) -> Option<&str> {
+        self.point().map(|p| p.structure.as_str())
+    }
+}
+
+impl fmt::Display for JumperEnd {
+    /// `T3 set 2`, `tap S1 P4` or `tap J2 K`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Wire(p) => write!(f, "{} set {}", p.structure, p.set),
+            Self::Tap { tap: Tap::Span(r) } => write!(f, "tap {} {}", r.section, r.point),
+            Self::Tap {
+                tap: Tap::Jumper { jumper, point },
+            } => write!(f, "tap {jumper} {point}"),
+        }
+    }
+}
+
+impl PartialEq<SectionPoint> for JumperEnd {
+    fn eq(&self, p: &SectionPoint) -> bool {
+        self.is_at(p)
+    }
+}
+
+impl PartialEq<JumperEnd> for SectionPoint {
+    fn eq(&self, end: &JumperEnd) -> bool {
+        end.is_at(self)
+    }
+}
+
+impl From<SectionPoint> for JumperEnd {
+    fn from(p: SectionPoint) -> Self {
+        Self::Wire(p)
+    }
+}
+
+impl From<Tap> for JumperEnd {
+    fn from(tap: Tap) -> Self {
+        Self::Tap { tap }
+    }
+}
+
+impl Jumper {
+    /// Its taps (none, one or both ends).
+    pub fn taps(&self) -> impl Iterator<Item = &Tap> {
+        [&self.from, &self.to]
+            .into_iter()
+            .filter_map(JumperEnd::as_tap)
+    }
+
+    /// Whether an end is a tap.
+    pub fn on_tap(&self) -> bool {
+        self.taps().next().is_some()
+    }
+
+    /// Whether an end is at wire point `p`.
+    pub fn is_at(&self, p: &SectionPoint) -> bool {
+        self.from.is_at(p) || self.to.is_at(p)
+    }
+
+    /// Its ends' wire points (not its taps).
+    pub fn points(&self) -> impl Iterator<Item = &SectionPoint> {
+        [&self.from, &self.to]
+            .into_iter()
+            .filter_map(JumperEnd::point)
+    }
+}
+
+/// A jumper as written in files, older ones included: before version 5 a
+/// tap end was `from_tap` / `to_tap` beside a placeholder `from` / `to`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JumperFile {
+    #[serde(default)]
+    description: String,
+    id: String,
+    cable: String,
+    from: Option<JumperEnd>,
+    to: Option<JumperEnd>,
+    #[serde(default)]
+    length: Option<f64>,
+    #[serde(default)]
+    sag: Option<f64>,
+    #[serde(default = "default_jumper_temperature")]
+    temperature: f64,
+    #[serde(default)]
+    rigid: bool,
+    #[serde(default)]
+    support: Option<JumperSupport>,
+    #[serde(default)]
+    supports: Vec<JumperClamp>,
+    #[serde(default)]
+    bending_stiffness: Option<f64>,
+    #[serde(default)]
+    stiffness_factor: Option<f64>,
+    #[serde(default)]
+    angle_from_deg: Option<f64>,
+    #[serde(default)]
+    angle_to_deg: Option<f64>,
+    #[serde(default)]
+    points: Vec<JumperPoint>,
+    #[serde(default)]
+    from_tap: Option<Tap>,
+    #[serde(default)]
+    to_tap: Option<Tap>,
+    #[serde(default)]
+    color: Option<String>,
+    #[serde(default)]
+    bundle: Option<u32>,
+    #[serde(default)]
+    bundle_spacing: Option<f64>,
+    #[serde(default)]
+    bundle_rotation_deg: Option<f64>,
+    #[serde(default)]
+    fields: Fields,
+}
+
+impl From<JumperFile> for Jumper {
+    fn from(f: JumperFile) -> Self {
+        // A tap given the old way wins over the placeholder beside it.
+        let end = |end: Option<JumperEnd>, tap: Option<Tap>| match tap {
+            Some(tap) => JumperEnd::Tap { tap },
+            None => end.unwrap_or_else(|| JumperEnd::wire("", 0)),
+        };
+        Jumper {
+            description: f.description,
+            id: f.id,
+            cable: f.cable,
+            from: end(f.from, f.from_tap),
+            to: end(f.to, f.to_tap),
+            length: f.length,
+            sag: f.sag,
+            temperature: f.temperature,
+            rigid: f.rigid,
+            support: f.support,
+            supports: f.supports,
+            bending_stiffness: f.bending_stiffness,
+            stiffness_factor: f.stiffness_factor,
+            angle_from_deg: f.angle_from_deg,
+            angle_to_deg: f.angle_to_deg,
+            points: f.points,
+            color: f.color,
+            bundle: f.bundle,
+            bundle_spacing: f.bundle_spacing,
+            bundle_rotation_deg: f.bundle_rotation_deg,
+            fields: f.fields,
+        }
+    }
 }
 
 /// A string holding a jumper at one point (DESIGN_GOALS §6).
@@ -448,7 +659,10 @@ impl JumperClamp {
     /// The structure holding the clamp: its own, else that of `jumper`'s
     /// `from` end.
     pub fn structure_id<'a>(&'a self, jumper: &'a Jumper) -> &'a str {
-        self.structure.as_deref().unwrap_or(&jumper.from.structure)
+        self.structure
+            .as_deref()
+            .or_else(|| jumper.from.structure())
+            .unwrap_or("")
     }
 }
 
@@ -2105,23 +2319,17 @@ impl Line {
     /// circuit): the first section through its `from` point — or, `from`
     /// a tap, the section it hangs on — else through its `to` end.
     pub fn jumper_section(&self, jumper: &Jumper) -> Option<&Section> {
-        self.end_section(jumper, &jumper.from, jumper.from_tap.as_ref(), 0)
-            .or_else(|| self.end_section(jumper, &jumper.to, jumper.to_tap.as_ref(), 0))
+        self.end_section(&jumper.from, 0)
+            .or_else(|| self.end_section(&jumper.to, 0))
     }
 
     /// The section at an end of a jumper: through its section point, or
     /// that a tap hangs on (a jumper's: that jumper's section, at most
     /// `depth` 16 jumpers deep).
-    fn end_section(
-        &self,
-        _jumper: &Jumper,
-        point: &SectionPoint,
-        tap: Option<&Tap>,
-        depth: usize,
-    ) -> Option<&Section> {
-        match tap {
-            None => self.sections.iter().find(|s| s.points.contains(point)),
-            Some(t) => self.tap_section(t, depth),
+    fn end_section(&self, end: &JumperEnd, depth: usize) -> Option<&Section> {
+        match end {
+            JumperEnd::Wire(point) => self.sections.iter().find(|s| s.points.contains(point)),
+            JumperEnd::Tap { tap } => self.tap_section(tap, depth),
         }
     }
 
@@ -2132,8 +2340,8 @@ impl Line {
             Tap::Span(r) => self.sections.iter().find(|s| s.id == r.section),
             Tap::Jumper { jumper, .. } if depth < 16 => {
                 let host = self.jumpers.iter().find(|j| &j.id == jumper)?;
-                self.end_section(host, &host.from, host.from_tap.as_ref(), depth + 1)
-                    .or_else(|| self.end_section(host, &host.to, host.to_tap.as_ref(), depth + 1))
+                self.end_section(&host.from, depth + 1)
+                    .or_else(|| self.end_section(&host.to, depth + 1))
             }
             Tap::Jumper { .. } => None,
         }
@@ -2141,9 +2349,9 @@ impl Line {
 
     /// The structures a jumper's end is at: its section point's, or, a
     /// tap, those of the span (or section) it hangs on.
-    pub fn end_structures(&self, point: &SectionPoint, tap: Option<&Tap>) -> Vec<String> {
-        match tap {
-            None => vec![point.structure.clone()],
+    pub fn end_structures(&self, end: &JumperEnd) -> Vec<String> {
+        match end.as_tap() {
+            None => end.structure().map(str::to_owned).into_iter().collect(),
             Some(Tap::Span(r)) => self
                 .sections
                 .iter()
@@ -2695,11 +2903,14 @@ impl Line {
             };
             own.check(&format!("jumper {}", j.id))
                 .map_err(LineError::Invalid)?;
-            for (end, tap) in [(&j.from, &j.from_tap), (&j.to, &j.to_tap)] {
-                if let Some(tap) = tap {
-                    self.check_tap(j, tap)?;
-                    continue;
-                }
+            for end in [&j.from, &j.to] {
+                let end = match end {
+                    JumperEnd::Tap { tap } => {
+                        self.check_tap(j, tap)?;
+                        continue;
+                    }
+                    JumperEnd::Wire(p) => p,
+                };
                 let Some(structure) = self.structure(&end.structure) else {
                     return bad(&format!("unknown structure {}", end.structure));
                 };
@@ -2710,13 +2921,10 @@ impl Line {
                     ));
                 }
             }
-            if j.from == j.to && j.from_tap.is_none() && j.to_tap.is_none() {
-                return bad("both ends are the same wire point");
+            if j.from == j.to {
+                return bad("both ends are the same wire point or tap");
             }
-            if j.from_tap.is_some() && j.from_tap == j.to_tap {
-                return bad("both ends are the same tap");
-            }
-            if (j.from_tap.is_some() || j.to_tap.is_some()) && j.length.is_none() && !j.rigid {
+            if j.on_tap() && j.length.is_none() && !j.rigid {
                 return bad(
                     "a jumper on a tap is given by its length (its sag would need a design case where the tap stays put)",
                 );
@@ -2909,9 +3117,7 @@ impl Line {
             .jumpers
             .iter()
             .map(|j| {
-                [&j.from_tap, &j.to_tap]
-                    .into_iter()
-                    .flatten()
+                j.taps()
                     .filter_map(|t| match t {
                         Tap::Jumper { jumper, .. } => index.get(jumper.as_str()).copied(),
                         Tap::Span(_) => None,
@@ -3575,5 +3781,31 @@ mod tests {
             serde_json::to_string(&JumperPlace::Fraction(0.5)).unwrap(),
             r#"{"fraction":0.5}"#
         );
+    }
+
+    /// A jumper end is a wire point or a tap; files before version 5
+    /// gave a tap beside a placeholder `from`.
+    #[test]
+    fn jumper_ends_are_a_wire_point_or_a_tap() {
+        let old = r#"{"id":"J","cable":"c","from":{"structure":"","set":0},
+            "to":{"structure":"T3","set":1},"length":5.0,
+            "from_tap":{"span":{"section":"S1","point":"P"}}}"#;
+        let j: Jumper = serde_json::from_str(old).unwrap();
+        let tap = Tap::Span(SpanPointRef {
+            section: "S1".into(),
+            point: "P".into(),
+        });
+        assert_eq!(j.from, JumperEnd::tap(tap.clone()));
+        assert_eq!(j.to, JumperEnd::wire("T3", 1));
+        let text = serde_json::to_string(&j).unwrap();
+        assert!(
+            text.contains(r#""from":{"tap":{"span":{"section":"S1","point":"P"}}}"#),
+            "{text}"
+        );
+        assert!(!text.contains("from_tap"));
+        assert_eq!(serde_json::from_str::<Jumper>(&text).unwrap(), j);
+        assert_eq!(j.taps().collect::<Vec<_>>(), [&tap]);
+        assert_eq!(j.to.to_string(), "T3 set 1");
+        assert_eq!(j.from.to_string(), "tap S1 P");
     }
 }

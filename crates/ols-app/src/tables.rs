@@ -834,6 +834,42 @@ fn point(p: &SectionPoint) -> String {
     format!("{} {}", p.structure, p.set)
 }
 
+/// A jumper end as the table writes it: "T3 2", or "tap S1 P4" (a span
+/// point) / "tap J2 K" (a jumper's point).
+fn end_text(e: &ols_line::JumperEnd) -> String {
+    match e {
+        ols_line::JumperEnd::Wire(p) => point(p),
+        ols_line::JumperEnd::Tap { .. } => e.to_string(),
+    }
+}
+
+/// "T3 2" → a wire point; "tap S1 P4" → a tap on span point P4 of
+/// section S1, "tap J2 K" on point K of jumper J2.
+fn parse_end(text: &str, line: &ols_line::Line) -> Result<ols_line::JumperEnd, String> {
+    let Some(rest) = text.trim().strip_prefix("tap ") else {
+        return parse_point(text).map(ols_line::JumperEnd::Wire);
+    };
+    let (host, label) = rest.trim().split_once(' ').ok_or_else(|| {
+        format!("\"{text}\": write tap, a section or jumper, a point, e.g. tap S1 P4")
+    })?;
+    let (host, point) = (host.trim().to_owned(), label.trim().to_owned());
+    if line.sections.iter().any(|s| s.id == host) {
+        Ok(ols_line::JumperEnd::tap(ols_line::Tap::Span(
+            ols_line::SpanPointRef {
+                section: host,
+                point,
+            },
+        )))
+    } else if line.jumpers.iter().any(|j| j.id == host) {
+        Ok(ols_line::JumperEnd::tap(ols_line::Tap::Jumper {
+            jumper: host,
+            point,
+        }))
+    } else {
+        Err(format!("\"{text}\": no section or jumper {host}"))
+    }
+}
+
 /// "T3 2" → a section point (files written before: "T3 2:1", the set
 /// [`ols_line::assembly::set_from_v1`]).
 fn parse_point(text: &str) -> Result<SectionPoint, String> {
@@ -1557,8 +1593,8 @@ impl TableKind {
                     select: Selection::Jumper(j.id.clone()),
                     cells: vec![
                         j.id.clone(),
-                        point(&j.from),
-                        point(&j.to),
+                        end_text(&j.from),
+                        end_text(&j.to),
                         j.cable.clone(),
                         j.length.map_or(String::new(), |v| f(v, 3)),
                         j.sag.map_or(String::new(), |v| f(v, 3)),
@@ -3006,14 +3042,17 @@ fn circuit_commands(
             let Some(j) = line.jumpers.iter().find(|j| &j.id == id) else {
                 continue;
             };
-            if at(&j.to) < at(&j.from) {
+            let (Some(from), Some(to)) = (j.from.point(), j.to.point()) else {
+                continue;
+            };
+            if at(to) < at(from) {
                 let mut j = j.clone();
                 // Its clamps from the other end: on the same structures,
                 // in the other order.
-                let first = j.from.structure.clone();
+                let (first, last) = (from.structure.clone(), to.structure.clone());
                 for c in &mut j.supports {
                     let id = c.structure.take().unwrap_or_else(|| first.clone());
-                    c.structure = (id != j.to.structure).then_some(id);
+                    c.structure = (id != last).then_some(id);
                     c.at = 1.0 - c.at;
                 }
                 j.supports.reverse();
@@ -3408,15 +3447,13 @@ fn jumper_cells(
         .get(TableKind::Jumpers.column("description"))
         .trim()
         .to_owned();
-    j.from = parse_point(&c.get(1)).map_err(|e| format!("{name} from: {e}"))?;
-    j.to = parse_point(&c.get(2)).map_err(|e| format!("{name} to: {e}"))?;
+    j.from = parse_end(&c.get(1), &model.line).map_err(|e| format!("{name} from: {e}"))?;
+    j.to = parse_end(&c.get(2), &model.line).map_err(|e| format!("{name} to: {e}"))?;
     j.cable = match opt(&c.get(3)) {
         Some(cable) => cable,
         None => model
             .line
-            .sections
-            .iter()
-            .find(|s| s.points.contains(&j.from))
+            .jumper_section(j)
             .map(|s| s.cable.clone())
             .ok_or_else(|| format!("{name}: give its cable"))?,
     };
@@ -5488,7 +5525,7 @@ fn span_object_commands<'a>(
                 .map(|(_, p)| p.label.clone())
                 .collect();
             for x in stored.jumpers.iter().filter(|x| {
-                [&x.from_tap, &x.to_tap].into_iter().flatten().any(|t| {
+                x.taps().any(|t| {
                     matches!(t, ols_line::Tap::Jumper { jumper, point } if jumper == id && labels.contains(point))
                 })
             }) {
@@ -5525,7 +5562,7 @@ fn span_object_commands<'a>(
             ));
         }
         for x in stored.jumpers.iter().filter(|x| {
-            [&x.from_tap, &x.to_tap].into_iter().flatten().any(|t| {
+            x.taps().any(|t| {
                 matches!(t, ols_line::Tap::Span(r) if r.section == *id && labels.contains(&r.point))
             })
         }) {

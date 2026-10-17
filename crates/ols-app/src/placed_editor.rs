@@ -316,8 +316,8 @@ impl PlacedEditor {
         }
         for j in &stored.jumpers {
             let mut j = j.clone();
-            let a = remap(&mut j.from);
-            let b = remap(&mut j.to);
+            let a = j.from.point_mut().is_some_and(remap);
+            let b = j.to.point_mut().is_some_and(remap);
             if a || b {
                 commands.push(Command::Put {
                     kind: Kind::Jumper,

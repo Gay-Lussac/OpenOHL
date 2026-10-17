@@ -896,7 +896,7 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
                 Kind::Jumper => {
                     if let Some(j) = line.jumpers.iter().find(|j| &j.id == id) {
                         for sec in &line.sections {
-                            if sec.points.contains(&j.from) || sec.points.contains(&j.to) {
+                            if sec.points.iter().any(|p| j.is_at(p)) {
                                 out.insert(sec.id.clone());
                             }
                         }
@@ -1657,12 +1657,14 @@ impl Session {
                             let clamp_on = |c: &ols_line::JumperClamp| {
                                 c.structure.as_deref() == Some(id.as_str())
                             };
-                            if j.from.structure == id
-                                || j.to.structure == id
+                            if j.points().any(|p| p.structure == id)
                                 || j.supports.iter().any(clamp_on)
                             {
                                 let mut j = j.clone();
-                                for p in [&mut j.from, &mut j.to] {
+                                for p in [&mut j.from, &mut j.to]
+                                    .into_iter()
+                                    .filter_map(ols_line::JumperEnd::point_mut)
+                                {
                                     if p.structure == id {
                                         p.structure = new_id.clone();
                                     }
@@ -1705,7 +1707,10 @@ impl Session {
                         for j in &self.line.jumpers {
                             let mut j = j.clone();
                             let mut changed = false;
-                            for t in [&mut j.from_tap, &mut j.to_tap].into_iter().flatten() {
+                            for t in [&mut j.from, &mut j.to]
+                                .into_iter()
+                                .filter_map(ols_line::JumperEnd::tap_mut)
+                            {
                                 if let ols_line::Tap::Span(r) = t
                                     && r.section == id
                                 {
@@ -1757,7 +1762,10 @@ impl Session {
                         for j in &self.line.jumpers {
                             let mut j = j.clone();
                             let mut changed = false;
-                            for t in [&mut j.from_tap, &mut j.to_tap].into_iter().flatten() {
+                            for t in [&mut j.from, &mut j.to]
+                                .into_iter()
+                                .filter_map(ols_line::JumperEnd::tap_mut)
+                            {
                                 if let ols_line::Tap::Jumper { jumper, .. } = t
                                     && *jumper == id
                                 {
@@ -1847,9 +1855,12 @@ impl Session {
                     }
                 }
                 for j in &self.line.jumpers {
-                    if j.from == old || j.to == old {
+                    if j.is_at(&old) {
                         let mut j = j.clone();
-                        for p in [&mut j.from, &mut j.to] {
+                        for p in [&mut j.from, &mut j.to]
+                            .into_iter()
+                            .filter_map(ols_line::JumperEnd::point_mut)
+                        {
                             if *p == old {
                                 *p = new.clone();
                             }
@@ -2106,10 +2117,7 @@ impl Session {
                     .line
                     .jumpers
                     .iter()
-                    .filter(|j| {
-                        (j.from_tap.is_none() && sec.points.contains(&j.from))
-                            || (j.to_tap.is_none() && sec.points.contains(&j.to))
-                    })
+                    .filter(|j| j.points().any(|p| sec.points.contains(p)))
                     .map(|j| j.id.clone())
                     .collect();
                 // With the jumpers hanging on taps on it (and on those).
@@ -2200,13 +2208,8 @@ impl Session {
             .jumpers
             .iter()
             .filter(|j| {
-                [(&j.from, &j.from_tap), (&j.to, &j.to_tap)]
-                    .into_iter()
-                    .any(|(end, tap)| {
-                        tap.is_none()
-                            && (*end == point
-                                || sections.iter().any(|sec| sec.points.contains(end)))
-                    })
+                j.points()
+                    .any(|end| *end == point || sections.iter().any(|sec| sec.points.contains(end)))
             })
             .map(|j| j.id.clone())
             .collect();
@@ -2257,14 +2260,9 @@ impl Session {
             .jumpers
             .iter()
             .filter(|j| {
-                [(&j.from, &j.from_tap), (&j.to, &j.to_tap)]
-                    .into_iter()
-                    .any(|(end, tap)| {
-                        tap.is_none()
-                            && (end.structure == id
-                                || sections.iter().any(|sec| sec.points.contains(end)))
-                    })
-                    || j.supports.iter().any(|c| c.structure_id(j) == id)
+                j.points().any(|end| {
+                    end.structure == id || sections.iter().any(|sec| sec.points.contains(end))
+                }) || j.supports.iter().any(|c| c.structure_id(j) == id)
             })
             .map(|j| j.id.clone())
             .collect();
@@ -2282,13 +2280,10 @@ impl Session {
         let mut out: Vec<String> = jumpers.to_vec();
         let mut k = 0;
         let hangs_on = |j: &ols_line::Jumper, ids: &[String]| {
-            [&j.from_tap, &j.to_tap]
-                .into_iter()
-                .flatten()
-                .any(|t| match t {
-                    ols_line::Tap::Span(r) => sections.contains(&r.section),
-                    ols_line::Tap::Jumper { jumper, .. } => ids.contains(jumper),
-                })
+            j.taps().any(|t| match t {
+                ols_line::Tap::Span(r) => sections.contains(&r.section),
+                ols_line::Tap::Jumper { jumper, .. } => ids.contains(jumper),
+            })
         };
         loop {
             let more: Vec<String> = self

@@ -47,9 +47,9 @@ All examples on this page are invented (structures `T1`, `T2`, sections
  │  Spacer ── a / b : {section, point} ─► SpanPoint.label            │      │  │    │
  │   └─ insulator ──────────────────────────────────────────────────┼──────┤  │    │
  │                                                                   │      │  │    │
- │  Jumper ── from / to : SectionPoint ─► WirePoint.set              │      │  │    │
- │   │  from_tap / to_tap (instead): {section, point} ─► SpanPoint   │      │  │    │
- │   │                    or {jumper, point} ─► JumperPoint          │      │  │    │
+ │  Jumper ── from / to : JumperEnd — SectionPoint ─► WirePoint.set  │      │  │    │
+ │   │      or {tap: {span: {section, point}}} ─► SpanPoint          │      │  │    │
+ │   │      or {tap: {jumper: {jumper, point}}} ─► JumperPoint       │      │  │    │
  │   │  cable ───────────────────────────────────────────────────────┤      │  │    │
  │   ├─ points[] JumperPoint {label, at, object?}                    │      │  │    │
  │   └─ supports[] : JumperClamp {structure?, wire ─► WirePoint.label}      │  │    │
@@ -122,7 +122,7 @@ files](../user-guide/line-file.md).
 | Field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `format` | string | — | `"ols-line"` | — |
-| `version` | u32 | — | file version (now 4; versions 1–3 are read and upgraded; the points and objects of 2026-10 came without a new version: older `loads` / `spread_loads` are read into them) | — |
+| `version` | u32 | — | file version (now 5: jumper ends as `JumperEnd`, places with one key; versions 1–4 are read and upgraded — version 4 files' `from_tap` / `to_tap`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
 | `name` | string | — | line name | — |
 | `crs` | string | — | coordinate reference system, e.g. an EPSG code (informative) | — |
 | `routes` | `[Route]` | — | routes: paths of the line, made of alignments | — |
@@ -348,14 +348,13 @@ ids (Sections › Point and spread load types).
 | `id` | string | — | unique id | — |
 | `description` | string | — | free text | — |
 | `cable` | string | — | cable | `.olsw` cable `id` |
-| `from`, `to` | `SectionPoint` | — | the two ends (different wire points); an end given by a tap keeps here an empty placeholder (`{"structure": "", "set": 0}`) that nothing reads | structure id + set |
+| `from`, `to` | `JumperEnd` | — | the two ends (different): a wire point `{"structure", "set"}`, or a tap `{"tap": {"span": {"section", "point"}}}` (a span point) / `{"tap": {"jumper": {"jumper", "point"}}}` (another jumper's point); a tap's point holds a clamp object (a hinge: forces only); a span's section by FE; a jumper on a tap is given by its `length` (or rigid); jumpers hanging on each other in a ring refused; solved after what they hang on (`Line::jumper_order`); their loads keyed `solve::LoadAt::{Clamp, Span, Jumper}`. Version 4 files gave a tap as `from_tap` / `to_tap` beside a placeholder `from` / `to` (read: the tap) | structure id + set, or point labels |
 | `length` | f64? | m | cut length at `temperature` | — |
 | `sag` | f64? | m | or: sag below the chord in still air (no supports) | — |
 | `temperature` | f64 | °C | of `length` / `sag` | — |
 | `rigid` | bool | — | a tube or bar: no length, sag or supports | — |
 | `support` | `JumperSupport`? | — | one support string from a point: `point` (m), `length` (m), `weight` (N), `fraction` (0–1) | — |
 | `supports` | `[JumperClamp]` | — | or: support clamps on a structure's strings, in order from `from` | — |
-| `from_tap`, `to_tap` | `Tap?` | — | an end at a tap instead of `from` / `to`: `{"span": {"section", "point"}}` (a span point) or `{"jumper": {"jumper", "point"}}` (another jumper's point); the point holds a clamp object (a hinge: forces only); a span's section by FE; given by its `length` (or rigid); jumpers hanging on each other in a ring refused; solved after what they hang on (`Line::jumper_order`); their loads keyed `solve::LoadAt::{Clamp, Span, Jumper}` | point labels |
 | `points` | `[JumperPoint]` | — | labelled points along it (`at`: `JumperPlace` — `fraction` of its length from `from`, `length` along it, m, or `distance`, m horizontally from `from`'s clamp — one of them, `{"length": 3}`; older files giving several: a distance over a length over the fraction), each with its `object` or bare | label unique on the jumper |
 | `bending_stiffness` | f64? | N·m² | EI; default estimated from the cable; 0: hinged | — |
 | `stiffness_factor` | f64? | 0–1 | share of the solid-bar EI for the estimate | — |
@@ -435,7 +434,7 @@ Derived, never stored:
 | Section | `system` | System | `id` |
 | Section | `phase_label` | SystemPhase of that system; `Display.phase_colors` | label |
 | Jumper | `from`, `to` | WirePoint | structure `id` + `set` |
-| Jumper | `from_tap`, `to_tap` | SpanPoint (`{section, point}`) or JumperPoint (`{jumper, point}`) holding a clamp | section / jumper `id` + point label |
+| Jumper | `from`, `to` (a tap) | SpanPoint (`{section, point}`) or JumperPoint (`{jumper, point}`) holding a clamp | section / jumper `id` + point label |
 | JumperClamp | `structure`, `wire` | WirePoint without a set | `id`, label |
 | SpanPoint | `span` | the span between `points[span]` and `points[span + 1]` of its section | **index** |
 | SpreadObject | `from`, `to` | SpanPoints of the same section and span | label |

@@ -411,12 +411,11 @@ impl JumperForm {
 
 fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
     let j = &mut f.jumper;
-    let point = |p: &SectionPoint| format!("{} set {}", p.structure, p.set);
     egui::Grid::new("jumper-form")
         .num_columns(2)
         .show(ui, |ui| {
             ui.label("ends");
-            ui.label(format!("{} → {}", point(&j.from), point(&j.to)));
+            ui.label(format!("{} → {}", j.from, j.to));
             ui.end_row();
             ui.label("description");
             ui.add(
@@ -612,13 +611,11 @@ fn clamps_ui(
          straight through the clamp. The strings take their weight and wind area.",
     );
     let ends: Vec<String> = {
-        let mut v = vec![j.from.structure.clone()];
-        if j.to.structure != j.from.structure {
-            v.push(j.to.structure.clone());
-        }
+        let mut v: Vec<String> = j.points().map(|p| p.structure.clone()).collect();
+        v.dedup();
         v
     };
-    let from = j.from.structure.clone();
+    let from = j.from.structure().unwrap_or_default().to_owned();
     egui::Grid::new("jumper-clamps")
         .num_columns(5)
         .show(ui, |ui| {
@@ -708,10 +705,9 @@ fn clamps_ui(
             .num_columns(2)
             .show(ui, |ui| {
                 // Each clamp by its wire point; the ends by structure and set.
-                let mut names: Vec<String> =
-                    vec![format!("{} set {}", j.from.structure, j.from.set)];
+                let mut names: Vec<String> = vec![j.from.to_string()];
                 names.extend(j.supports.iter().map(|c| c.wire.clone()));
-                names.push(format!("{} set {}", j.to.structure, j.to.set));
+                names.push(j.to.to_string());
                 for (k, piece) in edited.iter_mut().enumerate() {
                     let name = format!("{} to {}", names[k], names[k + 1]);
                     ui.label(name);
@@ -4552,46 +4548,44 @@ pub fn new_jumper(
 /// still-air distance between its ends.
 pub fn new_tap_jumper(
     model: &Model,
-    from: (&SectionPoint, Option<&ols_line::Tap>),
-    to: (&SectionPoint, Option<&ols_line::Tap>),
+    from: ols_line::JumperEnd,
+    to: ols_line::JumperEnd,
 ) -> Result<ols_line::Jumper, String> {
     let line = &model.line;
-    if from.1.is_some() && from.1 == to.1 {
+    if from == to {
         return Err("a jumper joins two different points".into());
     }
-    let end = |e: (&SectionPoint, Option<&ols_line::Tap>)| {
-        ols_line::jumper::approximate_end(line, e.0, e.1, 0).ok_or_else(|| match e.1 {
+    let end = |e: &ols_line::JumperEnd| {
+        ols_line::jumper::approximate_end(line, e, 0).ok_or_else(|| match e.as_tap() {
             Some(t) => format!("no place for the tap {}", t.text()),
-            None => format!("no wire point {} set {}", e.0.structure, e.0.set),
+            None => format!("no wire point {e}"),
         })
     };
-    let (a, b) = (end(from)?, end(to)?);
+    let (a, b) = (end(&from)?, end(&to)?);
     let chord = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
     if chord < 0.1 {
         return Err("its ends are less than 0.1 m apart".into());
     }
-    let section = |e: (&SectionPoint, Option<&ols_line::Tap>)| match e.1 {
-        Some(t) => line.tap_section(t, 0),
-        None => line.sections.iter().find(|s| s.points.contains(e.0)),
+    let section = |e: &ols_line::JumperEnd| match e {
+        ols_line::JumperEnd::Tap { tap } => line.tap_section(tap, 0),
+        ols_line::JumperEnd::Wire(p) => line.sections.iter().find(|s| s.points.contains(p)),
     };
-    let cable = section(from)
-        .or_else(|| section(to))
+    let cable = section(&from)
+        .or_else(|| section(&to))
         .map(|s| s.cable.clone())
         .or_else(|| model.library.iter().next().map(|c| c.id.clone()))
         .ok_or("no cable for the jumper")?;
     let like = line.jumpers.last().map_or("J0", |j| j.id.as_str());
     let id = next_id(line.jumpers.iter().map(|j| j.id.as_str()), like);
-    let mut j: ols_line::Jumper = serde_json::from_value(serde_json::json!({
+    let j: ols_line::Jumper = serde_json::from_value(serde_json::json!({
         "id": id,
         "cable": cable,
-        "from": from.0,
-        "to": to.0,
+        "from": from,
+        "to": to,
         "length": ((1.03 * chord) * 100.0).round() / 100.0,
         "temperature": 15.0,
     }))
     .map_err(|e| e.to_string())?;
-    j.from_tap = from.1.cloned();
-    j.to_tap = to.1.cloned();
     Ok(j)
 }
 

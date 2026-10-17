@@ -665,8 +665,6 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         angle_from_deg,
         angle_to_deg,
         points,
-        from_tap,
-        to_tap,
         color,
         bundle,
         bundle_spacing,
@@ -694,19 +692,22 @@ fn write_jumper(out: &mut String, j: &Jumper) {
     opt_num(out, "bundle_spacing", *bundle_spacing);
     opt_num(out, "bundle_rotation_deg", *bundle_rotation_deg);
     out.push_str(">\n");
-    section_point(out, "from", from, "    ");
-    section_point(out, "to", to, "    ");
-    for (name, tap) in [("from_tap", from_tap), ("to_tap", to_tap)] {
-        match tap {
-            None => {}
-            Some(ols_line::Tap::Span(r)) => {
-                let _ = write!(out, "    <{name}");
+    // Each end: `<from>` at a wire point, or `<from_tap>` on a tap.
+    for (name, end) in [("from", from), ("to", to)] {
+        match end {
+            ols_line::JumperEnd::Wire(p) => section_point(out, name, p, "    "),
+            ols_line::JumperEnd::Tap {
+                tap: ols_line::Tap::Span(r),
+            } => {
+                let _ = write!(out, "    <{name}_tap");
                 attr(out, "section", &r.section);
                 attr(out, "point", &r.point);
                 out.push_str("/>\n");
             }
-            Some(ols_line::Tap::Jumper { jumper, point }) => {
-                let _ = write!(out, "    <{name}");
+            ols_line::JumperEnd::Tap {
+                tap: ols_line::Tap::Jumper { jumper, point },
+            } => {
+                let _ = write!(out, "    <{name}_tap");
                 attr(out, "jumper", jumper);
                 attr(out, "point", point);
                 out.push_str("/>\n");
@@ -1569,12 +1570,20 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             })
         })
         .transpose()?;
+    // A tap, else the wire point (files before version 5 gave a
+    // placeholder `<from>` beside a tap).
+    let end = |name: &str| -> Result<ols_line::JumperEnd, String> {
+        Ok(match tap(&format!("{name}_tap"))? {
+            Some(tap) => ols_line::JumperEnd::Tap { tap },
+            None => ols_line::JumperEnd::Wire(read_section_point(one(e, name)?)?),
+        })
+    };
     Ok(Jumper {
         description: owned(e, "description").unwrap_or_default(),
         id: text(e, "id")?.to_owned(),
         cable: text(e, "cable")?.to_owned(),
-        from: read_section_point(one(e, "from")?)?,
-        to: read_section_point(one(e, "to")?)?,
+        from: end("from")?,
+        to: end("to")?,
         length: optional(e, "length")?,
         sag: optional(e, "sag")?,
         temperature: optional(e, "temperature")?.unwrap_or(15.0),
@@ -1590,8 +1599,6 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         angle_from_deg: optional(e, "angle_from_deg")?,
         angle_to_deg: optional(e, "angle_to_deg")?,
         points,
-        from_tap: tap("from_tap")?,
-        to_tap: tap("to_tap")?,
         color: owned(e, "color"),
         bundle: optional(e, "bundle")?,
         bundle_spacing: optional(e, "bundle_spacing")?,

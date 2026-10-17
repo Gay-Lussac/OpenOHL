@@ -65,11 +65,10 @@ struct JumperInputs {
 
 impl JumperInputs {
     fn of(line: &Line, jumper: &Jumper) -> Self {
-        let ends = |p: &crate::SectionPoint| *p == jumper.from || *p == jumper.to;
+        let ends = |p: &crate::SectionPoint| jumper.is_at(p);
         // The sections its taps hang on (and so the jumpers too).
-        let hosts: Vec<String> = [&jumper.from_tap, &jumper.to_tap]
-            .into_iter()
-            .flatten()
+        let hosts: Vec<String> = jumper
+            .taps()
             .filter_map(|t| line.tap_section(t, 0).map(|s| s.id.clone()))
             .collect();
         Self {
@@ -84,8 +83,7 @@ impl JumperInputs {
                 .structures
                 .iter()
                 .filter(|s| {
-                    s.id == jumper.from.structure
-                        || s.id == jumper.to.structure
+                    jumper.points().any(|p| p.structure == s.id)
                         || jumper
                             .supports
                             .iter()
@@ -93,7 +91,10 @@ impl JumperInputs {
                 })
                 .cloned()
                 .collect(),
-            direction: match (line.wire_point(&jumper.from), line.wire_point(&jumper.to)) {
+            direction: match (
+                jumper.from.point().and_then(|p| line.wire_point(p)),
+                jumper.to.point().and_then(|p| line.wire_point(p)),
+            ) {
                 (Some(a), Some(b)) => line.direction_at([
                     0.5 * (a.position[0] + b.position[0]),
                     0.5 * (a.position[1] + b.position[1]),
@@ -350,10 +351,7 @@ impl SolvedLine {
         // their order (a jumper on another's point after it, with the
         // loads it puts there).
         let case = &self.case;
-        let taps = line
-            .jumpers
-            .iter()
-            .any(|j| j.from_tap.is_some() || j.to_tap.is_some());
+        let taps = line.jumpers.iter().any(crate::Jumper::on_tap);
         if taps {
             let all = crate::jumper::solve_jumpers_with(
                 line,

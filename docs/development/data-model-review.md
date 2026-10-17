@@ -49,7 +49,7 @@ These change the line file (a new version, older files still read).
 
 | # | What | Why it matters | Proposal |
 |---|---|---|---|
-| 2.1 | **Jumper ends**: `from`/`to` are required even when `from_tap`/`to_tap` replace them (an empty placeholder) | code that reads `from` (clamp structure default, bundle and colour from the section through `from`, deletion filters) must remember the tap; easy to get wrong | one `JumperEnd` enum per end: a wire point (`{structure, set}`) **or** a tap |
+| 2.1 ✓ | **Jumper ends**: `from`/`to` are required even when `from_tap`/`to_tap` replace them (an empty placeholder) | code that reads `from` (clamp structure default, bundle and colour from the section through `from`, deletion filters) must remember the tap; easy to get wrong | one `JumperEnd` enum per end: a wire point (`{structure, set}`) **or** a tap |
 | 2.2 | **Spans by index** (`SpanPoint.span`, `Stringing::Sag.span`, `UnstressedLengths.lengths`) | the only list-position references in the model (see 1.2); merges of two branches touching a section's structures can mis-place points | name a span by its back structure (`span: "T4"`) or keep the index but re-index in one place (`Section::insert_point` / `remove_point`) used by every editor |
 | 2.3 | **Three ways to support a jumper**: `support` (one string by coordinates), `supports` (clamps on structure strings), jumper points with clamp objects; positions as `fraction`, `at` (0–1) and `JumperPlace` | three placements, three solver paths | supports become jumper points (a `support` clamp object naming its wire point); `support` read as one |
 | 2.4 ✓ | **Places with priorities**: `SpanPlace` (station › distance › fraction) and `JumperPlace` (distance › length › fraction) keep unused values and differ in order | a stale fraction is written and read back; the two orders confuse | an enum per place (`{fraction}` \| `{distance}` \| `{station}`) |
@@ -60,7 +60,7 @@ These change the line file (a new version, older files still read).
 | 2.9 | **`Display.phase_colors` keyed by phase label** only | `L1` of two systems always the same colour | keep (by system colours exist), or key by system + label |
 | 2.10 | **`Section.circuit`** (free text) beside the derived circuits | two meanings of "circuit" | rename to `circuit_name` / a description, or drop |
 | 2.11 | **`Calculation`** lists condition × method by hand (kebab-case, the only one) | each new condition or method is many edits | `{condition, method}`; read the old names |
-| 2.12 | **Line file version** not raised for points and objects (still 4) | an older program refuses a new file with "unknown field" rather than "newer version" | raise to 5 with the next format change |
+| 2.12 ✓ | **Line file version** not raised for points and objects (still 4) | an older program refuses a new file with "unknown field" rather than "newer version" | raise to 5 with the next format change |
 
 ## 3. The project file
 

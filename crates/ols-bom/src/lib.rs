@@ -310,12 +310,13 @@ pub fn bill_of_materials(
         });
     }
     for j in &line.jumpers {
-        let ends = (line.wire_point(&j.from), line.wire_point(&j.to));
+        let ends = (
+            ols_line::jumper::approximate_end(line, &j.from, 0),
+            ols_line::jumper::approximate_end(line, &j.to, 0),
+        );
         let length = match (j.length, ends) {
             (Some(l), _) => l,
-            (None, (Some(a), Some(b))) => {
-                parabolic_length(distance(a.position, b.position), j.sag.unwrap_or(0.0))
-            }
+            (None, (Some(a), Some(b))) => parabolic_length(distance(a, b), j.sag.unwrap_or(0.0)),
             _ => {
                 notes.push(format!("jumper {}: ends not found (not counted)", j.id));
                 continue;
