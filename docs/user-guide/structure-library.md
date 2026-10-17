@@ -88,8 +88,8 @@ A structure file describes its structure at one of three levels. The level is **
 
 | Level | What the file holds | Used for |
 |---|---|---|
-| **1 — stick figure** | Only the points, strings and wire points: a mast from the centre to the top and crossarms to the points are drawn. | Placing the wires, drawings, the 3D view. |
-| **2 — sticks of the pylon** | Joints (`[[node]]`) and members (`[[member]]`) without sections, or `[[body]]` polylines. | Drawings and the 3D view with the pylon's members; distances to the structure (planned). |
+| **1 — stick figure** | Only the points, strings and wire points: a mast from the centre to the top and crossarms to the points are drawn — or `[[body]]` polylines that all lie in one plane (a face of the pylon). | Placing the wires, drawings, the 3D view. |
+| **2 — sticks of the pylon** | Joints (`[[node]]`) and members (`[[member]]`) without sections, or `[[body]]` polylines that make a 3D object (their points, all together, not in one plane — more than 1 mm off it). | Drawings and the 3D view with the pylon's members; distances to the structure (planned). |
 | **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint — or a separate `model = "….olsfe"`. | Structure analysis (finite elements) and fabrication. |
 
 ```toml
@@ -223,7 +223,16 @@ level 1 (its points, strings and wire points with their sets), for
 **suspension** or for **strain**: two separate types, built one after the
 other with the toggle. The type records the template, the role and the
 values (`[template]`), so a type built before is built again from them
-(the structures of that type follow).
+(the structures of that type follow). Built again, only what the
+template makes is replaced — the header, `[template]`, and the points,
+strings and wire points it makes (by label, for either role); everything
+else in the file stays: joints, members, sections, materials, supports,
+capacity, bodies, extensions, and points, strings and wire points added
+by hand. What refers to a point or wire point the template no longer
+makes (a string, a joint's `attachment`, a capacity entry) is kept and
+listed in the window to look at; if the file would not read any more
+(a string to a wire point no longer there), nothing is written and the
+window says why.
 
 The library grows with files: the templates shipped with OLS CAD in
 `libraries/pylon-templates`, and a project's own in its

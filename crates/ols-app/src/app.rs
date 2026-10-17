@@ -4061,8 +4061,12 @@ fn alignment_windows(ctx: &egui::Context, r: &mut Ready) {
 fn pylon_windows(ctx: &egui::Context, r: &mut Ready) {
     if let Some(mut b) = r.pylon_builder.take() {
         let mut open = true;
-        if let Some(crate::pylon_builder::BuilderAction::Save { id, text, replace }) =
-            b.ui(ctx, &r.model, &mut open)
+        if let Some(crate::pylon_builder::BuilderAction::Save {
+            id,
+            text,
+            replace,
+            notes,
+        }) = b.ui(ctx, &r.model, &mut open)
         {
             let again = replace.is_some();
             b.message = Some(match r.save_built_type(&id, &text, replace) {
@@ -4072,10 +4076,14 @@ fn pylon_windows(ctx: &egui::Context, r: &mut Ready) {
                         r.refresh_views();
                     }
                     b.rebuild = Some(id.clone());
-                    (
-                        format!("structure type {id} written: {}", p.display()),
-                        false,
-                    )
+                    let mut m = format!("structure type {id} written: {}", p.display());
+                    if !notes.is_empty() {
+                        m.push_str("\nKept, to look at:");
+                        for n in &notes {
+                            m.push_str(&format!("\n- {n}"));
+                        }
+                    }
+                    (m, !notes.is_empty())
                 }
                 Err(e) => (e, true),
             });

@@ -5,7 +5,8 @@
 //! Structures › New pylon from a template…: a pylon template's face (its
 //! dimensions typed, drawn as they change) built into a structure type of
 //! level 1, for suspension or strain (the toggle: each role is a type of
-//! its own); a type built before is built again from what it records.
+//! its own); a type built before is built again from what it records,
+//! keeping what the template does not make ([`rebuilt`]).
 //! Structures › Place on alignment points…: a type stood on many points
 //! of an alignment at once, along the line, in one command.
 //!
@@ -13,11 +14,13 @@
 //! project's own (`Pylon templates` next to the line): the library grows
 //! with files.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use eframe::egui;
 use ols_structures::LibraryItem;
 use ols_structures::templates::{PylonTemplate, Role, Values};
+use toml_edit::{DocumentMut, Item, Table};
 
 use crate::model::Model;
 
@@ -53,6 +56,180 @@ pub fn templates(model: &Model) -> (Vec<PylonTemplate>, Vec<String>) {
     (out, errors)
 }
 
+/// The keys of a structure type its template writes: built again, they
+/// are the new ones.
+const TEMPLATE_KEYS: [&str; 8] = [
+    "format", "version", "id", "name", "kind", "height", "source", "template",
+];
+
+/// The lists the template fills, by label: built again, its own entries
+/// are replaced, others kept.
+const MADE: [&str; 3] = ["point", "wire", "string"];
+
+/// The entries of list `key` of a type's file (`[[key]]`).
+fn entries<'a>(doc: &'a Item, key: &str) -> impl Iterator<Item = &'a Table> {
+    doc.get(key)
+        .and_then(Item::as_array_of_tables)
+        .into_iter()
+        .flatten()
+}
+
+/// The labels of the points, wire points and strings of a type's text.
+fn made_labels(text: &str) -> Result<BTreeSet<String>, String> {
+    let doc: DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+    Ok(MADE
+        .iter()
+        .flat_map(|k| entries(doc.as_item(), k))
+        .filter_map(|t| Some(t.get("label")?.as_str()?.to_owned()))
+        .collect())
+}
+
+/// Every table in `item` (nested ones too), in the order they are written.
+fn tables_mut(item: &mut Item, f: &mut dyn FnMut(&mut Table)) {
+    let table = |t: &mut Table, f: &mut dyn FnMut(&mut Table)| {
+        f(t);
+        for (_, v) in t.iter_mut() {
+            tables_mut(v, f);
+        }
+    };
+    match item {
+        Item::Table(t) => table(t, f),
+        Item::ArrayOfTables(a) => {
+            for t in a.iter_mut() {
+                table(t, f);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Structure type `existing` built again from `template` as `built`:
+/// what the template makes (the header, `[template]`, and the points,
+/// wire points and strings it makes now or made before, by label) comes
+/// from `built`; everything else of `existing` is kept — joints, members,
+/// sections, materials, capacity, bodies, extensions, points and strings
+/// added by hand. Also: what to look at — kept entries that refer to a
+/// point or wire point no longer built (they are kept, not dropped), and
+/// template points that were tied to a joint or member. A result that does
+/// not read as a type is refused with those notes.
+pub fn rebuilt(
+    existing: &str,
+    built: &str,
+    template: &PylonTemplate,
+) -> Result<(String, Vec<String>), String> {
+    let old = ols_structures::StructureType::parse(std::path::Path::new("type"), existing)
+        .map_err(|e| format!("the type's file: {}", e.message))?;
+    let now = made_labels(built)?;
+    let mut made = now.clone();
+    if let Some((id, role, _)) = old
+        .template
+        .as_ref()
+        .and_then(ols_structures::templates::recorded)
+        && id == template.id
+    {
+        // The labels do not depend on the dimensions: the defaults do.
+        let before = template.build(&template.defaults(role), role, "x", "x")?;
+        made.extend(made_labels(&before)?);
+    }
+    let mut doc: DocumentMut = built.parse().map_err(|e| format!("{e}"))?;
+    let from: DocumentMut = existing
+        .parse()
+        .map_err(|e| format!("the type's file: {e}"))?;
+    // Kept tables go after the built ones, in their order.
+    let mut next = 0;
+    for (_, item) in doc.iter_mut() {
+        tables_mut(item, &mut |t| {
+            next = next.max(t.position().unwrap_or(0) + 1)
+        });
+    }
+    let mut notes = Vec::new();
+    let mut gone = BTreeSet::new();
+    for (key, item) in from.iter() {
+        if TEMPLATE_KEYS.contains(&key) {
+            continue;
+        }
+        let mut item = item.clone();
+        if MADE.contains(&key) {
+            let mut list = match item.into_array_of_tables() {
+                Ok(list) => list,
+                Err(other) => {
+                    return Err(format!("the type's file: {key} is {}", other.type_name()));
+                }
+            };
+            list.retain(|t| {
+                let Some(label) = t.get("label").and_then(Item::as_str) else {
+                    return true;
+                };
+                if !made.contains(label) {
+                    return true;
+                }
+                if !now.contains(label) {
+                    gone.insert(label.to_owned());
+                }
+                if key == "point" && (t.contains_key("node") || t.contains_key("member")) {
+                    notes.push(format!(
+                        "point {label} was tied to a joint or member: built again at the \
+                         template's position"
+                    ));
+                }
+                false
+            });
+            if list.is_empty() {
+                continue;
+            }
+            item = Item::ArrayOfTables(list);
+        }
+        tables_mut(&mut item, &mut |t| {
+            t.set_position(Some(next));
+            next += 1;
+        });
+        match (
+            doc.get_mut(key).and_then(Item::as_array_of_tables_mut),
+            item,
+        ) {
+            (Some(list), Item::ArrayOfTables(kept)) => {
+                for t in kept {
+                    list.push(t);
+                }
+            }
+            (_, item) => {
+                doc.insert(key, item);
+            }
+        }
+    }
+    // Kept entries that name what is no longer built.
+    let field = |t: &Table, k: &str| t.get(k).and_then(Item::as_str).map(str::to_owned);
+    let root = doc.as_item();
+    for s in entries(root, "string") {
+        for k in ["top", "wire"] {
+            if let Some(l) = field(s, k).filter(|l| gone.contains(l)) {
+                let label = field(s, "label").unwrap_or_default();
+                notes.push(format!("string {label}: its {k} {l} is no longer built"));
+            }
+        }
+    }
+    for n in entries(root, "node") {
+        if let Some(l) = field(n, "attachment").filter(|l| gone.contains(l)) {
+            let id = field(n, "id").unwrap_or_default();
+            notes.push(format!("joint {id}: its point {l} is no longer built"));
+        }
+    }
+    let capacity = root.get("capacity").map(|c| entries(c, "attachment"));
+    for a in capacity.into_iter().flatten() {
+        if let Some(l) = field(a, "point").filter(|l| gone.contains(l)) {
+            notes.push(format!("capacity.attachment: point {l} is no longer built"));
+        }
+    }
+    let text = doc.to_string();
+    match ols_structures::StructureType::parse(std::path::Path::new("built"), &text) {
+        Ok(_) => Ok((text, notes)),
+        Err(e) => {
+            notes.insert(0, e.message);
+            Err(format!("not built again: {}", notes.join("; ")))
+        }
+    }
+}
+
 /// What the builder asks of the application.
 pub enum BuilderAction {
     /// Write structure type `id` (`text`), replacing the file of the type
@@ -64,6 +241,8 @@ pub enum BuilderAction {
         text: String,
         /// The file of the type it replaces.
         replace: Option<PathBuf>,
+        /// What to look at in the type built again.
+        notes: Vec<String>,
     },
 }
 
@@ -418,17 +597,24 @@ impl PylonBuilder {
                     );
                 }
                 let editable = model.can_edit().is_ok();
-                let label = if self.rebuild.is_some() {
-                    "Build it again (replace the type)"
+                let (label, hover) = if self.rebuild.is_some() {
+                    (
+                        "Build it again (keep what was added)",
+                        "Its points, strings and wire points from the template again; joints, \
+                         members, sections, capacity, bodies and what was added by hand are kept",
+                    )
                 } else {
-                    "Save the type"
+                    (
+                        "Save the type",
+                        "Into the project's structure types; then Structures › Place on alignment points…",
+                    )
                 };
                 if ui
                     .add_enabled(
                         editable && built.is_ok() && !taken && !self.id.trim().is_empty(),
                         egui::Button::new(label),
                     )
-                    .on_hover_text("Into the project's structure types; then Structures › Place on alignment points…")
+                    .on_hover_text(hover)
                     .clicked()
                     && let Ok(text) = built
                 {
@@ -438,19 +624,37 @@ impl PylonBuilder {
                             .as_ref()
                             .and_then(|(l, _)| l.path(id).map(|p| p.to_path_buf()))
                     });
-                    out = Some(BuilderAction::Save {
-                        id: self.id.trim().to_owned(),
-                        text,
-                        replace,
-                    });
+                    // Built again: what the template does not make is kept.
+                    let merged = match &replace {
+                        Some(path) => std::fs::read_to_string(path)
+                            .map_err(|e| format!("{}: {e}", path.display()))
+                            .and_then(|old| rebuilt(&old, &text, &t)),
+                        None => Ok((text, Vec::new())),
+                    };
+                    match merged {
+                        Ok((text, notes)) => {
+                            out = Some(BuilderAction::Save {
+                                id: self.id.trim().to_owned(),
+                                text,
+                                replace,
+                                notes,
+                            });
+                        }
+                        Err(e) => self.message = Some((e, true)),
+                    }
                 }
                 if let Some((m, error)) = &self.message {
                     let t = egui::RichText::new(m).small();
-                    if *error {
-                        crate::menu::error_label(ui, t);
-                    } else {
-                        ui.colored_label(egui::Color32::LIGHT_GREEN, t);
-                    }
+                    egui::ScrollArea::vertical()
+                        .id_salt("pylon-message")
+                        .max_height(120.0)
+                        .show(ui, |ui| {
+                            if *error {
+                                crate::menu::error_label(ui, t);
+                            } else {
+                                ui.colored_label(egui::Color32::LIGHT_GREEN, t);
+                            }
+                        });
                 }
             });
             ui.separator();
@@ -826,5 +1030,146 @@ impl Placement {
                 }
             });
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ols_structures::StructureType;
+
+    fn delta() -> PylonTemplate {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../libraries/pylon-templates/delta-1c.olspt");
+        PylonTemplate::parse(&path, &std::fs::read_to_string(&path).unwrap()).unwrap()
+    }
+
+    fn read(text: &str) -> StructureType {
+        StructureType::parse(std::path::Path::new("x"), text).unwrap()
+    }
+
+    /// What was added to a built type: a joint and a member with its
+    /// section, a body, an extension, capacity, a point and a string by
+    /// hand (from a template point), a comment.
+    const ADDED: &str = r#"
+# hand-made below
+[[extension]]
+name = "+3"
+dz = "3 m"
+
+[[body]]
+points = [["0 m", "0 m", "0 m"], ["0 m", "1 m", "0 m"], ["0 m", "0 m", "30 m"]]
+
+[[node]]
+id = "J1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "J2"
+point = ["0 m", "0 m", "10 m"]
+
+[[member]]
+id = "M1"
+nodes = ["J1", "J2"]
+section = "s"
+
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+
+[[point]]
+label = "X1"
+node = "J2"
+
+[[wire]]
+label = "WX"
+
+[[string]]
+label = "SX"
+top = "A-L1"
+wire = "WX"
+length = "1 m"
+weight = "10 N"
+
+[[capacity.attachment]]
+point = "A-L1"
+vertical = "20 kN"
+"#;
+
+    /// Built again with other dimensions: the template's points move, all
+    /// that was added stays (a key at the top and the comment too),
+    /// nothing to look at.
+    #[test]
+    fn building_again_keeps_what_was_added() {
+        let t = delta();
+        let role = Role::Suspension;
+        let v = t.defaults(role);
+        let first = t.build(&v, role, "d", "D").unwrap();
+        let existing = format!("foot = \"0.5 m\"\n{first}{ADDED}");
+        let before = read(&existing);
+        let mut higher = v.clone();
+        *higher.dimensions.get_mut("lower_level").unwrap() += 2.0;
+        let built = t.build(&higher, role, "d", "D").unwrap();
+        let (text, notes) = rebuilt(&existing, &built, &t).unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+        assert!(text.contains("# hand-made below"), "{text}");
+        let after = read(&text);
+        assert_eq!(after.nodes, before.nodes);
+        assert_eq!(after.members, before.members);
+        assert_eq!(after.sections, before.sections);
+        assert_eq!(after.materials, before.materials);
+        assert_eq!(after.body, before.body);
+        assert_eq!(after.extensions, before.extensions);
+        assert_eq!(after.capacity, before.capacity);
+        assert_eq!(after.foot, before.foot);
+        assert_eq!(after.points.len(), before.points.len());
+        assert_eq!(after.strings.len(), before.strings.len());
+        assert_eq!(after.wires.len(), before.wires.len());
+        assert!(after.points.iter().any(|p| p.label == "X1"));
+        assert!(after.strings.iter().any(|s| s.label == "SX"));
+        let z = |ty: &StructureType| ty.point_local("A-L1", None).unwrap()[2];
+        assert!((z(&after) - z(&before) - 2.0).abs() < 1e-9);
+        // Each template point once, the record new.
+        assert_eq!(text.matches("label = \"A-L1\"").count(), 1);
+        assert_eq!(text.matches("[template]").count(), 1);
+    }
+
+    /// Built again for the other role: a kept entry naming a wire point no
+    /// longer built is reported (kept, not dropped); one that would not
+    /// read as a type is refused with the reason.
+    #[test]
+    fn building_again_reports_what_it_no_longer_makes() {
+        let t = delta();
+        let susp = t
+            .build(&t.defaults(Role::Suspension), Role::Suspension, "d", "D")
+            .unwrap();
+        let strain = t
+            .build(&t.defaults(Role::Strain), Role::Strain, "d", "D")
+            .unwrap();
+        // A joint naming a suspension wire point the strain type has not.
+        let joint =
+            "\n[[node]]\nid = \"J9\"\npoint = [\"0 m\", \"0 m\", \"5 m\"]\nattachment = \"W-L1\"\n";
+        let (text, notes) = rebuilt(&format!("{susp}{joint}"), &strain, &t).unwrap();
+        assert!(text.contains("attachment = \"W-L1\""), "kept: {text}");
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("J9") && notes[0].contains("W-L1"));
+        // A hand string down to a wire point no longer built: refused.
+        let string = "\n[[string]]\nlabel = \"SX\"\ntop = \"A-L2\"\nwire = \"W-L1\"\n\
+                      length = \"1 m\"\nweight = \"1 N\"\n";
+        let e = rebuilt(&format!("{susp}{string}"), &strain, &t).unwrap_err();
+        assert!(
+            e.contains("string SX: its wire W-L1 is no longer built"),
+            "{e}"
+        );
+        // Back to suspension: the strain strings go, the suspension ones
+        // come back.
+        let (text, _) = rebuilt(&strain, &susp, &t).unwrap();
+        assert_eq!(read(&text).strings.len(), read(&susp).strings.len());
     }
 }
