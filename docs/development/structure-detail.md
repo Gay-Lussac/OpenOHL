@@ -3,8 +3,11 @@
 A structure type says how much of the structure its file describes
 (`detail`, see [Structure libraries](../user-guide/structure-library.md#detail-levels)):
 
-1. **stick figure** — a mast and crossarms to the attachment points;
-2. **sticks of the pylon** — joints and members without sections (or `[[body]]` polylines);
+1. **stick figure** — a mast and crossarms to the attachment points, or
+   `[[body]]` polylines all in one plane (a face);
+2. **sticks of the pylon** — joints and members without sections, or
+   `[[body]]` polylines that make a 3D object (their vertices, all together,
+   not in one plane within 1 mm: `StructureType::body_is_3d`);
 3. **full design** — every member with its section and a supported joint (or a separate `.olsfe` model).
 
 The level follows from the file's content (`StructureType::detail()`), so it

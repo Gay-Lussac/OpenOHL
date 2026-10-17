@@ -637,7 +637,8 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 **Detail level** (`StructureType::detail`, never stored — an older
 `detail` key is read and ignored): 3 *full design* when `model` is given
 or every member has a section and a joint is supported; 2 *outline* when
-there are members or body polylines; else 1 *stick figure*. Checks that
+there are members or body polylines that are not all in one plane
+(within 1 mm, `StructureType::body_is_3d`); else 1 *stick figure*. Checks that
 depend on the structure's shape must say what they do at each level
 ([Structure detail levels](structure-detail.md)). The meaning of the
 levels decided for the structure application (poles with levels, a flat

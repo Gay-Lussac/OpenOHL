@@ -195,12 +195,13 @@ pub enum StructureKind {
 #[serde(try_from = "u8")]
 pub enum Detail {
     /// 1 — a stick figure: a mast and crossarms to the points where
-    /// strings hang. Enough to place the wires and draw.
+    /// strings hang (or `[[body]]` polylines in one plane). Enough to
+    /// place the wires and draw.
     #[default]
     Stick = 1,
     /// 2 — the pylon's members as sticks (`[[node]]` joints and
-    /// `[[member]]`s without sections, or `[[body]]` polylines); for
-    /// drawings and distances to the structure.
+    /// `[[member]]`s without sections, or `[[body]]` polylines that make a
+    /// 3D object); for drawings and distances to the structure.
     Outline = 2,
     /// 3 — a full design: every member with its section, the supports
     /// (or a separate finite-element model, `model`); for structure
@@ -1464,15 +1465,66 @@ impl StructureType {
     /// How much of the structure the file describes, from what it holds:
     /// a full design when every member has a section and a joint is
     /// supported (or a separate `model` is named), the pylon's sticks when
-    /// it has members or `[[body]]` polylines, else a stick figure.
+    /// it has members or `[[body]]` polylines that make a 3D object (not
+    /// all in one plane, [`StructureType::body_is_3d`]), else a stick
+    /// figure.
     pub fn detail(&self) -> Detail {
         if self.model.is_some() || self.missing_for_design().is_empty() {
             Detail::Design
-        } else if !self.members.is_empty() || !self.body.is_empty() {
+        } else if !self.members.is_empty() || self.body_is_3d() {
             Detail::Outline
         } else {
             Detail::Stick
         }
+    }
+
+    /// Whether the `[[body]]` polylines describe a 3D object: their
+    /// vertices, all together, are not in one plane (within 1 mm, or a
+    /// millionth of the body's size when that is more). A face drawn in a
+    /// plane stays a stick figure.
+    pub fn body_is_3d(&self) -> bool {
+        let points: Vec<[f64; 3]> = self
+            .body
+            .iter()
+            .flat_map(|o| o.points.iter().map(|p| p.map(|v| v.si())))
+            .collect();
+        let Some(&first) = points.first() else {
+            return false;
+        };
+        let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let cross = |a: [f64; 3], b: [f64; 3]| {
+            [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ]
+        };
+        let farthest = |f: &dyn Fn([f64; 3]) -> f64| {
+            points
+                .iter()
+                .map(|p| (f(*p), *p))
+                .max_by(|a, b| a.0.total_cmp(&b.0))
+                .unwrap_or((0.0, first))
+        };
+        // Three points far apart span the plane, if there is one.
+        let (size2, a) = farthest(&|p| dot(sub(p, first), sub(p, first)));
+        let tol = 1e-3_f64.max(1e-6 * size2.sqrt());
+        let axis = sub(a, first);
+        let (area, b) = farthest(&|p| {
+            let c = cross(axis, sub(p, first));
+            dot(c, c)
+        });
+        let length = size2.sqrt();
+        if length <= tol || area.sqrt() / length <= tol {
+            // One point, or all on one line.
+            return false;
+        }
+        let n = cross(axis, sub(b, first));
+        let n_len = dot(n, n).sqrt();
+        points
+            .iter()
+            .any(|p| (dot(sub(*p, first), n) / n_len).abs() > tol)
     }
 
     /// What the members still lack for a full design (empty: nothing).
@@ -1668,9 +1720,26 @@ mod tests {
         assert_eq!(parse("").unwrap(), Detail::Stick);
         // A level stated by an older file is read, but the content decides.
         assert_eq!(parse("detail = 3\n").unwrap(), Detail::Stick);
-        let outline =
-            "[[body]]\npoints = [[\"0 m\", \"0 m\", \"0 m\"], [\"0 m\", \"0 m\", \"30 m\"]]\n";
-        assert_eq!(parse(outline).unwrap(), Detail::Outline);
+        // Body polylines: level 2 only when they make a 3D object; a line
+        // or a face in one plane (a skew one too) stays level 1.
+        let body = |polylines: &[&str]| {
+            polylines
+                .iter()
+                .map(|p| format!("[[body]]\npoints = [{p}]\n"))
+                .collect::<String>()
+        };
+        let mast = "[\"0 m\", \"0 m\", \"0 m\"], [\"0 m\", \"0 m\", \"30 m\"]";
+        assert_eq!(parse(&body(&[mast])).unwrap(), Detail::Stick);
+        let face = "[\"-4 m\", \"0 m\", \"0 m\"], [\"0 m\", \"0 m\", \"30 m\"], [\"4 m\", \"0 m\", \"0 m\"]";
+        let arm = "[\"-6 m\", \"0 m\", \"20 m\"], [\"6 m\", \"0.0005 m\", \"20 m\"]";
+        assert_eq!(parse(&body(&[face, arm])).unwrap(), Detail::Stick);
+        let skew =
+            "[\"0 m\", \"0 m\", \"0 m\"], [\"3 m\", \"3 m\", \"0 m\"], [\"3 m\", \"3 m\", \"9 m\"]";
+        assert_eq!(parse(&body(&[skew])).unwrap(), Detail::Stick);
+        let side = "[\"0 m\", \"-4 m\", \"0 m\"], [\"0 m\", \"0 m\", \"30 m\"], [\"0 m\", \"4 m\", \"0 m\"]";
+        assert_eq!(parse(&body(&[face, side])).unwrap(), Detail::Outline);
+        let off = "[\"-6 m\", \"0 m\", \"20 m\"], [\"6 m\", \"0.01 m\", \"20 m\"]";
+        assert_eq!(parse(&body(&[face, off])).unwrap(), Detail::Outline);
         assert_eq!(parse("model = \"t.olsfe\"\n").unwrap(), Detail::Design);
         // Joints and members: sticks; with sections and a support: a design.
         let joints = "[[node]]\nid = \"B\"\npoint = [\"0 m\", \"0 m\", \"0 m\"]\n\
