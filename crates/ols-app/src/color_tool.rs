@@ -127,29 +127,22 @@ impl Palette {
         let doc: toml_edit::DocumentMut = text
             .parse()
             .map_err(|e: toml_edit::TomlError| format!("not a TOML file: {}", e.message()))?;
-        match doc.get("format").and_then(|v| v.as_str()) {
-            Some(FORMAT) => {}
-            Some(other) => {
-                return Err(format!(
-                    "format = \"{other}\": not a colour palette (format = \"{FORMAT}\")"
-                ));
-            }
-            None => {
-                return Err(format!(
-                    "not a colour palette: format = \"{FORMAT}\" is missing"
-                ));
-            }
-        }
-        match doc.get("version").and_then(|v| v.as_integer()) {
-            Some(v) if v == VERSION => {}
-            Some(v) if v > VERSION => {
-                return Err(format!(
-                    "version {v}: written by a newer program (this one reads version {VERSION})"
-                ));
-            }
-            Some(v) => return Err(format!("version {v}: unknown (write version = {VERSION})")),
-            None => return Err(format!("version is missing (write version = {VERSION})")),
-        }
+        // The header as every format's (both optional, no newer version).
+        let version = match doc.get("version") {
+            None => None,
+            Some(v) => Some(
+                v.as_integer()
+                    .and_then(|v| u32::try_from(v).ok())
+                    .ok_or("version: give a whole number")?,
+            ),
+        };
+        ols_core::files::check_header(
+            doc.get("format").and_then(|v| v.as_str()),
+            version,
+            FORMAT,
+            VERSION as u32,
+            "colour palette",
+        )?;
         let Some(item) = doc.get("color") else {
             return Ok(Vec::new());
         };

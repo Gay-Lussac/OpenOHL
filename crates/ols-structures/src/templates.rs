@@ -286,14 +286,13 @@ impl LibraryItem for PylonTemplate {
     }
 
     fn check(&self) -> Result<(), String> {
-        if let Some(f) = &self.format
-            && f != "ols-pylon-template"
-        {
-            return Err(format!("format \"{f}\" is not \"ols-pylon-template\""));
-        }
-        if self.version.unwrap_or(1) > 1 {
-            return Err("version newer than supported (1)".into());
-        }
+        ols_core::files::check_header(
+            self.format.as_deref(),
+            self.version,
+            "ols-pylon-template",
+            1,
+            "pylon template",
+        )?;
         let mut names = BTreeMap::new();
         for p in &self.parameters {
             let ok = !p.name.is_empty()

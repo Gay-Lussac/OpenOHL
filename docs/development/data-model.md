@@ -91,6 +91,16 @@ the box belongs to one line; the libraries are shared and referred to by
 - Inside the program every quantity is SI ([Conventions and
   units](../theory/conventions.md)).
 
+### File headers
+
+Every OLS CAD file may start with `format` (its id, e.g. `ols-wire`) and
+`version`; both optional. A file of another format is refused; any
+version up to the program's is read (older ones converted), a newer one
+refused ("written by a newer OLS CAD") — one check for all,
+`ols_core::files::check_header` (the line file and OLS XML, check
+reports and colour palettes too; plugins' own files, as `.olspd`, the
+same way).
+
 ### Coordinates and angles
 
 | Frame | Axes | Where it is used |
