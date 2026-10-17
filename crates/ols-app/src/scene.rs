@@ -616,9 +616,9 @@ fn drawn_copies<'a>(
         .collect()
 }
 
-/// A point on a wire at `at`, by its object: a body as a ball as big as
-/// it (none without a size), a clamp a small steel ball, a bare point a
-/// dot (`colors`: bare, clamp, body).
+/// A point on a wire at `at`, by its object: a body to its shape and size
+/// (none without a size), a clamp a short steel cylinder, a bare point a
+/// small cross marker — a mark, not a body (`colors`: bare, clamp, body).
 fn draw_point(
     out: &mut Vec<Prim>,
     at: [f64; 3],
@@ -628,7 +628,28 @@ fn draw_point(
     alpha: u8,
 ) {
     let (triangles, color) = match object {
-        None => (sphere(at, 0.25), colors[0]),
+        // A bare point: three short strokes (vertical, along, across the
+        // wire), drawn as lines.
+        None => {
+            let l = 0.4;
+            let n = (along[0].hypot(along[1])).max(1e-9);
+            let (ax, ay) = (along[0] / n, along[1] / n);
+            for (dx, dy, dz) in [(0.0, 0.0, l), (ax * l, ay * l, 0.0), (-ay * l, ax * l, 0.0)] {
+                out.push(
+                    Prim::new(
+                        at,
+                        vec![
+                            [at[0] - dx, at[1] - dy, at[2] - dz],
+                            [at[0] + dx, at[1] + dy, at[2] + dz],
+                        ],
+                        rgba(colors[0], alpha),
+                        3.0,
+                    )
+                    .at(0, 1),
+                );
+            }
+            return;
+        }
         // A clamp: a short steel cylinder along the wire.
         Some(o) if o.kind == ols_line::ObjectKind::Clamp => (
             body_mesh(

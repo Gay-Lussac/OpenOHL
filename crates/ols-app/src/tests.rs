@@ -12180,6 +12180,41 @@ fn spacers_are_laid_between_span_points() {
         let p = &r.model.line.sections[0].span_points[k];
         assert_eq!(p.at, ols_line::SpanPlace::Fraction(0.2));
     }
+    // The Edit tool on a point opens its own window (not the section's):
+    // relabelled and moved there.
+    let old = harness.state_mut().ready().unwrap().model.line.sections[0].span_points[k]
+        .label
+        .clone();
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::SpanPoint {
+            section: s0.clone(),
+            label: old.clone(),
+        },
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Span(f)) = &mut r.editor else {
+            panic!("no point window: {:?}", r.editor.as_ref().map(Form::title));
+        };
+        assert_eq!(f.editing.as_deref(), Some(old.as_str()));
+        assert_eq!(f.what, SpanWhat::Load);
+        f.label = "EDITED".into();
+        f.by = PlaceBy::Fraction;
+        f.from = 0.3 * f.horizontal;
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let p = &r.model.line.sections[0].span_points[k];
+        assert_eq!(p.label, "EDITED");
+        assert!(matches!(p.at, ols_line::SpanPlace::Fraction(f) if (f - 0.3).abs() < 1e-9));
+        assert!(p.object.is_some());
+    }
     // Deleting a span point takes its spacer.
     {
         let r = harness.state_mut().ready().unwrap();

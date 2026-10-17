@@ -80,6 +80,8 @@ pub struct SpanForm {
     pub spread_type: Option<String>,
     /// The types to choose from (the project's library).
     pub library: ObjectLibrary,
+    /// An existing point changed (its label), instead of points added.
+    pub editing: Option<String>,
 }
 
 impl SpanForm {
@@ -112,7 +114,152 @@ impl SpanForm {
             per_metre: 10.0,
             spread_type: None,
             library,
+            editing: None,
         }
+    }
+
+    /// The window of existing point `label` of section `section`'s spans
+    /// (`on_jumper`: of jumper `section`), as in `case`: its place, label,
+    /// description and object.
+    pub fn edit_point(
+        model: &Model,
+        case: usize,
+        host: &str,
+        on_jumper: bool,
+        label: &str,
+    ) -> Option<Self> {
+        let line = &model.line;
+        let (mut f, at_span, at_jumper, description, object) = if on_jumper {
+            let j = line.jumpers.iter().find(|j| j.id == host)?;
+            let p = j.points.iter().find(|p| p.label == label)?;
+            let f = Self::on_jumper(model, case, host, None)?;
+            (f, None, Some(p.at), p.description.clone(), p.object.clone())
+        } else {
+            let s = line.sections.iter().find(|s| s.id == host)?;
+            let p = s.span_points.iter().find(|p| p.label == label)?;
+            let f = Self::new(model, case, host, p.span, None)?;
+            // A station as the fraction it is in this span.
+            let resolved = line.section_with_fractions(s);
+            let at = resolved
+                .span_points
+                .iter()
+                .find(|q| q.label == label)
+                .map_or(p.at, |q| q.at);
+            let mut f = f;
+            f.by = match p.at {
+                SpanPlace::Fraction(_) => PlaceBy::Fraction,
+                SpanPlace::Distance(_) => PlaceBy::Distance,
+                SpanPlace::Station(_) if f.stations.is_some() => PlaceBy::Station,
+                SpanPlace::Station(_) => PlaceBy::Fraction,
+            };
+            (f, Some(at), None, p.description.clone(), p.object.clone())
+        };
+        f.from = match (at_span, at_jumper) {
+            (Some(at), _) => at.fraction_of(f.horizontal) * f.horizontal,
+            (None, Some(at)) => {
+                f.by = match at {
+                    JumperPlace::Fraction(_) => PlaceBy::Fraction,
+                    JumperPlace::Length(_) => PlaceBy::Length,
+                    JumperPlace::Distance(_) => PlaceBy::Distance,
+                };
+                ols_line::jumper::place_fraction(&at, f.length, f.horizontal) * f.horizontal
+            }
+            _ => f.from,
+        };
+        f.to = f.from;
+        f.label = label.to_owned();
+        f.description = description;
+        f.what = if object.is_some() {
+            SpanWhat::Load
+        } else {
+            SpanWhat::Point
+        };
+        if let Some(o) = object {
+            f.advanced = o.type_id.is_none();
+            f.object = o;
+        }
+        f.editing = Some(label.to_owned());
+        Some(f)
+    }
+
+    /// The change of the point being edited: its place, description and
+    /// object put on the host, a new label followed by what names it
+    /// ([`ols_line::Line::relabel_point`]).
+    fn edit_command(&self, model: &Model, old: &str) -> Result<(String, Command), String> {
+        let stored = model.stored_line().unwrap_or(&model.line);
+        if !(-1e-6..=self.horizontal + 1e-6).contains(&self.from) {
+            return Err(format!(
+                "{} m is off the wire (0 to {:.1} m)",
+                self.from, self.horizontal
+            ));
+        }
+        if let Some(o) = self.object() {
+            o.validate()?;
+        }
+        let mut line = stored.clone();
+        let host = self.jumper.clone().unwrap_or_else(|| self.section.clone());
+        match &self.jumper {
+            Some(id) => {
+                let p = line
+                    .jumpers
+                    .iter_mut()
+                    .find(|j| &j.id == id)
+                    .and_then(|j| j.points.iter_mut().find(|p| p.label == old))
+                    .ok_or_else(|| format!("jumper {id} has no point {old}"))?;
+                p.at = self.jumper_place(self.from);
+                p.description = self.description.clone();
+                // A support's hold stays with its clamp.
+                let hold = p.object.as_ref().and_then(|o| o.hold.clone());
+                p.object = self.object().map(|mut o| {
+                    if o.kind == ols_line::ObjectKind::Clamp {
+                        o.hold = hold;
+                    }
+                    o
+                });
+            }
+            None => {
+                let p = line
+                    .sections
+                    .iter_mut()
+                    .find(|s| s.id == self.section)
+                    .and_then(|s| s.span_points.iter_mut().find(|p| p.label == old))
+                    .ok_or_else(|| format!("section {} has no point {old}", self.section))?;
+                p.at = self.place(self.from);
+                p.description = self.description.clone();
+                p.object = self.object();
+            }
+        }
+        let label = self.label.trim();
+        if label != old {
+            line.relabel_point(self.jumper.is_some(), &host, old, label)?;
+        }
+        // What changed: the host, and what names a relabelled point.
+        let mut commands = Vec::new();
+        for (a, b) in stored.sections.iter().zip(&line.sections) {
+            if a != b {
+                commands.push(put(Kind::Section, &b.id, b)?);
+            }
+        }
+        for (a, b) in stored.jumpers.iter().zip(&line.jumpers) {
+            if a != b {
+                commands.push(put(Kind::Jumper, &b.id, b)?);
+            }
+        }
+        for (a, b) in stored.spacers.iter().zip(&line.spacers) {
+            if a != b {
+                commands.push(put(Kind::Spacer, &b.id, b)?);
+            }
+        }
+        if commands.is_empty() {
+            return Err("nothing changed".into());
+        }
+        Ok((
+            format!("changed point {old} of {host}"),
+            match commands.len() {
+                1 => commands.remove(0),
+                _ => Command::Batch { commands },
+            },
+        ))
     }
 
     /// On span `span` of `section`, at the point `on` of its wire (where
@@ -240,6 +387,9 @@ impl SpanForm {
     /// The command putting the section (or the jumper) with what is
     /// added, in words.
     pub fn command(&self, model: &Model) -> Result<(String, Command), String> {
+        if let Some(old) = &self.editing {
+            return self.edit_command(model, old);
+        }
         let stored = model.stored_line().unwrap_or(&model.line);
         let inside = |d: f64| (-1e-6..=self.horizontal + 1e-6).contains(&d);
         let ds = self.distances();
@@ -627,17 +777,22 @@ pub fn span_ui(ui: &mut egui::Ui, f: &mut SpanForm) {
         )),
     };
     let on_jumper = f.jumper.is_some();
+    let editing = f.editing.is_some();
     ui.horizontal(|ui| {
         ui.radio_value(&mut f.what, SpanWhat::Point, "point")
             .on_hover_text("A bare point: a spacer's end, a spread's end (a clamp can be put on it later)");
         ui.radio_value(&mut f.what, SpanWhat::Load, "object")
             .on_hover_text("A point with its object: a body (a marker ball, a light, a weight) or a clamp (a tap for a jumper, a spacer's end)");
-        ui.add_enabled_ui(!on_jumper, |ui| {
-            ui.radio_value(&mut f.what, SpanWhat::Spread, "spread")
-        })
-        .response
-        .on_hover_text("A load along a stretch of the wire, N per metre, between two new points")
-        .on_disabled_hover_text("Spread objects lie on spans");
+        if !editing {
+            ui.add_enabled_ui(!on_jumper, |ui| {
+                ui.radio_value(&mut f.what, SpanWhat::Spread, "spread")
+            })
+            .response
+            .on_hover_text(
+                "A load along a stretch of the wire, N per metre, between two new points",
+            )
+            .on_disabled_hover_text("Spread objects lie on spans");
+        }
     });
     ui.horizontal(|ui| {
         ui.label("place by");
@@ -653,7 +808,7 @@ pub fn span_ui(ui: &mut egui::Ui, f: &mut SpanForm) {
             .on_disabled_hover_text("The span's structures stand on no common alignment");
         }
     });
-    if f.what != SpanWhat::Spread {
+    if f.what != SpanWhat::Spread && !editing {
         ui.checkbox(&mut f.regular, "regular spacing")
             .on_hover_text("Repeated from the first place to the last, every spacing");
     }
@@ -985,4 +1140,14 @@ pub fn spacer_ui(ui: &mut egui::Ui, f: &mut SpacerForm, model: &Model) {
             });
             ui.end_row();
         });
+}
+
+/// The put of `value` as object `kind`/`id`.
+fn put(kind: Kind, id: &str, value: &impl serde::Serialize) -> Result<Command, String> {
+    Ok(Command::Put {
+        kind,
+        id: id.to_owned(),
+        value: serde_json::to_value(value).map_err(|e| e.to_string())?,
+        ord: None,
+    })
 }
