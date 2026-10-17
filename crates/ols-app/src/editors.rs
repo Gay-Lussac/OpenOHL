@@ -19,23 +19,8 @@ use ols_structures::structures::{to_global, to_local};
 use crate::model::Model;
 
 /// `like` with its trailing number increased until no id in `taken` has
-/// it (`T7` → `T8`; `S` → `S-1`).
-pub fn next_id<'a>(taken: impl Iterator<Item = &'a str> + Clone, like: &str) -> String {
-    let digits = like.len() - like.trim_end_matches(|c: char| c.is_ascii_digit()).len();
-    let (stem, num) = like.split_at(like.len() - digits);
-    let width = num.len();
-    let (stem, mut n) = match num.parse::<u64>() {
-        Ok(n) => (stem.to_owned(), n + 1),
-        Err(_) => (format!("{like}-"), 1),
-    };
-    loop {
-        let id = format!("{stem}{n:0width$}");
-        if !taken.clone().any(|t| t == id) {
-            return id;
-        }
-        n += 1;
-    }
-}
+/// it (`T7` → `T8`; `S` → `S-1`); shared with the structure application.
+pub use ols_structure_edit::next_id;
 
 /// A structure being added or changed.
 #[derive(Debug, Clone, PartialEq)]
@@ -179,21 +164,8 @@ pub struct WireRow {
 /// Where `at` is seen from `top` (local axes): its angle from straight
 /// down (0–180°: 0 down, 90 level, 180 up), its direction in plan
 /// (0–360°: 0 ahead along the line, 90 to the right, 180 back, 270 to the
-/// left) and its distance, m.
-pub fn polar(top: [f64; 3], at: [f64; 3]) -> (f64, f64, f64) {
-    let d = [0, 1, 2].map(|k| at[k] - top[k]);
-    let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    if len < 1e-9 {
-        return (0.0, 0.0, 0.0);
-    }
-    let down = (-d[2] / len).clamp(-1.0, 1.0).acos().to_degrees();
-    let dir = if d[0].hypot(d[1]) < 1e-9 {
-        0.0
-    } else {
-        d[0].atan2(d[1]).to_degrees().rem_euclid(360.0)
-    };
-    (down, dir, len)
-}
+/// left) and its distance, m; shared with the structure application.
+pub use ols_structure_edit::polar;
 
 /// The point at angles and distance from `top` ([`polar`]).
 pub fn from_polar(top: [f64; 3], down: f64, dir: f64, len: f64) -> [f64; 3] {

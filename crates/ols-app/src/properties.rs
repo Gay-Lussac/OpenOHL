@@ -151,6 +151,17 @@ pub fn ui(
             {
                 action = Some(crate::edit::Action::EditType { id: t.clone() });
             }
+            if let Some(t) = &s.structure_type
+                && ui
+                    .button("Edit…")
+                    .on_hover_text(format!(
+                        "Open structure {t} in the structure application (its own window); \
+                         saved there, every structure of the type follows"
+                    ))
+                    .clicked()
+            {
+                action = Some(crate::edit::Action::EditInStructureApp { id: t.clone() });
+            }
             if ui
                 .button("Placement…")
                 .on_hover_text(

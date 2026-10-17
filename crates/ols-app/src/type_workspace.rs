@@ -15,32 +15,13 @@
 use eframe::egui;
 use eframe::egui_wgpu;
 use ols_render::{Bounds, Camera, GpuScene, Renderer, Scene};
+use ols_structure_edit::{self as edit, StringChange, compass_radius, pick, polar, position};
 use ols_structures::{InsulatorLibrary, LibraryItem, StructureType};
-use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, Value};
+use toml_edit::DocumentMut;
 
-/// Something picked in the view.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Handle {
-    /// A joint (`[[node]]`), by id.
-    Joint(String),
-    /// A member, by id.
-    Member(String),
-    /// A point where strings hang, by label.
-    Point(String),
-    /// A wire point, by label.
-    Wire(String),
-}
-
-impl Handle {
-    fn describe(&self) -> String {
-        match self {
-            Handle::Joint(id) => format!("joint {id}"),
-            Handle::Member(id) => format!("member {id}"),
-            Handle::Point(l) => format!("point {l}"),
-            Handle::Wire(l) => format!("wire point {l}"),
-        }
-    }
-}
+/// The edits are those of the structure application
+/// (`ols-structure-edit`): one implementation for both.
+pub use ols_structure_edit::{Geometry, Handle, Removal, geometry};
 
 /// The table shown under the view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -72,38 +53,6 @@ pub enum Request {
     },
     /// Open the insulator library (to import, export, edit assemblies).
     OpenInsulators,
-}
-
-/// What goes with a deletion.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Removal {
-    /// Joints.
-    pub joints: Vec<String>,
-    /// Members.
-    pub members: Vec<String>,
-    /// Points.
-    pub points: Vec<String>,
-    /// Wire points.
-    pub wires: Vec<String>,
-    /// Strings.
-    pub strings: Vec<String>,
-}
-
-impl Removal {
-    /// One line per kind, for the confirmation.
-    pub fn lines(&self) -> Vec<String> {
-        [
-            ("joint", &self.joints),
-            ("member", &self.members),
-            ("point", &self.points),
-            ("wire point", &self.wires),
-            ("string", &self.strings),
-        ]
-        .into_iter()
-        .filter(|(_, v)| !v.is_empty())
-        .map(|(k, v)| format!("{} {k}(s): {}", v.len(), v.join(", ")))
-        .collect()
-    }
 }
 
 /// A drag moving a joint or a (wire) point.
@@ -174,136 +123,6 @@ impl Default for Workspace {
     }
 }
 
-/// A position as written in files: `["1.250 m", …]`.
-fn point_value(p: [f64; 3]) -> Item {
-    let mut a = Array::new();
-    for v in p {
-        let v = if v.abs() < 5e-4 { 0.0 } else { v };
-        a.push(format!("{v:.3} m"));
-    }
-    Item::Value(Value::Array(a))
-}
-
-/// The array of tables `key` of the file (made when missing).
-fn array<'a>(doc: &'a mut DocumentMut, key: &str) -> &'a mut ArrayOfTables {
-    if doc.get(key).and_then(Item::as_array_of_tables).is_none() {
-        doc.insert(key, Item::ArrayOfTables(ArrayOfTables::new()));
-    }
-    doc.get_mut(key)
-        .and_then(Item::as_array_of_tables_mut)
-        .expect("made above")
-}
-
-/// The table of `key` whose `field` is `value`.
-fn entry<'a>(
-    doc: &'a mut DocumentMut,
-    key: &str,
-    field: &str,
-    value: &str,
-) -> Option<&'a mut Table> {
-    doc.get_mut(key)?
-        .as_array_of_tables_mut()?
-        .iter_mut()
-        .find(|t| t.get(field).and_then(Item::as_str) == Some(value))
-}
-
-/// `like` when it is free, else the next id after it.
-fn fresh<'a>(taken: impl Iterator<Item = &'a str> + Clone, like: &str) -> String {
-    if taken.clone().any(|t| t == like) {
-        crate::editors::next_id(taken, like)
-    } else {
-        like.to_owned()
-    }
-}
-
-fn length(v: f64) -> Item {
-    toml_edit::value(format!("{v:.3} m"))
-}
-
-/// The positions (local axes) of the joints, points and wire points of
-/// `t`, and its strings (top, wire point).
-#[derive(Default)]
-pub(crate) struct Geometry {
-    pub(crate) joints: Vec<(String, [f64; 3], bool)>,
-    pub(crate) members: Vec<(String, [f64; 3], [f64; 3], bool)>,
-    pub(crate) points: Vec<(String, [f64; 3])>,
-    pub(crate) wires: Vec<(String, [f64; 3], Option<u32>)>,
-    pub(crate) strings: Vec<(String, [f64; 3], [f64; 3])>,
-    pub(crate) sticks: Vec<Vec<[f64; 3]>>,
-}
-
-pub(crate) fn geometry(t: &StructureType, insulators: &InsulatorLibrary) -> Geometry {
-    let si = |p: &[ols_core::units::Length; 3]| p.map(|v| v.si());
-    let mut g = Geometry {
-        joints: t
-            .nodes
-            .iter()
-            .map(|n| (n.id.clone(), si(&n.point), n.support.is_some()))
-            .collect(),
-        ..Default::default()
-    };
-    let joint = |id: &str| g.joints.iter().find(|j| j.0 == id).map(|j| j.1);
-    g.members = t
-        .members
-        .iter()
-        .filter_map(|m| {
-            Some((
-                m.id.clone(),
-                joint(&m.nodes[0])?,
-                joint(&m.nodes[1])?,
-                m.section.is_some(),
-            ))
-        })
-        .collect();
-    // Placed with the feet on the ground at the feet's level: local axes.
-    let foot = t.foot_level();
-    if let Ok(placed) = t.place_strings([0.0, 0.0, foot], 0.0, None, insulators) {
-        g.points = placed
-            .points
-            .iter()
-            .map(|p| (p.label.clone(), p.position))
-            .collect();
-        g.wires = placed
-            .wires
-            .iter()
-            .map(|w| (w.label.clone(), w.position, w.set))
-            .collect();
-        let at = |label: &str| {
-            g.points
-                .iter()
-                .map(|p| (&p.0, p.1))
-                .chain(g.wires.iter().map(|w| (&w.0, w.1)))
-                .find(|(l, _)| *l == label)
-                .map(|(_, p)| p)
-        };
-        g.strings = placed
-            .strings
-            .iter()
-            .filter_map(|s| Some((s.label.clone(), at(&s.top)?, at(&s.wire)?)))
-            .collect();
-    } else {
-        g.points = t
-            .points
-            .iter()
-            .map(|p| (p.label.clone(), si(&p.position())))
-            .collect();
-    }
-    if t.members.is_empty() {
-        // The stick figure (or the body lines), back in local axes.
-        if let Ok(lines) = t.stick(None) {
-            g.sticks = lines
-                .into_iter()
-                .map(|l| l.into_iter().map(|p| [p[0], p[1], p[2] + foot]).collect())
-                .collect();
-        }
-    } else {
-        for b in &t.body {
-            g.sticks.push(b.points.iter().map(si).collect());
-        }
-    }
-    g
-}
-
 const STEEL: [u8; 4] = [215, 215, 220, 255];
 const BARE: [u8; 4] = [200, 170, 110, 255];
 const STICK: [u8; 4] = [150, 150, 160, 255];
@@ -335,221 +154,6 @@ impl Workspace {
     /// The type as last read.
     pub fn shown(&self) -> Option<&StructureType> {
         self.shown.as_ref()
-    }
-
-    /// What goes when `h` is deleted: a joint takes its members and the
-    /// points on them; a member the points along it; a point or wire
-    /// point the strings from or to it.
-    pub fn removal(t: &StructureType, h: &Handle) -> Removal {
-        let mut r = Removal::default();
-        match h {
-            Handle::Joint(id) => {
-                r.joints.push(id.clone());
-                r.members = t
-                    .members
-                    .iter()
-                    .filter(|m| m.nodes.contains(id))
-                    .map(|m| m.id.clone())
-                    .collect();
-            }
-            Handle::Member(id) => r.members.push(id.clone()),
-            Handle::Point(l) => r.points.push(l.clone()),
-            Handle::Wire(l) => r.wires.push(l.clone()),
-        }
-        for p in &t.points {
-            let on = p.node.as_ref().is_some_and(|n| r.joints.contains(n))
-                || p.member.as_ref().is_some_and(|m| r.members.contains(m));
-            if on && !r.points.contains(&p.label) {
-                r.points.push(p.label.clone());
-            }
-        }
-        for s in &t.strings {
-            let gone = [&s.top, &s.wire]
-                .iter()
-                .any(|l| r.points.contains(l) || r.wires.contains(l));
-            if gone {
-                r.strings.push(s.label.clone());
-            }
-        }
-        r
-    }
-
-    /// Removes everything in `r` from the file.
-    pub fn remove(doc: &mut DocumentMut, r: &Removal) {
-        for (key, field, gone) in [
-            ("node", "id", &r.joints),
-            ("member", "id", &r.members),
-            ("point", "label", &r.points),
-            ("wire", "label", &r.wires),
-            ("string", "label", &r.strings),
-        ] {
-            if let Some(a) = doc.get_mut(key).and_then(Item::as_array_of_tables_mut) {
-                a.retain(|t| {
-                    !t.get(field)
-                        .and_then(Item::as_str)
-                        .is_some_and(|v| gone.iter().any(|g| g == v))
-                });
-            }
-        }
-    }
-
-    /// Adds a joint at `at` (local axes); its id.
-    pub fn add_joint(doc: &mut DocumentMut, t: Option<&StructureType>, at: [f64; 3]) -> String {
-        let like = t
-            .and_then(|t| t.nodes.last())
-            .map_or("N1", |n| n.id.as_str());
-        let id = crate::editors::next_id(
-            t.into_iter()
-                .flat_map(|t| t.nodes.iter().map(|n| n.id.as_str())),
-            like,
-        );
-        let mut table = Table::new();
-        table.insert("id", toml_edit::value(id.clone()));
-        table.insert("point", point_value(at));
-        array(doc, "node").push(table);
-        id
-    }
-
-    /// Adds a member between joints `a` and `b`; its id (or why not).
-    pub fn add_member(
-        doc: &mut DocumentMut,
-        t: &StructureType,
-        a: &str,
-        b: &str,
-    ) -> Result<String, String> {
-        if a == b {
-            return Err("pick two different joints".into());
-        }
-        if t.members
-            .iter()
-            .any(|m| (m.nodes[0] == a && m.nodes[1] == b) || (m.nodes[0] == b && m.nodes[1] == a))
-        {
-            return Err(format!("joints {a} and {b} are joined already"));
-        }
-        let like = t.members.last().map_or("M1", |m| m.id.as_str());
-        let id = crate::editors::next_id(t.members.iter().map(|m| m.id.as_str()), like);
-        let mut table = Table::new();
-        table.insert("id", toml_edit::value(id.clone()));
-        let mut nodes = Array::new();
-        nodes.push(a);
-        nodes.push(b);
-        table.insert("nodes", Item::Value(Value::Array(nodes)));
-        // Like the last member: its section and kind.
-        if let Some(last) = t.members.last() {
-            if let Some(s) = &last.section {
-                table.insert("section", toml_edit::value(s.clone()));
-            }
-            if let Some(k) = &last.kind {
-                table.insert("kind", toml_edit::value(k.clone()));
-            }
-        }
-        array(doc, "member").push(table);
-        Ok(id)
-    }
-
-    fn labels(t: &StructureType) -> Vec<&str> {
-        t.points
-            .iter()
-            .map(|p| p.label.as_str())
-            .chain(t.wires.iter().map(|w| w.label.as_str()))
-            .collect()
-    }
-
-    /// A point of the type at joint `joint`; its label.
-    pub fn add_point_at_joint(doc: &mut DocumentMut, t: &StructureType, joint: &str) -> String {
-        let label = fresh(Self::labels(t).into_iter(), "A1");
-        let mut table = Table::new();
-        table.insert("label", toml_edit::value(label.clone()));
-        table.insert("node", toml_edit::value(joint));
-        array(doc, "point").push(table);
-        label
-    }
-
-    /// Presets: an I-string of `length` from `top` (a point or a wire
-    /// point) down to a new wire point; or, with two tops, a V: two
-    /// strings to one wire point `length` below the middle of the tops.
-    /// No set: the set is put on it by hand (Set points). The new wire
-    /// point's label.
-    pub fn add_strings(
-        doc: &mut DocumentMut,
-        t: &StructureType,
-        tops: &[String],
-        length: f64,
-    ) -> Result<String, String> {
-        if tops.is_empty() || tops.len() > 2 {
-            return Err("pick one point (an I-string) or two (a V)".into());
-        }
-        if !(length > 0.0 && length < 50.0) {
-            return Err("the string length must be between 0 and 50 m".into());
-        }
-        let labels = Self::labels(t);
-        let wire = fresh(labels.iter().copied(), "W1");
-        let mut w = Table::new();
-        w.insert("label", toml_edit::value(wire.clone()));
-        array(doc, "wire").push(w);
-        let mut taken: Vec<String> = t.strings.iter().map(|s| s.label.clone()).collect();
-        for top in tops {
-            let label = fresh(taken.iter().map(String::as_str), "S1");
-            taken.push(label.clone());
-            let mut s = Table::new();
-            s.insert("label", toml_edit::value(label));
-            s.insert("top", toml_edit::value(top.clone()));
-            s.insert("wire", toml_edit::value(wire.clone()));
-            s.insert("length", length_or_leg(t, tops, length));
-            array(doc, "string").push(s);
-        }
-        Ok(wire)
-    }
-
-    /// Writes a moved joint or (wire) point at `at` into the file.
-    fn put(
-        doc: &mut DocumentMut,
-        t: &StructureType,
-        h: &Handle,
-        at: [f64; 3],
-    ) -> Result<(), String> {
-        match h {
-            Handle::Joint(id) => {
-                let n = entry(doc, "node", "id", id).ok_or("no such joint")?;
-                n.insert("point", point_value(at));
-            }
-            Handle::Point(l) => {
-                let p = t
-                    .points
-                    .iter()
-                    .find(|p| &p.label == l)
-                    .ok_or("no such point")?;
-                if let Some(n) = &p.node {
-                    // On a joint: the joint moves.
-                    return Self::put(doc, t, &Handle::Joint(n.clone()), at);
-                }
-                if p.member.is_some() {
-                    return Err(format!("point {l} sits along a member: move its joints"));
-                }
-                let p = entry(doc, "point", "label", l).ok_or("no such point")?;
-                p.insert("point", point_value(at));
-            }
-            Handle::Wire(l) => {
-                let w = entry(doc, "wire", "label", l).ok_or("no such wire point")?;
-                w.insert("point", point_value(at));
-            }
-            Handle::Member(_) => return Err("move its joints".into()),
-        }
-        Ok(())
-    }
-
-    /// Where `h` is drawn (local axes).
-    fn position(g: &Geometry, h: &Handle) -> Option<[f64; 3]> {
-        match h {
-            Handle::Joint(id) => g.joints.iter().find(|j| &j.0 == id).map(|j| j.1),
-            Handle::Point(l) => g.points.iter().find(|p| &p.0 == l).map(|p| p.1),
-            Handle::Wire(l) => g.wires.iter().find(|w| &w.0 == l).map(|w| w.1),
-            Handle::Member(id) => g
-                .members
-                .iter()
-                .find(|m| &m.0 == id)
-                .map(|m| [0, 1, 2].map(|k| 0.5 * (m.1[k] + m.2[k]))),
-        }
     }
 
     fn scene(&self, g: &Geometry, foot: f64) -> Scene {
@@ -624,63 +228,6 @@ impl Workspace {
             s.point(*p, c, 10.0);
         }
         s
-    }
-
-    /// The handle nearest to `at` (screen pixels) within `radius`: joints,
-    /// points and wire points first, then members.
-    fn pick(
-        g: &Geometry,
-        project: &impl Fn([f64; 3]) -> Option<[f64; 2]>,
-        at: [f64; 2],
-        radius: f64,
-    ) -> Option<Handle> {
-        let d = |p: [f64; 3]| {
-            project(p).map(|q| ((q[0] - at[0]).powi(2) + (q[1] - at[1]).powi(2)).sqrt())
-        };
-        let nearest = |found: Vec<(Option<f64>, Handle)>| {
-            found
-                .into_iter()
-                .filter_map(|(dist, h)| Some((dist.filter(|x| *x <= radius)?, h)))
-                .min_by(|a, b| a.0.total_cmp(&b.0))
-                .map(|b| b.1)
-        };
-        let handles = g
-            .points
-            .iter()
-            .map(|(l, p)| (d(*p), Handle::Point(l.clone())))
-            .chain(
-                g.wires
-                    .iter()
-                    .map(|(l, p, _)| (d(*p), Handle::Wire(l.clone()))),
-            )
-            .chain(
-                g.joints
-                    .iter()
-                    .map(|(id, p, _)| (d(*p), Handle::Joint(id.clone()))),
-            )
-            .collect();
-        if let Some(h) = nearest(handles) {
-            return Some(h);
-        }
-        let mut members = Vec::new();
-        for (id, a, b, _) in &g.members {
-            let (Some(qa), Some(qb)) = (project(*a), project(*b)) else {
-                continue;
-            };
-            let (dx, dy) = (qb[0] - qa[0], qb[1] - qa[1]);
-            let len2 = dx * dx + dy * dy;
-            let s = if len2 > 0.0 {
-                (((at[0] - qa[0]) * dx + (at[1] - qa[1]) * dy) / len2).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            let (x, y) = (qa[0] + s * dx, qa[1] + s * dy);
-            members.push((
-                Some(((x - at[0]).powi(2) + (y - at[1]).powi(2)).sqrt()),
-                Handle::Member(id.clone()),
-            ));
-        }
-        nearest(members)
     }
 
     /// The workspace: level, tools, the view and the tables. `doc` is the
@@ -777,7 +324,7 @@ impl Workspace {
                     _ => None,
                 }
                 .unwrap_or([0.0; 3]);
-                let id = Self::add_joint(doc, Some(t), at);
+                let id = edit::add_joint(doc, Some(t), at);
                 self.selected = vec![Handle::Joint(id.clone())];
                 self.message = Some((format!("added joint {id}"), false));
                 changed = true;
@@ -797,7 +344,7 @@ impl Workspace {
                 .clicked()
             {
                 let (a, b) = (joints[0].clone(), joints[1].clone());
-                match Self::add_member(doc, t, &a, &b) {
+                match edit::add_member(doc, t, &a, &b) {
                     Ok(id) => {
                         self.message = Some((format!("added member {id} ({a}–{b})"), false));
                         // The second joint stays picked: the next member
@@ -814,7 +361,7 @@ impl Workspace {
                     .on_hover_text("A point where strings hang, on this joint (it moves with it)")
                     .clicked()
             {
-                let l = Self::add_point_at_joint(doc, t, j);
+                let l = edit::add_point_at_joint(doc, t, j);
                 self.selected = vec![Handle::Point(l.clone())];
                 self.message = Some((format!("added point {l} on joint {j}"), false));
                 changed = true;
@@ -850,7 +397,7 @@ impl Workspace {
                     })
                     .clicked()
                 {
-                    match Self::add_strings(doc, t, &tops, self.string_length) {
+                    match edit::add_strings(doc, t, &tops, self.string_length) {
                         Ok(w) => {
                             self.message = Some((
                                 format!("added the insulators to wire point {w}: put its set in Set points"),
@@ -869,7 +416,7 @@ impl Workspace {
                 .on_hover_text("Delete what is picked, with what goes with it (asks first)")
                 .clicked()
             {
-                self.confirm = Some(Self::removal(t, &self.selected[0]));
+                self.confirm = Some(edit::removal(t, &self.selected[0]));
             }
             if ui.button("Fit").on_hover_text("Show the whole pylon").clicked() {
                 self.camera = None;
@@ -907,7 +454,7 @@ impl Workspace {
                 });
             ui.horizontal(|ui| {
                 if ui.button("Delete").clicked() {
-                    Self::remove(doc, &r);
+                    edit::remove(doc, &r);
                     self.selected.clear();
                     self.message = Some((format!("deleted {}", r.lines().join("; ")), false));
                     self.confirm = None;
@@ -970,7 +517,7 @@ impl Workspace {
             && let Some(pos) = response.interact_pointer_pos()
         {
             let shift = ui.input(|i| i.modifiers.shift);
-            match Self::pick(g, &project, local(pos), 12.0) {
+            match pick(g, &project, local(pos), 12.0) {
                 Some(h) if shift => {
                     if let Some(k) = self.selected.iter().position(|x| *x == h) {
                         self.selected.remove(k);
@@ -987,9 +534,9 @@ impl Workspace {
         // A drag from a joint or point moves it; elsewhere it turns the view.
         if response.drag_started_by(egui::PointerButton::Primary)
             && let Some(pos) = response.interact_pointer_pos()
-            && let Some(h) = Self::pick(g, &project, local(pos), 12.0)
+            && let Some(h) = pick(g, &project, local(pos), 12.0)
             && !matches!(h, Handle::Member(_))
-            && let Some(at) = Self::position(g, &h)
+            && let Some(at) = position(g, &h)
         {
             let eye = cam.eye();
             let n = [0, 1, 2].map(|k| eye[k] - cam.target[k]);
@@ -1022,8 +569,8 @@ impl Workspace {
                     }) {
                         at = *p;
                     }
-                    if Self::position(g, &m.handle) != Some(at) {
-                        match Self::put(doc, t, &m.handle, at) {
+                    if position(g, &m.handle) != Some(at) {
+                        match edit::move_to(doc, t, &m.handle, at) {
                             Ok(()) => {
                                 changed = true;
                                 self.message = Some((
@@ -1152,7 +699,7 @@ impl Workspace {
             }
         }
         for h in &self.selected {
-            if let (Handle::Joint(id) | Handle::Member(id), Some(p)) = (h, Self::position(g, h))
+            if let (Handle::Joint(id) | Handle::Member(id), Some(p)) = (h, position(g, h))
                 && let Some((q, align)) = screen(p)
             {
                 painter.text(q, align, id, font.clone(), rgb(PICKED));
@@ -1236,7 +783,7 @@ impl Workspace {
                             for v in &mut p {
                                 moved |= coord(ui, v);
                             }
-                            if moved && Self::put(doc, t, &h, p).is_ok() {
+                            if moved && edit::move_to(doc, t, &h, p).is_ok() {
                                 changed = true;
                             }
                             let support = n
@@ -1252,14 +799,8 @@ impl Workspace {
                                         ui.selectable_value(&mut chosen, s.to_owned(), s);
                                     }
                                 });
-                            if chosen != support
-                                && let Some(e) = entry(doc, "node", "id", &n.id)
-                            {
-                                if chosen == "—" {
-                                    e.remove("support");
-                                } else {
-                                    e.insert("support", toml_edit::value(chosen));
-                                }
+                            if chosen != support {
+                                edit::set_support(doc, &n.id, (chosen != "—").then_some(chosen.as_str()));
                                 changed = true;
                             }
                             ui.end_row();
@@ -1308,17 +849,12 @@ impl Workspace {
                                         ui.selectable_value(&mut new_kind, k.to_owned(), k);
                                     }
                                 });
-                            if (chosen != current || new_kind != kind)
-                                && let Some(e) = entry(doc, "member", "id", &m.id)
-                            {
-                                if chosen == "—" {
-                                    e.remove("section");
-                                } else {
-                                    e.insert("section", toml_edit::value(chosen));
-                                }
-                                if new_kind != kind {
-                                    e.insert("kind", toml_edit::value(new_kind));
-                                }
+                            if chosen != current {
+                                edit::set_member_section(doc, &m.id, (chosen != "—").then_some(chosen.as_str()));
+                                changed = true;
+                            }
+                            if new_kind != kind {
+                                edit::set_member_kind(doc, &m.id, &new_kind);
                                 changed = true;
                             }
                             ui.end_row();
@@ -1356,7 +892,7 @@ impl Workspace {
                                     ui.label(format!("{v:.3} m"));
                                 }
                             }
-                            if moved && Self::put(doc, t, &h, at).is_ok() {
+                            if moved && edit::move_to(doc, t, &h, at).is_ok() {
                                 changed = true;
                             }
                             ui.label(match (&p.node, &p.member, p.at) {
@@ -1406,7 +942,7 @@ impl Workspace {
                                 for v in &mut at {
                                     moved |= coord(ui, v);
                                 }
-                                if moved && Self::put(doc, t, &h, at).is_ok() {
+                                if moved && edit::move_to(doc, t, &h, at).is_ok() {
                                     changed = true;
                                 }
                             } else {
@@ -1432,13 +968,8 @@ impl Workspace {
                             if ui
                                 .add(egui::DragValue::new(&mut cw).range(0.0..=1e6).speed(10.0).max_decimals(0).suffix(" N"))
                                 .changed()
-                                && let Some(e) = entry(doc, "wire", "label", &w.label)
                             {
-                                if cw > 0.0 {
-                                    e.insert("weight", toml_edit::value(format!("{cw} N")));
-                                } else {
-                                    e.remove("weight");
-                                }
+                                edit::set_counterweight(doc, &w.label, cw);
                                 changed = true;
                             }
                             ui.end_row();
@@ -1457,174 +988,6 @@ impl Workspace {
 }
 
 impl Workspace {
-    /// A new insulator from `top` (an attachment point or a wire point):
-    /// from the library (`assembly`: its length, weight, stiffness, wind
-    /// area; strain when it is a strain assembly) or of `length`, hanging
-    /// (or, strain, level along the line: 0°), to `wire` (an existing wire
-    /// point: a V with the insulator there; none: a new wire point). Its
-    /// label and its wire point's.
-    pub fn new_string(
-        doc: &mut DocumentMut,
-        t: &StructureType,
-        top: &str,
-        assembly: Option<&ols_structures::InsulatorAssembly>,
-        length: f64,
-        wire: Option<&str>,
-    ) -> Result<(String, String), String> {
-        if !Self::labels(t).contains(&top) {
-            return Err(format!("no attachment point or wire point {top}"));
-        }
-        if !(length > 0.0 && length < 50.0) && assembly.is_none() {
-            return Err("the insulator length must be between 0 and 50 m".into());
-        }
-        let wire = match wire {
-            Some(w) => w.to_owned(),
-            None => {
-                let w = fresh(Self::labels(t).into_iter(), "W1");
-                let mut table = Table::new();
-                table.insert("label", toml_edit::value(w.clone()));
-                array(doc, "wire").push(table);
-                w
-            }
-        };
-        if wire == top {
-            return Err("an insulator cannot end where it hangs from".into());
-        }
-        let label = fresh(t.strings.iter().map(|x| x.label.as_str()), "S1");
-        let mut x = Table::new();
-        x.insert("label", toml_edit::value(label.clone()));
-        x.insert("top", toml_edit::value(top));
-        x.insert("wire", toml_edit::value(wire.clone()));
-        match assembly {
-            Some(a) => {
-                x.insert("insulator", toml_edit::value(a.id.clone()));
-                if a.kind == ols_structures::AssemblyKind::Strain {
-                    x.insert("strain", toml_edit::value(true));
-                    x.insert("angle", toml_edit::value("90 deg"));
-                }
-            }
-            None => {
-                x.insert("length", length_item(length));
-            }
-        }
-        array(doc, "string").push(x);
-        Ok((label, wire))
-    }
-
-    /// Deletes insulator `label`. Its wire point, held by no other
-    /// insulator: removed when nothing else is on it, else kept where it
-    /// is (fixed: its position written).
-    pub fn delete_string(doc: &mut DocumentMut, t: &StructureType, g: &Geometry, label: &str) {
-        let Some(x) = t.strings.iter().find(|x| x.label == label) else {
-            return;
-        };
-        if let Some(a) = doc.get_mut("string").and_then(Item::as_array_of_tables_mut) {
-            a.retain(|e| e.get("label").and_then(Item::as_str) != Some(label));
-        }
-        let others = t
-            .strings
-            .iter()
-            .any(|y| y.label != label && y.wire == x.wire);
-        if others {
-            return;
-        }
-        let w = t.wires.iter().find(|w| w.label == x.wire);
-        let used = w.is_some_and(|w| w.set.is_some()) || t.strings.iter().any(|y| y.top == x.wire);
-        if used {
-            let at = g.wires.iter().find(|v| v.0 == x.wire).map(|v| v.1);
-            if let (Some(at), Some(e)) = (at, entry(doc, "wire", "label", &x.wire)) {
-                e.insert("point", point_value(at));
-            }
-        } else if let Some(a) = doc.get_mut("wire").and_then(Item::as_array_of_tables_mut) {
-            a.retain(|e| e.get("label").and_then(Item::as_str) != Some(x.wire.as_str()));
-        }
-    }
-
-    /// Insulator `label` as an assembly of the insulator library (`.olsi`
-    /// text): its length, weight, wind area, strain or suspension (a leg of
-    /// a V: a V-string assembly).
-    pub fn assembly_text(
-        t: &StructureType,
-        g: &Geometry,
-        insulators: &InsulatorLibrary,
-        label: &str,
-        id: &str,
-    ) -> Result<String, String> {
-        let x = t
-            .strings
-            .iter()
-            .find(|x| x.label == label)
-            .ok_or_else(|| format!("no insulator {label}"))?;
-        let a = x.insulator.as_deref().and_then(|i| insulators.get(i));
-        let at = |l: &str| {
-            g.points
-                .iter()
-                .map(|p| (&p.0, p.1))
-                .chain(g.wires.iter().map(|w| (&w.0, w.1)))
-                .find(|(k, _)| *k == l)
-                .map(|(_, p)| p)
-        };
-        let length = match (a, x.length) {
-            (Some(a), _) => a.length.si(),
-            (None, Some(l)) => l.si(),
-            (None, None) => at(&x.top)
-                .zip(at(&x.wire))
-                .map(|(p, q)| (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt())
-                .ok_or("its length is not known")?,
-        };
-        let legs = t.strings.iter().filter(|y| y.wire == x.wire).count();
-        let kind = if legs >= 2 {
-            "v_string"
-        } else if x.strain {
-            "strain"
-        } else {
-            "suspension"
-        };
-        let weight = x
-            .weight
-            .map(|w| w.si())
-            .or(a.map(|a| a.weight.si()))
-            .unwrap_or(0.0)
-            * if legs >= 2 { legs as f64 } else { 1.0 };
-        let wind = x
-            .wind_area
-            .map(|w| w.si())
-            .or(a.map(|a| a.wind_area.si()))
-            .unwrap_or(0.0)
-            * if legs >= 2 { legs as f64 } else { 1.0 };
-        let stiffness = a.map_or(5e7, |a| a.axial_stiffness.si());
-        let mut text = String::new();
-        text.push_str("format = \"ols-insulator\"\nversion = 1\n");
-        text.push_str(&format!("id = {}\n", toml_edit::value(id)));
-        text.push_str(&format!(
-            "name = {}\n",
-            toml_edit::value(format!("{id} (from insulator {label} of {})", t.id))
-        ));
-        text.push_str(&format!("kind = \"{kind}\"\n"));
-        text.push_str(&format!("length = \"{} m\"\n", round3(length)));
-        text.push_str(&format!("weight = \"{} N\"\n", round3(weight)));
-        text.push_str(&format!("axial_stiffness = \"{stiffness} N\"\n"));
-        if wind > 0.0 {
-            text.push_str(&format!("wind_area = \"{} m²\"\n", round3(wind)));
-        }
-        if legs >= 2 {
-            // The V's half width: from the middle of the legs' tops.
-            let tops: Vec<[f64; 3]> = t
-                .strings
-                .iter()
-                .filter(|y| y.wire == x.wire)
-                .filter_map(|y| at(&y.top))
-                .collect();
-            if let [p, q, ..] = tops.as_slice() {
-                let half = 0.5 * (p[0] - q[0]).hypot(p[1] - q[1]);
-                text.push_str(&format!("half_width = \"{} m\"\n", round3(half)));
-            }
-        }
-        ols_structures::InsulatorAssembly::parse(std::path::Path::new("new.olsi"), &text)
-            .map_err(|e| e.message)?;
-        Ok(text)
-    }
-
     /// The Insulators sheet: each insulator's top (an attachment point or
     /// another insulator's wire point), wire point, kind (suspension or
     /// strain), assembly from the library (or a length), its direction (an
@@ -1639,17 +1002,9 @@ impl Workspace {
         g: &Geometry,
         insulators: &InsulatorLibrary,
     ) -> bool {
-        use crate::editors::polar;
         let mut changed = false;
         let ahead = self.ahead;
-        let at = |label: &str| {
-            g.points
-                .iter()
-                .map(|p| (&p.0, p.1))
-                .chain(g.wires.iter().map(|w| (&w.0, w.1)))
-                .find(|(l, _)| *l == label)
-                .map(|(_, p)| p)
-        };
+        let at = |label: &str| g.at(label);
         let tops: Vec<&str> = t
             .points
             .iter()
@@ -1678,7 +1033,7 @@ impl Workspace {
                 .on_disabled_hover_text("Add an attachment point first")
                 .clicked()
             {
-                match Self::new_string(doc, t, &from, None, self.string_length, None) {
+                match edit::new_string(doc, t, &from, None, self.string_length, None) {
                     Ok((l, w)) => {
                         self.message = Some((format!("insulator {l} from {from} to {w}"), false));
                         self.selected = vec![Handle::Wire(w)];
@@ -1716,7 +1071,7 @@ impl Workspace {
             if let Some(id) = chosen
                 && let Some(a) = assemblies.iter().find(|a| a.id == id)
             {
-                match Self::new_string(doc, t, &from, Some(a), a.length.si(), None) {
+                match edit::new_string(doc, t, &from, Some(a), a.length.si(), None) {
                     Ok((l, w)) => {
                         self.message =
                             Some((format!("insulator {l} ({id}) from {from} to {w}"), false));
@@ -1745,6 +1100,7 @@ impl Workspace {
         });
         let mut delete: Option<String> = None;
         let mut save: Option<String> = None;
+        let mut changes: Vec<(String, StringChange)> = Vec::new();
         egui::Grid::new("type-strings").striped(true).show(ui, |ui| {
             for (h, tip) in [
                 ("insulator", "Its label"),
@@ -1765,15 +1121,11 @@ impl Workspace {
             }
             ui.end_row();
             for s in &t.strings {
-                let Some(e) = entry(doc, "string", "label", &s.label) else {
-                    continue;
-                };
                 let a = s
                     .insulator
                     .as_ref()
                     .and_then(|i| assemblies.iter().find(|a| &a.id == i).copied());
-                // Its geometry changed: its wire point is placed again.
-                let mut geo = false;
+                let mut put = |c: StringChange| changes.push((s.label.clone(), c));
                 ui.label(&s.label);
                 // Hangs from.
                 let mut top = s.top.clone();
@@ -1785,9 +1137,7 @@ impl Workspace {
                         }
                     });
                 if top != s.top {
-                    e.insert("top", toml_edit::value(top));
-                    changed = true;
-                    geo = true;
+                    put(StringChange::Top(top));
                 }
                 // Its wire point: another insulator's makes a V.
                 let mut wire = s.wire.clone();
@@ -1799,9 +1149,7 @@ impl Workspace {
                         }
                     });
                 if wire != s.wire {
-                    e.insert("wire", toml_edit::value(wire));
-                    changed = true;
-                    geo = true;
+                    put(StringChange::Wire(wire));
                 }
                 // Kind.
                 let mut strain = s.strain;
@@ -1812,12 +1160,7 @@ impl Workspace {
                         ui.selectable_value(&mut strain, true, "strain");
                     });
                 if strain != s.strain {
-                    if strain {
-                        e.insert("strain", toml_edit::value(true));
-                    } else {
-                        e.remove("strain");
-                    }
-                    changed = true;
+                    put(StringChange::Strain(strain));
                 }
                 // Assembly.
                 let mut pick = s.insulator.clone();
@@ -1838,25 +1181,7 @@ impl Workspace {
                 let ends = at(&s.top).zip(at(&s.wire));
                 let len_now = ends.map_or(0.0, |(a, b)| polar(a, b).2);
                 if pick != s.insulator {
-                    match pick.as_ref().and_then(|i| assemblies.iter().find(|a| &a.id == i)) {
-                        Some(a) => {
-                            e.insert("insulator", toml_edit::value(a.id.clone()));
-                            for k in ["length", "weight", "wind_area"] {
-                                e.remove(k);
-                            }
-                            if a.kind == ols_structures::AssemblyKind::Strain {
-                                e.insert("strain", toml_edit::value(true));
-                            } else {
-                                e.remove("strain");
-                            }
-                        }
-                        None => {
-                            e.remove("insulator");
-                            e.insert("length", length_item(len_now.max(0.01)));
-                        }
-                    }
-                    changed = true;
-                    geo = true;
+                    put(StringChange::Assembly(pick));
                 }
                 // Length: it places the wire point.
                 let mut l = a.map_or(s.length.map_or(len_now, |l| l.si()), |a| a.length.si());
@@ -1866,9 +1191,7 @@ impl Workspace {
                     .add(egui::DragValue::new(&mut l).range(0.01..=50.0).speed(0.01).max_decimals(3).suffix(" m"))
                     .changed()
                 {
-                    e.insert("length", length_item(l));
-                    changed = true;
-                    geo = true;
+                    put(StringChange::Length(l));
                 }
                 // Direction: its own, or (a V's leg) where the legs meet.
                 let legs = t.strings.iter().filter(|x| x.wire == s.wire).count();
@@ -1878,15 +1201,7 @@ impl Workspace {
                     let a1 = ui.add(egui::DragValue::new(&mut dn).range(0.0..=180.0).speed(0.5).max_decimals(2).suffix("°"));
                     let a2 = ui.add(egui::DragValue::new(&mut dr).range(0.0..=360.0).speed(0.5).max_decimals(2).suffix("°"));
                     if a1.changed() || a2.changed() {
-                        e.insert("angle", toml_edit::value(format!("{dn} deg")));
-                        e.insert("direction", toml_edit::value(format!("{} deg", (dr - ahead).rem_euclid(360.0))));
-                        e.remove("side");
-                        // Written before without a length: its length now.
-                        if s.length.is_none() && a.is_none() {
-                            e.insert("length", length_item(len_now.max(0.01)));
-                        }
-                        changed = true;
-                        geo = true;
+                        put(StringChange::Direction(dn, (dr - ahead).rem_euclid(360.0)));
                     }
                 } else {
                     let (dn, dr, _) = ends.map_or((0.0, 0.0, 0.0), |(a, b)| polar(a, b));
@@ -1897,13 +1212,11 @@ impl Workspace {
                 // Weight, wind area, compression.
                 let mut w = s.weight.map(|w| w.si()).or(a.map(|a| a.weight.si())).unwrap_or(0.0);
                 if ui.add(egui::DragValue::new(&mut w).range(0.0..=1e6).speed(1.0).max_decimals(1).suffix(" N")).changed() {
-                    e.insert("weight", toml_edit::value(format!("{w} N")));
-                    changed = true;
+                    put(StringChange::Weight(w));
                 }
                 let mut wa = s.wind_area.map(|w| w.si()).or(a.map(|a| a.wind_area.si())).unwrap_or(0.0);
                 if ui.add(egui::DragValue::new(&mut wa).range(0.0..=100.0).speed(0.005).max_decimals(3).suffix(" m²")).changed() {
-                    e.insert("wind_area", toml_edit::value(format!("{wa} m²")));
-                    changed = true;
+                    put(StringChange::WindArea(wa));
                 }
                 ui.horizontal(|ui| {
                     let mut push = s.compression.is_some();
@@ -1911,22 +1224,12 @@ impl Workspace {
                     let a = ui.checkbox(&mut push, "");
                     let b = ui.add_enabled(push, egui::DragValue::new(&mut c).range(0.0..=1e7).speed(10.0).max_decimals(0).suffix(" N"));
                     if a.changed() || b.changed() {
-                        if push {
-                            e.insert("compression", toml_edit::value(format!("{c} N")));
-                        } else {
-                            e.remove("compression");
-                        }
-                        changed = true;
+                        put(StringChange::Compression(push.then_some(c)));
                     }
                 });
                 let mut d = s.description.clone();
                 if ui.add(egui::TextEdit::singleline(&mut d).desired_width(160.0)).changed() {
-                    if d.trim().is_empty() {
-                        e.remove("description");
-                    } else {
-                        e.insert("description", toml_edit::value(d));
-                    }
-                    changed = true;
+                    put(StringChange::Description(d));
                 }
                 ui.horizontal(|ui| {
                     if ui
@@ -1941,36 +1244,24 @@ impl Workspace {
                     }
                 });
                 ui.end_row();
-                // Its geometry changed: its wire point is placed by it again
-                // (a position written before goes).
-                if geo {
-                    // The other insulators to it (a V) without a length
-                    // (written before): their length now, so it can be
-                    // placed from them.
-                    for x in t.strings.iter().filter(|x| {
-                        x.wire == s.wire && x.label != s.label && x.length.is_none() && x.insulator.is_none()
-                    }) {
-                        let l = at(&x.top)
-                            .zip(at(&x.wire))
-                            .map_or(0.01, |(p, q)| polar(p, q).2.max(0.01));
-                        if let Some(o) = entry(doc, "string", "label", &x.label) {
-                            o.insert("length", length_item(l));
-                        }
-                    }
-                    if let Some(w) = entry(doc, "wire", "label", &s.wire) {
-                        w.remove("point");
-                    }
-                }
             }
         });
+        // The changes, each by the edit of the structure application (its
+        // wire point placed again when its geometry changed).
+        for (label, change) in changes {
+            match edit::set_string(doc, t, g, insulators, &label, change) {
+                Ok(()) => changed = true,
+                Err(e) => self.message = Some((e, true)),
+            }
+        }
         if let Some(label) = delete {
-            Self::delete_string(doc, t, g, &label);
+            edit::delete_string(doc, t, g, &label);
             self.message = Some((format!("deleted insulator {label}"), false));
             changed = true;
         }
         if let Some(label) = save {
             let id = format!("{}-{label}", t.id);
-            match Self::assembly_text(t, g, insulators, &label, &id) {
+            match edit::assembly_text(t, g, insulators, &label, &id) {
                 Ok(text) => self.request = Some(Request::SaveInsulator { id, text }),
                 Err(e) => self.message = Some((e, true)),
             }
@@ -2019,12 +1310,9 @@ impl Workspace {
                 let set = w.set.expect("filtered");
                 let mut n = i64::from(set);
                 if ui.add(egui::DragValue::new(&mut n).range(1..=99_999)).changed() {
-                    let taken = t.wires.iter().any(|x| x.label != w.label && x.set.map(i64::from) == Some(n));
-                    if taken {
-                        self.message = Some((format!("set {n} is on another wire point already"), true));
-                    } else if let Some(e) = entry(doc, "wire", "label", &w.label) {
-                        e.insert("set", toml_edit::value(n));
-                        changed = true;
+                    match edit::set_set(doc, t, &w.label, u32::try_from(n).unwrap_or(set)) {
+                        Ok(()) => changed = true,
+                        Err(e) => self.message = Some((e, true)),
                     }
                 }
                 // Moved to another wire point (one without a set).
@@ -2037,12 +1325,7 @@ impl Workspace {
                         }
                     });
                 if on != w.label {
-                    if let Some(e) = entry(doc, "wire", "label", &w.label) {
-                        e.remove("set");
-                    }
-                    if let Some(e) = entry(doc, "wire", "label", &on) {
-                        e.insert("set", toml_edit::value(i64::from(set)));
-                    }
+                    edit::move_set(doc, &w.label, &on, set);
                     changed = true;
                 }
                 ui.label(kind(&w.label));
@@ -2052,10 +1335,8 @@ impl Workspace {
                 ui.end_row();
             }
         });
-        if let Some(l) = drop_set
-            && let Some(e) = entry(doc, "wire", "label", &l)
-        {
-            e.remove("set");
+        if let Some(l) = drop_set {
+            edit::drop_set(doc, &l);
             changed = true;
         }
         // A new set on a wire point without one.
@@ -2081,65 +1362,13 @@ impl Workspace {
                     .on_hover_text("A set where a wire will be strung: its number is the next free one; change it here");
             });
         });
-        if let Some(l) = add {
-            let next = (1..)
-                .find(|s| !t.wires.iter().any(|w| w.set == Some(*s)))
-                .expect("a free set");
-            if let Some(e) = entry(doc, "wire", "label", &l) {
-                e.insert("set", toml_edit::value(i64::from(next)));
-                changed = true;
-                self.message = Some((format!("set {next} on {l}"), false));
-            }
+        if let Some(l) = add
+            && let Some(next) = edit::add_set(doc, t, &l)
+        {
+            changed = true;
+            self.message = Some((format!("set {next} on {l}"), false));
         }
         changed
-    }
-}
-
-fn round3(v: f64) -> f64 {
-    (v * 1000.0).round() / 1000.0
-}
-
-fn length_item(v: f64) -> Item {
-    length(v)
-}
-
-/// The compass's radius: beyond the pylon's reach in plan, a third of its
-/// height at least.
-fn compass_radius(g: &Geometry) -> f64 {
-    let pts = || {
-        g.joints
-            .iter()
-            .map(|j| j.1)
-            .chain(g.points.iter().map(|p| p.1))
-            .chain(g.wires.iter().map(|w| w.1))
-            .chain(g.sticks.iter().flatten().copied())
-    };
-    let reach = pts().map(|p| p[0].hypot(p[1])).fold(3.0, f64::max);
-    let (lo, hi) = pts().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| {
-        (a.min(p[2]), b.max(p[2]))
-    });
-    (reach * 1.25).max(0.35 * (hi - lo).max(0.0))
-}
-
-/// The length written for a preset string: `length` for an I-string; for
-/// a V the leg that puts the wire point `length` below the middle of the
-/// tops.
-fn length_or_leg(t: &StructureType, tops: &[String], length: f64) -> Item {
-    if tops.len() != 2 {
-        return self::length(length);
-    }
-    let at = |l: &str| {
-        t.points
-            .iter()
-            .find(|p| p.label == l)
-            .map(|p| p.position().map(|v| v.si()))
-    };
-    match (at(&tops[0]), at(&tops[1])) {
-        (Some(a), Some(b)) => {
-            let half = 0.5 * (0..3).map(|k| (b[k] - a[k]).powi(2)).sum::<f64>().sqrt();
-            self::length(half.hypot(length))
-        }
-        _ => self::length(length),
     }
 }
 
@@ -2181,132 +1410,23 @@ node = "N3"
         StructureType::parse(std::path::Path::new("p.olss"), &doc.to_string()).unwrap()
     }
 
+    /// The workspace's edits are those of the structure application: a
+    /// joint, a member, a point on it and an I-string under it read back
+    /// (the edits themselves are tested in `ols-structure-edit`).
     #[test]
-    fn joints_members_points_and_strings_are_added() {
+    fn the_workspace_uses_the_shared_edits() {
         let mut doc: DocumentMut = PYLON.parse().unwrap();
         let t = read(&doc);
-        assert_eq!(t.detail(), ols_structures::Detail::Outline);
-        let id = Workspace::add_joint(&mut doc, Some(&t), [6.0, 0.0, 30.0]);
-        assert_eq!(id, "N4");
+        let id = edit::add_joint(&mut doc, Some(&t), [6.0, 0.0, 30.0]);
         let t = read(&doc);
-        assert_eq!(
-            Workspace::add_member(&mut doc, &t, "N2", "N4").unwrap(),
-            "M3"
-        );
+        edit::add_member(&mut doc, &t, "N2", &id).unwrap();
         let t = read(&doc);
-        assert!(Workspace::add_member(&mut doc, &t, "N4", "N2").is_err());
-        let a2 = Workspace::add_point_at_joint(&mut doc, &t, "N4");
+        let a2 = edit::add_point_at_joint(&mut doc, &t, &id);
         let t = read(&doc);
-        assert_eq!(t.point_local(&a2, None), Some([6.0, 0.0, 30.0]));
-        // An I under A1, a V from A1 and A2.
-        let w = Workspace::add_strings(&mut doc, &t, &["A1".into()], 4.0).unwrap();
+        let w = edit::add_strings(&mut doc, &t, &[a2], 4.0).unwrap();
         let t = read(&doc);
-        let placed = t
-            .place_strings([0.0; 3], 0.0, None, &InsulatorLibrary::default())
-            .unwrap();
-        let wp = placed.wires.iter().find(|x| x.label == w).unwrap();
-        // No set: set numbers are put by hand.
-        assert_eq!((wp.position, wp.set), ([-6.0, 0.0, 26.0], None));
-        let v = Workspace::add_strings(&mut doc, &t, &["A1".into(), a2], 3.0).unwrap();
-        let t = read(&doc);
-        let placed = t
-            .place_strings([0.0; 3], 0.0, None, &InsulatorLibrary::default())
-            .unwrap();
-        let vp = placed.wires.iter().find(|x| x.label == v).unwrap();
-        assert!((vp.position[2] - 27.0).abs() < 1e-3 && vp.position[0].abs() < 1e-9);
-        assert_eq!(vp.set, None);
-    }
-
-    #[test]
-    fn deleting_a_joint_takes_its_members_points_and_strings() {
-        let mut doc: DocumentMut = PYLON.parse().unwrap();
-        let t = read(&doc);
-        Workspace::add_strings(&mut doc, &t, &["A1".into()], 4.0).unwrap();
-        let t = read(&doc);
-        let r = Workspace::removal(&t, &Handle::Joint("N3".into()));
-        assert_eq!(r.joints, vec!["N3"]);
-        assert_eq!(r.members, vec!["M2"]);
-        assert_eq!(r.points, vec!["A1"]);
-        assert_eq!(r.strings, vec!["S1"]);
-        Workspace::remove(&mut doc, &r);
-        let t = read(&doc);
-        assert_eq!((t.nodes.len(), t.members.len(), t.points.len()), (2, 1, 0));
-        assert!(t.strings.is_empty());
-    }
-
-    #[test]
-    fn moving_a_point_on_a_joint_moves_the_joint() {
-        let mut doc: DocumentMut = PYLON.parse().unwrap();
-        let t = read(&doc);
-        Workspace::put(&mut doc, &t, &Handle::Point("A1".into()), [-7.0, 0.0, 31.0]).unwrap();
-        let t = read(&doc);
-        assert_eq!(t.point_local("A1", None), Some([-7.0, 0.0, 31.0]));
-        assert_eq!(t.nodes[2].point[0].si(), -7.0);
-    }
-
-    /// Insulators: a new one from an attachment point (its wire point
-    /// placed by its length, hanging), a second to the same wire point (a
-    /// V: where their lengths meet), one from the library (strain: level),
-    /// saved back to the library, deleted (its wire point with it when
-    /// nothing else is on it).
-    #[test]
-    fn insulators_are_made_from_the_library_saved_and_deleted() {
-        let mut doc: DocumentMut = PYLON.parse().unwrap();
-        let mut t = read(&doc);
-        let a2 = Workspace::add_point_at_joint(&mut doc, &t, "N2");
-        t = read(&doc);
-        let none = InsulatorLibrary::default();
-        let (s1, w1) = Workspace::new_string(&mut doc, &t, "A1", None, 3.0, None).unwrap();
-        t = read(&doc);
-        let g = geometry(&t, &none);
-        let at = |g: &Geometry, l: &str| g.wires.iter().find(|w| w.0 == l).unwrap().1;
-        assert_eq!(at(&g, &w1), [-6.0, 0.0, 27.0]);
-        // A V: a second insulator to the same wire point, from A2 (6 m away).
-        let (_, w) = Workspace::new_string(&mut doc, &t, &a2, None, 5.0, Some(&w1)).unwrap();
-        assert_eq!(w, w1);
-        // (The first leg 5 m too: they meet 4 m below the middle.)
-        let e = entry(&mut doc, "string", "label", &s1).unwrap();
-        e.insert("length", length(5.0));
-        t = read(&doc);
-        let g = geometry(&t, &none);
-        let v = at(&g, &w1);
-        assert!(
-            (v[0] + 3.0).abs() < 1e-9 && (v[2] - 26.0).abs() < 1e-9,
-            "{v:?}"
-        );
-        // From the library: a strain assembly, level (ahead).
-        let lib_dir = std::env::temp_dir().join(format!("ols-ws-ins-{}", std::process::id()));
-        std::fs::create_dir_all(&lib_dir).unwrap();
-        std::fs::write(
-            lib_dir.join("D.olsi"),
-            "id = \"D\"\nname = \"dead end\"\nkind = \"strain\"\nlength = \"4 m\"\nweight = \"1 kN\"\n",
-        )
-        .unwrap();
-        let lib = InsulatorLibrary::load_dir(&lib_dir).unwrap();
-        let d = lib.get("D").unwrap();
-        let (s3, w3) = Workspace::new_string(&mut doc, &t, "A1", Some(d), 4.0, None).unwrap();
-        t = read(&doc);
-        let g = geometry(&t, &lib);
-        assert_eq!(at(&g, &w3), [-6.0, 4.0, 30.0]);
-        assert!(t.strings.iter().find(|x| x.label == s3).unwrap().strain);
-        // Saved to the library: a strain assembly of its length and weight.
-        let text = Workspace::assembly_text(&t, &g, &lib, &s3, "D2").unwrap();
-        let back = ols_structures::InsulatorAssembly::parse(std::path::Path::new("D2.olsi"), &text)
-            .unwrap();
-        assert_eq!(back.kind, ols_structures::AssemblyKind::Strain);
-        assert!((back.length.si() - 4.0).abs() < 1e-9 && (back.weight.si() - 1000.0).abs() < 1e-9);
-        // The V's leg: a V-string assembly, half width from its tops.
-        let leg = Workspace::assembly_text(&t, &g, &lib, &s1, "V2").unwrap();
-        assert!(
-            leg.contains("kind = \"v_string\"") && leg.contains("half_width = \"3 m\""),
-            "{leg}"
-        );
-        // Deleted: its own wire point goes; the V's stays (the other leg).
-        Workspace::delete_string(&mut doc, &t, &g, &s3);
-        Workspace::delete_string(&mut doc, &t, &g, &s1);
-        t = read(&doc);
-        assert!(t.wires.iter().all(|w| w.label != w3));
-        assert!(t.wires.iter().any(|w| w.label == w1));
-        std::fs::remove_dir_all(&lib_dir).ok();
+        let g = geometry(&t, &InsulatorLibrary::default());
+        assert_eq!(g.at(&w), Some([6.0, 0.0, 26.0]));
+        assert_eq!(compass_radius(&g), 7.5_f64.max(0.35 * 30.0));
     }
 }

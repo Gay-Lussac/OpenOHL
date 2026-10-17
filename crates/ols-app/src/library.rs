@@ -631,6 +631,8 @@ pub enum PageAction {
     /// Use this file (or, for libraries kept one per file, its folder) for
     /// the model.
     UseForModel(PathBuf),
+    /// Edit this structure file in the structure application.
+    EditInStructureApp(PathBuf),
 }
 
 /// Whether the model reads `kind` from the project (its working copies).
@@ -1053,6 +1055,21 @@ impl LibraryPage {
                         "The pylon in its own axes: joints, members, points, wire points and \
                          strings, in 3D and in tables",
                     );
+                ui.separator();
+                let dirty = self.dirty();
+                if let Some(f) = &self.file
+                    && !self.standalone
+                    && ui
+                        .add_enabled(!dirty, egui::Button::new("Edit…"))
+                        .on_hover_text(
+                            "Open this structure in the structure application (its own \
+                             window); saved there, the line follows",
+                        )
+                        .on_disabled_hover_text("Save or discard the changes here first")
+                        .clicked()
+                {
+                    action = Some(PageAction::EditInStructureApp(f.clone()));
+                }
             });
             if self.workspace.on {
                 let id = self.workspace.shown().map(|t| t.id.clone());
