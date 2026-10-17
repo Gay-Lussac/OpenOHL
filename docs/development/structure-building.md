@@ -328,6 +328,11 @@ and what to pick (row, joint, member). Two kinds:
 
 ### 1.6 Replace structure (line application)
 
+**Status (2026-10-17): done** — session command `replace_structure`
+(`crates/ols-session/src/replace.rs`), the Replace structure tool, the
+structure's Properties and the Structures table
+(`crates/ols-app/src/replace.rs`); see the user guide (Editing).
+
 A tool of the line application (decision 8): a placed structure is
 replaced by another structure from the library, at the same place and
 orientation.

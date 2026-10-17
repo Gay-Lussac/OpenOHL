@@ -163,7 +163,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [ ] Symmetry (optional, decided 2026-10-17): members and joints copied about x, y or both, to ease building
 - [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view still to come)*
 - [ ] Level 2 and 3 drawn with their members in 3D and on plan & profile sheets
-- [ ] **Replace structure** tool: a new structure put in place of another, with its strings; wire points (sets) that match are rewired automatically, for the others the user says which goes where; with no match the replacement still runs after the model shows what will be removed and the user confirms
+- [x] **Replace structure** tool: a new structure put in place of another, with its strings; wire points (sets) that match are rewired automatically, for the others the user says which goes where; with no match the replacement still runs after the model shows what will be removed and the user confirms
 - [ ] PLS-TOWER geometry from PLS XML (joints, members, sections) into levels 2 and 3 (local importer)
 - [ ] Level 2 from LiDAR: a plugin (later); the classes holding pylons chosen by the user from all classes, as in the display options
 - [ ] Clearances to the structure body: none for level 1 (LiDAR points only, separate topic); levels 2 and 3 computed — **the tests are to be defined with the project owner**

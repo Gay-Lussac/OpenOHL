@@ -283,7 +283,9 @@ impl Op {
                 Command::Put { kind, id, .. }
                 | Command::Delete { kind, id, .. }
                 | Command::Rename { kind, id, .. } => out.push((*kind, id.clone())),
-                Command::MoveStructure { id, .. } | Command::DeleteStructure { id, .. } => {
+                Command::MoveStructure { id, .. }
+                | Command::DeleteStructure { id, .. }
+                | Command::ReplaceStructure { id, .. } => {
                     out.push((Kind::Structure, id.clone()));
                 }
                 Command::DeleteAttachment { structure, .. }

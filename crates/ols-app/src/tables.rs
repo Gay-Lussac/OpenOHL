@@ -4352,6 +4352,8 @@ pub enum TableAction {
     Select(Selection),
     /// Show weather case `k`.
     ShowCase(usize),
+    /// Replace structure `id` (Replace structure, [`crate::replace`]).
+    Replace(String),
 }
 
 impl TablePage {
@@ -4917,17 +4919,41 @@ impl TablePage {
                                 TableKind::WeatherCases => row.key == case.to_string(),
                                 _ => *selection == row.select && row.select != Selection::None,
                             };
-                            if ui
+                            let go = ui
                                 .add_sized(
                                     [24.0, row_height],
                                     egui::Button::selectable(selected, "⤴"),
                                 )
                                 .on_hover_text(match kind {
                                     TableKind::WeatherCases => "Show this weather case",
+                                    TableKind::Structures => {
+                                        "Select it and bring the views to it (right-click: \
+                                         Replace structure…)"
+                                    }
                                     _ => "Select it and bring the views to it",
-                                })
-                                .clicked()
+                                });
+                            // A structure: replaced by another type.
+                            if let (TableKind::Structures, Selection::Structure(id)) =
+                                (kind, &row.select)
                             {
+                                go.context_menu(|ui| {
+                                    if ui
+                                        .add_enabled(
+                                            editable,
+                                            egui::Button::new("Replace structure…"),
+                                        )
+                                        .on_hover_text(
+                                            "Another structure type in its place: matching wire \
+                                             points are rewired, the others you map",
+                                        )
+                                        .clicked()
+                                    {
+                                        action = Some(TableAction::Replace(id.clone()));
+                                        ui.close();
+                                    }
+                                });
+                            }
+                            if go.clicked() {
                                 action = Some(match kind {
                                     TableKind::WeatherCases => {
                                         TableAction::ShowCase(row.key.parse().unwrap_or(0))

@@ -144,6 +144,12 @@ pub struct Impact {
     pub structures_changed: Vec<String>,
     /// Alignment points tied to it, detached (they stay where they are).
     pub alignment_detached: Vec<String>,
+    /// A structure replaced: its own points, strings and wire points over
+    /// its type (and the type's left out), dropped.
+    pub overrides: Vec<String>,
+    /// A structure replaced: jumper support clamps on wire points the new
+    /// structure does not have, dropped (the jumpers stay).
+    pub supports: Vec<String>,
 }
 
 impl Impact {
@@ -160,6 +166,8 @@ impl Impact {
             alignments_changed: vec![],
             structures_changed: vec![],
             alignment_detached: vec![],
+            overrides: vec![],
+            supports: vec![],
         }
     }
 
@@ -173,7 +181,9 @@ impl Impact {
             && self.alignments_deleted.is_empty()
             && self.alignments_changed.is_empty()
             && self.structures_changed.is_empty()
-            && self.alignment_detached.is_empty())
+            && self.alignment_detached.is_empty()
+            && self.overrides.is_empty()
+            && self.supports.is_empty())
     }
 
     /// The dependents as (heading, items), for listing.
@@ -195,6 +205,14 @@ impl Impact {
             (
                 "alignment points detached (they stay in place)",
                 &self.alignment_detached[..],
+            ),
+            (
+                "own points, strings and wire points dropped (overrides of the old type)",
+                &self.overrides[..],
+            ),
+            (
+                "jumper support clamps dropped (no such wire point on the new structure)",
+                &self.supports[..],
             ),
         ]
     }
@@ -484,6 +502,33 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         phase: Option<u32>,
         /// Confirms the listed deletions.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        confirm: bool,
+    },
+    /// Replace structure `id` by another (structure building decision 8,
+    /// [`replace`]): it keeps its id, position, orientation, height
+    /// adjustment, description and routes. What ends at an old set goes to
+    /// the new set given in `sets`, else to the same set when the new
+    /// structure has it, else is removed — with the jumpers and spacers
+    /// that go with the sections removed — after a confirmation as for
+    /// [`Command::Delete`] (also asked when the old structure's own points,
+    /// strings or wire points, or jumper support clamps, are dropped).
+    ReplaceStructure {
+        /// Structure id.
+        id: String,
+        /// The new structure: its type and extension, or no type and its
+        /// own points, strings and wire points (its id, place and
+        /// orientation are the old one's).
+        structure: Box<Structure>,
+        /// A typed new structure: its wire points as placed from the
+        /// structure library (the session does not read it).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        wires: Vec<replace::NewWire>,
+        /// Old set → new set (none: removed), for the sets not kept as
+        /// they are.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        sets: Vec<replace::SetMove>,
+        /// Confirms the listed removals.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         confirm: bool,
     },
@@ -1890,6 +1935,19 @@ impl Session {
                 });
                 notes.push(impact.summary());
             }
+            Command::ReplaceStructure {
+                id,
+                structure,
+                wires,
+                sets,
+                confirm,
+            } => {
+                let plan = self.replacement(&id, &structure, &wires, &sets)?;
+                if user && plan.impact.has_dependents() && !confirm {
+                    return Err(SessionError::NeedsConfirmation(Box::new(plan.impact)));
+                }
+                self.replace_primitives(plan, out, notes);
+            }
             Command::Rename { kind, id, new_id } => {
                 let new_id = new_id.trim().to_owned();
                 if new_id.is_empty() || new_id == id {
@@ -3190,6 +3248,7 @@ pub mod collab;
 pub mod impact;
 pub mod lines;
 pub mod live;
+pub mod replace;
 pub mod reports;
 pub mod reproject;
 pub mod spatial;
@@ -3200,6 +3259,8 @@ pub use live::Live;
 
 #[cfg(test)]
 mod lines_tests;
+#[cfg(test)]
+mod replace_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

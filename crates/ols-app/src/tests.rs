@@ -13378,3 +13378,128 @@ fn the_structures_table_chooses_a_type_in_the_structure_picker() {
     assert_eq!(s.structure_type.as_deref(), Some("type-02"), "one undo");
     assert_eq!(s.extension, None);
 }
+
+/// Replace structure: the tool on T2 (type-02, sets 1 and 11) opens the
+/// structure picker; type-03 has both sets, so Choose replaces it at once
+/// and the status line says how many wires were rewired; one undo takes
+/// it back.
+#[test]
+fn replace_structure_with_every_set_matching_rewires_at_once() {
+    use crate::tools::Tool;
+    let model = typed_project("replace-match");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    crate::structure_picker::Picker::set_filter(&harness.ctx, "type-03");
+    use_tool(
+        &mut harness,
+        Tool::Replace,
+        Selection::Structure("T2".into()),
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let rep = r.replace.as_ref().expect("the picker");
+        let crate::replace::Stage::Pick(p) = &rep.stage else {
+            panic!("the picker first");
+        };
+        assert_eq!(p.selected.as_deref(), Some("type-02"), "its type");
+    }
+    harness.get_by_label("type-03").click();
+    harness.run();
+    harness.get_by_label("Choose").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.replace.is_none(), "no mapping needed");
+    let (status, error) = r.status.clone().unwrap();
+    assert!(!error && status.contains("rewired 2 wires"), "{status}");
+    let s = r.model.line.structure("T2").unwrap();
+    assert_eq!(s.structure_type.as_deref(), Some("type-03"));
+    // Resolved from its new type: its set 2 is there.
+    assert!(s.wire_at_set(2).is_some());
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    let r = harness.state_mut().ready().unwrap();
+    let s = r.model.line.structure("T2").unwrap();
+    assert_eq!(s.structure_type.as_deref(), Some("type-02"), "one undo");
+}
+
+/// Replace structure on T3 (type-03, sets 1, 11 and 2) by type-02 (sets
+/// 1 and 11), from its Properties' action: the mapping window lists the
+/// old wire points with what ends there, proposes none for set 2, lists
+/// S3 and its jumper as removed (drawn red in the 3D view); Escape
+/// changes nothing; Replace removes them as one undoable change.
+#[test]
+fn replace_structure_maps_wire_points_and_lists_what_goes() {
+    use crate::replace::Stage;
+    let model = typed_project("replace-map");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    crate::structure_picker::Picker::set_filter(&harness.ctx, "type-02");
+    let open = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        r.perform(crate::edit::Action::ReplaceStructure { id: "T3".into() });
+        h.run();
+        h.get_by_label("type-02").click();
+        h.run();
+        h.get_by_label("Choose").click();
+        h.run();
+    };
+    open(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Stage::Map(m)) = r.replace.as_ref().map(|x| &x.stage) else {
+            panic!("the mapping window: {:?}", r.status);
+        };
+        assert_eq!(
+            m.choice.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>(),
+            vec![(1, Some(1)), (2, None), (11, Some(11))]
+        );
+        let i = m.impact.as_ref().unwrap();
+        assert_eq!(i.sections, vec!["S3"]);
+        assert_eq!(i.jumpers, vec!["J-T3-branch"]);
+        assert!(!r.view3d.removed.is_empty(), "drawn red");
+    }
+    harness.get_by_label("Replace structure T3 by type-02");
+    harness.get_by_label("S3, jumper J-T3-branch");
+    harness.get_by_label("  S3");
+    if let Some(dir) = std::env::var_os("OLS_RENDER_PNG")
+        && let Ok(image) = harness.render()
+    {
+        let path = PathBuf::from(dir).join("ols-cad-replace-structure.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    // Escape: closed, nothing changed, nothing drawn red.
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.replace.is_none());
+        assert!(r.view3d.removed.is_empty());
+        assert!(r.model.line.sections.iter().any(|s| s.id == "S3"));
+    }
+    open(&mut harness);
+    harness.get_by_label("Replace").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.replace.is_none(), "{:?}", r.status);
+        let l = &r.model.line;
+        assert_eq!(
+            l.structure("T3").unwrap().structure_type.as_deref(),
+            Some("type-02")
+        );
+        assert!(l.sections.iter().all(|s| s.id != "S3"));
+        assert!(l.jumpers.is_empty());
+        let (status, _) = r.status.clone().unwrap();
+        assert!(status.contains("rewired 2 wires"), "{status}");
+    }
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(
+        r.model.line.sections.iter().any(|s| s.id == "S3"),
+        "one undo"
+    );
+    assert_eq!(r.model.line.jumpers.len(), 1);
+}

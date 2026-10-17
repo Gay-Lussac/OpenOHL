@@ -197,6 +197,8 @@ pub struct Ready {
     popup_serial: u64,
     /// A tool window is open.
     popup_open: bool,
+    /// Replace structure: the picker or the mapping window, when open.
+    pub replace: Option<crate::replace::Replace>,
     /// The Delete tool on an alignment point on several alignments: the
     /// point and its alignments, ticked to take it off.
     pub point_delete: Option<(String, Vec<(String, bool)>)>,
@@ -358,6 +360,7 @@ impl Ready {
             popup_at: egui::pos2(400.0, 200.0),
             popup_serial: 0,
             popup_open: false,
+            replace: None,
             point_delete: None,
             spread_delete: None,
             cataloguing: false,
@@ -1243,6 +1246,7 @@ impl TabViewer for Viewer<'_> {
                     {
                         r.set_case(k);
                     }
+                    Some(crate::tables::TableAction::Replace(id)) => r.start_replace(&id),
                     Some(crate::tables::TableAction::ShowCase(_)) | None => {}
                 }
                 None
@@ -1410,6 +1414,11 @@ impl Ready {
                 let id = id.clone();
                 self.select(target);
                 self.use_tool_on(&id);
+            }
+            (Tool::Replace, Selection::Structure(id)) => {
+                let id = id.clone();
+                self.select(target);
+                self.start_replace(&id);
             }
             // A point on several alignments: which to take it off (a window).
             (Tool::Delete, Selection::AlignmentPoint { id })
@@ -3111,6 +3120,19 @@ impl Ready {
         }
     }
 
+    /// Replace structure on structure `id`: the structure picker, then
+    /// (when not every set matches) the mapping window
+    /// ([`crate::replace`]).
+    pub fn start_replace(&mut self, id: &str) {
+        match crate::replace::Replace::start(&self.model, id) {
+            Ok(r) => {
+                self.replace = Some(r);
+                self.popup_open = false;
+            }
+            Err(e) => self.status = Some((e, true)),
+        }
+    }
+
     pub fn perform(&mut self, action: crate::edit::Action) -> bool {
         use crate::edit::Action;
         // The strings an edit puts without a library label are taken into
@@ -3307,6 +3329,10 @@ impl Ready {
             }
             Action::EditStructure { id } => {
                 self.edit_structure(&id);
+                return true;
+            }
+            Action::ReplaceStructure { id } => {
+                self.start_replace(&id);
                 return true;
             }
             Action::EditPlacement { id } => {
@@ -3803,6 +3829,7 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         || r.point_delete.is_some()
         || r.spread_delete.is_some()
         || r.confirm.is_some()
+        || r.replace.is_some()
         || r.editor.is_some()
         || r.display_window.is_some()
         || r.lines_window.is_some();
@@ -4242,6 +4269,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     spread_delete_window(ctx, r);
     first_steps_window(ctx, r);
     alignment_windows(ctx, r);
+    crate::replace::window(ctx, r, rs);
     editor_window(ctx, r, rs);
     display_window(ctx, r);
     angles_window(ctx, r);
