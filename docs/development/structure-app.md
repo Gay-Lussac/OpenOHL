@@ -9,10 +9,10 @@ their tests run separately from the core's.
 | Crate | What | Depends on |
 |---|---|---|
 | `ols-structure-loads` | Load-case recipes (`[[load_case]]` in a `.olss`, `.olsslc` on their own), `LineValues` and `LoadTable` (plain, serde-able data), `evaluate`, CSV of the table and the recipes | `ols-core`, `ols-structures` only: no line, no `ols-loads` |
-| `ols-structure-link` | **The boundary**: the one crate where the application meets the core. `line_values` (a placed structure's loads from `ols_loads::structure_loads` → `LineValues`), `fe_loads` (a table case → `ols_structures_fe::Loads`; a point on a member shared to its ends), `analyse_cases` (table cases solved on the structure's model → `CaseResult`, plain data: displacements, member forces and usage, reactions, Σ loads and Σ reactions), `export_structure` (a level 3 structure with its section library and load table as plain `ExportStructure` for the exports). Later: the section library (member areas) and saving back into the line | core crates + `ols-structure-loads` |
+| `ols-structure-link` | **The boundary**: the one crate where the application meets the core. `line_values` (a placed structure's loads from `ols_loads::structure_loads` → `LineValues`), `fe_loads` (a table case → `ols_structures_fe::Loads`; a point on a member shared to its ends), `analyse_cases` (table cases solved on the structure's model → `CaseResult`, plain data: displacements, member forces and usage, reactions, Σ loads and Σ reactions), `export_structure` (a level 3 structure with its section library and load table as plain `ExportStructure` for the exports). `placed_values` (a placed structure's line values with the other places of its type, written for the application, below), `SectionAreas` (member areas from the section library for surface loads) | core crates + `ols-structure-loads` |
 | `ols-structure-edit` | The edits of a structure file, each a function on its text (`toml_edit`: comments and order kept); `StructureFile` with undo and redo of whole edits (a drag is one); `Geometry`, picking; `missing(level)` (what the next level lacks, and advice: points on no joint, joints on one member, members crossing without a joint); the edits of the load-case recipes (`load_cases.rs`: by place, `merge_load_cases` for imports); the body tools: generators (`generators`, pure), apply and rebuild (`rebuild`), the `[[generator]]` and `[[symmetry]]` tables (`body`), mirrored edits (`symmetry`), member groups (`groups`). No UI | `ols-core`, `ols-structures` (the file format only). `ols-app`'s pylon workspace depends on it, so there is one implementation of the edits |
 | `ols-structure-export` | The exports of a level 3 structure ([Structure exports](structure-exports.md)): IFC4 (members with profile solids and the structural analysis model with load cases), IFC2x3 (members, for Tekla Structures), SAF (xlsx, its own small writer on `zip`), CSV tables; the tool `ols-structure-export` (not `ols structures export`: `ols-cli` is a core crate) | `ols-structure-link` (`export_structure`, the plain `ExportStructure`), `ols-structure-loads`, `ols-sections`, `ols-structures` (parsing the file only) |
-| `ols-structure-app` | The binary `ols-structure` (eframe): the 3D view in local axes, the tabs, the header with the level and what the next one lacks, Save / Save as, undo / redo. The line application's **Edit…** starts it on the structure's file and reads the file again when it is saved. Tabs in modules of their own: `tables.rs` (Geometry, Body, Design), `body_tab.rs` and `generators_ui.rs` (the Body tab's tools, Design › Groups), `load_cases_tab.rs`, `results_tab.rs`, `export_menu.rs` (File › Export) | `ols-structure-edit`, `ols-structure-loads`, `ols-structure-link` (analysis only through it), `ols-structure-export`, `ols-structures`, `ols-render` (drawing only) |
+| `ols-structure-app` | The binary `ols-structure` (eframe): the 3D view in local axes, the tabs, the header with the level and what the next one lacks, Save / Save as, undo / redo. The line application's **Edit…** starts it on the structure's file and reads the file again when it is saved. Tabs in modules of their own: `tables.rs` (Geometry, Body, Design), `in_line_tab.rs` (In the line), `body_tab.rs` and `generators_ui.rs` (the Body tab's tools, Design › Groups), `load_cases_tab.rs`, `results_tab.rs`, `export_menu.rs` (File › Export) | `ols-structure-edit`, `ols-structure-loads`, `ols-structure-link` (analysis only through it), `ols-structure-export`, `ols-structures`, `ols-render` (drawing only) |
 | `ols-structure-tests` | Test-only (`publish = false`, empty library, tests in `tests/`): the synthetic example line solved by the core, through the link, against hand values and the line run's own structure check; the application's formats refusing typos; a body built by the generators solved by the FE model (`body_fe.rs`) | everything above, as dev-dependencies |
 
 Rules:
@@ -30,6 +30,33 @@ Rules:
 - Plugins are not involved (design codes stay `code-plugin`s giving the
   line's weather and load cases).
 
+## Started for a placed structure
+
+```text
+line app: Properties › Edit…  (Action::EditInStructureApp { id, structure })
+  ├─ writes <stem>.<id>.line-values.json   ("being computed" first, then
+  │     ols_structure_link::placed_values on a thread; again when the
+  │     line changes and stays unchanged for 1 s; one run at a time)
+  └─ starts  ols-structure <file> --structure <id> --line-values <json> --sections <dir>
+structure app: reads the JSON when its mtime changes (twice a second):
+  header "loads of <id> in <line>", the In the line tab, the load table
+  typed values → <stem>.<id>.loads.csv → the line app stores them (kind `loads`)
+```
+
+- The JSON is `ols_structure_loads::PlacedValues` (format
+  `ols-structure-line-values`, version 1): the structure, the line, its
+  type, the line's load cases, the values (`LineValues`), the other
+  places of the same type with theirs, and a note (no values yet, no
+  load case file, sections a case did not solve).
+- One structure application per structure file: Edit… on another place
+  of the same type while one is open is refused with a message.
+- Outside a project (a plain line file) both files are written next to
+  the structure files.
+- Member areas for surface loads (`SectionAreas`): profile width for the
+  load's direction × length × sin θ (`Model::projected_area`, shared with
+  member wind); a member whose section is not in the library gets "no
+  area" with the reason.
+
 ## Load cases and Results tabs
 
 - **Recipes** are edited in the file (`ols-structure-edit::load_cases`):
@@ -41,8 +68,10 @@ Rules:
   each evaluation. They are kept beside the structure file as
   `<stem>.loads.csv` (the table's CSV with the typed rows only), written
   on Save (also Save as, beside the new file) and read on open; unsaved
-  typed values count as unsaved changes. Opened from a project later,
-  they will go with the placed structure instead (spec §4.1). A table
+  typed values count as unsaved changes. Started for a placed structure
+  (`--structure T2`), they are `<stem>.<id>.loads.csv` instead, and the
+  line application keeps them in the project (library kind `loads`,
+  per project line; spec §4.1). A table
   imported as CSV becomes the overrides of what it has beyond the
   evaluation (`LoadTable::overrides_over`), so export → import gives the
   same table.
