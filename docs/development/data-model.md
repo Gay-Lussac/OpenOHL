@@ -13,6 +13,8 @@ guide pages linked below give the full field lists of each file.
 > field is added, renamed or removed, or a reference changes from an id to
 > a label, the diagram and the tables below change with it.
 
+Known weak points and proposed changes: [Data model review](data-model-review.md).
+
 All examples on this page are invented (structures `T1`, `T2`, sections
 `S1`, a system `sys-A`, …).
 
@@ -21,8 +23,8 @@ All examples on this page are invented (structures `T1`, `T2`, sections
 ```text
                                   LINE  (.ols.json / OLS XML / project rows)
  ┌──────────────────────────────────────────────────────────────────────────────────┐
- │ meta: name, crs, display, systems[], creep_stretch, bimetallic,                  │
- │       circuit_starts[]                                                           │
+ │ meta: name, crs, display, systems[], creep_stretch, bimetallic, solver,          │
+ │       defaults, circuit_starts[]                                                 │
  │                                                                                  │
  │  Route {id, name} ◄──route── Alignment ──points[] (ids)──► AlignmentPoint {id}   │
  │     ▲                     (one route)      (a point: 0..n alignments) structure?┐ │
@@ -39,14 +41,22 @@ All examples on this page are invented (structures `T1`, `T2`, sections
  │  Section ──points[] : SectionPoint {structure, set}──► WirePoint.set     │  │    │
  │   │  cable ───────────────────────────────────────────────────────┐      │  │    │
  │   │  system ─► System.id,  phase_label ─► SystemPhase.label       │      │  │    │
- │   └─ stringing, span_points[] (+ object), spreads[], calculation │      │  │    │
+ │   └─ stringing, span_points[] {label, span (index), at, object?}  │      │  │    │
+ │        spreads[] {from, to ─► span point labels}, calculation     │      │  │    │
+ │                                                                   │      │  │    │
+ │  Spacer ── a / b : {section, point} ─► SpanPoint.label            │      │  │    │
+ │   └─ insulator ──────────────────────────────────────────────────┼──────┤  │    │
  │                                                                   │      │  │    │
  │  Jumper ── from / to : SectionPoint ─► WirePoint.set              │      │  │    │
+ │   │  from_tap / to_tap (instead): {section, point} ─► SpanPoint   │      │  │    │
+ │   │                    or {jumper, point} ─► JumperPoint          │      │  │    │
  │   │  cable ───────────────────────────────────────────────────────┤      │  │    │
+ │   ├─ points[] JumperPoint {label, at, object?}                    │      │  │    │
  │   └─ supports[] : JumperClamp {structure?, wire ─► WirePoint.label}      │  │    │
  └───────────────────────────────────────────────────────────────────┼──────┼──┼────┘
                                                                      ▼      ▼  ▼
                          LIBRARIES (TOML, units in the values)   .olsw   .olsi .olss
+   .olsload point and spread load types ◄── LineObject.type, SpreadObject.type   │
    .olswc weather cases ◄── creep_stretch names, LoadCase.weather          ▲     │
    .olslc load cases                                                       └─────┘
                                                         TypeString.insulator ─► .olsi id
@@ -112,7 +122,7 @@ files](../user-guide/line-file.md).
 | Field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `format` | string | — | `"ols-line"` | — |
-| `version` | u32 | — | file version (now 4; versions 1–3 are read and upgraded) | — |
+| `version` | u32 | — | file version (now 4; versions 1–3 are read and upgraded; the points and objects of 2026-10 came without a new version: older `loads` / `spread_loads` are read into them) | — |
 | `name` | string | — | line name | — |
 | `crs` | string | — | coordinate reference system, e.g. an EPSG code (informative) | — |
 | `routes` | `[Route]` | — | routes: paths of the line, made of alignments | — |
@@ -338,7 +348,7 @@ ids (Sections › Point and spread load types).
 | `id` | string | — | unique id | — |
 | `description` | string | — | free text | — |
 | `cable` | string | — | cable | `.olsw` cable `id` |
-| `from`, `to` | `SectionPoint` | — | the two ends (different wire points) | structure id + set |
+| `from`, `to` | `SectionPoint` | — | the two ends (different wire points); an end given by a tap keeps here an empty placeholder (`{"structure": "", "set": 0}`) that nothing reads | structure id + set |
 | `length` | f64? | m | cut length at `temperature` | — |
 | `sag` | f64? | m | or: sag below the chord in still air (no supports) | — |
 | `temperature` | f64 | °C | of `length` / `sag` | — |
@@ -425,7 +435,13 @@ Derived, never stored:
 | Section | `system` | System | `id` |
 | Section | `phase_label` | SystemPhase of that system; `Display.phase_colors` | label |
 | Jumper | `from`, `to` | WirePoint | structure `id` + `set` |
+| Jumper | `from_tap`, `to_tap` | SpanPoint (`{section, point}`) or JumperPoint (`{jumper, point}`) holding a clamp | section / jumper `id` + point label |
 | JumperClamp | `structure`, `wire` | WirePoint without a set | `id`, label |
+| SpanPoint | `span` | the span between `points[span]` and `points[span + 1]` of its section | **index** |
+| SpreadObject | `from`, `to` | SpanPoints of the same section and span | label |
+| Spacer | `a`, `b` | SpanPoints (`{section, point}`) | section `id` + point label |
+| Spacer | `insulator` | InsulatorAssembly (`.olsi`) | `id` |
+| LineObject, SpreadObject | `type` | ObjectType (`.olsload`) — informative: the values are the object's own | `id` |
 | Line | `circuit_starts[]` | WirePoint at a circuit end | structure `id` + `set` |
 | Line | `creep_stretch` | WeatherCase (`.olswc`) | `name` |
 | LoadCase (`.olslc`) | `weather` | WeatherCase | `name` |
@@ -434,15 +450,23 @@ Derived, never stored:
 | TypeMember | `nodes`, `section` | TypeNode, `[[section]]` | `id` |
 | StructureType | `model`, `pole` | `.olsfe` file (relative path), `.olsp` id | — |
 
-Labels are scoped to their structure (or type); ids are unique per kind in
-the line; library ids are unique per library. A typed structure's sets and
+Labels are scoped to their structure (or type), span point labels to
+their section, jumper point labels to their jumper; ids are unique per
+kind in the line; library ids are unique per library. Span points are the
+one place a **position in a list** is a reference: `SpanPoint.span` (and
+`Stringing::Sag.span`, `UnstressedLengths.lengths`) count the section's
+spans, so they must change when a structure is added to or taken out of
+the section's `points`. A typed structure's sets and
 labels may come from its type: references to them are checked after
 `Line::resolve`.
 
 ### Ownership and deletion
 
 A structure **owns** its points, wire points, strings and stick drawing;
-a section owns its stringing and span loads; an alignment owns its points.
+a section owns its stringing, span points (with their objects) and
+spreads; a jumper owns its points (with their objects) and support
+clamps. Alignment points are their own objects (an alignment lists
+them); spacers are their own objects between two sections' span points.
 Everything else is a reference. Deletion goes through the session
 (`crates/ols-session/src/lib.rs`, `Command::Delete`): when an object takes
 others with it, the command is refused with the list
@@ -451,17 +475,21 @@ of it is one log entry, undone together.
 
 | Deleting | Also deletes or changes |
 |---|---|
-| Structure | its own items; every **section** through it; every **jumper** at it, held by its strings (`supports`), or at a point of those sections; alignment points tied to it are **detached** (they stay in place) |
-| Wire point with a set (`delete_attachment`) | its strings and the set-less wire points only it uses (own items removed; a type's items added to `omit_sets`); the sections through it; the jumpers at it or at those sections |
-| Section | the jumpers at any of its points |
+| Structure | its own items; every **section** through it (and their spacers); every **jumper** at it, held by its strings (`supports`), or at a point of those sections; alignment points tied to it are **detached** (they stay in place). Jumpers on **taps** of those sections are not yet listed: the deletion is then refused by validation (to fix) |
+| Wire point with a set (`delete_attachment`) | its strings and the set-less wire points only it uses (own items removed; a type's items added to `omit_sets`); the sections through it (and their spacers); the jumpers at it or at those sections (taps: as for a structure) |
+| Section | its spacers; the jumpers at any of its points; the jumpers on taps on its span points, and those hanging on them (`jumpers_hanging`, those hanging first) |
+| Span point, jumper point | edited inside its section / jumper (a `put`): a point a spacer, spread or tap uses cannot be removed or relabelled (validation refuses; the tables keep such labels fixed) |
+| Spacer | nothing else |
 | Route | its alignments on no other route; it is taken out of the alignments, points and structures that stay |
 | Alignment (also: its last point) | its points (asked first) |
-| Jumper | nothing else |
+| Jumper | the jumpers on taps on its points, and those hanging on them |
 | Meta (line settings) | cannot be deleted |
 
 Renames follow references: `rename` of a structure updates section
-points, jumper ends and tied alignment points; of a route, the alignments,
-points and structures on it;
+points, jumper ends and clamps and tied alignment points (not yet
+`circuit_starts`); of a section, its spacers and the taps on it; of a
+jumper, the taps on it; of a route, the alignments, points and structures
+on it; a rename is a put under the new id and a delete of the old one;
 `rename_attachment` (set renumbering) updates the sections and jumpers
 there; `rename_system` updates the sections given it. Library items are
 not renamed through the session: a changed library id leaves dangling
@@ -617,10 +645,10 @@ case name), `condition` (initial, creep, load, max sag), factors
 |---|---|
 | `ols_meta(key, value)` | settings: `session_schema` (3), `grid_size`, the weather file used, … |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
-| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `report` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; `meta` (id `line`) holds `name`, `crs`, `display`, `systems`, `creep_stretch`, `bimetallic`, `circuit_starts` (projects before routes and alignments also an `alignment`, converted once when they open) |
+| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; `meta` (id `line`) holds `name`, `crs`, `display`, `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts` (projects before routes and alignments also an `alignment`, converted once when they open) |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
 | `line_snapshot` | named saved lines |
-| `library_file(kind, name, user, text)` | the project's library files; `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `phase-distance` (an admin's copy of a `.olspd`, e.g. `lev-ch.olspd`, used instead of the shipped file); not logged, not undone |
+| `library_file(kind, name, time, user, text)` | the project's library files, shared by all its project lines (no `line` column; versions snapshot them per branch); `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.olsload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.olspd`, e.g. `lev-ch.olspd`, used instead of the shipped file); not logged, not undone. Clearance rules, galloping, thermal ambient, costs, poles and structure models are files beside the project, not rows |
 | `spatial_index` | plan bounds and tile of every object (ADR-0008) |
 | `vc_*`, `edit_grant`, `surface`, point cloud tables | versions and reviews, edit rights, terrain surfaces, LiDAR ([Versions](../user-guide/versions.md), ADR-0007) |
 
@@ -689,6 +717,8 @@ on the computer, never in the project.
 ## What a plugin sees
 
 Plugin tiers and manifests: [Writing plugins](plugins.md) and ADR-0003.
+The project's own default values (`defaults`) and calculation options
+(`solver`) are in the line a plugin receives.
 WebAssembly interface: `crates/ols-plugins/wit/plugin.wit` and
 `code.wit` (package `ols:plugin@0.1.0`). A WebAssembly plugin never gets
 Rust structs or the project file: it exchanges **text in the file formats
@@ -702,6 +732,7 @@ above**.
 | `terrain-plugin` (`terrain`) | file bytes | surfaces: `name`, `points` (x, y, z flat, m), `triangles` (indices) |
 | `project-plugin` (`project`) | file bytes | `project { line: <line file JSON>, libraries: [{kind, name, text}], notes }`; `kind` as in `library_file` |
 | `code-plugin` (`design-code`) | a parameter file (TOML text) | `generated { weather-cases: <.olswc text>, load-cases: <.olslc text>, notes }` |
+| `check-plugin` / `code-check-plugin` (`check`) | `checks()`: nothing; `value-tables` / `edit-value`: a values file's text (e.g. `.olspd`); `evaluate`: the values, the user's choices, a `conductor-pair` (same system / span, kV, plugin column values, altitude, diameters, masses, spacer sags) and per station 6 numbers (distance, system angle, both local sags, both string lengths) | the check list (id, title, menu; the app's Checks menu is built from it); tables; the edited file; per station the required distance and the check's own values, the rule applied |
 
 So a plugin that writes a line follows the line file rules on this page:
 global coordinates, ids unique per kind, sections and jumpers ending at
