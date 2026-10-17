@@ -78,6 +78,13 @@ impl StructureApp {
             Tab::Geometry | Tab::Body | Tab::Design => {}
             Tab::LoadCases => {
                 ui.label(PLACEHOLDER_LOADS);
+                if !t.load_cases.is_empty() {
+                    ui.label(format!(
+                        "This file holds {} load-case recipe(s) ([[load_case]]): \
+                         shown and edited here once this tab is built.",
+                        t.load_cases.len()
+                    ));
+                }
                 if !t.loads.is_empty() {
                     ui.label(format!(
                         "This file holds {} nodal force(s) ([[load]]): read as one case, \"model\".",

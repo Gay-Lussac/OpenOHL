@@ -10,6 +10,8 @@ their tests run separately from the core's.
 |---|---|---|
 | `ols-structure-loads` | Load-case recipes (`[[load_case]]` in a `.olss`, `.olsslc` on their own), `LineValues` and `LoadTable` (plain, serde-able data), `evaluate`, CSV of the table and the recipes | `ols-core`, `ols-structures` only: no line, no `ols-loads` |
 | `ols-structure-link` | **The boundary**: the one crate where the application meets the core. `line_values` (a placed structure's loads from `ols_loads::structure_loads` → `LineValues`), `fe_loads` (a table case → `ols_structures_fe::Loads`). Later: the section library (member areas) and saving back into the line | core crates + `ols-structure-loads` |
+| `ols-structure-edit` | The edits of a structure file, each a function on its text (`toml_edit`: comments and order kept); `StructureFile` with undo and redo of whole edits (a drag is one); `Geometry`, picking; `missing(level)` (what the next level lacks, and advice: points on no joint, joints on one member, members crossing without a joint). No UI | `ols-core`, `ols-structures` (the file format only). `ols-app`'s pylon workspace depends on it, so there is one implementation of the edits |
+| `ols-structure-app` | The binary `ols-structure` (eframe): the 3D view in local axes, the tabs, the header with the level and what the next one lacks, Save / Save as, undo / redo. The line application's **Edit…** starts it on the structure's file and reads the file again when it is saved | `ols-structure-edit`, `ols-structures`, `ols-render` (drawing only); later the link for line values |
 | `ols-structure-tests` | Test-only (`publish = false`, empty library, tests in `tests/`): the synthetic example line solved by the core, through the link, against hand values and the line run's own structure check; the application's formats refusing typos | everything above, as dev-dependencies |
 
 Rules:
@@ -36,6 +38,17 @@ cargo fmt --all --check
 cargo clippy -p ols-structure-loads -p ols-structure-link -p ols-structure-tests --all-targets -- -D warnings
 cargo test -p ols-structure-loads -p ols-structure-link -p ols-structure-tests
 ```
+
+The editor and the window on their own (seconds for the edits, under a
+minute for the window's egui_kittest tests with a warm build):
+
+```sh
+cargo clippy -p ols-structure-edit -p ols-structure-app --all-targets -- -D warnings
+cargo test -p ols-structure-edit -p ols-structure-app
+```
+
+`ols-app` depends on `ols-structure-edit` (its pylon workspace), so a
+change there also runs `cargo test -p ols-app`.
 
 The workspace-wide checks (and CI, which runs `--workspace`) include
 these crates too; a change to a core crate the application uses also

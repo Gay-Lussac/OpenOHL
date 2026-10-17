@@ -13,6 +13,7 @@
 - [Design codes](user-guide/design-codes.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
 - [Structure analysis (.olsfe, .olsp)](user-guide/structure-analysis.md)
+- [The structure application (ols-structure)](user-guide/structure-app.md)
 - [Section library (.olssec)](user-guide/section-library.md)
 - [Structure load cases (.olsslc)](user-guide/structure-load-cases.md)
 - [Terrain and ground clearance](user-guide/terrain.md)
