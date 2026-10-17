@@ -565,6 +565,17 @@ pub fn structures_dir(sources: &Sources) -> PathBuf {
         .unwrap_or_else(|| dir_of(&sources.file).join("Structures"))
 }
 
+/// Where a model's section library is read from when it has no copy of
+/// its own: `Sections/` next to the model, else the folder of the model.
+pub fn sections_dir(sources: &Sources) -> PathBuf {
+    let dir = dir_of(&sources.file).join("Sections");
+    if dir.is_dir() {
+        dir
+    } else {
+        dir_of(&sources.file)
+    }
+}
+
 /// The insulator assemblies' directory.
 pub fn insulators_dir(sources: &Sources) -> PathBuf {
     sources
@@ -673,7 +684,7 @@ pub fn remember_weather(session: &ols_session::Session, path: &Path) {
 }
 
 /// The libraries a project keeps: kind (in the project) and file extension.
-pub const PROJECT_LIBRARIES: [(&str, &str); 11] = [
+pub const PROJECT_LIBRARIES: [(&str, &str); 12] = [
     ("cables", ols_cables::WIRE_FILE_EXTENSION),
     (
         "structures",
@@ -694,6 +705,7 @@ pub const PROJECT_LIBRARIES: [(&str, &str); 11] = [
     ("costs", ols_bom::cost::COST_FILE_EXTENSION),
     ("poles", ols_structures_fe::pole::POLE_FILE_EXTENSION),
     ("femodels", ols_structures_fe::model::MODEL_FILE_EXTENSION),
+    ("sections", ols_sections::SECTION_FILE_EXTENSION),
 ];
 
 /// The folder of library `kind` in the working folder and in an export:
@@ -814,6 +826,9 @@ fn project_libraries(
                         .filter(|p| p.is_absolute() && p.is_file())
                 }),
                 "poles" | "femodels" => own(structures_from.clone(), "structures"),
+                // The `Sections/` folder next to the project, else the
+                // files next to it.
+                "sections" => own(sections_dir(sources), "sections"),
                 // Clearance rules, galloping, ambient cases, unit costs:
                 // the files next to the project (none are shipped).
                 _ => Some(model_dir(sources)),
@@ -1003,6 +1018,19 @@ impl Model {
             .filter(|d| d.is_dir())
             .unwrap_or_else(|| model_dir(&self.sources));
         files_with_extension(&dir, ext)
+    }
+
+    /// The section library (`.olssec`) the structure models refer to: the
+    /// project's working copies, else ([`sections_dir`]) the files next to
+    /// the model; empty when there are none.
+    pub fn section_library(&self) -> Result<ols_sections::SectionLibrary, String> {
+        let dir = self
+            .library_dir
+            .as_ref()
+            .map(|w| w.join(library_folder("sections")))
+            .filter(|d| d.is_dir())
+            .unwrap_or_else(|| sections_dir(&self.sources));
+        ols_sections::SectionLibrary::load(&dir)
     }
 
     /// Keeps the working copies of the project's libraries in the project

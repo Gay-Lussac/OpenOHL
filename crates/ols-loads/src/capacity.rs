@@ -27,8 +27,9 @@
 //!   interaction. Usage: the largest over the attachments.
 //! - **Finite elements** (`fe`): the type's structure model (its members
 //!   when it is a full design, or `model = "….olsfe"`) solved with the factored attachment loads (and its
-//!   members' weight times the vertical factor); usage: the member using
-//!   most of its capacity times the strength factor
+//!   members' weight times the vertical factor, and the wind on members
+//!   whose section comes from the section library); usage: the member
+//!   using most of its capacity times the strength factor
 //!   ([`ols_structures_fe`]).
 //! - **Pole** (`pole`): the type's pole (`pole = "id"`): the bending
 //!   moment of the factored loads at the type's attachment points and of
@@ -274,10 +275,25 @@ pub fn usage(
     weather: &[WeatherCase],
     results: &[CaseLoads],
 ) -> Vec<CaseUsage> {
+    let none = ols_sections::SectionLibrary::default();
+    usage_with_sections(line, types, &none, library, weather, results)
+}
+
+/// [`usage`], the members of the structure models taking their sections
+/// from `sections` (the project's section library) first, and the wind on
+/// those with a profile.
+pub fn usage_with_sections(
+    line: &Line,
+    types: &StructureLibrary,
+    sections: &ols_sections::SectionLibrary,
+    library: &ols_cables::Library,
+    weather: &[WeatherCase],
+    results: &[CaseLoads],
+) -> Vec<CaseUsage> {
     let wind = wind_spans(line);
     let position = positions(line);
     let angles = line_angles(line);
-    let analyses = crate::analysis::Analyses::load(types);
+    let analyses = crate::analysis::Analyses::load(types, sections);
     results
         .iter()
         .map(|r| {
@@ -512,7 +528,8 @@ pub fn usage(
                         .iter()
                         .map(|(label, p)| ((*label).clone(), p.factored))
                         .collect();
-                    let fe = type_def.and_then(|t| analyses.fe(t, &factored, &r.case, &mut notes));
+                    let fe =
+                        type_def.and_then(|t| analyses.fe(t, &factored, &r.case, case, &mut notes));
                     let pole = type_def
                         .and_then(|t| analyses.pole(t, &factored, &r.case, case, &mut notes));
                     StructureUsage {

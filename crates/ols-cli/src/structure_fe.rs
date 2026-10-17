@@ -44,6 +44,19 @@ pub struct FeArgs {
     /// Write every member of every case as CSV.
     #[arg(long)]
     csv: Option<PathBuf>,
+    /// Section library (.olssec file or folder): a member's section is
+    /// looked up there first, then in the model's [[section]] tables.
+    #[arg(long)]
+    sections: Option<PathBuf>,
+    /// Member wind: factored wind pressure, Pa, on the members whose
+    /// section comes from the section library (their profiles' widths,
+    /// the model's drag factor), added to every case.
+    #[arg(long, default_value_t = 0.0)]
+    wind: f64,
+    /// Direction the member wind blows to, degrees from the structure's x
+    /// axis (right of the line) towards y (ahead).
+    #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
+    wind_dir: f64,
 }
 
 /// Arguments of `ols structures pole`.
@@ -173,7 +186,11 @@ fn read_loads(path: &Path, structure: &str, cases: &[String]) -> Result<CaseLoad
 
 /// `ols structures fe`.
 pub fn fe(args: &FeArgs) -> Result<(), String> {
-    let mut model = Model::load(&args.model)?;
+    let sections = match &args.sections {
+        Some(p) => ols_sections::SectionLibrary::load(p)?,
+        None => ols_sections::SectionLibrary::default(),
+    };
+    let mut model = Model::load_with(&args.model, &sections)?;
     if args.linear {
         model.analysis.nonlinear = false;
     }
@@ -198,6 +215,27 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             "first order"
         }
     );
+    let a = args.wind_dir.to_radians();
+    let wind = model.member_wind(args.wind, [a.cos(), a.sin(), 0.0]);
+    if args.wind != 0.0 {
+        if !model.has_profiles() {
+            return Err(
+                "--wind: no member's section comes from a section library (give --sections)".into(),
+            );
+        }
+        let total = wind.iter().fold([0.0; 3], |s, l| {
+            [s[0] + l.force[0], s[1] + l.force[1], s[2] + l.force[2]]
+        });
+        println!(
+            "member wind {:.0} Pa to {:.0}°: {:.1} / {:.1} / {:.1} kN (drag {})",
+            args.wind,
+            args.wind_dir,
+            total[0] / 1000.0,
+            total[1] / 1000.0,
+            total[2] / 1000.0,
+            model.analysis.drag
+        );
+    }
     let runs: Vec<(String, Vec<NodalLoad>)> = match (&args.loads, &args.structure) {
         (Some(path), Some(structure)) => read_loads(path, structure, &args.case)?
             .into_iter()
@@ -212,14 +250,15 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             })
             .collect::<Result<_, String>>()?,
         _ => {
-            if model.loads.is_empty() && weight == 0.0 {
+            if model.loads.is_empty() && weight == 0.0 && wind.is_empty() {
                 return Err("the model has no [[load]]; give --loads and --structure".into());
             }
             vec![("model".into(), model.loads.clone())]
         }
     };
     let mut csv = String::from("case,member,kind,section,axial_n,usage,governs\n");
-    for (case, nodal) in runs {
+    for (case, mut nodal) in runs {
+        nodal.extend(wind.iter().copied());
         let started = std::time::Instant::now();
         let loads = Loads {
             nodal,

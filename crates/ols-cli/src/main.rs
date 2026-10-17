@@ -203,6 +203,11 @@ struct LineArgs {
     /// (default: the `Structures` folder next to the line or project file).
     #[arg(long)]
     structures: Option<PathBuf>,
+    /// Section library (.olssec file or folder) the structure models'
+    /// members refer to (default: the `Sections` folder next to the line
+    /// or project file, if there is one).
+    #[arg(long)]
+    sections: Option<PathBuf>,
     /// Insulator assembly library directory (.olsi) (default: the shipped
     /// libraries/insulators).
     #[arg(long)]
@@ -1190,6 +1195,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         file,
         library,
         structures: structure_dir_arg,
+        sections: sections_arg,
         insulators: insulator_dir,
         temperature,
         wind_pressure,
@@ -1368,7 +1374,16 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 println!("  written to {}", out.display());
             }
             // Structure checks: the types' allowable spans and loads.
-            let usage = ols_loads::capacity::usage(&line, &types, &library, &all, &results);
+            let sections = match sections_arg
+                .clone()
+                .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
+            {
+                Some(p) => ols_sections::SectionLibrary::load(&p)?,
+                None => ols_sections::SectionLibrary::default(),
+            };
+            let usage = ols_loads::capacity::usage_with_sections(
+                &line, &types, &sections, &library, &all, &results,
+            );
             let governing = ols_loads::capacity::governing(&usage);
             if !governing.is_empty() {
                 let over = governing

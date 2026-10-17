@@ -354,7 +354,9 @@ pub struct TypeMember {
     pub id: String,
     /// Its two joints.
     pub nodes: [String; 2],
-    /// Section (a `[[section]]` id): needed for a full design.
+    /// Section id: in the project's section library (`.olssec`) or a
+    /// `[[section]]` table of the file (resolved by `ols_structures_fe`,
+    /// the library first); needed for a full design.
     #[serde(default)]
     pub section: Option<String>,
     /// `truss` (default), `frame` or `cable`.
@@ -1551,7 +1553,8 @@ impl StructureType {
     }
 
     /// Joints, members and the points on them: ids unique, members between
-    /// two different joints, sections given.
+    /// two different joints. A section id may be in the section library
+    /// (not read here): the structure model resolves it.
     fn check_members(&self) -> Result<(), String> {
         let mut joints = std::collections::BTreeSet::new();
         for n in &self.nodes {
@@ -1559,11 +1562,6 @@ impl StructureType {
                 return Err(format!("joint \"{}\": empty or given twice", n.id));
             }
         }
-        let sections: std::collections::BTreeSet<&str> = self
-            .sections
-            .iter()
-            .filter_map(|s| s.get("id")?.as_str())
-            .collect();
         let mut members = std::collections::BTreeSet::new();
         for m in &self.members {
             let bad = |x: String| Err(format!("member {}: {x}", m.id));
@@ -1577,11 +1575,6 @@ impl StructureType {
             }
             if m.nodes[0] == m.nodes[1] {
                 return bad("both ends at the same joint".into());
-            }
-            if let Some(s) = &m.section
-                && !sections.contains(s.as_str())
-            {
-                return bad(format!("no section \"{s}\""));
             }
         }
         Ok(())
@@ -1779,14 +1772,16 @@ mod tests {
             t.stick(None).unwrap(),
             vec![vec![[0.0; 3], [0.0, 0.0, 30.0]]]
         );
-        // Unknown joint or section, a member on one joint: refused.
+        // Unknown joint, a member on one joint: refused. A section not in
+        // the file may be in the section library.
         for bad in [
             "[[member]]\nid = \"M\"\nnodes = [\"B\", \"X\"]\n",
             "[[member]]\nid = \"M\"\nnodes = [\"B\", \"B\"]\n",
-            "[[member]]\nid = \"M\"\nnodes = [\"B\", \"T\"]\nsection = \"Q\"\n",
         ] {
             assert!(parse(&format!("{joints}{bad}")).is_err(), "{bad}");
         }
+        let library = "[[member]]\nid = \"M\"\nnodes = [\"B\", \"T\"]\nsection = \"Q\"\n";
+        assert!(parse(&format!("{joints}{library}")).is_ok());
         assert_eq!(Detail::Outline.level(), 2);
     }
 

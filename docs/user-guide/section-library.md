@@ -2,9 +2,9 @@
 
 A **section library** holds standard profiles — angles, channels, I and
 H sections, tubes, round bars, pole shafts — and their materials. A
-structure at [level 3](structure-library.md#detail-levels) will refer to
-its sections there by id, so a whole project shares one set of profiles
-(see [How structures will refer to it](#how-structures-will-refer-to-it)).
+structure at [level 3](structure-library.md#detail-levels) refers to its
+sections there by id, so a whole project shares one set of profiles
+(see [How structures refer to it](#how-structures-refer-to-it)).
 OLS CAD computes each profile's properties from its dimensions; values
 you give replace the computed ones.
 
@@ -109,7 +109,8 @@ What is exact and what is approximate:
 ## Wind on the profile
 
 The body wind of a level 3 structure is computed from the surface of its
-profiles. `Section::wind_width(direction)` gives the profile's **width
+profiles (the [member wind](structure-analysis.md#member-wind-body-wind-at-level-3)
+of the finite-element check). `Section::wind_width(direction)` gives the profile's **width
 seen by the wind**: the extent of its outline normal to a wind blowing
 in the section's plane at `direction` (from y towards z). Per metre of
 member, the projected area is that width × 1 m
@@ -118,9 +119,10 @@ member, the projected area is that width × 1 m
 Approximation: the silhouette of the whole outline. An angle's two legs
 do not shield each other (at 45° the width is the diagonal extent of the
 legs), a tube's width is its diameter in every direction, and no drag
-factor is applied — the shape factor and the solidity rules of a lattice
-face come from the code that computes the wind (a later step). A `general`
-section's width is that of its outline box.
+factor is applied here — the structure model's `drag` is the one factor
+the member wind applies; shielding and the solidity rules of a lattice
+face from a code are a later step. A `general` section's width is that of
+its outline box.
 
 ## Several files
 
@@ -132,11 +134,10 @@ name order, an id in two of them an error. A material a section names
 may be in another file read together; a material missing from all of
 them is reported.
 
-## How structures will refer to it
+## How structures refer to it
 
-Not built yet (the structure application, [Building
-structures](../development/structure-building.md) §1.3, §4.2): a member
-or a member group of a structure names its section by id,
+A member of a structure (in its type's `.olss`, or a separate `.olsfe`
+model) names its section by id,
 
 ```toml
 [[member]]
@@ -146,7 +147,23 @@ section = "L-61x7"
 ```
 
 and the id is looked up **in the project's section library first, then in
-the structure's own `[[section]]` tables** (the tables a structure file
-holds today, read by the finite-element check). In a project the section
-library is stored like the other library kinds of the project file, per
-project line, so every structure of the line uses the same profiles.
+the structure's own `[[section]]` tables** (read by the finite-element
+check, [Structure analysis](structure-analysis.md#structure-models-olsfe)):
+the profile's properties and its material's E, G, density and yield. An
+id in neither is refused, naming it. A structure file alone does not
+check its ids against a library: the structure model does, when it is
+built.
+
+In a project the section library is stored like the other library kinds
+of the project file, per project line (kind `sections`), so every
+structure of the line uses the same profiles: when the project opens
+without one, the `.olssec` files of the `Sections/` folder next to it
+(else those next to it) are copied in — never the shipped example — and
+exported with the other libraries (see [Library
+editors](desktop-app.md#library-editors)). For a line file the `Sections/`
+folder (else the files next to it) is read directly. `ols line` and `ols
+structures fe` take `--sections <file|folder>`; `ols line` reads the
+`Sections/` folder next to the line by default.
+
+Member groups (one section for many members) come with the structure
+application; a group's `section` will resolve the same way.

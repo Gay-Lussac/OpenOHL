@@ -397,6 +397,113 @@ fn structure_analysis_on_the_example_line() {
     assert!(csv.lines().next().unwrap().contains("fe_usage,pole_usage"));
 }
 
+/// With a section library holding the example tower's section ids (as
+/// invented angles), its members take them and the wind of the load case
+/// on their profiles: the FE usage is that of the model solved by hand
+/// with the attachment loads and the member wind, and the type's wind
+/// bands (in the loads as the body wind) change nothing — not counted
+/// twice. The note says which wind was used.
+#[test]
+fn member_wind_replaces_the_bands_in_the_fe_check() {
+    let sections = ols_sections::SectionLibrary::parse(
+        "[[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\ndensity = \"7850 kg/m3\"\n\
+         yield = \"355 MPa\"\n\
+         [[section]]\nid = \"leg\"\nshape = \"equal_angle\"\nmaterial = \"steel\"\n\
+         h = \"110 mm\"\nt = \"12 mm\"\n\
+         [[section]]\nid = \"brace\"\nshape = \"equal_angle\"\nmaterial = \"steel\"\n\
+         h = \"70 mm\"\nt = \"7 mm\"\n\
+         [[section]]\nid = \"arm\"\nshape = \"equal_angle\"\nmaterial = \"steel\"\n\
+         h = \"90 mm\"\nt = \"9 mm\"\n",
+    )
+    .unwrap();
+    let types = ols_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ols.json"))
+        .unwrap()
+        .resolve(&types, &ols_structures::InsulatorLibrary::default())
+        .unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    let (_, library, weather, cases) = setup();
+    let budget = ols_wirefe::default_fe_budget();
+    let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    let mut with_bands = loads.clone();
+    add_structure_wind(&mut with_bands, &line, &types, &weather);
+    assert!(with_bands[1].loads.len() > loads[1].loads.len());
+    let run = |loads: &[CaseLoads]| {
+        capacity::usage_with_sections(&line, &types, &sections, &library, &weather, loads)
+    };
+    let (plain, banded) = (run(&loads), run(&with_bands));
+    let t2 = |u: &[capacity::CaseUsage], case: usize| {
+        u[case]
+            .structures
+            .iter()
+            .find(|s| s.structure == "T2")
+            .unwrap()
+            .clone()
+    };
+    let (wind, banded_wind) = (t2(&plain, 1), t2(&banded, 1));
+    assert_eq!(wind.fe, banded_wind.fe, "the bands are not in the model");
+    assert!(
+        wind.notes
+            .iter()
+            .any(|n| n.contains("member wind") && n.contains("wind bands not in the model")),
+        "{:?}",
+        wind.notes
+    );
+    // Still air: no member wind, no note.
+    assert!(t2(&plain, 0).notes.is_empty(), "{:?}", t2(&plain, 0).notes);
+    // By hand: the model with the library, the factored loads at its
+    // points and the member wind (high wind × 1.4 transverse, to −x: the
+    // wind comes from the right).
+    let t = types.get("type-02").unwrap();
+    let model =
+        ols_structures_fe::Model::load_with(types.path("type-02").unwrap(), &sections).unwrap();
+    assert!(model.has_profiles());
+    let case = &cases.cases[1];
+    let w = weather.iter().find(|w| w.name == case.weather).unwrap();
+    let mut at: std::collections::BTreeMap<&str, [f64; 3]> = Default::default();
+    for l in loads[1]
+        .loads
+        .iter()
+        .filter(|l| l.structure == "T2" && !l.point.is_empty())
+    {
+        let e = at.entry(l.point.as_str()).or_default();
+        for (sum, f) in e.iter_mut().zip(l.factored) {
+            *sum += f;
+        }
+    }
+    let mut nodal = Vec::new();
+    for (label, [tr, lo, ve]) in at {
+        nodal.extend(model.point_loads(label, [tr, lo, -ve]).unwrap());
+    }
+    let q = w.wind_pressure.si() * case.transverse;
+    let member_wind = model.member_wind(q, [-w.wind_from.to_left(), 0.0, 0.0]);
+    let total: f64 = member_wind.iter().map(|l| l.force[0]).sum();
+    assert!(total.abs() > 1000.0, "{total}");
+    nodal.extend(member_wind);
+    let fe_loads = ols_structures_fe::Loads {
+        nodal,
+        self_weight: case.vertical,
+    };
+    let (_, usage) = ols_structures_fe::analyse(
+        &model,
+        &fe_loads,
+        case.strength,
+        &ols_structures_fe::default_budget(),
+    )
+    .unwrap();
+    let worst = ols_structures_fe::check::worst(&usage).unwrap();
+    let fe = wind.fe.clone().unwrap();
+    assert!(
+        (fe.usage - worst.usage.unwrap()).abs() < 1e-12,
+        "{fe:?} {worst:?}"
+    );
+    assert!(t.wind.is_some());
+    // Without the library: the type's own tables, no member wind.
+    let own = capacity::usage(&line, &types, &library, &weather, &loads);
+    assert!(t2(&own, 1).notes.is_empty());
+    assert_ne!(t2(&own, 1).fe, wind.fe);
+}
+
 /// A level synthetic line T1–T4, 300 m apart: T1 and T4 end the wire, T2
 /// is a suspension structure (one attachment carries both spans), T3 a
 /// dead-end whose back and ahead strain strings are separate attachments

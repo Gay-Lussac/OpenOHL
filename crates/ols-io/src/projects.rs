@@ -22,7 +22,7 @@ pub struct ImportedProject {
     pub line: Line,
     /// Library files: kind (`cables`, `weather`, `loadcases`,
     /// `structures`, `insulators`, `rules`, `galloping`, `ambient`,
-    /// `costs`, `poles`, `femodels`), file name, text.
+    /// `costs`, `poles`, `femodels`, `sections`), file name, text.
     pub libraries: Vec<(String, String, String)>,
     /// What was read, left out or assumed.
     pub notes: Vec<String>,

@@ -2,9 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Section quantities `ols_core::units` does not have: second moment of
-//! area (m⁴), section modulus (m³) and bending moment (N·m). Read like the
-//! other quantities: a plain number in SI, or text with a unit.
+//! The bending moment (N·m), which `ols_core::units` does not have (second
+//! moments and section moduli are its `SecondMoment`, `SectionModulus`).
+//! Read like the other quantities: a plain number in SI, or text with a
+//! unit.
 
 use std::fmt;
 
@@ -12,28 +13,6 @@ use serde::Deserialize;
 
 /// Units of one kind: symbol and factor to SI.
 type Units = &'static [(&'static str, f64)];
-
-const SECOND_MOMENT: Units = &[
-    ("m4", 1.0),
-    ("m⁴", 1.0),
-    ("cm4", 1e-8),
-    ("cm⁴", 1e-8),
-    ("mm4", 1e-12),
-    ("mm⁴", 1e-12),
-    ("in4", 0.0254 * 0.0254 * 0.0254 * 0.0254),
-    ("in⁴", 0.0254 * 0.0254 * 0.0254 * 0.0254),
-];
-
-const MODULUS: Units = &[
-    ("m3", 1.0),
-    ("m³", 1.0),
-    ("cm3", 1e-6),
-    ("cm³", 1e-6),
-    ("mm3", 1e-9),
-    ("mm³", 1e-9),
-    ("in3", 0.0254 * 0.0254 * 0.0254),
-    ("in³", 0.0254 * 0.0254 * 0.0254),
-];
 
 /// Pound-force, N.
 const LBF: f64 = 4.448_221_615_260_5;
@@ -140,18 +119,6 @@ macro_rules! kind {
 }
 
 kind!(
-    /// Second moment of area, m⁴.
-    SecondMoment,
-    SECOND_MOMENT,
-    "second moment of area"
-);
-kind!(
-    /// Elastic section modulus, m³.
-    Modulus,
-    MODULUS,
-    "section modulus"
-);
-kind!(
     /// Bending moment, N·m.
     Moment,
     MOMENT,
@@ -165,16 +132,11 @@ mod tests {
     #[test]
     fn units_are_read() {
         let close = |a: f64, b: f64| (a - b).abs() <= 1e-12 * b.abs();
-        assert!(close(
-            parse("1250 cm4", SECOND_MOMENT, "x").unwrap(),
-            1.25e-5
-        ));
-        assert!(close(parse("2e6 mm⁴", SECOND_MOMENT, "x").unwrap(), 2e-6));
         assert!(close(parse("120 kN m", MOMENT, "x").unwrap(), 1.2e5));
         assert!(close(parse("120 kN·m", MOMENT, "x").unwrap(), 1.2e5));
         assert!(close(parse("120 kN*m", MOMENT, "x").unwrap(), 1.2e5));
-        assert!(close(parse("3 cm3", MODULUS, "x").unwrap(), 3e-6));
-        assert!(parse("3 kg", MODULUS, "x").is_err());
-        assert!(parse("abc cm3", MODULUS, "x").is_err());
+        assert!(close(parse("1.5e3 N m", MOMENT, "x").unwrap(), 1.5e3));
+        assert!(parse("3 kg", MOMENT, "x").is_err());
+        assert!(parse("abc kN m", MOMENT, "x").is_err());
     }
 }

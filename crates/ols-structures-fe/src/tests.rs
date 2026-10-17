@@ -596,3 +596,170 @@ fn pole_check() {
     assert!(close(c.usage, 40e3 / (0.8 * 100e3), 1e-12), "{c:?}");
     assert!(Pole::parse("id = \"x\"\nmaterial = \"steel\"\nlength = \"10 m\"\ntop_diameter = \"1 m\"\nground_diameter = \"1 m\"\n").is_err());
 }
+
+/// A section library of invented profiles: a tube and a rectangular tube
+/// (300 mm along z, 100 mm along y).
+const LIBRARY: &str = "[[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\n\
+    shear_modulus = \"81 GPa\"\ndensity = \"7850 kg/m3\"\nyield = \"355 MPa\"\n\
+    [[section]]\nid = \"T200\"\nshape = \"circular_hollow\"\nmaterial = \"steel\"\n\
+    d = \"200 mm\"\nt = \"8 mm\"\n\
+    [[section]]\nid = \"R300\"\nshape = \"rectangular_hollow\"\nmaterial = \"steel\"\n\
+    h = \"300 mm\"\nb = \"100 mm\"\nt = \"8 mm\"\n";
+
+/// A frame portal of `section` (two columns and a beam, fixed feet),
+/// loaded at a top corner; `extra`: more tables.
+fn portal(section: &str, extra: &str) -> String {
+    format!(
+        "[analysis]\nnonlinear = true\n{extra}\
+         [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"fixed\"\n\
+         [[node]]\nid = \"B\"\npoint = [0, 0, 6]\n\
+         [[node]]\nid = \"C\"\npoint = [5, 0, 6]\n\
+         [[node]]\nid = \"D\"\npoint = [5, 0, 0]\nsupport = \"fixed\"\n\
+         [[member]]\nid = \"c1\"\nnodes = [\"A\", \"B\"]\nsection = \"{section}\"\nkind = \"frame\"\n\
+         [[member]]\nid = \"beam\"\nnodes = [\"B\", \"C\"]\nsection = \"{section}\"\nkind = \"frame\"\n\
+         [[member]]\nid = \"c2\"\nnodes = [\"D\", \"C\"]\nsection = \"{section}\"\nkind = \"frame\"\n\
+         [[load]]\nnode = \"B\"\nforce = [\"20 kN\", \"5 kN\", \"-30 kN\"]\n"
+    )
+}
+
+/// A member whose section is in the section library gives the same
+/// results as with a `[[section]]` table of the same values; the library
+/// comes first; an unknown id is refused, named.
+#[test]
+fn library_sections_resolve_first() {
+    let lib = ols_sections::SectionLibrary::parse(LIBRARY).unwrap();
+    let q = lib.section("T200").unwrap().properties();
+    let table = format!(
+        "[[material]]\nid = \"steel\"\nelasticity = 210e9\nshear_modulus = 81e9\n\
+         density = 7850.0\nyield = 355e6\n\
+         [[section]]\nid = \"local\"\nmaterial = \"steel\"\narea = {:e}\niy = {:e}\niz = {:e}\n\
+         torsion = {:e}\ni_min = {:e}\nwy = {:e}\nwz = {:e}\n",
+        q.area,
+        q.iy,
+        q.iz,
+        q.it.unwrap(),
+        q.iv,
+        q.wel_y.unwrap(),
+        q.wel_z.unwrap(),
+    );
+    let run = |m: &Model| {
+        let loads = Loads {
+            nodal: m.loads.clone(),
+            self_weight: 1.0,
+        };
+        analyse(m, &loads, 1.0, &default_budget()).unwrap()
+    };
+    let from_lib = Model::parse_with(&portal("T200", ""), &lib).unwrap();
+    let local = Model::parse(&portal("local", &table)).unwrap();
+    assert!(from_lib.sections[0].profile.is_some() && local.sections[0].profile.is_none());
+    assert!(close(from_lib.weight(), local.weight(), 1e-12));
+    let ((a, ua), (b, ub)) = (run(&from_lib), run(&local));
+    for (da, db) in a.displacements.iter().zip(&b.displacements) {
+        for k in 0..6 {
+            assert!(
+                (da[k] - db[k]).abs() <= 1e-9 * db[k].abs().max(1e-6),
+                "{da:?} {db:?}"
+            );
+        }
+    }
+    for (x, y) in ua.iter().zip(&ub) {
+        assert!(
+            close(x.usage.unwrap(), y.usage.unwrap(), 1e-9),
+            "{x:?} {y:?}"
+        );
+        assert_eq!(x.governs, y.governs);
+    }
+    // A table of the same id: the library's is used.
+    let shadowed = table.replace("id = \"local\"", "id = \"T200\"");
+    let m = Model::parse_with(&portal("T200", &shadowed), &lib).unwrap();
+    assert_eq!(m.sections.len(), 1);
+    assert!(m.sections[0].profile.is_some());
+    // Without the library: the table.
+    let m = Model::parse(&portal("T200", &shadowed)).unwrap();
+    assert!(m.sections[0].profile.is_none());
+    // Unknown everywhere: refused, named.
+    let e = Model::parse_with(&portal("NOPE", ""), &lib).unwrap_err();
+    assert!(e.contains("NOPE") && e.contains("c1"), "{e}");
+    // The library's material missing: named.
+    let lonely = ols_sections::SectionLibrary::parse(
+        "[[section]]\nid = \"X\"\nshape = \"round_bar\"\nmaterial = \"gone\"\nd = \"20 mm\"\n",
+    )
+    .unwrap();
+    let e = Model::parse_with(&portal("X", ""), &lonely).unwrap_err();
+    assert!(e.contains("gone"), "{e}");
+}
+
+/// Member wind on a vertical cantilever: pressure × drag × width × length
+/// in all, half at each joint; the base reacts with the force and q·d·L²/2
+/// (the uniform load's moment). The width follows the wind's direction in
+/// the section (300 mm across y, 100 mm across z), and a wind at 45° to the
+/// member gives sin²θ of it.
+#[test]
+fn member_wind_on_a_cantilever() {
+    let lib = ols_sections::SectionLibrary::parse(LIBRARY).unwrap();
+    let text = |section: &str, drag: &str| {
+        format!(
+            "[analysis]\nnonlinear = false\nself_weight = false\n{drag}\
+             [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"fixed\"\n\
+             [[node]]\nid = \"B\"\npoint = [0, 0, 10]\n\
+             [[member]]\nid = \"m\"\nnodes = [\"A\", \"B\"]\nsection = \"{section}\"\nkind = \"frame\"\n"
+        )
+    };
+    let (q, l) = (500.0, 10.0);
+    let base = |m: &Model, wind: Vec<NodalLoad>| {
+        let sol = solve(m, &nodal(wind), &first_order(), &default_budget()).unwrap();
+        sol.reactions[0]
+    };
+    // A tube: 200 mm whatever the direction.
+    let m = Model::parse_with(&text("T200", ""), &lib).unwrap();
+    assert!(m.has_profiles());
+    let wind = m.member_wind(q, [1.0, 0.0, 0.0]);
+    assert_eq!(wind.len(), 2);
+    for w in &wind {
+        assert!(close(w.force[0], 0.5 * q * 0.2 * l, 1e-12), "{w:?}");
+    }
+    let r = base(&m, wind);
+    assert!(close(r.force[0], -q * 0.2 * l, 1e-9), "{r:?}");
+    assert!(close(r.moment[1], -q * 0.2 * l * l / 2.0, 1e-9), "{r:?}");
+    // Drag factor 1.5.
+    let m = Model::parse_with(&text("T200", "drag = 1.5\n"), &lib).unwrap();
+    let r = base(&m, m.member_wind(q, [1.0, 0.0, 0.0]));
+    assert!(close(r.force[0], -1.5 * q * 0.2 * l, 1e-9), "{r:?}");
+    // The rectangular tube: a vertical member's local y is the structure's
+    // x, so a wind along x sees the 300 mm side, along y the 100 mm one.
+    let m = Model::parse_with(&text("R300", ""), &lib).unwrap();
+    let r = base(&m, m.member_wind(q, [1.0, 0.0, 0.0]));
+    assert!(close(r.force[0], -q * 0.3 * l, 1e-9), "{r:?}");
+    let r = base(&m, m.member_wind(q, [0.0, -1.0, 0.0]));
+    assert!(close(r.force[1], q * 0.1 * l, 1e-9), "{r:?}");
+    // A wind at 45° to the member: half of it (sin²θ), normal to the member.
+    let m = Model::parse_with(&text("T200", ""), &lib).unwrap();
+    let r = base(&m, m.member_wind(q, [1.0, 0.0, 1.0]));
+    assert!(close(r.force[0], -0.5 * q * 0.2 * l, 1e-9), "{r:?}");
+    assert!(r.force[2].abs() < 1e-9, "{r:?}");
+    // Along the member: none. A table section: none.
+    assert!(m.member_wind(q, [0.0, 0.0, 1.0]).is_empty());
+    let table = "[[material]]\nid = \"s\"\nelasticity = \"210 GPa\"\n\
+                 [[section]]\nid = \"t\"\nmaterial = \"s\"\narea = \"10 cm2\"\niy = \"100 cm4\"\n\
+                 iz = \"100 cm4\"\n";
+    let m = Model::parse(&format!("{table}{}", text("t", ""))).unwrap();
+    assert!(!m.has_profiles() && m.member_wind(q, [1.0, 0.0, 0.0]).is_empty());
+    assert!(Model::parse_with(&text("T200", "drag = 0\n"), &lib).is_err());
+}
+
+/// Member wind on a horizontal truss bar between two pins, the wind
+/// across it: each support takes half of q·d·L.
+#[test]
+fn member_wind_on_a_truss_bar() {
+    let lib = ols_sections::SectionLibrary::parse(LIBRARY).unwrap();
+    let text = "[analysis]\nnonlinear = false\nself_weight = false\n\
+        [[node]]\nid = \"A\"\npoint = [0, 0, 5]\nsupport = \"pinned\"\n\
+        [[node]]\nid = \"B\"\npoint = [0, 8, 5]\nsupport = \"pinned\"\n\
+        [[member]]\nid = \"bar\"\nnodes = [\"A\", \"B\"]\nsection = \"T200\"\n";
+    let m = Model::from_structure_type_with(text, &lib).unwrap();
+    let wind = m.member_wind(700.0, [-1.0, 0.0, 0.0]);
+    let sol = solve(&m, &nodal(wind), &first_order(), &default_budget()).unwrap();
+    for r in &sol.reactions {
+        assert!(close(r.force[0], 0.5 * 700.0 * 0.2 * 8.0, 1e-9), "{r:?}");
+    }
+}

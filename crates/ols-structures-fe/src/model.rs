@@ -13,6 +13,7 @@
 //! [analysis]
 //! nonlinear = true          # P-Delta (default); false: first order
 //! self_weight = true        # members' weight (default)
+//! drag = 1.0                # member wind: drag factor on the profiles (default 1)
 //!
 //! [[material]]
 //! id = "steel"
@@ -50,7 +51,7 @@
 //! [[member]]
 //! id = "leg1"
 //! nodes = ["B1", "A1"]
-//! section = "L90x9"
+//! section = "L90x9"         # the section library's first, then [[section]]
 //! kind = "truss"            # truss (default) | frame | cable
 //! reference = [0, 0, 1]     # frame: a direction in the local x–y plane
 //! roll = "0 deg"            # frame: turns the local y, z about x
@@ -66,10 +67,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use ols_core::units::{Angle, Area, Density, Force, Length, Stress};
+use ols_core::units::{Angle, Area, Density, Force, Length, SecondMoment, SectionModulus, Stress};
+use ols_sections::SectionLibrary;
 use serde::Deserialize;
 
-use crate::units::{Modulus, Moment, SecondMoment};
+use crate::units::Moment;
 
 /// `format` of a structure model file.
 pub const MODEL_FILE_FORMAT: &str = "ols-structure-model";
@@ -100,6 +102,8 @@ struct AnalysisFile {
     nonlinear: bool,
     #[serde(default = "yes")]
     self_weight: bool,
+    #[serde(default = "one")]
+    drag: f64,
 }
 
 impl Default for AnalysisFile {
@@ -107,6 +111,7 @@ impl Default for AnalysisFile {
         Self {
             nonlinear: true,
             self_weight: true,
+            drag: 1.0,
         }
     }
 }
@@ -139,9 +144,9 @@ struct SectionFile {
     #[serde(default)]
     i_min: Option<SecondMoment>,
     #[serde(default)]
-    wy: Option<Modulus>,
+    wy: Option<SectionModulus>,
     #[serde(default)]
-    wz: Option<Modulus>,
+    wz: Option<SectionModulus>,
     #[serde(default)]
     tension: Option<Force>,
     #[serde(default)]
@@ -352,6 +357,9 @@ pub struct Section {
     pub moment_y: Option<f64>,
     /// Allowable moment about z, N·m.
     pub moment_z: Option<f64>,
+    /// The section library's profile it comes from (its width for the
+    /// member wind); none for a `[[section]]` table.
+    pub profile: Option<ols_sections::Section>,
 }
 
 impl Section {
@@ -374,7 +382,42 @@ impl Section {
             compression: None,
             moment_y: None,
             moment_z: None,
+            profile: None,
         }
+    }
+
+    /// A section of the section library with its material: the profile's
+    /// properties (its minor principal second moment for buckling; the
+    /// torsion constant iy + iz when it has none), no allowables (the
+    /// capacity from the yield strength).
+    pub fn from_library(
+        p: &ols_sections::Section,
+        library: &SectionLibrary,
+    ) -> Result<Self, String> {
+        let m = library.material_of(p).ok_or_else(|| match &p.material {
+            Some(m) => format!("section {}: no material {m} in the section library", p.id),
+            None => format!("section {}: no material", p.id),
+        })?;
+        let q = p.properties();
+        Ok(Self {
+            id: p.id.clone(),
+            area: q.area,
+            iy: q.iy,
+            iz: q.iz,
+            j: q.it.unwrap_or(q.iy + q.iz),
+            i_min: q.iv,
+            wy: q.wel_y,
+            wz: q.wel_z,
+            e: m.elasticity,
+            g: m.shear_modulus,
+            density: m.density,
+            yield_strength: m.yield_strength,
+            tension: None,
+            compression: None,
+            moment_y: None,
+            moment_z: None,
+            profile: Some(p.clone()),
+        })
     }
 
     /// Weight per metre, N/m.
@@ -454,6 +497,8 @@ pub struct Analysis {
     pub nonlinear: bool,
     /// Members' self-weight.
     pub self_weight: bool,
+    /// Drag factor of the member wind on the profiles.
+    pub drag: f64,
 }
 
 impl Default for Analysis {
@@ -461,6 +506,7 @@ impl Default for Analysis {
         Self {
             nonlinear: true,
             self_weight: true,
+            drag: 1.0,
         }
     }
 }
@@ -495,6 +541,12 @@ fn dof_index(name: &str) -> Option<usize> {
 impl Model {
     /// Parses and checks a model file's text.
     pub fn parse(text: &str) -> Result<Self, String> {
+        Self::parse_with(text, &SectionLibrary::default())
+    }
+
+    /// Parses and checks a model file's text, a member's section looked
+    /// up in `library` first, then in the file's `[[section]]` tables.
+    pub fn parse_with(text: &str, library: &SectionLibrary) -> Result<Self, String> {
         let file: ModelFile = toml::from_str(text).map_err(|e| e.to_string())?;
         ols_core::files::check_header(
             file.format.as_deref(),
@@ -516,7 +568,7 @@ impl Model {
                 .get(s.material.as_str())
                 .ok_or_else(|| format!("section {}: no material {}", s.id, s.material))?;
             let e = m.elasticity.si();
-            let (iy, iz) = (s.iy.0, s.iz.0);
+            let (iy, iz) = (s.iy.si(), s.iz.si());
             if section_index.insert(s.id.clone(), sections.len()).is_some() {
                 return Err(format!("section {} given twice", s.id));
             }
@@ -525,10 +577,10 @@ impl Model {
                 area: s.area.si(),
                 iy,
                 iz,
-                j: s.torsion.map_or(iy + iz, |j| j.0),
-                i_min: s.i_min.map_or(iy.min(iz), |i| i.0),
-                wy: s.wy.map(|w| w.0),
-                wz: s.wz.map(|w| w.0),
+                j: s.torsion.map_or(iy + iz, SecondMoment::si),
+                i_min: s.i_min.map_or(iy.min(iz), SecondMoment::si),
+                wy: s.wy.map(SectionModulus::si),
+                wz: s.wz.map(SectionModulus::si),
                 e,
                 g: m.shear_modulus.map_or(e / 2.6, |g| g.si()),
                 density: m.density.si(),
@@ -537,6 +589,7 @@ impl Model {
                 compression: s.compression.map(|f| f.si()),
                 moment_y: s.moment_y.map(|m| m.0),
                 moment_z: s.moment_z.map(|m| m.0),
+                profile: None,
             });
         }
         let mut nodes = Vec::new();
@@ -586,11 +639,25 @@ impl Model {
         };
         let mut members = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
+        // Library sections taken in (one replaces a table of its id).
+        let mut taken = std::collections::BTreeSet::new();
         for m in &file.members {
             if !seen.insert(m.id.as_str()) {
                 return Err(format!("member {} given twice", m.id));
             }
             let what = format!("member {}", m.id);
+            if let Some(p) = library.section(&m.section)
+                && taken.insert(m.section.clone())
+            {
+                let s = Section::from_library(p, library)?;
+                match section_index.get(&m.section) {
+                    Some(&k) => sections[k] = s,
+                    None => {
+                        section_index.insert(m.section.clone(), sections.len());
+                        sections.push(s);
+                    }
+                }
+            }
             members.push(Member {
                 id: m.id.clone(),
                 kind: m.kind,
@@ -622,6 +689,7 @@ impl Model {
             analysis: Analysis {
                 nonlinear: file.analysis.nonlinear,
                 self_weight: file.analysis.self_weight,
+                drag: file.analysis.drag,
             },
             nodes,
             sections,
@@ -639,6 +707,11 @@ impl Model {
     /// a joint (`node = "…"`) makes that joint carry the point's loads; one
     /// along a member (`member`, `at`) shares them to the member's ends.
     pub fn from_structure_type(text: &str) -> Result<Self, String> {
+        Self::from_structure_type_with(text, &SectionLibrary::default())
+    }
+
+    /// The same, a member's section looked up in `library` first.
+    pub fn from_structure_type_with(text: &str, library: &SectionLibrary) -> Result<Self, String> {
         let file: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
         let mut model = toml::Table::new();
         for key in [
@@ -687,7 +760,10 @@ impl Model {
             }
         }
         model.insert("node".into(), nodes.into());
-        let mut out = Self::parse(&toml::to_string(&model).map_err(|e| e.to_string())?)?;
+        let mut out = Self::parse_with(
+            &toml::to_string(&model).map_err(|e| e.to_string())?,
+            library,
+        )?;
         for (label, member, at) in along {
             let member = out
                 .members
@@ -703,14 +779,19 @@ impl Model {
     /// Reads a model file (`.olsfe`), or a structure type file (`.olss`)
     /// holding its members.
     pub fn load(path: &Path) -> Result<Self, String> {
+        Self::load_with(path, &SectionLibrary::default())
+    }
+
+    /// The same, a member's section looked up in `library` first.
+    pub fn load_with(path: &Path, library: &SectionLibrary) -> Result<Self, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         if path
             .extension()
             .is_some_and(|e| e == STRUCTURE_FILE_EXTENSION)
         {
-            Self::from_structure_type(&text)
+            Self::from_structure_type_with(&text, library)
         } else {
-            Self::parse(&text)
+            Self::parse_with(&text, library)
         }
         .map_err(|e| format!("{}: {e}", path.display()))
     }
@@ -748,6 +829,9 @@ impl Model {
                     s.id
                 ));
             }
+        }
+        if self.analysis.drag.is_nan() || self.analysis.drag <= 0.0 {
+            return Err("analysis: drag must be above 0".into());
         }
         let mut attachments = std::collections::BTreeSet::new();
         for n in &self.nodes {
@@ -846,6 +930,63 @@ impl Model {
         norm(sub(self.nodes[m.j].point, self.nodes[m.i].point))
     }
 
+    /// Whether a member's section has a profile (from the section
+    /// library): the model takes member wind ([`Self::member_wind`]).
+    pub fn has_profiles(&self) -> bool {
+        self.members
+            .iter()
+            .any(|m| self.sections[m.section].profile.is_some())
+    }
+
+    /// The wind on the members whose section has a profile, as loads at
+    /// their joints. Per member: `pressure` (Pa) × the drag factor × the
+    /// profile's width × its length × sin²θ (θ between the wind and the
+    /// member: the wind's component normal to the member), normal to the
+    /// member in the plane of the member and the wind, half at each
+    /// joint. The width is the profile's for the wind's direction in the
+    /// member's local y–z plane (the section's y and z). `direction`:
+    /// where the wind blows to, structure axes. No member shields
+    /// another.
+    pub fn member_wind(&self, pressure: f64, direction: [f64; 3]) -> Vec<NodalLoad> {
+        let n = norm(direction);
+        if pressure == 0.0 || n.is_nan() || n <= 0.0 {
+            return Vec::new();
+        }
+        let w = direction.map(|d| d / n);
+        let mut out = Vec::new();
+        for m in &self.members {
+            let Some(p) = &self.sections[m.section].profile else {
+                continue;
+            };
+            let r = crate::element::axes(self, m);
+            let row = |k: usize| [r[(k, 0)], r[(k, 1)], r[(k, 2)]];
+            let x = row(0);
+            let along = dot(w, x);
+            // The wind's component normal to the member (length sin θ).
+            let normal = [
+                w[0] - along * x[0],
+                w[1] - along * x[1],
+                w[2] - along * x[2],
+            ];
+            let sin = norm(normal);
+            if sin <= 1e-9 {
+                continue;
+            }
+            let angle = dot(normal, row(2)).atan2(dot(normal, row(1)));
+            let width = p.wind_width(Angle::from_radians(angle));
+            // q·C·d·L·sin²θ along the unit normal: q·C·d·L·sin θ × normal.
+            let f = pressure * self.analysis.drag * width * self.length(m) * sin;
+            for node in [m.i, m.j] {
+                out.push(NodalLoad {
+                    node,
+                    force: normal.map(|c| 0.5 * f * c),
+                    moment: [0.0; 3],
+                });
+            }
+        }
+        out
+    }
+
     /// Total weight of the members, N.
     pub fn weight(&self) -> f64 {
         self.members
@@ -857,6 +998,10 @@ impl Model {
 
 pub(crate) fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+pub(crate) fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 pub(crate) fn norm(a: [f64; 3]) -> f64 {

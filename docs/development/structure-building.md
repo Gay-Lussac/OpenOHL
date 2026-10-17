@@ -140,10 +140,10 @@ Where today's code differs from the decisions:
 
 | | Level 1 | Level 2 | Level 3 |
 |---|---|---|---|
-| **Data** | points, strings, wire points, extensions, foot (`structures.rs`) | `TypeNode`, `TypeMember` (no section), `Outline` | sections and materials as raw `toml::Table`s in the structure, parsed by `ols_structures_fe::Model::from_structure_type` (`crates/ols-structures-fe/src/model.rs`); or a separate `.olsfe` |
+| **Data** | points, strings, wire points, extensions, foot (`structures.rs`) | `TypeNode`, `TypeMember` (no section), `Outline` | a member's section from the project's section library (`.olssec`) or the structure's raw `[[section]]` `toml::Table`s, the library first, parsed by `ols_structures_fe::Model::from_structure_type_with` (`crates/ols-structures-fe/src/model.rs`); or a separate `.olsfe` |
 | **Built by** | pylon builder from `.olspt` templates (`pylon_builder.rs`, `templates.rs`: level 1 only, suspension or strain); workspace I and V presets (`type_workspace.rs`); the placed editor's **Make it a type** (`placed_editor.rs`); `ols structures derive` (version 1 attachments); the PLS importer (local) | workspace: **Add joint**, **Member** between two picked joints, **Point here** on a joint, drag with a grid snap or onto a joint | workspace tables: a section per member, a support per joint; sections and materials typed in the **Fields** tab of the library page (`library.rs`) |
 | **Shown** | the line's 3D view, plan and profile sheets (`place_stick`, `ols-line/src/library.rs`); the workspace's own 3D view | the same, with the members; the workspace shows "Level N — name" and what level 3 still lacks (`missing_for_design`) | the same; no 3D view of the FE model, no deformed shape, no usage colours |
-| **Checks** | structure loads at the points, Methods 1 and 2, wind bands, the pole check | as level 1 | `fe` check in **Structure loads › Usage** and `ols line --usage-csv` (`ols-loads/src/analysis.rs`) |
+| **Checks** | structure loads at the points, Methods 1 and 2, wind bands, the pole check | as level 1 | `fe` check in **Structure loads › Usage** and `ols line --usage-csv` (`ols-loads/src/analysis.rs`), with the member wind on profiles from the section library |
 | **On its own** | `ols-cad pylon.olss` opens the structure alone (`structure_desk.rs`): edit, no computation | the same | `ols structures fe structure.olss` with the model's own `[[load]]`s or `--loads loads.csv --structure T2` (`ols-cli/src/structure_fe.rs`); `ols structures pole`; benchmark `structures.fe` (`benchmarks/structures-fe/frames.toml`) |
 
 ### `[[extension]]` today
@@ -172,15 +172,20 @@ extension). Decisions 17 and 20: extension bodies at level 3, leg extensions inc
    rebuild keeps the joints and members made by hand.
 5. **Flat `[[body]]` polylines count as level 2** — *being fixed*: only
    a 3D body gives level 2 (decision 3).
-6. **Wind on the body is not in the FE model.** Waits for level 3
-   profile areas and the load-case recipes (decision 10).
+6. **Wind on the body in the FE model** — *done for the FE check*: the
+   member wind on profiles from the section library (pressure × drag ×
+   width × length × sin²θ, half to each joint; no shielding, one `drag`
+   per structure); the wind bands stay out of the model. Load-case
+   recipes (surface loads per case) still to come.
 7. **Extensions are not in the FE model.** Decision 17: extension
    bodies, built with the levels.
 8. **Level 2 has no generator.** Every joint and member is added by
    hand; no panels, bracing patterns, symmetry, member groups or copying
    of a face.
 9. **Sections and materials are untyped tables**, edited as TOML, kept
-   per structure; no section library.
+   per structure — *partly done*: the project's section library
+   (`.olssec`, a project library kind) is referred to by id, first; the
+   structure's own tables remain as raw TOML.
 10. **No import of a body** other than the local PLS importer, and **no
     export** of the model other than the file itself (IFC writes the
     stick polylines only, `ols-io/src/ifc.rs`).
@@ -394,7 +399,7 @@ Run per structure, per case, with the engine used in the line run:
 | Pole check, P-Delta amplification | pole at level 3 | yes (`check_pole`) |
 | Loads at points along members | level 3 | being fixed (shared to the member's joints) |
 | Surface loads on members (wind, snow) | level 3 (profile areas) | no |
-| Body wind | level 3 (profile areas, decision 10) | no |
+| Body wind | level 3 (profile areas, decision 10) | yes, in the FE check: member wind on profiles from the section library (`Model::member_wind`); wind bands kept out of the model |
 | Extensions in the model | level 3 extension bodies (decision 17) | no |
 | Capacity derived from the design | level 3 | no: the load tree or allowable spans found by scaling a case until the worst member reaches 100 % |
 
@@ -479,11 +484,12 @@ placed structure in the line (format to decide with the implementation).
 ### 4.2 Section library
 
 A new library kind, `.olssec` (`ols-sections`, crate `ols-sections`,
-[Section library](../user-guide/section-library.md); the format and the
-properties are built, not yet referred to): standard profiles (angles,
+[Section library](../user-guide/section-library.md); built and referred
+to by the FE model, a project library kind `sections`): standard profiles (angles,
 tubes, poles…), user data; OLS CAD ships only synthetic examples. A
-member's `section = "<id>"` will resolve in the section library first,
-then in the structure's own `[[section]]` tables. A structure **refers** to it by
+member's `section = "<id>"` resolves in the section library first,
+then in the structure's own `[[section]]` tables (member groups: the
+same, when they come). A structure **refers** to it by
 id (decision 11). In a project it is stored like the other library kinds
 (per project line, see [Project file tables](data-model.md#project-file-tables-cratesols-session)), so all
 structures share one copy; exported and imported like the others.
@@ -521,7 +527,11 @@ Each phase is a deliverable of its own, checked and committed.
    Results tab and `ols structures check`; the report.
 5. **Section library**: the library kind in the project file, sections
    referred to by id, typed sections and materials; surface areas from
-   the profiles; body wind (decision 10).
+   the profiles; body wind (decision 10). *Done:* the format and
+   properties, the project library kind `sections`, ids resolved in the
+   library first by the FE model, the member wind in the FE check.
+   *Open:* typed sections edited in the structure application, member
+   groups.
 6. **Replace structure** in the line application (§1.6).
 7. **Exports**: IFC with member solids, Tekla, RFEM; PLS-TOWER later.
 8. **Code checks**: the plugin interface for member and joint checks
