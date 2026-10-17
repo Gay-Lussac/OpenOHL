@@ -15,6 +15,8 @@ All values are computed in **SI base units**, as `f64`:
 | Angle | rad | ° |
 | Speed | m/s | m/s / mph |
 | Temperature | K | °C / °F |
+| Second moment of area, torsion constant | m⁴ | cm⁴ / in⁴ |
+| Section modulus | m³ | cm³ / in³ |
 
 What the files store differs for two quantities, so that they read naturally:
 

@@ -63,6 +63,9 @@ fn formats() -> Vec<(&'static str, Parse)> {
             "examples/synthetic-line/Structures/steel-pole-30m.olsp",
             |t| ols_structures_fe::pole::Pole::parse(t).map(drop),
         ),
+        ("libraries/sections/example-sections.olssec", |t| {
+            ols_sections::SectionLibrary::parse(t).map(drop)
+        }),
         ("examples/synthetic-line/weather-cases.olswc", |t| {
             ols_weather::WeatherCases::parse(t).map(drop)
         }),

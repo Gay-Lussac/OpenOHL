@@ -66,6 +66,8 @@ All examples on this page are invented (structures `T1`, `T2`, sections
                         pole ─► .olsp, template (built from ─► .olspt)
    .olspt PylonTemplate: parameter[], attachment[] (slot, across, up),
                         earth[], strings ─► builds a level-1 .olss
+   .olssec SectionLibrary: material[], section[] (shape, dimensions,
+                        material ─► material id); not referred to yet
 ```
 
 Arrows point from the referring field to what it names. Everything inside
@@ -549,6 +551,7 @@ One directory per kind; TOML with units in the values. Each item has an
 | (pylon templates: shipped `libraries/pylon-templates`, the project's `Pylon templates` folder; not kept in the project file) | `.olspt` | `ols-pylon-template` | one | `ols_structures::templates::PylonTemplate` | [Pylon templates](../user-guide/structure-library.md#pylon-templates-olspt) |
 | `WeatherCases` | `.olswc` | `ols-weather-cases` | several (`[[case]]`) | `ols_weather::WeatherCase` | [Weather cases](../user-guide/weather.md) |
 | `LoadCases` | `.olslc` | `ols-load-cases` | several (`[[case]]`) | `ols_loads::LoadCase` | [Load cases](../user-guide/loads.md) |
+| (section library: shipped `libraries/sections`; not in the project file or the app yet) | `.olssec` | `ols-sections` | several (`[[section]]`, `[[material]]`) | `ols_sections::Section`, `ols_sections::Material` (crate `ols-sections`) | [Section library](../user-guide/section-library.md) |
 
 Other data files: structure models `.olsfe` (`ols-structure-model`) and
 poles `.olsp` (`ols-pole`) next to the `.olss`
@@ -648,6 +651,39 @@ levels decided for the structure application (poles with levels, a flat
 Placed into a line, a type becomes `PlacedStrings { points, strings,
 wires }` (global coordinates) that `Line::resolve` merges with the
 structure's own items.
+
+### Section library (`.olssec`)
+
+Source: `crates/ols-sections` (a core crate: the level 3 checks inside
+the line will read it through `ols-structures-fe`), `SectionLibrary`.
+Format `ols-sections`, version 1 (constants `SECTION_FILE_FORMAT`,
+`SECTION_FILE_VERSION`, `SECTION_FILE_EXTENSION`). Full reference:
+[Section library](../user-guide/section-library.md).
+
+| Field (TOML key) | Type | Unit | Meaning |
+|---|---|---|---|
+| `format`, `version`, `name`, `description` | optional | — | header |
+| `default_material` | id? | — | material of the sections naming none |
+| `[[material]]` | `id`, `name`, `description`, `elasticity`, `shear_modulus?` (default E / 2.6), `density?` (0), `yield?`, `ultimate?`, `partial_factors?` (name → number) | Pa, kg/m³ | `ols_sections::Material` |
+| `[[section]]` | `id`, `name`, `description`, `shape`, `material?`, dimensions of the shape (`h`, `b`, `t`, `tw`, `tf`, `r`, `d`, `sides`) | m | `ols_sections::Section` (`Shape`) |
+| section, given | `area`, `iy`, `iz`, `iu`, `iv`, `it`, `wel_y`, `wel_z`, `wpl_y`, `wpl_z`, `gyration_y/z/u/v`, `shear_area_y/z` | m², m⁴ (`SecondMoment`), m³ (`SectionModulus`), m | replace the computed values (`Given`) |
+
+Shapes: `equal_angle`, `unequal_angle`, `channel`, `i_section`,
+`rectangular_hollow`, `circular_hollow`, `round_bar`, `polygonal_hollow`,
+`general` (properties given only). `Section::properties()` computes area,
+centroid, second moments about the geometric and principal axes, torsion
+constant, elastic and plastic moduli, radii of gyration and shear areas;
+`Section::wind_width(direction)` the outline's width normal to a wind in
+the section's plane (body wind from the profiles, decision 10 of
+[Building structures](structure-building.md)). Several files merge in
+order (`merge`: project first, then user; the earlier id wins);
+`missing_materials()` lists sections whose material is in none.
+
+**Not referred to yet.** The plan (structure-building §1.3, §4.2): a
+member or group's `section = "<id>"` resolves in the project's section
+library first, then in the structure's own `[[section]]` tables; in a
+project the library is a library kind of the project file, per project
+line.
 
 ### Insulator assembly (`.olsi`)
 

@@ -49,6 +49,7 @@ Every module is a Rust crate under `crates/` (the workspace's members):
 | `ols-line` | Line model (`.ols.json`): routes, structures, attachments, sections, jumpers, electrical systems; 3D solving (RS and FE, elements following the curves), incremental re-solving, exports |
 | `ols-structures` | Structure type library (`.olss`) and insulator library (`.olsi`); placement of types into a line; deriving types from a line |
 | `ols-structures-fe` | Structure analysis: 3D truss/frame/cable finite elements (members of a full-design `.olss`, or `.olsfe`; P-Delta, skyline solver), member usage, poles (`.olsp`) and the pole check |
+| `ols-sections` | Section library (`.olssec`): standard profiles and materials shared by a project, cross-section properties from the dimensions, projected widths for wind |
 | `ols-loads` | Load cases (`.olslc`: weather × wire condition × load factors), the loads on the structures at every attachment, wind on structures, capacity checks (Method 1 allowable spans, Method 2 load trees, FE and pole) |
 | `ols-terrain` | Survey points (CSV/XYZ, feature codes, breaklines), TIN, ground heights and exact profiles |
 | `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), corridors, classification (ground filter, height classes) |

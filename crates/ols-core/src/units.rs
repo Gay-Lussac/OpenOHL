@@ -582,6 +582,30 @@ quantity!(
     ]
 );
 
+quantity!(
+    /// Second moment of area (and torsion constant), stored in m⁴. Used for
+    /// cross-sections.
+    SecondMoment, kind = "second moment of area", si = "m⁴", display = ("cm⁴", "in⁴"),
+    units = [
+        from_m4, m4, 1.0, "metres to the fourth", ["m⁴", "m4"];
+        from_cm4, cm4, 1e-8, "centimetres to the fourth", ["cm⁴", "cm4"];
+        from_mm4, mm4, 1e-12, "millimetres to the fourth", ["mm⁴", "mm4"];
+        from_in4, in4, INCH * INCH * INCH * INCH, "inches to the fourth", ["in⁴", "in4"];
+    ]
+);
+
+quantity!(
+    /// Section modulus (elastic or plastic), stored in m³. Used for
+    /// cross-sections.
+    SectionModulus, kind = "section modulus", si = "m³", display = ("cm³", "in³"),
+    units = [
+        from_m3, m3, 1.0, "cubic metres", ["m³", "m3"];
+        from_cm3, cm3, 1e-6, "cubic centimetres", ["cm³", "cm3"];
+        from_mm3, mm3, 1e-9, "cubic millimetres", ["mm³", "mm3"];
+        from_in3, in3, INCH * INCH * INCH, "cubic inches", ["in³", "in3"];
+    ]
+);
+
 /// Thermodynamic temperature, stored in kelvins.
 ///
 /// Differences between two temperatures are also expressed as a `Temperature`
@@ -710,6 +734,8 @@ pub const QUANTITY_KINDS: &[&str] = &[
     Angle::KIND,
     Speed::KIND,
     Temperature::KIND,
+    SecondMoment::KIND,
+    SectionModulus::KIND,
 ];
 
 /// Serde helpers for a plain `f64` field kept in SI: read from an SI number
@@ -792,6 +818,8 @@ pub fn convert(quantity: &str, value: &str, to: &str) -> Result<f64, ParseQuanti
         Angle::KIND => run::<Angle>(value, to),
         Speed::KIND => run::<Speed>(value, to),
         Temperature::KIND => run::<Temperature>(value, to),
+        SecondMoment::KIND => run::<SecondMoment>(value, to),
+        SectionModulus::KIND => run::<SectionModulus>(value, to),
         other => Err(ParseQuantityError::UnknownQuantity(other.to_owned())),
     }
 }
@@ -1109,6 +1137,29 @@ mod tests {
         check::<Angle>();
         check::<Speed>();
         check::<Temperature>();
+        check::<SecondMoment>();
+        check::<SectionModulus>();
+    }
+
+    #[test]
+    fn section_quantities() {
+        assert_close(
+            "116 cm4".parse::<SecondMoment>().unwrap().si(),
+            1.16e-6,
+            1e-12,
+        );
+        assert_close(
+            "2e6 mm⁴".parse::<SecondMoment>().unwrap().cm4(),
+            200.0,
+            1e-12,
+        );
+        assert_close(
+            "18 cm³".parse::<SectionModulus>().unwrap().mm3(),
+            18e3,
+            1e-12,
+        );
+        assert_close(SectionModulus::from_in3(1.0).cm3(), 2.54f64.powi(3), 1e-12);
+        assert!("3 kg".parse::<SectionModulus>().is_err());
     }
 
     #[test]

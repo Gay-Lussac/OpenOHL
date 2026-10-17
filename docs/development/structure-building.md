@@ -478,9 +478,12 @@ placed structure in the line (format to decide with the implementation).
 
 ### 4.2 Section library
 
-A new library kind (file name and format decided with the
-implementation): standard profiles (angles, tubes, poles…), user data;
-OLS CAD ships only synthetic examples. A structure **refers** to it by
+A new library kind, `.olssec` (`ols-sections`, crate `ols-sections`,
+[Section library](../user-guide/section-library.md); the format and the
+properties are built, not yet referred to): standard profiles (angles,
+tubes, poles…), user data; OLS CAD ships only synthetic examples. A
+member's `section = "<id>"` will resolve in the section library first,
+then in the structure's own `[[section]]` tables. A structure **refers** to it by
 id (decision 11). In a project it is stored like the other library kinds
 (per project line, see [Project file tables](data-model.md#project-file-tables-cratesols-session)), so all
 structures share one copy; exported and imported like the others.

@@ -89,6 +89,7 @@ One Rust crate per module, in [`crates/`](crates/):
 | `ols-line` | Line model (`.ols.json`): structures, attachments, sections; 3D solving |
 | `ols-structures` | Structure types (`.olss`) and insulator assemblies (`.olsi`) |
 | `ols-structures-fe` | Structure analysis: frame/truss/cable finite elements, poles (`.olsp`) |
+| `ols-sections` | Section library: standard profiles, cross-section properties (`.olssec`) |
 | `ols-loads` | Load cases (`.olslc`), structure loads, capacity checks |
 | `ols-terrain` | Survey points, TIN, ground heights and profiles |
 | `ols-lidar` | LAS/LAZ reading, class schemes (`.olsc`), ground classification |

@@ -21,6 +21,7 @@ ols-wirefe = { path = "crates/ols-wirefe" }
 ols-line = { path = "crates/ols-line" }
 ols-structures = { path = "crates/ols-structures" }
 ols-structures-fe = { path = "crates/ols-structures-fe" }
+ols-sections = { path = "crates/ols-sections" }
 ols-terrain = { path = "crates/ols-terrain" }
 ols-clearance = { path = "crates/ols-clearance" }
 ols-lidar = { path = "crates/ols-lidar" }
