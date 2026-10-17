@@ -639,7 +639,10 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 or every member has a section and a joint is supported; 2 *outline* when
 there are members or body polylines; else 1 *stick figure*. Checks that
 depend on the structure's shape must say what they do at each level
-([Structure detail levels](structure-detail.md)).
+([Structure detail levels](structure-detail.md)). The meaning of the
+levels decided for the structure application (poles with levels, a flat
+`[[body]]` staying level 1, capacities derived only at level 3) is in
+[Building structures](structure-building.md); not built yet.
 
 Placed into a line, a type becomes `PlacedStrings { points, strings,
 wires }` (global coordinates) that `Line::resolve` merges with the
