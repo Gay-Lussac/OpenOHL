@@ -168,6 +168,75 @@ pub struct SolverOptions {
     /// What of the jumpers the sections carry at their clamps.
     #[serde(default)]
     pub jumper_loads: JumperLoads,
+    /// How a jumper starting from a point (a tap) and what it hangs on
+    /// are solved.
+    #[serde(default, skip_serializing_if = "TapLoads::is_default")]
+    pub taps: TapLoads,
+}
+
+/// How taps are solved ([`Tap`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TapLoads {
+    /// The full loop (the default): the jumper's own force at its tap put
+    /// on the wire (or jumper) it hangs on, both solved in turn until the
+    /// tap no longer moves.
+    #[default]
+    Loop,
+    /// One calculation: the wire it hangs on carries the jumper's
+    /// estimate (its weight, ice and wind up to its first support, half
+    /// without), then the jumper is solved once.
+    Once,
+}
+
+impl TapLoads {
+    /// Every choice.
+    pub const ALL: [Self; 2] = [Self::Loop, Self::Once];
+
+    /// The default.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// As written in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Loop => "loop",
+            Self::Once => "once",
+        }
+    }
+
+    /// From its written name.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|j| j.as_str() == text)
+    }
+}
+
+/// A point a jumper starts (or ends) at instead of a section's end: a
+/// clamp object on a span point or on another jumper's point — a hinge,
+/// forces only.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Tap {
+    /// A span point of a section.
+    Span(SpanPointRef),
+    /// A point of another jumper.
+    Jumper {
+        /// The jumper's id.
+        jumper: String,
+        /// Its point's label.
+        point: String,
+    },
+}
+
+impl Tap {
+    /// In words.
+    pub fn text(&self) -> String {
+        match self {
+            Tap::Span(r) => format!("{} point {}", r.section, r.point),
+            Tap::Jumper { jumper, point } => format!("jumper {jumper} point {point}"),
+        }
+    }
 }
 
 impl SolverOptions {
@@ -290,6 +359,13 @@ pub struct Jumper {
     /// or bare.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<JumperPoint>,
+    /// Its `from` end is a tap (a clamp on a span or another jumper):
+    /// `from` is then not used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_tap: Option<Tap>,
+    /// Its `to` end is a tap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_tap: Option<Tap>,
     /// Display colour (`#rrggbb`); default: the colour of the section at
     /// `from`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1852,11 +1928,67 @@ impl Bundle {
 
 impl Line {
     /// The section a jumper takes its defaults from (colour, bundle,
-    /// circuit): the first section through its `from` point.
+    /// circuit): the first section through its `from` point — or, `from`
+    /// a tap, the section it hangs on — else through its `to` end.
     pub fn jumper_section(&self, jumper: &Jumper) -> Option<&Section> {
-        self.sections
-            .iter()
-            .find(|s| s.points.contains(&jumper.from))
+        self.end_section(jumper, &jumper.from, jumper.from_tap.as_ref(), 0)
+            .or_else(|| self.end_section(jumper, &jumper.to, jumper.to_tap.as_ref(), 0))
+    }
+
+    /// The section at an end of a jumper: through its section point, or
+    /// that a tap hangs on (a jumper's: that jumper's section, at most
+    /// `depth` 16 jumpers deep).
+    fn end_section(
+        &self,
+        _jumper: &Jumper,
+        point: &SectionPoint,
+        tap: Option<&Tap>,
+        depth: usize,
+    ) -> Option<&Section> {
+        match tap {
+            None => self.sections.iter().find(|s| s.points.contains(point)),
+            Some(t) => self.tap_section(t, depth),
+        }
+    }
+
+    /// The section a tap hangs on: its span's, or that of the jumper it
+    /// is on (through that jumper's ends, at most 16 jumpers deep).
+    pub fn tap_section(&self, tap: &Tap, depth: usize) -> Option<&Section> {
+        match tap {
+            Tap::Span(r) => self.sections.iter().find(|s| s.id == r.section),
+            Tap::Jumper { jumper, .. } if depth < 16 => {
+                let host = self.jumpers.iter().find(|j| &j.id == jumper)?;
+                self.end_section(host, &host.from, host.from_tap.as_ref(), depth + 1)
+                    .or_else(|| self.end_section(host, &host.to, host.to_tap.as_ref(), depth + 1))
+            }
+            Tap::Jumper { .. } => None,
+        }
+    }
+
+    /// The structures a jumper's end is at: its section point's, or, a
+    /// tap, those of the span (or section) it hangs on.
+    pub fn end_structures(&self, point: &SectionPoint, tap: Option<&Tap>) -> Vec<String> {
+        match tap {
+            None => vec![point.structure.clone()],
+            Some(Tap::Span(r)) => self
+                .sections
+                .iter()
+                .find(|s| s.id == r.section)
+                .and_then(|s| {
+                    let p = s.span_points.iter().find(|p| p.label == r.point)?;
+                    Some(
+                        s.points[p.span..=(p.span + 1).min(s.points.len() - 1)]
+                            .iter()
+                            .map(|q| q.structure.clone())
+                            .collect(),
+                    )
+                })
+                .unwrap_or_default(),
+            Some(t) => self
+                .tap_section(t, 0)
+                .map(|s| s.points.iter().map(|q| q.structure.clone()).collect())
+                .unwrap_or_default(),
+        }
     }
 
     /// A jumper's bundle: its own `bundle`, `bundle_spacing` and
@@ -2388,7 +2520,11 @@ impl Line {
             };
             own.check(&format!("jumper {}", j.id))
                 .map_err(LineError::Invalid)?;
-            for end in [&j.from, &j.to] {
+            for (end, tap) in [(&j.from, &j.from_tap), (&j.to, &j.to_tap)] {
+                if let Some(tap) = tap {
+                    self.check_tap(j, tap)?;
+                    continue;
+                }
                 let Some(structure) = self.structure(&end.structure) else {
                     return bad(&format!("unknown structure {}", end.structure));
                 };
@@ -2399,8 +2535,16 @@ impl Line {
                     ));
                 }
             }
-            if j.from == j.to {
+            if j.from == j.to && j.from_tap.is_none() && j.to_tap.is_none() {
                 return bad("both ends are the same wire point");
+            }
+            if j.from_tap.is_some() && j.from_tap == j.to_tap {
+                return bad("both ends are the same tap");
+            }
+            if (j.from_tap.is_some() || j.to_tap.is_some()) && j.length.is_none() && !j.rigid {
+                return bad(
+                    "a jumper on a tap is given by its length (its sag would need a design case where the tap stays put)",
+                );
             }
             let mut labels = std::collections::BTreeSet::new();
             for p in &j.points {
@@ -2509,7 +2653,112 @@ impl Line {
                 return bad("weight, wind area, compression ≥ 0; stiffness and length > 0");
             }
         }
+        // Taps: no jumper hangs on itself, through other jumpers or not.
+        self.jumper_order()?;
         Ok(())
+    }
+
+    /// Tap `tap` of jumper `j` holds: its point exists and holds a clamp;
+    /// a span's section is solved by finite elements; another jumper.
+    fn check_tap(&self, j: &Jumper, tap: &Tap) -> Result<(), LineError> {
+        let bad = |m: String| {
+            Err(LineError::Invalid(format!(
+                "jumper {}: tap {}: {m}",
+                j.id,
+                tap.text()
+            )))
+        };
+        let object = match tap {
+            Tap::Span(r) => {
+                let Some(sec) = self.sections.iter().find(|s| s.id == r.section) else {
+                    return bad("no such section".into());
+                };
+                if sec.calculation.method() != condition::Method::Fe {
+                    return bad(format!(
+                        "section {} is calculated by ruling span: a tap needs finite elements",
+                        sec.id
+                    ));
+                }
+                sec.span_points
+                    .iter()
+                    .find(|p| p.label == r.point)
+                    .map(|p| &p.object)
+            }
+            Tap::Jumper { jumper, point } => {
+                if *jumper == j.id {
+                    return bad("a jumper cannot hang on itself".into());
+                }
+                let Some(host) = self.jumpers.iter().find(|x| &x.id == jumper) else {
+                    return bad("no such jumper".into());
+                };
+                host.points
+                    .iter()
+                    .find(|p| &p.label == point)
+                    .map(|p| &p.object)
+            }
+        };
+        match object {
+            None => bad("no such point".into()),
+            Some(Some(o)) if o.kind == ObjectKind::Clamp => Ok(()),
+            Some(_) => bad("its point holds no clamp (put a clamp object there)".into()),
+        }
+    }
+
+    /// The jumpers in the order they are solved: those hanging on another
+    /// jumper (a tap on its point) after it; refused when jumpers hang on
+    /// each other in a ring.
+    pub fn jumper_order(&self) -> Result<Vec<Vec<usize>>, LineError> {
+        let index: BTreeMap<&str, usize> = self
+            .jumpers
+            .iter()
+            .enumerate()
+            .map(|(k, j)| (j.id.as_str(), k))
+            .collect();
+        let hosts: Vec<Vec<usize>> = self
+            .jumpers
+            .iter()
+            .map(|j| {
+                [&j.from_tap, &j.to_tap]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|t| match t {
+                        Tap::Jumper { jumper, .. } => index.get(jumper.as_str()).copied(),
+                        Tap::Span(_) => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut level: Vec<Option<usize>> = vec![None; self.jumpers.len()];
+        for _ in 0..=self.jumpers.len() {
+            let mut changed = false;
+            for k in 0..self.jumpers.len() {
+                if level[k].is_some() {
+                    continue;
+                }
+                if let Some(l) = hosts[k]
+                    .iter()
+                    .map(|h| level[*h])
+                    .try_fold(0usize, |m, x| x.map(|x| m.max(x + 1)))
+                {
+                    level[k] = Some(l);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        if let Some(k) = level.iter().position(Option::is_none) {
+            return Err(LineError::Invalid(format!(
+                "jumper {}: jumpers hang on each other in a ring (taps)",
+                self.jumpers[k].id
+            )));
+        }
+        let top = level.iter().flatten().copied().max().unwrap_or(0);
+        Ok((0..=top)
+            .map(|l| (0..level.len()).filter(|k| level[*k] == Some(l)).collect())
+            .filter(|v: &Vec<usize>| !v.is_empty())
+            .collect())
     }
 }
 

@@ -1414,7 +1414,8 @@ impl Ready {
             }
             (Tool::Edit, Selection::Jumper(id)) => {
                 // Its window, as a section's (it frees the mouse).
-                self.editor = crate::editors::JumperForm::of(model, id).map(Form::Jumper);
+                self.editor =
+                    crate::editors::JumperForm::of(model, id).map(|f| Form::Jumper(Box::new(f)));
                 self.select(target);
             }
             (Tool::AddJumper, Selection::Structure(id)) => {
@@ -1568,7 +1569,7 @@ impl Ready {
                                     self.select(Selection::Jumper(id.clone()));
                                     // Its window: the lengths between its clamps.
                                     self.editor = crate::editors::JumperForm::of(&self.model, &id)
-                                        .map(Form::Jumper);
+                                        .map(|f| Form::Jumper(Box::new(f)));
                                 }
                             }
                             Err(e) => self.status = Some((e, true)),
@@ -4344,6 +4345,45 @@ fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                      nothing more; the pull solves the sections at jumpers and the jumpers again \
                      in two or three passes — {}",
                     PULL_COST
+                ))
+                .small()
+                .weak(),
+            );
+            ui.separator();
+            ui.strong("Jumpers on taps");
+            ui.label(
+                "A jumper starting from a clamp on a span or on another jumper (a tap: a hinge, \
+                 forces only): what the wire it hangs on carries.",
+            );
+            let taps = r
+                .model
+                .line
+                .jumpers
+                .iter()
+                .filter(|j| j.from_tap.is_some() || j.to_tap.is_some())
+                .count();
+            for (choice, text, help) in [
+                (
+                    ols_line::TapLoads::Loop,
+                    "The full loop (default)",
+                    "The jumper's own force at its tap put on the wire (or jumper) it hangs on, \
+                     both solved in turn until the tap no longer moves",
+                ),
+                (
+                    ols_line::TapLoads::Once,
+                    "One calculation",
+                    "The wire carries the jumper's estimate (weight, ice and wind up to its first \
+                     support, half without), then the jumper is solved once: no loop",
+                ),
+            ] {
+                ui.radio_value(&mut draft.taps, choice, text)
+                    .on_hover_text(help);
+            }
+            ui.label(
+                egui::RichText::new(format!(
+                    "{taps} jumper(s) on taps on this line. The loop solves the wires at taps and \
+                     their jumpers again in passes (usually two or three); one calculation costs \
+                     nothing more."
                 ))
                 .small()
                 .weak(),

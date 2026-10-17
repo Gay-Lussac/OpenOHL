@@ -722,10 +722,9 @@ impl Line {
             .jumpers
             .iter()
             .map(|j| {
-                (
-                    j.id.clone(),
-                    union(&mut [j.from.structure.as_str(), j.to.structure.as_str()].into_iter()),
-                )
+                let mut at = self.end_structures(&j.from, j.from_tap.as_ref());
+                at.extend(self.end_structures(&j.to, j.to_tap.as_ref()));
+                (j.id.clone(), union(&mut at.iter().map(String::as_str)))
             })
             .collect();
         (sections, jumpers)

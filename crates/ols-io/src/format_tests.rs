@@ -200,6 +200,20 @@ fn rich_line() -> Line {
             },
         )),
     });
+    // A jumper on a tap on S1's clamp C1, the loop turned off.
+    let mut tap = line.jumpers[0].clone();
+    tap.id = "JT".into();
+    tap.supports.clear();
+    tap.support = None;
+    tap.sag = None;
+    tap.length = Some(12.5);
+    tap.points.clear();
+    tap.from_tap = Some(ols_line::Tap::Span(ols_line::SpanPointRef {
+        section: line.sections[1].id.clone(),
+        point: "C1".into(),
+    }));
+    line.jumpers.push(tap);
+    line.solver.taps = ols_line::TapLoads::Once;
     line.sections[0].add_spread_load(&ols_line::SpreadLoad {
         span: 0,
         start: ols_line::SpanPlace::at_fraction(0.1),

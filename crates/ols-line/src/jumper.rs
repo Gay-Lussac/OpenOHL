@@ -66,19 +66,26 @@ pub fn end_loads<'a>(
     line: &Line,
     case: &WeatherCase,
     cable: impl Fn(&str) -> Option<&'a Cable>,
-) -> std::collections::BTreeMap<SectionPoint, [f64; 3]> {
-    let mut out = std::collections::BTreeMap::new();
-    for j in &line.jumpers {
+) -> crate::solve::JumperLoadMap {
+    use crate::solve::LoadAt;
+    let mut out = crate::solve::JumperLoadMap::new();
+    // Jumpers hanging on other jumpers first (their loads go on those).
+    let order: Vec<usize> = match line.jumper_order() {
+        Ok(levels) => levels.into_iter().rev().flatten().collect(),
+        Err(_) => (0..line.jumpers.len()).collect(),
+    };
+    for k in order {
+        let j = &line.jumpers[k];
         let Some(c) = cable(&j.cable) else {
             continue;
         };
-        let (Some(a), Some(b)) = (line.wire_point(&j.from), line.wire_point(&j.to)) else {
+        let (Some(a), Some(b)) = (
+            approximate_end(line, &j.from, j.from_tap.as_ref(), 0),
+            approximate_end(line, &j.to, j.to_tap.as_ref(), 0),
+        ) else {
             continue;
         };
-        let chord = (0..3)
-            .map(|k| (a.position[k] - b.position[k]).powi(2))
-            .sum::<f64>()
-            .sqrt();
+        let chord = (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt();
         // Given by its sag: the length giving it between the wire points in
         // still air (as the jumper is cut).
         let from_sag = |sag: f64| {
@@ -88,7 +95,7 @@ pub fn end_loads<'a>(
                 load: Vector3::new(0.0, 0.0, -c.weight().si()),
             };
             let budget = Budget::new().max_iterations(200);
-            length_for_sag(props, v(a.position), v(b.position), sag, &budget).ok()
+            length_for_sag(props, v(a), v(b), sag, &budget).ok()
         };
         let length = match (j.length, j.sag) {
             _ if j.rigid => chord,
@@ -100,11 +107,8 @@ pub fn end_loads<'a>(
         };
         // Per metre: its weight, ice and the wind across the line at its
         // middle (as the jumper is solved).
-        let d = v(b.position) - v(a.position);
-        let along = line.direction_at([
-            0.5 * (a.position[0] + b.position[0]),
-            0.5 * (a.position[1] + b.position[1]),
-        ]);
+        let d = v(b) - v(a);
+        let along = line.direction_at([0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])]);
         let q = wire_load_in_line_wind(case, c, d, along);
         let bundle = f64::from(line.jumper_bundle(j).count.max(1));
         // The supports' places along it, from `from`.
@@ -119,10 +123,18 @@ pub fn end_loads<'a>(
         } else {
             (first / 2.0, (1.0 - last) / 2.0)
         };
-        // Its objects: shared between the end and its first support (the
-        // other end without supports) by where they are.
+        // Its objects, and the jumpers hanging on its points: shared
+        // between an end and its first support (the other end without
+        // supports) by where they are.
+        let horizontal = d.xy().norm();
+        let mut loads = object_loads(j, c, case, length, horizontal, along);
+        for p in &j.points {
+            if let Some(f) = out.get(&LoadAt::Jumper(j.id.clone(), p.label.clone())) {
+                loads.push((place_fraction(&p.at, length, horizontal), v(*f)));
+            }
+        }
         let mut ends = [Vector3::zeros(); 2];
-        for (f, load) in object_loads(j, c, case, length, d.xy().norm(), along) {
+        for (f, load) in loads {
             let (to_from, to_to) = if at.is_empty() {
                 (1.0 - f, f)
             } else if f < first {
@@ -135,14 +147,108 @@ pub fn end_loads<'a>(
             ends[0] += load * to_from;
             ends[1] += load * to_to;
         }
-        for (k, (p, share)) in [(&j.from, from), (&j.to, to)].into_iter().enumerate() {
-            let e = out.entry(p.clone()).or_insert([0.0; 3]);
+        for (k, (key, share)) in [
+            (LoadAt::of(&j.from, j.from_tap.as_ref()), from),
+            (LoadAt::of(&j.to, j.to_tap.as_ref()), to),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let e = out.entry(key).or_insert([0.0; 3]);
             for i in 0..3 {
                 e[i] += q[i] * length * share * bundle + ends[k][i];
             }
         }
     }
     out
+}
+
+/// Where a jumper's end is in still air, roughly: its wire point's
+/// position, or a tap's — between the wire points of the span it is on,
+/// by its place (a jumper's: along that jumper, at most 16 deep).
+pub fn approximate_end(
+    line: &Line,
+    point: &SectionPoint,
+    tap: Option<&crate::Tap>,
+    depth: usize,
+) -> Option<Point> {
+    match tap {
+        None => line.wire_point(point).map(|w| w.position),
+        Some(crate::Tap::Span(r)) => {
+            let s = line.sections.iter().find(|s| s.id == r.section)?;
+            let s = line.section_with_fractions(s);
+            let p = s.span_points.iter().find(|p| p.label == r.point)?;
+            let w = s.points.get(p.span..=p.span + 1)?;
+            let (a, b) = (
+                line.wire_point(&w[0])?.position,
+                line.wire_point(&w[1])?.position,
+            );
+            let f =
+                p.at.fraction_of((b[0] - a[0]).hypot(b[1] - a[1]))
+                    .clamp(0.0, 1.0);
+            Some([0, 1, 2].map(|k| a[k] + f * (b[k] - a[k])))
+        }
+        Some(crate::Tap::Jumper {
+            jumper,
+            point: label,
+        }) if depth < 16 => {
+            let h = line.jumpers.iter().find(|x| &x.id == jumper)?;
+            let a = approximate_end(line, &h.from, h.from_tap.as_ref(), depth + 1)?;
+            let b = approximate_end(line, &h.to, h.to_tap.as_ref(), depth + 1)?;
+            let p = h.points.iter().find(|p| &p.label == label)?;
+            let chord = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+            let f = place_fraction(
+                &p.at,
+                h.length.unwrap_or(chord),
+                (b[0] - a[0]).hypot(b[1] - a[1]),
+            );
+            Some([0, 1, 2].map(|k| a[k] + f * (b[k] - a[k])))
+        }
+        Some(_) => None,
+    }
+}
+
+/// What a jumper solve takes from the jumpers solved before it: where
+/// their points are (its taps on them), and the loads of the jumpers
+/// hanging on its own points (the whole bundle's, N, by label).
+#[derive(Debug, Clone, Default)]
+pub struct TapContext {
+    /// Solved points of other jumpers, by (jumper, label).
+    pub points: std::collections::BTreeMap<(String, String), Point>,
+    /// Loads on its points, by label.
+    pub loads: Vec<(String, [f64; 3])>,
+}
+
+/// Where a tap is in the case solved: its span point as its section is
+/// solved, or another jumper's point as solved before ([`TapContext`]).
+fn tap_position(
+    line: &Line,
+    shapes: &[SectionShape],
+    context: &TapContext,
+    tap: &crate::Tap,
+) -> Result<Vector3<f64>, String> {
+    match tap {
+        crate::Tap::Span(r) => {
+            let shape = shapes
+                .iter()
+                .find(|s| s.section == r.section)
+                .ok_or_else(|| {
+                    format!("section {} is not solved in this weather case", r.section)
+                })?;
+            let _ = line;
+            shape
+                .span_points
+                .iter()
+                .find(|(l, _)| *l == r.point)
+                .map(|(_, q)| v(*q))
+                .ok_or_else(|| format!("span point {} of {} not solved", r.point, r.section))
+        }
+        crate::Tap::Jumper { jumper, point } => context
+            .points
+            .get(&(jumper.clone(), point.clone()))
+            .map(|q| v(*q))
+            .ok_or_else(|| format!("jumper {jumper} (its point {point}) is not solved")),
+    }
 }
 
 /// Solved geometry of a jumper.
@@ -1003,11 +1109,31 @@ pub fn solve_jumper(
     cable: &Cable,
     case: &WeatherCase,
 ) -> Result<JumperShape, LineError> {
+    solve_jumper_in(line, jumper, shapes, cable, case, &TapContext::default())
+}
+
+/// [`solve_jumper`] with what the jumpers solved before it give
+/// ([`TapContext`]): its taps on their points, the loads of the jumpers
+/// hanging on its own points. A tap end is a hinge: no direction held
+/// there.
+pub fn solve_jumper_in(
+    line: &Line,
+    jumper: &Jumper,
+    shapes: &[SectionShape],
+    cable: &Cable,
+    case: &WeatherCase,
+    context: &TapContext,
+) -> Result<JumperShape, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("jumper {}: {m}", jumper.id));
     // Its ends are the solved clamps: a section through an end that did not
     // solve leaves no clamp (the attachment's data point would be a wrong,
     // plausible-looking end).
-    for end in [&jumper.from, &jumper.to] {
+    for end in [&jumper.from, &jumper.to]
+        .into_iter()
+        .zip([&jumper.from_tap, &jumper.to_tap])
+        .filter(|(_, tap)| tap.is_none())
+        .map(|(e, _)| e)
+    {
         if let Some(s) = line
             .sections
             .iter()
@@ -1019,8 +1145,24 @@ pub fn solve_jumper(
             )));
         }
     }
-    let a = end_position(line, shapes, &jumper.from).map_err(|e| invalid(e.to_string()))?;
-    let b = end_position(line, shapes, &jumper.to).map_err(|e| invalid(e.to_string()))?;
+    let end = |point: &SectionPoint, tap: &Option<crate::Tap>| match tap {
+        None => end_position(line, shapes, point).map_err(|e| invalid(e.to_string())),
+        Some(t) => tap_position(line, shapes, context, t).map_err(invalid),
+    };
+    let a = end(&jumper.from, &jumper.from_tap)?;
+    let b = end(&jumper.to, &jumper.to_tap)?;
+    // The jumpers hanging on its points (whole bundle), by where they are.
+    let hanging = |length: f64| -> Vec<(f64, Vector3<f64>)> {
+        let horizontal = (b - a).xy().norm();
+        context
+            .loads
+            .iter()
+            .filter_map(|(label, f)| {
+                let p = jumper.points.iter().find(|p| &p.label == label)?;
+                Some((place_fraction(&p.at, length, horizontal), v(*f)))
+            })
+            .collect()
+    };
     let d = b - a;
     if jumper.rigid {
         // A straight member between the clamps.
@@ -1034,7 +1176,9 @@ pub fn solve_jumper(
         // Its objects shared between the ends by where they are.
         let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
         let mut ends = [Vector3::new(0.0, 0.0, -half); 2];
-        for (f, w) in object_loads(jumper, cable, case, d.norm(), d.xy().norm(), along) {
+        let mut loads = object_loads(jumper, cable, case, d.norm(), d.xy().norm(), along);
+        loads.extend(hanging(d.norm()));
+        for (f, w) in loads {
             ends[0] += w * (1.0 - f);
             ends[1] += w * f;
         }
@@ -1061,7 +1205,19 @@ pub fn solve_jumper(
     // line from the case's side (a jumper across the line takes little).
     let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
     let load = wire_load_in_line_wind(case, cable, d, along);
-    let stiff = stiffness(line, jumper, shapes, cable, load);
+    // A tap is a hinge: no direction held there.
+    let hinged = |mut s: Stiff| {
+        if jumper.from_tap.is_some() {
+            s.start = None;
+        }
+        if jumper.to_tap.is_some() {
+            s.end = None;
+        }
+        s
+    };
+    let stiff = stiffness(line, jumper, shapes, cable, load)
+        .map(hinged)
+        .filter(|s| s.ei > 0.0 && (s.start.is_some() || s.end.is_some()));
     let reference = match (jumper.length, jumper.sag) {
         (Some(length), _) => length,
         // Given by its sag: cut in this case (the design case; other cases
@@ -1098,15 +1254,16 @@ pub fn solve_jumper(
     let objects: Vec<(f64, Vector3<f64>)> =
         object_loads(jumper, cable, case, l0, d.xy().norm(), along)
             .into_iter()
+            .chain(hanging(l0))
             .map(|(f, w)| (f, w / f64::from(bundle)))
             .collect();
     // Support clamps and objects: always the rod (it keeps the jumper
     // straight through its clamps whatever its stiffness, and takes
     // loads at points).
     let stiff = if !jumper.supports.is_empty() {
-        Some(rod_ends(line, jumper, shapes, cable, load))
+        Some(hinged(rod_ends(line, jumper, shapes, cable, load)))
     } else if !objects.is_empty() {
-        stiff.or_else(|| Some(rod_ends(line, jumper, shapes, cable, load)))
+        stiff.or_else(|| Some(hinged(rod_ends(line, jumper, shapes, cable, load))))
     } else {
         stiff
     };
@@ -1294,13 +1451,60 @@ pub fn solve_jumpers(
     case: &WeatherCase,
     shapes: &[SectionShape],
 ) -> Vec<Result<JumperShape, LineError>> {
-    let all: Vec<&Jumper> = line.jumpers.iter().collect();
-    in_parallel(&all, |jumper| {
-        solve_one_jumper(line, library, case, shapes, jumper)
-    })
+    let loads = end_loads(line, case, |id| library.get(id));
+    solve_jumpers_with(line, library, case, shapes, &loads)
 }
 
-/// `f` of every item, in order, spread over the cores (jumpers are
+/// [`solve_jumpers`] with the loads `loads` of the jumpers hanging on
+/// other jumpers' points (taps; the rest unused): level by level, those
+/// hanging on a jumper after it (where its points are), each level over
+/// the cores.
+pub fn solve_jumpers_with(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    shapes: &[SectionShape],
+    loads: &crate::solve::JumperLoadMap,
+) -> Vec<Result<JumperShape, LineError>> {
+    let levels = line
+        .jumper_order()
+        .unwrap_or_else(|_| vec![(0..line.jumpers.len()).collect()]);
+    let mut out: Vec<Option<Result<JumperShape, LineError>>> = vec![None; line.jumpers.len()];
+    let mut points: std::collections::BTreeMap<(String, String), Point> = Default::default();
+    for level in levels {
+        let jumpers: Vec<&Jumper> = level.iter().map(|&k| &line.jumpers[k]).collect();
+        let solved = in_parallel(&jumpers, |jumper| {
+            let context = TapContext {
+                points: points.clone(),
+                loads: jumper
+                    .points
+                    .iter()
+                    .filter_map(|p| {
+                        loads
+                            .get(&crate::solve::LoadAt::Jumper(
+                                jumper.id.clone(),
+                                p.label.clone(),
+                            ))
+                            .map(|f| (p.label.clone(), *f))
+                    })
+                    .collect(),
+            };
+            solve_one_jumper_in(line, library, case, shapes, jumper, &context)
+        });
+        for (&k, r) in level.iter().zip(solved) {
+            if let Ok(s) = &r {
+                for (label, q) in &s.point_positions {
+                    points.insert((line.jumpers[k].id.clone(), label.clone()), *q);
+                }
+            }
+            out[k] = Some(r);
+        }
+    }
+    out.into_iter()
+        .map(|r| r.unwrap_or_else(|| Err(LineError::Invalid("not solved".into()))))
+        .collect()
+}
+
 /// independent of each other). Fewer than 16 items: on this thread.
 pub(crate) fn in_parallel<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
     let threads = std::thread::available_parallelism()
@@ -1332,6 +1536,18 @@ pub fn solve_one_jumper(
     shapes: &[SectionShape],
     jumper: &Jumper,
 ) -> Result<JumperShape, LineError> {
+    solve_one_jumper_in(line, library, case, shapes, jumper, &TapContext::default())
+}
+
+/// [`solve_one_jumper`] with what the jumpers solved before it give.
+pub fn solve_one_jumper_in(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    shapes: &[SectionShape],
+    jumper: &Jumper,
+    context: &TapContext,
+) -> Result<JumperShape, LineError> {
     let cable = library.get(&jumper.cable).ok_or_else(|| {
         LineError::Invalid(format!(
             "jumper {}: cable \"{}\" not in the libraries",
@@ -1341,9 +1557,9 @@ pub fn solve_one_jumper(
     if jumper.length.is_none() && jumper.sag.is_some() {
         let mut cut = jumper.clone();
         cut.length = Some(cut_once(line, library, jumper, cable)?);
-        return solve_jumper(line, &cut, shapes, cable, case);
+        return solve_jumper_in(line, &cut, shapes, cable, case, context);
     }
-    solve_jumper(line, jumper, shapes, cable, case)
+    solve_jumper_in(line, jumper, shapes, cable, case, context)
 }
 
 /// Cut lengths of the jumpers given by their sag, kept between solves (and
@@ -1830,7 +2046,10 @@ mod tests {
         let down = |l: &Line, c: &WeatherCase| -> std::collections::BTreeMap<SectionPoint, f64> {
             end_loads(l, c, |id| lib.get(id))
                 .into_iter()
-                .map(|(k, f)| (k, -f[2]))
+                .filter_map(|(k, f)| match k {
+                    crate::solve::LoadAt::Clamp(p) => Some((p, -f[2])),
+                    _ => None,
+                })
                 .collect()
         };
         let w = down(&line, &calm);
@@ -1880,6 +2099,240 @@ mod tests {
     /// their horizontal parts cancel), the sections and jumpers settle in
     /// a few passes, the clamps elsewhere than with the estimate; read
     /// back from the line file.
+    /// The example with a tap: a clamp at 0.4 of S1's first span, a
+    /// jumper from it to the first jumper's `to` end, 5 % longer than the
+    /// still-air distance.
+    fn tapped() -> (Line, String) {
+        let mut line = crate::tests::example();
+        let s1 = line.sections[0].id.clone();
+        line.sections[0].span_points.push(crate::SpanPoint {
+            label: "TAP".into(),
+            span: 0,
+            at: crate::SpanPlace::at_fraction(0.4),
+            description: String::new(),
+            object: Some(crate::LineObject::clamp(30.0)),
+        });
+        let mut j = line.jumpers[0].clone();
+        j.id = "JT".into();
+        j.from_tap = Some(crate::Tap::Span(crate::SpanPointRef {
+            section: s1.clone(),
+            point: "TAP".into(),
+        }));
+        j.supports.clear();
+        j.support = None;
+        j.sag = None;
+        let a = approximate_end(&line, &j.from, j.from_tap.as_ref(), 0).unwrap();
+        let b = approximate_end(&line, &j.to, None, 0).unwrap();
+        let chord = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+        j.length = Some(1.05 * chord);
+        line.jumpers.push(j);
+        line.validate().unwrap();
+        (line, s1)
+    }
+
+    /// A jumper from a tap on a span: its end where the tap is solved, a
+    /// hinge; with the full loop (the default) the wire carries the
+    /// jumper's own force there — the tap moves until settled — with one
+    /// calculation the estimate. Refused: a point without a clamp, a sag,
+    /// a ruling-span section; the tap joins the jumper to its wire's
+    /// conductor path.
+    #[test]
+    fn a_jumper_hangs_on_a_tap_in_a_span() {
+        let lib = library();
+        let calm = still(15.0);
+        let (line, s1) = tapped();
+        assert_eq!(line.solver.taps, crate::TapLoads::Loop);
+        let solve = |line: &Line| {
+            let shapes: Vec<SectionShape> = crate::solve::solve_line(line, &lib, &calm)
+                .into_iter()
+                .map(Result::unwrap)
+                .collect();
+            let jumpers = solve_jumpers(line, &lib, &calm, &shapes);
+            (shapes, jumpers)
+        };
+        let tap = |shapes: &[SectionShape]| {
+            shapes
+                .iter()
+                .find(|s| s.section == s1)
+                .unwrap()
+                .span_points
+                .iter()
+                .find(|(l, _)| l == "TAP")
+                .unwrap()
+                .1
+        };
+        let (looped, jumpers) = solve(&line);
+        let jt = jumpers.last().unwrap().as_ref().unwrap();
+        let at = tap(&looped);
+        let gap = (0..3)
+            .map(|k| (jt.points[0][k] - at[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!(gap < 1e-9, "its end at the tap: {gap}");
+        // One calculation: the estimate on the wire, the tap elsewhere.
+        let mut once = line.clone();
+        once.solver.taps = crate::TapLoads::Once;
+        let (single, _) = solve(&once);
+        let moved = (0..3)
+            .map(|k| (tap(&single)[k] - at[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!(moved > 1e-4, "{moved}");
+        // The loop's force on the wire is the jumper's own pull.
+        let estimate = end_loads(&line, &calm, |id| lib.get(id));
+        let key = crate::solve::LoadAt::Span(crate::SpanPointRef {
+            section: s1.clone(),
+            point: "TAP".into(),
+        });
+        let est = estimate[&key];
+        assert!(est[2] < 0.0, "the estimate: down {est:?}");
+        // Without a tap nothing changes on the other sections' clamps.
+        let mut results = crate::solve::solve_line(&line, &lib, &calm);
+        let used = crate::solve::jumper_pull(
+            &line,
+            &lib,
+            &calm,
+            &ols_wirefe::model::default_fe_budget(),
+            &estimate,
+            estimate.clone(),
+            &mut results,
+        );
+        let pulled = used[&key];
+        let f = jt.end_forces[0];
+        assert!(
+            (0..3).all(|k| (pulled[k] - f[k]).abs() < 0.05 * f[2].abs().max(1.0)),
+            "{pulled:?} {f:?}"
+        );
+        // Refused.
+        let mut bare = line.clone();
+        bare.sections[0].span_points.last_mut().unwrap().object =
+            Some(crate::LineObject::body(10.0, crate::Shape::Point));
+        assert!(bare.validate().unwrap_err().to_string().contains("clamp"));
+        let mut sagged = line.clone();
+        sagged.jumpers.last_mut().unwrap().length = None;
+        sagged.jumpers.last_mut().unwrap().sag = Some(1.0);
+        assert!(
+            sagged
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("length")
+        );
+        let mut ruling = line.clone();
+        ruling.sections[0].calculation = crate::condition::Calculation::InitialRs;
+        assert!(ruling.validate().is_err());
+        // One conductor path with its wire.
+        let paths = crate::electrical::conductor_paths(&line);
+        let to = line.jumpers.last().unwrap().to.clone();
+        let other = line
+            .sections
+            .iter()
+            .find(|s| s.points.contains(&to))
+            .unwrap();
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.contains(&s1) && p.contains(&other.id))
+        );
+    }
+
+    /// A jumper from a tap on another jumper: solved after it, its end at
+    /// that jumper's point; that jumper carries it (its clamps more
+    /// loaded); jumpers hanging on each other in a ring are refused; the
+    /// incremental solve is the full one.
+    #[test]
+    fn a_jumper_hangs_on_a_tap_on_a_jumper() {
+        let lib = library();
+        let calm = still(15.0);
+        let mut line = crate::tests::example();
+        let host = line.jumpers[0].id.clone();
+        line.jumpers[0].points.push(crate::JumperPoint {
+            label: "K".into(),
+            at: crate::JumperPlace {
+                fraction: 0.5,
+                ..Default::default()
+            },
+            description: String::new(),
+            object: Some(crate::LineObject::clamp(20.0)),
+        });
+        let (_, before) = solve_all(&line, &calm);
+        let mut j = line.jumpers[0].clone();
+        j.id = "JJ".into();
+        j.points.clear();
+        j.supports.clear();
+        j.support = None;
+        j.sag = None;
+        j.from_tap = Some(crate::Tap::Jumper {
+            jumper: host.clone(),
+            point: "K".into(),
+        });
+        // To the host's `from` end, 3 % slack.
+        j.to = line.jumpers[0].from.clone();
+        let a = approximate_end(&line, &j.from, j.from_tap.as_ref(), 0).unwrap();
+        let b = approximate_end(&line, &j.to, None, 0).unwrap();
+        j.length = Some(1.03 * (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt());
+        line.jumpers.push(j);
+        line.validate().unwrap();
+        assert_eq!(line.jumper_order().unwrap().len(), 2);
+        let (_, after) = solve_all(&line, &calm);
+        let (h, jj) = (&after[0], after.last().unwrap());
+        let k = h.point_positions[0].1;
+        let gap = (0..3)
+            .map(|i| (jj.points[0][i] - k[i]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!(gap < 1e-9, "{gap}");
+        let down = |s: &JumperShape| -(s.end_forces[0][2] + s.end_forces[1][2]);
+        assert!(
+            down(h) > down(&before[0]) + 1.0,
+            "{} {}",
+            down(h),
+            down(&before[0])
+        );
+        // A ring.
+        let mut ring = line.clone();
+        ring.jumpers[0].points[0].object = Some(crate::LineObject::clamp(1.0));
+        ring.jumpers
+            .last_mut()
+            .unwrap()
+            .points
+            .push(crate::JumperPoint {
+                label: "Q".into(),
+                at: crate::JumperPlace::default(),
+                description: String::new(),
+                object: Some(crate::LineObject::clamp(1.0)),
+            });
+        ring.jumpers[0].from_tap = Some(crate::Tap::Jumper {
+            jumper: "JJ".into(),
+            point: "Q".into(),
+        });
+        ring.jumpers[0].length = Some(10.0);
+        ring.jumpers[0].sag = None;
+        assert!(ring.validate().unwrap_err().to_string().contains("ring"));
+        // Incremental = full (with the looped loads of the jumper on its
+        // host).
+        let estimate = end_loads(&line, &calm, |id| lib.get(id));
+        let mut results = crate::solve::solve_line(&line, &lib, &calm);
+        let used = crate::solve::jumper_pull(
+            &line,
+            &lib,
+            &calm,
+            &ols_wirefe::model::default_fe_budget(),
+            &estimate,
+            estimate.clone(),
+            &mut results,
+        );
+        let shapes: Vec<SectionShape> = results.into_iter().map(Result::unwrap).collect();
+        let looped = solve_jumpers_with(&line, &lib, &calm, &shapes, &used);
+        let jl = looped.last().unwrap().as_ref().unwrap();
+        let full = crate::incremental::SolvedLine::solve(&line, &lib, &calm);
+        let inc = full.jumper_shapes(&line);
+        assert_eq!(inc.len(), line.jumpers.len());
+        let p = &inc.last().unwrap().points[0];
+        let q = &jl.points[0];
+        assert!((0..3).all(|i| (p[i] - q[i]).abs() < 1e-6), "{p:?} {q:?}");
+    }
+
     #[test]
     fn a_body_on_a_jumper_hangs_on_it() {
         let lib = library();
@@ -1927,7 +2380,8 @@ mod tests {
         // The estimate: half on each end without supports.
         let est = |line: &Line| end_loads(line, &calm, |id| lib.get(id));
         let bare_line = crate::tests::example();
-        let more = est(&line)[&j.from][2] - est(&bare_line)[&j.from][2];
+        let at = crate::solve::LoadAt::Clamp(j.from.clone());
+        let more = est(&line)[&at][2] - est(&bare_line)[&at][2];
         assert!((more + 100.0).abs() < 1.0, "{more}");
         // A rigid jumper shares it by where it is.
         let mut rigid = line.clone();
@@ -1980,8 +2434,9 @@ mod tests {
         let calm = still(15.0);
         let mut windy = still(15.0);
         windy.wind_pressure = ols_core::units::Stress::from_pascals(600.0);
-        let quiet = end_loads(&line, &calm, |id| lib.get(id))[&j.from];
-        let blown = end_loads(&line, &windy, |id| lib.get(id))[&j.from];
+        let at = crate::solve::LoadAt::Clamp(j.from.clone());
+        let quiet = end_loads(&line, &calm, |id| lib.get(id))[&at];
+        let blown = end_loads(&line, &windy, |id| lib.get(id))[&at];
         assert!(quiet[0] == 0.0 && quiet[1] == 0.0 && quiet[2] < 0.0);
         assert!((blown[2] - quiet[2]).abs() < 1e-9, "the same weight");
         assert!(blown[0].hypot(blown[1]) > 1.0, "a push: {blown:?}");

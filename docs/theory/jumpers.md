@@ -117,6 +117,39 @@ supports, none). A rigid jumper shares each object between its ends by
 where it is. A jumper given by its sag is cut without its objects
 (fitted afterwards, as spacers on spans).
 
+## Jumpers on taps
+
+A jumper's end may be a **tap** instead of a section's end: a clamp
+object on a span point (a T-off from a conductor in the span) or on
+another jumper's point. The clamp is a hinge: it passes forces only, so
+the jumper leaves it in the direction its own equilibrium gives (no exit
+angle; the rod's end is left free) and the wire takes no moment nor
+torsion (the wires carry none anyway). The end is where the point is
+solved in the case. A tap jumper is given by its length (or rigid): a
+sag would need a design case in which the tap stays put.
+
+What the wire it hangs on carries (Criteria › Calculation options,
+*Jumpers on taps*):
+
+- **The full loop** (default): the jumper's own force at its end put on
+  the wire at the tap point (a force on that node of the section's FE
+  model, or a load at that point of the host jumper's rod), the wire and
+  the jumper solved again in passes until the tap no longer moves (less
+  than 0.5 N change, at most 8 passes — the same loop as the jumpers'
+  pull on clamps, which stays the separate *Jumpers on the clamps*
+  choice). Cost: the sections with taps and their jumpers solved again,
+  two or three passes; the others untouched.
+- **One calculation**: the wire carries the jumper's estimate (its
+  weight, ice and wind up to its first support, half without) at the
+  tap, then the jumper is solved once.
+
+Jumpers on jumpers are solved after the jumper they hang on, level by
+level (each level over the cores); a ring is refused. A tap joins the
+jumper to its wire's conductor path (electrical circuits) and connects
+it to that wire for the checks (not paired with it in the distance
+between conductors, as two wires sharing a clamp). A span with a tap is
+solved by finite elements only (not the ruling span).
+
 ## Rigid jumpers
 
 A jumper given `rigid` is a tube or bar: the straight member between its two solved clamps, in every weather case. It has no length or sag of its own and no thermal change. Its tension is not computed, because the members holding it carry it. It is drawn, and checked for clearances, along that straight line, and it can never be taut. The PLS-CADD jumpers marked rigid are read this way.

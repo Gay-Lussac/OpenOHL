@@ -127,7 +127,7 @@ files](../user-guide/line-file.md).
 | `display` | `Display` | — | phase colours, `ahead_deg` | phase labels |
 | `creep_stretch` | `CreepStretch` | — | weather cases for creep / load stretch | weather case **names** |
 | `bimetallic` | `BimetallicModel` | Pa | outer-strand behaviour of bimetallic cables above the transition temperature, for cables that do not say | — |
-| `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); in the project's line settings and OLS XML `<solver>` | — |
+| `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); in the project's line settings and OLS XML `<solver taps>` | — |
 | `circuit_starts` | `[SectionPoint]` | — | circuit ends that are starts (power flows in) | structures + sets |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
@@ -343,6 +343,7 @@ spread type's `load` (N/m). Shipped templates (typical values, to check):
 | `rigid` | bool | — | a tube or bar: no length, sag or supports | — |
 | `support` | `JumperSupport`? | — | one support string from a point: `point` (m), `length` (m), `weight` (N), `fraction` (0–1) | — |
 | `supports` | `[JumperClamp]` | — | or: support clamps on a structure's strings, in order from `from` | — |
+| `from_tap`, `to_tap` | `Tap?` | — | an end at a tap instead of `from` / `to`: `{"span": {"section", "point"}}` (a span point) or `{"jumper": {"jumper", "point"}}` (another jumper's point); the point holds a clamp object (a hinge: forces only); a span's section by FE; given by its `length` (or rigid); jumpers hanging on each other in a ring refused; solved after what they hang on (`Line::jumper_order`); their loads keyed `solve::LoadAt::{Clamp, Span, Jumper}` | point labels |
 | `points` | `[JumperPoint]` | — | labelled points along it (`at`: `JumperPlace` — `fraction` of its length from `from`, `length` along it, m, or `distance`, m horizontally from `from`'s clamp; a distance wins over a length, a length over the fraction), each with its `object` or bare | label unique on the jumper |
 | `bending_stiffness` | f64? | N·m² | EI; default estimated from the cable; 0: hinged | — |
 | `stiffness_factor` | f64? | 0–1 | share of the solid-bar EI for the estimate | — |

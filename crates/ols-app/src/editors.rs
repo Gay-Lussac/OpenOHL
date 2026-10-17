@@ -360,7 +360,7 @@ pub enum Form {
     /// An alignment point.
     Alignment(AlignmentForm),
     /// A jumper.
-    Jumper(JumperForm),
+    Jumper(Box<JumperForm>),
     /// Objects added on a span (the span tool).
     Span(crate::span_tool::SpanForm),
     /// A new spacer between two span points.
