@@ -67,7 +67,7 @@ Virtual stress = actual stress × Ao / At (Ao the outer strands' area, At the to
 
 | Field | Required | Type / units | Notes |
 |---|---|---|---|
-| `area` | yes | area: `mm²`/`mm2`, `m²`/`m2`, `in²`/`in2`, `kcmil`/`MCM` | Area of **this component only**. |
+| `area` | yes | area: `mm²`/`mm2`, `cm²`/`cm2`, `m²`/`m2`, `in²`/`in2`, `kcmil`/`MCM` | Area of **this component only**. |
 | `modulus` | yes | stress: `Pa`, `kPa`, `MPa`, `N/mm²`, `GPa`, `psi`, `ksi`, `psf` | Final (elastic) modulus; used by the linear model and when there are no curves. |
 | `thermal_expansion` | yes | plain number, 1/K | e.g. `23.0e-6` (aluminium), `11.5e-6` (steel). |
 | `stress_strain` | no | table, see below | Non-linear curves. Without it the component is linear. |

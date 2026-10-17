@@ -473,6 +473,7 @@ quantity!(
     units = [
         from_square_meters, square_meters, 1.0, "square metres", ["m²", "m2"];
         from_square_millimeters, square_millimeters, 1e-6, "square millimetres", ["mm²", "mm2"];
+        from_square_centimeters, square_centimeters, 1e-4, "square centimetres", ["cm²", "cm2"];
         from_square_inches, square_inches, INCH * INCH, "square inches", ["in²", "in2"];
         from_kcmil, kcmil, CIRCULAR_MIL * 1e3, "thousands of circular mils (kcmil / MCM)", ["kcmil", "MCM"];
     ]
@@ -1009,6 +1010,11 @@ mod tests {
             "1.2E+1kN".parse::<Force>().unwrap().kilonewtons(),
             12.0,
             1e-15,
+        );
+        assert_close(
+            "15.5 cm2".parse::<Area>().unwrap().square_millimeters(),
+            1550.0,
+            1e-9,
         );
         assert_close(
             "795 kcmil".parse::<Area>().unwrap().square_millimeters(),
