@@ -109,7 +109,7 @@ How the wire is held at each point of a section follows from these. The usual ca
 
 **Files of version 3** had alignments holding their points (`[x, y, z]` or `{ "position", "structure", "routes" }`) on one or more `routes`. Their points become alignment points of their own (`P1`, `P2`…); points of different alignments at the same place (within 1 mm, tied to the same structure or one of them free) become one shared point; an alignment on several routes becomes one alignment per route through the same points (`a`, `a (route)`…); a point's own routes go to the structure tied to it (a free point's are dropped). Projects are converted the same way when they open.
 
-**Files of version 4** gave a jumper's tap as `from_tap` / `to_tap` beside a placeholder `from` / `to`, its supports as `support` (a string from a point) and `supports` (clamps on a structure's strings, `at` a fraction), and a place could carry a fraction beside a distance or a station (the station, else the distance, was used). They are read as a tap end, support points (`S1`; `C1`, `C2`… — labels its points do not use) and a place of one kind. Files are written as version 5.
+**Files of version 4** gave a jumper's tap as `from_tap` / `to_tap` beside a placeholder `from` / `to`, its supports as `support` (a string from a point) and `supports` (clamps on a structure's strings, `at` a fraction), a section's circuit name as `circuit`, and a place could carry a fraction beside a distance or a station (the station, else the distance, was used). They are read as a tap end, support points (`S1`; `C1`, `C2`… — labels its points do not use) and a place of one kind. Files are written as version 5.
 
 `cargo run -p ols-cli -- line FILE --stations` prints the stationing, offsets and line angles along every alignment (with its route), and for each structure the other routes it is also on.
 
@@ -120,7 +120,7 @@ How the wire is held at each point of a section follows from these. The usual ca
 | `id` | yes | Unique id. |
 | `description` | no | What it is, in words (free text). |
 | `cable` | yes | Cable id from the wire libraries. |
-| `circuit`, `phase_label` | no | Labels. |
+| `circuit_name`, `phase_label` | no | Labels: the name of its circuit (the same on all its sections; files before version 5: `circuit`) and its phase. |
 | `system` | no | Electrical system (id in `systems`) whose phase `phase_label` the section carries. Give it once per conductor path: sections joined by jumpers (or sharing a wire point) follow. None on the whole path: earthed (earth wire, OPGW). Independent of the cable. |
 | `bundle` | no (1) | Subconductors per phase. Tension, sag and loads are per subconductor; the solve follows the bundle's centre line with each subconductor's share of the insulator weights (string forces are reported for the whole bundle). |
 | `bundle_spacing` | no | Distance between neighbouring subconductors, m (e.g. `0.4` for 400 mm). They sit evenly on a circle around the centre line, across the wire — radius `s / (2·sin(π/n))` — so clearances are measured to the nearest subconductor. Without it a bundle is checked as one wire. |

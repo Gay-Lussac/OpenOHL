@@ -205,7 +205,7 @@ pub fn ui(
                             "{} span {} ({} {}): {} → {}",
                             sec.id,
                             k + 1,
-                            sec.circuit,
+                            sec.circuit_name,
                             sec.phase_label,
                             w[0].structure,
                             w[1].structure
@@ -299,7 +299,7 @@ pub fn ui(
                                 "{} span {} ({} {})",
                                 sec.id,
                                 k + 1,
-                                sec.circuit,
+                                sec.circuit_name,
                                 sec.phase_label
                             ))
                             .clicked()
@@ -739,7 +739,7 @@ pub fn ui(
                     (
                         "section",
                         section.map_or("—".into(), |s| {
-                            format!("{} ({} {})", s.id, s.circuit, s.phase_label)
+                            format!("{} ({} {})", s.id, s.circuit_name, s.phase_label)
                         }),
                     ),
                     (
@@ -935,7 +935,7 @@ pub fn ui(
                     ("cable", sec.cable.clone()),
                     (
                         "circuit / phase",
-                        format!("{} {}", sec.circuit, sec.phase_label),
+                        format!("{} {}", sec.circuit_name, sec.phase_label),
                     ),
                     ("system", system),
                     (

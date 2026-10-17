@@ -106,7 +106,7 @@ fn rich_line() -> Line {
     sec.bundle_spacing = Some(0.4);
     sec.bundle_rotation_deg = Some(45.0);
     sec.color = Some("#123abc".into());
-    sec.calculation = ols_line::condition::Calculation::CreepRs;
+    sec.calculation = ols_line::condition::Calculation::CREEP_RS;
     line.jumpers[0].set_support(Some(ols_line::JumperSupport {
         point: [1.0, 2.0, 3.0],
         length: 2.5,

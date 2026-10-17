@@ -504,6 +504,9 @@
             <xs:attribute name="id" type="xs:string" use="required"/>
             <xs:attribute name="description" type="xs:string"/>
             <xs:attribute name="cable" type="xs:string" use="required"/>
+            <!-- The name of its circuit (before version 5: `circuit`,
+                 still read). -->
+            <xs:attribute name="circuit_name" type="xs:string"/>
             <xs:attribute name="circuit" type="xs:string"/>
             <xs:attribute name="phase_label" type="xs:string"/>
             <xs:attribute name="system" type="xs:string"/>

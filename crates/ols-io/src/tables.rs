@@ -192,7 +192,7 @@ pub fn sections(model: &ExportModel) -> Table {
         t.rows.push(vec![
             s.id.as_str().into(),
             s.cable.as_str().into(),
-            s.circuit.as_str().into(),
+            s.circuit_name.as_str().into(),
             s.phase_label.as_str().into(),
             s.system.as_deref().into(),
             s.bundle.into(),

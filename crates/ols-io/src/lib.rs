@@ -152,7 +152,7 @@ impl ExportModel {
                         wires.push(ExportWire {
                             section: shape.section.clone(),
                             span: k,
-                            circuit: section.map_or(String::new(), |s| s.circuit.clone()),
+                            circuit: section.map_or(String::new(), |s| s.circuit_name.clone()),
                             phase: section.map_or(String::new(), |s| s.phase_label.clone()),
                             color: color.clone(),
                             system: system(&shape.section).0,
@@ -170,7 +170,7 @@ impl ExportModel {
                     wires.push(ExportWire {
                         section: format!("jumper:{}", j.jumper),
                         span: 0,
-                        circuit: from.map_or(String::new(), |s| s.circuit.clone()),
+                        circuit: from.map_or(String::new(), |s| s.circuit_name.clone()),
                         phase: from.map_or(String::new(), |s| s.phase_label.clone()),
                         color: def
                             .and_then(|d| d.color.clone())

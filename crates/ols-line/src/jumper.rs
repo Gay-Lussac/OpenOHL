@@ -2222,7 +2222,7 @@ mod tests {
                 .contains("length")
         );
         let mut ruling = line.clone();
-        ruling.sections[0].calculation = crate::condition::Calculation::InitialRs;
+        ruling.sections[0].calculation = crate::condition::Calculation::INITIAL_RS;
         assert!(ruling.validate().is_err());
         // One conductor path with its wire.
         let paths = crate::electrical::conductor_paths(&line);

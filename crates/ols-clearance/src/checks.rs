@@ -155,7 +155,7 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
             wires.push(Wire {
                 section: shape.section.clone(),
                 span: k,
-                circuit: section.map_or(String::new(), |s| s.circuit.clone()),
+                circuit: section.map_or(String::new(), |s| s.circuit_name.clone()),
                 phase: section.map_or(String::new(), |s| s.phase_label.clone()),
                 potential: potential(&shape.section),
                 bundle: section.map_or(Vec::new(), |s| s.bundle_offsets()),
@@ -188,7 +188,7 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
         wires.push(Wire {
             section: format!("jumper:{}", j.jumper),
             span: 0,
-            circuit: from.map_or(String::new(), |s| s.circuit.clone()),
+            circuit: from.map_or(String::new(), |s| s.circuit_name.clone()),
             phase: from.map_or(String::new(), |s| s.phase_label.clone()),
             potential: from.and_then(|s| potential(&s.id)),
             bundle: def.map_or(Vec::new(), |d| line.jumper_bundle(d).offsets()),

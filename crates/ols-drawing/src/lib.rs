@@ -281,7 +281,7 @@ pub fn build(
                     dash: None,
                     label: format!(
                         "{} span {k} ({} {})",
-                        section.id, section.circuit, section.phase_label
+                        section.id, section.circuit_name, section.phase_label
                     ),
                     color: color.clone(),
                     points: span.points.iter().map(to_route).collect(),

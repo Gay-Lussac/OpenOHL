@@ -2943,7 +2943,7 @@ fn jumpers_are_added_where_none_are() {
         let r = harness.state_mut().ready().unwrap();
         let s1 = r.model.line.sections[0].clone();
         let mut s2 = r.model.stored_line().unwrap().sections[1].clone();
-        s2.circuit = s1.circuit.clone();
+        s2.circuit_name = s1.circuit_name.clone();
         s2.phase_label = s1.phase_label.clone();
         assert!(r.perform(crate::edit::Action::Command {
             what: "same phase".into(),
@@ -4206,7 +4206,7 @@ fn sections_are_calculated_after_creep_or_load_as_chosen() {
     apply_table(&mut harness, kind, false).unwrap();
     {
         let r = harness.state_mut().ready().unwrap();
-        assert_eq!(r.model.line.sections[0].calculation, Calculation::CreepRs);
+        assert_eq!(r.model.line.sections[0].calculation, Calculation::CREEP_RS);
         // No creep weather case yet: S1 fails, saying where to choose one.
         let failed = &r.model.cases[0].failed;
         assert!(
@@ -7755,7 +7755,7 @@ fn a_circuit_keeps_one_name_and_phase() {
     let phase = |h: &mut Harness<'_, App>, id: &str| {
         let r = h.state_mut().ready().unwrap();
         let s = r.model.line.sections.iter().find(|s| s.id == id).unwrap();
-        (s.phase_label.clone(), s.circuit.clone())
+        (s.phase_label.clone(), s.circuit_name.clone())
     };
     // S1 and the branch S3 are one circuit (the jumper at T3).
     // The editor: the first Apply shows S3, the second applies.
@@ -8389,7 +8389,7 @@ fn a_circuit_takes_one_colour() {
             .line
             .sections
             .iter()
-            .map(|s| (s.id.clone(), s.circuit.clone(), s.color.clone()))
+            .map(|s| (s.id.clone(), s.circuit_name.clone(), s.color.clone()))
             .collect::<Vec<_>>()
     };
     set_cell(&mut harness, TableKind::Sections, "S1", "colour", "#12AB34");
@@ -11835,18 +11835,18 @@ fn phase_distance_page_sets_the_insulation_levels() {
         .filter(|s| s.fields.get("lev-ch.insulation_level").map(String::as_str) == Some("low"))
         .collect();
     assert!(!low.is_empty());
-    let circuit = &low[0].circuit;
+    let circuit = &low[0].circuit_name;
     assert!(
         line.sections
             .iter()
-            .filter(|s| &s.circuit == circuit)
+            .filter(|s| &s.circuit_name == circuit)
             .all(|s| low.iter().any(|l| l.id == s.id)),
         "all the circuit's sections"
     );
     assert!(
         line.sections
             .iter()
-            .any(|s| &s.circuit != circuit && s.fields.is_empty())
+            .any(|s| &s.circuit_name != circuit && s.fields.is_empty())
     );
 }
 

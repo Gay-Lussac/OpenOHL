@@ -21,7 +21,7 @@ The names are those of the line file:
 ## Elements
 
 ```xml
-<line xmlns="urn:ols-cad:ols-line:1" format="ols-line" version="1" name="…" crs="EPSG:2056">
+<line xmlns="urn:ols-cad:ols-line:1" format="ols-line" version="5" name="…" crs="EPSG:2056">
   <route id="main" name="Main route" description="…"/>
   <alignment id="alignment 1" name="…" route="main">  <!-- one route -->
     <point ref="P1"/> <point ref="P2"/> …       <!-- its points, in order -->
@@ -44,30 +44,42 @@ The names are those of the line file:
   <system id="…" name="…" kind="ac" voltage_kv="220" frequency_hz="50" color="#e4572e">
     <phase label="L1" angle_deg="0" polarity="1" code=".-"/>  <!-- code: line code by system -->
   </system>
-  <section id="S1" cable="…" circuit="…" phase_label="L1" system="…" bundle="1"
+  <section id="S1" cable="…" circuit_name="…" phase_label="L1" system="…" bundle="1"
            bundle_spacing="…" bundle_rotation_deg="…" color="#rrggbb" calculation="creep-rs">
     <point structure="T1" set="1"/> …
     <stringing kind="tension" horizontal_tension="25000" temperature="15"/>
     <!-- or kind="sag" sag="…" temperature="…" span="…" -->
     <!-- or kind="unstressed_lengths" temperature="…">
            <lengths>300.1 299.9 …</lengths><stringing kind="sag" …/></stringing> -->
-    <load span="1" fraction="0.5" vertical="55" label="marker ball" diameter="0.6" drag="1"/>
-    <!-- diameter (m, a sphere), drag (default 1), wind_area / ice_area (m²): optional -->
+    <span_point label="M1" span="1" fraction="0.5" description="marker ball">  <!-- or distance="…" or station="…" -->
+      <object kind="body" type="marker-ball-600" weight="55" shape="sphere" diameter="0.6" drag="1"/>
+    </span_point>
+    <span_point label="C1" span="0" distance="40">
+      <object kind="clamp" weight="30" shape="point" clamp_length="0.25"/>  <!-- a tap's or a spacer's clamp -->
+    </span_point>
+    <span_point label="P1" span="2" fraction="0.2"/>   <!-- bare: a spread's end -->
+    <span_point label="P2" span="2" fraction="0.4"/>
+    <spread label="heated" from="P1" to="P2" type="heated-stretch" load="12.5"/>  <!-- N/m -->
   </section>
   <jumper id="…" cable="…" length="…" sag="…" temperature="15" bending_stiffness="…" stiffness_factor="…"
           angle_from_deg="…" angle_to_deg="…" color="…" bundle="…" bundle_spacing="…"
           bundle_rotation_deg="…">
-    <from structure="T3" set="2"/>
-    <to structure="T3" set="1"/>
-    <support length="…" weight="…" fraction="0.5" x="…" y="…" z="…"/>
-    <!-- or support clamps, in order from `from` (structure: default the `from` end's) -->
-    <clamp structure="T3" wire="JW" at="0.5" clamp_length="0.1"/>
+    <from structure="T3" set="2"/>               <!-- or <from_tap section="S1" point="C1"/>, <from_tap jumper="J2" point="K"/> -->
+    <to structure="T3" set="1"/>                 <!-- or <to_tap …/> -->
+    <jumper_point label="C1" fraction="0.5">     <!-- or length="…" (along it) or distance="…" (from its from clamp) -->
+      <object kind="clamp" clamp_length="0.1">   <!-- held up: a support -->
+        <hold structure="T3" wire="JW"/>         <!-- a structure's strings; or <hold x y z length weight/>: a string from a point -->
+      </object>
+    </jumper_point>
   </jumper>
   <!-- structures, sections, jumpers, systems, alignments and routes may
        hold the values of plugins' table columns, last inside them:
        <field key="lev-ch.insulation_level" value="low"/> -->
-  <!-- in <section>: <spread_load span start_fraction|start_distance end_fraction|end_distance load label/>,
-       <span_point label span fraction|distance description/>; <load distance="…"/> instead of fraction -->
+  <!-- files before version 5, read and converted: in <section>, <load span fraction|distance|station vertical
+       label diameter drag wind_area ice_area/> (a point with a body) and <spread_load span start_… end_… load
+       label/> (two points and a spread); in <jumper>, <support length weight fraction x y z/> and <clamp structure
+       wire at clamp_length/> (support points), a placeholder <from> beside <from_tap>; several of fraction,
+       distance, station on one place (a station over a distance over the fraction); circuit= for circuit_name= -->
   <spacer id="SP1" weight="120" compression="10000">   <!-- an interphase spacer -->
     <end section="S1" point="P1"/> <end section="S2" point="P1"/>
   </spacer>

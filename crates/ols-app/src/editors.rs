@@ -2467,7 +2467,7 @@ impl SectionForm {
         let Some(old) = stored.sections.iter().find(|s| s.id == original) else {
             return Vec::new();
         };
-        let circuit = old.circuit != self.circuit;
+        let circuit = old.circuit_name != self.circuit;
         let phase = old.phase_label != self.phase_label;
         let system = old.system != self.system;
         if !(circuit || phase || system) {
@@ -2483,7 +2483,7 @@ impl SectionForm {
             .filter(|m| m.id != original && path.contains(&m.id))
             .filter_map(|m| {
                 let mut what = Vec::new();
-                if circuit && m.circuit != self.circuit {
+                if circuit && m.circuit_name != self.circuit {
                     what.push("circuit");
                 }
                 if phase && m.phase_label != self.phase_label {
@@ -2515,7 +2515,7 @@ impl SectionForm {
                 continue;
             };
             if what.contains(&"circuit") {
-                m.circuit = self.circuit.clone();
+                m.circuit_name = self.circuit.clone();
             }
             if what.contains(&"phase") {
                 m.phase_label = self.phase_label.clone();
@@ -2543,7 +2543,7 @@ impl SectionForm {
             new: false,
             id: id.to_owned(),
             cable: s.cable.clone(),
-            circuit: s.circuit.clone(),
+            circuit: s.circuit_name.clone(),
             phase_label: s.phase_label.clone(),
             system: s.system.clone(),
             bundle: s.bundle,
@@ -2696,7 +2696,7 @@ impl SectionForm {
             description: self.description.trim().to_owned(),
             id: self.id.trim().to_owned(),
             cable: self.cable.clone(),
-            circuit: self.circuit.clone(),
+            circuit_name: self.circuit.clone(),
             phase_label: self.phase_label.clone(),
             system: self.system.clone(),
             bundle: self.bundle.max(1),
@@ -4617,7 +4617,7 @@ pub fn missing_jumpers(model: &Model, id: &str) -> (Vec<ols_line::Jumper>, Vec<S
         };
         for p in [first, last] {
             if p.structure == id && !jumpered(p) {
-                ends.entry((s.circuit.clone(), s.phase_label.clone()))
+                ends.entry((s.circuit_name.clone(), s.phase_label.clone()))
                     .or_default()
                     .push((s.id.clone(), p.clone()));
             }
