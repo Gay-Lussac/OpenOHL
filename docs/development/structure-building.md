@@ -85,6 +85,18 @@ renamed later; they are not renamed now.
 16. **Principle for level 2 → 3**: every geometry already defined gets
     all its parameters.
 
+17. **Extensions at level 3** carry their own body: each extension has
+    its own joints and members (a body piece below the reference level,
+    with sections at level 3), so every extension is computed. At levels
+    1 and 2 an extension may stay a name and a `dz`.
+18. **Today's structure capacity** (`[capacity]`: Method 1 allowable
+    spans, Method 2 load trees) when the levels are built: a Method 2
+    load tree becomes maximum loads on the strings at levels 1 and 2;
+    Method 1 spans (a capacity of the structure itself) only at level 3.
+    No check changes until the levels are built.
+19. **Interaction levels 3 and 4** treat a structure below level 3 as
+    rigid, and the result says so.
+
 ## Today
 
 ### The three levels, as the code has them
@@ -104,8 +116,8 @@ Where today's code differs from the decisions:
 - **Capacity is read at any level.** `[capacity]` (Method 1 allowable
   spans, Method 2 load trees) and `[[wind.band]]` are read at any level;
   a level 1 structure with a capacity is checked by Methods 1 and 2 in a
-  line. Decision 13 allows maximum loads only on the strings below level
-  3 (open question 2).
+  line. Decisions 13 and 18 say how this changes when the levels are
+  built.
 - **Poles have no level.** A structure naming a `pole` (`.olsp`) is
   checked by the pole check, but `detail()` does not look at `pole`.
   Decision 2 gives poles levels 1 to 3.
@@ -132,7 +144,7 @@ member is added, the FE model is the same, and the wind bands are not
 raised ("Height extensions are not added to the bands yet",
 `loads.md`). Extensions are also used by automatic spotting (candidates
 by structure and extension) and by the bill of materials (a price per
-extension). See open question 1.
+extension). Decision 17: extension bodies at level 3.
 
 ### Gaps
 
@@ -150,7 +162,8 @@ extension). See open question 1.
    a 3D body gives level 2 (decision 3).
 6. **Wind on the body is not in the FE model.** Waits for level 3
    profile areas and the load-case recipes (decision 10).
-7. **Extensions are not in the FE model.** Waits for open question 1.
+7. **Extensions are not in the FE model.** Decision 17: extension
+   bodies, built with the levels.
 8. **Level 2 has no generator.** Every joint and member is added by
    hand; no panels, bracing patterns, symmetry, member groups or copying
    of a face.
@@ -269,7 +282,7 @@ TAK) and id renames in the tables.
   (all feet in one click).
 - **Joint details** (bolts, plates, eccentricities) as far as the code
   check needs them; their content follows the code check plugin
-  (open question 3).
+  (open question 2).
 - **Poles**: wall, material and the data the pole check needs.
 
 ### 1.4 What is missing for each level
@@ -370,7 +383,7 @@ Run per structure, per case, with the engine used in the line run:
 | Loads at points along members | level 3 | being fixed (shared to the member's joints) |
 | Surface loads on members (wind, snow) | level 3 (profile areas) | no |
 | Body wind | level 3 (profile areas, decision 10) | no |
-| Extensions in the model | open question 1 | no |
+| Extensions in the model | level 3 extension bodies (decision 17) | no |
 | Capacity derived from the design | level 3 | no: the load tree or allowable spans found by scaling a case until the worst member reaches 100 % |
 
 Every run keeps the exit clauses and budgets of
@@ -408,7 +421,7 @@ check is changed now.
 Member and joint verification by a code (e.g. SIA 263 for steel) is a
 **plugin**: the core gives member forces, lengths, sections and joint
 data; the plugin gives usages and the formulas used. Its interface is
-open question 3.
+open question 2.
 
 ### 3.3 Independent verification
 
@@ -443,8 +456,8 @@ Changes in `.olss` (version 2 → 3; older versions read as before):
 | pole outline (diameters by height, shape) | `StructureType` | poles at level 2 (decision 2) |
 | `[[load_case]]` with `[[load_case.load]]` (what, factor, one-sided share, direction, points or members, surface pressure) | `StructureType` | §2.1; replaces `[[load]]` (read as case `model`) |
 | typed `TypeSection` reference (section library id) and `TypeMaterial` | `structures.rs`, shared with `ols-structures-fe` | §1.3, §4.2 |
-| joint details | `TypeNode` | level 3 code checks (open question 3) |
-| extension members | `Extension` | open question 1 |
+| joint details | `TypeNode` | level 3 code checks (open question 2) |
+| extension members | `Extension` | decision 17 |
 | `missing(level)` | `StructureType` | §1.4 |
 
 The evaluated load table of a placed structure (§2.2) is a result, not
@@ -492,7 +505,7 @@ Each phase is a deliverable of its own, checked and committed.
 6. **Replace structure** in the line application (§1.6).
 7. **Exports**: IFC with member solids, Tekla, RFEM; PLS-TOWER later.
 8. **Code checks**: the plugin interface for member and joint checks
-   (open question 3), then a first code (e.g. SIA 263); capacity
+   (open question 2), then a first code (e.g. SIA 263); capacity
    derived from a level 3 design.
 9. **Structure–line interaction levels 3 and 4**: the stiffness matrix
    at the suspension points from level 3 structures, then the coupled
@@ -501,34 +514,14 @@ Each phase is a deliverable of its own, checked and committed.
 
 ## Open questions
 
-1. **Extensions at level 3.** Today an `[[extension]]` is a name and a
-   `dz`: the placed structure stands higher by `dz` and the same body is
-   used for every extension (see [`[[extension]]` today](#extension-today)).
-   By the level 2 → 3 principle, the extended part should have all its
-   parameters too. Options:
-   - **a) Extension bodies in the structure**: each extension carries its
-     own joints and members (a body piece added below the reference
-     level, its sections at level 3). One file, every extension computed.
-   - **b) One structure file per extension at level 3**: extensions stay
-     a level 1 / 2 convenience; a level 3 structure has one height, and
-     spotting and the bill of materials list the files as candidates.
-   - **c) Keep `dz` only**: the FE model ignores the extension and the
-     report says so. Simple, but the extended part is not verified.
-
-   Also undecided: leg extensions (one leg longer than the others on a
-   slope) are not modelled today; are they part of this?
-2. **Today's structure capacity below level 3.** Decision 13 allows
-   maximum loads on strings only. Today `[capacity]` (Method 1 allowable
-   spans, Method 2 load trees at the points) and wind bands are read at
-   any level and used in the line checks. When the levels are built:
-   refuse them below level 3, keep them read but unused with a note, or
-   turn a Method 2 load tree into maximum loads on the strings? No check
-   changes until then.
-3. **Code-check plugin interface** (e.g. SIA 263): which data the core
+1. **Leg extensions** (one leg longer than the others on a slope) are
+   not modelled today: part of the extension bodies (decision 17), or
+   later?
+2. **Code-check plugin interface** (e.g. SIA 263): which data the core
    hands to the plugin (member forces, buckling lengths, sections, joint
    details), what comes back (usage per member and joint, formulas),
    and whether any engine change is needed for it — asked before it is
    built.
-4. **Stored load overrides**: where the values typed over an evaluated
+3. **Stored load overrides**: where the values typed over an evaluated
    load table are kept (with the placed structure in the line, or in a
    load file per place), and what happens to them when the line changes.
