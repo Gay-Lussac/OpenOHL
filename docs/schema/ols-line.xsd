@@ -720,6 +720,38 @@
             <xs:attribute name="max_virtual_compression_pa" type="xs:double"/>
           </xs:complexType>
         </xs:element>
+
+        <xs:element name="structure_loads" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>What the line sends to the placed structures
+              (Criteria › Loads for structures): the load cases (all, or
+              those listed as load_case) and the weather cases sent on their
+              own (weather_case, each a case with all factors 1, after the
+              load cases).</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="load_case" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="weather_case" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="load_cases" default="all">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="all"/>
+                  <xs:enumeration value="listed"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+          </xs:complexType>
+        </xs:element>
       </xs:sequence>
       <xs:attribute name="format" type="xs:string" fixed="ols-line"/>
       <!-- The line file version (now 5), not the namespace's 1. -->

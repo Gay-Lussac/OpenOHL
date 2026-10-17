@@ -663,6 +663,8 @@ struct Meta {
     defaults: ols_line::Defaults,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     circuit_starts: Vec<ols_line::SectionPoint>,
+    #[serde(default, skip_serializing_if = "ols_line::StructureLoads::is_default")]
+    structure_loads: ols_line::StructureLoads,
 }
 
 impl Meta {
@@ -679,6 +681,7 @@ impl Meta {
             solver: line.solver,
             defaults: line.defaults,
             circuit_starts: line.circuit_starts.clone(),
+            structure_loads: line.structure_loads.clone(),
         }
     }
 }
@@ -688,13 +691,14 @@ impl Meta {
 /// undo one each: `line` (name, CRS, display) and one row per setting.
 /// Projects written before kept them all in `line`: read as defaults
 /// under the rows ([`meta_of`]), until the first change writes the rows.
-const META_ROWS: [&str; 6] = [
+const META_ROWS: [&str; 7] = [
     "systems",
     "creep_stretch",
     "bimetallic",
     "solver",
     "defaults",
     "circuit_starts",
+    "structure_loads",
 ];
 
 /// The settings `meta` as rows: (id, value).
@@ -712,7 +716,8 @@ fn meta_rows(meta: &Meta) -> Vec<(String, Value)> {
             "bimetallic" => json(&meta.bimetallic),
             "solver" => json(&meta.solver),
             "defaults" => json(&meta.defaults),
-            _ => json(&meta.circuit_starts),
+            "circuit_starts" => json(&meta.circuit_starts),
+            _ => json(&meta.structure_loads),
         };
         out.push((key.to_owned(), serde_json::json!({ key: v })));
     }
@@ -1005,6 +1010,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
         bimetallic: meta.bimetallic,
         solver: meta.solver,
         circuit_starts: meta.circuit_starts,
+        structure_loads: meta.structure_loads,
         condition_cases: Default::default(),
         spacers: vec![],
         defaults: meta.defaults,
@@ -1777,6 +1783,16 @@ impl Session {
     pub fn solver_command(&self, solver: ols_line::SolverOptions) -> Command {
         let mut line = self.line.clone();
         line.solver = solver;
+        line_settings_change(&self.line, &line)
+    }
+
+    /// The command setting what the line sends to the placed structures
+    /// (Criteria › Loads for structures: load cases, weather cases on
+    /// their own): one logged, undoable put of its settings row
+    /// (`structure_loads`); no section is solved again.
+    pub fn structure_loads_command(&self, choice: ols_line::StructureLoads) -> Command {
+        let mut line = self.line.clone();
+        line.structure_loads = choice;
         line_settings_change(&self.line, &line)
     }
 

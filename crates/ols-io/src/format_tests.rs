@@ -274,6 +274,11 @@ fn rich_line() -> Line {
     });
     // A circuit's chosen start, a rigid jumper and a jumper's EI factor.
     line.circuit_starts = vec![line.sections[0].points[0].clone()];
+    // Weather cases sent to the placed structures.
+    line.structure_loads = ols_line::StructureLoads {
+        load_cases: Some(vec!["wind 90°".into()]),
+        weather_cases: vec!["ice 25 mm".into(), "wind <&>".into()],
+    };
     if let Some(j) = line.jumpers.first_mut() {
         j.stiffness_factor = Some(0.3);
     }

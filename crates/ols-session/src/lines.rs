@@ -100,6 +100,7 @@ pub fn empty_line() -> Line {
         bimetallic: Default::default(),
         solver: Default::default(),
         circuit_starts: Vec::new(),
+        structure_loads: Default::default(),
         condition_cases: Default::default(),
         spacers: vec![],
         defaults: Default::default(),

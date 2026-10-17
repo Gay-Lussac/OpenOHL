@@ -67,13 +67,21 @@ ols-structure Structures/type-02.olss --structure T2 \
 - The **Level** panel says **loads of T2 in *line*** (a link to the
   **Line values** panel).
 - The line application computes the loads the wires and strings put on
-  T2 in every load case of the line (Criteria › Load cases; as Checks ›
-  Structure loads does, in the background) and writes them beside the
-  structure file as `<name>.<structure>.line-values.json`. When the line
-  changes while the application is open (and stays unchanged for a
-  second), the line application computes them again and rewrites the
-  file; the application reads it again within half a second (**In the
-  line › Read the line's values again** reads it now).
+  T2 in the cases it sends to its structures (Criteria › Loads for
+  structures, see [Loads for structures](desktop-app.md#loads-for-structures)):
+  its load cases (Criteria › Load cases or Design code; all by default),
+  then the weather cases ticked to be sent on their own, each a case
+  `weather: <name>` with every factor 1 (none by default). They are
+  computed as Checks › Structure loads does, in the background, and
+  written beside the structure file as
+  `<name>.<structure>.line-values.json` (version 2: each case with its
+  source; version 1 files still read, their cases load cases). Until
+  they are there the header says they are being computed; with no load
+  case and no weather case ticked it says so and suggests ticking weather
+  cases; a ticked case no longer in the line is named. When the line changes while the application is open
+  (and stays unchanged for a second), the line application computes them
+  again and rewrites the file; the application reads it again within
+  half a second and evaluates the recipes with the new values.
 - A **status block** at the top of the Load recipes, Load table and Line
   values panels says, in plain words, what the line gave or why not:
   *The line gives the forces at 2 point(s) of T2 in 3 case(s): …*; *The
@@ -104,7 +112,8 @@ ols-structure Structures/type-02.olss --structure T2 \
   Load recipes panel while the structure has no recipe) writes instead
   one recipe per line case taking the line's factored values at every
   point: the forces then follow the line.
-- **Line values** lists the line's values per point (with its sets and
+- **Line values** lists, with each case's **source** (load case, or a
+  weather case sent on its own: factored = unfactored), the line's values per point (with its sets and
   phases) and load case: transverse, longitudinal, vertical, unfactored
   and factored by the line's load case, in kN. **Other places of this
   structure** lists the other placed structures of the same type with

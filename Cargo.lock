@@ -3876,6 +3876,7 @@ dependencies = [
 name = "ols-structure-link"
 version = "0.0.1"
 dependencies = [
+ "ols-cables",
  "ols-core",
  "ols-line",
  "ols-loads",
@@ -3883,6 +3884,7 @@ dependencies = [
  "ols-structure-loads",
  "ols-structures",
  "ols-structures-fe",
+ "ols-weather",
  "toml 0.9.12+spec-1.1.0",
 ]
 

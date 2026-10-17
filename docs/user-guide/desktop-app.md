@@ -149,6 +149,33 @@ Every window applies one command (**Apply** or Enter; **Cancel** or Escape); whe
 
 After an edit only the sections it touched are re-solved, in every weather case (incremental solving); the status bar reports what was re-solved and how long it took (about 0.1 s on the 25 km line), and the Clearances tab checks again.
 
+## Loads for structures
+
+What the line sends to its placed structures (**Edit…** on a placed
+structure starts the [structure application](structure-app.md#started-for-a-placed-structure)
+with that place's loads) is set up in three places of the **Criteria**
+menu:
+
+- **Weather cases**: the wind, ice and temperatures. Each one can be sent
+  on its own.
+- **Load cases** (a `.olslc` file) or **Design code** (a plugin writes the
+  load cases): a weather case with a wire condition and factors on the
+  vertical, transverse and longitudinal loads. They add factors and
+  combinations on top of the weather cases.
+- **Loads for structures**: a tick menu (it stays open while ticking)
+  with two lists. **Load cases**: those sent (all by default, also those
+  added later; **all** / **none**). **Weather cases (all factors 1)**:
+  those sent on their own, each as a case `weather: <name>` with every
+  factor 1 and the wires as strung (none by default; **none**). A ticked
+  case no longer in the line stays listed, marked, to be unticked. Each
+  tick is one edit of the project line's settings (undoable, the
+  `structure_loads` row), so every project line keeps its own choice.
+
+The structure application gets the load cases sent, then the weather
+cases sent, each marked with its source. A line with no load case and no
+weather case ticked sends nothing: the structure application says so and
+suggests ticking weather cases here.
+
 ## Tools: hotbar and inventory
 
 As in Minecraft, the bottom of the 3D view holds a **hotbar** (it goes with the 3D view when another page is in front; the inventory shows it to arrange it) of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair): Select, Move structure (M), Delete, Go to structure (G), Edit, Add structure, Add string, String wire, Add alignment point, Add jumper, Add on span, Replace structure (see [Editing](#editing) and [Routes and alignments](#routes-and-alignments)). A left click always selects; a right-*drag* still pans. A window opened by a tool (Move, an editor, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person), also when it replaces a window already open for another object; it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come.

@@ -92,6 +92,9 @@ The names are those of the line file:
   </creep_stretch>
   <solver jumper_loads="pull"/>                 <!-- Criteria › Calculation options; default estimate -->
   <bimetallic behavior="bird_cage"/>            <!-- or compression, max_virtual_compression_pa="…" -->
+  <structure_loads load_cases="listed">         <!-- Criteria › Loads for structures; default all, no weather case -->
+    <load_case name="…"/> <weather_case name="…"/>
+  </structure_loads>
 </line>
 ```
 
