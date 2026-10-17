@@ -3047,20 +3047,38 @@ fn circuit_commands(
             };
             if at(to) < at(from) {
                 let mut j = j.clone();
-                // Its clamps from the other end: on the same structures,
-                // in the other order.
+                // Its points (supports among them) from the other end; a
+                // support clamp on the same structure as before.
                 let (first, last) = (from.structure.clone(), to.structure.clone());
-                for c in &mut j.supports {
-                    let id = c.structure.take().unwrap_or_else(|| first.clone());
-                    c.structure = (id != last).then_some(id);
-                    c.at = 1.0 - c.at;
+                let horizontal = match (
+                    ols_line::jumper::approximate_end(&line, &j.from, 0),
+                    ols_line::jumper::approximate_end(&line, &j.to, 0),
+                ) {
+                    (Some(a), Some(b)) => (b[0] - a[0]).hypot(b[1] - a[1]),
+                    _ => 0.0,
+                };
+                let length = j.length;
+                for p in &mut j.points {
+                    p.at = match p.at {
+                        ols_line::JumperPlace::Fraction(f) => {
+                            ols_line::JumperPlace::Fraction(1.0 - f)
+                        }
+                        ols_line::JumperPlace::Length(l) => {
+                            ols_line::JumperPlace::Length(length.map_or(l, |t| t - l))
+                        }
+                        ols_line::JumperPlace::Distance(d) => {
+                            ols_line::JumperPlace::Distance(horizontal - d)
+                        }
+                    };
+                    if let Some(ols_line::objects::Hold::Strings { structure, .. }) =
+                        p.object.as_mut().and_then(|o| o.hold.as_mut())
+                    {
+                        let id = structure.take().unwrap_or_else(|| first.clone());
+                        *structure = (id != last).then_some(id);
+                    }
                 }
-                j.supports.reverse();
                 std::mem::swap(&mut j.from, &mut j.to);
                 std::mem::swap(&mut j.angle_from_deg, &mut j.angle_to_deg);
-                if let Some(s) = &mut j.support {
-                    s.fraction = 1.0 - s.fraction;
-                }
                 out.commands.push((
                     format!("jumper {} along its circuit", j.id),
                     Command::Put {
@@ -3422,7 +3440,7 @@ fn string_cells(x: &mut ols_line::InsulatorString, c: &Cells, name: &str) -> Res
 
 /// A jumper's support clamps, in order: "T3 JW at 0.50 (0.10 m); …".
 fn clamps_text(j: &ols_line::Jumper) -> String {
-    j.supports
+    j.supports()
         .iter()
         .map(|c| {
             format!(

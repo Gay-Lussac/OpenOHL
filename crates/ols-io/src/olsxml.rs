@@ -536,7 +536,9 @@ fn write_section(out: &mut String, s: &Section) {
 }
 
 /// An object on a point: `<object kind type weight shape …sizes drag
-/// clamp_length/>`.
+/// clamp_length/>`; a jumper's support clamp holds `<hold structure
+/// wire/>` (on a structure's strings) or `<hold x y z length weight/>`
+/// (a string from a fixed point).
 fn write_object(out: &mut String, o: &ols_line::LineObject, indent: &str) {
     let ols_line::LineObject {
         kind,
@@ -545,6 +547,7 @@ fn write_object(out: &mut String, o: &ols_line::LineObject, indent: &str) {
         shape,
         drag,
         clamp_length,
+        hold,
     } = o;
     let _ = write!(out, "{indent}<object");
     attr(out, "kind", kind.as_str());
@@ -582,7 +585,29 @@ fn write_object(out: &mut String, o: &ols_line::LineObject, indent: &str) {
     }
     opt_num(out, "drag", *drag);
     opt_num(out, "clamp_length", *clamp_length);
-    out.push_str("/>\n");
+    match hold {
+        None => out.push_str("/>\n"),
+        Some(h) => {
+            out.push_str(">\n");
+            let _ = write!(out, "{indent}  <hold");
+            match h {
+                ols_line::objects::Hold::Strings { structure, wire } => {
+                    opt_text(out, "structure", structure.as_deref());
+                    attr(out, "wire", wire);
+                }
+                ols_line::objects::Hold::String {
+                    point,
+                    length,
+                    weight,
+                } => {
+                    point_attrs(out, *point);
+                    attr(out, "length", &num(*length));
+                    attr(out, "weight", &num(*weight));
+                }
+            }
+            let _ = writeln!(out, "/>\n{indent}</object>");
+        }
+    }
 }
 
 fn read_object(e: &Element) -> Result<ols_line::LineObject, String> {
@@ -604,8 +629,29 @@ fn read_object(e: &Element) -> Result<ols_line::LineObject, String> {
             "drag",
             "clamp_length",
         ],
-        &[],
+        &["hold"],
     )?;
+    let hold = e
+        .child("hold")
+        .map(|h| {
+            check(
+                h,
+                &["structure", "wire", "x", "y", "z", "length", "weight"],
+                &[],
+            )?;
+            Ok::<_, String>(match owned(h, "wire") {
+                Some(wire) => ols_line::objects::Hold::Strings {
+                    structure: owned(h, "structure"),
+                    wire,
+                },
+                None => ols_line::objects::Hold::String {
+                    point: point(h)?,
+                    length: number(h, "length")?,
+                    weight: optional(h, "weight")?.unwrap_or(0.0),
+                },
+            })
+        })
+        .transpose()?;
     fn named<T: serde::de::DeserializeOwned>(name: &str, v: &str) -> Result<T, String> {
         serde_json::from_value(serde_json::Value::String(v.to_owned()))
             .map_err(|_| format!("<object>: {name} \"{v}\" unknown"))
@@ -644,6 +690,7 @@ fn read_object(e: &Element) -> Result<ols_line::LineObject, String> {
         shape,
         drag: optional(e, "drag")?,
         clamp_length: optional(e, "clamp_length")?,
+        hold,
     })
 }
 
@@ -658,8 +705,6 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         sag,
         temperature,
         rigid,
-        support,
-        supports,
         bending_stiffness,
         stiffness_factor,
         angle_from_deg,
@@ -713,37 +758,6 @@ fn write_jumper(out: &mut String, j: &Jumper) {
                 out.push_str("/>\n");
             }
         }
-    }
-    if let Some(JumperSupport {
-        point,
-        length,
-        weight,
-        fraction,
-    }) = support
-    {
-        let _ = write!(
-            out,
-            "    <support length=\"{}\" weight=\"{}\" fraction=\"{}\"",
-            num(*length),
-            num(*weight),
-            num(*fraction)
-        );
-        point_attrs(out, *point);
-        out.push_str("/>\n");
-    }
-    for JumperClamp {
-        structure,
-        wire,
-        at,
-        clamp_length,
-    } in supports
-    {
-        out.push_str("    <clamp");
-        opt_text(out, "structure", structure.as_deref());
-        attr(out, "wire", wire);
-        attr(out, "at", &num(*at));
-        attr(out, "clamp_length", &num(*clamp_length));
-        out.push_str("/>\n");
     }
     for p in points {
         let ols_line::JumperPoint {
@@ -1550,6 +1564,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         .map(|c| {
             check(c, &["structure", "wire", "at", "clamp_length"], &[])?;
             Ok(JumperClamp {
+                label: String::new(),
                 structure: owned(c, "structure"),
                 wire: text(c, "wire")?.to_owned(),
                 at: number(c, "at")?,
@@ -1578,7 +1593,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             None => ols_line::JumperEnd::Wire(read_section_point(one(e, name)?)?),
         })
     };
-    Ok(Jumper {
+    let mut j = Jumper {
         description: owned(e, "description").unwrap_or_default(),
         id: text(e, "id")?.to_owned(),
         cable: text(e, "cable")?.to_owned(),
@@ -1592,8 +1607,6 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             Some("true") => true,
             Some(v) => return Err(format!("jumper rigid=\"{v}\": true or false")),
         },
-        support,
-        supports,
         bending_stiffness: optional(e, "bending_stiffness")?,
         stiffness_factor: optional(e, "stiffness_factor")?,
         angle_from_deg: optional(e, "angle_from_deg")?,
@@ -1604,7 +1617,16 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         bundle_spacing: optional(e, "bundle_spacing")?,
         bundle_rotation_deg: optional(e, "bundle_rotation_deg")?,
         fields: read_fields(e)?,
-    })
+    };
+    // Supports given on their own before version 5: points holding a
+    // held clamp.
+    if !supports.is_empty() {
+        j.set_supports(supports);
+    }
+    if support.is_some() {
+        j.set_support(support);
+    }
+    Ok(j)
 }
 
 fn read_system(e: &Element) -> Result<System, String> {

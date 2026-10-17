@@ -325,7 +325,7 @@ pub fn structure_loads(
         }
         // Jumpers' support clamps: their strings pull on their tops (the
         // string's force towards the clamp, half its weight and wind).
-        for j in line.jumpers.iter().filter(|j| !j.supports.is_empty()) {
+        for j in line.jumpers.iter().filter(|j| !j.supports().is_empty()) {
             let shape = match ols_line::jumper::solve_one_jumper(&line, library, w, &solved, j) {
                 Ok(shape) => shape,
                 Err(e) => {

@@ -107,12 +107,12 @@ fn rich_line() -> Line {
     sec.bundle_rotation_deg = Some(45.0);
     sec.color = Some("#123abc".into());
     sec.calculation = ols_line::condition::Calculation::CreepRs;
-    line.jumpers[0].support = Some(ols_line::JumperSupport {
+    line.jumpers[0].set_support(Some(ols_line::JumperSupport {
         point: [1.0, 2.0, 3.0],
         length: 2.5,
         weight: 100.0,
         fraction: 0.25,
-    });
+    }));
     line.jumpers[0].bundle = Some(1);
     line.jumpers[0].description = "loop at the dead end".into();
     line.sections[0].description = "phase L1 of circuit 1".into();
@@ -199,8 +199,8 @@ fn rich_line() -> Line {
     // A jumper on a tap on S1's clamp C1, the loop turned off.
     let mut tap = line.jumpers[0].clone();
     tap.id = "JT".into();
-    tap.supports.clear();
-    tap.support = None;
+    tap.set_supports(Vec::new());
+    tap.set_support(None);
     tap.sag = None;
     tap.length = Some(12.5);
     tap.points.clear();
@@ -292,18 +292,19 @@ fn rich_line() -> Line {
     });
     let mut held = line.jumpers[0].clone();
     held.id = "held".into();
-    held.support = None;
+    held.set_support(None);
     held.sag = None;
     held.length = Some(12.5);
-    held.supports = vec![
+    held.set_supports(vec![
         ols_line::JumperClamp {
+            label: String::new(),
             structure: Some(line.structures[1].id.clone()),
             wire: "tip\nnext".into(),
             at: 0.25,
             clamp_length: 0.08,
         },
         ols_line::JumperClamp::new("JW", 0.75),
-    ];
+    ]);
     line.jumpers.push(held);
     // The strings added here: their lengths and directions from where
     // their wire points are.

@@ -563,7 +563,7 @@ pub fn wires(
             for (s, c) in j
                 .supports
                 .iter()
-                .zip(def.into_iter().flat_map(|d| &d.supports))
+                .zip(def.into_iter().flat_map(|d| d.supports()))
             {
                 let h = c.clamp_length / 2.0;
                 let (m, d) = (s.clamp, s.direction);

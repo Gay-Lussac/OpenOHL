@@ -575,7 +575,7 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
             });
             ui.end_row();
         });
-    if j.support.is_some() {
+    if j.support().is_some() {
         ui.label(egui::RichText::new("Its support string is kept (Jumpers table).").small());
     }
     if !j.rigid {
@@ -616,10 +616,13 @@ fn clamps_ui(
         v
     };
     let from = j.from.structure().unwrap_or_default().to_owned();
+    // Edited here, put back on the jumper (its points) when changed.
+    let mut supports = j.supports();
+    let before = supports.clone();
     egui::Grid::new("jumper-clamps")
         .num_columns(5)
         .show(ui, |ui| {
-            for (k, c) in j.supports.iter_mut().enumerate() {
+            for (k, c) in supports.iter_mut().enumerate() {
                 ui.label(format!("clamp {}", k + 1));
                 let id = c.structure.clone().unwrap_or_else(|| from.clone());
                 egui::ComboBox::from_id_salt(("clamp-structure", k))
@@ -673,7 +676,7 @@ fn clamps_ui(
             }
         });
     if let Some(k) = *remove {
-        if k >= j.supports.len() {
+        if k >= supports.len() {
             *remove = None;
         } else {
             ui.horizontal(|ui| {
@@ -681,11 +684,11 @@ fn clamps_ui(
                     "Remove clamp {} (on {} of {})? Nothing else goes with it; its strings stay \
                      on the structure. Applied as one change.",
                     k + 1,
-                    j.supports[k].wire,
-                    j.supports[k].structure_id(j)
+                    supports[k].wire,
+                    supports[k].structure_id(j)
                 ));
                 if ui.button("Remove").clicked() {
-                    j.supports.remove(k);
+                    supports.remove(k);
                     *remove = None;
                 }
                 if ui.button("Keep").clicked() {
@@ -693,6 +696,9 @@ fn clamps_ui(
                 }
             });
         }
+    }
+    if supports != before {
+        j.set_supports(supports.clone());
     }
     // The lengths between the clamps: typed, they give the jumper's length
     // and its clamps' places.
@@ -706,7 +712,7 @@ fn clamps_ui(
             .show(ui, |ui| {
                 // Each clamp by its wire point; the ends by structure and set.
                 let mut names: Vec<String> = vec![j.from.to_string()];
-                names.extend(j.supports.iter().map(|c| c.wire.clone()));
+                names.extend(supports.iter().map(|c| c.wire.clone()));
                 names.push(j.to.to_string());
                 for (k, piece) in edited.iter_mut().enumerate() {
                     let name = format!("{} to {}", names[k], names[k + 1]);
@@ -725,7 +731,7 @@ fn clamps_ui(
             set_jumper_pieces(j, &edited);
         }
     }
-    let why_not = if j.support.is_some() {
+    let why_not = if j.support().is_some() {
         Some(
             "It has a support string: clamps on suspension strings replace it (remove it in the Jumpers table)",
         )
@@ -748,7 +754,7 @@ fn clamps_ui(
     };
     if add.clicked() {
         // After the last clamp, halfway to the end.
-        let after = j.supports.last().map_or(0.0, |c| c.at);
+        let after = supports.last().map_or(0.0, |c| c.at);
         let mut c = ols_line::JumperClamp::new(
             clamp_wires(model, &from)
                 .first()
@@ -756,11 +762,11 @@ fn clamps_ui(
                 .unwrap_or_default(),
             0.5 * (after + 1.0),
         );
-        if j.supports.is_empty() {
+        if supports.is_empty() {
             c.at = 0.5;
         }
         c.clamp_length = model.line.defaults.jumper_clamp_length;
-        j.supports.push(c);
+        j.edit_supports(|cs| cs.push(c));
     }
 }
 
@@ -4420,10 +4426,11 @@ pub fn jumper_pieces(j: &ols_line::Jumper) -> Vec<f64> {
     let Some(length) = j.length else {
         return Vec::new();
     };
-    if j.supports.is_empty() {
+    let supports = j.supports();
+    if supports.is_empty() {
         return Vec::new();
     }
-    let mut at: Vec<f64> = j.supports.iter().map(|c| c.at).collect();
+    let mut at: Vec<f64> = supports.iter().map(|c| c.at).collect();
     at.insert(0, 0.0);
     at.push(1.0);
     at.windows(2).map(|w| (w[1] - w[0]) * length).collect()
@@ -4432,7 +4439,8 @@ pub fn jumper_pieces(j: &ols_line::Jumper) -> Vec<f64> {
 /// Gives a jumper with helping strings these piece lengths (see
 /// [`jumper_pieces`]): its length their sum, its clamps' places from them.
 pub fn set_jumper_pieces(j: &mut ols_line::Jumper, pieces: &[f64]) {
-    if pieces.len() != j.supports.len() + 1 {
+    let mut supports = j.supports();
+    if pieces.len() != supports.len() + 1 {
         return;
     }
     let total: f64 = pieces.iter().sum();
@@ -4440,10 +4448,11 @@ pub fn set_jumper_pieces(j: &mut ols_line::Jumper, pieces: &[f64]) {
         return;
     }
     let mut run = 0.0;
-    for (c, piece) in j.supports.iter_mut().zip(pieces) {
+    for (c, piece) in supports.iter_mut().zip(pieces) {
         run += piece;
         c.at = run / total;
     }
+    j.set_supports(supports);
     j.length = Some(total);
     j.sag = None;
 }
@@ -4480,17 +4489,21 @@ pub fn new_jumper_through(
         })
         .map(|l: f64| l.max(0.05))
         .collect();
-    j.supports = via
-        .iter()
-        .map(|(s, w)| {
-            let mut c = ols_line::JumperClamp::new(w.clone(), 0.5);
-            c.clamp_length = model.line.defaults.jumper_clamp_length;
-            if *s != from.structure {
-                c.structure = Some(s.clone());
-            }
-            c
-        })
-        .collect();
+    // (Placed in order: their places follow from the pieces.)
+    let n = via.len() as f64;
+    j.set_supports(
+        via.iter()
+            .enumerate()
+            .map(|(k, (s, w))| {
+                let mut c = ols_line::JumperClamp::new(w.clone(), (k as f64 + 1.0) / (n + 1.0));
+                c.clamp_length = model.line.defaults.jumper_clamp_length;
+                if *s != from.structure {
+                    c.structure = Some(s.clone());
+                }
+                c
+            })
+            .collect(),
+    );
     set_jumper_pieces(&mut j, &pieces);
     Ok(j)
 }

@@ -112,8 +112,8 @@ pub fn end_loads<'a>(
         let q = wire_load_in_line_wind(case, c, d, along);
         let bundle = f64::from(line.jumper_bundle(j).count.max(1));
         // The supports' places along it, from `from`.
-        let mut at: Vec<f64> = j.supports.iter().map(|c| c.at).collect();
-        if let Some(sp) = &j.support {
+        let mut at: Vec<f64> = j.supports().iter().map(|c| c.at).collect();
+        if let Some(sp) = &j.support() {
             at.push(sp.fraction);
         }
         let first = at.iter().copied().fold(1.0_f64, f64::min).clamp(0.0, 1.0);
@@ -333,6 +333,11 @@ fn object_loads(
         .filter_map(|q| {
             let o = q.object.as_ref()?;
             let [down, across] = o.forces(case, cable.diameter.si());
+            // A support's clamp: its strings hold it; its own weight,
+            // ice and wind when it has some.
+            if o.hold.is_some() && down == 0.0 && across == 0.0 {
+                return None;
+            }
             Some((
                 place_fraction(&q.at, length, horizontal),
                 left * across - Vector3::new(0.0, 0.0, down),
@@ -970,7 +975,7 @@ fn clamp_holds(
     wind: Vector3<f64>,
 ) -> Result<Vec<ClampHold>, String> {
     jumper
-        .supports
+        .supports()
         .iter()
         .enumerate()
         .map(|(k, c)| {
@@ -1018,7 +1023,7 @@ fn support_shapes(
     bundle: u32,
 ) -> Vec<JumperSupportShape> {
     let scale = f64::from(bundle);
-    if let Some(s) = &jumper.support {
+    if let Some(s) = &jumper.support() {
         return shape
             .holds
             .iter()
@@ -1036,7 +1041,7 @@ fn support_shapes(
             .collect();
     }
     jumper
-        .supports
+        .supports()
         .iter()
         .zip(&shape.holds)
         .map(|(c, h)| {
@@ -1257,7 +1262,9 @@ pub fn solve_jumper_in(
     // Support clamps and objects: always the rod (it keeps the jumper
     // straight through its clamps whatever its stiffness, and takes
     // loads at points).
-    let stiff = if !jumper.supports.is_empty() {
+    let supports = jumper.supports();
+    let support = jumper.support();
+    let stiff = if !supports.is_empty() {
         Some(hinged(rod_ends(line, jumper, shapes, cable, load)))
     } else if !objects.is_empty() {
         stiff.or_else(|| Some(hinged(rod_ends(line, jumper, shapes, cable, load))))
@@ -1266,7 +1273,7 @@ pub fn solve_jumper_in(
     };
     if let Some(stiff) = &stiff {
         // Half the string's weight per wire on the jumper.
-        let held = match &jumper.support {
+        let held = match &support {
             Some(s) => Held::Node {
                 fraction: s.fraction,
                 weight: s.weight / f64::from(bundle) / 2.0,
@@ -1276,7 +1283,7 @@ pub fn solve_jumper_in(
                     push: false,
                 },
             },
-            None if !jumper.supports.is_empty() => {
+            None if !supports.is_empty() => {
                 // The wind on the strings, across the line from the case's
                 // side (per m² of their wind area).
                 let wind = along.map_or(Vector3::zeros(), |a| {
@@ -1316,7 +1323,7 @@ pub fn solve_jumper_in(
             Vector3::zeros()
         }
     };
-    let (points, max_tension, supports, end_forces) = match &jumper.support {
+    let (points, max_tension, supports, end_forces) = match &support {
         None => {
             let state = props
                 .solve(d, None, &default_element_budget())
@@ -1583,7 +1590,8 @@ fn design_key(line: &Line, library: &ols_cables::Library, jumper: &Jumper) -> St
         .flat_map(|s| s.points.iter().map(|p| p.structure.as_str()))
         .collect();
     ids.extend(jumper.points().map(|p| p.structure.as_str()));
-    for c in &jumper.supports {
+    let supports = jumper.supports();
+    for c in &supports {
         ids.insert(c.structure_id(jumper));
     }
     let structures: Vec<&crate::Structure> = line
@@ -2011,12 +2019,12 @@ mod tests {
         let low = free[0].points[free[0].points.len() / 2];
         line.jumpers[0].sag = None;
         line.jumpers[0].length = Some(length);
-        line.jumpers[0].support = Some(JumperSupport {
+        line.jumpers[0].set_support(Some(JumperSupport {
             point: [low[0], low[1], low[2] + 2.0],
             length: 1.0,
             weight: 100.0,
             fraction: 0.5,
-        });
+        }));
         line.validate().unwrap();
         let (_, held) = solve_all(&line, &still(15.0));
         let s = &held[0].supports[0];
@@ -2054,17 +2062,17 @@ mod tests {
         iced.ice_thickness = ols_core::units::Length::from_si(0.02);
         assert!(down(&line, &iced)[j.from.point().unwrap()] > 2.0 * a);
         // A support a quarter along: the first end carries an eighth.
-        line.jumpers[0].support = Some(JumperSupport {
+        line.jumpers[0].set_support(Some(JumperSupport {
             point: [0.0, 0.0, 0.0],
             length: 1.0,
             weight: 0.0,
             fraction: 0.25,
-        });
+        }));
         let w = down(&line, &calm);
         assert!((w[j.from.point().unwrap()] / (2.0 * a) - 0.125).abs() < 1e-9);
         assert!((w[j.to.point().unwrap()] / (2.0 * a) - 0.375).abs() < 1e-9);
         // The clamp it hangs on, lower than without it.
-        line.jumpers[0].support = None;
+        line.jumpers[0].set_support(None);
         let (with, _) = solve_all(&line, &calm);
         let mut without = line.clone();
         without.jumpers.clear();
@@ -2113,8 +2121,8 @@ mod tests {
             section: s1.clone(),
             point: "TAP".into(),
         }));
-        j.supports.clear();
-        j.support = None;
+        j.set_supports(Vec::new());
+        j.set_support(None);
         j.sag = None;
         let a = approximate_end(&line, &j.from, 0).unwrap();
         let b = approximate_end(&line, &j.to, 0).unwrap();
@@ -2251,8 +2259,8 @@ mod tests {
         let mut j = line.jumpers[0].clone();
         j.id = "JJ".into();
         j.points.clear();
-        j.supports.clear();
-        j.support = None;
+        j.set_supports(Vec::new());
+        j.set_support(None);
         j.sag = None;
         j.from = crate::JumperEnd::tap(crate::Tap::Jumper {
             jumper: host.clone(),
@@ -2487,16 +2495,16 @@ mod tests {
         let low = free[0].points[free[0].points.len() / 2];
         line.jumpers[0].sag = None;
         line.jumpers[0].length = Some(free[0].unstressed_length);
-        line.jumpers[0].support = Some(JumperSupport {
+        line.jumpers[0].set_support(Some(JumperSupport {
             point: [low[0], low[1], low[2] + 2.0],
             length: 1.0,
             weight: 100.0,
             fraction: 0.5,
-        });
+        }));
         let (shapes, one) = solve_all(&line, &still(15.0));
         line.jumpers[0].bundle = Some(3);
         line.jumpers[0].bundle_spacing = Some(0.4);
-        line.jumpers[0].support.as_mut().unwrap().weight = 300.0;
+        line.jumpers[0].edit_support(|s| s.as_mut().unwrap().weight = 300.0);
         line.validate().unwrap();
         // Between the same clamps (three times the jumper weighs more on
         // them, which moves them a little).
@@ -2675,7 +2683,7 @@ mod tests {
                     ..Default::default()
                 });
             }
-            line.jumpers[0].supports.push(JumperClamp::new(label, at));
+            line.jumpers[0].edit_supports(|c| c.push(JumperClamp::new(label, at)));
         }
         line.validate().unwrap();
         (line, free)
@@ -2795,7 +2803,7 @@ mod tests {
         windy.wind_pressure = Stress::from_pascals(600.0);
         let (_, calm) = solve_all(&line, &still(15.0));
         let (_, bare) = solve_all(&line, &windy);
-        let structure = line.jumpers[0].supports[0]
+        let structure = line.jumpers[0].supports()[0]
             .structure_id(&line.jumpers[0])
             .to_owned();
         let s = line
@@ -2858,12 +2866,12 @@ mod tests {
         };
         assert!(
             err(&|l| {
-                l.jumpers[0].support = Some(JumperSupport {
+                l.jumpers[0].set_support(Some(JumperSupport {
                     point: [0.0; 3],
                     length: 1.0,
                     weight: 0.0,
                     fraction: 0.5,
-                })
+                }));
             })
             .contains("not both")
         );
@@ -2874,30 +2882,39 @@ mod tests {
             })
             .contains("needs a length")
         );
-        assert!(err(&|l| l.jumpers[0].supports[0].at = 1.0).contains("between 0 and 1"));
         assert!(
-            err(&|l| l.jumpers[0].supports[0].at = 0.001).contains("overlaps the jumper's start")
-        );
-        assert!(err(&|l| l.jumpers[0].supports[0].clamp_length = 0.0).contains("above 0"));
-        assert!(
-            err(&|l| {
-                let c = l.jumpers[0].supports[0].clone();
-                l.jumpers[0]
-                    .supports
-                    .push(crate::JumperClamp { at: 0.4, ..c });
-            })
-            .contains("overlaps clamp 1")
+            err(&|l| l.jumpers[0].edit_supports(|c| c[0].at = 1.0)).contains("between 0 and 1")
         );
         assert!(
-            err(&|l| l.jumpers[0].supports[0].wire = "nothing".into())
+            err(&|l| l.jumpers[0].edit_supports(|c| c[0].at = 0.001))
+                .contains("overlaps the jumper's start")
+        );
+        let e = err(&|l| l.jumpers[0].edit_supports(|c| c[0].clamp_length = 0.0));
+        assert!(e.contains("above 0"), "{e}");
+        let e = err(&|l| {
+            let c = l.jumpers[0].supports()[0].clone();
+            l.jumpers[0].edit_supports(|cs| {
+                cs.push(crate::JumperClamp {
+                    label: String::new(),
+                    // (Just after it: clamps are taken in order.)
+                    at: c.at + 0.001,
+                    ..c
+                })
+            });
+        });
+        assert!(e.contains("overlaps clamp 1"), "{e}");
+        assert!(
+            err(&|l| l.jumpers[0].edit_supports(|c| c[0].wire = "nothing".into()))
                 .contains("no wire point \"nothing\"")
         );
         assert!(
-            err(&|l| l.jumpers[0].supports[0].structure = Some("T9".into()))
+            err(&|l| l.jumpers[0].edit_supports(|c| c[0].structure = Some("T9".into())))
                 .contains("unknown structure T9")
         );
         // A section's wire point (with a set).
-        assert!(err(&|l| l.jumpers[0].supports[0].wire = "W1".into()).contains("has set"));
+        assert!(
+            err(&|l| l.jumpers[0].edit_supports(|c| c[0].wire = "W1".into())).contains("has set")
+        );
         fn t3(l: &mut Line) -> &mut crate::Structure {
             l.structures.iter_mut().find(|s| s.id == "T3").unwrap()
         }
@@ -2931,7 +2948,7 @@ mod tests {
                     wire: "JX".into(),
                     ..Default::default()
                 });
-                l.jumpers[0].supports[0].wire = "JX".into();
+                l.jumpers[0].edit_supports(|c| c[0].wire = "JX".into());
             })
             .contains("not a structure point")
         );

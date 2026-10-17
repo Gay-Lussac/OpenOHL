@@ -509,7 +509,7 @@ pub fn ui(
                 .jumpers
                 .iter()
                 .filter(|j| {
-                    j.supports
+                    j.supports()
                         .iter()
                         .any(|c| c.structure_id(j) == structure && c.wire == x.wire)
                 })
@@ -702,9 +702,9 @@ pub fn ui(
             });
             // The wire points it passes through (clamps on suspension
             // strings), in order, with the lengths between its clamps.
-            if !j.supports.is_empty() {
+            if !j.supports().is_empty() {
                 let through: Vec<String> = j
-                    .supports
+                    .supports()
                     .iter()
                     .map(|c| format!("{} on {}", c.wire, c.structure_id(j)))
                     .collect();
@@ -791,16 +791,16 @@ pub fn ui(
                     }),
                     (
                         "support string",
-                        j.support.as_ref().map_or("none".into(), |s| {
+                        j.support().map_or("none".into(), |s| {
                             format!("{:.2} m, {:.0} N", s.length, s.weight)
                         }),
                     ),
                     (
                         "helping strings",
-                        if j.supports.is_empty() {
+                        if j.supports().is_empty() {
                             "none".into()
                         } else {
-                            j.supports
+                            j.supports()
                                 .iter()
                                 .map(|c| {
                                     format!(

@@ -88,8 +88,25 @@
         (N, the whole bundle's), its shape for the wind and the ice (point,
         sphere: diameter; cylinder: diameter, length, axis along / across /
         vertical; box: along, across, height; areas: wind_area, ice_area),
-        drag (default 1), a clamp's length along the wire.</xs:documentation>
+        drag (default 1), a clamp's length along the wire. A clamp on a
+        jumper held up is a support: its `hold` gives the structure's
+        strings to a wire point without a set (structure: default the
+        `from` end's; wire), or one string from a fixed point (x, y, z,
+        length, weight).</xs:documentation>
     </xs:annotation>
+    <xs:sequence>
+      <xs:element name="hold" minOccurs="0">
+        <xs:complexType>
+          <xs:attribute name="structure" type="xs:string"/>
+          <xs:attribute name="wire" type="xs:string"/>
+          <xs:attribute name="x" type="xs:double"/>
+          <xs:attribute name="y" type="xs:double"/>
+          <xs:attribute name="z" type="xs:double"/>
+          <xs:attribute name="length" type="xs:double"/>
+          <xs:attribute name="weight" type="xs:double" default="0"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
     <xs:attribute name="kind" default="body">
       <xs:simpleType>
         <xs:restriction base="xs:string">
@@ -522,8 +539,10 @@
                   <xs:attributeGroup ref="ols:xyz"/>
                 </xs:complexType>
               </xs:element>
-              <!-- Support clamps, in order from `from`: each on the strings to a
-                   wire point without a set (structure: default the `from` end's). -->
+              <!-- Before version 5: a support string (`support`) and support
+                   clamps (`clamp`, in order from `from`: each on the strings
+                   to a wire point without a set) of their own; read as
+                   jumper points holding a held clamp, not written. -->
               <xs:element name="clamp" minOccurs="0" maxOccurs="unbounded">
                 <xs:complexType>
                   <xs:attribute name="structure" type="xs:string"/>

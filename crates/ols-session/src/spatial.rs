@@ -93,9 +93,9 @@ pub fn object_bounds(line: &Line) -> BTreeMap<(Kind, String), Bounds> {
                 None => ols_line::jumper::approximate_end(line, e, 0),
             })
             .collect();
-        pts.extend(j.support.iter().map(|s| s.point));
+        pts.extend(j.support().iter().map(|s| s.point));
         // Its support clamps, where their wire points hang.
-        pts.extend(j.supports.iter().filter_map(|c| {
+        pts.extend(j.supports().iter().filter_map(|c| {
             line.structure(c.structure_id(j))
                 .and_then(|s| s.wire(&c.wire))
                 .map(|w| w.position)
