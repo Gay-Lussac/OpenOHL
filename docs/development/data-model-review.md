@@ -80,7 +80,7 @@ These change the line file (a new version, older files still read).
 
 | # | What | Proposal |
 |---|---|---|
-| 4.1 | **Units**: the convention says library values carry their unit (`"0.6 m"`), but `.olsload` takes plain numbers only, `.olsg` `tilt` and `centre_above_rest`, `.olscost` prices and some kV keys too; `.olspd` (plugin) has its own parser taking one unit | make `.olsload` fields unit-aware (plain numbers still read as SI): the most visible gap, a new format |
+| 4.1 ✓ | **Units**: the convention says library values carry their unit (`"0.6 m"`), but `.olsload` takes plain numbers only, `.olsg` `tilt` and `centre_above_rest`, `.olscost` prices and some kV keys too; `.olspd` (plugin) has its own parser taking one unit | make `.olsload` fields unit-aware (plain numbers still read as SI): the most visible gap, a new format |
 | 4.2 | **Headers**: 13 formats use `check_header`, six their own copy (cables, pylon templates, the line file, `.olspd`, check reports, colour files) with different rules (`format` optional or required, older versions accepted or refused, bundle exactly 1) | one policy: header optional, any version up to the current read, newer refused |
 | 4.3 | **Typos**: unknown keys refused in cables, rules, galloping, classes, `.olsload`, load cases, models; silently ignored in weather, thermal ambient, structures, insulators, poles, pylon templates | refuse everywhere (warn first for a release) |
 | 4.4 | **Names**: format ids singular and plural (`ols-wire` holds `[[cable]]`, `ols-weather-cases`), constants named three ways, extensions as literals in ~30 places (no constant for `.olslc`, `.olspd`) | constants in each crate, used everywhere; ids kept (they are in files) |

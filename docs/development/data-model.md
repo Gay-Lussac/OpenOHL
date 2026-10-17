@@ -82,7 +82,12 @@ the box belongs to one line; the libraries are shared and referred to by
   are `#rrggbb`.
 - **Library files** (TOML): values carry their unit as text
   (`"12.5 m"`, `"1.4 kN"`, `"400 mm²"`, `"20 °C"`), converted to SI on
-  reading (`ols_core::units`). A bare number is a factor or a count.
+  reading (`ols_core::units`; a plain `f64` field reads so through
+  `units::si::de`); a plain number is SI. A bare number is otherwise a
+  factor or a count. Exceptions, where the key or the file says the unit:
+  angles in degrees (`tilt`, `_deg`: a plain number is degrees, text may
+  give `"0.17 rad"`, `units::si::de_degrees`), `_kv` keys, prices (in the
+  cost file's currency).
 - Inside the program every quantity is SI ([Conventions and
   units](../theory/conventions.md)).
 
@@ -341,7 +346,8 @@ between them; written in the new form.
 `ols-point-spread-loads`, version 1 (`objects::ObjectLibrary`): `name`
 and `[[type]]`s — `id`, `name`, `description`, `kind` (`body`, `clamp`,
 `spread`), `weight`, the shape as on objects, `drag`, `clamp_length`, a
-spread type's `load` (N/m). Shipped templates (typical values, to check):
+spread type's `load` (N/m); sizes, weights, lengths and loads with their
+unit (`"600 mm"`, `"70 N"`, `"12.5 N/m"`) or plain SI numbers. Shipped templates (typical values, to check):
 `libraries/objects/templates.olsload`. A project's own types are a project library file
 of kind `objects` (`project.olsload`), over the templates of the same
 ids (Sections › Point and spread load types).
