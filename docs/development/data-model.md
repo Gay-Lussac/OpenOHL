@@ -628,7 +628,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 
 | Field (TOML key) | Type | Unit | Meaning |
 |---|---|---|---|
-| `format`, `version` | optional | — | `"ols-structure"`, 1 or 2 |
+| `format`, `version` | optional | — | `"ols-structure"`, 1 to 3 (`STRUCTURE_FILE_VERSION`; 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
 | `id`, `name` | string | — | unique id (referred to by `Structure.type`), display name |
 | `kind` | `lattice` / `pole` / `portal` / `other` | — | family |
 | `height` | length? | m | mast top for the default stick drawing |
@@ -640,8 +640,10 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `[[attachment]]` | `TypeAttachment` | — | version 1: `set`, `phase`, `point`, `insulator` or inline `string`, `side` |
 | `[[extension]]` | `name`, `dz` | m | height extensions |
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |
-| `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?` | m | pylon joints (detail 2–3) |
-| `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`), `reference?`, `roll?`, `k?`, `pretension?` | — | pylon members |
+| `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?`, `made_by?` | m | pylon joints (detail 2–3); `made_by`: the `[[generator]]` that wrote it |
+| `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`), `reference?`, `roll?`, `k?`, `pretension?`, `group?`, `made_by?` | — | pylon members; `group`: its member group (no table of groups: a section per group is written on each member); `made_by` as for joints. `ols_structures_fe` leaves `group` and `made_by` out of the model |
+| `[[generator]]` | tables (`generators`, kept unread by the core): `id`, `kind` (`panels` / `crossarm` / `peak` / `copy_face`) and its inputs | m | a body generator's record, read by `ols-structure-edit` (`body::Generator`): panels `bottom?`, `feet`, `waist` (a length or [across, along]), `panel` [{`top`, `bracing` (`single`/`x`/`k`/`diamond`/`warren`), `horizontal`}]; crossarm `points`, `shape` (`triangular`/`rectangular`); peak `points` or `height`; copy_face `body` (a panels generator), `face` (`x+`/`x-`/`y+`/`y-`) |
+| `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body tab's option |
 | `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1) |
 | `[[load_case]]` | tables (`load_cases`, kept unread by the core) | N, Pa | the structure's load-case recipes, read by the structure application (`ols-structure-loads`; below) |
 | `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
@@ -665,6 +667,15 @@ levels decided for the structure application (poles with levels, a flat
 of `ols-app`'s pylon workspace is a function on the file's text
 (`toml_edit::DocumentMut`, comments and order kept) given the structure
 as last read; `StructureFile` keeps the undo and redo of whole edits.
+Body tools (same crate): `generators::generate(t, g) -> Body` (joints,
+members, points put on tips; pure, ids from the inputs),
+`rebuild::{apply, rebuild, rebuild_all, remove_generator, write}`
+(replace only what has the generator's `made_by`; what something else
+uses is kept, made by hand, and reported in `Report::kept`),
+`symmetry::{add_joint, add_member, move_to, removal, make_symmetric}`
+(images matched by position within 1 mm), `groups::{groups, set_group,
+set_group_section, set_group_kind}`. `StructureFile` refuses a file whose
+`[[generator]]` or `[[symmetry]]` tables do not read (`body::check`).
 `missing(t, level) -> Vec<Missing>` lists what the next level lacks
 (`Need::Level`: no member, a member without a section — one item per
 member —, no `[[section]]`, no supported joint) and advice

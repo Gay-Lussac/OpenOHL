@@ -77,6 +77,10 @@ pub enum Sheet {
     Joints,
     /// Members.
     Members,
+    /// Body generators (Body tab).
+    Generators,
+    /// Member groups: a section and kind per group (Design tab).
+    Groups,
     /// Supports of the joints.
     Supports,
     /// Members' sections, kinds, k.
@@ -130,9 +134,11 @@ pub struct StructureApp {
     view: View,
     rs: Option<egui_wgpu::RenderState>,
     /// What the view drew last (drawn again when it changes).
-    drawn: Option<(String, Vec<Handle>, u64)>,
+    drawn: Option<(String, Vec<Handle>, u64, usize)>,
     /// The window's title as set.
     title: String,
+    /// The Body tab's tools: generator form, preview, group filter.
+    pub body: crate::body_tab::BodyState,
 }
 
 impl StructureApp {
@@ -162,6 +168,7 @@ impl StructureApp {
             rs,
             drawn: None,
             title: String::new(),
+            body: Default::default(),
         }
     }
 
@@ -206,6 +213,7 @@ impl StructureApp {
                 if let Err(e) = self.loads.opened(path) {
                     self.message = Some((format!("typed loads not read: {e}"), true));
                 }
+                self.body = Default::default();
             }
             Err(e) => self.open_error = Some(e),
         }
@@ -658,8 +666,14 @@ impl eframe::App for StructureApp {
         };
         let t = f.structure().clone();
         let g = geometry(&t, &self.insulators);
-        // Drawn again when the file, what is picked or the compass change.
-        let key = (f.text(), self.selected.clone(), self.ahead.to_bits());
+        // Drawn again when the file, what is picked, the compass or the
+        // preview change.
+        let key = (
+            f.text(),
+            self.selected.clone(),
+            self.ahead.to_bits(),
+            self.body.preview_stamp(),
+        );
         if self.drawn.as_ref() != Some(&key) {
             self.view.redraw();
             self.drawn = Some(key);
@@ -685,6 +699,7 @@ impl eframe::App for StructureApp {
                     ahead: self.ahead,
                     message: &mut self.message,
                     overlay,
+                    preview: &self.body.preview,
                 },
             );
         });

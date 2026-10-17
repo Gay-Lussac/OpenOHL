@@ -6,7 +6,7 @@
 //! (`[[symmetry]]`) of a structure file: read from the tables the core
 //! keeps unread, checked, written back. What a generator builds is in
 //! [`crate::generators`]; applying and rebuilding it in
-//! [`crate::rebuild`].
+//! [`mod@crate::rebuild`].
 //!
 //! ```toml
 //! [[generator]]

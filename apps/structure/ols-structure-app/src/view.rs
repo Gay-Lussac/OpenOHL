@@ -11,9 +11,8 @@
 use eframe::egui;
 use eframe::egui_wgpu;
 use ols_render::{Bounds, Camera, GpuScene, Renderer, Scene};
-use ols_structure_edit::{
-    Geometry, Handle, StructureFile, compass_radius, move_to, pick, position,
-};
+use ols_structure_edit::symmetry::move_to;
+use ols_structure_edit::{Geometry, Handle, StructureFile, compass_radius, pick, position};
 
 const STEEL: [u8; 4] = [215, 215, 220, 255];
 const BARE: [u8; 4] = [200, 170, 110, 255];
@@ -23,6 +22,8 @@ const POINT: [u8; 4] = [255, 150, 60, 255];
 const WIRE: [u8; 4] = [90, 200, 255, 255];
 const PICKED: [u8; 4] = [255, 235, 60, 255];
 const SUPPORT: [u8; 4] = [110, 220, 120, 255];
+/// What a generator would build (before Apply).
+const PREVIEW: [u8; 4] = [80, 230, 200, 255];
 
 /// A drag moving a joint or a (wire) point.
 #[derive(Debug, Clone)]
@@ -65,6 +66,8 @@ pub struct ViewInput<'a> {
     /// A tab's drawing over the structure (loads, results) and its key
     /// (built again when the key changes).
     pub overlay: Option<(u64, Scene)>,
+    /// What a generator would build: lines drawn over the structure.
+    pub preview: &'a [[[f64; 3]; 2]],
 }
 
 impl View {
@@ -215,7 +218,7 @@ impl View {
         if self.dirty || self.gpu.is_none() {
             self.gpu = Some(GpuScene::new(
                 device,
-                &scene(g, v.foot, v.selected, v.ahead),
+                &scene(g, v.foot, v.selected, v.ahead, v.preview),
             ));
             self.dirty = false;
         }
@@ -285,8 +288,15 @@ impl View {
 }
 
 /// The scene: the ground at the feet (a 1 m grid), the axes, the compass,
-/// the sticks, members, strings, joints, points and wire points.
-fn scene(g: &Geometry, foot: f64, selected: &[Handle], ahead: f64) -> Scene {
+/// the sticks, members, strings, joints, points and wire points, and a
+/// generator's preview.
+fn scene(
+    g: &Geometry,
+    foot: f64,
+    selected: &[Handle],
+    ahead: f64,
+    preview: &[[[f64; 3]; 2]],
+) -> Scene {
     let mut s = Scene::new([0.0; 3]);
     let extent = g
         .all()
@@ -325,6 +335,9 @@ fn scene(g: &Geometry, foot: f64, selected: &[Handle], ahead: f64) -> Scene {
     }
     for (_, a, b) in &g.strings {
         s.polyline(&[*a, *b], STRING, 2.5);
+    }
+    for l in preview {
+        s.polyline(l, PREVIEW, 2.2);
     }
     for (id, p, support) in &g.joints {
         let (c, size) = match (picked(Handle::Joint(id.clone())), support) {

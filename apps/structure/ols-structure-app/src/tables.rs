@@ -31,8 +31,9 @@ fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
     }
 }
 
-/// A row's name: picks it; brought into view when asked.
-fn row(
+/// A row's name: picks it (Shift + click: picks another, or drops it);
+/// brought into view when asked.
+pub(crate) fn row(
     ui: &mut egui::Ui,
     selected: &mut Vec<Handle>,
     scroll_to: &mut Option<Handle>,
@@ -41,7 +42,16 @@ fn row(
 ) {
     let r = ui.selectable_label(selected.contains(&h), text);
     if r.clicked() {
-        *selected = vec![h.clone()];
+        if ui.input(|i| i.modifiers.shift) {
+            match selected.iter().position(|x| *x == h) {
+                Some(k) => {
+                    selected.remove(k);
+                }
+                None => selected.push(h.clone()),
+            }
+        } else {
+            *selected = vec![h.clone()];
+        }
     }
     if scroll_to.as_ref() == Some(&h) {
         r.scroll_to_me(Some(egui::Align::Center));
@@ -62,6 +72,8 @@ impl StructureApp {
         };
         let t = f.structure().clone();
         let g = geometry(&t, &self.insulators);
+        // Shown while the Generators table is.
+        self.body.preview.clear();
         match self.tab {
             Tab::Geometry | Tab::Body | Tab::Design => {}
             Tab::LoadCases => {
@@ -78,6 +90,9 @@ impl StructureApp {
             }
         }
         self.tools(ui, &t);
+        if self.tab == Tab::Body {
+            self.body_tools(ui, &t);
+        }
         self.confirm_ui(ui, &t);
         let k = tab_index(self.tab);
         let sheets: &[(Sheet, &str, &str)] = match self.tab {
@@ -113,7 +128,12 @@ impl StructureApp {
                 (
                     Sheet::Members,
                     "Members",
-                    "The body's members between two joints",
+                    "The body's members between two joints, with their groups",
+                ),
+                (
+                    Sheet::Generators,
+                    "Generators",
+                    "Build the body from a few dimensions: legs and panels, crossarms, a peak, a face copied; rebuild it",
                 ),
             ],
             _ => &[
@@ -126,6 +146,11 @@ impl StructureApp {
                     Sheet::Design,
                     "Members",
                     "Each member's section, kind and buckling factor",
+                ),
+                (
+                    Sheet::Groups,
+                    "Groups",
+                    "A section and kind for every member of a group",
                 ),
                 (
                     Sheet::Sections,
@@ -160,6 +185,8 @@ impl StructureApp {
                 Sheet::Sets => self.sets_sheet(ui, &t),
                 Sheet::Joints => self.joints_sheet(ui, &t),
                 Sheet::Members => self.members_sheet(ui, &t, &g),
+                Sheet::Generators => self.generators_sheet(ui, &t),
+                Sheet::Groups => self.groups_sheet(ui, &t),
                 Sheet::Supports => self.supports_sheet(ui, &t),
                 Sheet::Design => self.design_sheet(ui, &t),
                 Sheet::Sections => self.items_sheet(ui, "section"),
@@ -264,9 +291,9 @@ impl StructureApp {
                         _ => None,
                     }
                     .unwrap_or([0.0; 3]);
-                    let id = f.edit("add joint", |doc, t| edit::add_joint(doc, Some(t), at));
-                    self.selected = vec![Handle::Joint(id.clone())];
-                    self.message = Some((format!("added joint {id}"), false));
+                    let ids = f.edit("add joint", |doc, t| edit::symmetry::add_joint(doc, t, at));
+                    self.selected = vec![Handle::Joint(ids[0].clone())];
+                    self.message = Some((format!("added joint {}", ids.join(", ")), false));
                 }
                 let joints: Vec<String> = self
                     .selected
@@ -283,9 +310,14 @@ impl StructureApp {
                     .clicked()
                 {
                     let (a, b) = (joints[0].clone(), joints[1].clone());
-                    match f.edit("add member", |doc, t| edit::add_member(doc, t, &a, &b)) {
-                        Ok(id) => {
-                            self.message = Some((format!("added member {id} ({a}–{b})"), false));
+                    match f.edit("add member", |doc, t| edit::symmetry::add_member(doc, t, &a, &b)) {
+                        Ok(ids) => {
+                            let more = if ids.len() > 1 {
+                                format!(" and its images {}", ids[1..].join(", "))
+                            } else {
+                                String::new()
+                            };
+                            self.message = Some((format!("added member {} ({a}–{b}){more}", ids[0]), false));
                             // The next member starts at the second joint.
                             self.selected = vec![Handle::Joint(b)];
                         }
@@ -311,7 +343,7 @@ impl StructureApp {
                     .on_disabled_hover_text("Pick one thing")
                     .clicked()
                 {
-                    self.confirm = Some(edit::removal(t, &self.selected[0]));
+                    self.confirm = Some(edit::symmetry::removal(t, &self.selected[0]));
                 }
             }
             if ui.button("Fit").on_hover_text("Show the whole structure").clicked() {
@@ -1082,7 +1114,7 @@ impl StructureApp {
                 }
                 if moved {
                     let _ = f.edit(&format!("move joint {}", n.id), |doc, t| {
-                        edit::move_to(doc, t, &h, p)
+                        edit::symmetry::move_to(doc, t, &h, p)
                     });
                 }
                 ui.label(
@@ -1103,30 +1135,6 @@ impl StructureApp {
                 .weak(),
             );
         }
-    }
-
-    fn members_sheet(&mut self, ui: &mut egui::Ui, t: &StructureType, g: &Geometry) {
-        egui::Grid::new("members").striped(true).show(ui, |ui| {
-            for h in ["member", "from", "to", "length", "section"] {
-                ui.strong(h);
-            }
-            ui.end_row();
-            for m in &t.members {
-                let h = Handle::Member(m.id.clone());
-                row(ui, &mut self.selected, &mut self.scroll_to, h, &m.id);
-                ui.label(&m.nodes[0]);
-                ui.label(&m.nodes[1]);
-                let l = g.members.iter().find(|x| x.0 == m.id).map_or(0.0, |x| {
-                    (0..3)
-                        .map(|k| (x.2[k] - x.1[k]).powi(2))
-                        .sum::<f64>()
-                        .sqrt()
-                });
-                ui.label(format!("{l:.3} m"));
-                ui.label(m.section.as_deref().unwrap_or("—"));
-                ui.end_row();
-            }
-        });
     }
 
     fn supports_sheet(&mut self, ui: &mut egui::Ui, t: &StructureType) {
