@@ -41,6 +41,21 @@ impl Live {
         &self.solved
     }
 
+    /// Takes another cable library (one edited) and solves the line
+    /// again with it.
+    pub fn set_library(&mut self, library: ols_cables::Library) {
+        let dirty: Vec<String> = self
+            .session
+            .line()
+            .sections
+            .iter()
+            .map(|s| s.id.clone())
+            .collect();
+        self.library = library;
+        self.solved
+            .update(self.session.line(), &self.library, &dirty);
+    }
+
     fn refresh(&mut self, applied: Applied) -> (Applied, Update) {
         let update = self
             .solved

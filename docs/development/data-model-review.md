@@ -23,7 +23,15 @@ yet; the [data model map](data-model.md) describes the model as it is.
 - **Library ids are the only cross-file references**; units are SI
   inside, and the formats are versioned with a header.
 
-## 1. Broken today (small fixes, no change to the model)
+## 1. Broken today (small fixes, no change to the model) — fixed
+
+All seven fixed on 2026-10-17 (tests in `ols-line` and `ols-session`).
+Opening a project now drops stale circuit starts; a project or line file
+with a span point's distance beyond its span, repeated spread labels or
+impossible stringing values is refused on opening (none were found in the
+lines checked). The `Live` fix marks every section when the line settings
+the solve reads change, and `Live::set_library` solves again with an
+edited cable library.
 
 | # | Where | What happens | Fix |
 |---|---|---|---|

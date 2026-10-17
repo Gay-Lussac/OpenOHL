@@ -2655,7 +2655,7 @@ impl SectionForm {
             .library
             .get(&self.cable)
             .ok_or_else(|| format!("cable {} is not in the wire library", self.cable))?;
-        let section = self.section(None);
+        let section = self.section(None)?;
         let (lengths, temperature) = ols_line::solve::clip_lengths(&model.line, &section, cable)
             .map_err(|e| e.to_string())?;
         self.stringing = Stringing::UnstressedLengths {
@@ -2687,9 +2687,10 @@ impl SectionForm {
         self.points = points;
     }
 
-    /// The section as typed (loads and colour kept from `old`).
-    pub fn section(&self, old: Option<&Section>) -> Section {
-        Section {
+    /// The section as typed (span points, spreads and plugin values kept
+    /// from `old`, the span points on their spans if the points changed).
+    pub fn section(&self, old: Option<&Section>) -> Result<Section, String> {
+        let mut s = Section {
             description: self.description.trim().to_owned(),
             id: self.id.trim().to_owned(),
             cable: self.cable.clone(),
@@ -2699,14 +2700,18 @@ impl SectionForm {
             bundle: self.bundle.max(1),
             bundle_spacing: (self.bundle > 1).then_some(self.spacing),
             bundle_rotation_deg: (self.bundle > 1 && self.rotation != 0.0).then_some(self.rotation),
-            points: self.points.clone(),
+            points: old.map_or_else(|| self.points.clone(), |o| o.points.clone()),
             stringing: self.stringing.clone(),
             span_points: old.map_or_else(Vec::new, |o| o.span_points.clone()),
             spreads: old.map_or_else(Vec::new, |o| o.spreads.clone()),
             color: self.color.clone(),
             calculation: self.calculation,
             fields: old.map_or_else(Default::default, |o| o.fields.clone()),
+        };
+        if old.is_some_and(|o| o.points != self.points) {
+            s.set_points(self.points.clone())?;
         }
+        Ok(s)
     }
 
     pub(crate) fn command(&self, stored: Option<&Line>) -> Result<(String, Command), String> {
@@ -2732,7 +2737,7 @@ impl SectionForm {
             }
             _ => {}
         }
-        let s = self.section(old);
+        let s = self.section(old)?;
         Ok((
             if self.new {
                 format!("strung section {id}")
