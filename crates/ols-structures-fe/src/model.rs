@@ -721,11 +721,24 @@ impl Model {
                 model.insert(key.into(), v.clone());
             }
         }
+        // What only the structure file knows (a member's group, what a
+        // generator made) is not part of the model.
+        let strip = |items: &mut Vec<toml::Value>, keys: &[&str]| {
+            for t in items.iter_mut().filter_map(toml::Value::as_table_mut) {
+                for k in keys {
+                    t.remove(*k);
+                }
+            }
+        };
+        if let Some(members) = model.get_mut("member").and_then(toml::Value::as_array_mut) {
+            strip(members, &["group", "made_by"]);
+        }
         let mut nodes = file
             .get("node")
             .and_then(toml::Value::as_array)
             .cloned()
             .unwrap_or_default();
+        strip(&mut nodes, &["made_by"]);
         let mut along = Vec::new();
         let points = file.get("point").and_then(toml::Value::as_array);
         for p in points.into_iter().flatten() {

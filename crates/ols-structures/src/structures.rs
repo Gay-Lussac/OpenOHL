@@ -158,6 +158,15 @@
 //! attachments they carry) and/or a pole (`pole = "id"`, a `.olsp` file
 //! in the same folder) — checked with the attachment loads of each load
 //! case (`ols_structures_fe`, through `ols_loads::capacity`).
+//!
+//! **Body building** (version 3, written by the structure application):
+//! a member's `group` (sections and reports per group), `made_by` on a
+//! joint or member (the `[[generator]]` that wrote it, so a rebuild
+//! replaces only that), `[[generator]]` (a generator's id, kind and
+//! inputs) and `[[symmetry]]` (mirror planes kept while editing). The core
+//! keeps the last two unread; `ols-structure-edit` reads them. The joints
+//! and members a generator writes are ordinary `[[node]]` and
+//! `[[member]]` entries.
 
 use ols_core::units::Length;
 use serde::Deserialize;
@@ -169,8 +178,11 @@ use crate::{Library, LibraryItem};
 pub const STRUCTURE_FILE_EXTENSION: &str = "olss";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ols-structure";
-/// Newest format version read.
-pub const STRUCTURE_FILE_VERSION: u32 = 2;
+/// Newest format version read. Version 3 adds what the structure
+/// application writes: a member's `group` and `made_by`, a joint's
+/// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`);
+/// versions 1 and 2 read as before.
+pub const STRUCTURE_FILE_VERSION: u32 = 3;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -341,6 +353,10 @@ pub struct TypeNode {
     /// The point of the type it carries (also set by a point's `node`).
     #[serde(default)]
     pub attachment: Option<toml::Value>,
+    /// The `[[generator]]` that wrote it (its id): a rebuild of that
+    /// generator replaces it; none: made by hand.
+    #[serde(default)]
+    pub made_by: Option<String>,
 }
 
 /// A member of the pylon between two joints (levels 2 and 3). Without a
@@ -374,6 +390,14 @@ pub struct TypeMember {
     /// Cable: pretension.
     #[serde(default)]
     pub pretension: Option<toml::Value>,
+    /// Its member group (`"body-leg"`, `"body-bracing-3"`…): sections set
+    /// and results reported per group.
+    #[serde(default)]
+    pub group: Option<String>,
+    /// The `[[generator]]` that wrote it (its id): a rebuild of that
+    /// generator replaces it; none: made by hand.
+    #[serde(default)]
+    pub made_by: Option<String>,
 }
 
 /// A string of a structure type (version 2): from its top (a point, or a
@@ -791,6 +815,15 @@ pub struct StructureType {
     /// `ols-structure-loads`).
     #[serde(rename = "load_case", default)]
     pub load_cases: Vec<toml::Table>,
+    /// Mirror symmetry of the joints and members, kept while editing
+    /// (read by the structure application, `ols-structure-edit`).
+    #[serde(rename = "symmetry", default)]
+    pub symmetry: Vec<toml::Table>,
+    /// Body generators and their inputs, to build the body again (read by
+    /// the structure application, `ols-structure-edit`); what they wrote
+    /// are ordinary joints and members with a `made_by`.
+    #[serde(rename = "generator", default)]
+    pub generators: Vec<toml::Table>,
     /// What it can carry (structure checks).
     #[serde(default)]
     pub capacity: Option<Capacity>,
@@ -1783,6 +1816,35 @@ mod tests {
         let library = "[[member]]\nid = \"M\"\nnodes = [\"B\", \"T\"]\nsection = \"Q\"\n";
         assert!(parse(&format!("{joints}{library}")).is_ok());
         assert_eq!(Detail::Outline.level(), 2);
+    }
+
+    /// Version 3: member groups, what a generator made, symmetry and the
+    /// generators' inputs (kept for the structure application); older
+    /// versions read, a newer one refused.
+    #[test]
+    fn version_3_groups_generators_and_symmetry() {
+        let text = |version: u32| {
+            format!(
+                "format = \"ols-structure\"\nversion = {version}\n\
+                 id = \"T\"\nname = \"t\"\nkind = \"lattice\"\n\
+                 [[symmetry]]\nmirror = \"xy\"\n\
+                 [[generator]]\nid = \"body\"\nkind = \"panels\"\n\
+                 [[node]]\nid = \"B\"\npoint = [\"0 m\", \"0 m\", \"0 m\"]\nmade_by = \"body\"\n\
+                 [[node]]\nid = \"T\"\npoint = [\"0 m\", \"0 m\", \"30 m\"]\n\
+                 [[member]]\nid = \"M\"\nnodes = [\"B\", \"T\"]\ngroup = \"body-leg\"\nmade_by = \"body\"\n"
+            )
+        };
+        let t = StructureType::parse(Path::new("t.olss"), &text(3)).unwrap();
+        assert_eq!(t.members[0].group.as_deref(), Some("body-leg"));
+        assert_eq!(t.members[0].made_by.as_deref(), Some("body"));
+        assert_eq!(t.nodes[0].made_by.as_deref(), Some("body"));
+        assert_eq!((t.symmetry.len(), t.generators.len()), (1, 1));
+        assert_eq!(t.detail(), Detail::Outline);
+        for older in [1, 2] {
+            assert!(StructureType::parse(Path::new("t.olss"), &text(older)).is_ok());
+        }
+        let newer = StructureType::parse(Path::new("t.olss"), &text(4)).unwrap_err();
+        assert!(newer.message.contains("newer"), "{}", newer.message);
     }
 
     /// Points at a joint or along a member follow it.

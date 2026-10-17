@@ -3846,6 +3846,8 @@ version = "0.0.1"
 dependencies = [
  "ols-core",
  "ols-structures",
+ "serde",
+ "toml 0.9.12+spec-1.1.0",
  "toml_edit",
 ]
 
@@ -3879,6 +3881,7 @@ dependencies = [
  "ols-cables",
  "ols-line",
  "ols-loads",
+ "ols-structure-edit",
  "ols-structure-link",
  "ols-structure-loads",
  "ols-structures",
@@ -3886,6 +3889,7 @@ dependencies = [
  "ols-weather",
  "ols-wirefe",
  "toml 0.9.12+spec-1.1.0",
+ "toml_edit",
 ]
 
 [[package]]
