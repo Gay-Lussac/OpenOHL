@@ -54,6 +54,7 @@ impl StructureFile {
         let doc: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
         let read = StructureType::parse(path.unwrap_or(Path::new("structure.olss")), text)
             .map_err(|e| e.to_string())?;
+        crate::body::check(&read)?;
         Ok(Self {
             path: path.map(Path::to_path_buf),
             doc,
@@ -205,12 +206,15 @@ impl StructureFile {
             .path
             .clone()
             .unwrap_or_else(|| PathBuf::from("structure.olss"));
-        match StructureType::parse(&path, text) {
+        match StructureType::parse(&path, text)
+            .map_err(|e| e.message)
+            .and_then(|t| crate::body::check(&t).map(|()| t))
+        {
             Ok(t) => {
                 self.read = t;
                 self.error = None;
             }
-            Err(e) => self.error = Some(e.message),
+            Err(e) => self.error = Some(e),
         }
     }
 

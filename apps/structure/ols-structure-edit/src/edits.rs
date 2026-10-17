@@ -31,7 +31,7 @@ pub fn next_id<'a>(taken: impl Iterator<Item = &'a str> + Clone, like: &str) -> 
 }
 
 /// `like` when it is free, else the next id after it.
-fn fresh<'a>(taken: impl Iterator<Item = &'a str> + Clone, like: &str) -> String {
+pub(crate) fn fresh<'a>(taken: impl Iterator<Item = &'a str> + Clone, like: &str) -> String {
     if taken.clone().any(|t| t == like) {
         next_id(taken, like)
     } else {
@@ -40,7 +40,7 @@ fn fresh<'a>(taken: impl Iterator<Item = &'a str> + Clone, like: &str) -> String
 }
 
 /// A position as written in files: `["1.250 m", …]`.
-fn point_value(p: [f64; 3]) -> Item {
+pub(crate) fn point_value(p: [f64; 3]) -> Item {
     let mut a = Array::new();
     for v in p {
         let v = if v.abs() < 5e-4 { 0.0 } else { v };
@@ -59,7 +59,7 @@ fn round3(v: f64) -> f64 {
 }
 
 /// The array of tables `key` of the file (made when missing).
-fn array<'a>(doc: &'a mut DocumentMut, key: &str) -> &'a mut ArrayOfTables {
+pub(crate) fn array<'a>(doc: &'a mut DocumentMut, key: &str) -> &'a mut ArrayOfTables {
     if doc.get(key).and_then(Item::as_array_of_tables).is_none() {
         doc.insert(key, Item::ArrayOfTables(ArrayOfTables::new()));
     }
@@ -69,7 +69,7 @@ fn array<'a>(doc: &'a mut DocumentMut, key: &str) -> &'a mut ArrayOfTables {
 }
 
 /// The table of `key` whose `field` is `value`.
-fn entry<'a>(
+pub(crate) fn entry<'a>(
     doc: &'a mut DocumentMut,
     key: &str,
     field: &str,
