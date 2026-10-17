@@ -449,7 +449,7 @@ pub enum Hold {
 }
 
 /// The object on a point (one per point). Read through
-/// [`LineObjectFile`]: a key it does not know is refused (a flattened
+/// `LineObjectFile`: a key it does not know is refused (a flattened
 /// shape would let it through).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(try_from = "LineObjectFile")]
@@ -560,7 +560,7 @@ pub struct SpreadObject {
 }
 
 /// A type of the library: a template for objects on points (a body, a
-/// clamp) or for spread objects. Read through [`ObjectTypeFile`]: a key
+/// clamp) or for spread objects. Read through `ObjectTypeFile`: a key
 /// it does not know is refused.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ObjectTypeFile")]

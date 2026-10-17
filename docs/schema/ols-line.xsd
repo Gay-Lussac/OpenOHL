@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  OLS XML, version 1: the line model of OLS CAD (the content of a line file,
-  .ols.json) as XML. See ols-line.md in this folder.
+  OLS XML: the line model of OLS CAD (the content of a line file, .ols.json)
+  as XML. See ols-line.md in this folder. The namespace keeps its 1 (the
+  schema's own identity); a document's `version` attribute is the line file
+  version (now 5; older documents are read and converted).
 
   This Source Code Form is subject to the terms of the Mozilla Public
   License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -717,6 +719,7 @@
         </xs:element>
       </xs:sequence>
       <xs:attribute name="format" type="xs:string" fixed="ols-line"/>
+      <!-- The line file version (now 5), not the namespace's 1. -->
       <xs:attribute name="version" type="xs:unsignedInt" default="1"/>
       <xs:attribute name="name" type="xs:string" use="required"/>
       <xs:attribute name="crs" type="xs:string"/>
