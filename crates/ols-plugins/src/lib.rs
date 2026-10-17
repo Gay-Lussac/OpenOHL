@@ -11,7 +11,7 @@
 //! name = "hello-wasm"
 //! version = "0.1.0"
 //! description = "Example plugin"
-//! sdk = "0.1"                 # plugin interface version it targets
+//! sdk = "0.2"                 # plugin interface version it targets
 //! tier = "wasm"               # "wasm" or "python"
 //! entry = "hello_wasm.wasm"   # relative to the manifest
 //! extension-points = []
@@ -79,7 +79,9 @@ mod code_bindings {
     });
 }
 
-pub use code_bindings::ols::plugin::code_types::{CodeInfo, Generated};
+pub use code_bindings::ols::plugin::code_types::{
+    ClearanceMeasure, ClearancePreset, CodeInfo, Generated,
+};
 
 mod check_bindings {
     wasmtime::component::bindgen!({
@@ -102,7 +104,7 @@ pub use bindings::ols::plugin::types::PluginInfo;
 pub use io_bindings::ols::plugin::io_types::{Direction, Format};
 
 /// Version (major, minor) of the plugin interface implemented by this host.
-pub const SDK_VERSION: (u64, u64) = (0, 1);
+pub const SDK_VERSION: (u64, u64) = (0, 2);
 
 /// File name of plugin manifests.
 pub const MANIFEST_FILE: &str = "ols-plugin.toml";
@@ -1336,7 +1338,7 @@ mod tests {
 
     #[test]
     fn parses_manifest() {
-        let m = manifest("0.1", "extension-points = [\"checks\"]");
+        let m = manifest("0.2", "extension-points = [\"checks\"]");
         assert_eq!(m.plugin.tier, Tier::Wasm);
         assert_eq!(m.plugin.extension_points, ["checks"]);
         assert_eq!(m.entry_path(), Path::new("/plugins/t/t.wasm"));
@@ -1348,7 +1350,7 @@ mod tests {
     #[test]
     fn table_columns() {
         let m = manifest(
-            "0.1",
+            "0.2",
             "[[column]]\ntable = \"circuits\"\nname = \"level\"\nvalues = [\"low\", \"high\"]\ndefault = \"high\"",
         );
         assert_eq!(m.columns.len(), 1);
@@ -1360,7 +1362,7 @@ mod tests {
             "table = \"circuits\"\nname = \"x\"\nvalues = [\"a\"]\ndefault = \"b\"",
         ] {
             let text = format!(
-                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.1\"\ntier=\"wasm\"\nentry=\"t.wasm\"\n[[column]]\n{bad}"
+                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.2\"\ntier=\"wasm\"\nentry=\"t.wasm\"\n[[column]]\n{bad}"
             );
             assert!(
                 Manifest::parse(&text, Path::new("/plugins/t")).is_err(),
@@ -1373,7 +1375,7 @@ mod tests {
     fn the_entry_stays_inside_the_plugin_folder() {
         for entry in ["../x.wasm", "a/../../x.wasm", "/etc/x.wasm", ""] {
             let text = format!(
-                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.1\"\ntier=\"wasm\"\nentry=\"{entry}\""
+                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.2\"\ntier=\"wasm\"\nentry=\"{entry}\""
             );
             assert!(
                 Manifest::parse(&text, Path::new("/plugins/t")).is_err(),
@@ -1381,13 +1383,13 @@ mod tests {
             );
         }
         let text =
-            "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.1\"\ntier=\"wasm\"\nentry=\"bin/t.wasm\"";
+            "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.2\"\ntier=\"wasm\"\nentry=\"bin/t.wasm\"";
         assert!(Manifest::parse(text, Path::new("/plugins/t")).is_ok());
     }
 
     #[test]
     fn rejects_unknown_fields() {
-        let text = "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.1\"\ntier=\"wasm\"\nentry=\"t.wasm\"\nunknown=1";
+        let text = "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.2\"\ntier=\"wasm\"\nentry=\"t.wasm\"\nunknown=1";
         assert!(matches!(
             Manifest::parse(text, Path::new(".")),
             Err(PluginError::Manifest { .. })
@@ -1396,21 +1398,23 @@ mod tests {
 
     #[test]
     fn compatibility_rules() {
-        assert!(manifest("0.1", "").check_compatible().is_ok());
-        assert!(manifest("0.2", "").check_compatible().is_err());
+        assert!(manifest("0.2", "").check_compatible().is_ok());
+        // 0.1: before the design codes' clearance presets.
+        assert!(manifest("0.1", "").check_compatible().is_err());
+        assert!(manifest("0.3", "").check_compatible().is_err());
         assert!(manifest("1.0", "").check_compatible().is_err());
         assert!(manifest("zero", "").check_compatible().is_err());
     }
 
     #[test]
     fn permissions_denied_by_default() {
-        assert!(manifest("0.1", "").check_permissions().is_ok());
-        let net = manifest("0.1", "[permissions]\nnetwork = true");
+        assert!(manifest("0.2", "").check_permissions().is_ok());
+        let net = manifest("0.2", "[permissions]\nnetwork = true");
         assert!(matches!(
             net.check_permissions(),
             Err(PluginError::PermissionDenied { .. })
         ));
-        let fs = manifest("0.1", "[permissions]\nfilesystem = [\"/tmp\"]");
+        let fs = manifest("0.2", "[permissions]\nfilesystem = [\"/tmp\"]");
         assert!(fs.check_permissions().is_err());
     }
 

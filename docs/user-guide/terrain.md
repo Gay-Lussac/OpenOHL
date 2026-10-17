@@ -111,6 +111,19 @@ step = "50 Pa"
 sides = "both"      # both, left or right
 ```
 
+and a `[check]` table — what those windows solve and read; `ols line`
+ignores it too:
+
+```toml
+[check]
+circuits = ["North", "South"]   # circuit names; none: every circuit
+method = "fe"                   # every section by finite elements ("rs": ruling span); none: each section's own
+search_distance = "30 m"        # LiDAR points farther from the wires are ignored
+```
+
+Design-code plugins may give such rule files as **clearance presets**
+for those windows ([Design codes](design-codes.md#clearance-presets)).
+
 ### Clearances by voltage
 
 Each section belongs to an electrical system ([systems](line-file.md#electrical-systems): AC or DC, voltage, phase angles) through its conductor path, independent of the cable; its spans and jumpers are checked with the requirement for the system's nominal voltage. `vertical` and `radial` can be a distance, a table by voltage, or a formula:
@@ -141,7 +154,7 @@ envelope over 3 weather cases (glaze ice, max temperature, rime ice + wind) and 
 
 The clearance CSV holds each case's rows and then the envelope rows (`case = envelope`, last column `governing_case`). The plan and profile sheets draw every case's wires — the first solid, the others dashed, dotted… (named in the title block) — the envelope of the wire positions.
 
-Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.olsr`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/clearance-rules.olsr) and the crossing line `crossing-line.ols.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; a rule editor (per LiDAR class) and design-code plugins producing rule sets are planned.
+Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.olsr`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/clearance-rules.olsr) and the crossing line `crossing-line.ols.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; the desktop clearance windows edit rules per LiDAR class, and design-code plugins may give rule files as clearance presets.
 
 ## Survey files
 

@@ -2,7 +2,7 @@
 name = "go95"
 version = "0.1.0"
 description = "CPUC GO 95: loading district by elevation, safety factors at installation and replacement, from your parameter file"
-sdk = "0.1"
+sdk = "0.2"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/go95.wasm"
 extension-points = ["design-code"]

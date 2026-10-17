@@ -7,14 +7,19 @@
 //! rules (voltage, weather cases, distance, LiDAR classes and the ground),
 //! and the wind — the final state of each case, or every wind pressure
 //! from 0 up to it in steps, from the left and/or the right
-//! ([`ols_clearance::zone`]). The rules are kept with the project, in a
-//! rule file of its clearance rules (`<model>.vertical-clearances.olsr`,
-//! `<model>.radial-clearances.olsr`; next to a line file), which `ols line
-//! --rules` reads too.
+//! ([`ols_clearance::zone`]); the circuits checked, the calculation
+//! method and the distance beyond which LiDAR points are ignored. The
+//! rules are kept with the project, in a rule file of its clearance rules
+//! (`<model>.vertical-clearances.olsr`, `<model>.radial-clearances.olsr`;
+//! next to a line file), which `ols line --rules` reads too.
+//! **Load preset…** takes the rules of a design code's preset (kept in the
+//! project's rule files when the code generated, with a weather case file
+//! of the same name: the cases its rules name, added to the model's
+//! weather cases where missing).
 //! The check runs on its own thread: the wind positions are solved, the
 //! LiDAR points read again from the point cloud around the wires.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
@@ -24,8 +29,9 @@ use eframe::egui;
 use ols_clearance::zone::{
     self, Imported, Measure, WindState, Zone, ZoneReport, ZoneRule, ZoneTargets,
 };
-use ols_clearance::{RuleSet, WindSides, WindSteps};
+use ols_clearance::{CheckScope, RuleSet, WindSides, WindSteps};
 use ols_core::budget::{Budget, CancelToken};
+use ols_line::condition::Method;
 
 use crate::model::Model;
 use crate::selection::Selection;
@@ -62,6 +68,12 @@ pub struct Out {
     pub go: Option<(Selection, [f64; 3])>,
     /// New violations to draw (wire point, target).
     pub marks: Option<Vec<([f64; 3], [f64; 3])>>,
+    /// The model's weather case file was written (a preset's cases
+    /// added): read it again.
+    pub weather_saved: Option<PathBuf>,
+    /// A preset's weather case file to use for the model (the model has
+    /// none).
+    pub weather_use: Option<PathBuf>,
 }
 
 struct Running {
@@ -82,6 +94,9 @@ pub struct ZoneWindow {
     pub wind: WindSteps,
     /// The rules.
     pub rules: Vec<ZoneRule>,
+    /// The circuits checked and the calculation method (the search
+    /// distance is the zone's).
+    pub check: CheckScope,
     /// The project's rule file of this window (`None`: not set yet).
     pub file: Option<PathBuf>,
     loaded: bool,
@@ -101,6 +116,7 @@ impl ZoneWindow {
             zone: Zone::new(measure),
             wind: WindSteps::default(),
             rules: Vec::new(),
+            check: CheckScope::default(),
             file: None,
             loaded: false,
             dirty: false,
@@ -184,6 +200,7 @@ impl ZoneWindow {
             width,
             depth,
             wind,
+            check,
             notes,
         } = zone::from_rule_set(
             set,
@@ -201,12 +218,118 @@ impl ZoneWindow {
         if let Some(w) = wind {
             self.wind = w;
         }
+        let check = check.unwrap_or_default();
+        self.zone.search = check.search_distance;
+        self.check = CheckScope {
+            search_distance: None,
+            ..check
+        };
         self.status = (!notes.is_empty()).then(|| (notes.join("\n"), false));
     }
 
     /// The rules as a rule file.
     pub fn rule_set(&self) -> RuleSet {
-        zone::to_rule_set(self.title(), &self.zone, &self.wind, &self.rules)
+        zone::to_rule_set(
+            self.title(),
+            &self.zone,
+            &self.wind,
+            &self.check,
+            &self.rules,
+        )
+    }
+
+    /// The presets of the project: its rule files (but the clearance
+    /// windows' own) with a weather case file of the same name, that have
+    /// a rule of this window's measure — (name shown, rule file, weather
+    /// case file).
+    pub fn presets(&self, model: &Model) -> Vec<(String, PathBuf, PathBuf)> {
+        let Some(work) = model.library_dir.as_ref().filter(|_| model.editing.is_ok()) else {
+            return Vec::new();
+        };
+        let Ok(entries) = std::fs::read_dir(work.join("rules")) else {
+            return Vec::new();
+        };
+        let mut files: Vec<PathBuf> = entries
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension().and_then(|e| e.to_str())
+                    == Some(ols_clearance::rules::RULE_FILE_EXTENSION)
+            })
+            .collect();
+        files.sort();
+        let mut out = Vec::new();
+        for r in files {
+            let name = r
+                .file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+            if name.ends_with("-clearances.olsr") {
+                continue;
+            }
+            let stem = r
+                .file_stem()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+            let w = work
+                .join("weather")
+                .join(format!("{stem}.{}", ols_weather::WEATHER_FILE_EXTENSION));
+            if !w.is_file() {
+                continue;
+            }
+            let Ok(set) = RuleSet::load(&r) else {
+                continue;
+            };
+            let ours = set.rules.iter().any(|x| match self.zone.measure {
+                Measure::Vertical => x.vertical.is_some(),
+                Measure::Radial => x.radial.is_some(),
+            });
+            if ours {
+                let shown = if set.name.is_empty() {
+                    name
+                } else {
+                    set.name.clone()
+                };
+                out.push((shown, r, w));
+            }
+        }
+        out
+    }
+
+    /// Takes a preset: its rules replace those shown; its weather cases
+    /// missing from the model are added to the model's weather case file
+    /// (or its file is used for the model when the model has none).
+    pub fn load_preset(&mut self, model: &Model, rules: &Path, weather: &Path, out: &mut Out) {
+        let set = match RuleSet::load_with(rules, &(&model.line.defaults).into()) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Some((e, true));
+                return;
+            }
+        };
+        self.take(model, &set);
+        self.dirty = true;
+        let have: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+        let added = match &model.sources.weather {
+            None => {
+                out.weather_use = Some(weather.to_path_buf());
+                Ok("its weather cases are used for the model".to_owned())
+            }
+            Some(file) => add_missing_cases(file, weather, &have).map(|added| {
+                if added.is_empty() {
+                    "its weather cases are in the model".to_owned()
+                } else {
+                    out.weather_saved = Some(file.clone());
+                    format!("weather cases added to the model: {}", added.join(", "))
+                }
+            }),
+        };
+        let (mut text, error) = match added {
+            Ok(m) => (format!("preset {}: {m}", set.name), false),
+            Err(e) => (format!("preset {}: {e}", set.name), true),
+        };
+        if let Some((notes, _)) = &self.status {
+            text = format!("{text}\n{notes}");
+        }
+        self.status = Some((text, error));
     }
 
     /// Starts a check.
@@ -232,6 +355,7 @@ impl ZoneWindow {
         let cloud = model.cloud.clone();
         let ground = model.ground_for_checks();
         let zone = self.zone;
+        let check = self.check.clone();
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.sections);
         let done = Arc::new(AtomicUsize::new(0));
@@ -242,7 +366,7 @@ impl ZoneWindow {
         let (d, c) = (done.clone(), cancel.clone());
         std::thread::spawn(move || {
             let r = run(
-                &line, &library, zone, rules, states, cloud, ground, scope, &d, &c,
+                &line, &library, zone, &check, rules, states, cloud, ground, scope, &d, &c,
             );
             let _ = tx.send(r);
             ctx.request_repaint();
@@ -301,6 +425,7 @@ impl ZoneWindow {
         }
         let mut open = true;
         let mut run = false;
+        let mut preset = None;
         egui::Window::new(self.title())
             .open(&mut open)
             .default_width(820.0)
@@ -309,8 +434,11 @@ impl ZoneWindow {
                 ui.separator();
                 self.zone_ui(ui);
                 self.wind_ui(ui);
+                self.check_ui(ui, model);
                 ui.separator();
-                self.rules_ui(ui, model);
+                if let Some(chosen) = self.rules_ui(ui, model) {
+                    preset = Some(chosen);
+                }
                 ui.separator();
                 run = self.run_ui(ui);
                 if let Some(go) = self.results_ui(ui, model) {
@@ -318,6 +446,9 @@ impl ZoneWindow {
                 }
             });
         self.open = open;
+        if let Some((r, w)) = preset {
+            self.load_preset(model, &r, &w, &mut out);
+        }
         if !open && let Some(r) = &self.running {
             // Closing the window stops its check.
             r.cancel.cancel();
@@ -370,6 +501,26 @@ impl ZoneWindow {
     }
 
     fn zone_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let mut limited = self.zone.search.is_some();
+            if ui
+                .checkbox(&mut limited, "Ignore LiDAR points farther than")
+                .on_hover_text(
+                    "Only the points within this distance of the wires are read and compared \
+                     (unticked: as far as the rules reach)",
+                )
+                .changed()
+            {
+                self.zone.search = limited.then_some(30.0);
+                self.dirty = true;
+            }
+            if let Some(d) = self.zone.search.as_mut() {
+                self.dirty |= ui
+                    .add(egui::DragValue::new(d).speed(0.5).range(0.5..=500.0))
+                    .changed();
+                ui.label("m from the wires");
+            }
+        });
         if self.zone.measure != Measure::Vertical {
             return;
         }
@@ -440,7 +591,82 @@ impl ZoneWindow {
         );
     }
 
-    fn rules_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+    /// The circuits checked and the calculation method.
+    fn check_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let mut names: Vec<String> = model
+            .line
+            .sections
+            .iter()
+            .map(|s| s.circuit_name.clone())
+            .collect();
+        names.extend(self.check.circuits.iter().cloned());
+        names.sort();
+        names.dedup();
+        let shown = |n: &str| {
+            if n.is_empty() {
+                "(no circuit name)".to_owned()
+            } else {
+                n.to_owned()
+            }
+        };
+        ui.horizontal(|ui| {
+            ui.label("Circuits");
+            let title = match self.check.circuits.len() {
+                0 => "every circuit".to_owned(),
+                1 => shown(&self.check.circuits[0]),
+                n => format!("{n} circuits"),
+            };
+            ui.push_id((self.title(), "circuits"), |ui| {
+                crate::menu::options_menu(ui, &title, |ui| {
+                    ui.label(
+                        egui::RichText::new("None ticked: every circuit")
+                            .small()
+                            .weak(),
+                    );
+                    egui::ScrollArea::vertical()
+                        .max_height(LIST_HEIGHT)
+                        .show(ui, |ui| {
+                            for n in &names {
+                                let mut on = self.check.circuits.contains(n);
+                                if ui.checkbox(&mut on, shown(n)).changed() {
+                                    if on {
+                                        self.check.circuits.push(n.clone());
+                                        self.check.circuits.sort();
+                                    } else {
+                                        self.check.circuits.retain(|c| c != n);
+                                    }
+                                    self.dirty = true;
+                                }
+                            }
+                        });
+                });
+            });
+            ui.label("Solved by");
+            let name = |m: Option<Method>| match m {
+                None => "each section's calculation",
+                Some(Method::Fe) => "finite elements (FE)",
+                Some(Method::Rs) => "ruling span (RS)",
+            };
+            egui::ComboBox::from_id_salt((self.title(), "method"))
+                .selected_text(name(self.check.method))
+                .show_ui(ui, |ui| {
+                    for m in [None, Some(Method::Fe), Some(Method::Rs)] {
+                        self.dirty |= ui
+                            .selectable_value(&mut self.check.method, m, name(m))
+                            .changed();
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "The method every section is solved with in this check (each keeps its \
+                     cable condition)",
+                );
+        });
+    }
+
+    /// The rules; a preset chosen (rule file, weather case file).
+    fn rules_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<(PathBuf, PathBuf)> {
+        let mut preset = None;
         ui.horizontal(|ui| {
             ui.strong("Rules");
             if ui.button("Add rule").clicked() {
@@ -452,9 +678,40 @@ impl ZoneWindow {
                     classes: Vec::new(),
                     ground: false,
                     wires: ols_clearance::Wires::Both,
+                    width: None,
                 });
                 self.dirty = true;
             }
+            ui.push_id((self.title(), "presets"), |ui| {
+                ui.menu_button("Load preset…", |ui| {
+                    let list = self.presets(model);
+                    if list.is_empty() {
+                        ui.label(
+                            egui::RichText::new(
+                                "No preset in the project: a design code gives them when it \
+                                 generates (Criteria › Design code).",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                    }
+                    for (name, r, w) in list {
+                        let file = r
+                            .file_name()
+                            .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+                        if ui
+                            .button(name)
+                            .on_hover_text(format!(
+                                "{file}: its rules replace those listed; its weather cases go \
+                                 to the model where missing"
+                            ))
+                            .clicked()
+                        {
+                            preset = Some((r, w));
+                        }
+                    }
+                });
+            });
             if ui
                 .button("Import…")
                 .on_hover_text("Rules from a rule file (.olsr): they replace those listed")
@@ -508,7 +765,7 @@ impl ZoneWindow {
                 .small()
                 .weak(),
             );
-            return;
+            return preset;
         }
         let voltages = line_voltages(model);
         let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
@@ -524,15 +781,26 @@ impl ZoneWindow {
                     .striped(true)
                     .spacing([10.0, 4.0])
                     .show(ui, |ui| {
+                        let vertical = self.zone.measure == Measure::Vertical;
                         for h in [
                             "name",
                             "voltage",
                             "weather cases",
                             "distance m",
+                            "width m",
                             "wires",
                             "targets",
                             "",
                         ] {
+                            if h == "width m" {
+                                if vertical {
+                                    ui.strong(h).on_hover_text(
+                                        "The rule's own half width of the zone across the \
+                                         line (none: the window's)",
+                                    );
+                                }
+                                continue;
+                            }
                             ui.strong(h);
                         }
                         ui.end_row();
@@ -550,6 +818,9 @@ impl ZoneWindow {
                                         .max_decimals(3),
                                 )
                                 .changed();
+                            if vertical {
+                                self.dirty |= width_ui(ui, r, self.zone.width);
+                            }
                             self.dirty |= wires_ui(ui, (self.zone.measure, k), r);
                             self.dirty |= targets_ui(ui, (self.zone.measure, k), r, &classes);
                             ui.horizontal(|ui| {
@@ -591,6 +862,7 @@ impl ZoneWindow {
                 }
             });
         }
+        preset
     }
 
     /// The Run row; true to start a check.
@@ -765,6 +1037,7 @@ fn run(
     line: &ols_line::Line,
     library: &ols_cables::Library,
     zone: Zone,
+    check: &CheckScope,
     rules: Vec<ZoneRule>,
     states: Vec<WindState>,
     cloud: Option<String>,
@@ -774,6 +1047,31 @@ fn run(
     cancel: &CancelToken,
 ) -> Result<Report, String> {
     let mut sections = zone::sections_needed(line, &rules);
+    // The circuits chosen only.
+    if !check.circuits.is_empty() {
+        sections.retain(|id| {
+            line.sections
+                .iter()
+                .find(|s| &s.id == id)
+                .is_some_and(|s| check.takes_circuit(&s.circuit_name))
+        });
+        if sections.is_empty() {
+            return Err("no section of the rules' voltages in the circuits chosen".into());
+        }
+    }
+    // Every section by the method chosen.
+    let own;
+    let line = match check.method {
+        None => line,
+        Some(m) => {
+            let mut l = line.clone();
+            for s in &mut l.sections {
+                s.calculation = ols_line::condition::Calculation::of(s.calculation.condition(), m);
+            }
+            own = l;
+            &own
+        }
+    };
     if let Some(on) = &scope {
         sections.retain(|s| on.contains(s));
         if sections.is_empty() {
@@ -796,10 +1094,18 @@ fn run(
     let solving = started.elapsed();
     let started = Instant::now();
     // Points around the wires at every wind position, within reach.
-    let reach = rules.iter().map(|r| r.distance).fold(0.0, f64::max)
-        + line.defaults.clearance_search_margin
-        + zone.width
-        + 1.0;
+    let reach = match zone.search {
+        Some(d) => d,
+        None => {
+            rules.iter().map(|r| r.distance).fold(0.0, f64::max)
+                + line.defaults.clearance_search_margin
+                + rules
+                    .iter()
+                    .filter_map(|r| r.width)
+                    .fold(zone.width, f64::max)
+                + 1.0
+        }
+    };
     let polylines: Vec<Vec<[f64; 2]>> = solved
         .shapes
         .iter()
@@ -956,6 +1262,85 @@ fn cases_ui(ui: &mut egui::Ui, id: (Measure, usize), r: &mut ZoneRule, cases: &[
         });
     });
     changed
+}
+
+/// A vertical rule's own half width of the zone (none: the window's,
+/// `zone`).
+fn width_ui(ui: &mut egui::Ui, r: &mut ZoneRule, zone: f64) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| match r.width.as_mut() {
+        Some(w) => {
+            changed |= ui
+                .add(
+                    egui::DragValue::new(w)
+                        .speed(0.05)
+                        .range(0.0..=50.0)
+                        .max_decimals(3),
+                )
+                .changed();
+            if ui
+                .small_button("×")
+                .on_hover_text("Back to the window's width")
+                .clicked()
+            {
+                r.width = None;
+                changed = true;
+            }
+        }
+        None => {
+            if ui
+                .small_button(format!("({zone})"))
+                .on_hover_text("The window's width: click to give this rule its own")
+                .clicked()
+            {
+                r.width = Some(zone);
+                changed = true;
+            }
+        }
+    });
+    changed
+}
+
+/// Adds the cases of weather case file `from` whose names are not in
+/// `have` to the weather case file `to` (its text kept, the cases
+/// appended); the names added.
+pub fn add_missing_cases(to: &Path, from: &Path, have: &[String]) -> Result<Vec<String>, String> {
+    let read = |p: &Path| std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()));
+    let source: toml_edit::DocumentMut = read(from)?
+        .parse()
+        .map_err(|e| format!("{}: {e}", from.display()))?;
+    let mut doc: toml_edit::DocumentMut = read(to)?
+        .parse()
+        .map_err(|e| format!("{}: {e}", to.display()))?;
+    let Some(cases) = source
+        .get("case")
+        .and_then(toml_edit::Item::as_array_of_tables)
+    else {
+        return Ok(Vec::new());
+    };
+    let mut added: Vec<String> = Vec::new();
+    for c in cases.iter() {
+        let Some(name) = c.get("name").and_then(toml_edit::Item::as_str) else {
+            continue;
+        };
+        if have.iter().any(|h| h == name) || added.iter().any(|a| a == name) {
+            continue;
+        }
+        let list = doc
+            .entry("case")
+            .or_insert_with(|| toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new()));
+        let Some(list) = list.as_array_of_tables_mut() else {
+            return Err(format!("{}: case is not a list of tables", to.display()));
+        };
+        list.push(c.clone());
+        added.push(name.to_owned());
+    }
+    if !added.is_empty() {
+        let text = doc.to_string();
+        ols_weather::WeatherCases::parse(&text).map_err(|e| format!("{}: {e}", to.display()))?;
+        std::fs::write(to, text).map_err(|e| format!("{}: {e}", to.display()))?;
+    }
+    Ok(added)
 }
 
 /// The wires a rule checks: the sections' spans, the jumpers or both.

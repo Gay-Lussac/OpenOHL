@@ -4,7 +4,8 @@
 
 //! Shared by the OLS CAD design-code plugins (`code-plugin` world): reading
 //! the user's parameter file, building weather cases and load cases, and
-//! writing them as `.olswc` / `.olslc` text.
+//! writing them as `.olswc` / `.olslc` text; presets of the clearance
+//! windows ([`Preset`], their rules written as `.olsr` text).
 //!
 //! The plugins implement each code's *method* (which cases, how a wind
 //! pressure follows from a wind speed, which factor goes where). Every
@@ -49,6 +50,19 @@ macro_rules! code_plugin {
                 Ok(Generated {
                     weather_cases: c.weather_text(),
                     load_cases: c.load_cases_text(),
+                    clearance_presets: c
+                        .presets
+                        .iter()
+                        .map(|p| ClearancePreset {
+                            name: p.name.clone(),
+                            measure: match p.measure {
+                                $crate::Measure::Vertical => ClearanceMeasure::Vertical,
+                                $crate::Measure::Radial => ClearanceMeasure::Radial,
+                            },
+                            rules: p.rules.text(),
+                            weather_cases: c.preset_weather_text(p),
+                        })
+                        .collect(),
                     notes: c.notes,
                 })
             }
@@ -416,6 +430,159 @@ pub struct Cases {
     pub loads: Vec<Load>,
     /// What was generated, assumed or left out.
     pub notes: Vec<String>,
+    /// Presets of the clearance windows.
+    pub presets: Vec<Preset>,
+}
+
+/// The clearance window a preset is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Measure {
+    /// Vertical clearances (the zone under the wire).
+    Vertical,
+    /// Radial clearances (the direct 3D distance).
+    Radial,
+}
+
+/// A preset of a clearance window: its rules and the weather cases they
+/// name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Preset {
+    /// Name, unique among the plugin's presets.
+    pub name: String,
+    /// The window.
+    pub measure: Measure,
+    /// The rules.
+    pub rules: RuleFile,
+    /// The weather cases the rules name.
+    pub weather: Vec<Weather>,
+}
+
+/// One rule of a clearance rule file (`.olsr`): to points of LiDAR
+/// classes and/or the ground.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ClearanceRule {
+    /// Name.
+    pub name: String,
+    /// LiDAR classes of the targets.
+    pub classes: Vec<u8>,
+    /// The ground surface is a target too.
+    pub ground: bool,
+    /// Vertical clearance, m.
+    pub vertical: Option<f64>,
+    /// Radial clearance, m.
+    pub radial: Option<f64>,
+    /// Vertical: half width of the zone across the line, m (`None`: the
+    /// window's).
+    pub vertical_band: Option<f64>,
+    /// Only the wires of these nominal voltages, kV (0: earthed); empty:
+    /// every wire.
+    pub voltages: Vec<f64>,
+    /// Weather cases (names); empty: every case.
+    pub cases: Vec<String>,
+}
+
+/// A clearance rule file (`.olsr`, format `ols-clearance-rules`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RuleFile {
+    /// Name.
+    pub name: String,
+    /// Comment lines at the top.
+    pub header: Vec<String>,
+    /// `[wind]`: every pressure from 0 up to the case's, in steps.
+    pub wind_steps: bool,
+    /// `[wind]`: the step, Pa (`None`: the project's).
+    pub wind_step: Option<f64>,
+    /// `[wind]`: `both`, `left` or `right`.
+    pub wind_sides: String,
+    /// `[check]`: circuit names (empty: every circuit).
+    pub circuits: Vec<String>,
+    /// `[check]`: `fe` or `rs` (`None`: each section's).
+    pub method: Option<String>,
+    /// `[check]`: LiDAR points farther from the wires are ignored, m.
+    pub search_distance: Option<f64>,
+    /// The rules.
+    pub rules: Vec<ClearanceRule>,
+}
+
+impl RuleFile {
+    /// The rule file's text.
+    pub fn text(&self) -> String {
+        let mut s = String::new();
+        for h in &self.header {
+            s += &format!("# {h}\n");
+        }
+        s += &format!(
+            "format = \"ols-clearance-rules\"\nversion = 1\nname = {}\n",
+            quote(&self.name)
+        );
+        s += &format!(
+            "\n[wind]\nsteps = {}\nsides = {}\n",
+            self.wind_steps,
+            quote(if self.wind_sides.is_empty() {
+                "both"
+            } else {
+                &self.wind_sides
+            })
+        );
+        if let Some(step) = self.wind_step {
+            s += &format!("step = \"{} Pa\"\n", num(step));
+        }
+        if !self.circuits.is_empty() || self.method.is_some() || self.search_distance.is_some() {
+            s += "\n[check]\n";
+            if !self.circuits.is_empty() {
+                s += &format!("circuits = {}\n", tags(&self.circuits));
+            }
+            if let Some(m) = &self.method {
+                s += &format!("method = {}\n", quote(m));
+            }
+            if let Some(d) = self.search_distance {
+                s += &format!("search_distance = \"{} m\"\n", num(d));
+            }
+        }
+        for r in &self.rules {
+            let list = |v: &[String]| format!("[{}]", v.join(", "));
+            if !r.classes.is_empty() || !r.ground {
+                s += &format!(
+                    "\n[[rule]]\nname = {}\ntarget = \"points\"\nclasses = {}\n",
+                    quote(&r.name),
+                    list(&r.classes.iter().map(u8::to_string).collect::<Vec<_>>())
+                );
+                s += &r.requirements();
+            }
+            if r.ground {
+                s += &format!(
+                    "\n[[rule]]\nname = {}\ntarget = \"ground\"\n",
+                    quote(&r.name)
+                );
+                s += &r.requirements();
+            }
+        }
+        s
+    }
+}
+
+impl ClearanceRule {
+    /// Its keys after the target.
+    fn requirements(&self) -> String {
+        let mut s = String::new();
+        if let Some(v) = self.vertical {
+            s += &format!("vertical = \"{} m\"\n", num(v));
+        }
+        if let Some(r) = self.radial {
+            s += &format!("radial = \"{} m\"\n", num(r));
+        }
+        if let Some(b) = self.vertical_band {
+            s += &format!("vertical_band = \"{} m\"\n", num(b));
+        }
+        if !self.voltages.is_empty() {
+            let v: Vec<String> = self.voltages.iter().map(|v| format!("{v:?}")).collect();
+            s += &format!("voltages = [{}]\n", v.join(", "));
+        }
+        if !self.cases.is_empty() {
+            s += &format!("cases = {}\n", tags(&self.cases));
+        }
+        s
+    }
 }
 
 /// TOML string.
@@ -490,6 +657,19 @@ impl Cases {
                 return Err(format!("weather case \"{}\": ice density ≤ 0", w.name));
             }
         }
+        let mut presets = std::collections::BTreeSet::new();
+        for p in &self.presets {
+            if p.name.trim().is_empty() || !presets.insert(p.name.as_str()) {
+                return Err(format!("clearance preset \"{}\": empty or twice", p.name));
+            }
+            let check = Self {
+                weather: p.weather.clone(),
+                ..Self::default()
+            };
+            check
+                .check()
+                .map_err(|e| format!("clearance preset \"{}\": {e}", p.name))?;
+        }
         let mut loads = std::collections::BTreeSet::new();
         for l in &self.loads {
             if l.name.trim().is_empty() || !loads.insert(l.name.as_str()) {
@@ -533,8 +713,22 @@ impl Cases {
 
     /// The weather case file (`.olswc`).
     pub fn weather_text(&self) -> String {
+        self.weather_file(&self.weather)
+    }
+
+    /// The weather case file of a preset's cases (`.olswc`).
+    pub fn preset_weather_text(&self, preset: &Preset) -> String {
+        Self {
+            name: format!("{} — {}", self.name, preset.name),
+            header: self.header.clone(),
+            ..Self::default()
+        }
+        .weather_file(&preset.weather)
+    }
+
+    fn weather_file(&self, weather: &[Weather]) -> String {
         let mut s = self.head("ols-weather-cases");
-        for w in &self.weather {
+        for w in weather {
             s += &format!("\n[[case]]\nname = {}\n", quote(&w.name));
             if !w.description.is_empty() {
                 s += &format!("description = {}\n", quote(&w.description));
@@ -616,6 +810,7 @@ mod tests {
             weather: vec![w.clone(), i],
             loads: vec![Load::new("LC1", &w).factors(1.0, 1.2, 1.0).strength(0.9)],
             notes: vec![],
+            presets: vec![],
         };
         c.check().unwrap();
         let text = c.weather_text();
@@ -643,5 +838,50 @@ mod tests {
         assert!((us::PA_PER_PSF - 47.880_258_98).abs() < 1e-6);
         assert!((us::N_PER_M_PER_LBF_PER_FT - 14.593_903).abs() < 1e-5);
         assert_eq!(us::celsius(32.0), 0.0);
+    }
+
+    #[test]
+    fn presets_are_written_and_checked() {
+        let hot = Weather::new("hot", 80.0);
+        let rules = RuleFile {
+            name: "p".into(),
+            wind_sides: "both".into(),
+            method: Some("fe".into()),
+            search_distance: Some(30.0),
+            rules: vec![ClearanceRule {
+                name: "roads 380".into(),
+                classes: vec![11, 12],
+                ground: true,
+                vertical: Some(7.5),
+                vertical_band: Some(2.0),
+                voltages: vec![380.0],
+                cases: vec!["hot".into()],
+                ..ClearanceRule::default()
+            }],
+            ..RuleFile::default()
+        };
+        let text = rules.text();
+        let read: toml::Table = toml::from_str(&text).unwrap();
+        assert_eq!(read["check"]["method"].as_str(), Some("fe"));
+        assert_eq!(read["check"]["search_distance"].as_str(), Some("30 m"));
+        assert_eq!(read["rule"].as_array().unwrap().len(), 2, "{text}");
+        assert_eq!(read["rule"][0]["vertical_band"].as_str(), Some("2 m"));
+        assert_eq!(read["rule"][1]["target"].as_str(), Some("ground"));
+        let preset = Preset {
+            name: "vertical".into(),
+            measure: Measure::Vertical,
+            rules,
+            weather: vec![hot.clone()],
+        };
+        let mut c = Cases {
+            name: "t".into(),
+            presets: vec![preset.clone(), preset.clone()],
+            ..Cases::default()
+        };
+        assert!(c.check().unwrap_err().contains("twice"));
+        c.presets.pop();
+        c.check().unwrap();
+        let w = c.preset_weather_text(&c.presets[0]);
+        assert!(w.contains("name = \"hot\"\ntemperature = \"80 °C\""), "{w}");
     }
 }

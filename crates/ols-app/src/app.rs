@@ -6199,7 +6199,20 @@ impl Ready {
     }
 }
 
-fn clearance_zone_out(r: &mut Ready, out: crate::clearance_zones::Out) {
+pub(crate) fn clearance_zone_out(r: &mut Ready, out: crate::clearance_zones::Out) {
+    // A preset's weather cases: the model reads its weather cases again.
+    if let Some(p) = out.weather_saved {
+        r.library_saved(
+            crate::library::LibraryKind::WeatherCases,
+            crate::library::PageAction::Saved(p),
+        );
+    }
+    if let Some(p) = out.weather_use {
+        r.library_saved(
+            crate::library::LibraryKind::WeatherCases,
+            crate::library::PageAction::UseForModel(p),
+        );
+    }
     if let Some(marks) = out.marks {
         r.plan.marks = marks.iter().map(|m| m.0).collect();
         r.view3d.marks = marks;

@@ -66,7 +66,7 @@
 - [Writing plugins](development/plugins.md)
 - [Data model map](development/data-model.md)
   - [Data model review (2026-10)](development/data-model-review.md)
-- [LeV distance between conductors (spec)](development/lev-phase-spacing.md)
+- [Distance between conductors: the core's part](development/phase-distance-check.md)
 - [Interphase spacers (proposal)](development/interphase-spacers.md)
 - [Points on the wires and their objects (proposal)](development/line-points-and-objects.md)
 - [Performance and time budgets](development/performance.md)

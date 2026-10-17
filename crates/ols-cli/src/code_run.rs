@@ -118,6 +118,15 @@ fn generate(plugin: &Path, params: &Path, weather: &Path, load_cases: &Path) -> 
         g.load_cases.cases.len(),
         load_cases.display()
     );
+    // Clearance presets next to the weather cases.
+    let dir = weather.parent().unwrap_or(Path::new(""));
+    for (rules, cases) in g.write_presets(dir, dir)? {
+        println!(
+            "  clearance preset → {} (weather cases {})",
+            rules.display(),
+            cases.display()
+        );
+    }
     for n in &g.notes {
         println!("  note: {n}");
     }

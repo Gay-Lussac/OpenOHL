@@ -2,7 +2,7 @@
 name = "geojson"
 version = "0.1.0"
 description = "Example file-format plugin: GeoJSON export (structures, wires) and import (structures)"
-sdk = "0.1"
+sdk = "0.2"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/geojson.wasm"
 extension-points = ["io"]
