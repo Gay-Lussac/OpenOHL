@@ -2799,36 +2799,51 @@ impl Ready {
 
     /// **Edit**: structure type `id` in the structure application, on its
     /// file (in a project, the working copy); saved there, it comes back
-    /// into the line ([`Ready::structure_apps_frame`]).
-    pub fn edit_in_structure_app(&mut self, id: &str) {
-        let Some(path) = self
-            .model
-            .types
-            .as_ref()
-            .and_then(|(t, _)| t.path(id))
-            .map(std::path::Path::to_path_buf)
-        else {
-            self.status = Some((format!("structure type {id}: no file read"), true));
-            return;
-        };
-        self.edit_file_in_structure_app(&path, id);
+    /// into the line ([`Ready::structure_apps_frame`]). From placed
+    /// structure `placed`: with that place's line values and typed loads.
+    pub fn edit_in_structure_app(&mut self, id: &str, placed: Option<&str>) {
+        match crate::structure_app::prepare_edit(&self.model, id, placed) {
+            Ok((path, placed)) => self.launch_structure_app(&path, id, placed),
+            Err(e) => self.status = Some((e, true)),
+        }
     }
 
     /// The structure application on the structure file `path` (structure
     /// `id`).
     pub fn edit_file_in_structure_app(&mut self, path: &std::path::Path, id: &str) {
+        self.launch_structure_app(path, id, None);
+    }
+
+    fn launch_structure_app(
+        &mut self,
+        path: &std::path::Path,
+        id: &str,
+        placed: Option<crate::structure_app::Placed>,
+    ) {
         let insulators = crate::model::insulators_dir(&self.model.sources);
+        let sections = self.model.sections_folder();
         let ahead = self.model.line.display.ahead_deg;
+        let whose = placed.as_ref().map(|p| p.structure.clone());
         self.status = Some(
-            match self
-                .structure_apps
-                .launch(path, id, Some(&insulators), ahead)
-            {
+            match self.structure_apps.launch(
+                path,
+                id,
+                Some(&insulators),
+                ahead,
+                Some(&sections),
+                placed,
+            ) {
                 Ok(()) => (
-                    format!(
-                        "structure {id} opened in the structure application: saved there, \
-                         the line follows"
-                    ),
+                    match whose {
+                        Some(s) => format!(
+                            "structure {id} opened in the structure application with the loads \
+                             of {s}: saved there, the line follows"
+                        ),
+                        None => format!(
+                            "structure {id} opened in the structure application: saved there, \
+                             the line follows"
+                        ),
+                    },
                     false,
                 ),
                 Err(e) => (e, true),
@@ -2839,14 +2854,33 @@ impl Ready {
     /// Each frame: the structure files open in the structure application
     /// looked at (twice a second); one saved there goes into the project
     /// and the libraries are read again, as a save of the Structure types
-    /// page.
+    /// page; typed loads saved there go into the project; the placed
+    /// structures' line values written again when the line changed.
     pub fn structure_apps_frame(&mut self, ctx: &egui::Context) {
+        use crate::structure_app::Change;
         if !self.structure_apps.active() {
             return;
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
-        for (path, id) in self.structure_apps.poll() {
-            self.structure_file_saved(&path, &id);
+        for c in self.structure_apps.poll() {
+            match c {
+                Change::Structure(path, id) => self.structure_file_saved(&path, &id),
+                Change::Loads(_, whose) => {
+                    self.status = Some(match self.model.store_libraries() {
+                        Ok(n) if n > 0 => {
+                            (format!("typed loads of {whose} kept in the project"), false)
+                        }
+                        Ok(_) => (
+                            format!("typed loads of {whose} saved beside the structure file"),
+                            false,
+                        ),
+                        Err(e) => (format!("keeping the typed loads of {whose}: {e}"), true),
+                    });
+                }
+            }
+        }
+        if let Some(e) = self.structure_apps.refresh_values(&self.model).pop() {
+            self.status = Some((e, true));
         }
     }
 
@@ -3323,8 +3357,8 @@ impl Ready {
                 self.edit_type(&id);
                 return true;
             }
-            Action::EditInStructureApp { id } => {
-                self.edit_in_structure_app(&id);
+            Action::EditInStructureApp { id, structure } => {
+                self.edit_in_structure_app(&id, structure.as_deref());
                 return true;
             }
             Action::EditStructure { id } => {

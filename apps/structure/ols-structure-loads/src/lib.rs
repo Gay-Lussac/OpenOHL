@@ -56,12 +56,21 @@
 //! recipes are written and read as CSV (XLSX later).
 //!
 //! This crate knows nothing of the line: `ols-structure-link` turns the
-//! line's structure loads into [`LineValues`].
+//! line's structure loads into [`LineValues`]. A placed structure's values
+//! go from the line application to the structure application as a
+//! line-values file ([`PlacedValues`], JSON, [`line_values_path`]); the
+//! values typed over its table come back as `<stem>.<id>.loads.csv`
+//! ([`overrides_path`]).
 
 mod csv;
+mod placed;
 mod recipe;
 mod table;
 
+pub use placed::{
+    Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION, OtherPlace, PlacedValues,
+    file_part, line_values_path, overrides_path,
+};
 pub use recipe::{
     Direction, LineQuantity, LoadCaseRecipe, LoadRecipe, MODEL_CASE, Pick,
     STRUCTURE_LOAD_CASE_FILE_EXTENSION, STRUCTURE_LOAD_CASE_FILE_FORMAT,

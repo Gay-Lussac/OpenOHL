@@ -11,9 +11,12 @@ Status: the recipes, their files, the evaluation and the table's CSV
 are built (`apps/structure/ols-structure-loads`), and the structure
 application edits them in its **Load cases** tab and solves the table's
 cases in its **Results** tab ([The structure application](structure-app.md#load-cases)).
-The line application's use of the table (the line values of a placed
-structure in the window) comes later; so do XLSX import and export of
-the table and of the recipes. CSV works today.
+**Edit…** on a placed structure in the line application opens the
+structure with that place's line values and keeps the values typed over
+its table with it ([Started for a placed
+structure](structure-app.md#started-for-a-placed-structure)). XLSX
+import and export of the table and of the recipes come later; CSV works
+today.
 
 ## Recipes
 
@@ -108,8 +111,12 @@ opened on its own. Such values can be typed into the table.
 - **A line value with a direction**: its size along the direction.
 - **A value of the case** (`value`): along its direction, signed.
 - **A pressure**: pressure × the member's area along the direction, the
-  total per member. The areas come with the section library; until then
-  the rows say **no area**.
+  total per member, along the direction. The area comes from the
+  [section library](section-library.md): the profile's width seen along
+  the direction (in the member's cross-section plane) × the member's
+  length × sin θ (θ between the direction and the member; across the
+  member: width × length). No drag factor. A member whose section is not
+  in the library has **no area** (the row says why).
 
 The load is the value × `factor` × `one_sided`.
 
@@ -132,8 +139,9 @@ One row per case, load and point (or member, or joint):
 | `transverse`, `longitudinal`, `vertical` | N; vertical down |
 | `source` | `line` (a line value through the recipe), `recipe` (a value or pressure of the case), `typed` |
 | `evaluated_…` | A value typed over an evaluated one: the evaluated value, kept |
-| `missing` | Why there is no value: "no line value: …", "no area", "no point …", "selects no point" |
+| `missing` | Why there is no value: "no line value: …", "no area: …", "no point …", "selects no point" |
 | `note` | |
+| `area` | A surface load: the member's area it acts on, m² (may be left out when read) |
 
 **Typed values** stay as given and are marked `typed`; the evaluated
 value is kept beside them. Evaluated again (new line values, a recipe
@@ -144,7 +152,11 @@ tree).
 The structure application keeps the typed values beside the structure
 file as `<name>.loads.csv` (`type-02.olss` → `type-02.loads.csv`): the
 table's CSV with only the typed rows, written when the structure is
-saved and read when it is opened. A table read back from CSV types what
+saved and read when it is opened. Started for a placed structure (say
+T2), as `<name>.T2.loads.csv` instead: each place has its own loads
+(decision 7), and in a project the line application keeps the file in
+the project with that placed structure (project library kind `loads`).
+A table read back from CSV types what
 it has beyond the evaluation (other values, rows of its own), so a table
 exported and imported again is the same table.
 

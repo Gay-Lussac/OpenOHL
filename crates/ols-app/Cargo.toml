@@ -31,6 +31,10 @@ ols-loads.workspace = true
 ols-structures-fe.workspace = true
 # The edits of a structure file, shared with the structure application.
 ols-structure-edit.workspace = true
+# Edit… on a placed structure: its line values handed to the structure
+# application (the link is the one place the application meets the core).
+ols-structure-loads.workspace = true
+ols-structure-link.workspace = true
 ols-sections.workspace = true
 ols-thermal.workspace = true
 ols-bom.workspace = true

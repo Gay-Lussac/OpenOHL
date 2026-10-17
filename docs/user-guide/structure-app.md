@@ -10,16 +10,59 @@ what the levels mean and what comes next.
 ols-structure examples/synthetic-line/Structures/type-02.olss
 ```
 
-Options: `--insulators DIR` (the insulator assemblies strings may take;
-default: the file's folder and an `Insulators` folder there) and
-`--ahead DEG` (which plan angle means ahead along the line, for the
-compass). `--project`, `--line` and `--structure` are reserved for
-opening a placed structure of a project directly; they are not built yet
-and say so.
+Options:
+
+| Option | What |
+|---|---|
+| `--insulators DIR` | the insulator assemblies strings may take; default: the file's folder and an `Insulators` folder there |
+| `--ahead DEG` | which plan angle means ahead along the line, for the compass |
+| `--sections FILE\|DIR` | the [section library](section-library.md) (a `.olssec` file or a folder of them) the members' areas come from; default: the `Sections` folder beside the file |
+| `--structure ID` | the placed structure whose loads these are: values typed over the load table are kept for it (below) |
+| `--line-values FILE` | the line's values at that placed structure (a line-values file, written by the line application); read again when it changes |
 
 From the line application, **Edit…** on a structure (in its properties,
 or on the Structure types page) starts it on the structure's file; saved
 here, the line follows ([desktop application](desktop-app.md#the-pylon-workspace)).
+From a placed structure's properties it also hands over that place's
+loads ([below](#started-for-a-placed-structure)).
+
+## Started for a placed structure
+
+**Edit…** in a placed structure's properties (say T2, of type
+`type-02`) starts the application with T2's loads:
+
+```bash
+ols-structure Structures/type-02.olss --structure T2 \
+    --line-values Structures/type-02.T2.line-values.json --sections Sections
+```
+
+- The header says **loads of T2 in *line*** (a link to **In the line**).
+- The line application computes the loads the wires and strings put on
+  T2 in every load case of the line (Criteria › Load cases; as Checks ›
+  Structure loads does, in the background) and writes them beside the
+  structure file as `<name>.<structure>.line-values.json`. Until they are
+  there the header says they are being computed; without a load case
+  file it says so. When the line changes while the application is open
+  (and stays unchanged for a second), the line application computes them
+  again and rewrites the file; the application reads it again within
+  half a second and evaluates the recipes with the new values.
+- The **load table** takes the line's values: rows that take one are
+  marked `line` instead of **no line value**.
+- **In the line** lists the line's values per point (with its sets and
+  phases) and load case: transverse, longitudinal, vertical, unfactored
+  and factored by the line's load case, in kN. **Other places of this
+  structure** lists the other placed structures of the same type with
+  the governing (largest) factored value per point and direction and its
+  case — for comparison only: each place keeps its own loads.
+- **Typed values** are kept for T2, not for the type: **Save** writes
+  them as `<name>.T2.loads.csv` (for `type-02.olss`:
+  `type-02.T2.loads.csv`). In a project, the line application keeps that
+  file in the project with T2 (project library kind `loads`, per project
+  line), so it is there the next time T2 is opened. Opened alone, the
+  structure keeps using `<name>.loads.csv`.
+
+The structure file itself is the type's: saved here, every structure of
+the type follows in the line.
 
 ## The window
 
@@ -49,7 +92,7 @@ here, the line follows ([desktop application](desktop-app.md#the-pylon-workspace
 | **Design** (level 3) | Supports (**Support the feet** pins the lowest joints), Members (section, kind, buckling factor k), Groups (a section and kind per member group), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
 | **Load cases** (any level) | **Recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.olsslc` or CSV), **Import / Export table…** (CSV); the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3) | Per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage | **▶ Run** (one case or every case), **Cancel**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
-| **In the line** | to come: the places using the structure and their loads | — |
+| **In the line** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
 
 ## The Body tab
 
@@ -117,8 +160,9 @@ with the name of one in the structure replaces it, the others are added
 
 The **Load table** part shows the recipes evaluated: per case (or every
 case) and per point, member or joint, the transverse, longitudinal and
-vertical load in kN, where it comes from (`line`, `recipe`, `typed`)
-and why a row has no value. Opened on its own, the structure has no
+vertical load in kN, where it comes from (`line`, `recipe`, `typed`),
+the member's **area** a surface load acts on, and why a row has no
+value. Opened on its own, the structure has no
 line: every load taking a line value shows **no line value**. Type the
 values (drag or click a number), or **Import table…** a CSV with the
 table's columns (from **Export table…**, another program or a client's
@@ -128,8 +172,20 @@ load tree): what it has beyond the evaluation becomes typed values.
 evaluated again; ⟲ takes one back. They are not part of the structure
 file: **Save** writes them beside it as `<name>.loads.csv` (for
 `type-02.olss`: `type-02.loads.csv`, the table's CSV with the typed rows
-only), and opening the file reads them again. Unsaved typed values count
+only), and opening the file reads them again; started for a placed
+structure, as `<name>.<structure>.loads.csv`. Unsaved typed values count
 as unsaved changes.
+
+**Surface loads** (a `pressure` on `members`) take each member's area
+from the section library (`--sections`, else the `Sections` folder
+beside the file; the line application passes the project's): the
+profile's width seen along the pressure's direction (in the member's
+cross-section plane) × the member's length × sin θ, θ the angle between
+the direction and the member — for a member across the direction,
+width × length. The row shows the area used. A member whose section is
+not in the library, or a structure whose model does not build, has **no
+area** and says why. The line under the buttons says how many sections
+were read and from where.
 
 **Arrows** draws the loads of the case shown in the view, ending at
 their point (a member's at its middle), **m per kN** long.

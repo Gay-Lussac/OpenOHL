@@ -19,6 +19,9 @@ use crate::table::{At, LoadRow, LoadTable, Source};
 const TABLE_HEADER: &str = "case,load,at,label,transverse,longitudinal,vertical,source,\
 evaluated_transverse,evaluated_longitudinal,evaluated_vertical,missing,note";
 
+/// Columns of the load table a file may leave out (older files).
+const TABLE_OPTIONAL: &str = "area";
+
 /// Columns of the recipes.
 const RECIPE_HEADER: &str = "case,description,line_case,strength,self_weight,load,what,value,\
 pressure,load_line_case,factor,one_sided,side,direction,points,sets,phases,members,note";
@@ -55,13 +58,24 @@ struct Columns(Vec<String>);
 
 impl Columns {
     fn new(header: &[String], expected: &str) -> Result<Self, String> {
+        Self::with_optional(header, expected, "")
+    }
+
+    /// The columns `expected` must be there, those of `optional` may.
+    fn with_optional(header: &[String], expected: &str, optional: &str) -> Result<Self, String> {
         let names: Vec<String> = header.iter().map(|h| h.trim().to_owned()).collect();
         for want in expected.split(',') {
             if !names.iter().any(|n| n == want) {
                 return Err(format!("no column {want}"));
             }
         }
-        if let Some(extra) = names.iter().find(|n| !expected.split(',').any(|w| w == *n)) {
+        let known = |n: &str| {
+            expected
+                .split(',')
+                .chain(optional.split(',').filter(|o| !o.is_empty()))
+                .any(|w| w == n)
+        };
+        if let Some(extra) = names.iter().find(|n| !known(n)) {
             return Err(format!("unknown column \"{extra}\""));
         }
         Ok(Self(names))
@@ -120,12 +134,12 @@ fn opt<T: ToString>(v: Option<T>) -> String {
 impl LoadTable {
     /// The table as CSV: one row per case, load and place; forces in N.
     pub fn to_csv(&self) -> String {
-        let mut out = format!("{TABLE_HEADER}\n");
+        let mut out = format!("{TABLE_HEADER},{TABLE_OPTIONAL}\n");
         for r in &self.rows {
             let e = r.evaluated.map(|e| e.map(|x| x.to_string()));
             let _ = writeln!(
                 out,
-                "{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 csv_field(&r.case),
                 opt(r.load),
                 r.at.as_str(),
@@ -139,6 +153,7 @@ impl LoadTable {
                 e.as_ref().map_or("", |e| &e[2]),
                 csv_field(r.missing.as_deref().unwrap_or("")),
                 csv_field(&r.note),
+                opt(r.area),
             );
         }
         out
@@ -149,7 +164,7 @@ impl LoadTable {
     pub fn from_csv(text: &str) -> Result<Self, String> {
         let mut recs = records(text).into_iter();
         let header = recs.next().ok_or("an empty table")?;
-        let cols = Columns::new(&header, TABLE_HEADER)?;
+        let cols = Columns::with_optional(&header, TABLE_HEADER, TABLE_OPTIONAL)?;
         let mut rows = Vec::new();
         for (k, rec) in recs.enumerate() {
             let at_line = |e: String| format!("row {}: {e}", k + 2);
@@ -182,6 +197,7 @@ impl LoadTable {
                     evaluated: force("evaluated_")?,
                     missing: Some(g("missing").to_owned()).filter(|m| !m.is_empty()),
                     note: g("note").to_owned(),
+                    area: opt_number(g("area"), "area")?,
                 })
             })()
             .map_err(at_line)?;

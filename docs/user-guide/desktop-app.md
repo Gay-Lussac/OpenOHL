@@ -315,6 +315,22 @@ the `PATH`; when it is found in neither, the status line says so. The
 pylon workspace below stays until the structure application does
 everything it does; both make the same edits.
 
+**Edit… on a placed structure** (its properties) also hands over that
+place's loads ([Started for a placed
+structure](structure-app.md#started-for-a-placed-structure)): the line
+application computes the loads of the line's load cases (Criteria › Load
+cases) at that structure in the background and writes them beside the
+structure file (`<name>.<structure>.line-values.json`); while the
+structure application is open, a change of the line (once it has stayed
+unchanged for a second) computes and writes them again, and the window
+follows. Values typed over its load table there are saved as
+`<name>.<structure>.loads.csv`; in a project the line application keeps
+them in the project with that structure (library kind `loads`, per
+project line) as soon as they are saved, and the status line says so.
+The project's section library goes along for the members' areas. One
+structure application runs per structure file: Edit… on another
+structure of the same type while one is open says so.
+
 **A structure type on its own**: `ols-cad pylon.olss`, **File › Open** (choose a `.olss`) or the start page's recent files open a structure type file without a line: its editor is the whole window — the pylon workspace below and every field of the file (**Fields**), **Save** (⌘S), the other types of its folder in the list. The insulator assemblies of its folder (and of an `Insulators` folder there) are those its strings may take. Which angle means ahead is yours for files opened alone (at the top, remembered on this computer); a project has its own (Structures › Angles around structures). Unsaved changes are asked about before another file opens. In a project, the same editor is the Structure types page, and **Edit pylon…** opens a structure's type in it; what the type gives — its points, strings and wire points, with their descriptions — comes into the line with every structure of that type.
 
 On the **Structure library** page, **Pylon** (next to **Fields**) shows the type in its own axes — x to the right of the line (red), y ahead (green), z up (blue), 0;0 at the centre, the ground grid at the level of its feet — in its own 3D view, with tables below it. **Edit pylon…** in a typed structure's properties opens its type there.

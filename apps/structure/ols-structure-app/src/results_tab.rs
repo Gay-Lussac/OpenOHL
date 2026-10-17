@@ -275,8 +275,17 @@ impl StructureApp {
                 let structure = t.clone();
                 let text = f.text();
                 let dir = f.path().and_then(Path::parent).map(Path::to_path_buf);
+                let sections = self.loads.sections.clone();
                 self.results.start(&ctx, key, move |budget| {
-                    analyse_cases(&structure, &text, dir.as_deref(), &table, &run, budget)
+                    analyse_cases(
+                        &structure,
+                        &text,
+                        dir.as_deref(),
+                        &sections,
+                        &table,
+                        &run,
+                        budget,
+                    )
                 });
             }
             if let Some((started, _, cancel)) = &self.results.running {

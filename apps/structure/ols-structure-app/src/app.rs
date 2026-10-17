@@ -6,13 +6,18 @@
 //! the next one lacks), the 3D view on top and the tabs underneath.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui;
 use eframe::egui_wgpu;
 use ols_structure_edit::{
     Handle, Missing, Need, Place, Removal, StructureFile, geometry, missing, next_level,
 };
+use ols_structure_loads::PlacedValues;
 use ols_structures::InsulatorLibrary;
+
+/// How often the line-values file is looked at.
+const VALUES_POLL: Duration = Duration::from_millis(500);
 
 use crate::load_cases_tab::LoadCasesTab;
 use crate::results_tab::ResultsTab;
@@ -32,7 +37,7 @@ pub enum Tab {
     LoadCases,
     /// The finite-element results per case.
     Results,
-    /// The places using the structure in a line (to come).
+    /// The line's values at the placed structure, per point and case.
     InTheLine,
 }
 
@@ -131,6 +136,13 @@ pub struct StructureApp {
     pub loads: LoadCasesTab,
     /// The Results tab.
     pub results: ResultsTab,
+    /// The section library given (`--sections`: a file or folder; none:
+    /// `Sections/` beside the file).
+    pub sections_path: Option<PathBuf>,
+    /// The line-values file of the placed structure (`--line-values`),
+    /// read again when it changes: its time when read, when last looked.
+    pub line_values: Option<PathBuf>,
+    values_seen: Option<(Option<SystemTime>, Instant)>,
     view: View,
     rs: Option<egui_wgpu::RenderState>,
     /// What the view drew last (drawn again when it changes).
@@ -164,6 +176,9 @@ impl StructureApp {
             view_fit: false,
             loads: LoadCasesTab::default(),
             results: ResultsTab::default(),
+            sections_path: None,
+            line_values: None,
+            values_seen: None,
             view: View::default(),
             rs,
             drawn: None,
@@ -210,12 +225,67 @@ impl StructureApp {
                 self.view = View::default();
                 self.drawn = None;
                 self.results = ResultsTab::default();
+                let sections = self
+                    .sections_path
+                    .clone()
+                    .unwrap_or_else(|| dir.join("Sections"));
+                self.loads
+                    .set_sections(ols_structure_link::section_library(&sections), &sections);
+                self.values_seen = None;
+                self.poll_line_values();
                 if let Err(e) = self.loads.opened(path) {
                     self.message = Some((format!("typed loads not read: {e}"), true));
                 }
                 self.body = Default::default();
             }
             Err(e) => self.open_error = Some(e),
+        }
+    }
+
+    /// File › Open: another structure file, on its own (a placed
+    /// structure's loads do not go with it).
+    pub fn open_chosen(&mut self, path: &Path) {
+        if self.file.as_ref().and_then(StructureFile::path) != Some(path) {
+            self.line_values = None;
+            self.values_seen = None;
+            self.loads.placed = None;
+            self.loads.info = None;
+            self.loads.values_error = None;
+            self.loads.line = Default::default();
+        }
+        self.open(path);
+    }
+
+    /// The line-values file (`--line-values`) read again when its time
+    /// changed (looked at twice a second at most: the line application
+    /// rewrites it when the line is solved again).
+    pub fn poll_line_values(&mut self) {
+        let Some(path) = &self.line_values else {
+            return;
+        };
+        if self
+            .values_seen
+            .is_some_and(|(_, at)| at.elapsed() < VALUES_POLL)
+        {
+            return;
+        }
+        let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+        let before = self.values_seen.and_then(|(m, _)| m);
+        let first = self.values_seen.is_none();
+        self.values_seen = Some((modified, Instant::now()));
+        if !first && modified == before {
+            return;
+        }
+        if modified.is_none() {
+            self.loads.values_error = Some(format!(
+                "{}: not there (yet): the line application writes it",
+                path.display()
+            ));
+            return;
+        }
+        match PlacedValues::load(path) {
+            Ok(v) => self.loads.set_line_values(v),
+            Err(e) => self.loads.values_error = Some(e),
         }
     }
 
@@ -371,7 +441,7 @@ impl StructureApp {
                         .add_filter("Structure", &["olss"])
                         .pick_file()
                     {
-                        self.open(&p);
+                        self.open_chosen(&p);
                     }
                 }
                 let has = self.file.is_some();
@@ -485,6 +555,24 @@ impl StructureApp {
                 ui.colored_label(egui::Color32::YELLOW, "* unsaved");
             }
         });
+        if let Some(text) = self.loads.placed_title() {
+            let mut open_tab = false;
+            ui.horizontal_wrapped(|ui| {
+                open_tab = ui
+                    .link(egui::RichText::new(text).strong())
+                    .on_hover_text("The line's values at this placed structure: In the line")
+                    .clicked();
+                if let Some(note) = self.loads.info.as_ref().and_then(|i| i.note.as_ref()) {
+                    ui.label(egui::RichText::new(note).weak());
+                }
+            });
+            if let Some(e) = &self.loads.values_error {
+                error_label(ui, e.as_str());
+            }
+            if open_tab {
+                self.tab = Tab::InTheLine;
+            }
+        }
         let next = next_level(d);
         let items = missing(t, next.unwrap_or(3));
         let (needed, advice): (Vec<&Missing>, Vec<&Missing>) =
@@ -635,6 +723,10 @@ impl eframe::App for StructureApp {
         self.keys(&ctx);
         self.close_question(&ctx);
         self.title(&ctx);
+        if self.line_values.is_some() {
+            self.poll_line_values();
+            ctx.request_repaint_after(VALUES_POLL);
+        }
         // A group of edits (a drag) ends with the pointer let go.
         if !ctx.input(|i| i.pointer.any_down())
             && let Some(f) = &mut self.file

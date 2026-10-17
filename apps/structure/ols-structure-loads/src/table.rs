@@ -289,6 +289,9 @@ pub struct LoadRow {
     pub missing: Option<String>,
     /// A note.
     pub note: String,
+    /// A surface load: the member's area it acted on, m².
+    #[serde(default)]
+    pub area: Option<f64>,
 }
 
 impl LoadRow {
@@ -303,6 +306,7 @@ impl LoadRow {
             evaluated: None,
             missing: None,
             note: String::new(),
+            area: None,
         }
     }
 
@@ -459,11 +463,19 @@ impl LoadTable {
     }
 }
 
-/// The area of a member the surface loads act on, m² (later from the
-/// section library).
+/// The area of a member the surface loads act on, m² (from the section
+/// library: `ols-structure-link`).
 pub trait MemberAreas {
     /// The area of member `id`, if known.
     fn area(&self, id: &str) -> Option<f64>;
+
+    /// The area of member `id` a pressure acting in `direction` meets, or
+    /// why there is none (the row's "missing", starting "no area"). By
+    /// default [`MemberAreas::area`], whatever the direction.
+    fn area_along(&self, id: &str, direction: Direction) -> Result<f64, String> {
+        let _ = direction;
+        self.area(id).ok_or_else(|| "no area".to_owned())
+    }
 }
 
 /// No areas known: surface loads give rows marked "no area".
@@ -538,17 +550,19 @@ fn surface_rows(
         ];
     }
     let p = load.pressure.unwrap_or_default();
-    let dir = load.direction.unwrap_or(Direction::Right).table_vector();
+    let direction = load.direction.unwrap_or(Direction::Right);
+    let dir = direction.table_vector();
     ids.into_iter()
         .map(|id| {
             let row = LoadRow::new(&case.name, number, At::Member, id);
             if !structure.members.iter().any(|m| m.id == id) {
                 return row.missing(format!("no member \"{id}\""));
             }
-            match areas.area(id) {
-                None => row.missing("no area".into()),
-                Some(a) => LoadRow {
+            match areas.area_along(id, direction) {
+                Err(why) => row.missing(why),
+                Ok(a) => LoadRow {
                     force: dir.map(|d| d * p * a * load.scale()),
+                    area: Some(a),
                     ..row
                 },
             }

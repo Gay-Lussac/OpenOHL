@@ -320,6 +320,8 @@ pub enum Action {
     EditInStructureApp {
         /// Structure type.
         id: String,
+        /// The placed structure it was asked from: its loads go along.
+        structure: Option<String>,
     },
     /// Open structure `id` (one without a type) in the pylon editor (no
     /// edit by itself).

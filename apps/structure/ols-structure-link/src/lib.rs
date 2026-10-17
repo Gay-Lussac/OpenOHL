@@ -11,11 +11,15 @@
 //!   (`ols_loads::structure_loads`) as [`LineValues`].
 //! - [`fe_loads`]: one case of a [`LoadTable`] as the loads of the
 //!   structure's finite-element model (`ols_structures_fe`).
+//! - [`placed_values`]: the same with the placed structure's line, its
+//!   type and the other places of the type, as the line-values file the
+//!   line application hands to the structure application.
 //! - [`analyse_cases`]: cases of a [`LoadTable`] solved on the
 //!   structure's model, the results as plain data ([`CaseResult`]).
-//!
-//! Later also the section library (member areas) and saving back into the
-//! line.
+//! - [`SectionAreas`]: the members' areas from the section library, for
+//!   the surface loads of the recipes
+//!   ([`ols_structure_loads::evaluate_with_areas`]); [`section_library`]
+//!   reads it.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -23,7 +27,11 @@ use std::time::{Duration, Instant};
 use ols_core::budget::Budget;
 use ols_line::Line;
 use ols_loads::CaseLoads;
-use ols_structure_loads::{At, LinePoint, LineQuantity, LineValue, LineValues, LoadTable};
+pub use ols_sections::SectionLibrary;
+use ols_structure_loads::{
+    At, Direction, LinePoint, LineQuantity, LineValue, LineValues, LoadTable, MemberAreas,
+    OtherPlace, PlacedValues,
+};
 use ols_structures::StructureType;
 use ols_structures_fe::{Loads, Model, NodalLoad};
 
@@ -78,6 +86,121 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
         }
     }
     out
+}
+
+/// The line-values file of placed structure `structure` in line
+/// `line_name`: its values ([`line_values`]), the line's load cases, its
+/// structure type and the other placed structures of that type with
+/// their values; the note names the sections a load case did not solve.
+pub fn placed_values(
+    loads: &[CaseLoads],
+    line: &Line,
+    structure: &str,
+    line_name: &str,
+) -> PlacedValues {
+    let structure_type = line
+        .structures
+        .iter()
+        .find(|s| s.id == structure)
+        .and_then(|s| s.structure_type.clone())
+        .unwrap_or_default();
+    let others = line
+        .structures
+        .iter()
+        .filter(|s| {
+            s.id != structure
+                && !structure_type.is_empty()
+                && s.structure_type.as_deref() == Some(structure_type.as_str())
+        })
+        .map(|s| OtherPlace {
+            structure: s.id.clone(),
+            values: line_values(loads, line, &s.id),
+        })
+        .collect();
+    // Sections a case did not solve: their loads are missing.
+    let failed: Vec<String> = loads
+        .iter()
+        .filter(|c| !c.failed.is_empty())
+        .map(|c| {
+            format!(
+                "{}: {} section(s) not solved ({})",
+                c.case.name,
+                c.failed.len(),
+                c.failed.join("; ")
+            )
+        })
+        .collect();
+    PlacedValues {
+        cases: loads.iter().map(|c| c.case.name.clone()).collect(),
+        values: line_values(loads, line, structure),
+        others,
+        note: (!failed.is_empty()).then(|| {
+            format!(
+                "values missing where the line did not solve — {}",
+                failed.join(" · ")
+            )
+        }),
+        ..PlacedValues::pending(structure, line_name, &structure_type, "")
+    }
+}
+
+/// The section library at `path` (a `.olssec` file, or every one of a
+/// folder); a folder that is not there is an empty library.
+pub fn section_library(path: &Path) -> Result<SectionLibrary, String> {
+    if !path.exists() {
+        return Ok(SectionLibrary::default());
+    }
+    SectionLibrary::load(path)
+}
+
+/// The members' areas from the section library: the structure's
+/// finite-element model built with it, a member's area for a pressure in
+/// a direction its silhouette seen along it
+/// ([`Model::projected_area`]: the profile's width for that direction ×
+/// the member's length × sin θ). A member whose section is not in the
+/// library, or a structure whose model does not build, has no area (the
+/// row says why).
+pub struct SectionAreas {
+    model: Result<Model, String>,
+}
+
+impl SectionAreas {
+    /// The areas of `structure` (`text`: its file's text, `dir`: its
+    /// folder, for a `model = "….olsfe"` it names) with `sections`.
+    pub fn new(
+        structure: &StructureType,
+        text: &str,
+        dir: Option<&Path>,
+        sections: &SectionLibrary,
+    ) -> Self {
+        Self {
+            model: model_of(structure, text, dir, sections),
+        }
+    }
+}
+
+impl MemberAreas for SectionAreas {
+    fn area(&self, id: &str) -> Option<f64> {
+        self.area_along(id, Direction::Right).ok()
+    }
+
+    fn area_along(&self, id: &str, direction: Direction) -> Result<f64, String> {
+        let model = self
+            .model
+            .as_ref()
+            .map_err(|e| format!("no area: the model does not build ({e})"))?;
+        let k = model
+            .members
+            .iter()
+            .position(|m| m.id == id)
+            .ok_or_else(|| format!("no area: no member \"{id}\" in the model"))?;
+        // Table axes (vertical down) → structure axes (z up).
+        let d = direction.table_vector();
+        model.projected_area(k, [d[0], d[1], -d[2]]).ok_or_else(|| {
+            let s = &model.sections[model.members[k].section].id;
+            format!("no area: section \"{s}\" is not in the section library")
+        })
+    }
 }
 
 /// Case `case` of `table` as the loads of `model` (structure axes, z up):
@@ -248,17 +371,24 @@ pub type CaseRun = (String, Result<CaseResult, String>);
 
 /// The finite-element model of `structure`: its own members, or the
 /// `model = "….olsfe"` it names (beside the file, in `dir`); `text` is the
-/// structure file's text.
-fn model_of(structure: &StructureType, text: &str, dir: Option<&Path>) -> Result<Model, String> {
+/// structure file's text. A member's section is looked up in `sections`
+/// first.
+fn model_of(
+    structure: &StructureType,
+    text: &str,
+    dir: Option<&Path>,
+    sections: &SectionLibrary,
+) -> Result<Model, String> {
     match &structure.model {
-        Some(file) => Model::load(&dir.unwrap_or(Path::new(".")).join(file)),
-        None => Model::from_structure_type(text),
+        Some(file) => Model::load_with(&dir.unwrap_or(Path::new(".")).join(file), sections),
+        None => Model::from_structure_type_with(text, sections),
     }
 }
 
 /// Solves `cases` of `table` on the finite-element model of `structure`
-/// (`text`: its file's text, `dir`: its folder): per case its result, or
-/// why it did not solve. Err: the model does not read.
+/// (`text`: its file's text, `dir`: its folder; members' sections looked
+/// up in `sections` first): per case its result, or why it did not solve.
+/// Err: the model does not read.
 ///
 /// Expected cost: a few milliseconds per case for a lattice tower of a
 /// few hundred members (one or two iterations first order, a few tens
@@ -267,11 +397,12 @@ pub fn analyse_cases(
     structure: &StructureType,
     text: &str,
     dir: Option<&Path>,
+    sections: &SectionLibrary,
     table: &LoadTable,
     cases: &[CaseToRun],
     budget: &Budget,
 ) -> Result<Vec<CaseRun>, String> {
-    let model = model_of(structure, text, dir)?;
+    let model = model_of(structure, text, dir, sections)?;
     Ok(cases
         .iter()
         .map(|c| (c.name.clone(), analyse_one(&model, table, c, budget)))

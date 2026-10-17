@@ -248,7 +248,16 @@ fn the_cases_of_the_table_are_solved_through_the_link() {
         self_weight: 1.0,
     });
     let budget = ols_structures_fe::default_budget();
-    let results = analyse_cases(&structure, &text, path.parent(), &table, &cases, &budget).unwrap();
+    let results = analyse_cases(
+        &structure,
+        &text,
+        path.parent(),
+        &Default::default(),
+        &table,
+        &cases,
+        &budget,
+    )
+    .unwrap();
     assert_eq!(results.len(), 4);
     let model = Model::load(&path).unwrap();
     for (name, r) in &results {

@@ -59,11 +59,6 @@ pub(crate) fn row(
     }
 }
 
-const PLACEHOLDER_LINE: &str = "Started from a line (Edit on a structure in the line \
-     application), this tab will list the places using this structure and their loads per \
-     case, through the link to the line application (phase 4). Today: saved changes go back \
-     into the project — the line application reads the file again when it is saved here.";
-
 impl StructureApp {
     /// The tab shown.
     pub fn tab_ui(&mut self, ui: &mut egui::Ui) {
@@ -85,7 +80,7 @@ impl StructureApp {
                 return;
             }
             Tab::InTheLine => {
-                ui.label(PLACEHOLDER_LINE);
+                self.in_the_line_ui(ui);
                 return;
             }
         }
