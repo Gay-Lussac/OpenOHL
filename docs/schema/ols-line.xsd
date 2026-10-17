@@ -81,6 +81,56 @@
     <xs:attribute name="id" type="xs:string" use="required"/>
   </xs:complexType>
 
+  <xs:complexType name="object">
+    <xs:annotation>
+      <xs:documentation>The object on a point (one per point): a body or a
+        clamp (kind), the library type it was taken from (type), its weight
+        (N, the whole bundle's), its shape for the wind and the ice (point,
+        sphere: diameter; cylinder: diameter, length, axis along / across /
+        vertical; box: along, across, height; areas: wind_area, ice_area),
+        drag (default 1), a clamp's length along the wire.</xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="kind" default="body">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="body"/>
+          <xs:enumeration value="clamp"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="type" type="xs:string"/>
+    <xs:attribute name="weight" type="xs:double" default="0"/>
+    <xs:attribute name="shape" default="point">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="point"/>
+          <xs:enumeration value="sphere"/>
+          <xs:enumeration value="cylinder"/>
+          <xs:enumeration value="box"/>
+          <xs:enumeration value="areas"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="diameter" type="xs:double"/>
+    <xs:attribute name="length" type="xs:double"/>
+    <xs:attribute name="axis">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="along"/>
+          <xs:enumeration value="across"/>
+          <xs:enumeration value="vertical"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="along" type="xs:double"/>
+    <xs:attribute name="across" type="xs:double"/>
+    <xs:attribute name="height" type="xs:double"/>
+    <xs:attribute name="wind_area" type="xs:double"/>
+    <xs:attribute name="ice_area" type="xs:double"/>
+    <xs:attribute name="drag" type="xs:double"/>
+    <xs:attribute name="clamp_length" type="xs:double"/>
+  </xs:complexType>
+
   <xs:complexType name="field">
     <xs:annotation>
       <xs:documentation>The value of a table column added by a plugin, by
@@ -353,6 +403,8 @@
             <xs:sequence>
               <xs:element name="point" type="ols:sectionPoint" minOccurs="2" maxOccurs="unbounded"/>
               <xs:element name="stringing" type="ols:stringing"/>
+              <!-- Older documents: point loads of their own, read into
+                   points with a body (written as span_point + object). -->
               <xs:element name="load" minOccurs="0" maxOccurs="unbounded">
                 <xs:complexType>
                   <xs:attribute name="span" type="xs:unsignedInt" use="required"/>
@@ -369,7 +421,8 @@
               </xs:element>
               <xs:element name="spread_load" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
-                  <xs:documentation>A load spread along part of a span: from start
+                  <xs:documentation>Older documents (read into two points and a
+                    spread): a load spread along part of a span: from start
                     to end (each a fraction of the span or a horizontal distance
                     from its back point, m), downward, N per metre of conductor
                     (the whole bundle's).</xs:documentation>
@@ -388,16 +441,34 @@
               </xs:element>
               <xs:element name="span_point" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
-                  <xs:documentation>A point on a span where a spacer is clamped
-                    (fraction of the span or distance from its back point).</xs:documentation>
+                  <xs:documentation>A labelled point on a span (fraction of the
+                    span, distance from its back point, or station), with its
+                    object (a body or a clamp) or bare.</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="object" type="ols:object" minOccurs="0"/>
+                  </xs:sequence>
                   <xs:attribute name="label" type="xs:string" use="required"/>
                   <xs:attribute name="span" type="xs:unsignedInt" use="required"/>
                   <xs:attribute name="fraction" type="xs:double"/>
                   <xs:attribute name="distance" type="xs:double"/>
                   <xs:attribute name="station" type="xs:double"/>
                   <xs:attribute name="description" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="spread" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>An object spread between two points of one
+                    span (from, to: their labels): downward, N per metre of
+                    conductor (the whole bundle's).</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="label" type="xs:string"/>
+                  <xs:attribute name="from" type="xs:string" use="required"/>
+                  <xs:attribute name="to" type="xs:string" use="required"/>
+                  <xs:attribute name="type" type="xs:string"/>
+                  <xs:attribute name="load" type="xs:double" use="required"/>
                 </xs:complexType>
               </xs:element>
               <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>
@@ -437,6 +508,24 @@
                   <xs:attribute name="wire" type="xs:string" use="required"/>
                   <xs:attribute name="at" type="xs:double" use="required"/>
                   <xs:attribute name="clamp_length" type="xs:double" default="0.1"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="jumper_point" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A labelled point along the jumper (from
+                    `from`: fraction of its length, a length along it, or a
+                    horizontal distance from `from`'s clamp), with its object
+                    or bare.</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="object" type="ols:object" minOccurs="0"/>
+                  </xs:sequence>
+                  <xs:attribute name="label" type="xs:string" use="required"/>
+                  <xs:attribute name="fraction" type="xs:double" default="0"/>
+                  <xs:attribute name="length" type="xs:double"/>
+                  <xs:attribute name="distance" type="xs:double"/>
+                  <xs:attribute name="description" type="xs:string"/>
                 </xs:complexType>
               </xs:element>
               <xs:element name="field" type="ols:field" minOccurs="0" maxOccurs="unbounded"/>

@@ -1218,6 +1218,7 @@ fn spacers_follow_their_sections() {
             span: 0,
             at: ols_line::SpanPlace::at_fraction(0.4),
             description: String::new(),
+            object: Default::default(),
         });
     }
     let (s1, s2) = (line.sections[0].id.clone(), line.sections[1].id.clone());

@@ -340,11 +340,10 @@ pub fn spotted_line(
                 horizontal_tension: options.horizontal_tension,
                 temperature: options.temperature,
             },
-            loads: Vec::new(),
             color: None,
             calculation: Default::default(),
             fields: Default::default(),
-            spread_loads: Default::default(),
+            spreads: Default::default(),
             span_points: Default::default(),
         })
         .collect();

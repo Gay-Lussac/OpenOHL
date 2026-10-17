@@ -3260,8 +3260,12 @@ fn thinning_keeps_the_ends() {
 /// through the project file; one without a size is not.
 #[test]
 fn a_sized_marker_ball_is_drawn_on_its_wire() {
-    let m = synthetic_project_with("ball", |l| l.sections[0].loads[0].diameter = 0.6);
-    assert_eq!(m.line.sections[0].loads[0].diameter, 0.6);
+    let m = synthetic_project_with("ball", |l| {
+        l.sections[0].objects_mut().next().unwrap().shape =
+            ols_line::Shape::Sphere { diameter: 0.6 }
+    });
+    let (p, o) = m.line.sections[0].objects().next().unwrap();
+    assert_eq!(o.shape, ols_line::Shape::Sphere { diameter: 0.6 });
     let balls = |m: &model::Model| -> Vec<crate::scene::Prim> {
         crate::scene::prims(m, crate::scene::Layer::Wires, 0)
             .into_iter()
@@ -3269,13 +3273,26 @@ fn a_sized_marker_ball_is_drawn_on_its_wire() {
             .collect()
     };
     let drawn = balls(&m);
-    assert_eq!(drawn.len(), 1);
-    let pts = &drawn[0].points;
+    // The ball, and the dots of the other points (spread ends).
+    let pts = &drawn
+        .iter()
+        .find(|d| {
+            let r = d.points.iter().map(|q| q[2]).fold(f64::MIN, f64::max)
+                - d.points.iter().map(|q| q[2]).fold(f64::MAX, f64::min);
+            (r - 0.6).abs() < 0.05
+        })
+        .expect("a ball 0.6 m round")
+        .points;
     assert_eq!(pts.len() % 3, 0);
     // Centred on the wire at the ball's place, 0.3 m round.
-    let l = &m.line.sections[0].loads[0];
+    // Where the point is solved.
     let shape = &m.cases[0].shapes[0];
-    let at = crate::scene::at_fraction(&shape.spans[l.span].points, l.fraction).unwrap();
+    let at = shape
+        .span_points
+        .iter()
+        .find(|(l, _)| *l == p.label)
+        .unwrap()
+        .1;
     let mid = |k: usize| pts.iter().map(|p| p[k]).sum::<f64>() / pts.len() as f64;
     for (k, a) in at.iter().enumerate() {
         assert!((mid(k) - a).abs() < 0.05, "{k}");
@@ -8259,7 +8276,7 @@ fn string_editor_presets_make_valid_assemblies() {
         ols_line::SectionPoint::new("T9", 1),
         ols_line::SectionPoint::new("T10", 1),
     ];
-    section.loads.clear();
+    section.clear_point_loads();
     section.stringing = ols_line::Stringing::Tension {
         horizontal_tension: 20_000.0,
         temperature: 15.0,
@@ -11051,6 +11068,7 @@ fn span_objects_and_wire_points_are_picked_in_any_case_drawn() {
                 span: 0,
                 at: ols_line::SpanPlace::at_fraction(0.5),
                 description: String::new(),
+                object: Default::default(),
             });
         }
         let end = |section: &str| ols_line::SpanPointRef {
@@ -12028,12 +12046,15 @@ fn spacers_are_laid_between_span_points() {
     add_point(&mut harness, &s1);
     {
         let r = harness.state_mut().ready().unwrap();
-        let p = &r.model.line.sections[0].span_points[0];
-        assert_eq!(p.label, "M");
+        let p = r.model.line.sections[0]
+            .span_points
+            .iter()
+            .find(|p| p.label == "M")
+            .unwrap();
         assert!(p.at.distance.is_some());
         // Solved where it is: on the wire.
         let shape = r.model.shape(&s0, r.case).unwrap();
-        assert_eq!(shape.span_points.len(), 1);
+        assert!(shape.span_points.iter().any(|(l, _)| l == "M"));
     }
     // Add string: one span point, then the other — the spacer's window.
     let point = |section: &str| Selection::SpanPoint {
@@ -12091,8 +12112,8 @@ fn spacers_are_laid_between_span_points() {
     );
     // Point loads every 50 m and a spread load by station.
     let before = harness.state_mut().ready().unwrap().model.line.sections[0]
-        .loads
-        .len();
+        .objects()
+        .count();
     {
         let r = harness.state_mut().ready().unwrap();
         let mut f = crate::span_tool::SpanForm::new(&r.model, r.case, &s0, 0, None).unwrap();
@@ -12106,7 +12127,7 @@ fn spacers_are_laid_between_span_points() {
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.editor.is_none(), "{:?}", r.status);
-        assert_eq!(r.model.line.sections[0].loads.len(), before + 3);
+        assert_eq!(r.model.line.sections[0].objects().count(), before + 3);
         let mut f = crate::span_tool::SpanForm::new(&r.model, r.case, &s0, 0, None).unwrap();
         f.what = SpanWhat::Spread;
         if f.stations.is_some() {
@@ -12120,21 +12141,34 @@ fn spacers_are_laid_between_span_points() {
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.editor.is_none(), "{:?}", r.status);
-        let l = &r.model.line.sections[0].spread_loads[0];
+        let l = r.model.line.sections[0].spreads.last().unwrap();
         assert_eq!(l.load, 25.0);
         let rows = TableKind::SpanObjects.rows(&r.model, r.case);
-        // Two span points, the point loads, one spread load.
-        let loads: usize = r.model.line.sections.iter().map(|s| s.loads.len()).sum();
-        assert_eq!(rows.len(), 3 + loads);
+        // Every point and spread of every section.
+        let all: usize = r
+            .model
+            .line
+            .sections
+            .iter()
+            .map(|s| s.span_points.len() + s.spreads.len())
+            .sum();
+        assert_eq!(rows.len(), all);
     }
-    // A load's place typed in the table.
-    let key = format!("{s0}\tl\t{before}");
+    // A load's place typed in the table: the first point added with a
+    // body on S0.
+    let k = {
+        let r = harness.state_mut().ready().unwrap();
+        let s = &r.model.line.sections[0];
+        let first = s.objects().nth(before).unwrap().0.label.clone();
+        s.span_points.iter().position(|p| p.label == first).unwrap()
+    };
+    let key = format!("{s0}\tp\t{k}");
     set_cell(&mut harness, TableKind::SpanObjects, &key, "at", "0.2");
     apply_table(&mut harness, TableKind::SpanObjects, false).unwrap();
     {
         let r = harness.state_mut().ready().unwrap();
-        let l = &r.model.line.sections[0].loads[before];
-        assert_eq!((l.fraction, l.distance), (0.2, None));
+        let p = &r.model.line.sections[0].span_points[k];
+        assert_eq!((p.at.fraction, p.at.distance), (0.2, None));
     }
     // Deleting a span point takes its spacer.
     {
@@ -12150,7 +12184,12 @@ fn spacers_are_laid_between_span_points() {
     let r = harness.state_mut().ready().unwrap();
     assert!(r.model.line.spacers.is_empty(), "{:?}", r.status);
     assert!(r.model.line.sections[1].span_points.is_empty());
-    assert_eq!(r.model.line.sections[0].span_points.len(), 1);
+    assert!(
+        r.model.line.sections[0]
+            .span_points
+            .iter()
+            .any(|p| p.label == "M")
+    );
 }
 
 /// Criteria › Default values: every value of the project, changed in the

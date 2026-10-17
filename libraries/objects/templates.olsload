@@ -1,0 +1,88 @@
+# Point and spread load templates shipped with OLS CAD: the most used
+# objects on the wires, to start from. TYPICAL VALUES ONLY — check each
+# against the product you use (its data sheet) and make your own types.
+format = "ols-point-spread-loads"
+version = 1
+name = "OLS CAD templates"
+
+[[type]]
+id = "marker-ball-600"
+name = "Marker ball 600 mm"
+description = "Aircraft warning sphere, 600 mm"
+kind = "body"
+weight = 70.0
+shape = "sphere"
+diameter = 0.6
+
+[[type]]
+id = "marker-ball-800"
+name = "Marker ball 800 mm"
+description = "Aircraft warning sphere, 800 mm"
+kind = "body"
+weight = 110.0
+shape = "sphere"
+diameter = 0.8
+
+[[type]]
+id = "obstruction-light"
+name = "Obstruction light"
+description = "Light on the wire, a cylinder along it"
+kind = "body"
+weight = 150.0
+shape = "cylinder"
+diameter = 0.25
+length = 0.6
+axis = "along"
+
+[[type]]
+id = "bird-diverter"
+name = "Bird diverter"
+description = "Spiral or flapper: its wind area given"
+kind = "body"
+weight = 5.0
+shape = "areas"
+wind_area = 0.03
+ice_area = 0.06
+
+[[type]]
+id = "weight-50kg"
+name = "Weight 50 kg"
+description = "A weight without wind area"
+kind = "body"
+weight = 490.0
+shape = "point"
+
+[[type]]
+id = "tap-clamp"
+name = "Tap clamp"
+description = "Holds a jumper starting from the wire (a hinge: forces only)"
+kind = "clamp"
+weight = 30.0
+shape = "cylinder"
+diameter = 0.08
+length = 0.25
+axis = "along"
+clamp_length = 0.25
+
+[[type]]
+id = "spacer-clamp"
+name = "Spacer clamp"
+description = "Holds an interphase spacer's end (a hinge: forces only)"
+kind = "clamp"
+weight = 20.0
+shape = "point"
+clamp_length = 0.15
+
+[[type]]
+id = "heated-stretch"
+name = "Heated stretch"
+description = "Extra load along a stretch of wire"
+kind = "spread"
+load = 5.0
+
+[[type]]
+id = "lashed-cable"
+name = "Lashed cable"
+description = "A cable lashed on the wire"
+kind = "spread"
+load = 8.0

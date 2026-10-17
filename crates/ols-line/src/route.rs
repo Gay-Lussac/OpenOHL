@@ -559,12 +559,7 @@ impl Line {
         &self,
         section: &'s crate::Section,
     ) -> std::borrow::Cow<'s, crate::Section> {
-        let any = section.loads.iter().any(|l| l.station.is_some())
-            || section.span_points.iter().any(|p| p.at.station.is_some())
-            || section
-                .spread_loads
-                .iter()
-                .any(|l| l.start.station.is_some() || l.end.station.is_some());
+        let any = section.span_points.iter().any(|p| p.at.station.is_some());
         if !any {
             return std::borrow::Cow::Borrowed(section);
         }
@@ -580,22 +575,11 @@ impl Line {
                 *p = crate::SpanPlace::at_fraction(((st - a) / (b - a)).clamp(0.0, 1.0));
             }
         };
-        let mut loads = s.loads.clone();
-        for l in &mut loads {
-            let mut p = l.place();
-            resolve(l.span, &mut p);
-            (l.fraction, l.distance, l.station) = (p.fraction, p.distance, p.station);
-        }
         let mut points = s.span_points.clone();
         for p in &mut points {
             resolve(p.span, &mut p.at);
         }
-        let mut spread = s.spread_loads.clone();
-        for l in &mut spread {
-            resolve(l.span, &mut l.start);
-            resolve(l.span, &mut l.end);
-        }
-        (s.loads, s.span_points, s.spread_loads) = (loads, points, spread);
+        s.span_points = points;
         std::borrow::Cow::Owned(s)
     }
 

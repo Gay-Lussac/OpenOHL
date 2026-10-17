@@ -478,22 +478,9 @@ pub fn wires(
                 let points = &shape.spans.get(span)?.points;
                 at_fraction(points, at.fraction_of(plan_length(points)))
             };
-            for l in def.iter().flat_map(|sec| &sec.loads) {
-                let d = l
-                    .wind_area
-                    .map_or(l.diameter, |a| (4.0 * a / std::f64::consts::PI).sqrt());
-                let Some(at) = place(l.span, l.place()) else {
-                    continue;
-                };
-                if d > 0.0 {
-                    let mut p = Prim::new(at, sphere(at, d / 2.0), rgba(ball, alpha), 0.0).at(0, 1);
-                    p.filled = true;
-                    out.push(p);
-                }
-            }
-            // Spread loads: the stretch of wire they lie on.
+            // Spread objects: the stretch of wire they lie on.
             let spread = tint.unwrap_or(BALL_COLOR);
-            for l in def.iter().flat_map(|sec| &sec.spread_loads) {
+            for l in def.iter().flat_map(|sec| sec.spread_loads()) {
                 let Some(points) = shape.spans.get(l.span).map(|sp| &sp.points) else {
                     continue;
                 };
@@ -503,8 +490,11 @@ pub fn wires(
                     out.push(Prim::new(stretch[0], stretch, rgba(spread, alpha), 5.0).at(0, 1));
                 }
             }
-            // Span points (as solved, else where they are given).
+            // Span points (as solved, else where they are given): their
+            // bodies to size (a ball as big as the body), clamps in
+            // steel, bare points as dots.
             let dot = tint.unwrap_or(SPAN_POINT_COLOR);
+            let steel = tint.unwrap_or([205, 205, 210]);
             for p in def.iter().flat_map(|sec| &sec.span_points) {
                 let at = shape
                     .span_points
@@ -512,11 +502,19 @@ pub fn wires(
                     .find(|(l, _)| *l == p.label)
                     .map(|(_, q)| *q)
                     .or_else(|| place(p.span, p.at));
-                if let Some(at) = at {
-                    let mut s = Prim::new(at, sphere(at, 0.25), rgba(dot, alpha), 0.0).at(0, 1);
-                    s.filled = true;
-                    out.push(s);
-                }
+                let Some(at) = at else {
+                    continue;
+                };
+                let (radius, color) = match &p.object {
+                    None => (0.25, dot),
+                    Some(o) if o.kind == ols_line::ObjectKind::Clamp => (0.15, steel),
+                    // A body without a size (a weight): not drawn.
+                    Some(o) if body_size(&o.shape) <= 0.0 => continue,
+                    Some(o) => (body_size(&o.shape) / 2.0, ball),
+                };
+                let mut s = Prim::new(at, sphere(at, radius), rgba(color, alpha), 0.0).at(0, 1);
+                s.filled = true;
+                out.push(s);
             }
             // The spacers it holds, red beyond their compression limit.
             for x in &shape.spacers {
@@ -603,6 +601,26 @@ fn drawn_copies<'a>(
         .filter_map(|k| model.cases.get(k).map(|c| (k, c)))
         .flat_map(|(k, c)| c.drawn().map(move |d| (k, d)))
         .collect()
+}
+
+/// The size a body is drawn at, m (its largest dimension; given areas:
+/// a sphere's of that wind area).
+pub fn body_size(shape: &ols_line::Shape) -> f64 {
+    match *shape {
+        ols_line::Shape::Point => 0.0,
+        ols_line::Shape::Sphere { diameter } => diameter,
+        ols_line::Shape::Cylinder {
+            diameter, length, ..
+        } => diameter.max(length),
+        ols_line::Shape::Box {
+            along,
+            across,
+            height,
+        } => along.max(across).max(height),
+        ols_line::Shape::Areas { wind_area, .. } => {
+            (4.0 * wind_area.max(0.0) / std::f64::consts::PI).sqrt()
+        }
+    }
 }
 
 /// Colour of span points.

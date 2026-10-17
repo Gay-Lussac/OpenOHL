@@ -1,7 +1,12 @@
 # Points on the wires and the objects on them (proposal)
 
-Status: **draft, decisions taken (below); the tap's details being
-discussed** — nothing built. Every point below is an engine change
+Status: **being built.** Phase 1 done: points on spans and jumpers with
+one object each (bodies by shape, clamps), spread objects between two
+points, the library (`.olsload`) with its templates, older files' point
+and spread loads read into points and objects (same forces), OLS XML and
+the XSD; the solve takes the span points' objects and the spreads.
+Next: loads of every shape on jumper points (phase 2), taps (phase 3),
+the app (phase 4). Every point below is an engine change
 (data, solver, files).
 
 Decided with the user (2026-10-16): **one object per point**; objects

@@ -249,6 +249,7 @@ mod tests {
                 span: 0,
                 at: ols_line::SpanPlace::at_fraction(0.5),
                 description: String::new(),
+                object: Default::default(),
             });
         }
         let end = |section: &str| ols_line::SpanPointRef {
