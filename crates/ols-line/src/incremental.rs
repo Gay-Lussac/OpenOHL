@@ -294,18 +294,19 @@ impl SolvedLine {
                 resolved.insert(id);
             }
         }
-        if pull {
-            // The jumpers' own pull, settled again on the sections.
-            let mut results: Vec<Result<SectionShape, LineError>> = line
-                .sections
-                .iter()
-                .map(|s| {
-                    self.sections
-                        .get(&s.id)
-                        .cloned()
-                        .unwrap_or_else(|| Err(LineError::Invalid("not solved".into())))
-                })
-                .collect();
+        // The jumpers' own pull, settled again on the sections (with the
+        // option, or a jumper taut between its clamps).
+        let mut results: Vec<Result<SectionShape, LineError>> = line
+            .sections
+            .iter()
+            .map(|s| {
+                self.sections
+                    .get(&s.id)
+                    .cloned()
+                    .unwrap_or_else(|| Err(LineError::Invalid("not solved".into())))
+            })
+            .collect();
+        if pull || crate::solve::may_be_taut(line, &results) {
             let before = results.clone();
             weights = crate::solve::jumper_pull(
                 line,

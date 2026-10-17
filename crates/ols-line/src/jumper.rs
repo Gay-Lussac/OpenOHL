@@ -319,6 +319,13 @@ pub struct JumperShape {
     pub supports: Vec<JumperSupportShape>,
     /// Its labelled points ([`crate::JumperPoint`]) where they are.
     pub point_positions: Vec<(String, Point)>,
+    /// Taut: its clamps apart further than it is long — stretched, its
+    /// pull holding them back (the sections solved again with it,
+    /// [`crate::solve::jumper_pull`]).
+    pub taut: bool,
+    /// Its largest tension over its cable's rated tensile strength (above
+    /// 1: more than the cable takes).
+    pub strength_use: f64,
 }
 
 /// The share of its length from `from` a jumper point is at: a fraction;
@@ -1265,6 +1272,8 @@ pub fn solve_jumper_in(
             max_tension: 0.0,
             end_forces: ends.map(p),
             supports: Vec::new(),
+            taut: false,
+            strength_use: 0.0,
         });
     }
     if d.xy().norm() < 0.1 {
@@ -1316,10 +1325,14 @@ pub fn solve_jumper_in(
     // taut and hold them back, and the pull of a jumper on its clamps is
     // not modelled — sections are solved first. Said so, instead of a
     // stretched jumper at hundreds of kN or a solver that cannot settle.
-    if d.norm() >= l0 * (1.0 - TAUT) {
+    // Taut: stretched as an elastic cable (its bending left out, small
+    // beside its tension), its pull holding the clamps back.
+    let taut = d.norm() >= l0 * (1.0 - TAUT);
+    let rts = cable.rated_tensile_strength.si().max(1e-9);
+    if taut && (!jumper.supports().is_empty() || !jumper.points.is_empty()) {
         return Err(invalid(format!(
-            "taut: {l0:.2} m long between clamps {:.2} m apart in this weather case (the \
-             clamps swing apart; a jumper holding them back is not modelled yet)",
+            "taut: {l0:.2} m long between clamps {:.2} m apart in this weather case, with \
+             helping strings or points along it (a taut jumper is solved as a plain cable)",
             d.norm()
         )));
     }
@@ -1335,7 +1348,9 @@ pub fn solve_jumper_in(
     // loads at points).
     let supports = jumper.supports();
     let support = jumper.support();
-    let stiff = if !supports.is_empty() {
+    let stiff = if taut {
+        None
+    } else if !supports.is_empty() {
         Some(hinged(rod_ends(line, jumper, shapes, cable, load)))
     } else if !objects.is_empty() {
         stiff.or_else(|| Some(hinged(rod_ends(line, jumper, shapes, cable, load))))
@@ -1383,6 +1398,8 @@ pub fn solve_jumper_in(
             end_forces: shape.end_forces.map(|f| p(f * f64::from(bundle))),
             supports: support_shapes(line, jumper, shapes, &shape, bundle),
             point_positions: point_positions(jumper, &shape.points, l0),
+            taut,
+            strength_use: shape.max_tension / rts,
         });
     }
     // The pull at an end: its tension there along the jumper.
@@ -1510,6 +1527,8 @@ pub fn solve_jumper_in(
         max_tension,
         end_forces: end_forces.map(p),
         supports,
+        taut,
+        strength_use: max_tension / rts,
     })
 }
 
@@ -1867,13 +1886,50 @@ mod tests {
             .remove(0)
             .unwrap();
         assert!(j.sag > 0.0 && j.sag < 0.1, "{}", j.sag);
-        // Under the floor (5·10⁻⁶ longer): taut (between the same clamps).
+        // Under the floor (5·10⁻⁶ longer): taut (between the same clamps),
+        // solved as a stretched cable.
         let between = shapes(&line, t0);
         line.jumpers[0].length = Some((b - a).norm() * (1.0 + 5e-6));
-        let err = solve_jumpers(&line, &lib, &still(t0), &between)
+        let j = solve_jumpers(&line, &lib, &still(t0), &between)
             .remove(0)
-            .unwrap_err();
-        assert!(err.to_string().contains("taut"), "{err}");
+            .unwrap();
+        assert!(j.taut && j.max_tension > 0.0);
+    }
+
+    /// A jumper shorter than its clamps' distance: taut, stretched, its
+    /// pull holding the clamps back — the sections solved again with it
+    /// (whatever the jumper option) until it settles; its tension against
+    /// its cable's strength.
+    #[test]
+    fn a_taut_jumper_pulls_its_clamps_back() {
+        let mut line = crate::tests::example();
+        let lib = library();
+        let case = still(15.0);
+        let (shapes, free) = solve_all(&line, &case);
+        let at = |line: &Line, shapes: &[SectionShape]| {
+            let j = &line.jumpers[0];
+            let e = |x: &crate::JumperEnd| {
+                super::end_position(line, shapes, x.point().unwrap()).unwrap()
+            };
+            (e(&j.to) - e(&j.from)).norm()
+        };
+        let chord = at(&line, &shapes);
+        assert!(!free[0].taut);
+        line.jumpers[0].sag = None;
+        line.jumpers[0].length = Some(chord * 0.98);
+        let results = solve_line(&line, &lib, &case);
+        let shapes: Vec<SectionShape> = results.into_iter().map(Result::unwrap).collect();
+        let j = solve_jumpers(&line, &lib, &case, &shapes)
+            .remove(0)
+            .unwrap();
+        assert!(j.taut);
+        let now = at(&line, &shapes);
+        // The clamps pulled together (towards the jumper's length).
+        assert!(now < chord - 1e-3, "{now} {chord}");
+        // Its pull on the clamps is its tension (the whole bundle's).
+        let pull = v(j.end_forces[0]).norm();
+        assert!(pull > 1000.0, "{pull}");
+        assert!(j.strength_use > 0.0 && j.strength_use.is_finite());
     }
 
     /// The wind blows to the same side whichever way a section or a jumper
