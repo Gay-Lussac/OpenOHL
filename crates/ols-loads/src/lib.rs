@@ -44,9 +44,11 @@ use ols_weather::WeatherCase;
 use serde::Deserialize;
 
 /// `format` of a load case file.
-pub const LOAD_CASE_FORMAT: &str = "ols-load-cases";
+pub const LOAD_CASE_FILE_FORMAT: &str = "ols-load-cases";
 /// Newest format version read.
-pub const LOAD_CASE_VERSION: u32 = 1;
+pub const LOAD_CASE_FILE_VERSION: u32 = 1;
+/// File extension of load case files.
+pub const LOAD_CASE_FILE_EXTENSION: &str = "olslc";
 
 fn one() -> f64 {
     1.0
@@ -168,8 +170,8 @@ impl LoadCases {
         ols_core::files::check_header(
             set.format.as_deref(),
             set.version,
-            LOAD_CASE_FORMAT,
-            LOAD_CASE_VERSION,
+            LOAD_CASE_FILE_FORMAT,
+            LOAD_CASE_FILE_VERSION,
             "load case",
         )?;
         let mut names = std::collections::BTreeSet::new();

@@ -570,7 +570,11 @@ impl App {
             self.recent.add(&sources.file);
         }
         // A structure type: its editor, on its own.
-        if sources.file.extension().is_some_and(|e| e == "olss") {
+        if sources
+            .file
+            .extension()
+            .is_some_and(|e| e == ols_structures::structures::STRUCTURE_FILE_EXTENSION)
+        {
             self.state = match crate::structure_desk::StructureDesk::open(&sources.file) {
                 Ok(d) => State::Structure(Box::new(d)),
                 Err(e) => State::Failed(e),

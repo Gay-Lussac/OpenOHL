@@ -421,7 +421,10 @@ impl ZoneWindow {
                 .on_hover_text("Rules from a rule file (.olsr): they replace those listed")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Clearance rules", &["olsr"])
+                    .add_filter(
+                        "Clearance rules",
+                        &[ols_clearance::rules::RULE_FILE_EXTENSION],
+                    )
                     .pick_file()
             {
                 match RuleSet::load_with(&p, &(&model.line.defaults).into()) {
@@ -437,7 +440,10 @@ impl ZoneWindow {
                 .on_hover_text("The rules as a rule file (.olsr), for ols line --rules too")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Clearance rules", &["olsr"])
+                    .add_filter(
+                        "Clearance rules",
+                        &[ols_clearance::rules::RULE_FILE_EXTENSION],
+                    )
                     .set_file_name(format!("{}-clearances.olsr", self.zone.measure.as_str()))
                     .save_file()
             {

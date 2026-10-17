@@ -74,11 +74,18 @@ pub fn pick_file() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter(
             "OLS CAD project, line or structure type",
-            &["ols", "json", "olss"],
+            &[
+                "ols",
+                "json",
+                ols_structures::structures::STRUCTURE_FILE_EXTENSION,
+            ],
         )
         .add_filter("OLS CAD project", &["ols"])
         .add_filter("Line file", &["json"])
-        .add_filter("Structure type (opened on its own)", &["olss"])
+        .add_filter(
+            "Structure type (opened on its own)",
+            &[ols_structures::structures::STRUCTURE_FILE_EXTENSION],
+        )
         .pick_file()
 }
 

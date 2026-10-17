@@ -516,8 +516,9 @@ impl CopcSource {
     pub fn open(path: &Path) -> Result<Self, String> {
         let file = CopcFile::open(path)?;
         let olsc = [
-            path.with_extension("olsc"),
-            path.with_extension("").with_extension("olsc"),
+            path.with_extension(ols_lidar::classes::CLASS_FILE_EXTENSION),
+            path.with_extension("")
+                .with_extension(ols_lidar::classes::CLASS_FILE_EXTENSION),
         ];
         let scheme = olsc.iter().find_map(|p| std::fs::read_to_string(p).ok());
         Ok(Self { file, scheme })

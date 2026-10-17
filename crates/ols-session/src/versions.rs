@@ -487,7 +487,9 @@ pub struct Bundle {
 }
 
 /// Format id of bundles.
-pub const BUNDLE_FORMAT: &str = "ols-bundle";
+pub const BUNDLE_FILE_FORMAT: &str = "ols-bundle";
+/// Newest bundle version read.
+pub const BUNDLE_FILE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Tree {
@@ -1818,8 +1820,8 @@ impl Session {
             }
         }
         Ok(Bundle {
-            format: BUNDLE_FORMAT.into(),
-            version: 1,
+            format: BUNDLE_FILE_FORMAT.into(),
+            version: BUNDLE_FILE_VERSION,
             branch: branch.to_owned(),
             head,
             revisions,
@@ -1838,12 +1840,14 @@ impl Session {
         as_branch: Option<&str>,
     ) -> Result<usize, SessionError> {
         self.require(user, Role::Designer)?;
-        if bundle.format != BUNDLE_FORMAT || bundle.version != 1 {
-            return Err(refused(format!(
-                "not a bundle of this version ({} {})",
-                bundle.format, bundle.version
-            )));
-        }
+        ols_core::files::check_header(
+            Some(&bundle.format),
+            Some(bundle.version),
+            BUNDLE_FILE_FORMAT,
+            BUNDLE_FILE_VERSION,
+            "bundle",
+        )
+        .map_err(refused)?;
         for (h, text) in &bundle.blobs {
             if hash(text) != *h {
                 return Err(refused(format!("bundle: blob {h} does not match its hash")));

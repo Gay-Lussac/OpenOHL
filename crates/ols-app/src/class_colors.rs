@@ -78,7 +78,7 @@ impl ClassWindow {
                         .on_hover_text("A class scheme file (.olsc): names, roles, colours")
                         .clicked()
                         && let Some(p) = rfd::FileDialog::new()
-                            .add_filter("Class scheme", &["olsc"])
+                            .add_filter("Class scheme", &[ols_lidar::classes::CLASS_FILE_EXTENSION])
                             .pick_file()
                     {
                         match ClassScheme::load(&p) {
@@ -96,7 +96,7 @@ impl ClassWindow {
                     }
                     if ui.button("Save as…").clicked()
                         && let Some(p) = rfd::FileDialog::new()
-                            .add_filter("Class scheme", &["olsc"])
+                            .add_filter("Class scheme", &[ols_lidar::classes::CLASS_FILE_EXTENSION])
                             .set_file_name(format!("{}.olsc", model.scheme.id))
                             .save_file()
                         && self.save(model, p.clone())

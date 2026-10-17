@@ -29,11 +29,11 @@ use eframe::egui;
 use ols_core::text::{format_rgb, parse_rgb};
 
 /// The file format of an exported palette.
-pub const FORMAT: &str = "ols-colors";
+pub const PALETTE_FILE_FORMAT: &str = "ols-colors";
 /// Its version.
-pub const VERSION: i64 = 1;
+pub const PALETTE_FILE_VERSION: i64 = 1;
 /// Its file extension.
-pub const EXTENSION: &str = "olscolors";
+pub const PALETTE_FILE_EXTENSION: &str = "olscolors";
 
 /// A colour of the palette.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,8 +107,8 @@ impl Palette {
     /// The palette as a file (`.olscolors`).
     pub fn to_toml(&self) -> String {
         let mut doc = toml_edit::DocumentMut::new();
-        doc["format"] = toml_edit::value(FORMAT);
-        doc["version"] = toml_edit::value(VERSION);
+        doc["format"] = toml_edit::value(PALETTE_FILE_FORMAT);
+        doc["version"] = toml_edit::value(PALETTE_FILE_VERSION);
         let mut array = toml_edit::ArrayOfTables::new();
         for e in &self.entries {
             let mut t = toml_edit::Table::new();
@@ -139,8 +139,8 @@ impl Palette {
         ols_core::files::check_header(
             doc.get("format").and_then(|v| v.as_str()),
             version,
-            FORMAT,
-            VERSION as u32,
+            PALETTE_FILE_FORMAT,
+            PALETTE_FILE_VERSION as u32,
             "colour palette",
         )?;
         let Some(item) = doc.get("color") else {
@@ -907,8 +907,8 @@ impl ColorTool {
                 .on_hover_text("Write the palette to a file (.olscolors) to share")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Colour palette", &[EXTENSION])
-                    .set_file_name(format!("palette.{EXTENSION}"))
+                    .add_filter("Colour palette", &[PALETTE_FILE_EXTENSION])
+                    .set_file_name(format!("palette.{PALETTE_FILE_EXTENSION}"))
                     .save_file()
             {
                 self.status = Some(match palette.write(&p) {
@@ -921,7 +921,7 @@ impl ColorTool {
                 .on_hover_text("Read a palette file (.olscolors): replace yours or add to it")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Colour palette", &[EXTENSION])
+                    .add_filter("Colour palette", &[PALETTE_FILE_EXTENSION])
                     .pick_file()
             {
                 self.import_file(&p);

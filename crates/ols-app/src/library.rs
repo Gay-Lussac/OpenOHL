@@ -401,11 +401,11 @@ impl LibraryKind {
     /// File extension.
     pub fn extension(self) -> &'static str {
         match self {
-            LibraryKind::Cables => "olsw",
-            LibraryKind::Insulators => "olsi",
-            LibraryKind::StructureTypes => "olss",
-            LibraryKind::WeatherCases => "olswc",
-            LibraryKind::LoadCases => "olslc",
+            LibraryKind::Cables => ols_cables::WIRE_FILE_EXTENSION,
+            LibraryKind::Insulators => ols_structures::insulators::INSULATOR_FILE_EXTENSION,
+            LibraryKind::StructureTypes => ols_structures::structures::STRUCTURE_FILE_EXTENSION,
+            LibraryKind::WeatherCases => ols_weather::WEATHER_FILE_EXTENSION,
+            LibraryKind::LoadCases => ols_loads::LOAD_CASE_FILE_EXTENSION,
         }
     }
 

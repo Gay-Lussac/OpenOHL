@@ -84,9 +84,12 @@ impl ThermalWindow {
         self.open = true;
         if self.file.is_none() {
             let dir = ols_core::files::dir_of(&model.sources.file);
-            if let Some(p) = ols_core::files::files_with_extension(&dir, "olsta")
-                .into_iter()
-                .next()
+            if let Some(p) = ols_core::files::files_with_extension(
+                &dir,
+                ols_thermal::ambient::AMBIENT_FILE_EXTENSION,
+            )
+            .into_iter()
+            .next()
             {
                 self.choose(p);
             }
@@ -275,7 +278,10 @@ pub fn window(
                     .on_hover_text("An ambient case file (.olsta): air, wind, sun")
                     .clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Thermal ambient cases", &["olsta"])
+                        .add_filter(
+                            "Thermal ambient cases",
+                            &[ols_thermal::ambient::AMBIENT_FILE_EXTENSION],
+                        )
                         .pick_file()
                 {
                     w.choose(p);
