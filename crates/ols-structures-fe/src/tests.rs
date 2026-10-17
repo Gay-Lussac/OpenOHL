@@ -472,6 +472,57 @@ fn example_model_parses() {
     }
 }
 
+/// A point along a member (`member`, `at`) shares its load to the
+/// member's ends: an L frame (column fixed at the base, beam out along x)
+/// loaded at a quarter of the beam gives the reactions by hand (P up, −P·1 m
+/// about y) and those of the same frame with a joint at that point.
+#[test]
+fn point_along_a_member_carries_its_load() {
+    let head = "[analysis]\nnonlinear = false\nself_weight = false\n\
+                [[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\n\
+                [[section]]\nid = \"s\"\nmaterial = \"steel\"\narea = \"2000 mm2\"\n\
+                iy = \"500 cm4\"\niz = \"500 cm4\"\n\
+                [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"fixed\"\n\
+                [[node]]\nid = \"B\"\npoint = [0, 0, 4]\n\
+                [[node]]\nid = \"C\"\npoint = [4, 0, 4]\n\
+                [[member]]\nid = \"col\"\nnodes = [\"A\", \"B\"]\nsection = \"s\"\nkind = \"frame\"\n";
+    let along = format!(
+        "{head}[[member]]\nid = \"beam\"\nnodes = [\"B\", \"C\"]\nsection = \"s\"\nkind = \"frame\"\n\
+         [[point]]\nlabel = \"P1\"\nmember = \"beam\"\nat = 0.25\n"
+    );
+    let joint = format!(
+        "{head}[[node]]\nid = \"D\"\npoint = [1, 0, 4]\n\
+         [[member]]\nid = \"b1\"\nnodes = [\"B\", \"D\"]\nsection = \"s\"\nkind = \"frame\"\n\
+         [[member]]\nid = \"b2\"\nnodes = [\"D\", \"C\"]\nsection = \"s\"\nkind = \"frame\"\n\
+         [[point]]\nlabel = \"P1\"\nnode = \"D\"\n"
+    );
+    let p = 10e3;
+    let reaction = |text: &str| {
+        let m = Model::from_structure_type(text).unwrap();
+        let at = m.point_loads("P1", [0.0, 0.0, -p]).unwrap();
+        let sol = solve(&m, &nodal(at), &first_order(), &default_budget()).unwrap();
+        sol.reactions[0]
+    };
+    let shared = reaction(&along);
+    assert!(close(shared.force[2], p, 1e-9), "{shared:?}");
+    assert!(close(shared.moment[1], -p * 1.0, 1e-9), "{shared:?}");
+    let exact = reaction(&joint);
+    for k in 0..3 {
+        assert!((shared.force[k] - exact.force[k]).abs() < 1e-6 * p);
+        assert!((shared.moment[k] - exact.moment[k]).abs() < 1e-6 * p);
+    }
+    // The shares: (1 − at) to the first joint, at to the second.
+    let m = Model::from_structure_type(&along).unwrap();
+    let shares = m.point_loads("P1", [0.0, 0.0, -p]).unwrap();
+    assert_eq!(shares.len(), 2);
+    assert!(close(shares[0].force[2], -0.75 * p, 1e-12));
+    assert!(close(shares[1].force[2], -0.25 * p, 1e-12));
+    assert!(m.point_loads("P2", [0.0; 3]).is_none());
+    // A point on a member that is not there is refused.
+    let bad = along.replace("member = \"beam\"", "member = \"nope\"");
+    assert!(Model::from_structure_type(&bad).is_err());
+}
+
 /// Wood pole: a horizontal load F at height h gives F·h at the ground
 /// line against f·πD³/32; the wind on a linear taper adds
 /// p·(D₀H²/2 + (D₁ − D₀)H²/3); a vertical load amplifies the moment.

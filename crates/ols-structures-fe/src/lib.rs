@@ -30,7 +30,7 @@ pub mod solve;
 mod units;
 
 pub use check::{MemberUsage, member_usage};
-pub use model::{Analysis, Member, MemberKind, Model, NodalLoad, Node, Section};
+pub use model::{Analysis, Member, MemberKind, MemberPoint, Model, NodalLoad, Node, Section};
 pub use pole::{Pole, PoleCheck, PoleLoad, check_pole};
 pub use solve::{FeError, Loads, MemberForces, Options, Reaction, Solution, default_budget, solve};
 

@@ -72,7 +72,7 @@ force = ["4 kN", "0 kN", "-9 kN"]
 
 Units: lengths, areas (`mm2`, `m2`), stresses, forces as elsewhere; second moments in `cm4`, `mm4`, `m4`, `in4`; section moduli in `cm3`, `mm3`, `m3`, `in3`; moments in `kN m`, `N m`, `kip ft`. A plain number is SI.
 
-**Attachments**: a node with `attachment = "label"` (in a structure type, also a `[[point]]` with `node = "…"`) receives the factored loads at that point of the structure type (where strings hang): transverse along x, longitudinal along y, vertical downwards. Version 1 models' `attachment = [set, phase]` names the point `A<set>-<phase>`. A loaded point without a node is reported in the usage notes and its load is left out.
+**Attachments**: a node with `attachment = "label"` (in a structure type, also a `[[point]]` with `node = "…"`) receives the factored loads at that point of the structure type (where strings hang): transverse along x, longitudinal along y, vertical downwards. A `[[point]]` along a member (`member`, `at`) shares its loads to the member's two joints: (1 − `at`) to the first, `at` to the second — the same forces on the rest of the structure as a joint there, without the bending of that member between its joints. Version 1 models' `attachment = [set, phase]` names the point `A<set>-<phase>`. A loaded point without a node or member in the model is reported in the usage notes and its load is left out.
 
 **Members**: trusses take axial force only; frames are 3D beams (six degrees of freedom at their nodes); cables take tension only and may be pretensioned — a cable that would be compressed goes slack. Truss-only nodes have no rotations; a node held by nothing in one direction is a mechanism and is named in the error.
 

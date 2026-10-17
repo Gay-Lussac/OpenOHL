@@ -435,6 +435,18 @@ pub struct NodalLoad {
     pub moment: [f64; 3],
 }
 
+/// A structure type's point along a member (not on a joint): its loads
+/// go to the member's two end nodes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MemberPoint {
+    /// The point's label.
+    pub label: String,
+    /// Member (index).
+    pub member: usize,
+    /// Fraction of the member's length from its first node, 0–1.
+    pub at: f64,
+}
+
 /// Analysis settings of a model.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Analysis {
@@ -470,6 +482,8 @@ pub struct Model {
     pub members: Vec<Member>,
     /// The model's own loads.
     pub loads: Vec<NodalLoad>,
+    /// The structure type's points along members.
+    pub member_points: Vec<MemberPoint>,
 }
 
 fn dof_index(name: &str) -> Option<usize> {
@@ -613,6 +627,7 @@ impl Model {
             sections,
             members,
             loads,
+            member_points: Vec::new(),
         };
         model.check()?;
         Ok(model)
@@ -621,7 +636,8 @@ impl Model {
     /// The model of a structure type file (`.olss`) that holds its
     /// members: its `[[node]]`, `[[member]]`, `[[section]]`,
     /// `[[material]]`, `[[load]]` and `[analysis]` tables. A `[[point]]` on
-    /// a joint (`node = "…"`) makes that joint carry the point's loads.
+    /// a joint (`node = "…"`) makes that joint carry the point's loads; one
+    /// along a member (`member`, `at`) shares them to the member's ends.
     pub fn from_structure_type(text: &str) -> Result<Self, String> {
         let file: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
         let mut model = toml::Table::new();
@@ -637,12 +653,21 @@ impl Model {
             .and_then(toml::Value::as_array)
             .cloned()
             .unwrap_or_default();
+        let mut along = Vec::new();
         let points = file.get("point").and_then(toml::Value::as_array);
         for p in points.into_iter().flatten() {
-            let (Some(label), Some(at)) = (
-                p.get("label").and_then(toml::Value::as_str),
-                p.get("node").and_then(toml::Value::as_str),
-            ) else {
+            let Some(label) = p.get("label").and_then(toml::Value::as_str) else {
+                continue;
+            };
+            if let Some(member) = p.get("member").and_then(toml::Value::as_str) {
+                let at = p
+                    .get("at")
+                    .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
+                    .ok_or_else(|| format!("point {label}: member {member} without at"))?;
+                along.push((label.to_string(), member.to_string(), at));
+                continue;
+            }
+            let Some(at) = p.get("node").and_then(toml::Value::as_str) else {
                 continue;
             };
             let node = nodes
@@ -662,7 +687,17 @@ impl Model {
             }
         }
         model.insert("node".into(), nodes.into());
-        Self::parse(&toml::to_string(&model).map_err(|e| e.to_string())?)
+        let mut out = Self::parse(&toml::to_string(&model).map_err(|e| e.to_string())?)?;
+        for (label, member, at) in along {
+            let member = out
+                .members
+                .iter()
+                .position(|m| m.id == member)
+                .ok_or_else(|| format!("point {label}: no member {member}"))?;
+            out.member_points.push(MemberPoint { label, member, at });
+        }
+        out.check()?;
+        Ok(out)
     }
 
     /// Reads a model file (`.olsfe`), or a structure type file (`.olss`)
@@ -722,6 +757,17 @@ impl Model {
                 return Err(format!("point {a} on two nodes (node {})", n.id));
             }
         }
+        for p in &self.member_points {
+            if p.member >= self.members.len() || !(0.0..=1.0).contains(&p.at) {
+                return Err(format!(
+                    "point {}: member index out of range or at not between 0 and 1",
+                    p.label
+                ));
+            }
+            if !attachments.insert(&p.label) {
+                return Err(format!("point {} given twice", p.label));
+            }
+        }
         for m in &self.members {
             let (Some(a), Some(b)) = (self.nodes.get(m.i), self.nodes.get(m.j)) else {
                 return Err(format!("member {}: node index out of range", m.id));
@@ -775,6 +821,24 @@ impl Model {
         self.nodes
             .iter()
             .position(|n| n.attachment.as_deref() == Some(label))
+    }
+
+    /// The loads at the structure's point labelled `label` with `force`
+    /// (N, structure axes): at its node, or shared to the two end nodes
+    /// of its member by `at` (statically equivalent for a point on the
+    /// member's axis). None: no such point in the model.
+    pub fn point_loads(&self, label: &str, force: [f64; 3]) -> Option<Vec<NodalLoad>> {
+        let at = |node: usize, share: f64| NodalLoad {
+            node,
+            force: force.map(|f| f * share),
+            moment: [0.0; 3],
+        };
+        if let Some(node) = self.attachment_node(label) {
+            return Some(vec![at(node, 1.0)]);
+        }
+        let p = self.member_points.iter().find(|p| p.label == label)?;
+        let m = &self.members[p.member];
+        Some(vec![at(m.i, 1.0 - p.at), at(m.j, p.at)])
     }
 
     /// Length of a member, m.

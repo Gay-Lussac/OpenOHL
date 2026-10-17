@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use ols_structures::{StructureLibrary, StructureType};
 use ols_structures_fe::check::worst;
-use ols_structures_fe::{Loads, Model, NodalLoad, Pole, PoleLoad};
+use ols_structures_fe::{Loads, Model, Pole, PoleLoad};
 use ols_weather::WeatherCase;
 
 use crate::LoadCase;
@@ -85,12 +85,8 @@ impl Analyses {
         };
         let mut nodal = Vec::new();
         for (label, [tr, lo, ve]) in loads {
-            match model.attachment_node(label) {
-                Some(node) => nodal.push(NodalLoad {
-                    node,
-                    force: [*tr, *lo, -ve],
-                    moment: [0.0; 3],
-                }),
+            match model.point_loads(label, [*tr, *lo, -ve]) {
+                Some(at) => nodal.extend(at),
                 None => notes.push(format!(
                     "model: no node for point {label} (its load left out)"
                 )),
