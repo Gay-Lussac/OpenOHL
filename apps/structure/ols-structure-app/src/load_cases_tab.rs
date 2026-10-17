@@ -10,18 +10,25 @@
 //!
 //! Overrides live in the session and are kept beside the structure file
 //! as `<stem>.loads.csv` (the table's CSV, typed rows only) when it is
-//! saved, and read back when it is opened.
+//! saved, and read back when it is opened; for a placed structure (started
+//! from the line application with `--structure`) as
+//! `<stem>.<structure>.loads.csv`, which the line application keeps in
+//! the project with that placed structure.
+//!
+//! Surface loads take the members' areas from the section library
+//! (`--sections`, else `Sections/` beside the file).
 
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use eframe::egui;
 use ols_render::Scene;
 use ols_structure_edit::{self as edit, Geometry, StructureFile};
+use ols_structure_link::{SectionAreas, SectionLibrary};
 use ols_structure_loads::{
-    At, LineQuantity, LineValues, LoadCaseRecipe, LoadRow, LoadTable, Override, Source,
-    StructureLoadCases, evaluate,
+    At, LineQuantity, LineValues, LoadCaseRecipe, LoadRow, LoadTable, Override, PlacedValues,
+    Source, StructureLoadCases, evaluate_with_areas,
 };
 
 use crate::app::{StructureApp, error_label};
@@ -58,6 +65,17 @@ pub struct LoadCasesTab {
     pub shown: Option<String>,
     /// The line's values at the placed structure (empty: opened alone).
     pub line: LineValues,
+    /// The placed structure the loads are of (`--structure`; none: the
+    /// structure on its own).
+    pub placed: Option<String>,
+    /// The line-values file as last read (its line, cases, other places).
+    pub info: Option<PlacedValues>,
+    /// Why the line-values file did not read.
+    pub values_error: Option<String>,
+    /// The section library (member areas for surface loads).
+    pub sections: SectionLibrary,
+    /// Where it came from, or why it did not read (`true`).
+    pub sections_note: Option<(String, bool)>,
     /// Values typed over the table (this session; kept beside the file).
     pub overrides: Vec<Override>,
     /// Overrides changed since the file was saved.
@@ -80,6 +98,11 @@ impl Default for LoadCasesTab {
             recipe: 0,
             shown: None,
             line: LineValues::default(),
+            placed: None,
+            info: None,
+            values_error: None,
+            sections: SectionLibrary::default(),
+            sections_note: None,
             overrides: Vec::new(),
             overrides_dirty: false,
             arrows: true,
@@ -91,20 +114,21 @@ impl Default for LoadCasesTab {
     }
 }
 
-/// Where the overrides of structure file `path` are kept:
-/// `<stem>.loads.csv` beside it.
-pub fn overrides_path(path: &Path) -> PathBuf {
-    let stem = path
-        .file_stem()
-        .map_or("structure".into(), |s| s.to_string_lossy().into_owned());
-    path.with_file_name(format!("{stem}.loads.csv"))
-}
-
 impl LoadCasesTab {
-    /// A file opened: its overrides read from beside it (an error said).
+    /// A file opened: its overrides read from beside it (an error said);
+    /// the placed structure, its line values and the section library kept.
     pub fn opened(&mut self, path: &Path) -> Result<(), String> {
-        *self = Self::default();
-        let at = overrides_path(path);
+        let kept = Self {
+            placed: self.placed.take(),
+            line: std::mem::take(&mut self.line),
+            info: self.info.take(),
+            values_error: self.values_error.take(),
+            sections: std::mem::take(&mut self.sections),
+            sections_note: self.sections_note.take(),
+            ..Self::default()
+        };
+        *self = kept;
+        let at = ols_structure_loads::overrides_path(path, self.placed.as_deref());
         if !at.exists() {
             return Ok(());
         }
@@ -117,7 +141,7 @@ impl LoadCasesTab {
     /// The file saved to `path`: the overrides written beside it (when
     /// there are some, or a file of them is there already).
     pub fn saved(&mut self, path: &Path) -> Result<(), String> {
-        let at = overrides_path(path);
+        let at = ols_structure_loads::overrides_path(path, self.placed.as_deref());
         if !self.overrides.is_empty() || at.exists() {
             std::fs::write(&at, Override::table(&self.overrides).to_csv())
                 .map_err(|e| format!("{}: {e}", at.display()))?;
@@ -138,7 +162,17 @@ impl LoadCasesTab {
         let t = f.structure();
         let recipes = StructureLoadCases::from_structure(t);
         let cases = recipes.as_deref().unwrap_or(&[]);
-        let evaluated = evaluate(cases, t, &self.line);
+        // Member areas only when a load needs them (the model is built).
+        let surface = cases
+            .iter()
+            .any(|c| c.loads.iter().any(|l| l.members.is_some()));
+        let evaluated = if surface {
+            let dir = f.path().and_then(Path::parent);
+            let areas = SectionAreas::new(t, &f.text(), dir, &self.sections);
+            evaluate_with_areas(cases, t, &self.line, &areas)
+        } else {
+            evaluate_with_areas(cases, t, &self.line, &ols_structure_loads::NoAreas)
+        };
         let mut table = evaluated.clone();
         table.apply(&self.overrides);
         self.cache = Some(Evaluated {
@@ -192,6 +226,65 @@ impl LoadCasesTab {
     fn changed(&mut self) {
         self.generation += 1;
         self.overrides_dirty = true;
+    }
+
+    /// The line's values at the placed structure, read (again) from its
+    /// line-values file: the table is evaluated with them.
+    pub fn set_line_values(&mut self, v: PlacedValues) {
+        if self.placed.is_none() && !v.structure.is_empty() {
+            self.placed = Some(v.structure.clone());
+        }
+        self.line = v.values.clone();
+        self.info = Some(v);
+        self.values_error = None;
+        self.generation += 1;
+    }
+
+    /// "loads of T2 in line": whose loads these are (none: the structure
+    /// on its own).
+    pub fn placed_title(&self) -> Option<String> {
+        let id = self
+            .placed
+            .as_deref()
+            .or(self.info.as_ref().map(|i| i.structure.as_str()))?;
+        let line = self
+            .info
+            .as_ref()
+            .map(|i| i.line.as_str())
+            .filter(|l| !l.is_empty());
+        Some(match line {
+            Some(line) => format!("loads of {id} in {line}"),
+            None => format!("loads of {id}"),
+        })
+    }
+
+    /// The section library the members' areas come from (`from`: where).
+    pub fn set_sections(&mut self, r: Result<SectionLibrary, String>, from: &Path) {
+        match r {
+            Ok(lib) => {
+                self.sections_note = Some((
+                    if lib.sections.is_empty() {
+                        format!(
+                            "no section library at {} (surface loads: no area)",
+                            from.display()
+                        )
+                    } else {
+                        format!(
+                            "member areas from {} section(s) of {}",
+                            lib.sections.len(),
+                            from.display()
+                        )
+                    },
+                    false,
+                ));
+                self.sections = lib;
+            }
+            Err(e) => {
+                self.sections_note = Some((format!("section library: {e}"), true));
+                self.sections = SectionLibrary::default();
+            }
+        }
+        self.generation += 1;
     }
 
     /// Reads a load table (CSV): what it has that the evaluation does not
@@ -697,13 +790,25 @@ impl StructureApp {
         };
         ui.horizontal_wrapped(|ui| {
             if self.loads.line.values.is_empty() {
-                ui.label(
-                    egui::RichText::new(
+                let text = match &self.loads.placed {
+                    None => {
                         "Opened on its own: the line gives no values, so loads that take one \
-                         show \"no line value\". Type values in the table or import one.",
-                    )
-                    .weak(),
-                );
+                         show \"no line value\". Type values in the table or import one."
+                    }
+                    Some(_) => {
+                        "No values from the line (yet): see In the line. Loads that take one \
+                         show \"no line value\"."
+                    }
+                };
+                ui.label(egui::RichText::new(text).weak());
+            }
+            if let Some((note, error)) = &self.loads.sections_note {
+                let text = egui::RichText::new(note).weak().small();
+                if *error {
+                    error_label(ui, text);
+                } else {
+                    ui.label(text);
+                }
             }
             if ui
                 .button("Import table…")
@@ -774,6 +879,11 @@ impl StructureApp {
                             ("vertical", "kN, down"),
                             ("source", "line, recipe or typed"),
                             (
+                                "area",
+                                "A surface load: the member's area it acts on (the section \
+                                 library's profile width for the direction × length), m²",
+                            ),
+                            (
                                 "evaluated",
                                 "Typed over an evaluated value: the evaluated one, kN",
                             ),
@@ -813,6 +923,7 @@ impl StructureApp {
                             } else {
                                 source
                             });
+                            ui.label(r.area.map_or(String::new(), |a| format!("{a:.4} m²")));
                             ui.label(r.evaluated.map_or(String::new(), |e| {
                                 format!(
                                     "{:.3}; {:.3}; {:.3}",

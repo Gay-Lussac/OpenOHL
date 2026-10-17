@@ -1,0 +1,225 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! A placed structure handed from the line to the structure application:
+//! its line-values file (`ols_structure_link::placed_values`) through JSON
+//! and back gives the same table as the line's values taken directly; the
+//! section library gives the members' areas for surface loads.
+
+use std::path::{Path, PathBuf};
+
+use ols_line::Line;
+use ols_loads::{CaseLoads, LoadCases};
+use ols_structure_link::{SectionAreas, SectionLibrary, line_values, placed_values};
+use ols_structure_loads::{
+    LineQuantity, PlacedValues, StructureLoadCases, evaluate, evaluate_with_areas,
+    line_values_path, overrides_path,
+};
+use ols_structures::{LibraryItem, StructureLibrary, StructureType};
+
+fn ex() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/synthetic-line")
+}
+
+/// The typed example line's structure loads in its three load cases.
+fn solved() -> (Line, Vec<CaseLoads>) {
+    let types = StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ols.json"))
+        .unwrap()
+        .resolve(&types, &ols_structures::InsulatorLibrary::default())
+        .unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    let library = ols_cables::Library::load(&ex().join("../../libraries/cables")).unwrap();
+    let weather = ols_weather::WeatherCases::load(&ex().join("weather-cases.olswc"))
+        .unwrap()
+        .cases;
+    let cases = LoadCases::load(&ex().join("load-cases.olslc")).unwrap();
+    let loads = ols_loads::structure_loads(
+        &line,
+        &library,
+        &weather,
+        &cases.cases,
+        &ols_wirefe::default_fe_budget(),
+    )
+    .unwrap();
+    (line, loads)
+}
+
+/// T2's line-values file, written and read back, evaluates the recipes of
+/// its type to the same table as its values taken directly; it names the
+/// line, the type, the cases and the other place of the type (T4).
+#[test]
+fn the_line_values_file_gives_the_same_table() {
+    let (line, loads) = solved();
+    let placed = placed_values(&loads, &line, "T2", "synthetic");
+    assert_eq!(placed.structure, "T2");
+    assert_eq!(placed.line, "synthetic");
+    assert_eq!(placed.structure_type, "type-02");
+    assert_eq!(placed.cases, ["everyday", "wind", "ice"]);
+    assert_eq!(placed.note, None);
+    let others: Vec<&str> = placed.others.iter().map(|o| o.structure.as_str()).collect();
+    assert_eq!(others, ["T4"]);
+    assert_eq!(placed.others[0].values, line_values(&loads, &line, "T4"));
+
+    let dir = std::env::temp_dir().join(format!("ols-placed-values-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("type-02.olss");
+    let at = line_values_path(&file, "T2");
+    assert_eq!(at, dir.join("type-02.T2.line-values.json"));
+    assert_eq!(
+        overrides_path(&file, Some("T2")),
+        dir.join("type-02.T2.loads.csv")
+    );
+    assert_eq!(overrides_path(&file, None), dir.join("type-02.loads.csv"));
+    placed.save(&at).unwrap();
+    let back = PlacedValues::load(&at).unwrap();
+    assert_eq!(back, placed);
+    std::fs::remove_dir_all(&dir).ok();
+
+    let path = ex().join("Structures/type-02.olss");
+    let structure = StructureType::parse(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+    let recipes = StructureLoadCases::from_structure(&structure).unwrap();
+    let direct = evaluate(&recipes, &structure, &line_values(&loads, &line, "T2"));
+    let through = evaluate(&recipes, &structure, &back.values);
+    assert_eq!(through, direct);
+    // As the integration test has it: the wind case takes the line's
+    // factored loads at A1.
+    let v = back
+        .values
+        .get("wind", "A1", &[1], LineQuantity::TransverseFactored)
+        .unwrap();
+    let r = through
+        .case("wind")
+        .find(|r| r.load == Some(1) && r.label == "A1")
+        .unwrap();
+    assert_eq!(r.force, [v, 0.0, 0.0]);
+    // The governing values per point (for the other places).
+    let g = back.values.governing();
+    assert_eq!(g.len(), 2);
+    assert!(g.iter().all(|g| g.largest.iter().all(Option::is_some)));
+}
+
+/// A mast of one vertical member, a tube of 100 mm from the section
+/// library, 10 m long: 1 kPa across it gives 1 kPa × 0.1 m × 10 m = 1 kN
+/// along the pressure's direction, and the row shows the area (1 m²). A
+/// member whose section is not in the library says so.
+#[test]
+fn a_pressure_on_a_library_section_takes_width_times_length() {
+    let text = r#"
+format = "ols-structure"
+version = 2
+id = "mast"
+name = "test mast"
+kind = "other"
+
+[[node]]
+id = "B"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "T"
+point = ["0 m", "0 m", "10 m"]
+
+[[node]]
+id = "A"
+point = ["2 m", "0 m", "10 m"]
+
+[[member]]
+id = "mast"
+nodes = ["B", "T"]
+section = "CHS-100"
+kind = "frame"
+
+[[member]]
+id = "arm"
+nodes = ["T", "A"]
+section = "own"
+kind = "frame"
+
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+density = "7850 kg/m3"
+
+[[section]]
+id = "own"
+material = "steel"
+area = "500 mm2"
+iy = "100 cm4"
+iz = "100 cm4"
+
+[[load_case]]
+name = "body wind"
+
+[[load_case.load]]
+pressure = "1 kPa"
+direction = "x"
+members = "all"
+
+[[load_case.load]]
+pressure = "1 kPa"
+direction = "-y"
+members = ["mast"]
+"#;
+    let sections = SectionLibrary::parse(
+        r#"
+format = "ols-sections"
+version = 1
+name = "test"
+
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+density = "7850 kg/m3"
+yield = "355 MPa"
+
+[[section]]
+id = "CHS-100"
+shape = "circular_hollow"
+material = "steel"
+d = "100 mm"
+t = "5 mm"
+"#,
+    )
+    .unwrap();
+    let structure = StructureType::parse(Path::new("mast.olss"), text).unwrap();
+    let recipes = StructureLoadCases::from_structure(&structure).unwrap();
+    let areas = SectionAreas::new(&structure, text, None, &sections);
+    let table = evaluate_with_areas(&recipes, &structure, &Default::default(), &areas);
+    let row = |load: usize, label: &str| {
+        table
+            .case("body wind")
+            .find(|r| r.load == Some(load) && r.label == label)
+            .unwrap()
+            .clone()
+    };
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * (1.0 + b.abs());
+    let m = row(1, "mast");
+    assert_eq!(m.missing, None);
+    assert!(close(m.area.unwrap(), 1.0), "{:?}", m.area);
+    assert!(close(m.force[0], 1000.0) && m.force[1] == 0.0 && m.force[2] == 0.0);
+    // Ahead or back, a tube shows the same width.
+    let m = row(2, "mast");
+    assert!(close(m.force[1], -1000.0), "{:?}", m.force);
+    // The arm's section is the file's own: no area, saying why.
+    let a = row(1, "arm");
+    assert_eq!(a.area, None);
+    assert!(
+        a.missing
+            .as_deref()
+            .unwrap()
+            .contains("not in the section library"),
+        "{:?}",
+        a.missing
+    );
+    // Without the library: no area anywhere.
+    let none = SectionAreas::new(&structure, text, None, &SectionLibrary::default());
+    let table = evaluate_with_areas(&recipes, &structure, &Default::default(), &none);
+    assert!(table.case("body wind").all(|r| {
+        r.missing
+            .as_deref()
+            .is_some_and(|m| m.starts_with("no area"))
+    }));
+}

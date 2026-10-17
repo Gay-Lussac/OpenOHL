@@ -2727,6 +2727,14 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
         let to = dir.join("Structures").join(name);
         std::fs::copy(ex.join("Structures").join(name), to).unwrap();
     }
+    // Loads typed for placed structure T2 in the structure application
+    // (kind `loads`: only `*.loads.csv`, not another CSV there).
+    let typed = "case,load,at,label,transverse,longitudinal,vertical,source,\
+                 evaluated_transverse,evaluated_longitudinal,evaluated_vertical,missing,note\n\
+                 wind,1,point,A1,2500,0,0,typed,,,,,\n";
+    let structures_dir = dir.join("Structures");
+    std::fs::write(structures_dir.join("type-02.T2.loads.csv"), typed).unwrap();
+    std::fs::write(structures_dir.join("notes.csv"), "a,b\n").unwrap();
     let file = dir.join("p.ols");
     let line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
     ols_session::Session::open(&file)
@@ -2762,6 +2770,12 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
     for (_, name) in structures {
         assert!(work.join("structures").join(name).is_file(), "{name}");
     }
+    let loads = session.library_files("loads").unwrap();
+    assert_eq!(
+        loads,
+        [("type-02.T2.loads.csv".to_owned(), typed.to_owned())]
+    );
+    assert!(work.join("structures/type-02.T2.loads.csv").is_file());
     drop(m);
     // The files next to the project gone: the project's are read.
     for (_, name) in beside {
@@ -2779,6 +2793,16 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
             .join("steel-pole-30m.olsp")
             .is_file()
     );
+    // T2's typed loads come back from the project; T4's, saved in the
+    // structure application, go in.
+    assert_eq!(
+        std::fs::read_to_string(work.join("structures/type-02.T2.loads.csv")).unwrap(),
+        typed
+    );
+    std::fs::write(work.join("structures/type-02.T4.loads.csv"), typed).unwrap();
+    m.store_libraries().unwrap();
+    let session = &m.editing.as_ref().unwrap().session;
+    assert_eq!(session.library_files("loads").unwrap().len(), 2);
     let r = crate::clearance::Clearances::new(&m, None);
     assert_eq!(r.files, [work.join("rules").join("clearance-rules.olsr")]);
     assert!(matches!(r.rules, Some(Ok(_))), "the only file chosen");

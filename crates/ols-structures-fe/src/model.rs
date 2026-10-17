@@ -968,25 +968,9 @@ impl Model {
         let w = direction.map(|d| d / n);
         let mut out = Vec::new();
         for m in &self.members {
-            let Some(p) = &self.sections[m.section].profile else {
+            let Some((normal, sin, width)) = self.across(m, w) else {
                 continue;
             };
-            let r = crate::element::axes(self, m);
-            let row = |k: usize| [r[(k, 0)], r[(k, 1)], r[(k, 2)]];
-            let x = row(0);
-            let along = dot(w, x);
-            // The wind's component normal to the member (length sin θ).
-            let normal = [
-                w[0] - along * x[0],
-                w[1] - along * x[1],
-                w[2] - along * x[2],
-            ];
-            let sin = norm(normal);
-            if sin <= 1e-9 {
-                continue;
-            }
-            let angle = dot(normal, row(2)).atan2(dot(normal, row(1)));
-            let width = p.wind_width(Angle::from_radians(angle));
             // q·C·d·L·sin²θ along the unit normal: q·C·d·L·sin θ × normal.
             let f = pressure * self.analysis.drag * width * self.length(m) * sin;
             for node in [m.i, m.j] {
@@ -998,6 +982,49 @@ impl Model {
             }
         }
         out
+    }
+
+    /// The area member `member` (its place) shows to a wind blowing in
+    /// `direction` (structure axes), m²: the profile's width for the
+    /// wind's direction in the member's y–z plane × its length × sin θ
+    /// (θ between the wind and the member: the member's silhouette seen
+    /// along the wind). No drag factor. None: no such member, or its
+    /// section has no profile (it is not from the section library).
+    pub fn projected_area(&self, member: usize, direction: [f64; 3]) -> Option<f64> {
+        let m = self.members.get(member)?;
+        self.sections[m.section].profile.as_ref()?;
+        let n = norm(direction);
+        if n.is_nan() || n <= 0.0 {
+            return Some(0.0);
+        }
+        Some(
+            self.across(m, direction.map(|d| d / n))
+                .map_or(0.0, |(_, sin, width)| width * self.length(m) * sin),
+        )
+    }
+
+    /// For a member with a profile and the unit wind `w`: the wind's
+    /// component normal to the member, its length (sin θ) and the
+    /// profile's width for it. None: no profile, or the wind along the
+    /// member.
+    fn across(&self, m: &Member, w: [f64; 3]) -> Option<([f64; 3], f64, f64)> {
+        let p = self.sections[m.section].profile.as_ref()?;
+        let r = crate::element::axes(self, m);
+        let row = |k: usize| [r[(k, 0)], r[(k, 1)], r[(k, 2)]];
+        let x = row(0);
+        let along = dot(w, x);
+        // The wind's component normal to the member (length sin θ).
+        let normal = [
+            w[0] - along * x[0],
+            w[1] - along * x[1],
+            w[2] - along * x[2],
+        ];
+        let sin = norm(normal);
+        if sin <= 1e-9 {
+            return None;
+        }
+        let angle = dot(normal, row(2)).atan2(dot(normal, row(1)));
+        Some((normal, sin, p.wind_width(Angle::from_radians(angle))))
     }
 
     /// Total weight of the members, N.

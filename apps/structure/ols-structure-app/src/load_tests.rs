@@ -13,7 +13,7 @@ use egui_kittest::kittest::Queryable;
 use ols_structure_loads::{At, LoadRow, Source};
 
 use crate::app::{StructureApp, Tab};
-use crate::load_cases_tab::{LoadSheet, overrides_path};
+use crate::load_cases_tab::LoadSheet;
 
 /// A copy of example structure `name` in a folder of its own.
 fn copy_of(name: &str, tag: &str) -> PathBuf {
@@ -169,7 +169,7 @@ fn a_typed_value_is_kept_after_evaluating_again() {
     h.get_by_label("Save").click();
     h.run();
     assert!(!h.state().dirty());
-    let kept = overrides_path(&path);
+    let kept = ols_structure_loads::overrides_path(&path, None);
     assert!(kept.ends_with("type-02.loads.csv"), "{}", kept.display());
     assert!(
         std::fs::read_to_string(&kept)
@@ -211,6 +211,7 @@ fn the_table_goes_out_and_back_as_csv() {
         evaluated: None,
         missing: None,
         note: String::new(),
+        area: None,
     };
     h.state_mut().loads.type_value(&own, own.force);
     h.run();
@@ -254,6 +255,7 @@ fn results_of_a_typed_case() {
             evaluated: None,
             missing: None,
             note: String::new(),
+            area: None,
         };
         h.state_mut().loads.type_value(&own, force);
     }

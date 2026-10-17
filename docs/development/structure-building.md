@@ -484,7 +484,7 @@ Changes in `.olss` (version 2 → 3; older versions read as before):
 
 The evaluated load table of a placed structure (§2.2) is a result, not
 stored in the structure file; values typed over it are stored with the
-placed structure in the line (format to decide with the implementation).
+placed structure in the line: a load file per place, `<stem>.<placed structure>.loads.csv` beside the structure file, kept in the project as library kind `loads` (per project line; the line file is unchanged; [Data model](data-model.md#structure-load-cases-load_case-olsslc)).
 
 ### 4.2 Section library
 
@@ -569,6 +569,7 @@ Each phase is a deliverable of its own, checked and committed.
    details), what comes back (usage per member and joint, formulas),
    and whether any engine change is needed for it — asked before it is
    built.
-2. **Stored load overrides**: where the values typed over an evaluated
-   load table are kept (with the placed structure in the line, or in a
-   load file per place), and what happens to them when the line changes.
+2. **Stored load overrides** (settled 2026-10-17, §4.1): a load file per
+   place, kept in the project (kind `loads`). When the line changes, the
+   typed values stay over the new evaluation (the evaluated value kept
+   beside them).

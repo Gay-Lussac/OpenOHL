@@ -155,12 +155,16 @@ pub fn ui(
                 && ui
                     .button("Edit…")
                     .on_hover_text(format!(
-                        "Open structure {t} in the structure application (its own window); \
-                         saved there, every structure of the type follows"
+                        "Open structure {t} in the structure application (its own window) with \
+                         the loads the line puts on {id}; saved there, every structure of the \
+                         type follows, and values typed over its load table stay with {id}"
                     ))
                     .clicked()
             {
-                action = Some(crate::edit::Action::EditInStructureApp { id: t.clone() });
+                action = Some(crate::edit::Action::EditInStructureApp {
+                    id: t.clone(),
+                    structure: Some(id.clone()),
+                });
             }
             if ui
                 .button("Placement…")

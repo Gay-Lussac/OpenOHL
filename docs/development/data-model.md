@@ -563,6 +563,8 @@ One directory per kind; TOML with units in the values. Each item has an
 | `LoadCases` | `.olslc` | `ols-load-cases` | several (`[[case]]`) | `ols_loads::LoadCase` | [Load cases](../user-guide/loads.md) |
 | (section library: project kind `sections`; shipped example `libraries/sections`, never copied into a project) | `.olssec` | `ols-sections` | several (`[[section]]`, `[[material]]`) | `ols_sections::Section`, `ols_sections::Material` (crate `ols-sections`) | [Section library](../user-guide/section-library.md) |
 | (structure application; not a library kind yet) | `.olsslc` | `ols-structure-load-cases` | several (`[[load_case]]`) | `ols_structure_loads::LoadCaseRecipe` | [Structure load cases](../user-guide/structure-load-cases.md) |
+| (structure application: typed loads; project kind `loads`, beside the structure types) | `*.loads.csv` | CSV, the load table's columns | typed rows (`Override`) of one structure type or one placed structure | `ols_structure_loads::LoadTable` | [Structure load cases](../user-guide/structure-load-cases.md#the-load-table) |
+| (line application → structure application, derived, not kept) | `*.line-values.json` | `ols-structure-line-values` (JSON) | one placed structure | `ols_structure_loads::PlacedValues` | [Structure application](../user-guide/structure-app.md#started-for-a-placed-structure) |
 
 Other data files: structure models `.olsfe` (`ols-structure-model`) and
 poles `.olsp` (`ols-pole`) next to the `.olss`
@@ -781,19 +783,43 @@ Evaluated (`evaluate`) with `LineValues` (per point: sets, phases; values
 per line load case, point or set and quantity) into a `LoadTable`
 (rows: `case`, `load`, `at` point/member/joint, `label`, `force`
 transverse/longitudinal/vertical down N, `source` recipe/line/typed,
-`evaluated`, `missing`, `note`). The table is a result, not stored in
-the structure file. Typed values (`Override`: case, load, at, label,
-force) are kept by the structure application beside the structure file
-as **`<stem>.loads.csv`** (the table's CSV, typed rows only), written on
-Save and read on open; with the placed structure in the line once the
-application is started from a project. A table read back (CSV) types
-what it has beyond the evaluation (`LoadTable::overrides_over`).
-`[[load]]` is read as case `model` (joints). CSV of the table and the
-recipes; XLSX later. `ols-structure-link` fills `LineValues` from
-`ols_loads::structure_loads` (the six force values; tensions, wire wind
-and ice not yet) and solves table cases on the structure's model
-(`analyse_cases` → `CaseResult`: joints with displacements, members with
-axial force and usage, reactions, Σ loads and Σ reactions).
+`evaluated`, `missing`, `note`, `area` — a surface load's member area,
+m²). The table is a result, not stored in the structure file. Typed
+values (`Override`: case, load, at, label, force) are kept by the
+structure application beside the structure file as **`<stem>.loads.csv`**
+(the table's CSV, typed rows only; the structure on its own) or
+**`<stem>.<placed structure>.loads.csv`** (started for a placed
+structure, `--structure`; the id with characters other than letters,
+digits, `-`, `_` as `_`), written on Save and read on open
+(`ols_structure_loads::overrides_path`). In a project the line
+application keeps both in the project as library kind **`loads`** (beside
+the structure types in the working folder; only `*.loads.csv`), so the
+values typed for a placed structure are stored with it per project line
+— no field of the line file. A table read back (CSV) types what it has
+beyond the evaluation (`LoadTable::overrides_over`). `[[load]]` is read
+as case `model` (joints). CSV of the table (the `area` column optional
+when read) and the recipes; XLSX later.
+
+`ols-structure-link` fills `LineValues` from `ols_loads::structure_loads`
+(the six force values; tensions, wire wind and ice not yet), solves
+table cases on the structure's model (`analyse_cases` → `CaseResult`:
+joints with displacements, members with axial force and usage,
+reactions, Σ loads and Σ reactions; members' sections from the section
+library first) and gives the members' areas from the section library
+(`SectionAreas`: `Model::projected_area` — the profile's width for the
+pressure's direction in the member's y–z plane × length × sin θ; a
+member whose section is not in the library has no area).
+
+**Line-values file** (`<stem>.<placed structure>.line-values.json`
+beside the structure file, `ols_structure_loads::PlacedValues`, JSON,
+`format = "ols-structure-line-values"`, version 1): what the line
+application hands to the structure application for **Edit…** on a placed
+structure — `structure` (placed structure id), `line` (project line, or
+the line file's name), `structure_type`, `cases` (the line's load cases),
+`values` (`LineValues`), `others` (`OtherPlace`: the other placed
+structures of the type with their `LineValues`), `note` (why there are
+no values: being computed, no load case file). Derived data, rewritten
+when the line changes; never stored in the project.
 
 ## Where data lives
 
@@ -814,7 +840,7 @@ axial force and usage, reactions, Σ loads and Σ reactions).
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
 | `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts` (`{"solver": …}`) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
-| `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.olsload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.olspd`), `rules` (`.olsr`), `galloping` (`.olsg`), `ambient` (`.olsta`), `costs` (`.olscost`), `poles` (`.olsp`), `femodels` (`.olsfe`), `sections` (`.olssec`, the section library); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels` next to the `structures`; `sections` in its own folder), which it reads from then on |
+| `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.olsload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.olspd`), `rules` (`.olsr`), `galloping` (`.olsg`), `ambient` (`.olsta`), `costs` (`.olscost`), `poles` (`.olsp`), `femodels` (`.olsfe`), `sections` (`.olssec`, the section library), `loads` (`*.loads.csv`: values typed over a structure's load table in the structure application, per structure type and per placed structure, [below](#structure-load-cases-load_case-olsslc)); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels`, `loads` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels`, `loads` next to the `structures`; `sections` in its own folder), which it reads from then on |
 | `spatial_index` | plan bounds and tile of every object (ADR-0008) |
 | `vc_*`, `edit_grant`, `surface`, point cloud tables | versions and reviews, edit rights, terrain surfaces, LiDAR ([Versions](../user-guide/versions.md), ADR-0007) |
 

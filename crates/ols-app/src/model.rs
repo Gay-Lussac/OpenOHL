@@ -684,7 +684,11 @@ pub fn remember_weather(session: &ols_session::Session, path: &Path) {
 }
 
 /// The libraries a project keeps: kind (in the project) and file extension.
-pub const PROJECT_LIBRARIES: [(&str, &str); 12] = [
+/// `loads`: the values typed over a structure's load table in the
+/// structure application, `<stem>.loads.csv` (the type on its own) and
+/// `<stem>.<placed structure>.loads.csv` (one placed structure), beside
+/// the structure types ([`kind_files`]: only `*.loads.csv`).
+pub const PROJECT_LIBRARIES: [(&str, &str); 13] = [
     ("cables", ols_cables::WIRE_FILE_EXTENSION),
     (
         "structures",
@@ -706,16 +710,30 @@ pub const PROJECT_LIBRARIES: [(&str, &str); 12] = [
     ("poles", ols_structures_fe::pole::POLE_FILE_EXTENSION),
     ("femodels", ols_structures_fe::model::MODEL_FILE_EXTENSION),
     ("sections", ols_sections::SECTION_FILE_EXTENSION),
+    ("loads", "csv"),
 ];
 
 /// The folder of library `kind` in the working folder and in an export:
-/// poles and structure models go next to the structure types that name
-/// them.
+/// poles, structure models and typed structure loads go next to the
+/// structure types that name them.
 pub fn library_folder(kind: &str) -> &str {
     match kind {
-        "poles" | "femodels" => "structures",
+        "poles" | "femodels" | "loads" => "structures",
         _ => kind,
     }
+}
+
+/// The files of library `kind` (extension `extension`) at `at`: for
+/// `loads` only the `*.loads.csv` files.
+fn kind_files(at: &Path, kind: &str, extension: &str) -> Vec<PathBuf> {
+    let mut files = files_at(at, extension);
+    if kind == "loads" {
+        files.retain(|f| {
+            f.file_name()
+                .is_some_and(|n| n.to_string_lossy().ends_with(".loads.csv"))
+        });
+    }
+    files
 }
 
 /// Where the working copies of projects' libraries go.
@@ -800,7 +818,7 @@ fn project_libraries(
             "insulators" => sources.insulators.is_some(),
             "loadcases" => sources.load_cases.is_some(),
             "weather" => sources.weather.is_some(),
-            "poles" | "femodels" => structures_given,
+            "poles" | "femodels" | "loads" => structures_given,
             _ => false,
         };
         let stored = session.library_files(kind).map_err(|e| e.to_string())?;
@@ -825,7 +843,7 @@ fn project_libraries(
                         .map(PathBuf::from)
                         .filter(|p| p.is_absolute() && p.is_file())
                 }),
-                "poles" | "femodels" => own(structures_from.clone(), "structures"),
+                "poles" | "femodels" | "loads" => own(structures_from.clone(), "structures"),
                 // The `Sections/` folder next to the project, else the
                 // files next to it.
                 "sections" => own(sections_dir(sources), "sections"),
@@ -835,7 +853,7 @@ fn project_libraries(
             };
             let files = from
                 .as_deref()
-                .map(|f| files_at(f, ext))
+                .map(|f| kind_files(f, kind, ext))
                 .unwrap_or_default();
             if !files.is_empty() {
                 // One log entry, not undone by Undo (the program's doing).
@@ -1024,13 +1042,17 @@ impl Model {
     /// project's working copies, else ([`sections_dir`]) the files next to
     /// the model; empty when there are none.
     pub fn section_library(&self) -> Result<ols_sections::SectionLibrary, String> {
-        let dir = self
-            .library_dir
+        ols_sections::SectionLibrary::load(&self.sections_folder())
+    }
+
+    /// Where the section library is read from: the project's working
+    /// copies, else [`sections_dir`].
+    pub fn sections_folder(&self) -> PathBuf {
+        self.library_dir
             .as_ref()
             .map(|w| w.join(library_folder("sections")))
             .filter(|d| d.is_dir())
-            .unwrap_or_else(|| sections_dir(&self.sources));
-        ols_sections::SectionLibrary::load(&dir)
+            .unwrap_or_else(|| sections_dir(&self.sources))
     }
 
     /// Keeps the working copies of the project's libraries in the project
@@ -1055,7 +1077,7 @@ impl Model {
                 .map_err(|e| e.to_string())?
                 .into_iter()
                 .collect();
-            let files = files_at(&dir, ext);
+            let files = kind_files(&dir, kind, ext);
             let names: Vec<String> = files
                 .iter()
                 .filter_map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned()))
