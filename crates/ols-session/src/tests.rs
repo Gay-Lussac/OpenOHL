@@ -1317,8 +1317,8 @@ fn tapped_jumpers_follow_what_they_hang_on() {
     let mut a = line.jumpers[0].clone();
     a.id = "JA".into();
     a.points.clear();
-    a.supports.clear();
-    a.support = None;
+    a.set_supports(Vec::new());
+    a.set_support(None);
     a.sag = None;
     a.length = Some(12.0);
     a.from = ols_line::JumperEnd::tap(ols_line::Tap::Span(ols_line::SpanPointRef {
@@ -1439,8 +1439,8 @@ fn tapped_on_s2(s: &mut Session) {
     a.id = "JA".into();
     // On S2's own circuit.
     a.to = ols_line::JumperEnd::wire("T3", 11);
-    a.supports.clear();
-    a.support = None;
+    a.set_supports(Vec::new());
+    a.set_support(None);
     a.sag = None;
     a.length = Some(12.0);
     a.from = ols_line::JumperEnd::tap(ols_line::Tap::Span(ols_line::SpanPointRef {

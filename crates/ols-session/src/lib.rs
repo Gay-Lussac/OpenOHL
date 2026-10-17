@@ -1658,7 +1658,7 @@ impl Session {
                                 c.structure.as_deref() == Some(id.as_str())
                             };
                             if j.points().any(|p| p.structure == id)
-                                || j.supports.iter().any(clamp_on)
+                                || j.supports().iter().any(clamp_on)
                             {
                                 let mut j = j.clone();
                                 for p in [&mut j.from, &mut j.to]
@@ -1669,9 +1669,11 @@ impl Session {
                                         p.structure = new_id.clone();
                                     }
                                 }
-                                for c in j.supports.iter_mut().filter(|c| clamp_on(c)) {
-                                    c.structure = Some(new_id.clone());
-                                }
+                                j.edit_supports(|cs| {
+                                    for c in cs.iter_mut().filter(|c| clamp_on(c)) {
+                                        c.structure = Some(new_id.clone());
+                                    }
+                                });
                                 out.push(Command::Put {
                                     kind: Kind::Jumper,
                                     id: j.id.clone(),
@@ -2262,7 +2264,7 @@ impl Session {
             .filter(|j| {
                 j.points().any(|end| {
                     end.structure == id || sections.iter().any(|sec| sec.points.contains(end))
-                }) || j.supports.iter().any(|c| c.structure_id(j) == id)
+                }) || j.supports().iter().any(|c| c.structure_id(j) == id)
             })
             .map(|j| j.id.clone())
             .collect();

@@ -57,7 +57,8 @@ use serde::{Deserialize, Serialize};
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ols-line";
 /// Latest line file version: 5 writes a jumper's tap end as its `from` /
-/// `to` ([`JumperEnd`]) and a place with one key ([`SpanPlace`],
+/// `to` ([`JumperEnd`]), its supports as points holding a held clamp
+/// ([`objects::Hold`]) and a place with one key ([`SpanPlace`],
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
@@ -324,16 +325,6 @@ pub struct Jumper {
     /// solved clamps, without length or sag; never taut, no thermal change.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub rigid: bool,
-    /// Optional jumper support string, from a point given by its
-    /// coordinates (`supports` gives clamps held by a structure's strings;
-    /// not both).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub support: Option<JumperSupport>,
-    /// Support clamps on the jumper, in order from `from`, each held by
-    /// the strings of a structure ([`JumperClamp`]). The jumper runs
-    /// straight through each clamp; the clamp swings and turns freely.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub supports: Vec<JumperClamp>,
     /// Bending stiffness EI of the cable, N·m²: the jumper leaves a
     /// section's end clamp along the conductor's axis and bends away from
     /// it, instead of hanging from a hinge. Default: estimated from the
@@ -360,7 +351,8 @@ pub struct Jumper {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle_to_deg: Option<f64>,
     /// Labelled points along it, each with its object (a body, a clamp)
-    /// or bare.
+    /// or bare. A clamp held up by strings is a support
+    /// ([`objects::Hold`], [`Jumper::supports`], [`Jumper::support`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<JumperPoint>,
     /// Display colour (`#rrggbb`); default: the colour of the section at
@@ -492,6 +484,143 @@ impl From<Tap> for JumperEnd {
 }
 
 impl Jumper {
+    /// Its support clamps on a structure's strings ([`objects::Hold::Strings`]),
+    /// in order from `from`, each labelled by its point.
+    pub fn supports(&self) -> Vec<JumperClamp> {
+        let mut out: Vec<JumperClamp> = self
+            .points
+            .iter()
+            .filter_map(|p| {
+                let o = p.object.as_ref()?;
+                let objects::Hold::Strings { structure, wire } = o.hold.as_ref()? else {
+                    return None;
+                };
+                Some(JumperClamp {
+                    label: p.label.clone(),
+                    structure: structure.clone(),
+                    wire: wire.clone(),
+                    at: p.at.share(),
+                    clamp_length: o.clamp_length.unwrap_or(DEFAULT_CLAMP_LENGTH),
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| a.at.total_cmp(&b.at));
+        out
+    }
+
+    /// Its support string from a fixed point ([`objects::Hold::String`]).
+    pub fn support(&self) -> Option<JumperSupport> {
+        self.points.iter().find_map(|p| {
+            let o = p.object.as_ref()?;
+            let objects::Hold::String {
+                point,
+                length,
+                weight,
+            } = o.hold.as_ref()?
+            else {
+                return None;
+            };
+            Some(JumperSupport {
+                point: *point,
+                length: *length,
+                weight: *weight,
+                fraction: p.at.share(),
+            })
+        })
+    }
+
+    /// Gives it the support clamps `clamps` (instead of those it has):
+    /// points by their labels (new ones `C1`, `C2`…) holding a clamp on
+    /// the strings, at their fraction.
+    pub fn set_supports(&mut self, clamps: Vec<JumperClamp>) {
+        let held = |p: &JumperPoint, strings: bool| {
+            p.object
+                .as_ref()
+                .and_then(|o| o.hold.as_ref())
+                .is_some_and(|h| matches!(h, objects::Hold::Strings { .. }) == strings)
+        };
+        let old: Vec<JumperPoint> = self
+            .points
+            .iter()
+            .filter(|p| held(p, true))
+            .cloned()
+            .collect();
+        self.points.retain(|p| !held(p, true));
+        for c in clamps {
+            let label = if !c.label.is_empty() && self.points.iter().all(|p| p.label != c.label) {
+                c.label
+            } else {
+                free_point_label(&self.points, "C")
+            };
+            let before = old.iter().find(|p| p.label == label);
+            let mut object = before
+                .and_then(|p| p.object.clone())
+                .unwrap_or_else(|| LineObject::clamp(0.0));
+            object.clamp_length = Some(c.clamp_length);
+            object.hold = Some(objects::Hold::Strings {
+                structure: c.structure,
+                wire: c.wire,
+            });
+            self.points.push(JumperPoint {
+                label,
+                at: JumperPlace::Fraction(c.at),
+                description: before.map(|p| p.description.clone()).unwrap_or_default(),
+                object: Some(object),
+            });
+        }
+    }
+
+    /// Changes its support clamps with `f` ([`Jumper::supports`],
+    /// [`Jumper::set_supports`]).
+    pub fn edit_supports(&mut self, f: impl FnOnce(&mut Vec<JumperClamp>)) {
+        let mut clamps = self.supports();
+        f(&mut clamps);
+        self.set_supports(clamps);
+    }
+
+    /// Changes its support string with `f` ([`Jumper::support`],
+    /// [`Jumper::set_support`]).
+    pub fn edit_support(&mut self, f: impl FnOnce(&mut Option<JumperSupport>)) {
+        let mut s = self.support();
+        f(&mut s);
+        self.set_support(s);
+    }
+
+    /// Gives it the support string `support` (or none), instead of the
+    /// one it has: a point (`S1`) holding a clamp on the string.
+    pub fn set_support(&mut self, support: Option<JumperSupport>) {
+        let is_string = |p: &JumperPoint| {
+            p.object
+                .as_ref()
+                .and_then(|o| o.hold.as_ref())
+                .is_some_and(|h| matches!(h, objects::Hold::String { .. }))
+        };
+        let at = self.points.iter().position(is_string);
+        let old = at.map(|k| self.points.remove(k));
+        self.points.retain(|p| !is_string(p));
+        let Some(s) = support else {
+            return;
+        };
+        let mut object = old
+            .as_ref()
+            .and_then(|p| p.object.clone())
+            .unwrap_or_else(|| LineObject::clamp(0.0));
+        object.hold = Some(objects::Hold::String {
+            point: s.point,
+            length: s.length,
+            weight: s.weight,
+        });
+        let point = JumperPoint {
+            label: old
+                .as_ref()
+                .map_or_else(|| free_point_label(&self.points, "S"), |p| p.label.clone()),
+            at: JumperPlace::Fraction(s.fraction),
+            description: old.map(|p| p.description).unwrap_or_default(),
+            object: Some(object),
+        };
+        self.points.push(point);
+    }
+
     /// Its taps (none, one or both ends).
     pub fn taps(&self) -> impl Iterator<Item = &Tap> {
         [&self.from, &self.to]
@@ -518,7 +647,8 @@ impl Jumper {
 }
 
 /// A jumper as written in files, older ones included: before version 5 a
-/// tap end was `from_tap` / `to_tap` beside a placeholder `from` / `to`.
+/// tap end was `from_tap` / `to_tap` beside a placeholder `from` / `to`,
+/// and its supports were `support` / `supports` of their own.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct JumperFile {
@@ -573,7 +703,7 @@ impl From<JumperFile> for Jumper {
             Some(tap) => JumperEnd::Tap { tap },
             None => end.unwrap_or_else(|| JumperEnd::wire("", 0)),
         };
-        Jumper {
+        let mut j = Jumper {
             description: f.description,
             id: f.id,
             cable: f.cable,
@@ -583,8 +713,6 @@ impl From<JumperFile> for Jumper {
             sag: f.sag,
             temperature: f.temperature,
             rigid: f.rigid,
-            support: f.support,
-            supports: f.supports,
             bending_stiffness: f.bending_stiffness,
             stiffness_factor: f.stiffness_factor,
             angle_from_deg: f.angle_from_deg,
@@ -595,11 +723,22 @@ impl From<JumperFile> for Jumper {
             bundle_spacing: f.bundle_spacing,
             bundle_rotation_deg: f.bundle_rotation_deg,
             fields: f.fields,
+        };
+        // Supports given on their own before version 5: points holding
+        // a held clamp.
+        if !f.supports.is_empty() {
+            j.set_supports(f.supports);
         }
+        if f.support.is_some() {
+            j.set_support(f.support);
+        }
+        j
     }
 }
 
-/// A string holding a jumper at one point (DESIGN_GOALS §6).
+/// A string holding a jumper at one point (DESIGN_GOALS §6), from a fixed
+/// point: kept as a jumper point holding a clamp held by the string
+/// ([`Jumper::support`]); version 4 files gave it as `support`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JumperSupport {
@@ -627,10 +766,15 @@ fn default_clamp_length() -> f64 {
 /// one string (an I) or two strings from structure points (a V) to a wire
 /// point without a set. The clamp is a straight rigid piece of the
 /// jumper, `clamp_length` long, held at its middle. It swings and turns
-/// freely; the jumper leaves it in the direction it enters.
+/// freely; the jumper leaves it in the direction it enters. Kept as a
+/// jumper point holding a clamp held by the strings
+/// ([`Jumper::supports`]); version 4 files listed them as `supports`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JumperClamp {
+    /// The label of its point on the jumper (none given: one is chosen).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
     /// The structure holding it; default: that of the jumper's `from`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structure: Option<String>,
@@ -649,6 +793,7 @@ impl JumperClamp {
     /// A clamp at `at` on wire point `wire` of the `from` end's structure.
     pub fn new(wire: impl Into<String>, at: f64) -> Self {
         JumperClamp {
+            label: String::new(),
             structure: None,
             wire: wire.into(),
             at,
@@ -1104,6 +1249,14 @@ impl JumperPlace {
             distance,
         }
         .into()
+    }
+
+    /// Its fraction, when given by one (a support's), else 0.
+    pub fn share(&self) -> f64 {
+        match *self {
+            Self::Fraction(f) => f,
+            Self::Length(_) | Self::Distance(_) => 0.0,
+        }
     }
 
     /// It holds: a fraction 0–1, a length or a distance ≥ 0.
@@ -1890,6 +2043,15 @@ fn free_label(taken: &[SpanPoint], prefix: &str) -> String {
         .expect("a free label")
 }
 
+/// A label `{prefix}1`, `{prefix}2`… not taken by `taken` (a jumper's
+/// points).
+fn free_point_label(taken: &[JumperPoint], prefix: &str) -> String {
+    (1..)
+        .map(|k| format!("{prefix}{k}"))
+        .find(|l| !taken.iter().any(|p| &p.label == l))
+        .expect("a free label")
+}
+
 impl Section {
     /// Adds point load `l` (as older files gave it): a point labelled
     /// `L1`, `L2`… holding its object, its label as the point's
@@ -2444,7 +2606,14 @@ impl Line {
         points.extend(self.alignment_points.iter().map(|a| a.position));
         points.extend(self.alignment.iter().map(|a| a.position));
         for j in &self.jumpers {
-            points.extend(j.support.iter().map(|sp| sp.point));
+            points.extend(
+                j.points
+                    .iter()
+                    .filter_map(|p| match p.object.as_ref()?.hold {
+                        Some(objects::Hold::String { point, .. }) => Some(point),
+                        _ => None,
+                    }),
+            );
         }
         transform(&mut points)?;
         let mut it = points.into_iter();
@@ -2471,8 +2640,12 @@ impl Line {
             a.position = next();
         }
         for j in &mut self.jumpers {
-            if let Some(sp) = &mut j.support {
-                sp.point = next();
+            for p in &mut j.points {
+                if let Some(objects::Hold::String { point, .. }) =
+                    p.object.as_mut().and_then(|o| o.hold.as_mut())
+                {
+                    *point = next();
+                }
             }
         }
         Ok(())
@@ -2615,10 +2788,36 @@ impl Line {
     /// its wire point held as [`clamp_strings`] says (a typed structure's
     /// wire points are checked once resolved).
     fn check_clamps(&self, j: &Jumper) -> Result<(), String> {
-        if j.supports.is_empty() {
+        // Supports are placed by a fraction of the jumper's length; one
+        // string from a fixed point at most.
+        for p in &j.points {
+            if p.object.as_ref().and_then(|o| o.hold.as_ref()).is_some()
+                && !matches!(p.at, JumperPlace::Fraction(_))
+            {
+                return Err(format!(
+                    "support {}: placed by a fraction of the jumper's length",
+                    p.label
+                ));
+            }
+        }
+        if j.points
+            .iter()
+            .filter(|p| {
+                p.object
+                    .as_ref()
+                    .and_then(|o| o.hold.as_ref())
+                    .is_some_and(|h| matches!(h, objects::Hold::String { .. }))
+            })
+            .count()
+            > 1
+        {
+            return Err("one support string from a fixed point at most".into());
+        }
+        let supports = j.supports();
+        if supports.is_empty() {
             return Ok(());
         }
-        if j.support.is_some() {
+        if j.support().is_some() {
             return Err(
                 "give a support string (support) or support clamps (supports), not both".into(),
             );
@@ -2632,7 +2831,7 @@ impl Line {
             );
         };
         let mut end_before = 0.0;
-        for (k, c) in j.supports.iter().enumerate() {
+        for (k, c) in supports.iter().enumerate() {
             let n = k + 1;
             if !(c.clamp_length > 0.0 && c.clamp_length <= 1.0) {
                 return Err(format!(
@@ -2673,7 +2872,7 @@ impl Line {
                 continue;
             }
             clamp_strings(structure, &c.wire).map_err(|m| format!("support clamp {n}: {m}"))?;
-            if j.supports[..k]
+            if supports[..k]
                 .iter()
                 .any(|d| d.structure_id(j) == id && d.wire == c.wire)
             {
@@ -2971,7 +3170,7 @@ impl Line {
             {
                 return bad("clamp exit angles must be between −90° and 90°");
             }
-            if let Some(support) = &j.support {
+            if let Some(support) = &j.support() {
                 if j.length.is_none() {
                     return bad(
                         "a supported jumper needs a length (its sag depends on the support)",
@@ -3098,6 +3297,9 @@ impl Line {
         };
         match object {
             None => bad("no such point".into()),
+            Some(Some(o)) if o.kind == ObjectKind::Clamp && o.hold.is_some() => {
+                bad("its clamp holds the jumper up (a support), not a tap".into())
+            }
             Some(Some(o)) if o.kind == ObjectKind::Clamp => Ok(()),
             Some(_) => bad("its point holds no clamp (put a clamp object there)".into()),
         }
@@ -3807,5 +4009,77 @@ mod tests {
         assert_eq!(j.taps().collect::<Vec<_>>(), [&tap]);
         assert_eq!(j.to.to_string(), "T3 set 1");
         assert_eq!(j.from.to_string(), "tap S1 P");
+    }
+
+    /// Supports are jumper points holding a held clamp; files before
+    /// version 5 listed them on their own.
+    #[test]
+    fn supports_are_points_holding_a_held_clamp() {
+        let old = r#"{"id":"J","cable":"c","from":{"structure":"T3","set":2},
+            "to":{"structure":"T3","set":1},"length":5.0,
+            "supports":[{"wire":"JW","at":0.6,"clamp_length":0.2},
+                        {"structure":"T4","wire":"JX","at":0.3}],
+            "points":[{"label":"C1","at":{"fraction":0.9}}]}"#;
+        let j: Jumper = serde_json::from_str(old).unwrap();
+        let clamps = j.supports();
+        // In order along it; labels not taken by its points.
+        assert_eq!(
+            clamps
+                .iter()
+                .map(|c| (c.label.as_str(), c.wire.as_str(), c.at))
+                .collect::<Vec<_>>(),
+            [("C3", "JX", 0.3), ("C2", "JW", 0.6)]
+        );
+        assert_eq!(clamps[1].clamp_length, 0.2);
+        assert_eq!(clamps[0].structure.as_deref(), Some("T4"));
+        let text = serde_json::to_string(&j).unwrap();
+        assert!(!text.contains("supports"), "{text}");
+        assert!(
+            text.contains(r#""hold":{"strings":{"wire":"JW"}}"#),
+            "{text}"
+        );
+        assert_eq!(serde_json::from_str::<Jumper>(&text).unwrap(), j);
+        // Edited: the same points, moved.
+        let mut k = j.clone();
+        k.edit_supports(|c| c[1].at = 0.7);
+        assert_eq!(k.supports()[1].label, "C2");
+        assert_eq!(k.points.len(), 3);
+        // A support string.
+        let old = r#"{"id":"J","cable":"c","from":{"structure":"T3","set":2},
+            "to":{"structure":"T3","set":1},"length":5.0,
+            "support":{"point":[1.0,2.0,3.0],"length":2.0,"weight":50.0}}"#;
+        let j: Jumper = serde_json::from_str(old).unwrap();
+        let s = j.support().unwrap();
+        assert_eq!(
+            (s.point, s.length, s.weight, s.fraction),
+            ([1.0, 2.0, 3.0], 2.0, 50.0, 0.5)
+        );
+        assert_eq!(j.points[0].label, "S1");
+    }
+
+    /// A tap is not on a support's clamp.
+    #[test]
+    fn a_tap_is_not_on_a_support() {
+        let mut line = example();
+        let host = line.jumpers[0].id.clone();
+        line.jumpers[0].length = Some(12.0);
+        line.jumpers[0].sag = None;
+        line.jumpers[0].set_support(Some(JumperSupport {
+            point: [0.0, 0.0, 30.0],
+            length: 2.0,
+            weight: 0.0,
+            fraction: 0.5,
+        }));
+        let label = line.jumpers[0].points[0].label.clone();
+        let mut tap = line.jumpers[0].clone();
+        tap.id = "JT".into();
+        tap.set_support(None);
+        tap.from = JumperEnd::tap(Tap::Jumper {
+            jumper: host,
+            point: label,
+        });
+        line.jumpers.push(tap);
+        let e = line.validate().unwrap_err().to_string();
+        assert!(e.contains("support"), "{e}");
     }
 }

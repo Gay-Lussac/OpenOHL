@@ -515,7 +515,7 @@ fn jumper_support_strings_load_their_tops() {
     let j = &mut line.jumpers[0];
     j.sag = None;
     j.length = Some(free.unstressed_length);
-    j.supports = vec![ols_line::JumperClamp::new("JW", 0.5)];
+    j.set_supports(vec![ols_line::JumperClamp::new("JW", 0.5)]);
     let st = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
     st.points.push(ols_line::StructurePoint {
         description: Default::default(),

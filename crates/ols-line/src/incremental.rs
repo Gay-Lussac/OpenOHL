@@ -85,7 +85,7 @@ impl JumperInputs {
                 .filter(|s| {
                     jumper.points().any(|p| p.structure == s.id)
                         || jumper
-                            .supports
+                            .supports()
                             .iter()
                             .any(|c| c.structure_id(jumper) == s.id)
                 })

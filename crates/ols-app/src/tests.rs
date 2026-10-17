@@ -10980,8 +10980,8 @@ fn a_jumper_is_laid_through_suspension_strings() {
     let r = harness.state_mut().ready().unwrap();
     assert_eq!(r.model.line.jumpers.len(), n + 1, "{:?}", r.status);
     let j = r.model.line.jumpers.last().unwrap().clone();
-    assert_eq!(j.supports.len(), 1);
-    assert_eq!(j.supports[0].wire, "JH");
+    assert_eq!(j.supports().len(), 1);
+    assert_eq!(j.supports()[0].wire, "JH");
     assert!(j.sag.is_none() && j.length.is_some());
     let pieces = jumper_pieces(&j);
     assert_eq!(pieces.len(), 2);
@@ -11003,7 +11003,7 @@ fn a_jumper_is_laid_through_suspension_strings() {
     let mut k = j.clone();
     set_jumper_pieces(&mut k, &[3.0, 5.0]);
     assert!((k.length.unwrap() - 8.0).abs() < 1e-12);
-    assert!((k.supports[0].at - 3.0 / 8.0).abs() < 1e-12);
+    assert!((k.supports()[0].at - 3.0 / 8.0).abs() < 1e-12);
     assert_eq!(jumper_pieces(&k), vec![3.0, 5.0]);
 }
 

@@ -191,6 +191,33 @@ impl Shape {
     }
 }
 
+/// What holds a clamp on a jumper up, making it a support: the strings of
+/// a structure to a wire point without a set (an I or a V), or one string
+/// from a fixed point. Written `{"strings": {"structure", "wire"}}` or
+/// `{"string": {"point", "length", "weight"}}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Hold {
+    /// The strings of a structure to wire point `wire` (no set).
+    Strings {
+        /// The structure; default: that of the jumper's `from` end.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        structure: Option<String>,
+        /// The wire point its strings hold.
+        wire: String,
+    },
+    /// One tension-only string from a fixed point.
+    String {
+        /// Its top, m.
+        point: crate::Point,
+        /// Its length, m.
+        length: f64,
+        /// Its weight, N.
+        #[serde(default)]
+        weight: f64,
+    },
+}
+
 /// The object on a point (one per point).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 // (No deny_unknown_fields: serde does not check them with a flattened
@@ -214,6 +241,9 @@ pub struct LineObject {
     /// A clamp's length along the wire, m.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clamp_length: Option<f64>,
+    /// A clamp on a jumper held up (a support), and by what.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hold: Option<Hold>,
 }
 
 impl LineObject {
@@ -249,6 +279,9 @@ impl LineObject {
             .is_some_and(|l| !(l.is_finite() && l >= 0.0))
         {
             return Err("clamp length must be ≥ 0".into());
+        }
+        if self.hold.is_some() && self.kind != ObjectKind::Clamp {
+            return Err("only a clamp is held (a support)".into());
         }
         self.shape.validate()
     }
@@ -349,6 +382,7 @@ impl ObjectType {
             shape: self.shape.unwrap_or_default(),
             drag: self.drag,
             clamp_length: self.clamp_length,
+            hold: None,
         })
     }
 }
