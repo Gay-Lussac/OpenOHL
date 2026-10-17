@@ -102,7 +102,7 @@ radial = "4.5 m"
 | `exclude_spans_at` | Exclusion zone: spans ending at these structures are not checked, e.g. `["con_*"]` for down-leads into cable terminations (wildcards). |
 | `case_pairs` | Wire rules: `[["glaze ice", "max temperature"]]` — the first wire in the first case, the second wire in the second (e.g. an iced upper wire sagging towards a hot lower one); checked after all cases are solved. |
 
-A rule file may hold a `[wind]` table. The desktop [vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances) read and write it; `ols line` ignores it and checks each weather case as it is:
+A rule file may hold a `[wind]` table. The desktop [vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances) and [`ols zones`](#vertical-and-radial-clearances-without-the-window-ols-zones) read it (the windows write it); `ols line` ignores it and checks each weather case as it is:
 
 ```toml
 [wind]
@@ -111,8 +111,8 @@ step = "50 Pa"
 sides = "both"      # both, left or right
 ```
 
-and a `[check]` table — what those windows solve and read; `ols line`
-ignores it too:
+and a `[check]` table — what those windows and `ols zones` solve and
+read; `ols line` ignores it too:
 
 ```toml
 [check]
@@ -155,6 +155,64 @@ envelope over 3 weather cases (glaze ice, max temperature, rime ice + wind) and 
 The clearance CSV holds each case's rows and then the envelope rows (`case = envelope`, last column `governing_case`). The plan and profile sheets draw every case's wires — the first solid, the others dashed, dotted… (named in the title block) — the envelope of the wire positions.
 
 Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.olsr`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/clearance-rules.olsr) and the crossing line `crossing-line.ols.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; the desktop clearance windows edit rules per LiDAR class, and design-code plugins may give rule files as clearance presets.
+
+## Vertical and radial clearances without the window (`ols zones`)
+
+`ols zones` runs the check of the desktop
+[vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances)
+without the program: a rule file gives the rules, the zone, the wind and
+what is solved; the project gives the point cloud and the ground.
+
+```bash
+ols zones project.ols --rules vertical-clearances.olsr
+ols zones examples/synthetic-line/synthetic-line.ols.json --rules rules.olsr \
+  --weather examples/synthetic-line/weather-cases.olswc \
+  --terrain examples/synthetic-line/synthetic-survey.csv --csv zones.csv
+```
+
+```text
+vertical clearances: Demo (rules.olsr) — 1 rule row(s); zone ±0 m in slices of 0 m, wind stepped by 100 Pa from the left and the right, method fe
+weather: examples/synthetic-line/weather-cases.olswc — 5 case(s), 2 wind position(s)
+ground: survey file examples/synthetic-line/synthetic-survey.csv
+points: not needed
+solved 3 section(s) in 2 wind position(s) in 283.8ms; checked in 10.0ms; 0 LiDAR points read
+1 span below a rule
+  status    rule      span        case & wind       target   found m required m    count
+  violation Ground    S2 span 2   max temperature   ground      4.72       7.50 16 pieces
+```
+
+The rule file is read as the windows import it: its ground and point
+rules with a clearance of one measure — **vertical** or **radial**, the
+only one the file has (a file with both needs `--measure vertical` or
+`--measure radial`); a requirement by voltage gives one row per voltage of
+the line; roles become the classes of the class scheme; the first rule's
+`vertical_band` and `vertical_depth` are the zone's width and depth. The
+`[wind]` table sets the wind (default: the cases' own pressure from both
+sides), the `[check]` table the circuits, the calculation method and the
+search distance. A window's own rule file (**Export…**, or **File ›
+Export › Libraries…**) and a design code's clearance preset work as they
+are.
+
+| Option | Meaning |
+|---|---|
+| `--rules FILE` | The rule file (`.olsr`). |
+| `--measure vertical\|radial` | The measure, for a rule file with both. |
+| `--weather FILE` | Weather cases (`.olswc`). Default: the file of the same name as the rule file, next to it or in a `weather` folder beside it (a design code's preset), else the project's weather case file used last. |
+| `--case NAME` | Only these weather cases (wildcards; repeatable). Default: every case the rules name. |
+| `--cloud SPEC` | Point cloud: `FILE.ols`, `FILE.ols#name` or `FILE.copc.laz`. Default: the project's own point cloud, if it holds one. `--no-cloud` reads none. |
+| `--terrain FILE`, `--surface NAME` | The ground: survey points, or a surface stored in the project. Default: the project's surface of the checks, else its active surface (as set by an earlier build), else the ground classes of the point cloud along the spans (lowest point per square metre, triangles of up to 50 m) — as the program builds it. |
+| `--lidar-classes FILE` | Class scheme (`.olsc`); default the point cloud's own, else ASPRS. |
+| `--library`, `--structures`, `--insulators` | As for `ols line`: the shipped wire and insulator libraries, the `Structures` folder next to the file. |
+| `--search-distance M`, `--circuits NAME`, `--method fe\|rs` | Override the rule file's `[check]` (`--circuits` repeatable; `""`: the sections without a circuit). |
+| `--csv FILE` | Every finding: `status` (`violation`, then `ok` for each rule's lowest clearance that keeps it), rule, section, span, case, wind pressure and side, target, class, clearance and required distance, count, the wire and target points. |
+| `--time-limit S` | Stop after this many seconds (default 600): solving every wind position and reading the points. |
+
+The report lists the sections solved, the wind positions, the LiDAR points
+read and the time taken, then the findings as the window shows them:
+the violations, worst first, then each rule's lowest clearance. The exit
+status is **0** with no violation, **1** with violations, **2** on an
+error (a rule file with both measures, no weather case, the time limit) —
+for scripts and batch runs.
 
 ## Survey files
 

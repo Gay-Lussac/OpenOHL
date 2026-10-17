@@ -66,14 +66,14 @@
 //!   `vertical_depth = "0.2 m"` cuts it along the line in slices of that
 //!   depth, the wire taken at its lowest over each slice.
 //! - `[wind]` (`steps`, `step`, `sides`): how the desktop clearance windows
-//!   apply the wind ([`WindSteps`]); `ols line` ignores it.
+//!   apply the wind ([`WindSteps`]), and `ols zones`; `ols line` ignores it.
 //! - `[check]` (`circuits`, `method`, `search_distance`): what the
 //!   desktop clearance windows solve and read ([`CheckScope`]): only the
 //!   circuits named (by circuit name; default every circuit), every
 //!   section by this calculation method (`"fe"` finite elements, `"rs"`
 //!   ruling span; default each section's own), LiDAR points only within
 //!   `search_distance` of the wires (default: as far as the rules reach);
-//!   `ols line` ignores it.
+//!   `ols zones` too; `ols line` ignores it.
 //!
 //! ## Clearances by voltage
 //!

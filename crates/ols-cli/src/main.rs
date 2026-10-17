@@ -21,6 +21,7 @@ mod structure_fe;
 mod surface;
 mod thermal_run;
 mod versions;
+mod zones_run;
 
 #[derive(Parser)]
 #[command(
@@ -78,6 +79,10 @@ enum Command {
         #[command(subcommand)]
         command: StructuresCommand,
     },
+    /// Vertical or radial clearances to the ground and LiDAR classes in
+    /// the wind, by a rule file: the check of the desktop clearance
+    /// windows. Exit status 0: no violation, 1: violations, 2: an error.
+    Zones(Box<zones_run::ZonesArgs>),
     /// Galloping ellipses and blowout against the right of way.
     Clearance {
         #[command(subcommand)]
@@ -624,6 +629,7 @@ fn main() -> ExitCode {
         Some(Command::Validate { path, report, list }) => validate(&path, report.as_deref(), list),
         Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
         Some(Command::Line(args)) => line(&args, None),
+        Some(Command::Zones(args)) => zones_run::command(&args),
         Some(Command::Bom(args)) => report(cost_run::bom(&args)),
         Some(Command::Spot(args)) => report(cost_run::spot(&args)),
         Some(Command::Drawing(args)) => drawing_command(&args),
@@ -1247,27 +1253,11 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
     use ols_weather::{WeatherCase, WeatherCases};
     // Pylon files: given, else the project's Structures/ folder, else the
     // shared library.
-    let structure_dir: &std::path::Path = &match structure_dir_arg {
-        Some(d) => d.clone(),
-        None => file
-            .parent()
-            .unwrap_or(std::path::Path::new("."))
-            .join("Structures"),
-    };
+    let structure_dir: &std::path::Path =
+        &project::structures_dir(file, structure_dir_arg.as_deref());
 
     let run = || -> Result<(), String> {
-        let mut line = project::load_line(file)?;
-        let mut types = ols_structures::StructureLibrary::default();
-        if line.structures.iter().any(|s| s.structure_type.is_some()) {
-            let structures = ols_structures::StructureLibrary::load_dir(structure_dir)
-                .map_err(|e| e.to_string())?;
-            let insulators = ols_structures::InsulatorLibrary::load_dir(insulator_dir)
-                .map_err(|e| e.to_string())?;
-            line = line
-                .resolve(&structures, &insulators)
-                .map_err(|e| e.to_string())?;
-            types = structures;
-        }
+        let (mut line, types) = project::load_resolved(file, structure_dir, insulator_dir)?;
         let library = ols_cables::Library::load(library).map_err(|e| e.to_string())?;
         // Formats first: a wrong format or plugin fails before solving.
         let export_options = io_run::options(export_options)?;

@@ -244,6 +244,22 @@ pub fn open_source(spec: &str) -> Result<Box<dyn PointSource + Send>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Reads the points of `classes` of the cloud of `spec` ([`open_source`])
+/// within `reach` of the `polylines` (in plan): the point reader of a zone
+/// check (`ols_clearance::zone::run_zone_check`).
+pub fn visit_around(
+    spec: &str,
+    polylines: &[Vec<[f64; 2]>],
+    reach: f64,
+    classes: &[u8],
+    budget: &Budget,
+    visit: &mut dyn FnMut(f64, f64, f64, u8),
+) -> Result<Stats, String> {
+    let source = open_source(spec)?;
+    let corridor = Corridor::new(polylines, reach);
+    source.visit(Some(&corridor), Some(classes), budget, visit)
+}
+
 /// A block read at a level of detail: its summary and the counts of its
 /// stored levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

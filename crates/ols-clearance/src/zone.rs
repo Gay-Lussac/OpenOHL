@@ -27,6 +27,8 @@
 //! the wires at all of them form the surface the wire sweeps as the wind
 //! rises, and each span's clearance is the lowest over all of them
 //! ([`wind_states`], [`solve_states`], [`check_zones`]).
+//!
+//! The whole check, as the windows and `ols zones` run it: [`run_zone_check`].
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -44,6 +46,7 @@ use crate::rules::{
     CheckScope, CircuitFilter, DEFAULT_SEARCH_MARGIN, PairVoltage, Requirement, Rule, RuleSet,
     Target, WindSteps, Wires, default_band,
 };
+pub use crate::zone_run::{PointReader, ZoneCheckResult, line_voltages, run_zone_check};
 use ols_line::jumper::JumperShape;
 
 /// Default half width of the vertical zone, m.
@@ -972,6 +975,55 @@ mod tests {
             .unwrap()
             .spans[0]
             .mid_point
+    }
+
+    /// The whole check: the points through the caller's reader, the
+    /// circuits chosen.
+    #[test]
+    fn a_whole_zone_check() {
+        let (line, library) = example();
+        let case = WeatherCase::still("still", Temperature::from_celsius(15.0));
+        let mid = s1_middle(&case);
+        let states = wind_states(std::slice::from_ref(&case), |_| true, &WindSteps::default());
+        let read = |polylines: &[Vec<[f64; 2]>],
+                    reach: f64,
+                    classes: &[u8],
+                    _: &Budget,
+                    visit: &mut dyn FnMut(f64, f64, f64, u8)| {
+            assert!(!polylines.is_empty());
+            // The rule's 5 m, the margin, the zone's width and 1 m.
+            assert!(reach > 5.0, "{reach}");
+            assert_eq!(classes, [5]);
+            visit(mid[0], mid[1], mid[2] - 3.0, 5);
+            Ok(())
+        };
+        let run = |check: &CheckScope| {
+            run_zone_check(
+                &line,
+                &library,
+                Zone::new(Measure::Vertical),
+                check,
+                vec![rule(5.0, &[5])],
+                states.clone(),
+                Some(&read),
+                None,
+                None,
+                &Budget::new(),
+                &AtomicUsize::new(0),
+            )
+        };
+        let r = run(&CheckScope::default()).unwrap();
+        assert_eq!(r.sections.len(), line.sections.len());
+        assert_eq!(r.zone.points, 1);
+        let f = s1(&r.zone).unwrap();
+        assert!((f.distance - 3.0).abs() < 0.05, "{}", f.distance);
+        assert_eq!(r.violations(), 1);
+        let none = run(&CheckScope {
+            circuits: vec!["no such circuit".into()],
+            ..CheckScope::default()
+        })
+        .unwrap_err();
+        assert!(none.contains("circuits chosen"), "{none}");
     }
 
     #[test]
