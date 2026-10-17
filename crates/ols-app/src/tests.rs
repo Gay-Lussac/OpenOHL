@@ -3005,6 +3005,100 @@ fn jumpers_are_added_where_none_are() {
     assert!(matches!(r.selection, Selection::Jumper(_)));
 }
 
+/// A jumper between two different circuits: told first (Continue /
+/// Cancel), then both compared and the one that stays chosen; the other's
+/// sections take its name, phase and system with the jumper, undone
+/// together.
+#[test]
+fn a_jumper_joining_two_circuits_asks_which_stays() {
+    use crate::tools::Tool;
+    let model = synthetic_project("circuit-join");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let n = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .jumpers
+        .len();
+    // S1 (L1) and S2 (L2) at T5: different phases.
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1), None);
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 11), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let join = r.circuit_join.as_ref().expect("asked first");
+        assert_eq!(join.step, crate::circuit_join::Step::Warn);
+        assert_eq!(r.model.line.jumpers.len(), n, "nothing added yet");
+    }
+    harness.run();
+    harness.get_by_label("You are trying to connect 2 different circuits");
+    // Cancel: nothing changes.
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    assert!(harness.state_mut().ready().unwrap().circuit_join.is_none());
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1), None);
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 11), None);
+    harness.run();
+    harness.get_by_label("Continue").click();
+    harness.run();
+    harness.get_by_label_contains("system's phases");
+    // Keep the circuit at the jumper's other end (S2's phase).
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .circuit_join
+        .as_mut()
+        .unwrap()
+        .keep = 1;
+    harness.run();
+    harness.get_by_label_contains("Join into").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.circuit_join.is_none());
+        assert_eq!(r.model.line.jumpers.len(), n + 1, "{:?}", r.status);
+        let line = &r.model.line;
+        assert_eq!(line.sections[0].phase_label, line.sections[1].phase_label);
+        assert_eq!(line.sections[0].phase_label, "L2");
+    }
+    // One undo takes both back.
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.line.jumpers.len(), n);
+    assert_eq!(r.model.line.sections[0].phase_label, "L1");
+}
+
+#[test]
+#[ignore = "writes images of the circuit join windows to OLS_SHOTS (a look by eye)"]
+fn circuit_join_window_images() {
+    use crate::tools::Tool;
+    let Ok(dir) = std::env::var("OLS_SHOTS") else {
+        return;
+    };
+    let model = synthetic_project("circuit-join-shots");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1), None);
+    use_tool(&mut harness, Tool::AddJumper, string_at("T5", 11), None);
+    let shot = |h: &mut Harness<'_, App>, name: &str| {
+        h.run();
+        h.render()
+            .unwrap()
+            .save(format!("{dir}/{name}.png"))
+            .unwrap();
+    };
+    shot(&mut harness, "circuit-join-1");
+    harness.get_by_label("Continue").click();
+    shot(&mut harness, "circuit-join-2");
+}
+
 /// ⌘S writes the project file through and says so; the hotbar is at the
 /// bottom of the 3D view and goes with it when another page is in front.
 #[test]
