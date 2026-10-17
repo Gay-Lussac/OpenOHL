@@ -327,7 +327,9 @@ between them; written in the new form.
 and `[[type]]`s — `id`, `name`, `description`, `kind` (`body`, `clamp`,
 `spread`), `weight`, the shape as on objects, `drag`, `clamp_length`, a
 spread type's `load` (N/m). Shipped templates (typical values, to check):
-`libraries/objects/templates.olsload`.
+`libraries/objects/templates.olsload`. A project's own types are a project library file
+of kind `objects` (`project.olsload`), over the templates of the same
+ids (Sections › Point and spread load types).
 
 ### Jumper and JumperClamp (`lib.rs`, `jumper.rs`)
 

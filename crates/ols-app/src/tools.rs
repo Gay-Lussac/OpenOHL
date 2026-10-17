@@ -147,7 +147,7 @@ impl Tool {
                 "right-click a structure: the jumpers missing there (section ends of the same circuit and phase); or two strings: a jumper between them"
             }
             Tool::OnSpan => {
-                "right-click a span: a span point, a point load or a spread load where it was clicked"
+                "right-click a span or a jumper: a point there, bare or with its object (a body or a clamp, from a template), or on a span a spread"
             }
         }
     }
@@ -172,12 +172,20 @@ impl Tool {
         self == Tool::AddString
     }
 
+    /// Jumpers (their points) can be right-clicked while it is held.
+    pub fn picks_jumpers(self) -> bool {
+        matches!(
+            self,
+            Tool::OnSpan | Tool::AddJumper | Tool::Delete | Tool::Edit
+        )
+    }
+
     /// Spans (their span points, spacers) can be right-clicked while it is
     /// held.
     pub fn picks_spans(self) -> bool {
         matches!(
             self,
-            Tool::AddString | Tool::OnSpan | Tool::Delete | Tool::Edit
+            Tool::AddString | Tool::OnSpan | Tool::AddJumper | Tool::Delete | Tool::Edit
         )
     }
 

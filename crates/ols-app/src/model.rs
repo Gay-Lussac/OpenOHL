@@ -1204,6 +1204,39 @@ impl Model {
         self.check_plugins = dirs;
     }
 
+    /// Kind of the project's library files of point and spread load
+    /// types (`.olsload`).
+    pub const OBJECT_LIBRARY_KIND: &'static str = "objects";
+
+    /// The point and spread load types to choose from: the shipped
+    /// templates, then the project's own (an own type of a template's id
+    /// replaces it).
+    pub fn object_library(&self) -> ols_line::ObjectLibrary {
+        let mut lib = ols_line::ObjectLibrary::templates();
+        if let Ok(e) = &self.editing
+            && let Ok(files) = e.session.library_files(Self::OBJECT_LIBRARY_KIND)
+        {
+            for (_, text) in files {
+                if let Ok(own) = ols_line::ObjectLibrary::parse(&text) {
+                    for t in own.types {
+                        lib.types.retain(|x| x.id != t.id);
+                        lib.types.push(t);
+                    }
+                }
+            }
+        }
+        lib
+    }
+
+    /// A jumper as solved in weather case `case`.
+    pub fn jumper_shape(&self, id: &str, case: usize) -> Option<&ols_line::jumper::JumperShape> {
+        self.cases
+            .get(self.shown(case).first().copied().unwrap_or(case))?
+            .jumpers
+            .iter()
+            .find(|j| j.jumper == id)
+    }
+
     /// Section `section` as shown (its display case, else `case`).
     pub fn shape(&self, section: &str, case: usize) -> Option<&SectionShape> {
         self.cases
