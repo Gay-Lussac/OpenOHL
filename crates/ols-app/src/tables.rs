@@ -2289,10 +2289,11 @@ impl TableKind {
                     systems.push(s);
                 }
                 // The systems are part of the line settings.
-                out.commands.push((
-                    "changed electrical systems".into(),
-                    ols_session::line_settings_put(stored, Some(systems)),
-                ));
+                out.commands.push(("changed electrical systems".into(), {
+                    let mut line = stored.clone();
+                    line.systems = systems;
+                    ols_session::line_settings_change(stored, &line)
+                }));
             }
             TableKind::Alignments => alignment_list_commands(stored, rows, page, &mut out)?,
             TableKind::AlignmentPoints => {
@@ -2467,8 +2468,8 @@ impl TableKind {
             TableKind::Systems => Kind::Meta,
             _ => return Ok(()),
         };
-        // The systems are in the line settings.
-        let put_id = if kind == Kind::Meta { "line" } else { id };
+        // The systems are a row of the line settings.
+        let put_id = if kind == Kind::Meta { "systems" } else { id };
         let found = out
             .commands
             .iter_mut()
@@ -2512,10 +2513,7 @@ impl TableKind {
                             .find(|r| r.id == id)
                             .ok_or_else(missing)?,
                     ),
-                    _ => match ols_session::line_settings_put(stored, None) {
-                        Command::Put { value, .. } => Ok(value),
-                        _ => unreachable!("a put"),
-                    },
+                    _ => Ok(serde_json::json!({ "systems": stored.systems })),
                 }
                 .map_err(json)?;
                 own.insert(v)
@@ -3029,7 +3027,7 @@ fn circuit_commands(
     }
     out.commands.push((
         "changed the starts and ends of electrical circuits".into(),
-        ols_session::line_settings_put(&line, None),
+        ols_session::line_settings_change(stored, &line),
     ));
     // Their jumpers along them: `from` the end nearer a start.
     for c in ols_line::electrical::circuits(&line)

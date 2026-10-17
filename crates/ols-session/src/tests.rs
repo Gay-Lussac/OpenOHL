@@ -1533,10 +1533,7 @@ fn circuit_starts_follow_renames_and_deletions() {
     )
     .unwrap();
     let stored = |s: &Session| -> Vec<ols_line::SectionPoint> {
-        let meta = &s.objects[&(Kind::Meta, "line".to_owned())];
-        serde_json::from_value::<Meta>(meta.value.clone())
-            .unwrap()
-            .circuit_starts
+        meta_of(&s.objects).unwrap().unwrap().circuit_starts
     };
     s.apply(
         "ana",
@@ -1662,4 +1659,103 @@ fn relabelling_a_point_takes_what_names_it() {
     );
     s.undo("ana").unwrap();
     assert_eq!(ja(&s, "JA").points[0].label, "K");
+}
+
+/// Replacing the line keeps the replacing line's order; spacers are in
+/// the spatial index.
+#[test]
+fn a_replaced_line_keeps_its_order_and_spacers_are_indexed() {
+    let (_p, mut s) = project("replace-order");
+    let mut line = s.export();
+    line.structures.reverse();
+    line.sections.reverse();
+    s.apply(
+        "ana",
+        Command::ReplaceLine {
+            line: Box::new(line.clone()),
+        },
+    )
+    .unwrap();
+    let ids = |l: &Line| {
+        l.structures
+            .iter()
+            .map(|x| x.id.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(s.line()), ids(&line));
+    assert_eq!(s.line().sections[0].id, line.sections[0].id);
+    // A spacer between S1 and S2 in their first span.
+    let mut line = s.export();
+    for sec in line
+        .sections
+        .iter_mut()
+        .filter(|x| x.id == "S1" || x.id == "S2")
+    {
+        sec.span_points.push(ols_line::SpanPoint {
+            label: "M".into(),
+            span: 0,
+            at: ols_line::SpanPlace::at_fraction(0.5),
+            description: String::new(),
+            object: Some(ols_line::LineObject::clamp(0.0)),
+        });
+    }
+    let end = |sec: &str| ols_line::SpanPointRef {
+        section: sec.into(),
+        point: "M".into(),
+    };
+    line.spacers.push(ols_line::Spacer {
+        id: "SP".into(),
+        a: end("S1"),
+        b: end("S2"),
+        weight: 100.0,
+        ..Default::default()
+    });
+    s.apply(
+        "ana",
+        Command::ReplaceLine {
+            line: Box::new(line),
+        },
+    )
+    .unwrap();
+    assert!(s.spatial_entry(Kind::Spacer, "SP").is_some());
+}
+
+/// The line's settings are rows of their own: two users changing
+/// different settings from the same state keep both, and each undoes
+/// their own; a project with all settings in one row reads as before.
+#[test]
+fn settings_changed_by_two_users_are_both_kept() {
+    let (_p, mut s) = project("settings-rows");
+    let base = s.line().clone();
+    let mut a = base.clone();
+    a.defaults.jumper_stiffness_factor = 0.5;
+    let mut b = base.clone();
+    b.solver.jumper_loads = ols_line::JumperLoads::Pull;
+    // Both made on `base` (as two clients would).
+    s.apply("ana", line_settings_change(&base, &a)).unwrap();
+    s.apply("ben", line_settings_change(&base, &b)).unwrap();
+    assert_eq!(s.line().defaults.jumper_stiffness_factor, 0.5);
+    assert_eq!(s.line().solver.jumper_loads, ols_line::JumperLoads::Pull);
+    // Ana's undo: her row only, Ben's change stays.
+    s.undo("ana").unwrap();
+    assert_eq!(
+        s.line().defaults.jumper_stiffness_factor,
+        base.defaults.jumper_stiffness_factor
+    );
+    assert_eq!(s.line().solver.jumper_loads, ols_line::JumperLoads::Pull);
+    // All settings in the `line` row (projects written before): read,
+    // the rows over it.
+    let mut objects = s.objects.clone();
+    let mut all = Meta::of(s.line());
+    all.name = "old form".into();
+    for k in META_ROWS {
+        objects.remove(&(Kind::Meta, k.to_owned()));
+    }
+    objects
+        .get_mut(&(Kind::Meta, "line".to_owned()))
+        .unwrap()
+        .value = json(&all);
+    let read = meta_of(&objects).unwrap().unwrap();
+    assert_eq!(read.name, "old form");
+    assert_eq!(read.solver.jumper_loads, ols_line::JumperLoads::Pull);
 }

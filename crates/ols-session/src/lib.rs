@@ -606,9 +606,114 @@ impl Meta {
     }
 }
 
-/// The put of the line's settings (name, CRS, display, systems, creep
-/// stretch) as in `line`, with new systems when given. Every field is
-/// written: the put replaces the whole object.
+/// The line's settings in rows of their own (`meta` objects), so that
+/// two users changing different settings do not overwrite each other and
+/// undo one each: `line` (name, CRS, display) and one row per setting.
+/// Projects written before kept them all in `line`: read as defaults
+/// under the rows ([`meta_of`]), until the first change writes the rows.
+const META_ROWS: [&str; 6] = [
+    "systems",
+    "creep_stretch",
+    "bimetallic",
+    "solver",
+    "defaults",
+    "circuit_starts",
+];
+
+/// The settings `meta` as rows: (id, value).
+fn meta_rows(meta: &Meta) -> Vec<(String, Value)> {
+    let Value::Object(mut all) = json(meta) else {
+        unreachable!("settings are an object")
+    };
+    let mut out = Vec::new();
+    for key in META_ROWS {
+        all.remove(key);
+        // Every row written, defaults too (a row overrides the old one).
+        let v = match key {
+            "systems" => json(&meta.systems),
+            "creep_stretch" => json(&meta.creep_stretch),
+            "bimetallic" => json(&meta.bimetallic),
+            "solver" => json(&meta.solver),
+            "defaults" => json(&meta.defaults),
+            _ => json(&meta.circuit_starts),
+        };
+        out.push((key.to_owned(), serde_json::json!({ key: v })));
+    }
+    out.insert(0, ("line".to_owned(), Value::Object(all)));
+    out
+}
+
+/// The puts of the settings `meta`, every row (those unchanged are left
+/// out when applied).
+fn meta_puts(meta: &Meta) -> Command {
+    Command::Batch {
+        commands: meta_rows(meta)
+            .into_iter()
+            .map(|(id, value)| Command::Put {
+                kind: Kind::Meta,
+                id,
+                value,
+                ord: None,
+            })
+            .collect(),
+    }
+}
+
+/// The settings kept in the `meta` rows of `objects`: `line` under the
+/// others.
+fn meta_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Option<Meta>, String> {
+    let Some(base) = objects.get(&(Kind::Meta, "line".to_owned())) else {
+        return Ok(None);
+    };
+    let Value::Object(mut all) = base.value.clone() else {
+        return Err("line settings: not an object".into());
+    };
+    for key in META_ROWS {
+        if let Some(Value::Object(row)) = objects
+            .get(&(Kind::Meta, key.to_owned()))
+            .map(|o| o.value.clone())
+        {
+            all.extend(row);
+        }
+    }
+    serde_json::from_value(Value::Object(all))
+        .map(Some)
+        .map_err(|e| format!("line settings: {e}"))
+}
+
+/// The put of the settings row of the circuit starts.
+fn starts_put(starts: &[ols_line::SectionPoint]) -> Command {
+    Command::Put {
+        kind: Kind::Meta,
+        id: "circuit_starts".into(),
+        value: serde_json::json!({ "circuit_starts": starts }),
+        ord: None,
+    }
+}
+
+/// The puts of the settings rows that differ between `before` (the line
+/// the change was made on) and `after`: a user's change of one setting
+/// puts that row only, never another user's settings as they were.
+pub fn line_settings_change(before: &Line, after: &Line) -> Command {
+    let old = meta_rows(&Meta::of(before));
+    Command::Batch {
+        commands: meta_rows(&Meta::of(after))
+            .into_iter()
+            .zip(old)
+            .filter(|((_, a), (_, b))| a != b)
+            .map(|((id, value), _)| Command::Put {
+                kind: Kind::Meta,
+                id,
+                value,
+                ord: None,
+            })
+            .collect(),
+    }
+}
+
+/// The puts of the line's settings (name, CRS, display, systems, creep
+/// stretch…) as in `line`, with new systems when given: one row each
+/// ([`META_ROWS`]), those unchanged left out when applied.
 pub fn line_settings_put(
     line: &Line,
     systems: Option<Vec<ols_line::electrical::System>>,
@@ -617,12 +722,7 @@ pub fn line_settings_put(
     if let Some(s) = systems {
         meta.systems = s;
     }
-    Command::Put {
-        kind: Kind::Meta,
-        id: "line".into(),
-        value: json(&meta),
-        ord: None,
-    }
+    meta_puts(&meta)
 }
 
 /// A raw log row: seq, time, user, kind, command, inverse, objects,
@@ -719,7 +819,10 @@ fn put<T: Serialize>(kind: Kind, id: &str, v: &T) -> Command {
 
 /// Objects of a line, in line order.
 fn objects_of(line: &Line) -> Vec<(Kind, String, Value)> {
-    let mut out = vec![(Kind::Meta, "line".to_owned(), json(&Meta::of(line)))];
+    let mut out: Vec<(Kind, String, Value)> = meta_rows(&Meta::of(line))
+        .into_iter()
+        .map(|(id, v)| (Kind::Meta, id, v))
+        .collect();
     out.extend(
         line.routes
             .iter()
@@ -804,11 +907,9 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
     let bad = |m: String| refused(m);
     let mut ordered: Vec<(&(Kind, String), &Object)> = objects.iter().collect();
     ordered.sort_by_key(|(k, o)| (k.0, o.ord));
-    let meta = objects
-        .get(&(Kind::Meta, "line".to_owned()))
+    let meta = meta_of(objects)
+        .map_err(bad)?
         .ok_or_else(|| bad("the project has no line".into()))?;
-    let meta: Meta = serde_json::from_value(meta.value.clone())
-        .map_err(|e| bad(format!("line settings: {e}")))?;
     let mut line = Line {
         alignments: Default::default(),
         alignment_points: Default::default(),
@@ -1441,16 +1542,9 @@ impl Session {
         &self,
         creep_stretch: ols_line::condition::CreepStretch,
     ) -> Command {
-        let meta = Meta {
-            creep_stretch,
-            ..Meta::of(&self.line)
-        };
-        Command::Put {
-            kind: Kind::Meta,
-            id: "line".into(),
-            value: json(&meta),
-            ord: None,
-        }
+        let mut line = self.line.clone();
+        line.creep_stretch = creep_stretch;
+        line_settings_change(&self.line, &line)
     }
 
     /// The command setting the line's bimetallic conductor model
@@ -1459,7 +1553,7 @@ impl Session {
     pub fn bimetallic_command(&self, bimetallic: ols_cables::BimetallicModel) -> Command {
         let mut line = self.line.clone();
         line.bimetallic = bimetallic;
-        line_settings_put(&line, None)
+        line_settings_change(&self.line, &line)
     }
 
     /// The command setting the line's calculation options (Criteria ›
@@ -1468,7 +1562,7 @@ impl Session {
     pub fn solver_command(&self, solver: ols_line::SolverOptions) -> Command {
         let mut line = self.line.clone();
         line.solver = solver;
-        line_settings_put(&line, None)
+        line_settings_change(&self.line, &line)
     }
 
     /// The alignment points tied to structure `id`.
@@ -1942,16 +2036,9 @@ impl Session {
                     .find(|s| s.id == id)
                     .ok_or_else(|| refused(format!("no system {id}")))?
                     .id = new_id.clone();
-                let meta = Meta {
-                    systems,
-                    ..Meta::of(&self.line)
-                };
-                out.push(Command::Put {
-                    kind: Kind::Meta,
-                    id: "line".into(),
-                    value: json(&meta),
-                    ord: None,
-                });
+                let mut line = self.line.clone();
+                line.systems = systems;
+                self.primitives(line_settings_change(&self.line, &line), out, notes, user)?;
                 for sec in &self.line.sections {
                     if sec.system.as_deref() == Some(&id) {
                         let mut sec = sec.clone();
@@ -1980,11 +2067,17 @@ impl Session {
                         });
                     }
                 }
+                // In the replacing line's order: each object's place among
+                // its kind.
+                let mut nth: BTreeMap<Kind, i64> = BTreeMap::new();
                 for (kind, id, value) in new {
+                    let n = nth.entry(kind).or_default();
+                    let place = *n;
+                    *n += 1;
                     if self
                         .objects
                         .get(&(kind, id.clone()))
-                        .is_some_and(|o| o.value == value)
+                        .is_some_and(|o| o.value == value && o.ord == place)
                     {
                         continue;
                     }
@@ -1992,7 +2085,7 @@ impl Session {
                         kind,
                         id,
                         value,
-                        ord: None,
+                        ord: Some(place),
                     });
                 }
                 notes.push(format!("replace the line by \"{}\"", line.name));
@@ -2399,37 +2492,35 @@ impl Session {
                     sections.remove(id);
                 }
                 Command::Put {
-                    kind: Kind::Meta, ..
-                } => meta_at = Some(k),
+                    kind: Kind::Meta,
+                    id,
+                    ..
+                } if id == "circuit_starts" => meta_at = Some(k),
                 _ => {}
             }
         }
         let on = |p: &ols_line::SectionPoint| sections.values().any(|pts| pts.contains(p));
+        let starts_of = |v: &Value| -> Vec<ols_line::SectionPoint> {
+            v.get("circuit_starts")
+                .and_then(|x| serde_json::from_value(x.clone()).ok())
+                .unwrap_or_default()
+        };
+        let mut starts = match meta_at {
+            Some(k) => match &prims[k] {
+                Command::Put { value, .. } => starts_of(value),
+                _ => unreachable!("a put"),
+            },
+            None => self.line.circuit_starts.clone(),
+        };
+        let n = starts.len();
+        starts.retain(on);
+        if starts.len() == n {
+            return;
+        }
+        let put = starts_put(&starts);
         match meta_at {
-            Some(k) => {
-                if let Command::Put { value, .. } = &mut prims[k]
-                    && let Ok(mut meta) = serde_json::from_value::<Meta>(value.clone())
-                {
-                    let n = meta.circuit_starts.len();
-                    meta.circuit_starts.retain(on);
-                    if meta.circuit_starts.len() != n {
-                        *value = json(&meta);
-                    }
-                }
-            }
-            None => {
-                let mut meta = Meta::of(&self.line);
-                let n = meta.circuit_starts.len();
-                meta.circuit_starts.retain(on);
-                if meta.circuit_starts.len() != n {
-                    prims.push(Command::Put {
-                        kind: Kind::Meta,
-                        id: "line".into(),
-                        value: json(&meta),
-                        ord: None,
-                    });
-                }
-            }
+            Some(k) => prims[k] = put,
+            None => prims.push(put),
         }
     }
 
@@ -2447,12 +2538,7 @@ impl Session {
                 changed = true;
             }
         }
-        changed.then(|| Command::Put {
-            kind: Kind::Meta,
-            id: "line".into(),
-            value: json(&meta),
-            ord: None,
-        })
+        changed.then(|| starts_put(&meta.circuit_starts))
     }
 
     /// The command setting the project's default values (Criteria ›
@@ -2460,7 +2546,7 @@ impl Session {
     pub fn defaults_command(&self, defaults: ols_line::Defaults) -> Command {
         let mut line = self.line.clone();
         line.defaults = defaults;
-        line_settings_put(&line, None)
+        line_settings_change(&self.line, &line)
     }
 
     /// Applies `command` (validated, atomic), logs it as `entry_kind`.
@@ -2480,6 +2566,15 @@ impl Session {
         self.primitives(command, &mut prims, &mut notes, cascade)?;
         if cascade {
             self.starts_follow(&mut prims);
+        }
+        // Settings rows unchanged are left out: a setting changed touches
+        // its own row only ([`META_ROWS`]).
+        let same = |c: &Command| {
+            matches!(c, Command::Put { kind: Kind::Meta, id, value, .. }
+                if self.objects.get(&(Kind::Meta, id.clone())).is_some_and(|o| &o.value == value))
+        };
+        if prims.iter().any(|c| !same(c)) {
+            prims.retain(|c| !same(c));
         }
         let note = (!notes.is_empty()).then(|| notes.join("; "));
         if prims.is_empty() {

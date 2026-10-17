@@ -102,6 +102,20 @@ pub fn object_bounds(line: &Line) -> BTreeMap<(Kind, String), Bounds> {
         }));
         put(Kind::Jumper, &j.id, pts);
     }
+    // Spacers: where their ends are on the wires.
+    for s in &line.spacers {
+        let pts = [&s.a, &s.b]
+            .into_iter()
+            .filter_map(|e| {
+                ols_line::jumper::approximate_end(
+                    line,
+                    &ols_line::JumperEnd::tap(ols_line::Tap::Span(e.clone())),
+                    0,
+                )
+            })
+            .collect();
+        put(Kind::Spacer, &s.id, pts);
+    }
     for p in &line.alignment_points {
         put(Kind::AlignmentPoint, &p.id, vec![p.position]);
     }
