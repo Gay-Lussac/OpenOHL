@@ -661,3 +661,87 @@ fn jumper_support_strings_load_their_tops() {
         assert!(l.local[2] < 50.0 + 400.0, "{}: {:?}", c.case.name, l.local);
     }
 }
+
+/// A placed structure standing on an extension with a body is checked on
+/// the model with that body: type-02 gets an extension `+2` (a piece of
+/// four pinned joints 2 m under its feet, X-braced), T2 stands on it; its
+/// finite-element check runs on the model with the piece (four joints and
+/// twelve members more), T4 (no extension) on the model as written; a
+/// plain extension (`+1`) has no model of its own.
+#[test]
+fn structure_analysis_with_an_extension_body() {
+    let dir = std::env::temp_dir().join(format!("ols-loads-ext-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for f in std::fs::read_dir(ex().join("Structures")).unwrap() {
+        let f = f.unwrap().path();
+        std::fs::copy(&f, dir.join(f.file_name().unwrap())).unwrap();
+    }
+    let feet = [
+        ("L0A", -2.5, -2.5),
+        ("L0B", 2.5, -2.5),
+        ("L0C", 2.5, 2.5),
+        ("L0D", -2.5, 2.5),
+    ];
+    let mut piece = String::from(
+        "\n[[extension]]\nname = \"+1\"\ndz = \"1 m\"\n\n[[extension]]\nname = \"+2\"\ndz = \"2 m\"\n",
+    );
+    for (k, (_, x, y)) in feet.iter().enumerate() {
+        piece.push_str(&format!(
+            "[[extension.node]]\nid = \"P{k}\"\npoint = [\"{x} m\", \"{y} m\", \"-2 m\"]\nsupport = \"pinned\"\n"
+        ));
+    }
+    let mut n = 0;
+    let mut member = |a: String, b: &str, s: &str| {
+        n += 1;
+        format!(
+            "[[extension.member]]\nid = \"PM{n}\"\nnodes = [\"{a}\", \"{b}\"]\nsection = \"{s}\"\n"
+        )
+    };
+    for k in 0..4 {
+        let j = (k + 1) % 4;
+        piece.push_str(&member(format!("P{k}"), feet[k].0, "leg"));
+        piece.push_str(&member(format!("P{k}"), feet[j].0, "brace"));
+        piece.push_str(&member(format!("P{j}"), feet[k].0, "brace"));
+    }
+    let path = dir.join("type-02.olss");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, format!("{text}{piece}")).unwrap();
+    let types = ols_structures::StructureLibrary::load_dir(&dir).unwrap();
+    let analyses =
+        crate::analysis::Analyses::load(&types, &ols_sections::SectionLibrary::default());
+    let size = |ext: Option<&str>| {
+        analyses
+            .model("type-02", ext)
+            .map(|m| (m.nodes.len(), m.members.len()))
+    };
+    let (n0, m0) = size(None).unwrap();
+    assert_eq!(size(Some("+2")), Some((n0 + 4, m0 + 12)));
+    assert_eq!(size(Some("+1")), None);
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ols.json")).unwrap();
+    for s in line.structures.iter_mut().filter(|s| s.id == "T2") {
+        s.extension = Some("+2".into());
+    }
+    let mut line = line
+        .resolve(&types, &ols_structures::InsulatorLibrary::default())
+        .unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    let (_, library, weather, cases) = setup();
+    let budget = ols_wirefe::default_fe_budget();
+    let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+    let mut seen = 0;
+    for c in &usage {
+        for s in c
+            .structures
+            .iter()
+            .filter(|s| s.structure == "T2" || s.structure == "T4")
+        {
+            let fe = s.fe.as_ref().unwrap_or_else(|| panic!("{s:?}"));
+            assert!(fe.usage > 0.0 && fe.usage < 1.0, "{}: {fe:?}", c.case);
+            assert!(s.notes.is_empty(), "{s:?}");
+            seen += 1;
+        }
+    }
+    assert_eq!(seen, 2 * usage.len());
+    std::fs::remove_dir_all(&dir).ok();
+}

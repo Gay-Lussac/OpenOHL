@@ -12,17 +12,27 @@
 //!   existing line.
 //! - [`templates`]: pylon templates (`*.olspt`), the face of a pylon as a
 //!   few dimensions, building structure types of level 1.
+//! - [`pole`]: the pole of a pole structure, named (`.olsp`) or described
+//!   in the structure file (`[pole]`, levels 1 to 3).
+//! - [`extensions`]: height extensions, their bodies and leg extensions.
 
 pub mod derive;
+pub mod extensions;
 pub mod insulators;
+pub mod pole;
 pub mod structures;
 pub mod templates;
+
+#[cfg(test)]
+mod pole_extension_tests;
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+pub use extensions::{ExtendedBody, Extension, LegExtension};
 pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary};
+pub use pole::{InlinePole, PoleRef, PoleRing, PoleShape};
 pub use structures::{
     AllowedSpans, AttachmentCapacity, Capacity, Detail, Interaction, PlacedAttachment, PlacedPoint,
     PlacedString, PlacedStrings, PlacedWire, SpanLimit, StructureLibrary, StructureType,

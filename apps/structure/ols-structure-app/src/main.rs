@@ -22,9 +22,11 @@
 mod app;
 mod body_tab;
 mod export_menu;
+mod extensions_panel;
 mod generators_ui;
 mod in_line_tab;
 mod load_cases_tab;
+mod pole_panel;
 mod results_tab;
 mod tables;
 mod view;
@@ -40,6 +42,8 @@ mod body_ui_tests;
 mod load_tests;
 #[cfg(test)]
 mod placed_tests;
+#[cfg(test)]
+mod pole_extension_ui_tests;
 #[cfg(test)]
 mod tests;
 

@@ -57,16 +57,25 @@ pub struct FeArgs {
     /// axis (right of the line) towards y (ahead).
     #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
     wind_dir: f64,
+    /// The structure standing on its extension (by name): the
+    /// extension's joints and members added, its leg extensions lowering
+    /// their supports (a structure file only).
+    #[arg(long)]
+    extension: Option<String>,
 }
 
 /// Arguments of `ols structures pole`.
 #[derive(clap::Args)]
 pub struct PoleArgs {
-    /// Pole (.olsp).
-    pole: PathBuf,
+    /// Pole (.olsp); none: the structure type's own pole (its `[pole]`
+    /// table, or the `.olsp` it names).
+    pole: Option<PathBuf>,
     /// Structure type (.olss): where the attachments are.
     #[arg(long = "type")]
     structure_type: PathBuf,
+    /// Section library (.olssec file or folder): a `[pole]`'s section.
+    #[arg(long)]
+    sections: Option<PathBuf>,
     /// Structure loads (CSV of `ols line --loads-csv`).
     #[arg(long)]
     loads: PathBuf,
@@ -190,7 +199,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         Some(p) => ols_sections::SectionLibrary::load(p)?,
         None => ols_sections::SectionLibrary::default(),
     };
-    let mut model = Model::load_with(&args.model, &sections)?;
+    let mut model = Model::load_extended(&args.model, &sections, args.extension.as_deref())?;
     if args.linear {
         model.analysis.nonlinear = false;
     }
@@ -337,11 +346,26 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
 
 /// `ols structures pole`.
 pub fn pole(args: &PoleArgs) -> Result<(), String> {
-    let pole = Pole::load(&args.pole)?;
     let text = std::fs::read_to_string(&args.structure_type)
         .map_err(|e| format!("{}: {e}", args.structure_type.display()))?;
     let t = ols_structures::StructureType::parse(&args.structure_type, &text)
         .map_err(|e| e.to_string())?;
+    let pole = match &args.pole {
+        Some(p) => Pole::load(p)?,
+        None => {
+            let sections = match &args.sections {
+                Some(p) => ols_sections::SectionLibrary::load(p)?,
+                None => ols_sections::SectionLibrary::default(),
+            };
+            let dir = args
+                .structure_type
+                .parent()
+                .unwrap_or(Path::new("."))
+                .to_path_buf();
+            ols_structures_fe::pole::structure_pole(&t, &dir, &sections)
+                .ok_or_else(|| format!("type {} has no pole: give a .olsp file", t.id))??
+        }
+    };
     let side = match args.wind_from.as_str() {
         "right" => -1.0,
         "left" => 1.0,

@@ -3,16 +3,20 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! The structure checks by analysis ([`ols_structures_fe`]): a structure
-//! type's finite-element model (its members, when it is a full design, or
-//! a separate `model = "….olsfe"`) and its pole (`pole =
-//! "id"`, a `.olsp` file next to the type), loaded once per usage run and
-//! solved with each load case's factored attachment loads. A member's
-//! section is looked up in the project's section library first, then in
-//! the type's `[[section]]` tables; when the model has profiles from the
-//! library, the weather case's wind on them is added (member wind).
+//! type's finite-element model (its members, when they are a full design,
+//! or a separate `model = "….olsfe"`) and its pole (`pole = "id"`, a
+//! `.olsp` file next to the type, or the type's own `[pole]` table, read
+//! by [`ols_structures_fe::pole::structure_pole`]), loaded once per usage
+//! run and solved with each load case's factored attachment loads. A
+//! placed structure standing on an extension with a body or leg
+//! extensions is solved on the model with that extension
+//! ([`Model::from_structure_type_extended`]). A member's section is
+//! looked up in the project's section library first, then in the type's
+//! `[[section]]` tables; when the model has profiles from the library,
+//! the weather case's wind on them is added (member wind).
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use ols_sections::SectionLibrary;
 use ols_structures::{StructureLibrary, StructureType};
@@ -27,20 +31,24 @@ use crate::capacity::{Check, Method};
 /// longitudinal, vertical down), N.
 pub(crate) type Factored = (String, [f64; 3]);
 
+/// A model's key: the type id and the extension it stands on (none: as
+/// written, also for an extension without a body or legs).
+type ModelKey = (String, Option<String>);
+
 /// The models and poles of the structure types, by type id (or why they
 /// could not be read).
 #[derive(Default)]
 pub(crate) struct Analyses {
-    models: BTreeMap<String, Result<Model, String>>,
+    models: BTreeMap<ModelKey, Result<Model, String>>,
     poles: BTreeMap<String, Result<Pole, String>>,
 }
 
 impl Analyses {
     /// Reads the models and poles the types name (each file once), the
-    /// members' sections from `sections` first.
+    /// members' sections from `sections` first; a type with members
+    /// designed also with each extension that changes its model.
     pub fn load(types: &StructureLibrary, sections: &SectionLibrary) -> Self {
         let mut out = Self::default();
-        let mut pole_dirs: BTreeMap<PathBuf, Result<Vec<Pole>, String>> = BTreeMap::new();
         for t in types.iter() {
             let dir = types
                 .path(&t.id)
@@ -48,33 +56,43 @@ impl Analyses {
                 .map(Path::to_path_buf)
                 .unwrap_or_default();
             if let Some(file) = &t.model {
-                out.models
-                    .insert(t.id.clone(), Model::load_with(&dir.join(file), sections));
-            } else if t.detail() == ols_structures::Detail::Design
+                out.models.insert(
+                    (t.id.clone(), None),
+                    Model::load_with(&dir.join(file), sections),
+                );
+            } else if t.members_designed()
                 && let Some(path) = types.path(&t.id)
             {
                 // A full design in the type's own file.
                 out.models
-                    .insert(t.id.clone(), Model::load_with(path, sections));
+                    .insert((t.id.clone(), None), Model::load_with(path, sections));
+                for e in t.extensions.iter().filter(|e| e.changes_model()) {
+                    out.models.insert(
+                        (t.id.clone(), Some(e.name.clone())),
+                        Model::load_extended(path, sections, Some(&e.name)),
+                    );
+                }
             }
-            if let Some(id) = &t.pole {
-                let poles = pole_dirs
-                    .entry(dir.clone())
-                    .or_insert_with(|| ols_structures_fe::pole::load_poles(&dir));
-                let pole = match poles {
-                    Ok(list) => list.iter().find(|p| &p.id == id).cloned().ok_or_else(|| {
-                        format!("pole {id}: no .olsp file with this id in {}", dir.display())
-                    }),
-                    Err(e) => Err(e.clone()),
-                };
+            if let Some(pole) = ols_structures_fe::pole::structure_pole(t, &dir, sections) {
                 out.poles.insert(t.id.clone(), pole);
             }
         }
         out
     }
 
-    /// The finite-element check of a structure of type `t` (none: the
-    /// type has no model, or no member a capacity). Members with a
+    /// The model of type `id` standing on `extension` (none: as written),
+    /// when one was built for it.
+    #[cfg(test)]
+    pub fn model(&self, id: &str, extension: Option<&str>) -> Option<&Model> {
+        self.models
+            .get(&(id.to_owned(), extension.map(str::to_owned)))?
+            .as_ref()
+            .ok()
+    }
+
+    /// The finite-element check of a structure of type `t` standing on
+    /// `extension` (none: the type has no model, or no member a
+    /// capacity). Members with a
     /// profile from the section library take the wind of `weather`
     /// (across the line, times the transverse factor); the type's wind
     /// bands are never in the model, so the body wind is not counted
@@ -82,12 +100,23 @@ impl Analyses {
     pub fn fe(
         &self,
         t: &StructureType,
+        extension: Option<&str>,
         loads: &[Factored],
         case: &LoadCase,
         weather: Option<&WeatherCase>,
         notes: &mut Vec<String>,
     ) -> Option<Check> {
-        let model = match self.models.get(&t.id)? {
+        // Its own model when the extension changes it.
+        let key = (
+            t.id.clone(),
+            extension
+                .filter(|e| {
+                    self.models
+                        .contains_key(&(t.id.clone(), Some((*e).to_owned())))
+                })
+                .map(str::to_owned),
+        );
+        let model = match self.models.get(&key)? {
             Ok(m) => m,
             Err(e) => {
                 notes.push(format!("model not read: {e}"));

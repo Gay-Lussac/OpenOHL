@@ -3834,12 +3834,14 @@ dependencies = [
  "log",
  "ols-core",
  "ols-render",
+ "ols-sections",
  "ols-structure-edit",
  "ols-structure-export",
  "ols-structure-link",
  "ols-structure-loads",
  "ols-structures",
  "rfd",
+ "toml 0.9.12+spec-1.1.0",
  "toml_edit",
 ]
 
@@ -3899,6 +3901,7 @@ dependencies = [
  "ols-cables",
  "ols-line",
  "ols-loads",
+ "ols-sections",
  "ols-structure-edit",
  "ols-structure-link",
  "ols-structure-loads",
@@ -3926,6 +3929,7 @@ dependencies = [
  "nalgebra",
  "ols-core",
  "ols-sections",
+ "ols-structures",
  "serde",
  "toml 0.9.12+spec-1.1.0",
 ]

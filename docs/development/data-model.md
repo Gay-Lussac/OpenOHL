@@ -63,7 +63,9 @@ All examples on this page are invented (structures `T1`, `T2`, sections
                                                         TypeString.insulator ─► .olsi id
    .olss StructureType: point[], wire[], string[], extension[], node[], member[],
                         section[], material[], load[], load_case[], capacity, wind,
-                        model ─► .olsfe, pole ─► .olsp, template (built from ─► .olspt)
+                        model ─► .olsfe, pole ─► .olsp (or [pole] in the file),
+                        extension[].node[]/member[]/leg[] (pieces below the feet),
+                        template (built from ─► .olspt)
    .olsslc structure load cases (load_case[]; structure application) ─► labels of
                         .olss points, sets, member ids; line_case ─► LoadCase.name
    .olspt PylonTemplate: parameter[], attachment[] (slot, across, up),
@@ -484,7 +486,10 @@ Derived, never stored:
 | StructureType | `capacity.attachment[].point` | TypePoint | label |
 | TypePoint | `node` / `member` | TypeNode / TypeMember | `id` |
 | TypeMember (and `.olsfe` `[[member]]`) | `nodes`, `section` | TypeNode; the section library's Section (`.olssec`) first, else `[[section]]` (resolved by `ols_structures_fe::Model::parse_with`; the structure type alone does not check a section id) | `id` |
-| StructureType | `model`, `pole` | `.olsfe` file (relative path), `.olsp` id | — |
+| StructureType | `model`, `pole` | `.olsfe` file (relative path), `.olsp` id or file name (a `[pole]` table refers to nothing) | — |
+| InlinePole (`[pole]`) | `section` | the section library's Section (`.olssec`, a polygonal or circular hollow section; resolved by `ols_structures_fe::pole::Pole::from_inline`) | `id` |
+| Extension | `member[].nodes` | TypeNode of the body or of the same extension | `id` |
+| LegExtension | `leg` | `A`–`D` (a quarter: its lowest supported joint) or a TypeNode of the body or extension | `id` |
 
 Labels are scoped to their structure (or type), span point labels to
 their section, jumper point labels to their jumper; ids are unique per
@@ -634,7 +639,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 
 | Field (TOML key) | Type | Unit | Meaning |
 |---|---|---|---|
-| `format`, `version` | optional | — | `"ols-structure"`, 1 to 3 (`STRUCTURE_FILE_VERSION`; 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
+| `format`, `version` | optional | — | `"ols-structure"`, 1 to 3 (`STRUCTURE_FILE_VERSION`; 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
 | `id`, `name` | string | — | unique id (referred to by `Structure.type`), display name |
 | `kind` | `lattice` / `pole` / `portal` / `other` | — | family |
 | `height` | length? | m | mast top for the default stick drawing |
@@ -644,7 +649,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `[[wire]]` | `TypeWire` | m, N | `label`, `description`, `set?`, `point?` (else it hangs below its strings), `weight?` |
 | `[[string]]` | `TypeString` | m, N, m² | `label`, `description`, `top`, `wire`, `insulator?` **or** `length` + `weight`, `compression?`, `wind_area?`, `strain`, `angle?` (from straight down), `direction?` (in plan, 0 ahead); `side` (`ahead`/`back`) in files written before: level, 0° or 180° |
 | `[[attachment]]` | `TypeAttachment` | — | version 1: `set`, `phase`, `point`, `insulator` or inline `string`, `side` |
-| `[[extension]]` | `name`, `dz` | m | height extensions |
+| `[[extension]]` | `Extension`: `name`, `dz`; version 3: `[[extension.node]]` (`TypeNode`), `[[extension.member]]` (`TypeMember`), `[[extension.leg]]` (`LegExtension`: `leg`, `dz`) | m | height extensions; at level 3 a piece below the feet (joints with z from `foot − dz` to `foot`, ids unique with the body's; members between its joints and the body's) and leg extensions. `StructureType::extended(ext) -> ExtendedBody` applies the rule (`crates/ols-structures/src/extensions.rs`, [user guide](../user-guide/structure-library.md#extension-bodies-and-leg-extensions)): the piece added, body joints it reaches lose their support, a leg's support joint slides `dz` lower along its steepest rising member; a placed structure on such an extension is analysed on `Model::from_structure_type_extended` (`ols_loads` keys its models by type and extension) |
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |
 | `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?`, `made_by?` | m | pylon joints (detail 2–3); `made_by`: the `[[generator]]` that wrote it |
 | `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`), `reference?`, `roll?`, `k?`, `pretension?`, `group?`, `made_by?` | — | pylon members; `group`: its member group (no table of groups: a section per group is written on each member); `made_by` as for joints. `ols_structures_fe` leaves `group` and `made_by` out of the model |
@@ -655,18 +660,26 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
 | `wind` | `band[]`: `from`, `to`, `area`, `drag` | m, m² | wind on the structure itself |
 | `model` | path? | — | separate `.olsfe` model, relative to this file |
-| `pole` | id? | — | `.olsp` file in the same folder |
+| `pole` | `PoleRef`: a string (`File`: a `.olsp` id, or a file name ending in `.olsp`, in the same folder) **or** a `[pole]` table (`Inline(InlinePole)`, version 3) | m, Pa, kg/m³ | the pole: `shape` (`round`/`polygon`), `sides?`, `embedment?`, `[[pole.outline]]` (`z`, `diameter` **or** `circumference`; rising z; a polygon across flats), level 3 `material` (`wood`/`steel`/`concrete`/`other`), `section?` (section library), `wall?`, `fibre_stress?`, `moment_capacity?`, `[[pole.capacity]]` (`height`, `moment`), `elasticity?`, `density?`, `drag?` — the `.olsp` fields; read into one `ols_structures_fe::Pole` by `pole::structure_pole` (`Pole::from_inline` for a table; `Pole::profile`, `Pole::sides`) |
 
 **Detail level** (`StructureType::detail`, never stored — an older
 `detail` key is read and ignored): 3 *full design* when `model` is given
-or every member has a section and a joint is supported; 2 *outline* when
+or every member has a section and a joint is supported (every extension
+piece too: its members with sections and a supported joint,
+`StructureType::members_designed`); 2 *outline* when
 there are members or body polylines that are not all in one plane
-(within 1 mm, `StructureType::body_is_3d`); else 1 *stick figure*. Checks that
-depend on the structure's shape must say what they do at each level
-([Structure detail levels](structure-detail.md)). The meaning of the
-levels decided for the structure application (poles with levels, a flat
-`[[body]]` staying level 1, capacities derived only at level 3) is in
-[Building structures](structure-building.md); not built yet.
+(within 1 mm, `StructureType::body_is_3d`); else 1 *stick figure*. The
+pole gives its own level (`StructureType::pole_detail`): a named `.olsp`
+or a `[pole]` with material, strength and (steel) wall 3, a `[pole]`
+outline with diameters at two heights 2 (`InlinePole::is_3d`,
+`InlinePole::missing_for_design`); the structure's level is the higher.
+Checks that depend on the structure's shape must say what they do at
+each level ([Structure detail levels](structure-detail.md)). The
+finite-element model of the structure's own members is built when its
+members are designed (`members_designed`), not when a pole makes the
+level 3; the pole check runs on a level 3 pole. The meaning of the
+levels decided for the structure application (capacities derived only at
+level 3) is in [Building structures](structure-building.md).
 
 **Editing a structure file** (`apps/structure/ols-structure-edit`,
 [crates](structure-app.md)): every edit of the structure application and
@@ -684,7 +697,11 @@ set_group_section, set_group_kind}`. `StructureFile` refuses a file whose
 `[[generator]]` or `[[symmetry]]` tables do not read (`body::check`).
 `missing(t, level) -> Vec<Missing>` lists what the next level lacks
 (`Need::Level`: no member, a member without a section — one item per
-member —, no `[[section]]`, no supported joint) and advice
+member —, no `[[section]]`, no supported joint; a pole's outline, its
+material, strength, wall (`Place::Pole`); an extension member without a
+section or a piece without a supported joint (`Place::Extensions`)) and
+advice (an extension without members at level 3: the FE model leaves it
+out)
 (`Need::Advice`: a point on no joint or member, a joint on one member or
 none, members crossing within 1 mm away from their ends without a
 joint); each item names its row (`Handle`) or its table (`Place`). It
@@ -692,7 +709,16 @@ reads the structure only; `detail()` stays the source of the level.
 The recipes are edited by place (`load_cases`, `add_load_case`,
 `add_load`, `set_load_case_field`, `set_load_field`, `remove_load`,
 `remove_load_case`; `merge_load_cases` takes the cases of a `.olsslc`
-text: same name replaces, others are added).
+text: same name replaces, others are added). The pole (`pole`:
+`add_outline_row`, `set_outline_row` — refused when the heights would
+not rise —, `remove_outline_row`, `set_shape`, `set_field`, `remove_pole`,
+`bring_in` a `.olsp`'s text as a two-height outline from the feet) and
+the extensions (`extension_edits`: `add_joint` — refused outside the
+piece's heights —, `add_member`, `remove_joint` with its members,
+`remove_member`, `set_field`, `set_leg`, `build_piece`). `geometry_with(t,
+insulators, extension)` gives the joints and members as
+`StructureType::extended` makes them (`Geometry::extension`: the piece's
+ids) and `Geometry::pole` the outline's wireframe.
 
 Placed into a line, a type becomes `PlacedStrings { points, strings,
 wires }` (global coordinates) that `Line::resolve` merges with the

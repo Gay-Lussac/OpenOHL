@@ -24,6 +24,10 @@ const PICKED: [u8; 4] = [255, 235, 60, 255];
 const SUPPORT: [u8; 4] = [110, 220, 120, 255];
 /// What a generator would build (before Apply).
 const PREVIEW: [u8; 4] = [80, 230, 200, 255];
+/// The pole's outline.
+const POLE: [u8; 4] = [190, 190, 120, 255];
+/// The members of the extension shown.
+const EXTENSION: [u8; 4] = [170, 140, 230, 255];
 
 /// A drag moving a joint or a (wire) point.
 #[derive(Debug, Clone)]
@@ -322,10 +326,15 @@ fn scene(
     for l in &g.sticks {
         s.polyline(l, STICK, 1.5);
     }
+    for l in &g.pole {
+        s.polyline(l, POLE, 1.3);
+    }
     let picked = |h: Handle| selected.contains(&h);
     for (id, a, b, section) in &g.members {
         let c = if picked(Handle::Member(id.clone())) {
             PICKED
+        } else if g.extension.contains(id) {
+            EXTENSION
         } else if *section {
             STEEL
         } else {

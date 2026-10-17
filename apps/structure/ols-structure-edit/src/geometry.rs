@@ -49,21 +49,43 @@ pub struct Geometry {
     pub strings: Vec<(String, [f64; 3], [f64; 3])>,
     /// The stick figure or the `[[body]]` polylines.
     pub sticks: Vec<Vec<[f64; 3]>>,
+    /// The pole's outline as a wireframe: a ring at each height and the
+    /// lines along it.
+    pub pole: Vec<Vec<[f64; 3]>>,
+    /// The joints and members of the extension shown (their ids).
+    pub extension: std::collections::BTreeSet<String>,
 }
 
 /// The geometry of `t` in its axes; strings placed with `insulators`.
 pub fn geometry(t: &StructureType, insulators: &InsulatorLibrary) -> Geometry {
+    geometry_with(t, insulators, None)
+}
+
+/// The same, standing on extension `extension` (its piece below the
+/// feet, legs lowered, as the finite-element model has them: the body is
+/// not raised); one that does not resolve shows the body as written.
+pub fn geometry_with(
+    t: &StructureType,
+    insulators: &InsulatorLibrary,
+    extension: Option<&str>,
+) -> Geometry {
     let si = |p: &[ols_core::units::Length; 3]| p.map(|v| v.si());
+    let body = t
+        .extended(extension)
+        .or_else(|_| t.extended(None))
+        .expect("the body as written");
     let mut g = Geometry {
-        joints: t
+        joints: body
             .nodes
             .iter()
             .map(|n| (n.id.clone(), si(&n.point), n.support.is_some()))
             .collect(),
+        extension: body.added.clone(),
+        pole: pole_wireframe(t),
         ..Default::default()
     };
     let joint = |id: &str| g.joints.iter().find(|j| j.0 == id).map(|j| j.1);
-    g.members = t
+    g.members = body
         .members
         .iter()
         .filter_map(|m| {
@@ -133,6 +155,7 @@ impl Geometry {
             .chain(self.points.iter().map(|p| p.1))
             .chain(self.wires.iter().map(|w| w.1))
             .chain(self.sticks.iter().flatten().copied())
+            .chain(self.pole.iter().flatten().copied())
     }
 
     /// Where the point or wire point `label` is.
@@ -244,4 +267,41 @@ pub fn polar(top: [f64; 3], at: [f64; 3]) -> (f64, f64, f64) {
         d[0].atan2(d[1]).to_degrees().rem_euclid(360.0)
     };
     (down, dir, len)
+}
+
+/// Lines around a round pole's rings (a 24-gon) and along it.
+const ROUND_SIDES: u32 = 24;
+
+/// The pole's outline (`[pole]`) as lines: a ring at each height (a
+/// polygon with its corners, a 24-gon for a round pole) and a line along
+/// the pole at every corner (every third for a round pole).
+pub fn pole_wireframe(t: &StructureType) -> Vec<Vec<[f64; 3]>> {
+    let Some(p) = t.pole.as_ref().and_then(ols_structures::PoleRef::inline) else {
+        return Vec::new();
+    };
+    let rings = p.rings();
+    if rings.is_empty() {
+        return Vec::new();
+    }
+    let (n, step, circum) = match p.polygon_sides() {
+        Some(n) => (n, 1, 1.0 / (std::f64::consts::PI / f64::from(n)).cos()),
+        None => (ROUND_SIDES, 3, 1.0),
+    };
+    // A side at the bottom of a polygon (as the section library has it).
+    let corner = |k: u32, z: f64, d: f64| {
+        let a = std::f64::consts::TAU * (f64::from(k) + 0.5) / f64::from(n)
+            - std::f64::consts::FRAC_PI_2;
+        let r = 0.5 * d * circum;
+        [r * a.cos(), r * a.sin(), z]
+    };
+    let mut lines: Vec<Vec<[f64; 3]>> = rings
+        .iter()
+        .map(|&(z, d)| (0..=n).map(|k| corner(k % n, z, d)).collect())
+        .collect();
+    if rings.len() >= 2 {
+        for k in (0..n).step_by(step) {
+            lines.push(rings.iter().map(|&(z, d)| corner(k, z, d)).collect());
+        }
+    }
+    lines
 }

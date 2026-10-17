@@ -156,8 +156,14 @@
 //! **Analysis** (optional): a finite-element model of the structure
 //! (`model = "type.olsfe"`, next to this file; its nodes name the
 //! attachments they carry) and/or a pole (`pole = "id"`, a `.olsp` file
-//! in the same folder) — checked with the attachment loads of each load
-//! case (`ols_structures_fe`, through `ols_loads::capacity`).
+//! in the same folder, or a `[pole]` table, [`crate::pole`]) — checked
+//! with the attachment loads of each load case (`ols_structures_fe`,
+//! through `ols_loads::capacity`).
+//!
+//! **Extension bodies** (version 3): an `[[extension]]` may carry its own
+//! joints and members below the feet and leg extensions
+//! ([`crate::extensions`]); a placed structure's finite-element model
+//! includes the extension it stands on.
 //!
 //! **Body building** (version 3, written by the structure application):
 //! a member's `group` (sections and reports per group), `made_by` on a
@@ -180,8 +186,9 @@ pub const STRUCTURE_FILE_EXTENSION: &str = "olss";
 pub const STRUCTURE_FILE_FORMAT: &str = "ols-structure";
 /// Newest format version read. Version 3 adds what the structure
 /// application writes: a member's `group` and `made_by`, a joint's
-/// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`);
-/// versions 1 and 2 read as before.
+/// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
+/// the `[pole]` table and an extension's `node`, `member` and `leg`
+/// tables; versions 1 and 2 read as before.
 pub const STRUCTURE_FILE_VERSION: u32 = 3;
 
 /// Family of structure.
@@ -510,15 +517,8 @@ pub struct TypeWire {
     pub weight: Option<ols_core::units::Force>,
 }
 
-/// A named height extension.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Extension {
-    /// Name, e.g. `"+3"`.
-    pub name: String,
-    /// Height added to every attachment point.
-    pub dz: Length,
-}
+pub use crate::extensions::{ExtendedBody, Extension, LegExtension};
+pub use crate::pole::{InlinePole, PoleRef, PoleRing, PoleShape};
 
 /// Allowable spans at a line angle (Method 1).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -834,10 +834,10 @@ pub struct StructureType {
     /// file, relative to this file's folder) instead of the members here.
     #[serde(default)]
     pub model: Option<String>,
-    /// Pole for the pole check (id of a `.olsp` file in this file's
-    /// folder).
+    /// The pole: `pole = "id"` (a `.olsp` file in this file's folder,
+    /// level 3) or a `[pole]` table ([`InlinePole`], levels 1 to 3).
     #[serde(default)]
-    pub pole: Option<String>,
+    pub pole: Option<PoleRef>,
     /// Built from a pylon template: its id, the role and the values
     /// ([`crate::templates::recorded`]), to build it again.
     #[serde(default)]
@@ -968,6 +968,7 @@ impl LibraryItem for StructureType {
             }
         }
         self.check_strings()?;
+        self.check_extensions()?;
         if let Some(w) = &self.wind {
             w.check()?;
         }
@@ -1510,14 +1511,41 @@ impl StructureType {
     /// it has members or `[[body]]` polylines that make a 3D object (not
     /// all in one plane, [`StructureType::body_is_3d`]), else a stick
     /// figure.
+    ///
+    /// A pole gives its own level ([`StructureType::pole_detail`]): a
+    /// named `.olsp` file or a `[pole]` with everything the pole check
+    /// needs a full design, a `[pole]` outline (diameters at two heights)
+    /// the outline; the higher of the two counts.
     pub fn detail(&self) -> Detail {
-        if self.model.is_some() || self.missing_for_design().is_empty() {
+        let pole = self.pole_detail().unwrap_or(Detail::Stick);
+        let body = if self.model.is_some() || self.missing_for_design().is_empty() {
             Detail::Design
         } else if !self.members.is_empty() || self.body_is_3d() {
             Detail::Outline
         } else {
             Detail::Stick
-        }
+        };
+        body.max(pole)
+    }
+
+    /// The level of the pole (none: no pole): a `.olsp` file named, or a
+    /// `[pole]` the pole check can read, a full design; a `[pole]` outline
+    /// in 3D (diameters at two heights at least) the outline; else a
+    /// stick figure.
+    pub fn pole_detail(&self) -> Option<Detail> {
+        Some(match self.pole.as_ref()? {
+            PoleRef::File(_) => Detail::Design,
+            PoleRef::Inline(p) if p.missing_for_design().is_empty() => Detail::Design,
+            PoleRef::Inline(p) if p.is_3d() => Detail::Outline,
+            PoleRef::Inline(_) => Detail::Stick,
+        })
+    }
+
+    /// The members are a full design (every member with a section, a
+    /// supported joint, the extensions' bodies too): the structure's own
+    /// finite-element model can be built.
+    pub fn members_designed(&self) -> bool {
+        self.missing_for_design().is_empty()
     }
 
     /// Whether the `[[body]]` polylines describe a 3D object: their
@@ -1582,6 +1610,19 @@ impl StructureType {
         if !self.nodes.iter().any(|n| n.support.is_some()) {
             out.push("no supported joint".into());
         }
+        // Every extension body gets its parameters too (decision 16).
+        for e in self.extensions.iter().filter(|e| e.has_body()) {
+            let bare = e.members.iter().filter(|m| m.section.is_none()).count();
+            if bare > 0 {
+                out.push(format!(
+                    "extension {}: {bare} member(s) without a section",
+                    e.name
+                ));
+            }
+            if !e.nodes.iter().any(|n| n.support.is_some()) {
+                out.push(format!("extension {}: no supported joint", e.name));
+            }
+        }
         out
     }
 
@@ -1638,20 +1679,38 @@ impl StructureType {
     /// polylines (points above the feet raised by the extension), or a
     /// mast from the centre point to the top and a crossarm from the mast
     /// to every attachment point.
+    ///
+    /// With an extension that has a body, the members include its piece
+    /// and the whole rises by its `dz` (the piece stands on the ground);
+    /// leg extensions lower their joints ([`StructureType::extended`]; an
+    /// extension that does not resolve is drawn without its body).
     pub fn stick(&self, extension: Option<&str>) -> Result<Vec<Vec<[f64; 3]>>, String> {
         let dz = self.lift(extension)?;
         if !self.body.is_empty() || !self.members.is_empty() {
             let foot = self.foot_level();
+            let with = extension
+                .and_then(|n| self.extension(n))
+                .filter(|e| e.changes_model());
+            let whole = with.is_some_and(|e| e.has_body());
+            let extended = with
+                .and_then(|e| self.extended(Some(&e.name)).ok())
+                .unwrap_or_else(|| self.extended(None).expect("no extension"));
             let up = |p: &[Length; 3]| {
                 let z = p[2].si();
                 [
                     p[0].si(),
                     p[1].si(),
-                    if z > foot { z + dz } else { z - foot },
+                    if z > foot || whole { z + dz } else { z - foot },
                 ]
             };
-            let joint = |id: &str| self.nodes.iter().find(|n| n.id == id).map(|n| up(&n.point));
-            return Ok(self
+            let joint = |id: &str| {
+                extended
+                    .nodes
+                    .iter()
+                    .find(|n| n.id == id)
+                    .map(|n| up(&n.point))
+            };
+            return Ok(extended
                 .members
                 .iter()
                 .filter_map(|m| Some(vec![joint(&m.nodes[0])?, joint(&m.nodes[1])?]))

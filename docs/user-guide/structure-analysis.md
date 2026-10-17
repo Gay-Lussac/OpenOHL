@@ -3,14 +3,15 @@
 Besides the allowable spans and load trees of a structure type ([Structure libraries](structure-library.md#capacity)), OLS CAD can check a structure by **analysis**:
 
 - a **structure model**: a 3D finite-element model of a lattice tower, frame or guyed mast — member forces and how much of its capacity each member uses. It is the members of a type that is a full design ([detail level 3](structure-library.md#detail-levels): every member with a section, a supported joint), in the type's own `.olss`; or a separate `.olsfe` file the type names;
-- a **pole** (`.olsp`): wood, steel or concrete pole — bending moment along the pole against its moment capacity.
+- a **pole** (`.olsp`, or the structure's own `[pole]` table): wood, steel or concrete pole — bending moment along the pole against its moment capacity.
 
 Every structure of that type is then checked in every load case with the factored attachment loads ([Load cases](loads.md)). The theory is in [Structure analysis](../theory/structures-fe.md).
 
 ```toml
 # In the structure type (.olss), before the [[point]] tables:
 model = "DL380-tangent.olsfe"   # optional: a separate model, relative to the .olss file
-pole = "wood-14m"               # id of a .olsp file in the same folder
+pole = "wood-14m"               # id of a .olsp file in the same folder (or its file name),
+                                # or a [pole] table in the file (Structure libraries › Poles)
 ```
 
 In a project, the `.olsfe` and `.olsp` files of the structure folder are copied into the project file when it opens, and read from there after (see [Library editors](desktop-app.md#library-editors)); a model in a subfolder is not, so keep them next to the `.olss`.
@@ -144,6 +145,23 @@ drag = 1.0                     # shape factor on the wind pressure
 ```
 
 The check takes the factored loads at the **type's points** (horizontal loads × height, vertical loads × their offset from the axis, both directions combined) and the **wind on the pole** (the weather case's wind pressure × the transverse factor × drag × diameter, across the line), at 41 heights from the ground line to the top. With `elasticity`, a frame model of the tapered pole gives the P-Delta amplification of the ground-line moment, applied at every height. Usage: the largest moment over (strength factor × capacity) — for a tapered wood pole it may be above the ground line.
+
+### Poles in the structure file (`[pole]`)
+
+A structure may describe its pole itself ([Poles](structure-library.md#poles)): its outline by height (round or polygonal) and the same level 3 fields as a `.olsp`. The pole check reads it through the **same conversion** as a `.olsp` file and checks it alike:
+
+- the heights of the outline above the feet are the heights above the ground line; the diameter between them is linear (a `.olsp`: linear from the ground line to the top). An outline of two heights starting at the feet is exactly a `.olsp` taper: the example pole written in the structure file gives the `.olsp`'s numbers to the last digit (a test);
+- a polygonal pole: its section at each height is the regular polygon of that width across flats (hollow by the wall), its elastic modulus taken at a corner; its width across flats takes the wind;
+- a `section` of the section library gives the wall, and its material the elasticity and density not given in the table;
+- the pole check runs at level 3 only: a `[pole]` with an outline but no material or strength (level 2) is not checked (the type then needs a capacity, as before).
+
+`ols structures pole --type structure.olss` without a `.olsp` checks the type's own pole (its `[pole]` table, or the `.olsp` it names), with `--sections` for a section it names.
+
+## Extensions in the model
+
+A placed structure standing on an extension that has a **piece** (its own joints and members below the feet) or **leg extensions** is checked on the model **with that extension** ([Extension bodies](structure-library.md#extension-bodies-and-leg-extensions)): the piece's joints and members added (all their fields: section, kind, support…), the supports of the body's joints the piece reaches dropped, a leg's support joint lowered along its leg member. The loads come in at the same points (the body above is not moved in the model: the extension's `dz` raises the whole, which changes nothing in the statics). Each extension's model is built once per usage run; structures of the same type on another extension, or on none, use theirs. An extension without a piece or legs uses the model as written (as before). A separate `.olsfe` model has no extensions.
+
+`ols structures fe structure.olss --extension "+3"` solves the model standing on extension `+3`.
 
 ## In the application and the line run
 

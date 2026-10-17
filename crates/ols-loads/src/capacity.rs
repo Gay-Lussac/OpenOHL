@@ -337,8 +337,11 @@ pub fn usage_with_sections(
                     let type_def = type_id.as_deref().and_then(|t| types.get(t));
                     let capacity = type_def.and_then(|t| t.capacity.as_ref());
                     let analysed = type_def.is_some_and(|t| {
-                        t.detail() == ols_structures::Detail::Design || t.pole.is_some()
+                        t.members_designed()
+                            || t.model.is_some()
+                            || t.pole_detail() == Some(ols_structures::Detail::Design)
                     });
+                    let extension = structure.and_then(|s| s.extension.as_deref());
                     let line_angle_deg = angles.get(id).copied().unwrap_or(0.0);
                     // Per conductor position (a suspension point, or a
                     // dead-end's back and ahead strings together): its wire
@@ -528,8 +531,9 @@ pub fn usage_with_sections(
                         .iter()
                         .map(|(label, p)| ((*label).clone(), p.factored))
                         .collect();
-                    let fe =
-                        type_def.and_then(|t| analyses.fe(t, &factored, &r.case, case, &mut notes));
+                    let fe = type_def.and_then(|t| {
+                        analyses.fe(t, extension, &factored, &r.case, case, &mut notes)
+                    });
                     let pole = type_def
                         .and_then(|t| analyses.pole(t, &factored, &r.case, case, &mut notes));
                     StructureUsage {

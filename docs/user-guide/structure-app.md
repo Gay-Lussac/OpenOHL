@@ -88,8 +88,8 @@ the type follows in the line.
 | Tab | Tables | Tools |
 |---|---|---|
 | **Geometry** (level 1) | Attachment points, Insulators (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, description), Wire points (counterweight), Set points, Structure (name, height, feet, height extensions) | **+ Point**, **I** and **V** presets for the points picked, **Delete…** (lists what goes with it first) |
-| **Body** (level 2) | Joints (x, y, z), Members (ends, length, group, section, made by; a group filter), Generators | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-tab)) |
-| **Design** (level 3) | Supports (**Support the feet** pins the lowest joints), Members (section, kind, buckling factor k), Groups (a section and kind per member group), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
+| **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, section, made by; a group filter), Generators, Extensions (each one's piece and legs) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-tab)) |
+| **Design** (level 3) | Pole (pole structures: material, section or wall, strength), Supports (**Support the feet** pins the lowest joints), Members (section, kind, buckling factor k), Groups (a section and kind per member group), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
 | **Load cases** (any level) | **Recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.olsslc` or CSV), **Import / Export table…** (CSV); the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3) | Per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage | **▶ Run** (one case or every case), **Cancel**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
@@ -142,6 +142,41 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   `body-bracing-3`, `arm1-top`…). In **Design › Groups** a section and a
   kind are chosen per group and written on each of its members; a member
   joining a group whose members share a section takes it.
+
+## Poles and extensions
+
+- **Body › Pole** (a structure of kind pole, or with a pole): the
+  pole's cross-section (round, or a polygon with its sides), its
+  embedment, and its **outline** — a row per height with its z and
+  diameter (dragged or typed; the circumference shown), 🗑 per row,
+  **+ Height** (a height half-way up the top step; the first time, the
+  feet and the top). The view draws it as a wireframe: a ring at each
+  height and lines along the pole. A pole named by a `.olsp` file is
+  shown as such; **Bring it into this file** writes its outline and
+  fields into the structure file (one undo step; the pole check gives
+  the same numbers). Diameters at two heights make level 2.
+- **Design › Pole**: the material (wood, steel, concrete, other), a
+  **section** of the section library next to the file (a polygonal
+  hollow section with the pole's sides, or a circular hollow one for a
+  round pole: its wall, and its material's elasticity and density), or
+  the wall typed; fibre stress, moment capacity, elasticity, density,
+  drag. Under them what level 3 still lacks, or *The pole check can read
+  the pole (level 3)*.
+- **Body › Extensions**: the extensions (**+ Extension**: +3 m, +6 m…),
+  the one picked with its `dz` and **show in 3D** — the view then shows
+  the structure standing on it, its piece below the feet (lilac) and its
+  legs lowered, as the finite-element model has it. Its **piece**: built
+  in one go (**Build the piece**: under every foot a joint `dz` lower
+  along the foot's leg, with the foot's support, a leg to the foot, the
+  faces braced — legs only, single diagonal or X, horizontals on
+  request; it replaces the piece there), or by hand (**+ Joint** at the
+  bottom of the piece, **Member between the 2 picked joints**); its
+  joints (support) and members (section) in two tables, 🗑 per row. Its
+  **legs**: a leg A–D one `dz` longer (**+ Leg**), the `dz` dragged, 🗑.
+  Every change is one undo step. The header lists, for level 3, an
+  extension member without a section or a piece without a support, and
+  as advice an extension without members (*the FE model leaves it
+  out*).
 
 ## Load cases
 
