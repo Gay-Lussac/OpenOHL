@@ -138,7 +138,7 @@ files](../user-guide/line-file.md).
 | `creep_stretch` | `CreepStretch` | — | weather cases for creep / load stretch | weather case **names** |
 | `bimetallic` | `BimetallicModel` | Pa | outer-strand behaviour of bimetallic cables above the transition temperature, for cables that do not say | — |
 | `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); in the project's line settings and OLS XML `<solver taps>` | — |
-| `circuit_starts` | `[SectionPoint]` | — | circuit ends that are starts (power flows in) | structures + sets |
+| `circuit_starts` | `[SectionPoint]` | — | circuit ends that are starts (power flows in); each a point of a section, given once (validated) | structures + sets |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
 **Plugin values** (`fields`, `ols_line::Fields`): structures, sections,
@@ -475,8 +475,8 @@ of it is one log entry, undone together.
 
 | Deleting | Also deletes or changes |
 |---|---|
-| Structure | its own items; every **section** through it (and their spacers); every **jumper** at it, held by its strings (`supports`), or at a point of those sections; alignment points tied to it are **detached** (they stay in place). Jumpers on **taps** of those sections are not yet listed: the deletion is then refused by validation (to fix) |
-| Wire point with a set (`delete_attachment`) | its strings and the set-less wire points only it uses (own items removed; a type's items added to `omit_sets`); the sections through it (and their spacers); the jumpers at it or at those sections (taps: as for a structure) |
+| Structure | its own items; every **section** through it (and their spacers); every **jumper** at it, held by its strings (`supports`), or at a point of those sections, and the jumpers on **taps** of those sections (and those hanging on them); alignment points tied to it are **detached** (they stay in place) |
+| Wire point with a set (`delete_attachment`) | its strings and the set-less wire points only it uses (own items removed; a type's items added to `omit_sets`); the sections through it (and their spacers); the jumpers at it or at those sections, and those on taps of those sections (as for a structure) |
 | Section | its spacers; the jumpers at any of its points; the jumpers on taps on its span points, and those hanging on them (`jumpers_hanging`, those hanging first) |
 | Span point, jumper point | edited inside its section / jumper (a `put`): a point a spacer, spread or tap uses cannot be removed or relabelled (validation refuses; the tables keep such labels fixed) |
 | Spacer | nothing else |
@@ -485,13 +485,21 @@ of it is one log entry, undone together.
 | Jumper | the jumpers on taps on its points, and those hanging on them |
 | Meta (line settings) | cannot be deleted |
 
+Every deletion (and a section's points changed) also takes the
+`circuit_starts` no longer a point of a section out of the line settings
+(`starts_follow`, a put of `meta` in the same entry); files written
+before drop such starts on reading (`Line::drop_stale_circuit_starts`).
+A section editor changing a section's points keeps its span points on
+their spans (`Section::set_points`, a span found by its two ends), and
+refuses when a span holding points is gone.
+
 Renames follow references: `rename` of a structure updates section
-points, jumper ends and clamps and tied alignment points (not yet
-`circuit_starts`); of a section, its spacers and the taps on it; of a
+points, jumper ends and clamps, tied alignment points and
+`circuit_starts`; of a section, its spacers and the taps on it; of a
 jumper, the taps on it; of a route, the alignments, points and structures
 on it; a rename is a put under the new id and a delete of the old one;
-`rename_attachment` (set renumbering) updates the sections and jumpers
-there; `rename_system` updates the sections given it. Library items are
+`rename_attachment` (set renumbering) updates the sections, jumpers and
+circuit starts there; `rename_system` updates the sections given it. Library items are
 not renamed through the session: a changed library id leaves dangling
 references that `Line::resolve` / validation report.
 
@@ -643,7 +651,7 @@ case name), `condition` (initial, creep, load, max sag), factors
 
 | Table | Content |
 |---|---|
-| `ols_meta(key, value)` | settings: `session_schema` (3), `grid_size`, the weather file used, … |
+| `ols_meta(key, value)` | settings: `session_schema` (3; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
 | `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; `meta` (id `line`) holds `name`, `crs`, `display`, `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts` (projects before routes and alignments also an `alignment`, converted once when they open) |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |

@@ -1424,3 +1424,208 @@ fn tapped_jumpers_follow_what_they_hang_on() {
         impact.jumpers
     );
 }
+
+/// A line whose section S2 has a tap TAP in its first span (T1–T2), with
+/// jumper JA on it and JB on JA's point K.
+fn tapped_on_s2(s: &mut Session) {
+    let mut line = s.export();
+    let s2 = line.sections.iter_mut().find(|x| x.id == "S2").unwrap();
+    s2.span_points.push(ols_line::SpanPoint {
+        label: "TAP".into(),
+        span: 0,
+        at: ols_line::SpanPlace::at_fraction(0.4),
+        description: String::new(),
+        object: Some(ols_line::LineObject::clamp(30.0)),
+    });
+    let mut a = line.jumpers[0].clone();
+    a.id = "JA".into();
+    // On S2's own circuit.
+    a.to = ols_line::SectionPoint::new("T3", 11);
+    a.supports.clear();
+    a.support = None;
+    a.sag = None;
+    a.length = Some(12.0);
+    a.from_tap = Some(ols_line::Tap::Span(ols_line::SpanPointRef {
+        section: "S2".into(),
+        point: "TAP".into(),
+    }));
+    a.points = vec![ols_line::JumperPoint {
+        label: "K".into(),
+        at: ols_line::JumperPlace {
+            fraction: 0.5,
+            ..Default::default()
+        },
+        description: String::new(),
+        object: Some(ols_line::LineObject::clamp(20.0)),
+    }];
+    let mut b = a.clone();
+    b.id = "JB".into();
+    b.points.clear();
+    b.from_tap = Some(ols_line::Tap::Jumper {
+        jumper: "JA".into(),
+        point: "K".into(),
+    });
+    line.jumpers.push(a);
+    line.jumpers.push(b);
+    s.apply(
+        "ana",
+        Command::ReplaceLine {
+            line: Box::new(line),
+        },
+    )
+    .unwrap();
+}
+
+/// Deleting a structure or a set lists the jumpers on taps of the
+/// sections it takes (those hanging first) and deletes them.
+#[test]
+fn deleting_a_structure_or_a_set_takes_the_jumpers_on_taps() {
+    let (_p, mut s) = project("taps-structure");
+    tapped_on_s2(&mut s);
+    // (With S1 goes the branch jumper at T3 too.)
+    let impact = s.structure_deletion("T1").unwrap();
+    assert_eq!(impact.jumpers, ["JB", "JA", "J-T3-branch"]);
+    s.apply(
+        "ana",
+        Command::Delete {
+            kind: Kind::Structure,
+            id: "T1".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert!(
+        s.line()
+            .jumpers
+            .iter()
+            .all(|j| j.id != "JA" && j.id != "JB")
+    );
+    s.undo("ana").unwrap();
+    let impact = s.attachment_deletion("T1", 11).unwrap();
+    assert_eq!(impact.sections, ["S2"]);
+    assert_eq!(impact.jumpers, ["JB", "JA"]);
+    s.apply(
+        "ana",
+        Command::DeleteAttachment {
+            structure: "T1".into(),
+            set: 11,
+            phase: None,
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert!(
+        s.line()
+            .jumpers
+            .iter()
+            .all(|j| j.id != "JA" && j.id != "JB")
+    );
+}
+
+/// The circuit starts follow a structure renamed and a set renumbered,
+/// and go with what they are on (also out of the stored settings, so
+/// they do not come back with the id).
+#[test]
+fn circuit_starts_follow_renames_and_deletions() {
+    let (_p, mut s) = project("circuit-starts");
+    let mut line = s.export();
+    line.circuit_starts = vec![ols_line::SectionPoint::new("T1", 1)];
+    s.apply(
+        "ana",
+        Command::ReplaceLine {
+            line: Box::new(line),
+        },
+    )
+    .unwrap();
+    let stored = |s: &Session| -> Vec<ols_line::SectionPoint> {
+        let meta = &s.objects[&(Kind::Meta, "line".to_owned())];
+        serde_json::from_value::<Meta>(meta.value.clone())
+            .unwrap()
+            .circuit_starts
+    };
+    s.apply(
+        "ana",
+        Command::Rename {
+            kind: Kind::Structure,
+            id: "T1".into(),
+            new_id: "T1x".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        s.line().circuit_starts,
+        [ols_line::SectionPoint::new("T1x", 1)]
+    );
+    s.apply(
+        "ana",
+        Command::RenameAttachment {
+            structure: "T1x".into(),
+            set: 1,
+            phase: None,
+            new_set: 21,
+            new_phase: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(stored(&s), [ols_line::SectionPoint::new("T1x", 21)]);
+    s.apply(
+        "ana",
+        Command::Delete {
+            kind: Kind::Section,
+            id: "S1".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert!(stored(&s).is_empty());
+    assert!(s.line().circuit_starts.is_empty());
+    s.undo("ana").unwrap();
+    assert_eq!(
+        s.line().circuit_starts,
+        [ols_line::SectionPoint::new("T1x", 21)]
+    );
+}
+
+/// The line's settings the solve reads mark every section to solve
+/// again; the name does not.
+#[test]
+fn settings_changed_mark_every_section() {
+    let (_p, mut s) = project("settings-dirty");
+    let mut d = s.line().defaults;
+    d.jumper_stiffness_factor = 0.5;
+    let a = s.apply("ana", s.defaults_command(d)).unwrap();
+    assert_eq!(a.sections, ["S1", "S2", "S3"]);
+    let mut line = s.line().clone();
+    line.name = "renamed".into();
+    let a = s.apply("ana", line_settings_put(&line, None)).unwrap();
+    assert!(a.sections.is_empty());
+}
+
+/// A project file of a newer schema is refused before anything in it
+/// changes.
+#[test]
+fn a_newer_project_file_is_left_unchanged() {
+    let dir = std::env::temp_dir().join(format!("ols-session-{}-newer", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.ols");
+    std::fs::remove_file(&path).ok();
+    {
+        let c = Connection::open(&path).unwrap();
+        c.execute_batch(
+            "CREATE TABLE ols_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO ols_meta (key, value) VALUES ('session_schema', '99');",
+        )
+        .unwrap();
+    }
+    let err = Session::open(&path).err().unwrap();
+    assert!(err.to_string().contains("newer"), "{err}");
+    let c = Connection::open(&path).unwrap();
+    let tables: Vec<String> = c
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(tables, ["ols_meta"]);
+}

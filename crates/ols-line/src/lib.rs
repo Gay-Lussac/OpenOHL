@@ -541,6 +541,49 @@ pub(crate) fn is_hex_color(text: &str) -> bool {
     text.len() == 7 && text.starts_with('#') && text[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// Checks a section's stringing condition for its `spans`: tensions,
+/// sags and lengths above 0, temperatures above absolute zero, as many
+/// lengths as spans, a sagged span among them.
+fn check_stringing(stringing: &Stringing, spans: usize) -> Result<(), String> {
+    let t = stringing.temperature();
+    if !(t.is_finite() && t > -273.15) {
+        return Err(format!("stringing temperature {t} °C is not a temperature"));
+    }
+    match stringing {
+        Stringing::Tension {
+            horizontal_tension, ..
+        } => {
+            if !(horizontal_tension.is_finite() && *horizontal_tension > 0.0) {
+                return Err("the stringing tension must be above 0".to_owned());
+            }
+        }
+        Stringing::Sag { sag, span, .. } => {
+            if !(sag.is_finite() && *sag > 0.0) {
+                return Err("sag must be above 0".to_owned());
+            }
+            if let Some(k) = span
+                && *k >= spans
+            {
+                return Err(format!("sag in span {} of {spans}", k + 1));
+            }
+        }
+        Stringing::UnstressedLengths {
+            lengths, sagged, ..
+        } => {
+            if lengths.len() != spans {
+                return Err(format!("{} lengths for {spans} spans", lengths.len()));
+            }
+            if lengths.iter().any(|l| !(l.is_finite() && *l > 0.0)) {
+                return Err("unstressed lengths must be above 0".to_owned());
+            }
+            if let Some(s) = sagged {
+                check_stringing(s, spans).map_err(|m| format!("sagged before: {m}"))?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// A structure.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(from = "StructureFile")]
@@ -1170,7 +1213,7 @@ pub const DEFAULT_FIELDS: &[DefaultField] = &[
         "m",
         0.0,
         true,
-        100.0,
+        1.0,
         "jumper support clamp length",
         "The length a new support clamp of a jumper starts with"
     ),
@@ -1814,6 +1857,48 @@ pub fn bundle_point(q: Point, a: Point, b: Point, offset: [f64; 2]) -> Point {
 }
 
 impl Section {
+    /// Gives it the wire points `points`: its span points (with their
+    /// objects, and so what hangs on them) and a sagged span keep their
+    /// span — found by its two ends — at its new index. Refused, naming
+    /// them, when span points are on a span the new points no longer have
+    /// (a structure put in it, taken out of it, or the section turned).
+    pub fn set_points(&mut self, points: Vec<SectionPoint>) -> Result<(), String> {
+        let old = &self.points;
+        let new_index = |k: usize| -> Option<usize> {
+            let (a, b) = (old.get(k)?, old.get(k + 1)?);
+            points.windows(2).position(|w| &w[0] == a && &w[1] == b)
+        };
+        let spans: Vec<Option<usize>> =
+            self.span_points.iter().map(|p| new_index(p.span)).collect();
+        let lost: Vec<&str> = self
+            .span_points
+            .iter()
+            .zip(&spans)
+            .filter(|(_, m)| m.is_none())
+            .map(|(p, _)| p.label.as_str())
+            .collect();
+        if !lost.is_empty() {
+            return Err(format!(
+                "section {}: span point(s) {} are on a span the new points no longer have \
+                 (a structure put in or taken out of it): move or delete them first",
+                self.id,
+                lost.join(", ")
+            ));
+        }
+        let sagged = match &self.stringing {
+            Stringing::Sag { span: Some(k), .. } => new_index(*k),
+            _ => None,
+        };
+        for (p, m) in self.span_points.iter_mut().zip(spans) {
+            p.span = m.expect("checked");
+        }
+        if let (Stringing::Sag { span: Some(k), .. }, Some(m)) = (&mut self.stringing, sagged) {
+            *k = m;
+        }
+        self.points = points;
+        Ok(())
+    }
+
     /// The section's bundle.
     pub fn bundle_geometry(&self) -> Bundle {
         Bundle {
@@ -2124,10 +2209,24 @@ impl Line {
         let mut line: Self =
             serde_json::from_str(text).map_err(|e| LineError::File(e.to_string()))?;
         line.upgrade_routes();
+        line.drop_stale_circuit_starts();
         line.place_strings()?;
         line.validate()?;
         line.version = LINE_FILE_VERSION;
         Ok(line)
+    }
+
+    /// Drops the circuit starts that are no section's point, and those
+    /// given twice (files written before the starts followed deletions);
+    /// nothing physical depends on them.
+    pub fn drop_stale_circuit_starts(&mut self) {
+        let mut seen = Vec::new();
+        let sections = &self.sections;
+        self.circuit_starts.retain(|p| {
+            let keep = !seen.contains(p) && sections.iter().any(|s| s.points.contains(p));
+            seen.push(p.clone());
+            keep
+        });
     }
 
     /// Serialises to pretty JSON.
@@ -2425,29 +2524,8 @@ impl Line {
                 }
             }
             let spans = sec.points.len() - 1;
-            if let Stringing::UnstressedLengths { lengths, .. } = &sec.stringing
-                && lengths.len() != spans
-            {
-                return invalid(format!(
-                    "section {}: {} lengths for {spans} spans",
-                    sec.id,
-                    lengths.len()
-                ));
-            }
-            if let Stringing::Sag { sag, span, .. } = &sec.stringing {
-                if sag.is_nan() || *sag <= 0.0 {
-                    return invalid(format!("section {}: sag must be above 0", sec.id));
-                }
-                if let Some(k) = span
-                    && *k >= spans
-                {
-                    return invalid(format!(
-                        "section {}: sag in span {} of {spans}",
-                        sec.id,
-                        k + 1
-                    ));
-                }
-            }
+            check_stringing(&sec.stringing, spans)
+                .map_err(|m| LineError::Invalid(format!("section {}: {m}", sec.id)))?;
             let place_ok = |p: &SpanPlace| match (p.station, p.distance) {
                 (Some(s), _) => s.is_finite(),
                 (None, Some(d)) => d.is_finite() && d > 0.0,
@@ -2467,7 +2545,10 @@ impl Line {
                         sec.id, p.label
                     ));
                 }
-                if p.span >= spans || !(place_ok(&p.at) || (p.object.is_none() && end_ok(&p.at))) {
+                if p.span >= spans
+                    || !(place_ok(&p.at) || (p.object.is_none() && end_ok(&p.at)))
+                    || !self.inside_span(sec, p)
+                {
                     return invalid(format!(
                         "section {}: span point {} is not inside a span",
                         sec.id, p.label
@@ -2482,7 +2563,14 @@ impl Line {
                     })?;
                 }
             }
+            let mut spread_labels = std::collections::BTreeSet::new();
             for s in &sec.spreads {
+                if !s.label.is_empty() && !spread_labels.insert(s.label.as_str()) {
+                    return invalid(format!(
+                        "section {}: spread label {:?} given twice",
+                        sec.id, s.label
+                    ));
+                }
                 let at = |l: &str| sec.span_points.iter().find(|p| p.label == l);
                 let ok = match (at(&s.from), at(&s.to)) {
                     (Some(a), Some(b)) => a.span == b.span && s.from != s.to,
@@ -2608,6 +2696,22 @@ impl Line {
             }
         }
         self.defaults.validate().map_err(LineError::Invalid)?;
+        // Circuit starts: section points, each once.
+        let mut starts = std::collections::BTreeSet::new();
+        for p in &self.circuit_starts {
+            if !starts.insert((p.structure.as_str(), p.set)) {
+                return invalid(format!(
+                    "circuit start {} set {} given twice",
+                    p.structure, p.set
+                ));
+            }
+            if !self.sections.iter().any(|s| s.points.contains(p)) {
+                return invalid(format!(
+                    "circuit start {} set {} is no section's point",
+                    p.structure, p.set
+                ));
+            }
+        }
         let mut ids = std::collections::BTreeSet::new();
         for s in &self.spacers {
             let bad = |m: &str| invalid(format!("spacer {}: {m}", s.id));
@@ -3225,5 +3329,130 @@ mod tests {
         let again = Line::from_json(&text).unwrap();
         assert_eq!(again.structures, line.structures);
         assert_eq!(again.sections, line.sections);
+    }
+
+    fn span_point(label: &str, span: usize, at: SpanPlace) -> SpanPoint {
+        SpanPoint {
+            label: label.into(),
+            span,
+            at,
+            description: String::new(),
+            object: None,
+        }
+    }
+
+    /// A section's points changed: its span points keep their span (by
+    /// its ends); a span gone with points on it is refused.
+    #[test]
+    fn span_points_follow_their_span_when_points_change() {
+        let mut sec = example().sections[0].clone();
+        let p = sec.points.clone();
+        sec.span_points = vec![span_point("A", 1, SpanPlace::at_fraction(0.5))];
+        sec.stringing = Stringing::Sag {
+            sag: 5.0,
+            temperature: 15.0,
+            span: Some(2),
+        };
+        // The first structure taken out: span 1 (p1–p2) becomes span 0.
+        sec.set_points(p[1..].to_vec()).unwrap();
+        assert_eq!(sec.span_points[0].span, 0);
+        assert!(matches!(
+            sec.stringing,
+            Stringing::Sag { span: Some(1), .. }
+        ));
+        // Put back in front: span 1 again.
+        sec.set_points(p.clone()).unwrap();
+        assert_eq!(sec.span_points[0].span, 1);
+        // A structure taken out of the middle of its span's neighbours:
+        // p2 gone, the span p1–p2 no longer exists.
+        let mut without = p.clone();
+        without.remove(2);
+        let err = sec.set_points(without).unwrap_err();
+        assert!(err.contains('A'), "{err}");
+        assert_eq!(sec.points, p);
+    }
+
+    /// Spread labels unique, a span point's distance within its span,
+    /// stringing values that make sense.
+    #[test]
+    fn validation_catches_spreads_places_and_stringing() {
+        let line = example();
+        let mut l = line.clone();
+        let sec = &mut l.sections[0];
+        sec.span_points = vec![
+            span_point("A", 0, SpanPlace::at_fraction(0.2)),
+            span_point("B", 0, SpanPlace::at_fraction(0.6)),
+        ];
+        let spread = SpreadObject {
+            label: "S".into(),
+            from: "A".into(),
+            to: "B".into(),
+            load: 5.0,
+            ..Default::default()
+        };
+        sec.spreads = vec![spread.clone(), spread];
+        assert!(l.validate().unwrap_err().to_string().contains("twice"));
+        l.sections[0].spreads.pop();
+        l.validate().unwrap();
+
+        let mut far = line.clone();
+        far.sections[0].span_points = vec![span_point("A", 0, SpanPlace::at_distance(1e5))];
+        assert!(
+            far.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("inside a span")
+        );
+        far.sections[0].span_points[0].at = SpanPlace::at_distance(10.0);
+        far.validate().unwrap();
+
+        let mut bad = line.clone();
+        bad.sections[0].stringing = Stringing::Tension {
+            horizontal_tension: -1.0,
+            temperature: 15.0,
+        };
+        assert!(bad.validate().is_err());
+        bad.sections[0].stringing = Stringing::Tension {
+            horizontal_tension: 20e3,
+            temperature: f64::NAN,
+        };
+        assert!(bad.validate().is_err());
+        let spans = bad.sections[0].points.len() - 1;
+        bad.sections[0].stringing = Stringing::UnstressedLengths {
+            lengths: vec![0.0; spans],
+            temperature: 15.0,
+            sagged: None,
+        };
+        assert!(bad.validate().is_err());
+    }
+
+    /// Circuit starts are section points, each once; files with stale
+    /// ones drop them on reading.
+    #[test]
+    fn circuit_starts_are_section_points() {
+        let mut line = example();
+        line.circuit_starts = vec![line.sections[0].points[0].clone()];
+        line.validate().unwrap();
+        line.circuit_starts.push(SectionPoint::new("nowhere", 1));
+        assert!(line.validate().is_err());
+        line.drop_stale_circuit_starts();
+        assert_eq!(line.circuit_starts.len(), 1);
+        line.circuit_starts.push(line.circuit_starts[0].clone());
+        assert!(line.validate().is_err());
+        line.circuit_starts.push(SectionPoint::new("nowhere", 1));
+        let again = Line::from_json(&line.to_json()).unwrap();
+        assert_eq!(again.circuit_starts, [line.sections[0].points[0].clone()]);
+    }
+
+    /// The default clamp length stays within what a clamp may be.
+    #[test]
+    fn default_clamp_length_at_most_a_clamp() {
+        let mut d = Defaults {
+            jumper_clamp_length: 1.0,
+            ..Default::default()
+        };
+        d.validate().unwrap();
+        d.jumper_clamp_length = 1.5;
+        assert!(d.validate().is_err());
     }
 }

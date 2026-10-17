@@ -857,6 +857,8 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
             )));
         }
     }
+    // Starts left by deletions before they followed them.
+    line.drop_stale_circuit_starts();
     Ok(line)
 }
 
@@ -865,6 +867,17 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
 /// through changed structures.
 fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<String> {
     let mut out = BTreeSet::new();
+    // The line's settings the solve reads: every section.
+    let [a, b] = lines;
+    if changed.iter().any(|(k, _)| *k == Kind::Meta)
+        && (a.solver != b.solver
+            || a.defaults != b.defaults
+            || a.bimetallic != b.bimetallic
+            || a.creep_stretch != b.creep_stretch
+            || a.systems != b.systems)
+    {
+        out.extend(b.sections.iter().map(|s| s.id.clone()));
+    }
     for line in lines {
         for (kind, id) in changed {
             match kind {
@@ -912,6 +925,27 @@ impl Session {
     /// line until [`Session::import`]).
     pub fn open(path: &Path) -> Result<Self, SessionError> {
         let conn = Connection::open(path)?;
+        // A newer project file is refused before anything in it changes.
+        let has_meta = conn
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ols_meta'")?
+            .exists([])?;
+        if has_meta {
+            let version: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM ols_meta WHERE key = 'session_schema'",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(v) = version
+                && v.parse::<u32>().ok().is_none_or(|v| v > SCHEMA_VERSION)
+            {
+                return Err(SessionError::Store(format!(
+                    "{}: session schema {v} newer than supported ({SCHEMA_VERSION})",
+                    path.display()
+                )));
+            }
+        }
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              CREATE TABLE IF NOT EXISTS ols_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1648,6 +1682,11 @@ impl Session {
                             p.structure = Some(new_id.clone());
                             out.push(put(Kind::AlignmentPoint, &p.id.clone(), &p));
                         }
+                        // The circuit starts on it.
+                        out.extend(self.starts_renamed(|p| {
+                            (p.structure == id)
+                                .then(|| ols_line::SectionPoint::new(new_id.clone(), p.set))
+                        }));
                     }
                     // A section renamed: its spacers follow.
                     Kind::Section => {
@@ -1823,6 +1862,7 @@ impl Session {
                         });
                     }
                 }
+                out.extend(self.starts_renamed(|p| (*p == old).then(|| new.clone())));
                 notes.push(format!(
                     "renumber wire point {structure} set {set} to {new_set}"
                 ));
@@ -2073,7 +2113,7 @@ impl Session {
                     .map(|j| j.id.clone())
                     .collect();
                 // With the jumpers hanging on taps on it (and on those).
-                impact.jumpers = self.jumpers_hanging(id, &at_ends);
+                impact.jumpers = self.jumpers_hanging(&[id.to_owned()], &at_ends);
             }
             Kind::Route => {
                 if !self.line.routes.iter().any(|r| r.id == id) {
@@ -2115,7 +2155,7 @@ impl Session {
                 }
                 // The jumpers hanging on taps on its points (and on those).
                 impact.jumpers = self
-                    .jumpers_hanging("", &[id.to_owned()])
+                    .jumpers_hanging(&[], &[id.to_owned()])
                     .into_iter()
                     .filter(|j| j != id)
                     .collect();
@@ -2155,19 +2195,23 @@ impl Session {
             .filter(|sec| sec.points.contains(&point))
             .collect();
         impact.sections = sections.iter().map(|sec| sec.id.clone()).collect();
-        impact.jumpers = self
+        let at_ends: Vec<String> = self
             .line
             .jumpers
             .iter()
             .filter(|j| {
-                j.from == point
-                    || j.to == point
-                    || sections
-                        .iter()
-                        .any(|sec| sec.points.contains(&j.from) || sec.points.contains(&j.to))
+                [(&j.from, &j.from_tap), (&j.to, &j.to_tap)]
+                    .into_iter()
+                    .any(|(end, tap)| {
+                        tap.is_none()
+                            && (*end == point
+                                || sections.iter().any(|sec| sec.points.contains(end)))
+                    })
             })
             .map(|j| j.id.clone())
             .collect();
+        // With the jumpers hanging on taps on those sections (and on those).
+        impact.jumpers = self.jumpers_hanging(&impact.sections, &at_ends);
         impact.spacers = self.spacers_on(&impact.sections);
         Ok(impact)
     }
@@ -2208,30 +2252,33 @@ impl Session {
             .collect();
         impact.sections = sections.iter().map(|sec| sec.id.clone()).collect();
         // Jumpers at its attachments, and at points of the deleted sections.
-        impact.jumpers = self
+        let at_ends: Vec<String> = self
             .line
             .jumpers
             .iter()
             .filter(|j| {
-                j.from.structure == id
-                    || j.to.structure == id
+                [(&j.from, &j.from_tap), (&j.to, &j.to_tap)]
+                    .into_iter()
+                    .any(|(end, tap)| {
+                        tap.is_none()
+                            && (end.structure == id
+                                || sections.iter().any(|sec| sec.points.contains(end)))
+                    })
                     || j.supports.iter().any(|c| c.structure_id(j) == id)
-                    || sections
-                        .iter()
-                        .any(|sec| sec.points.contains(&j.from) || sec.points.contains(&j.to))
             })
             .map(|j| j.id.clone())
             .collect();
+        // With the jumpers hanging on taps on those sections (and on those).
+        impact.jumpers = self.jumpers_hanging(&impact.sections, &at_ends);
         impact.alignment_detached = self.points_tied_to(id).into_iter().map(|p| p.id).collect();
         impact.spacers = self.spacers_on(&impact.sections);
         Ok(impact)
     }
 
-    /// The spacers on any of `sections`.
-    /// `jumpers` and the jumpers hanging on taps on section `section`'s
-    /// span points or on their points, and so on — those hanging first
+    /// `jumpers` and the jumpers hanging on taps on span points of
+    /// `sections` or on their points, and so on — those hanging first
     /// (deleted before what they hang on).
-    fn jumpers_hanging(&self, section: &str, jumpers: &[String]) -> Vec<String> {
+    fn jumpers_hanging(&self, sections: &[String], jumpers: &[String]) -> Vec<String> {
         let mut out: Vec<String> = jumpers.to_vec();
         let mut k = 0;
         let hangs_on = |j: &ols_line::Jumper, ids: &[String]| {
@@ -2239,7 +2286,7 @@ impl Session {
                 .into_iter()
                 .flatten()
                 .any(|t| match t {
-                    ols_line::Tap::Span(r) => r.section == section,
+                    ols_line::Tap::Span(r) => sections.contains(&r.section),
                     ols_line::Tap::Jumper { jumper, .. } => ids.contains(jumper),
                 })
         };
@@ -2262,6 +2309,7 @@ impl Session {
         out
     }
 
+    /// The spacers on any of `sections`.
     fn spacers_on(&self, sections: &[String]) -> Vec<String> {
         self.line
             .spacers
@@ -2269,6 +2317,94 @@ impl Session {
             .filter(|s| sections.contains(&s.a.section) || sections.contains(&s.b.section))
             .map(|s| s.id.clone())
             .collect()
+    }
+
+    /// The circuit starts no longer a section's point after `prims` (a
+    /// structure, a set or a section deleted, a section's points
+    /// changed) taken out of the line's settings: out of the settings
+    /// `prims` put, else by a put added.
+    fn starts_follow(&self, prims: &mut Vec<Command>) {
+        let mut sections: BTreeMap<String, Vec<ols_line::SectionPoint>> = self
+            .line
+            .sections
+            .iter()
+            .map(|s| (s.id.clone(), s.points.clone()))
+            .collect();
+        let mut meta_at = None;
+        for (k, p) in prims.iter().enumerate() {
+            match p {
+                Command::Put {
+                    kind: Kind::Section,
+                    id,
+                    value,
+                    ..
+                } => {
+                    if let Ok(s) = serde_json::from_value::<Section>(value.clone()) {
+                        sections.insert(id.clone(), s.points);
+                    }
+                }
+                Command::Delete {
+                    kind: Kind::Section,
+                    id,
+                    ..
+                } => {
+                    sections.remove(id);
+                }
+                Command::Put {
+                    kind: Kind::Meta, ..
+                } => meta_at = Some(k),
+                _ => {}
+            }
+        }
+        let on = |p: &ols_line::SectionPoint| sections.values().any(|pts| pts.contains(p));
+        match meta_at {
+            Some(k) => {
+                if let Command::Put { value, .. } = &mut prims[k]
+                    && let Ok(mut meta) = serde_json::from_value::<Meta>(value.clone())
+                {
+                    let n = meta.circuit_starts.len();
+                    meta.circuit_starts.retain(on);
+                    if meta.circuit_starts.len() != n {
+                        *value = json(&meta);
+                    }
+                }
+            }
+            None => {
+                let mut meta = Meta::of(&self.line);
+                let n = meta.circuit_starts.len();
+                meta.circuit_starts.retain(on);
+                if meta.circuit_starts.len() != n {
+                    prims.push(Command::Put {
+                        kind: Kind::Meta,
+                        id: "line".into(),
+                        value: json(&meta),
+                        ord: None,
+                    });
+                }
+            }
+        }
+    }
+
+    /// The put of the line's settings with the circuit starts renamed by
+    /// `rename` (none when no start changes).
+    fn starts_renamed(
+        &self,
+        rename: impl Fn(&ols_line::SectionPoint) -> Option<ols_line::SectionPoint>,
+    ) -> Option<Command> {
+        let mut meta = Meta::of(&self.line);
+        let mut changed = false;
+        for p in &mut meta.circuit_starts {
+            if let Some(new) = rename(p) {
+                *p = new;
+                changed = true;
+            }
+        }
+        changed.then(|| Command::Put {
+            kind: Kind::Meta,
+            id: "line".into(),
+            value: json(&meta),
+            ord: None,
+        })
     }
 
     /// The command setting the project's default values (Criteria ›
@@ -2294,6 +2430,9 @@ impl Session {
         let mut prims = Vec::new();
         let mut notes = Vec::new();
         self.primitives(command, &mut prims, &mut notes, cascade)?;
+        if cascade {
+            self.starts_follow(&mut prims);
+        }
         let note = (!notes.is_empty()).then(|| notes.join("; "));
         if prims.is_empty() {
             return Err(refused("empty command"));

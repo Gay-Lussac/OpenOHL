@@ -551,6 +551,30 @@ impl Line {
             })
     }
 
+    /// Whether span point `p` of `section` lies within its span: a
+    /// distance short of the span's horizontal length, a station between
+    /// its ends' stations. Places that cannot be measured yet (wire
+    /// points of a type not resolved, no alignment through both ends)
+    /// pass.
+    pub fn inside_span(&self, section: &crate::Section, p: &crate::SpanPoint) -> bool {
+        let Some(w) = section.points.get(p.span..=p.span + 1) else {
+            return false;
+        };
+        match (p.at.station, p.at.distance) {
+            (Some(st), _) => self
+                .span_stations(&w[0].structure, &w[1].structure)
+                .is_none_or(|(a, b)| a.min(b) < st && st < a.max(b)),
+            (None, Some(d)) => match (self.wire_point(&w[0]), self.wire_point(&w[1])) {
+                (Some(a), Some(b)) => {
+                    let (a, b) = (a.position, b.position);
+                    d < (b[0] - a[0]).hypot(b[1] - a[1])
+                }
+                _ => true,
+            },
+            (None, None) => true,
+        }
+    }
+
     /// Section `section` with its places given by station turned into
     /// fractions of their spans ([`Line::span_stations`]); unchanged when
     /// it has none. A station whose span has no stations stays as given

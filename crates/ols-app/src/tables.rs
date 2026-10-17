@@ -3298,7 +3298,7 @@ fn reach_target(
     let mut eval = |v: f64| -> Result<f64, String> {
         set(form, v);
         let shape =
-            ols_line::solve::solve_one(&model.line, &form.section(old), &model.library, weather)
+            ols_line::solve::solve_one(&model.line, &form.section(old)?, &model.library, weather)
                 .map_err(|e| e.to_string())?;
         Ok(match measure {
             Measure::Tension => shape.spans.first().map_or(0.0, |s| s.horizontal_tension) / 1000.0,
