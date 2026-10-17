@@ -713,7 +713,7 @@ pub fn line_settings_change(before: &Line, after: &Line) -> Command {
 
 /// The puts of the line's settings (name, CRS, display, systems, creep
 /// stretch…) as in `line`, with new systems when given: one row each
-/// ([`META_ROWS`]), those unchanged left out when applied.
+/// (`META_ROWS`), those unchanged left out when applied.
 pub fn line_settings_put(
     line: &Line,
     systems: Option<Vec<ols_line::electrical::System>>,
