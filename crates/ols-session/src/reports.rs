@@ -248,34 +248,21 @@ impl Session {
             [self.current_line()],
             |r| r.get(0),
         )?;
-        let mut objects: BTreeMap<String, String> = self
+        let objects: BTreeMap<String, String> = self
             .objects
             .iter()
             .filter(|((k, _), _)| *k != Kind::Report)
             .map(|((k, id), o)| {
-                (
-                    format!("{}:{id}", k.as_str()),
-                    crate::versions::hash(&o.value.to_string()),
-                )
+                // A library file by its text (`library:kind/name`, as
+                // fingerprints were before libraries were objects).
+                let text = match k {
+                    Kind::Library => crate::library_entry(&o.value)
+                        .map_or_else(|| o.value.to_string(), |(_, _, t)| t),
+                    _ => o.value.to_string(),
+                };
+                (format!("{}:{id}", k.as_str()), crate::versions::hash(&text))
             })
             .collect();
-        let mut stmt = self
-            .conn
-            .prepare("SELECT kind, name, text FROM library_file")?;
-        let files = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })?;
-        for f in files {
-            let (kind, name, text) = f?;
-            objects.insert(
-                format!("library:{kind}/{name}"),
-                crate::versions::hash(&text),
-            );
-        }
         Ok(LineState {
             line: self.current_line().to_owned(),
             seq,

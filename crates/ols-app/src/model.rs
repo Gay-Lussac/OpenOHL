@@ -739,9 +739,13 @@ pub fn without_wind_side(text: &str) -> Option<String> {
     changed.then(|| doc.to_string())
 }
 
+/// The project line's libraries as working copies (files the readers
+/// take, `sources` pointed at them); `import`: when the project opens,
+/// files given or next to it copied into the project first.
 fn project_libraries(
     sources: &mut Sources,
-    session: &ols_session::Session,
+    session: &mut ols_session::Session,
+    import: bool,
     log: &mut dyn FnMut(String),
 ) -> Result<PathBuf, String> {
     let user = sources.user.clone().unwrap_or_else(crate::files::user);
@@ -764,7 +768,7 @@ fn project_libraries(
         };
         let stored = session.library_files(kind).map_err(|e| e.to_string())?;
         let mut kept_in_files = false;
-        if !own && (stored.is_empty() || given) {
+        if import && !own && (stored.is_empty() || given) {
             // Files given, or next to the project: never the libraries
             // shipped with the program (a new project starts empty).
             let own =
@@ -790,24 +794,26 @@ fn project_libraries(
                 .map(|f| files_at(f, ext))
                 .unwrap_or_default();
             if !files.is_empty() {
-                let copy = || -> Result<(), String> {
+                // One log entry, not undone by Undo (the program's doing).
+                let mut copy = || -> Result<(), String> {
+                    let mut changes = Vec::new();
                     // Given: replaces the project's (weather: adds a file).
                     if given && kind != "weather" && kind != "loadcases" {
                         for (name, _) in &stored {
-                            session
-                                .delete_library_file(&user, kind, name)
-                                .map_err(|e| e.to_string())?;
+                            changes.push((kind.to_owned(), name.clone(), None));
                         }
                     }
                     for f in &files {
                         let text = std::fs::read_to_string(f)
                             .map_err(|e| format!("{}: {e}", f.display()))?;
                         let name = f.file_name().map(|n| n.to_string_lossy().into_owned());
-                        session
-                            .put_library_file(&user, kind, &name.unwrap_or_default(), &text)
-                            .map_err(|e| e.to_string())?;
+                        let name = name.unwrap_or_default();
+                        changes.retain(|(_, n, _)| *n != name);
+                        changes.push((kind.to_owned(), name, Some(text)));
                     }
-                    Ok(())
+                    session
+                        .keep_library_files(&user, &changes)
+                        .map_err(|e| e.to_string())
                 };
                 match copy() {
                     Ok(()) => log(format!(
@@ -851,7 +857,10 @@ fn project_libraries(
         if kind == "weather" {
             for (name, text) in &mut stored {
                 if let Some(converted) = without_wind_side(text) {
-                    match session.put_library_file(&user, kind, name, &converted) {
+                    match session.keep_library_files(
+                        &user,
+                        &[(kind.to_owned(), name.clone(), Some(converted.clone()))],
+                    ) {
                         Ok(()) => log(format!(
                             "weather cases {name}: the wind side removed (now chosen in \
                              Display weather cases)"
@@ -1329,13 +1338,27 @@ impl Model {
             Ok(e) => &mut e.session,
             Err(why) => self.viewer_session.as_mut().ok_or_else(|| why.clone())?,
         };
+        // Each project line has its library files: read again when they
+        // differ.
+        let files = |s: &ols_session::Session| {
+            PROJECT_LIBRARIES
+                .iter()
+                .map(|(k, _)| s.library_files(k).unwrap_or_default())
+                .collect::<Vec<_>>()
+        };
+        let before = files(session);
         session.select_line(name).map_err(|e| e.to_string())?;
+        let libraries_differ = files(session) != before;
         if let Some(r) = &mut self.remote {
             r.link.line = name.to_owned();
         }
         self.other_lines.retain(|o| o.name != name);
         let started = Instant::now();
-        self.reread_line()?;
+        if libraries_differ {
+            self.refresh_project_libraries()?;
+        } else {
+            self.reread_line()?;
+        }
         Ok(format!(
             "working on project line {name} now (read in {:.0?}; weather cases solving)",
             started.elapsed()
@@ -1344,7 +1367,8 @@ impl Model {
 
     /// Reads the session's line again (another project line chosen, or
     /// renamed or deleted by someone else): its structure types resolved
-    /// with the libraries in use — project-wide, so not read again — and
+    /// with the libraries in use (those of a line chosen with other
+    /// library files are read again first, [`Model::switch_line`]) and
     /// its weather cases solved in the background, those shown first (as
     /// when the project opens). The project lines shown next to it are
     /// kept as solved. Cost: resolving the line (milliseconds); the views
@@ -1431,6 +1455,18 @@ impl Model {
         ))
     }
 
+    /// The project line's library files written again as working copies
+    /// and read again (another project line chosen, a library change
+    /// undone or redone, a merge).
+    pub fn refresh_project_libraries(&mut self) -> Result<String, String> {
+        let session = match &mut self.editing {
+            Ok(e) => &mut e.session,
+            Err(why) => self.viewer_session.as_mut().ok_or_else(|| why.clone())?,
+        };
+        project_libraries(&mut self.sources, session, false, &mut |_| {})?;
+        self.reload_libraries()
+    }
+
     /// Reads the libraries again (wires, structure types, insulators,
     /// weather cases) after one was edited, resolves the line again and
     /// solves every case. Nothing changes when one does not load.
@@ -1504,7 +1540,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     };
     let started = Instant::now();
     let wanted = sources.view.as_ref().and_then(|v| v.line.clone());
-    let (mut line, session) = load_line(&sources.file, wanted.as_deref())?;
+    let (mut line, mut session) = load_line(&sources.file, wanted.as_deref())?;
     step(
         format!(
             "{}: {} structures, {} sections, {} jumpers",
@@ -1516,8 +1552,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         &mut log,
     );
     // The project's own libraries.
-    let library_dir = match &session {
-        Some(s) => Some(project_libraries(&mut sources, s, &mut |m| {
+    let library_dir = match &mut session {
+        Some(s) => Some(project_libraries(&mut sources, s, true, &mut |m| {
             step(m, &mut log)
         })?),
         None => None,

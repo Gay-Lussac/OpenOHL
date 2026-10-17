@@ -678,12 +678,12 @@ case name), `condition` (initial, creep, load, max sag), factors
 
 | Table | Content |
 |---|---|
-| `ols_meta(key, value)` | settings: `session_schema` (3; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … |
+| `ols_meta(key, value)` | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
 | `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts` (`{"solver": …}`) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
 | `line_snapshot` | named saved lines |
-| `library_file(kind, name, time, user, text)` | the project's library files, shared by all its project lines (no `line` column; versions snapshot them per branch); `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.olsload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.olspd`, e.g. `lev-ch.olspd`, used instead of the shipped file); not logged, not undone. Clearance rules, galloping, thermal ambient, costs, poles and structure models are files beside the project, not rows |
+| `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.olsload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.olspd`); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table emptied. Clearance rules, galloping, thermal ambient, costs, poles and structure models are files beside the project, not rows |
 | `spatial_index` | plan bounds and tile of every object (ADR-0008) |
 | `vc_*`, `edit_grant`, `surface`, point cloud tables | versions and reviews, edit rights, terrain surfaces, LiDAR ([Versions](../user-guide/versions.md), ADR-0007) |
 
@@ -744,9 +744,11 @@ changed and the sections to recalculate. Example (synthetic):
 | `load_cases` | the project's own, else the first `.olslc` next to the file |
 | `rules`, `terrain`, `pointcloud`, `class_scheme` | clearance rules, survey points, point cloud, LiDAR classes |
 
-A project keeps its libraries in `library_file`; on opening, kinds it
-lacks are copied in from these places, and the model reads working copies
-written to a temporary folder. Per-user view settings (`ViewPrefs`) stay
+A project line keeps its libraries as `library` objects; on opening, kinds
+it lacks are copied in from these places (one `library` log entry), and the
+model reads working copies written to a temporary folder — written again
+when another project line is chosen with other library files, or a
+library change is undone or redone. Per-user view settings (`ViewPrefs`) stay
 on the computer, never in the project.
 
 ## What a plugin sees

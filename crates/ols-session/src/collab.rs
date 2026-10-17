@@ -389,6 +389,11 @@ impl Session {
             if key.0 == Kind::Report {
                 continue;
             }
+            // Library files: by the "library" grant.
+            if key.0 == Kind::Library {
+                self.check_library_edit(user)?;
+                continue;
+            }
             // Points tied to structures the user may move follow them.
             if key.0 == Kind::AlignmentPoint
                 && let Some((old, new)) = lines

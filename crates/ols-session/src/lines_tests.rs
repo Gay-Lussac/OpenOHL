@@ -411,16 +411,38 @@ fn a_protected_line_is_changed_by_admins_only() {
 /// restored: such names never come back as file names.
 #[test]
 fn crafted_library_names_are_not_restored() {
-    let (path, mut s) = project("crafted-library");
+    let (path, s) = project("crafted-library");
+    drop(s);
     {
         let db = rusqlite::Connection::open(&path).unwrap();
         db.execute(
-            "INSERT INTO library_file (kind, name, user, text) VALUES ('cables', '../escaped.olsw', 'ana', 'x')",
+            "INSERT INTO model_object (line, kind, id, ord, version, json) VALUES ('main', 'library', 'cables/../escaped.olsw', 0, 1, '{\"id\":\"cables/../escaped.olsw\",\"kind\":\"cables\",\"name\":\"../escaped.olsw\",\"text\":\"x\"}')",
             [],
         )
         .unwrap();
     }
+    let mut s = Session::open(&path).unwrap();
     let rev = s.commit("ana", "with a crafted library").unwrap();
     let err = s.roll_back_line("ana", "main", &rev.id).unwrap_err();
     assert!(err.to_string().contains("bad name"), "{err}");
+}
+
+/// Each project line has its library files: a change on one leaves the
+/// others as they were; a new line starts with those of the line it is
+/// made from.
+#[test]
+fn library_files_are_each_lines() {
+    let (_path, mut s) = project("line-libraries");
+    s.put_library_file("ana", "cables", "a.olsw", "x = 1")
+        .unwrap();
+    s.create_line("ana", "phase 1", "main").unwrap();
+    s.select_line("phase 1").unwrap();
+    assert_eq!(s.library_files("cables").unwrap().len(), 1);
+    s.put_library_file("ana", "cables", "a.olsw", "x = 2")
+        .unwrap();
+    s.select_line("main").unwrap();
+    assert_eq!(
+        s.library_files("cables").unwrap(),
+        vec![("a.olsw".to_owned(), "x = 1".to_owned())]
+    );
 }
