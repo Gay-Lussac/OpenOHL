@@ -1310,10 +1310,7 @@ fn tapped_jumpers_follow_what_they_hang_on() {
     let host = line.jumpers[0].id.clone();
     line.jumpers[0].points.push(ols_line::JumperPoint {
         label: "K".into(),
-        at: ols_line::JumperPlace {
-            fraction: 0.5,
-            ..Default::default()
-        },
+        at: ols_line::JumperPlace::Fraction(0.5),
         description: String::new(),
         object: Some(ols_line::LineObject::clamp(20.0)),
     });
@@ -1451,10 +1448,7 @@ fn tapped_on_s2(s: &mut Session) {
     }));
     a.points = vec![ols_line::JumperPoint {
         label: "K".into(),
-        at: ols_line::JumperPlace {
-            fraction: 0.5,
-            ..Default::default()
-        },
+        at: ols_line::JumperPlace::Fraction(0.5),
         description: String::new(),
         object: Some(ols_line::LineObject::clamp(20.0)),
     }];

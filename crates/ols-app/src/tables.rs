@@ -5345,28 +5345,19 @@ fn parse_jumper_place(text: &str) -> Result<ols_line::JumperPlace, String> {
     };
     let number = |s: &str| s.trim().parse::<f64>().map_err(|_| bad());
     if let Some(l) = t.strip_suffix("m along") {
-        return Ok(ols_line::JumperPlace {
-            length: Some(number(l)?),
-            ..Default::default()
-        });
+        return Ok(ols_line::JumperPlace::Length(number(l)?));
     }
     let d = t
         .strip_suffix("m from the clamp")
         .or_else(|| t.strip_suffix('m'));
     if let Some(d) = d {
-        return Ok(ols_line::JumperPlace {
-            distance: Some(number(d)?),
-            ..Default::default()
-        });
+        return Ok(ols_line::JumperPlace::Distance(number(d)?));
     }
     let x = number(t)?;
     if !(0.0..=1.0).contains(&x) {
         return Err(bad());
     }
-    Ok(ols_line::JumperPlace {
-        fraction: x,
-        ..Default::default()
-    })
+    Ok(ols_line::JumperPlace::Fraction(x))
 }
 
 /// The span objects table's changes: each section (jumper) changed put

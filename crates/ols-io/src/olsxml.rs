@@ -87,28 +87,25 @@ fn read_on_routes(e: &Element) -> Result<Vec<String>, String> {
         .collect()
 }
 
-/// A place along a span: `{prefix}fraction` or `{prefix}distance`.
+/// A place along a span: `{prefix}fraction`, `{prefix}distance` or
+/// `{prefix}station`.
 fn write_place(out: &mut String, prefix: &str, p: &ols_line::SpanPlace) {
-    // The fraction unless a distance or station is given (then only when
-    // set too).
-    if (p.distance.is_none() && p.station.is_none()) || p.fraction != 0.0 {
-        let _ = write!(out, " {prefix}fraction=\"{}\"", num(p.fraction));
-    }
-    if let Some(d) = p.distance {
-        let _ = write!(out, " {prefix}distance=\"{}\"", num(d));
-    }
-    if let Some(s) = p.station {
-        let _ = write!(out, " {prefix}station=\"{}\"", num(s));
-    }
+    let (key, v) = match *p {
+        ols_line::SpanPlace::Fraction(f) => ("fraction", f),
+        ols_line::SpanPlace::Distance(d) => ("distance", d),
+        ols_line::SpanPlace::Station(s) => ("station", s),
+    };
+    let _ = write!(out, " {prefix}{key}=\"{}\"", num(v));
 }
 
-/// Reads a place along a span (`{prefix}fraction` / `{prefix}distance`).
+/// Reads a place along a span (older files may give several: a station
+/// over a distance over the fraction).
 fn read_place(e: &Element, prefix: &str) -> Result<ols_line::SpanPlace, String> {
-    Ok(ols_line::SpanPlace {
-        fraction: optional(e, &format!("{prefix}fraction"))?.unwrap_or(0.0),
-        distance: optional(e, &format!("{prefix}distance"))?,
-        station: optional(e, &format!("{prefix}station"))?,
-    })
+    Ok(ols_line::SpanPlace::from_parts(
+        optional(e, &format!("{prefix}fraction"))?.unwrap_or(0.0),
+        optional(e, &format!("{prefix}distance"))?,
+        optional(e, &format!("{prefix}station"))?,
+    ))
 }
 
 fn write_spacer(out: &mut String, s: &ols_line::Spacer) {
@@ -756,9 +753,11 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         } = p;
         out.push_str("    <jumper_point");
         attr(out, "label", label);
-        attr(out, "fraction", &num(at.fraction));
-        opt_num(out, "length", at.length);
-        opt_num(out, "distance", at.distance);
+        match *at {
+            ols_line::JumperPlace::Fraction(f) => attr(out, "fraction", &num(f)),
+            ols_line::JumperPlace::Length(l) => attr(out, "length", &num(l)),
+            ols_line::JumperPlace::Distance(d) => attr(out, "distance", &num(d)),
+        }
         nonempty(out, "description", description);
         match object {
             None => out.push_str("/>\n"),
@@ -1535,11 +1534,11 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             )?;
             Ok(ols_line::JumperPoint {
                 label: text(p, "label")?.to_owned(),
-                at: ols_line::JumperPlace {
-                    fraction: optional(p, "fraction")?.unwrap_or(0.0),
-                    length: optional(p, "length")?,
-                    distance: optional(p, "distance")?,
-                },
+                at: ols_line::JumperPlace::from_parts(
+                    optional(p, "fraction")?.unwrap_or(0.0),
+                    optional(p, "length")?,
+                    optional(p, "distance")?,
+                ),
                 description: owned(p, "description").unwrap_or_default(),
                 object: p.child("object").map(read_object).transpose()?,
             })

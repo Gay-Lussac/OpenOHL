@@ -573,12 +573,12 @@ mod legacy_tests {
         assert_eq!((o.weight, o.shape), (70.0, Shape::Sphere { diameter: 0.6 }));
         let o2 = s.span_points[1].object.as_ref().unwrap();
         assert!(matches!(o2.shape, Shape::Areas { wind_area, .. } if wind_area == 0.2));
-        assert_eq!(s.span_points[1].at.distance, Some(30.0));
+        assert_eq!(s.span_points[1].at.distance(), Some(30.0));
         assert_eq!(s.spreads.len(), 1);
         let r = &s.spread_loads()[0];
         assert_eq!(
-            (r.start.fraction, r.end.distance, r.load),
-            (0.1, Some(50.0), 12.5)
+            (r.start.fraction(), r.end.distance(), r.load),
+            (Some(0.1), Some(50.0), 12.5)
         );
         let written = serde_json::to_string(&s).unwrap();
         assert!(!written.contains("\"loads\"") && !written.contains("spread_loads"));
