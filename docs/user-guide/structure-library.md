@@ -60,6 +60,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | Field | Required | Meaning |
 |---|---|---|
 | `id`, `name`, `kind` | yes | Identity and family. |
+| `description` | no | What it is, in words (free text; shown in the structure picker). |
 | `point` | no | Points where strings hang (each, like wire points and strings, may have a `description`, free text, carried into the line): `label` and `point` (local), or `node` (at a joint), or `member` and `at` (along a member, 0–1 from its first joint) — then it moves with the pylon. Labels are unique among points and wire points. |
 | `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below), optional `weight` (a counterweight hanging at it). |
 | `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `wind_area` (default: its insulator's, else none), optional `compression` (what it may take; none: tension only), `strain` (a strain string, else suspension), `angle` (from straight down, default 0: hanging) and `direction` (in plan, default 0: ahead). Files written before gave a strain string a `side` (`ahead`/`back`): read as level, direction 0° or 180°. |
