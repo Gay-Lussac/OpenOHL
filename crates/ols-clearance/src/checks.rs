@@ -146,6 +146,9 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
     let potentials = line.potentials().unwrap_or_default();
     let potential = |id: &str| potentials.get(id).copied().flatten();
     let mut wires = Vec::new();
+    // The clamps jumpers hang on (taps): where they join their wire.
+    let tapped: std::collections::BTreeSet<&ols_line::Tap> =
+        line.jumpers.iter().flat_map(|j| j.taps()).collect();
     for shape in shapes {
         let section = line.sections.iter().find(|s| s.id == shape.section);
         for (k, span) in shape.spans.iter().enumerate() {
@@ -159,17 +162,20 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
                 points: span.points.clone(),
                 ends: section.map_or(Vec::new(), |s| {
                     let mut e: Vec<String> = s.points.iter().skip(k).take(2).map(key).collect();
-                    // Its clamps: where taps join jumpers to it.
+                    // Its clamps jumpers hang on: where taps join them to
+                    // it (a spacer's clamp is not a tap).
                     e.extend(
                         s.span_points
                             .iter()
                             .filter(|p| p.span == k && is_clamp(&p.object))
                             .map(|p| {
-                                tap_key(&ols_line::Tap::Span(ols_line::SpanPointRef {
+                                ols_line::Tap::Span(ols_line::SpanPointRef {
                                     section: s.id.clone(),
                                     point: p.label.clone(),
-                                }))
-                            }),
+                                })
+                            })
+                            .filter(|t| tapped.contains(t))
+                            .map(|t| tap_key(&t)),
                     );
                     e
                 }),
@@ -193,13 +199,18 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
                     ols_line::JumperEnd::Tap { tap } => tap_key(tap),
                 };
                 let mut e = vec![end(&d.from), end(&d.to)];
-                // Its clamps: where jumpers hanging on it join it.
-                e.extend(d.points.iter().filter(|p| is_clamp(&p.object)).map(|p| {
-                    tap_key(&ols_line::Tap::Jumper {
-                        jumper: d.id.clone(),
-                        point: p.label.clone(),
-                    })
-                }));
+                // Its clamps jumpers hang on: where they join it.
+                e.extend(
+                    d.points
+                        .iter()
+                        .filter(|p| is_clamp(&p.object))
+                        .map(|p| ols_line::Tap::Jumper {
+                            jumper: d.id.clone(),
+                            point: p.label.clone(),
+                        })
+                        .filter(|t| tapped.contains(t))
+                        .map(|t| tap_key(&t)),
+                );
                 e
             }),
         });

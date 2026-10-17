@@ -375,7 +375,7 @@ const SPAN_OBJECTS: &[Column] = &[
         "label",
         90.0,
         Yes,
-        "label (a point's: fixed, spacers, spreads and taps use it)",
+        "label (a point's: relabelled, its spreads, spacers and taps follow)",
     ),
     (
         "at",
@@ -5419,7 +5419,7 @@ fn parse_jumper_place(text: &str) -> Result<ols_line::JumperPlace, String> {
 /// once, after deleting the spacers clamped and the jumpers hanging on
 /// the points deleted.
 fn span_object_commands<'a>(
-    stored: &ols_line::Line,
+    original: &ols_line::Line,
     page: &TablePage,
     existing: &impl Fn(&String) -> Result<Cells<'a>, String>,
     out: &mut Changes,
@@ -5435,6 +5435,33 @@ fn span_object_commands<'a>(
             _ => Err(format!("{key}: not a span object")),
         }
     };
+    // Points relabelled first: their spreads, spacers and taps follow
+    // ([`ols_line::Line::relabel_point`]); the other edits on that.
+    let mut work = original.clone();
+    for key in page.edits.keys().filter(|k| !page.deleted.contains(*k)) {
+        let (id, kind, k) = parse_key(key)?;
+        let typed = existing(key)?.get(3).trim().to_owned();
+        let old = match kind {
+            'p' => work
+                .sections
+                .iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.span_points.get(k))
+                .map(|p| p.label.clone()),
+            'j' => work
+                .jumpers
+                .iter()
+                .find(|j| j.id == id)
+                .and_then(|j| j.points.get(k))
+                .map(|p| p.label.clone()),
+            _ => None,
+        };
+        if let Some(old) = old.filter(|l| *l != typed) {
+            work.relabel_point(kind == 'j', &id, &old, &typed)
+                .map_err(|e| format!("{id} {old}: {e}"))?;
+        }
+    }
+    let stored = &work;
     let mut sections: BTreeMap<String, ols_line::Section> = BTreeMap::new();
     let mut jumpers: BTreeMap<String, ols_line::Jumper> = BTreeMap::new();
     let mut gone: BTreeMap<String, BTreeSet<(char, usize)>> = BTreeMap::new();
@@ -5474,12 +5501,6 @@ fn span_object_commands<'a>(
                     .span_points
                     .get_mut(k)
                     .ok_or_else(|| format!("{name}: gone"))?;
-                if c.get(3).trim() != p.label {
-                    return Err(format!(
-                        "point {}: its label is fixed (spacers, spreads and taps use it)",
-                        p.label
-                    ));
-                }
                 p.at = parse_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
                 if let Some(o) = &mut p.object {
                     object_from_cells(o, &c, &name)?;
@@ -5489,12 +5510,6 @@ fn span_object_commands<'a>(
                 take_jumper(&mut jumpers, &id)?;
                 let j = jumpers.get_mut(&id).expect("taken");
                 let p = j.points.get_mut(k).ok_or_else(|| format!("{name}: gone"))?;
-                if c.get(3).trim() != p.label {
-                    return Err(format!(
-                        "point {}: its label is fixed (taps use it)",
-                        p.label
-                    ));
-                }
                 p.at = parse_jumper_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
                 if let Some(o) = &mut p.object {
                     object_from_cells(o, &c, &name)?;
@@ -5609,6 +5624,30 @@ fn span_object_commands<'a>(
                 confirm: true,
             },
         ));
+    }
+    // What the relabelling changed besides.
+    for (a, b) in original.sections.iter().zip(&stored.sections) {
+        if a != b && !sections.contains_key(&b.id) {
+            sections.insert(b.id.clone(), b.clone());
+        }
+    }
+    for (a, b) in original.jumpers.iter().zip(&stored.jumpers) {
+        if a != b && !jumpers.contains_key(&b.id) {
+            jumpers.insert(b.id.clone(), b.clone());
+        }
+    }
+    for (a, b) in original.spacers.iter().zip(&stored.spacers) {
+        if a != b {
+            out.commands.push((
+                format!("spacer {} on the relabelled point", b.id),
+                Command::Put {
+                    kind: Kind::Spacer,
+                    id: b.id.clone(),
+                    value: serde_json::to_value(b).map_err(|e| e.to_string())?,
+                    ord: None,
+                },
+            ));
+        }
     }
     for (id, s) in sections {
         out.commands.push((

@@ -1883,6 +1883,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     line.upgrade_routes();
     line.place_strings().map_err(|e| e.to_string())?;
     line.version = ols_line::LINE_FILE_VERSION;
+    line.read_older();
     Ok(line)
 }
 

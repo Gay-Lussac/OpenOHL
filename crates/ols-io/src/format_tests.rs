@@ -236,6 +236,8 @@ fn rich_line() -> Line {
         compression: Some(8000.0),
         fields: Default::default(),
     });
+    // Its ends: clamps.
+    line.clamp_spacer_ends();
     let second = line.alignments[1].id.clone();
     let s2 = (
         line.structures[2].position,

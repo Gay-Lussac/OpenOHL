@@ -482,6 +482,19 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         new_phase: Option<u32>,
     },
+    /// Relabel a point of a section's spans or of a jumper (`kind`:
+    /// section or jumper, `id` its id); the spreads, spacers and taps
+    /// naming it follow.
+    RenamePoint {
+        /// Section or jumper.
+        kind: Kind,
+        /// Its id.
+        id: String,
+        /// The point's label.
+        label: String,
+        /// Its new label.
+        new_label: String,
+    },
     /// Rename an electrical system; the sections given it follow.
     RenameSystem {
         /// System id.
@@ -857,8 +870,9 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
             )));
         }
     }
-    // Starts left by deletions before they followed them.
-    line.drop_stale_circuit_starts();
+    // Starts left by deletions before they followed them, spacers' bare
+    // ends.
+    line.read_older();
     Ok(line)
 }
 
@@ -1878,6 +1892,43 @@ impl Session {
                 out.extend(self.starts_renamed(|p| (*p == old).then(|| new.clone())));
                 notes.push(format!(
                     "renumber wire point {structure} set {set} to {new_set}"
+                ));
+            }
+            Command::RenamePoint {
+                kind,
+                id,
+                label,
+                new_label,
+            } => {
+                if !matches!(kind, Kind::Section | Kind::Jumper) {
+                    return Err(refused(format!(
+                        "a {} has no points to relabel",
+                        kind.as_str()
+                    )));
+                }
+                let mut line = self.line.clone();
+                line.relabel_point(kind == Kind::Jumper, &id, &label, &new_label)
+                    .map_err(refused)?;
+                // The objects that changed.
+                for (a, b) in self.line.sections.iter().zip(&line.sections) {
+                    if a != b {
+                        out.push(put(Kind::Section, &b.id, b));
+                    }
+                }
+                for (a, b) in self.line.jumpers.iter().zip(&line.jumpers) {
+                    if a != b {
+                        out.push(put(Kind::Jumper, &b.id, b));
+                    }
+                }
+                for (a, b) in self.line.spacers.iter().zip(&line.spacers) {
+                    if a != b {
+                        out.push(put(Kind::Spacer, &b.id, b));
+                    }
+                }
+                notes.push(format!(
+                    "relabel point {label} of {} {id} to {}",
+                    kind.as_str(),
+                    new_label.trim()
                 ));
             }
             Command::RenameSystem { id, new_id } => {

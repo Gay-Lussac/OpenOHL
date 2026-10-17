@@ -2323,10 +2323,12 @@ pub fn bundle_point(q: Point, a: Point, b: Point, offset: [f64; 2]) -> Point {
 
 impl Section {
     /// Gives it the wire points `points`: its span points (with their
-    /// objects, and so what hangs on them) and a sagged span keep their
-    /// span — found by its two ends — at its new index. Refused, naming
+    /// objects, and so what hangs on them), a sagged span and clipped
+    /// lengths keep their span — found by its two ends — at its new
+    /// index (the one place span indices are moved). Refused, naming
     /// them, when span points are on a span the new points no longer have
     /// (a structure put in it, taken out of it, or the section turned).
+    /// Lengths of spans gone are left as they are (to be clipped again).
     pub fn set_points(&mut self, points: Vec<SectionPoint>) -> Result<(), String> {
         let old = &self.points;
         let new_index = |k: usize| -> Option<usize> {
@@ -2354,11 +2356,29 @@ impl Section {
             Stringing::Sag { span: Some(k), .. } => new_index(*k),
             _ => None,
         };
+        // Clipped: each new span's length from its old span, when every
+        // new span was one.
+        let lengths: Option<Vec<f64>> = match &self.stringing {
+            Stringing::UnstressedLengths { lengths, .. } => points
+                .windows(2)
+                .map(|w| {
+                    old.windows(2)
+                        .position(|o| o[0] == w[0] && o[1] == w[1])
+                        .and_then(|k| lengths.get(k).copied())
+                })
+                .collect(),
+            _ => None,
+        };
         for (p, m) in self.span_points.iter_mut().zip(spans) {
             p.span = m.expect("checked");
         }
         if let (Stringing::Sag { span: Some(k), .. }, Some(m)) = (&mut self.stringing, sagged) {
             *k = m;
+        }
+        if let (Stringing::UnstressedLengths { lengths, .. }, Some(new)) =
+            (&mut self.stringing, lengths)
+        {
+            *lengths = new;
         }
         self.points = points;
         Ok(())
@@ -2679,11 +2699,118 @@ impl Line {
         let mut line: Self =
             serde_json::from_str(text).map_err(|e| LineError::File(e.to_string()))?;
         line.upgrade_routes();
-        line.drop_stale_circuit_starts();
+        line.read_older();
         line.place_strings()?;
         line.validate()?;
         line.version = LINE_FILE_VERSION;
         Ok(line)
+    }
+
+    /// Relabels point `label` of section `id` (`on_jumper`: of jumper
+    /// `id`) to `new_label`; its spreads, the spacers on it and the
+    /// jumpers tapped on it follow.
+    pub fn relabel_point(
+        &mut self,
+        on_jumper: bool,
+        id: &str,
+        label: &str,
+        new_label: &str,
+    ) -> Result<(), String> {
+        let new_label = new_label.trim();
+        if new_label.is_empty() || new_label == label {
+            return Err(format!("point {label}: give a new label"));
+        }
+        let host = if on_jumper { "jumper" } else { "section" };
+        if on_jumper {
+            let j = self
+                .jumpers
+                .iter_mut()
+                .find(|j| j.id == id)
+                .ok_or_else(|| format!("no jumper {id}"))?;
+            if j.points.iter().any(|p| p.label == new_label) {
+                return Err(format!("{host} {id} has a point {new_label} already"));
+            }
+            j.points
+                .iter_mut()
+                .find(|p| p.label == label)
+                .ok_or_else(|| format!("{host} {id} has no point {label}"))?
+                .label = new_label.to_owned();
+        } else {
+            let s = self
+                .sections
+                .iter_mut()
+                .find(|s| s.id == id)
+                .ok_or_else(|| format!("no section {id}"))?;
+            if s.span_points.iter().any(|p| p.label == new_label) {
+                return Err(format!("{host} {id} has a point {new_label} already"));
+            }
+            s.span_points
+                .iter_mut()
+                .find(|p| p.label == label)
+                .ok_or_else(|| format!("{host} {id} has no point {label}"))?
+                .label = new_label.to_owned();
+            for x in &mut s.spreads {
+                for end in [&mut x.from, &mut x.to] {
+                    if end == label {
+                        *end = new_label.to_owned();
+                    }
+                }
+            }
+            for x in &mut self.spacers {
+                for end in [&mut x.a, &mut x.b] {
+                    if end.section == id && end.point == label {
+                        end.point = new_label.to_owned();
+                    }
+                }
+            }
+        }
+        for j in &mut self.jumpers {
+            for t in [&mut j.from, &mut j.to]
+                .into_iter()
+                .filter_map(JumperEnd::tap_mut)
+            {
+                match t {
+                    Tap::Span(r) if !on_jumper && r.section == id && r.point == label => {
+                        r.point = new_label.to_owned();
+                    }
+                    Tap::Jumper { jumper, point }
+                        if on_jumper && jumper == id && point == label =>
+                    {
+                        *point = new_label.to_owned();
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// What files written before need and the format does not say:
+    /// stale circuit starts dropped ([`Line::drop_stale_circuit_starts`]),
+    /// spacers' bare end points given a clamp
+    /// ([`Line::clamp_spacer_ends`]).
+    pub fn read_older(&mut self) {
+        self.drop_stale_circuit_starts();
+        self.clamp_spacer_ends();
+    }
+
+    /// Gives a spacer's bare end point a clamp object, of no weight (files
+    /// written before a spacer's ends were clamps: nothing changes in the
+    /// results).
+    pub fn clamp_spacer_ends(&mut self) {
+        for s in &self.spacers {
+            for end in [&s.a, &s.b] {
+                if let Some(p) = self
+                    .sections
+                    .iter_mut()
+                    .find(|x| x.id == end.section)
+                    .and_then(|x| x.span_points.iter_mut().find(|p| p.label == end.point))
+                    && p.object.is_none()
+                {
+                    p.object = Some(LineObject::clamp(0.0));
+                }
+            }
+        }
     }
 
     /// Drops the circuit starts that are no section's point, and those
@@ -3055,6 +3182,12 @@ impl Line {
                             sec.id, p.label
                         ))
                     })?;
+                    if o.hold.is_some() {
+                        return invalid(format!(
+                            "section {}: the clamp on {} is held up: only a jumper's is (a support)",
+                            sec.id, p.label
+                        ));
+                    }
                 }
             }
             let mut spread_labels = std::collections::BTreeSet::new();
@@ -3226,6 +3359,16 @@ impl Line {
                         end.point, sec.id
                     ));
                 };
+                if !p
+                    .object
+                    .as_ref()
+                    .is_some_and(|o| o.kind == ObjectKind::Clamp)
+                {
+                    return bad(&format!(
+                        "its end {} on section {} holds no clamp (put a clamp object there)",
+                        end.point, sec.id
+                    ));
+                }
                 if sec.calculation.method() != condition::Method::Fe {
                     return bad(&format!(
                         "section {} is calculated by ruling span: a spacer needs finite \
@@ -3375,7 +3518,8 @@ mod tests {
                 span: 0,
                 at: SpanPlace::at_fraction(1.0 / 3.0),
                 description: String::new(),
-                object: Default::default(),
+                // A spacer's end: a clamp (of no weight here).
+                object: Some(LineObject::clamp(0.0)),
             });
         }
         line.spacers.push(Spacer {
@@ -3421,6 +3565,23 @@ mod tests {
         let mut missing = line.clone();
         missing.spacers[0].b.point = "nope".into();
         assert!(missing.validate().is_err());
+        // Its ends hold clamps; files before gave bare ends: given one.
+        let mut bare = line.clone();
+        for p in bare.sections[0]
+            .span_points
+            .iter_mut()
+            .filter(|p| p.label == "P1")
+        {
+            p.object = None;
+        }
+        assert!(
+            bare.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("no clamp")
+        );
+        bare.read_older();
+        bare.validate().unwrap();
         let mut far = line.clone();
         far.spacers[0].b.section = far.sections[2].id.clone();
         far.sections[2].span_points.push(SpanPoint {
@@ -3428,7 +3589,7 @@ mod tests {
             span: 0,
             at: SpanPlace::at_fraction(0.5),
             description: String::new(),
-            object: Default::default(),
+            object: Some(LineObject::clamp(0.0)),
         });
         assert!(
             far.validate()
@@ -3865,6 +4026,16 @@ mod tests {
         let err = sec.set_points(without).unwrap_err();
         assert!(err.contains('A'), "{err}");
         assert_eq!(sec.points, p);
+        // Clipped lengths follow their spans.
+        let n = p.len() - 1;
+        sec.stringing = Stringing::UnstressedLengths {
+            lengths: (0..n).map(|k| 100.0 + k as f64).collect(),
+            temperature: 15.0,
+            sagged: None,
+        };
+        sec.set_points(p[1..].to_vec()).unwrap();
+        assert!(matches!(&sec.stringing,
+            Stringing::UnstressedLengths { lengths, .. } if lengths[0] == 101.0 && lengths.len() == n - 1));
     }
 
     /// Spread labels unique, a span point's distance within its span,
@@ -4081,5 +4252,31 @@ mod tests {
         line.jumpers.push(tap);
         let e = line.validate().unwrap_err().to_string();
         assert!(e.contains("support"), "{e}");
+    }
+
+    /// A point relabelled: its spreads and the spacers on it follow.
+    #[test]
+    fn a_relabelled_point_takes_its_spreads_and_spacers() {
+        let mut line = spaced();
+        let s1 = line.sections[0].id.clone();
+        line.sections[0].span_points.push(SpanPoint {
+            label: "Q".into(),
+            span: 0,
+            at: SpanPlace::at_fraction(0.6),
+            ..Default::default()
+        });
+        line.sections[0].spreads.push(SpreadObject {
+            from: "P1".into(),
+            to: "Q".into(),
+            load: 5.0,
+            ..Default::default()
+        });
+        line.validate().unwrap();
+        line.relabel_point(false, &s1, "P1", "P9").unwrap();
+        line.validate().unwrap();
+        assert_eq!(line.spacers[0].a.point, "P9");
+        assert_eq!(line.sections[0].spreads[0].from, "P9");
+        assert!(line.relabel_point(false, &s1, "P9", "Q").is_err());
+        assert!(line.relabel_point(false, &s1, "nope", "Z").is_err());
     }
 }
