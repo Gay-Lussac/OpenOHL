@@ -3835,6 +3835,7 @@ dependencies = [
  "ols-core",
  "ols-render",
  "ols-structure-edit",
+ "ols-structure-export",
  "ols-structure-link",
  "ols-structure-loads",
  "ols-structures",
@@ -3854,6 +3855,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-structure-export"
+version = "0.0.1"
+dependencies = [
+ "clap",
+ "ols-core",
+ "ols-sections",
+ "ols-structure-link",
+ "ols-structure-loads",
+ "ols-structures",
+ "zip",
+]
+
+[[package]]
 name = "ols-structure-link"
 version = "0.0.1"
 dependencies = [
@@ -3864,6 +3878,7 @@ dependencies = [
  "ols-structure-loads",
  "ols-structures",
  "ols-structures-fe",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]

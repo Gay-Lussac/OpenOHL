@@ -188,7 +188,9 @@ extension). Decisions 17 and 20: extension bodies at level 3, leg extensions inc
    structure's own tables remain as raw TOML.
 10. **No import of a body** other than the local PLS importer, and **no
     export** of the model other than the file itself (IFC writes the
-    stick polylines only, `ols-io/src/ifc.rs`).
+    stick polylines only, `ols-io/src/ifc.rs`) — *export done*: a level
+    3 structure as IFC4, IFC2x3, SAF and CSV ([Structure
+    exports](structure-exports.md)).
 11. **No report of a structure**: results are console text or one usage
     line per placed structure.
 12. **Poles are text files** (`.olsp`), not edited in the app, and have
@@ -321,6 +323,10 @@ and what to pick (row, joint, member). Two kinds:
   profiles), **Tekla** and **RFEM** (model, sections, supports, load
   cases), written from the public documentation of each format.
   **PLS-TOWER** later.
+  *Built* ([Structure exports](structure-exports.md)): IFC4 with member
+  solids and the structural analysis model (RFEM), IFC2x3 members (Tekla
+  Structures converts only IFC2x3), SAF xlsx (RFEM and other SAF
+  programs), CSV tables.
 - **Import**: PLS-TOWER XML stays a local importer; DXF 3D lines and
   CSV / XLSX tables of joints and members into level 2; merge an
   `.olsfe` into the structure.
@@ -554,6 +560,14 @@ Each phase is a deliverable of its own, checked and committed.
    groups.
 6. **Replace structure** in the line application (§1.6).
 7. **Exports**: IFC with member solids, Tekla, RFEM; PLS-TOWER later.
+   *Built*: `ols-structure-export` (File › Export, tool
+   `ols-structure-export`): IFC4 (members with profile solids and the
+   structural analysis model with load cases), IFC2x3 Coordination View
+   2.0 (members, for Tekla Structures' IFC object conversion), SAF 2.2.0
+   (xlsx) and CSV tables ([Structure exports](structure-exports.md)).
+   The application exports the Load cases tab's table (a placed
+   structure's line values and typed values). *Open*: imports tried in
+   RFEM 6 and Tekla Structures; PLS-TOWER.
 8. **Code checks**: the plugin interface for member and joint checks
    (open question 1), then a first code (e.g. SIA 263); capacity
    derived from a level 3 design.

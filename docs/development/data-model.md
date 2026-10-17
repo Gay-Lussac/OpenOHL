@@ -825,6 +825,24 @@ structures of the type with their `LineValues`), `note` (why there are
 no values: being computed, no load case file). Derived data, rewritten
 when the line changes; never stored in the project.
 
+### Structure exports (IFC, SAF, CSV)
+
+Written by `apps/structure/ols-structure-export` (File › Export of the
+structure application, tool `ols-structure-export`); nothing is read
+back. `ols_structure_link::export_structure` turns a level 3 `.olss`
+(through the FE `Model`), the section library and a `LoadTable` into
+plain data, `ExportStructure`: `nodes` (`id`, `point`, `fixed[6]`,
+`spring[6]`), `materials` (E, G, density, yield), `sections` (`shape`
+from the library or none for a `[[section]]` table, A, Iy, Iz, It, Wpl,
+the centroid's offset from the outline box), `members` (joint and
+section indices, kind, local axes `[x, y, z]` as the FE model takes
+them, length, k, pretension) and `load_cases` (`self_weight` factor,
+loads at a joint, at a point along a member, or uniform per metre along
+one; structure axes, z up). Formats: IFC4 (members and the structural
+analysis model), IFC2x3 Coordination View 2.0 (members, for Tekla
+Structures), SAF 2.2.0 xlsx, CSV tables. Mapping and what is lost:
+[Structure exports](structure-exports.md).
+
 ## Where data lives
 
 ### Files

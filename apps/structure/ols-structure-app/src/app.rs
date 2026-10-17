@@ -128,6 +128,8 @@ pub struct StructureApp {
     pub buffers: std::collections::HashMap<String, String>,
     /// The window asked to close with unsaved changes: the question shown.
     pub closing: bool,
+    /// File › Export: another section library or load table chosen.
+    pub export: crate::export_menu::ExportSettings,
     /// Closing confirmed.
     close_now: bool,
     /// Fit the view to the structure (Fit clicked).
@@ -172,6 +174,7 @@ impl StructureApp {
             message: None,
             buffers: Default::default(),
             closing: false,
+            export: Default::default(),
             close_now: false,
             view_fit: false,
             loads: LoadCasesTab::default(),
@@ -462,6 +465,8 @@ impl StructureApp {
                     ui.close();
                     self.save_as();
                 }
+                ui.separator();
+                self.export_menu(ui);
                 ui.separator();
                 if ui.button("Quit").clicked() {
                     ui.close();

@@ -224,3 +224,53 @@ the view, is one step. Comments and the order of the file are kept.
 one, which is then the file edited. A file that does not read (the error
 is shown in red) is not saved. Closing the window with unsaved changes
 asks first: **Save and close**, **Close without saving** or **Cancel**.
+
+## Export
+
+**File › Export** writes the structure as it is in the window (unsaved
+edits included) for another program. It needs **level 3**: joints,
+members with sections, a supported joint.
+
+| Entry | File | For |
+|---|---|---|
+| **IFC4 — analysis model with load cases, and members** | `.ifc` | RFEM 6 (imports a structural analysis view as nodes and members), BIM viewers |
+| **IFC4 — members with their profiles** | `.ifc` | BIM viewers, coordination |
+| **IFC2x3 — members for Tekla Structures** | `.ifc` | Tekla Structures: insert as a reference model, then *IFC object conversion* makes native parts (Tekla converts IFC2x3 only) |
+| **SAF (xlsx) — analysis model with load cases** | `.xlsx` | RFEM 6, SCIA and other programs reading the Structural Analysis Format |
+| **CSV tables** | a folder | anything else: `materials`, `sections`, `nodes`, `supports`, `members`, `load_cases`, `loads` |
+
+Members carry their sections as real profiles (angles, channels, I
+sections, tubes, round bars, polygonal tubes) when the section comes from
+the [section library](section-library.md); a section given only by its
+values (`[[section]]`) has no shape (IFC: the member's axis only; SAF: a
+square of the same area, its values given).
+
+Under the entries:
+
+- **Section library**: by default the window's (`--sections`, else the
+  `Sections` folder beside the file — the one the Load cases tab uses);
+  **Choose library…** takes another file.
+- **Loads**: by default the **Load cases tab's table**: for a placed
+  structure (opened with **Edit…** from the line) the line's values at
+  that place, and the values typed over the table; for a structure opened
+  on its own the recipes without line values (loads needing a line value
+  are left out; the message says how many). Its `[[load]]` tables are
+  case `model`. **Choose load table…** takes a load table written as CSV
+  instead ([Structure load cases](structure-load-cases.md)).
+
+The message under the header says what was written. What each format
+holds and leaves out: [Structure exports](../development/structure-exports.md).
+
+The same from the command line:
+
+```bash
+ols-structure-export examples/synthetic-line/Structures/type-02.olss --format saf -o type-02.xlsx
+ols-structure-export tower.olss --format ifc --sections libraries/sections --loads loads.csv -o tower.ifc
+```
+
+`--format` is `ifc`, `ifc-members`, `ifc2x3`, `saf` or `csv` (`-o` a
+folder); `--sections` takes library files or folders (the first giving an
+id wins); `--loads` a load table (CSV; without it the file's own recipes
+without line values); `--timestamp` writes the export
+time into IFC headers (without it, exports of the same file are
+identical byte for byte).

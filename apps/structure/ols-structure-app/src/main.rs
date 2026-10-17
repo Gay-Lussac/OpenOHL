@@ -21,6 +21,7 @@
 
 mod app;
 mod body_tab;
+mod export_menu;
 mod generators_ui;
 mod in_line_tab;
 mod load_cases_tab;

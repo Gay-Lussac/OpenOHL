@@ -20,6 +20,16 @@
 //!   the surface loads of the recipes
 //!   ([`ols_structure_loads::evaluate_with_areas`]); [`section_library`]
 //!   reads it.
+//! - [`export_structure`]: a level 3 structure with its section library
+//!   and load table as plain data for the exports
+//!   (`ols-structure-export`: IFC, SAF, CSV).
+
+mod export;
+
+pub use export::{
+    ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
+    ExportSection, ExportStructure, LoadPlace, export_structure, member_axes,
+};
 
 use std::path::Path;
 use std::time::{Duration, Instant};

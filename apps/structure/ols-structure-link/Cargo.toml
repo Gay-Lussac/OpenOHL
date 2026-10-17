@@ -16,6 +16,7 @@ ols-line.workspace = true
 ols-loads.workspace = true
 ols-structures-fe.workspace = true
 ols-sections.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

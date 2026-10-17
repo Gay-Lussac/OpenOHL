@@ -42,6 +42,7 @@ ols-spotting = { path = "crates/ols-spotting" }
 ols-structure-loads = { path = "apps/structure/ols-structure-loads" }
 ols-structure-link = { path = "apps/structure/ols-structure-link" }
 ols-structure-edit = { path = "apps/structure/ols-structure-edit" }
+ols-structure-export = { path = "apps/structure/ols-structure-export" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

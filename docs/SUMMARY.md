@@ -74,6 +74,7 @@
 - [Structure detail levels in checks](development/structure-detail.md)
 - [Building structures, levels 1 to 3](development/structure-building.md)
 - [Structure application crates](development/structure-app.md)
+- [Structure exports: IFC, SAF, CSV](development/structure-exports.md)
 
 # Validation
 
