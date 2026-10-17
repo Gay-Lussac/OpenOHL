@@ -300,6 +300,20 @@ Every field is shown as written in the file, with its units (`"28.1 mm"`, `"55 G
 
 ### The pylon workspace
 
+**Edit… — the structure application.** A typed structure's properties
+(next to **Edit pylon…**) and the Structure types page (next to
+**Fields** and **Pylon**) have **Edit…**: it opens the structure in the
+[structure application](structure-app.md), a window of its own, on the
+structure's file — in a project, the project's working copy of it. When
+it is saved there, the line application takes the file back into the
+project and reads the structure libraries again, as when the Structure
+types page is saved: every structure of the type follows, and the page
+shows the saved text (if it has unsaved changes of its own, it says so
+and keeps them). `ols-structure` is looked for next to `ols-cad`, then on
+the `PATH`; when it is found in neither, the status line says so. The
+pylon workspace below stays until the structure application does
+everything it does; both make the same edits.
+
 **A structure type on its own**: `ols-cad pylon.olss`, **File › Open** (choose a `.olss`) or the start page's recent files open a structure type file without a line: its editor is the whole window — the pylon workspace below and every field of the file (**Fields**), **Save** (⌘S), the other types of its folder in the list. The insulator assemblies of its folder (and of an `Insulators` folder there) are those its strings may take. Which angle means ahead is yours for files opened alone (at the top, remembered on this computer); a project has its own (Structures › Angles around structures). Unsaved changes are asked about before another file opens. In a project, the same editor is the Structure types page, and **Edit pylon…** opens a structure's type in it; what the type gives — its points, strings and wire points, with their descriptions — comes into the line with every structure of that type.
 
 On the **Structure library** page, **Pylon** (next to **Fields**) shows the type in its own axes — x to the right of the line (red), y ahead (green), z up (blue), 0;0 at the centre, the ground grid at the level of its feet — in its own 3D view, with tables below it. **Edit pylon…** in a typed structure's properties opens its type there.

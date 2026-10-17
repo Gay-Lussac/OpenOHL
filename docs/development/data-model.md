@@ -653,6 +653,19 @@ levels decided for the structure application (poles with levels, a flat
 `[[body]]` staying level 1, capacities derived only at level 3) is in
 [Building structures](structure-building.md); not built yet.
 
+**Editing a structure file** (`apps/structure/ols-structure-edit`,
+[crates](structure-app.md)): every edit of the structure application and
+of `ols-app`'s pylon workspace is a function on the file's text
+(`toml_edit::DocumentMut`, comments and order kept) given the structure
+as last read; `StructureFile` keeps the undo and redo of whole edits.
+`missing(t, level) -> Vec<Missing>` lists what the next level lacks
+(`Need::Level`: no member, a member without a section — one item per
+member —, no `[[section]]`, no supported joint) and advice
+(`Need::Advice`: a point on no joint or member, a joint on one member or
+none, members crossing within 1 mm away from their ends without a
+joint); each item names its row (`Handle`) or its table (`Place`). It
+reads the structure only; `detail()` stays the source of the level.
+
 Placed into a line, a type becomes `PlacedStrings { points, strings,
 wires }` (global coordinates) that `Line::resolve` merges with the
 structure's own items.

@@ -8,7 +8,7 @@
 //! comments and layout are kept), a file with an undo and redo of whole
 //! edits ([`StructureFile`]), the positions of what is drawn and picked
 //! ([`Geometry`]), and what a structure still lacks for each level
-//! ([`missing`]).
+//! ([`missing()`]).
 //!
 //! Axes are the structure's own: x right of the line, y ahead, z up,
 //! 0;0 at the centre.

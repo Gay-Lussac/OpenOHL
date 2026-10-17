@@ -506,7 +506,12 @@ Each phase is a deliverable of its own, checked and committed.
 2. **Separate structure application**: its own binary on the workspace
    crates; started from **Edit** in the line application or by opening
    a `.olss`; the tabs of §1 with today's editing; `missing(level)` in
-   the header.
+   the header. *Built*: `ols-structure` (`apps/structure/ols-structure-app`)
+   and `ols-structure-edit` ([crates](structure-app.md), [user
+   guide](../user-guide/structure-app.md)); `missing(level)` lives in
+   `ols-structure-edit`, not in `StructureType`; the mechanism found by a
+   trial solve is not among the advice yet; Load cases, Results and In
+   the line are placeholders.
 3. **Levels including poles**: pole outline at level 2 and pole design at
    level 3; `detail()` looks at poles; body generators, symmetry, member
    groups, body templates.
