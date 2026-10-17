@@ -519,6 +519,7 @@ of it is one log entry, undone together.
 | Route | its alignments on no other route; it is taken out of the alignments, points and structures that stay |
 | Alignment (also: its last point) | its points (asked first) |
 | Jumper | the jumpers on taps on its points, and those hanging on them |
+| Structure replaced (`replace_structure`) | what ends at an old set mapped to no new set: those sections (and their spacers), the jumpers at those sets or at those sections, and those on taps of those sections (as for a wire point); the old structure's own points, strings, wire points and `omit` / `omit_sets` (overrides of its type) and the jumper support clamps on wire points the new structure lacks are dropped — all listed in the confirmation |
 | Meta (line settings) | cannot be deleted |
 
 Every deletion (and a section's points changed) also takes the
@@ -537,7 +538,12 @@ on it; a rename is a put under the new id and a delete of the old one;
 `rename_attachment` (set renumbering) updates the sections, jumpers and
 circuit starts there; `rename_point` (a span or jumper point's label)
 updates its spreads, the spacers on it and the jumpers tapped on it;
-`rename_system` updates the sections given it. Library items are
+`rename_system` updates the sections given it. `replace_structure`
+(`crates/ols-session/src/replace.rs`) keeps the structure's id, position,
+orientation, height adjustment, description, routes and fields, and moves
+the section points, jumper ends and circuit starts at each old set to the
+new set mapped (given in `sets`, else the same set when the new structure
+has it). Library items are
 not renamed through the session: a changed library id leaves dangling
 references that `Line::resolve` / validation report.
 
@@ -833,7 +839,12 @@ as results the counts and the pairs below z or within 1 m of it.
 `remove_alignment_point` (deletes the point: off every alignment),
 `tie_alignment_point`, `detach_alignment_point`,
 `align_under_structures`, `delete_structure`, `delete_attachment`
-(`structure`, `set`), `rename`, `rename_attachment`, `rename_system`,
+(`structure`, `set`), `replace_structure` (`id`; `structure`: the new
+one, its `type` and `extension` or its own points, strings and wire
+points; `wires`: a typed new structure's wire points as placed,
+`{label, set}` — the session does not read the structure library;
+`sets`: `{from, to}` old set → new set, `to` left out: removed;
+`confirm`), `rename`, `rename_attachment`, `rename_system`,
 `replace_line`, `batch`. Each is expanded into puts and deletes, the whole
 line is validated, and the log keeps the command, its inverse, the objects
 changed and the sections to recalculate. Example (synthetic):

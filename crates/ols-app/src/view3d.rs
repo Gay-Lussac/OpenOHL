@@ -53,6 +53,9 @@ pub struct View3d {
     pub marks: Vec<([f64; 3], [f64; 3])>,
     /// A wire being strung: its points so far.
     pub draft: Vec<[f64; 3]>,
+    /// What a replacement would remove (Replace structure's window open):
+    /// polylines drawn red over the line.
+    pub removed: Vec<Vec<[f64; 3]>>,
     /// A measured line to draw on top, with its label (the distance
     /// between conductors' worst station: d and z).
     pub measure: Option<crate::phase_distance::Measure>,
@@ -484,7 +487,7 @@ impl View3d {
             }
             let s = match layer {
                 Layer::Clearances => scene::marks(model.origin, &self.marks),
-                Layer::Draft => scene::draft(model.origin, &self.draft),
+                Layer::Draft => scene::draft(model.origin, &self.draft, &self.removed),
                 _ => scene::layer(model, layer, case, selection),
             };
             self.gpu.insert(layer, GpuScene::new(device, &s));

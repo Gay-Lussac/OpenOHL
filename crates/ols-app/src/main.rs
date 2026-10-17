@@ -53,6 +53,7 @@ mod properties;
 mod pylon_builder;
 mod python;
 mod remote;
+mod replace;
 mod scene;
 mod selection;
 mod span_tool;

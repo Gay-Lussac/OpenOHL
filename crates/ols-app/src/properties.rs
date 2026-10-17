@@ -172,6 +172,16 @@ pub fn ui(
             {
                 action = Some(crate::edit::Action::EditPlacement { id: id.clone() });
             }
+            if ui
+                .button("Replace…")
+                .on_hover_text(
+                    "Another structure type in its place (Replace structure): matching wire \
+                     points are rewired, the others you map — what would be removed is listed",
+                )
+                .clicked()
+            {
+                action = Some(crate::edit::Action::ReplaceStructure { id: id.clone() });
+            }
             if s.structure_type.is_none()
                 && ui
                     .button("Edit pylon…")

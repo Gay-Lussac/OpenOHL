@@ -48,11 +48,14 @@ pub enum Tool {
     /// Right-click a span: a span point, a point load or a spread load
     /// there (by fraction, distance, station or regular spacing).
     OnSpan,
+    /// Right-click a structure: another structure type in its place, its
+    /// wires rewired ([`crate::replace`]).
+    Replace,
 }
 
 impl Tool {
     /// Every tool (the inventory).
-    pub const ALL: [Tool; 13] = [
+    pub const ALL: [Tool; 14] = [
         Tool::Select,
         Tool::Move,
         Tool::Delete,
@@ -66,6 +69,7 @@ impl Tool {
         Tool::NewAlignment,
         Tool::EditAlignment,
         Tool::OnSpan,
+        Tool::Replace,
     ];
 
     /// Name.
@@ -84,6 +88,7 @@ impl Tool {
             Tool::EditAlignment => "Edit alignment",
             Tool::AddJumper => "Add jumper",
             Tool::OnSpan => "Add on span",
+            Tool::Replace => "Replace structure",
         }
     }
 
@@ -103,6 +108,7 @@ impl Tool {
             Tool::EditAlignment => "⤲",
             Tool::AddJumper => "Ψ",
             Tool::OnSpan => "⊙",
+            Tool::Replace => "⇄",
         }
     }
 
@@ -148,6 +154,9 @@ impl Tool {
             }
             Tool::OnSpan => {
                 "right-click a span or a jumper: a point there, bare or with its object (a body or a clamp, from a template), or on a span a spread"
+            }
+            Tool::Replace => {
+                "right-click a structure: choose another structure type for its place; matching wire points are rewired, the others you map (or they are removed, after a list)"
             }
         }
     }
@@ -218,6 +227,7 @@ impl Tool {
             Tool::EditAlignment => "edit_alignment",
             Tool::AddJumper => "add_jumper",
             Tool::OnSpan => "on_span",
+            Tool::Replace => "replace",
         }
     }
 }

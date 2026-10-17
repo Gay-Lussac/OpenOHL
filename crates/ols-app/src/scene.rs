@@ -1587,9 +1587,14 @@ pub fn marks(origin: [f64; 3], marks: &[([f64; 3], [f64; 3])]) -> Scene {
     s
 }
 
-/// A wire being strung: its points joined, yellow.
-pub fn draft(origin: [f64; 3], points: &[[f64; 3]]) -> Scene {
+/// A wire being strung: its points joined, yellow; and what a replacement
+/// would remove, red.
+pub fn draft(origin: [f64; 3], points: &[[f64; 3]], removed: &[Vec<[f64; 3]>]) -> Scene {
     let mut s = Scene::new(origin);
+    // What a replacement would remove (Replace structure), red.
+    for l in removed {
+        s.polyline(l, [255, 60, 60, 255], 4.0);
+    }
     if points.len() > 1 {
         s.polyline(points, [255, 220, 60, 255], 3.0);
     }

@@ -334,6 +334,13 @@ pub enum Action {
         /// Structure.
         id: String,
     },
+    /// Replace structure `id` by another type: the structure picker, then
+    /// the mapping of its wire points (no edit by itself,
+    /// [`crate::replace`]).
+    ReplaceStructure {
+        /// Structure.
+        id: String,
+    },
     /// Undo the user's last command.
     Undo,
     /// Redo the user's last undo.
