@@ -31,6 +31,10 @@ use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
 
+/// The extension of a phase distance values file when the check gives
+/// none (the LeV plugin's `.olspd`).
+const PHASE_DISTANCE_FILE_EXTENSION: &str = "olspd";
+
 /// A worst station within this of a conductor's clamp is marked "at a
 /// clamp" (f about 0), m.
 const NEAR_CLAMP: f64 = 2.0;
@@ -1343,7 +1347,9 @@ impl PhaseDistanceWindow {
             .unwrap_or_default();
         let ext = self
             .check()
-            .map_or("olspd".to_owned(), |c| c.info.values_extension.clone());
+            .map_or(PHASE_DISTANCE_FILE_EXTENSION.to_owned(), |c| {
+                c.info.values_extension.clone()
+            });
         ui.horizontal(|ui| {
             if ui
                 .button("Choose a values file…")

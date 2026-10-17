@@ -52,11 +52,11 @@ use crate::solve::{FeError, Loads, Options, solve};
 use crate::units::Moment;
 
 /// `format` of a pole file.
-pub const POLE_FORMAT: &str = "ols-pole";
+pub const POLE_FILE_FORMAT: &str = "ols-pole";
 /// Newest format version read.
-pub const POLE_VERSION: u32 = 1;
+pub const POLE_FILE_VERSION: u32 = 1;
 /// File extension of poles.
-pub const POLE_EXTENSION: &str = "olsp";
+pub const POLE_FILE_EXTENSION: &str = "olsp";
 
 /// Pole material.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -161,8 +161,8 @@ impl Pole {
         ols_core::files::check_header(
             f.format.as_deref(),
             f.version,
-            POLE_FORMAT,
-            POLE_VERSION,
+            POLE_FILE_FORMAT,
+            POLE_FILE_VERSION,
             "pole",
         )?;
         let pi = std::f64::consts::PI;
@@ -319,7 +319,7 @@ impl Pole {
 /// Every pole (`*.olsp`) of a directory, sorted by file name.
 pub fn load_poles(dir: &Path) -> Result<Vec<Pole>, String> {
     let mut out: Vec<Pole> = Vec::new();
-    for path in ols_core::files::files_with_extension(dir, POLE_EXTENSION) {
+    for path in ols_core::files::files_with_extension(dir, POLE_FILE_EXTENSION) {
         let p = Pole::load(&path)?;
         if out.iter().any(|q| q.id == p.id) {
             return Err(format!("{}: pole id {} given twice", path.display(), p.id));

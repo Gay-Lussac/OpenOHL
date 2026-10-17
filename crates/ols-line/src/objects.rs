@@ -632,11 +632,11 @@ impl ObjectType {
 }
 
 /// File format id of a library of point and spread loads.
-pub const OBJECT_LIBRARY_FORMAT: &str = "ols-point-spread-loads";
+pub const OBJECT_FILE_FORMAT: &str = "ols-point-spread-loads";
 /// Newest version read.
-pub const OBJECT_LIBRARY_VERSION: u32 = 1;
+pub const OBJECT_FILE_VERSION: u32 = 1;
 /// File extension.
-pub const OBJECT_LIBRARY_EXTENSION: &str = "olsload";
+pub const OBJECT_FILE_EXTENSION: &str = "olsload";
 
 /// A library of point and spread load types (`.olsload`).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -663,8 +663,8 @@ impl ObjectLibrary {
         ols_core::files::check_header(
             lib.format.as_deref(),
             lib.version,
-            OBJECT_LIBRARY_FORMAT,
-            OBJECT_LIBRARY_VERSION,
+            OBJECT_FILE_FORMAT,
+            OBJECT_FILE_VERSION,
             "point and spread loads",
         )?;
         lib.validate()?;
@@ -680,8 +680,8 @@ impl ObjectLibrary {
     /// As a library file.
     pub fn to_text(&self) -> String {
         let mut out = self.clone();
-        out.format = Some(OBJECT_LIBRARY_FORMAT.into());
-        out.version = Some(OBJECT_LIBRARY_VERSION);
+        out.format = Some(OBJECT_FILE_FORMAT.into());
+        out.version = Some(OBJECT_FILE_VERSION);
         toml::to_string(&out).expect("a library serialises")
     }
 

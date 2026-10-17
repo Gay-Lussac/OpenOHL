@@ -949,7 +949,7 @@ fn pointcloud(command: PointcloudCommand) -> ExitCode {
                         .points_visited
                 };
                 if let Some(text) = &cloud.class_scheme {
-                    let olsc = out.with_extension("olsc");
+                    let olsc = out.with_extension(ols_lidar::classes::CLASS_FILE_EXTENSION);
                     std::fs::write(&olsc, text).map_err(|e| format!("{}: {e}", olsc.display()))?;
                 }
                 println!(

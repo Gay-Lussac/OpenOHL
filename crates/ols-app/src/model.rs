@@ -494,7 +494,13 @@ pub fn library_path(s: &Sources) -> PathBuf {
     }
     let dir = dir_of(&s.file);
     let has_olsw = std::fs::read_dir(&dir).is_ok_and(|mut it| {
-        it.any(|e| e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "olsw")))
+        it.any(|e| {
+            e.is_ok_and(|e| {
+                e.path()
+                    .extension()
+                    .is_some_and(|x| x == ols_cables::WIRE_FILE_EXTENSION)
+            })
+        })
     });
     if has_olsw {
         dir
@@ -673,11 +679,17 @@ pub fn remember_weather(session: &ols_session::Session, path: &Path) {
 
 /// The libraries a project keeps: kind (in the project) and file extension.
 pub const PROJECT_LIBRARIES: [(&str, &str); 5] = [
-    ("cables", "olsw"),
-    ("structures", "olss"),
-    ("insulators", "olsi"),
-    ("weather", "olswc"),
-    ("loadcases", "olslc"),
+    ("cables", ols_cables::WIRE_FILE_EXTENSION),
+    (
+        "structures",
+        ols_structures::structures::STRUCTURE_FILE_EXTENSION,
+    ),
+    (
+        "insulators",
+        ols_structures::insulators::INSULATOR_FILE_EXTENSION,
+    ),
+    ("weather", ols_weather::WEATHER_FILE_EXTENSION),
+    ("loadcases", ols_loads::LOAD_CASE_FILE_EXTENSION),
 ];
 
 /// Where the working copies of projects' libraries go.
@@ -766,10 +778,11 @@ fn project_libraries(
                 "cables" => own(library_path(sources), "cables"),
                 "structures" => own(structures_dir(sources), "structures"),
                 "insulators" => own(insulators_dir(sources), "insulators"),
-                "loadcases" => sources
-                    .load_cases
-                    .clone()
-                    .or_else(|| files_at(&model_dir(sources), "olslc").into_iter().next()),
+                "loadcases" => sources.load_cases.clone().or_else(|| {
+                    files_at(&model_dir(sources), ols_loads::LOAD_CASE_FILE_EXTENSION)
+                        .into_iter()
+                        .next()
+                }),
                 _ => sources.weather.clone().or_else(|| {
                     remembered
                         .as_deref()

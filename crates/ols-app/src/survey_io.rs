@@ -235,7 +235,7 @@ impl ImportDialog {
                             }));
                             if ui.small_button("Choose…").clicked() {
                                 self.scheme = rfd::FileDialog::new()
-                                    .add_filter("Class scheme", &["olsc"])
+                                    .add_filter("Class scheme", &[ols_lidar::classes::CLASS_FILE_EXTENSION])
                                     .pick_file();
                             }
                         });
@@ -480,7 +480,7 @@ pub(crate) fn export(
         .map_err(|e| e.to_string())?;
     let mut extra = String::new();
     if scheme && let Some(text) = &cloud.class_scheme {
-        let olsc = path.with_extension("olsc");
+        let olsc = path.with_extension(ols_lidar::classes::CLASS_FILE_EXTENSION);
         std::fs::write(&olsc, text).map_err(|e| format!("{}: {e}", olsc.display()))?;
         extra = format!(" and its class scheme {}", olsc.display());
     }

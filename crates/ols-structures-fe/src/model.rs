@@ -72,11 +72,15 @@ use serde::Deserialize;
 use crate::units::{Modulus, Moment, SecondMoment};
 
 /// `format` of a structure model file.
-pub const MODEL_FORMAT: &str = "ols-structure-model";
+pub const MODEL_FILE_FORMAT: &str = "ols-structure-model";
 /// Newest format version read.
-pub const MODEL_VERSION: u32 = 1;
+pub const MODEL_FILE_VERSION: u32 = 1;
 /// File extension of structure models.
-pub const MODEL_EXTENSION: &str = "olsfe";
+pub const MODEL_FILE_EXTENSION: &str = "olsfe";
+/// The structure library's extension (`ols_structures`'
+/// `STRUCTURE_FILE_EXTENSION`; this crate does not depend on it): a
+/// structure type's own model.
+const STRUCTURE_FILE_EXTENSION: &str = "olss";
 
 /// Gravity, m/s².
 const G: f64 = ols_core::units::STANDARD_GRAVITY;
@@ -481,8 +485,8 @@ impl Model {
         ols_core::files::check_header(
             file.format.as_deref(),
             file.version,
-            MODEL_FORMAT,
-            MODEL_VERSION,
+            MODEL_FILE_FORMAT,
+            MODEL_FILE_VERSION,
             "structure model",
         )?;
         let mut materials = BTreeMap::new();
@@ -665,7 +669,10 @@ impl Model {
     /// holding its members.
     pub fn load(path: &Path) -> Result<Self, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        if path.extension().is_some_and(|e| e == "olss") {
+        if path
+            .extension()
+            .is_some_and(|e| e == STRUCTURE_FILE_EXTENSION)
+        {
             Self::from_structure_type(&text)
         } else {
             Self::parse(&text)

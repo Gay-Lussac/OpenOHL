@@ -235,7 +235,8 @@ pub fn rule_files(model_file: &Path, given: Option<&Path>) -> Vec<PathBuf> {
         ols_core::files::shipped_library("clearance-rules"),
     ];
     for d in &dirs {
-        for p in ols_core::files::files_with_extension(d, "olsr") {
+        for p in ols_core::files::files_with_extension(d, ols_clearance::rules::RULE_FILE_EXTENSION)
+        {
             if !out.iter().any(|q| q == &p) {
                 out.push(p);
             }

@@ -66,7 +66,11 @@ use crate::LibraryItem;
 use crate::structures::StructureKind;
 
 /// File extension of pylon templates.
-pub const TEMPLATE_EXTENSION: &str = "olspt";
+pub const TEMPLATE_FILE_EXTENSION: &str = "olspt";
+/// `format` of a pylon template.
+pub const TEMPLATE_FILE_FORMAT: &str = "ols-pylon-template";
+/// Newest format version read.
+pub const TEMPLATE_FILE_VERSION: u32 = 1;
 
 /// A named dimension of a template.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -278,7 +282,7 @@ pub struct FacePoint {
 }
 
 impl LibraryItem for PylonTemplate {
-    const EXTENSION: &'static str = TEMPLATE_EXTENSION;
+    const EXTENSION: &'static str = TEMPLATE_FILE_EXTENSION;
     const KIND: &'static str = "pylon template";
 
     fn id(&self) -> &str {
@@ -289,8 +293,8 @@ impl LibraryItem for PylonTemplate {
         ols_core::files::check_header(
             self.format.as_deref(),
             self.version,
-            "ols-pylon-template",
-            1,
+            TEMPLATE_FILE_FORMAT,
+            TEMPLATE_FILE_VERSION,
             "pylon template",
         )?;
         let mut names = BTreeMap::new();

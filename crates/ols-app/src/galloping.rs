@@ -68,9 +68,12 @@ impl GallopingWindow {
         self.case = case;
         if self.file.is_none() {
             let dir = ols_core::files::dir_of(&model.sources.file);
-            self.file = ols_core::files::files_with_extension(&dir, "olsg")
-                .into_iter()
-                .next();
+            self.file = ols_core::files::files_with_extension(
+                &dir,
+                ols_clearance::galloping::GALLOPING_FILE_EXTENSION,
+            )
+            .into_iter()
+            .next();
         }
     }
 
@@ -147,7 +150,10 @@ impl GallopingWindow {
                     ui.label(format!("parameters: {name}"));
                     if ui.button("Choose…").clicked()
                         && let Some(p) = rfd::FileDialog::new()
-                            .add_filter("Galloping parameters", &["olsg"])
+                            .add_filter(
+                                "Galloping parameters",
+                                &[ols_clearance::galloping::GALLOPING_FILE_EXTENSION],
+                            )
                             .pick_file()
                     {
                         self.file = Some(p);
