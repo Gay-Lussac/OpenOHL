@@ -867,6 +867,26 @@ impl StructureApp {
             .collect();
         let missing = rows.iter().filter(|r| r.missing.is_some()).count();
         let line_names: Vec<String> = self.loads.line_table_names();
+        // A line case's source: a load case, or a weather case sent on its
+        // own.
+        let line_from: std::collections::BTreeMap<String, &'static str> = self
+            .loads
+            .line_cases()
+            .into_iter()
+            .map(|(shown, case)| {
+                let weather = self.loads.info.as_ref().is_some_and(|i| {
+                    i.source(&case) == ols_structure_loads::CaseSource::WeatherCase
+                });
+                (
+                    shown,
+                    if weather {
+                        "line weather case"
+                    } else {
+                        "line load case"
+                    },
+                )
+            })
+            .collect();
         ui.label(format!(
             "{} row(s), {} typed, {missing} without a value — forces in kN, transverse to the \
              right of the line, longitudinal ahead, vertical down",
@@ -886,8 +906,9 @@ impl StructureApp {
                             ("case", ""),
                             (
                                 "from",
-                                "line load case: the line's forces as it computed them; \
-                                 recipe: a case of the structure file",
+                                "line load case / line weather case (sent on its own, factors 1): \
+                                 the line's forces as it computed them; recipe: a case of the \
+                                 structure file",
                             ),
                             ("load", "The recipe's load (none: a row of its own)"),
                             ("at", "point, member (a surface load, its total) or joint"),
@@ -913,7 +934,9 @@ impl StructureApp {
                         ui.end_row();
                         for r in &rows {
                             ui.label(&r.case);
-                            ui.label(if line_names.contains(&r.case) {
+                            ui.label(if let Some(from) = line_from.get(&r.case) {
+                                *from
+                            } else if line_names.contains(&r.case) {
                                 "line load case"
                             } else if r.load.is_some() {
                                 "recipe"
