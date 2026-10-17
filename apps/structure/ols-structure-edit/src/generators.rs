@@ -414,7 +414,10 @@ fn crossarm(t: &StructureType, id: &str, c: &Crossarm) -> Result<Body, String> {
                     b.member(r, &tip_id, group("top"));
                 }
             }
-            ArmShape::Rectangular => {
+            // The point on the bottom chord, the other chord's tip one
+            // level up; at the top of the body (no level above) the point
+            // is on the top chord and the other tip one level down.
+            ArmShape::Rectangular if p[2] < upper.0 - SAME => {
                 let top = b.joint(
                     format!("{id}-{label}-top"),
                     [p[0], p[1], p[2] + (upper.0 - lower.0)],
@@ -430,6 +433,22 @@ fn crossarm(t: &StructureType, id: &str, c: &Crossarm) -> Result<Body, String> {
                     b.member(r, &top, group("bracing"));
                 }
             }
+            ArmShape::Rectangular => {
+                let bottom = b.joint(
+                    format!("{id}-{label}-bottom"),
+                    [p[0], p[1], p[2] - (upper.0 - lower.0)],
+                );
+                for (r, _) in &lower.1 {
+                    b.member(r, &bottom, group("bottom"));
+                }
+                for (r, _) in &upper.1 {
+                    b.member(r, &tip_id, group("top"));
+                }
+                b.member(&bottom, &tip_id, group("bracing"));
+                for (r, _) in &lower.1 {
+                    b.member(r, &tip_id, group("bracing"));
+                }
+            }
         }
     }
     Ok(b.body)
@@ -438,9 +457,28 @@ fn crossarm(t: &StructureType, id: &str, c: &Crossarm) -> Result<Body, String> {
 /// A peak: from the joints at the top of the body to each tip.
 fn peak(t: &StructureType, id: &str, p: &Peak) -> Result<Body, String> {
     let mut b = Build::new(id);
-    let joints = others(t, id);
+    // The body's joints: not the crossarms' (an arm's tip at the top level
+    // would pull the peak's centre aside).
+    let arms: BTreeSet<String> = crate::body::generators(t)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|g| matches!(g.kind, Kind::Crossarm(_)))
+        .map(|g| g.id)
+        .collect();
+    let joints: Vec<(&str, [f64; 3])> = t
+        .nodes
+        .iter()
+        .filter(|n| {
+            n.made_by
+                .as_deref()
+                .is_none_or(|m| m != id && !arms.contains(m))
+        })
+        .map(|n| (n.id.as_str(), n.point.map(|v| v.si())))
+        .collect();
     let levels = by_level(&joints);
-    let (top_z, top) = levels.last().filter(|(_, j)| j.len() >= 3).ok_or(
+    // The highest level of the body itself (an arm's tips above it are
+    // fewer than three).
+    let (top_z, top) = levels.iter().rev().find(|(_, j)| j.len() >= 3).ok_or(
         "the top of the body: three joints at least at its highest level (build the body first)",
     )?;
     let mut tips = Vec::new();
