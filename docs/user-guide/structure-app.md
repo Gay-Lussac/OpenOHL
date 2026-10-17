@@ -45,11 +45,60 @@ here, the line follows ([desktop application](desktop-app.md#the-pylon-workspace
 | Tab | Tables | Tools |
 |---|---|---|
 | **Geometry** (level 1) | Attachment points, Insulators (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, description), Wire points (counterweight), Set points, Structure (name, height, feet, height extensions) | **+ Point**, **I** and **V** presets for the points picked, **Delete…** (lists what goes with it first) |
-| **Body** (level 2) | Joints (x, y, z), Members (ends, length) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…** |
-| **Design** (level 3) | Supports (**Support the feet** pins the lowest joints), Members (section, kind, buckling factor k), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
+| **Body** (level 2) | Joints (x, y, z), Members (ends, length, group, section, made by; a group filter), Generators | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-tab)) |
+| **Design** (level 3) | Supports (**Support the feet** pins the lowest joints), Members (section, kind, buckling factor k), Groups (a section and kind per member group), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
 | **Load cases** (any level) | **Recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.olsslc` or CSV), **Import / Export table…** (CSV); the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3) | Per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage | **▶ Run** (one case or every case), **Cancel**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line** | to come: the places using the structure and their loads | — |
+
+## The Body tab
+
+The body is built from a few dimensions with **generators**, then
+completed by hand; the file keeps each generator's inputs, so it can be
+built again ([format](structure-library.md#body-generators-groups-and-symmetry)).
+
+- **Generators** (a table of the Body tab): **New** › *legs and panels*,
+  *crossarms*, *peak* or *copy a face* opens a form with the generator's
+  inputs; what it would build is drawn in the view (turquoise) and
+  counted under the form, or why it cannot be built is said. **Apply**
+  writes it into the file: one undo step. The table lists the
+  generators of the file with the joints and members each made:
+  **Edit** opens its form again, **Rebuild** builds it again from its
+  inputs, **Remove…** removes it and what it made (asks first),
+  **Rebuild all** builds every generator again in file order.
+  - *Legs and panels*: the widths at the feet and at the waist (across
+    and along the line), the level of the feet (default: the file's
+    foot), and per panel its top, its bracing (single diagonal, X, K,
+    diamond, Warren) and whether it has horizontals at its top; **+ Panel**
+    adds one on top. A new body goes up to the lowest point of the
+    structure (the waist under the crossarms), in four X panels.
+  - *Crossarms*: the points ticked each get an arm from the body face on
+    their side, triangular (four chords to the point) or rectangular (a
+    tip at the point and one above it); the point is put on the arm's
+    tip, so it carries its loads in the analysis.
+  - *Peak*: a tip above the top of the body, or one at each earth-wire
+    point ticked, joined to the joints at the top.
+  - *Copy a face*: the members on one face of a legs-and-panels body (a
+    redundant added by hand, say) copied to the opposite face, without
+    doubling those there already.
+- **Rebuild** replaces only what the generator made. What was set on its
+  joints and members (a section, a kind, a group, a support) stays when
+  they come again; joints and members made by hand are never touched; a
+  joint it no longer makes stays while a member made by hand or a point
+  uses it, and is listed under the table (*kept, as made by hand*).
+- **Symmetry** (none, x, y or both): with it on, a joint or member
+  added, moved (dragged in the view or typed in the Joints table) or
+  deleted takes its mirror images along — about x = 0 (left and right of
+  the line), y = 0 (ahead and back) or both. A joint on a mirror plane
+  stays on it. **Make symmetric** adds the mirror images every joint and
+  member lacks.
+- **Member groups**: pick members (Shift + click adds one, in the view or
+  the Members table; **Pick them** picks the members the filter shows),
+  type a group and **Set on N member(s)**; **No group** takes them out.
+  The generators give their members groups (`body-leg`,
+  `body-bracing-3`, `arm1-top`…). In **Design › Groups** a section and a
+  kind are chosen per group and written on each of its members; a member
+  joining a group whose members share a section takes it.
 
 ## Load cases
 

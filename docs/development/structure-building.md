@@ -179,9 +179,9 @@ extension). Decisions 17 and 20: extension bodies at level 3, leg extensions inc
    recipes (surface loads per case) still to come.
 7. **Extensions are not in the FE model.** Decision 17: extension
    bodies, built with the levels.
-8. **Level 2 has no generator.** Every joint and member is added by
-   hand; no panels, bracing patterns, symmetry, member groups or copying
-   of a face.
+8. ~~**Level 2 has no generator.**~~ *Built* (phase 3, body part): legs
+   and panels with bracing patterns, crossarms, peaks, copying a face,
+   rebuild, symmetry and member groups in the structure application.
 9. **Sections and materials are untyped tables**, edited as TOML, kept
    per structure — *partly done*: the project's section library
    (`.olssec`, a project library kind) is referred to by id, first; the
@@ -472,9 +472,9 @@ Changes in `.olss` (version 2 → 3; older versions read as before):
 
 | Change | Where | Why |
 |---|---|---|
-| member `group` | `TypeMember` | sections and reports per group |
-| `[[symmetry]]` (optional) | `StructureType` | mirrored joints and members |
-| generator record and member `made_by` | `StructureType`, `TypeMember` | rebuild without losing hand edits |
+| member `group` *(built)* | `TypeMember` | sections and reports per group |
+| `[[symmetry]]` (optional) *(built: `mirror` x / y / xy, `groups`)* | `StructureType` | mirrored joints and members |
+| generator record and member `made_by` *(built: `[[generator]]`, `made_by` on members and joints)* | `StructureType`, `TypeMember`, `TypeNode` | rebuild without losing hand edits |
 | pole outline (diameters by height, shape) | `StructureType` | poles at level 2 (decision 2) |
 | `[[load_case]]` with `[[load_case.load]]` (what, factor, one-sided share, direction, points or members, surface pressure) | `StructureType` | §2.1; replaces `[[load]]` (read as case `model`) |
 | typed `TypeSection` reference (section library id) and `TypeMaterial` | `structures.rs`, shared with `ols-structures-fe` | §1.3, §4.2 |
@@ -525,7 +525,22 @@ Each phase is a deliverable of its own, checked and committed.
    the line are placeholders.
 3. **Levels including poles**: pole outline at level 2 and pole design at
    level 3; `detail()` looks at poles; body generators, symmetry, member
-   groups, body templates.
+   groups, body templates. *Body part built* (format version 3): member
+   `group` and `made_by`, `[[generator]]` records (the body templates)
+   and `[[symmetry]]`, read by `ols-structure-edit` (the core keeps the
+   last two unread); generators *legs and panels* (single, X, K,
+   diamond, Warren; horizontals per panel), *crossarms* (triangular,
+   rectangular), *peak*, *copy a face*, each a pure function writing
+   ordinary joints and members; rebuild replacing only what a generator
+   made (what was set on it kept, what others use kept and reported);
+   edits mirrored by the symmetry and **Make symmetric**; groups with a
+   section and kind per group written on each member (no `[[group]]`
+   table); the Body tab's Generators (preview, Apply = one undo step),
+   group column and filter, Shift + click in tables, Design › Groups
+   ([user guide](../user-guide/structure-app.md#the-body-tab)). Not yet:
+   poles and their levels, redundants in the panels, plan bracing,
+   leg extensions as bodies (decision 17), a crossarm with several
+   points on one arm.
 4. **Load-case recipes**: `[[load_case]]` (format version 3), evaluation
    in the core from the line values at each placed structure, the load
    table (editable, CSV / XLSX import and export), surface loads; the

@@ -70,7 +70,8 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest point) and a crossarm from the mast to every point. |
 | `height` | no | Mast top (local z) for the generated stick drawing. |
 | `capacity` | no | What the type can carry, for the structure checks (below). |
-| `node`, `member` | no | The pylon's joints and members (levels 2 and 3, below). |
+| `node`, `member` | no | The pylon's joints and members (levels 2 and 3, below); a member may have a `group`, and both a `made_by` (the generator that wrote it). |
+| `generator`, `symmetry` | no | Version 3: the body generators with their inputs, and the mirror symmetry kept while editing ([Body generators](#body-generators-groups-and-symmetry)). |
 | `section`, `material`, `analysis`, `load` | no | A full design's sections, materials, analysis options and own loads — see [Structure analysis](structure-analysis.md). |
 | `model` | no | A separate structure model (`.olsfe`, path relative to this file) for the finite-element check, instead of the members here. |
 | `pole` | no | Pole id (a `.olsp` file in the same folder) for the pole check — see [Structure analysis](structure-analysis.md). |
@@ -116,6 +117,60 @@ node = "T1"                          # at a joint (or member = "arm1", at = 0.5)
 The joints and members take the same fields as in a [structure model](structure-analysis.md#structure-models-olsfe); a point on a joint carries its loads in the finite-element check.
 
 Checks that depend on the structure's shape — distances from the wires to the structure body, structure analysis, insulator swing to the structure — behave differently at each level; each such check says in its documentation what it does for levels 1, 2 and 3. The structure's level is shown in its properties.
+
+### Body generators, groups and symmetry
+
+Version 3 of the format (versions 1 and 2 are read as before; an older OLS CAD refuses a version 3 file as "newer") keeps what the [structure application](structure-app.md#the-body-tab) needs to build the body again:
+
+```toml
+version = 3
+
+[[generator]]                        # legs and panels: the body as a frustum
+id = "body"
+kind = "panels"
+feet = "6 m"                         # width at the feet; or ["8 m", "6 m"]: across (x), along (y)
+waist = "2 m"                        # width at the top of the last panel
+# bottom = "0 m"                     # level of the feet (default: the file's foot)
+panel = [
+  { top = "8 m", bracing = "x", horizontal = true },
+  { top = "15 m", bracing = "k" },   # horizontal: true by default
+]
+
+[[generator]]                        # crossarms from the body face to points
+id = "arm1"
+kind = "crossarm"
+points = ["A1", "A11"]
+shape = "triangular"                 # or "rectangular"
+
+[[generator]]                        # a peak on the top of the body
+id = "peak"
+kind = "peak"
+points = ["E1"]                      # earth-wire points; none: one tip at the centre…
+# height = "4 m"                     # …this high above the top
+
+[[generator]]                        # a face of a panels body to the opposite face
+id = "front"
+kind = "copy_face"
+body = "body"
+face = "y-"                          # x+, x-, y+ or y-
+
+[[symmetry]]
+mirror = "xy"                        # "x": about x = 0 (left ↔ right), "y": about y = 0 (ahead ↔ back), "xy": both
+# groups = ["body-leg"]              # only the members of these groups and their joints (default: all)
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"                   # sections and results per group
+made_by = "body"                     # written by generator body: a rebuild replaces it
+```
+
+- **What a generator writes** are ordinary `[[node]]` and `[[member]]` entries with its `made_by`; the file never needs the generator to be read. Ids follow from the inputs: joints `body-L<level>-<corner>` (corners 1 to 4 counter-clockwise from +x +y, level 0 the feet), `body-L<level>-F<face>` in the middle of a horizontal edge (faces 1 to 4: x+, y+, x−, y−), `body-P<panel>-<corner>` in the middle of a leg; members `body-M<n>`; groups `body-leg`, `body-bracing-<panel>`, `body-horizontal-<level>`; a crossarm's tip `arm1-A1` (the point is put on it), groups `arm1-bottom`, `arm1-top`, `arm1-bracing`; a peak's tip `peak-tip` (at a point: `peak-E1`), group `peak-peak`; a copied face's joints and members `front-<the original's id>`, in the original's group.
+- **Bracing** per panel: `single` (one diagonal, bottom left to top right of each face), `x` (both, crossing without a joint), `k` (from the bottom corners to the middle of the top edge, which then has its horizontal), `diamond` (between the middles of the four edges, legs and both horizontals split there), `warren` (one diagonal, alternating from panel to panel). `horizontal` puts horizontals at the panel's top.
+- **Crossarms** start on the body face on the point's side (its outermost joints at a level): the lower root at the highest level at or below the point, the upper root at the next level up (a point at the top of the body: the top and the level below). *Triangular*: four chords to one tip at the point. *Rectangular*: a bottom tip at the point, a top tip above it, a vertical and two diagonals.
+- **Rebuild** replaces only what the generator made: a joint or member it makes again (same id) keeps what was set on it (section, kind, group, support…); one it no longer makes goes, unless a member made by hand, another generator's member or a point uses it — then it stays, as made by hand, and is reported. Hand-made joints and members are never touched.
+- **Groups**: there is no table of groups; a group is the members naming it. A section set for a group is written on each of its members, so the finite-element model and the level read the members only (the FE model leaves `group` and `made_by` out).
+- **Symmetry**: joints are matched by position (within 1 mm); see [the Body tab](structure-app.md#the-body-tab).
 
 ### Capacity
 

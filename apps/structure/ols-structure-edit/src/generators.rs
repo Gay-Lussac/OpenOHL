@@ -6,7 +6,7 @@
 //! (as last read) and a generator's inputs to joints and members, with
 //! ids that follow from the inputs (the same inputs give the same ids, so
 //! a rebuild keeps what was set on them and what refers to them).
-//! Nothing is written here: [`crate::rebuild`] writes them as ordinary
+//! Nothing is written here: [`mod@crate::rebuild`] writes them as ordinary
 //! `[[node]]` and `[[member]]` entries with a `made_by`.
 
 use std::collections::BTreeSet;
@@ -379,22 +379,31 @@ fn crossarm(t: &StructureType, id: &str, c: &Crossarm) -> Result<Body, String> {
             let hi = on.iter().max_by(|x, y| x.1[o].total_cmp(&y.1[o]))?;
             (hi.1[o] - lo.1[o] > SAME).then(|| [(lo.0.to_owned(), lo.1), (hi.0.to_owned(), hi.1)])
         };
-        let levels = by_level(&near);
-        let lower = levels
+        // The face at each level: the lower root at or below the point, the
+        // upper the next above; a point at the top of the body hangs from
+        // the top and the level below it.
+        type Root = (f64, [(String, [f64; 3]); 2]);
+        let faces: Vec<Root> = by_level(&near)
             .iter()
-            .filter(|(z, _)| *z <= p[2] + SAME)
             .filter_map(|(z, j)| Some((*z, face(j)?)))
-            .next_back()
+            .collect();
+        let at = faces
+            .iter()
+            .rposition(|(z, _)| *z <= p[2] + SAME)
             .ok_or_else(|| {
                 format!(
                     "point {label}: no body face at or below it on its side (build the body first)"
                 )
             })?;
-        let upper = levels
-            .iter()
-            .filter(|(z, _)| *z > lower.0 + SAME)
-            .find_map(|(z, j)| Some((*z, face(j)?)))
-            .ok_or_else(|| format!("point {label}: no body face above the arm's lower root"))?;
+        let (lower, upper) = match (faces.get(at + 1), at.checked_sub(1)) {
+            (Some(up), _) => (&faces[at], up),
+            (None, Some(below)) => (&faces[below], &faces[at]),
+            (None, None) => {
+                return Err(format!(
+                    "point {label}: the body face on its side has one level only"
+                ));
+            }
+        };
         let group = |g: &str| Some(format!("{id}-{g}"));
         match c.shape {
             ArmShape::Triangular => {

@@ -10,8 +10,8 @@
 //! ([`Geometry`]), and what a structure still lacks for each level
 //! ([`missing()`]); the edits of its load-case recipes
 //! ([`load_cases`](mod@load_cases)); and the body tools: generators
-//! ([`body`], [`generators`], [`rebuild`]), mirror symmetry
-//! ([`symmetry`]) and member groups ([`groups`]).
+//! ([`body`], [`generators`], [`mod@rebuild`]), mirror symmetry
+//! ([`symmetry`]) and member groups ([`mod@groups`]).
 //!
 //! Axes are the structure's own: x right of the line, y ahead, z up,
 //! 0;0 at the centre.

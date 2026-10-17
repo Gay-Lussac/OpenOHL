@@ -14,7 +14,7 @@ use ols_structure_edit::Handle;
 use crate::app::{Sheet, StructureApp, Tab};
 
 /// A copy of example structure `name` in a folder of its own.
-fn copy_of(name: &str, tag: &str) -> PathBuf {
+pub(crate) fn copy_of(name: &str, tag: &str) -> PathBuf {
     let from = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../examples/synthetic-line/Structures")
         .join(name);
@@ -25,7 +25,7 @@ fn copy_of(name: &str, tag: &str) -> PathBuf {
     to
 }
 
-fn harness(path: &Path) -> Harness<'static, StructureApp> {
+pub(crate) fn harness(path: &Path) -> Harness<'static, StructureApp> {
     let gpu = ols_render::headless_device().is_ok();
     assert!(
         gpu || std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
