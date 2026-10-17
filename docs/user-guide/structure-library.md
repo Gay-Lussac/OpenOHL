@@ -209,7 +209,7 @@ moment = "900 kN m"
 ```
 
 - **Outline**: heights rise from row to row (by more than 1 mm); a row gives its `diameter` or its `circumference` (a polygon's perimeter: across flats = perimeter / (n · tan(π/n))). Between the heights the diameter is linear; below the lowest and above the top it is held. The pole's height above ground is the top's z less the feet's.
-- **Level 3** needs the `material`, a strength (`fibre_stress`, `moment_capacity` or `[[pole.capacity]]`) and, for a steel pole, its `wall` (or a `section`). A wood, concrete or other pole without a wall is solid.
+- **Level 3** needs the `material`, a strength (`fibre_stress`, `moment_capacity` or `[[pole.capacity]]`) and its `wall` thickness (or a `section`), whatever the material. A pole named by a `.olsp` file counts as level 3 as given; brought into the structure file, its missing wall is listed.
 - **`section`**: a hollow section of the project's section library ([Section library](section-library.md)) — `polygonal_hollow` with the pole's sides, or `circular_hollow` for a round pole. Its wall `t` is the pole's wall (unless `wall` is given), and its material's elasticity and density are taken when not given here. The section's own diameter is not used: the outline gives the diameters.
 - **A polygon's section** at each height: a regular polygon of the outline's width across flats, hollow by the wall; its second moment is the same about every axis through the centre (A·(12 r² + a²)/48 for inradius r and side a, as the section library computes it), its elastic modulus taken at a corner (the smaller).
 

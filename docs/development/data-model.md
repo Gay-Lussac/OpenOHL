@@ -672,7 +672,7 @@ piece too: its members with sections and a supported joint,
 there are members or body polylines that are not all in one plane
 (within 1 mm, `StructureType::body_is_3d`); else 1 *stick figure*. The
 pole gives its own level (`StructureType::pole_detail`): a named `.olsp`
-or a `[pole]` with material, strength and (steel) wall 3, a `[pole]`
+or a `[pole]` with material, strength and wall thickness 3, a `[pole]`
 outline with diameters at two heights 2 (`InlinePole::is_3d`,
 `InlinePole::missing_for_design`); the structure's level is the higher.
 Checks that depend on the structure's shape must say what they do at

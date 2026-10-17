@@ -49,14 +49,14 @@ fn a_pole_is_outlined_and_designed() {
     let text = f.text();
     assert!(text.starts_with("# A pole carrying one wire"), "{text}");
     assert!(text.contains("version = 3"), "{text}");
-    // Level 3 lacks the material and the strength.
+    // Level 3 lacks the material, the strength and the wall.
     let lacks = missing(f.structure(), 3);
     let pole_items: Vec<&str> = lacks
         .iter()
         .filter(|m| m.place == Place::Pole && m.need == Need::Level)
         .map(|m| m.reason.as_str())
         .collect();
-    assert_eq!(pole_items.len(), 2, "{lacks:?}");
+    assert_eq!(pole_items.len(), 3, "{lacks:?}");
     // A row in the middle, then its diameter.
     let row = f.edit("pole row", pole_edit::add_outline_row).unwrap();
     assert_eq!(row, 1);
