@@ -7,7 +7,9 @@ cd "${0:A:h}" || exit 1
 export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
 echo "Building and starting OLS CAD…"
-cargo run --release -p ols-app
+# Both applications from the same code: Edit… on a structure starts the
+# structure application (ols-structure), which must be next to ols-cad.
+cargo build --release -p ols-app -p ols-structure-app && cargo run --release -p ols-app
 status=$?
 
 if [ $status -ne 0 ]; then

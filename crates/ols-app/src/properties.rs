@@ -11,6 +11,10 @@ use eframe::egui;
 use crate::model::Model;
 use crate::selection::Selection;
 
+/// The button opening a structure's structure screen (its strings and
+/// points beside the pylon in 3D).
+pub const STRINGS_AND_POINTS: &str = "Strings and points…";
+
 fn grid(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
     egui::Grid::new(id)
         .num_columns(2)
@@ -142,9 +146,10 @@ pub fn ui(
             }
             if let Some(t) = &s.structure_type
                 && ui
-                    .button("Edit pylon…")
+                    .button(STRINGS_AND_POINTS)
                     .on_hover_text(format!(
-                        "Open type {t} in the pylon workspace (every structure of the type \
+                        "Type {t} on the structure screen: its attachment points, strings, wire \
+                         points and sets beside the pylon in 3D (every structure of the type \
                          follows when saved)"
                     ))
                     .clicked()
@@ -188,14 +193,27 @@ pub fn ui(
             }
             if s.structure_type.is_none()
                 && ui
-                    .button("Edit pylon…")
+                    .button(STRINGS_AND_POINTS)
                     .on_hover_text(
-                        "Edit its points, wire points, strings and drawing in the pylon \
-                         editor (Make it a type… there saves it as a structure type)",
+                        "Its points, wire points, strings and sets beside its drawing in 3D, on \
+                         the structure screen (Make it a type… there saves it as a structure \
+                         type)",
                     )
                     .clicked()
             {
                 action = Some(crate::edit::Action::EditStructure { id: id.clone() });
+            }
+            if s.structure_type.is_none()
+                && ui
+                    .button("Edit…")
+                    .on_hover_text(
+                        "It has no structure file for the structure application to open: make \
+                         it one (a structure type of the project, the structure takes it) and \
+                         open that in the structure application",
+                    )
+                    .clicked()
+            {
+                action = Some(crate::edit::Action::MakeFileAndEdit { id: id.clone() });
             }
             ui.separator();
             ui.label(egui::RichText::new("Wire points").strong());

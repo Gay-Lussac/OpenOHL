@@ -684,7 +684,7 @@ level 3) is in [Building structures](structure-building.md).
 
 **Editing a structure file** (`apps/structure/ols-structure-edit`,
 [crates](structure-app.md)): every edit of the structure application and
-of `ols-app`'s pylon workspace is a function on the file's text
+of `ols-app`'s structure screen is a function on the file's text
 (`toml_edit::DocumentMut`, comments and order kept) given the structure
 as last read; `StructureFile` keeps the undo and redo of whole edits.
 Body tools (same crate): `generators::generate(t, g) -> Body` (joints,

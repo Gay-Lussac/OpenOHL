@@ -7,7 +7,9 @@
 //! own axes (a document only this editor holds), edited with the same
 //! tools as a type, and put back on the structure on Apply — one command.
 //! **Make it a type** saves the document as a structure type of the
-//! project and gives the structure that type.
+//! project and gives the structure that type; **Make it a structure file
+//! and edit it** does the same and opens the new file in the structure
+//! application (a structure without a file has nothing to open there).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -37,15 +39,26 @@ pub struct PlacedEditor {
     pub message: Option<(String, bool)>,
     /// Make it a type: the id being typed.
     pub type_id: Option<String>,
+    /// The type made is opened in the structure application.
+    pub then_edit: bool,
 }
+
+/// The button making a structure without a type a structure file, opened
+/// in the structure application.
+pub const MAKE_FILE_AND_EDIT: &str = "Make it a structure file and edit it…";
 
 /// What the editor asks of the application.
 pub enum PlacedAction {
     /// Put the document on the structure.
     Apply,
     /// Save the document as structure type `id` and give the structure
-    /// that type.
-    MakeType(String),
+    /// that type; `edit`: then open it in the structure application.
+    MakeType {
+        /// The new type's id.
+        id: String,
+        /// Opened in the structure application.
+        edit: bool,
+    },
 }
 
 /// A position as written in structure types.
@@ -164,11 +177,15 @@ impl PlacedEditor {
             .structure(id)
             .ok_or_else(|| format!("no structure {id}"))?;
         if s.structure_type.is_some() {
-            return Err(format!("{id} has a type: edit the type (Edit pylon…)"));
+            return Err(format!(
+                "{id} has a type: edit the type (Strings and points…)"
+            ));
         }
         let doc = as_type(s);
         let mut workspace = crate::type_workspace::Workspace::default();
         workspace.on = true;
+        // Its own button: a file first (Make it a structure file and edit it).
+        workspace.app_button = false;
         workspace.ahead = line.display.ahead_deg;
         Ok(Self {
             id: id.to_owned(),
@@ -182,6 +199,7 @@ impl PlacedEditor {
                 .collect(),
             message: None,
             type_id: None,
+            then_edit: false,
         })
     }
 
@@ -350,6 +368,21 @@ impl PlacedEditor {
         doc.to_string()
     }
 
+    /// **Make it a structure file and edit it**: the type id asked for
+    /// (the structure's own, made fit), then the type saved, used and
+    /// opened in the structure application.
+    pub fn ask_file_and_edit(&mut self) {
+        self.type_id = Some(type_id(&self.id));
+        self.then_edit = true;
+        self.message = Some((
+            format!(
+                "structure {} has no structure file: give the new structure type an id, then                  Save, use and edit",
+                self.id
+            ),
+            false,
+        ));
+    }
+
     /// Applied: the text kept as the one to compare with.
     pub fn applied(&mut self) {
         self.saved = self.doc.to_string();
@@ -402,6 +435,16 @@ impl PlacedEditor {
                 .clicked()
             {
                 self.type_id = Some(type_id(&self.id));
+                self.then_edit = false;
+            }
+            if ui
+                .button(MAKE_FILE_AND_EDIT)
+                .on_hover_text(
+                    "It has no structure file, so the structure application has nothing to                      open: save it as a structure type of the project (the structure takes                      that type) and open that file in the structure application",
+                )
+                .clicked()
+            {
+                self.ask_file_and_edit();
             }
         });
         if let Some(id) = &mut self.type_id {
@@ -409,14 +452,22 @@ impl PlacedEditor {
             ui.horizontal(|ui| {
                 ui.label("type id");
                 ui.add(egui::TextEdit::singleline(id).desired_width(160.0));
+                let label = if self.then_edit {
+                    "Save, use and edit"
+                } else {
+                    "Save and use"
+                };
                 if ui
                     .add_enabled(
                         readable.is_ok() && !id.trim().is_empty(),
-                        egui::Button::new("Save and use"),
+                        egui::Button::new(label),
                     )
                     .clicked()
                 {
-                    out = Some(PlacedAction::MakeType(type_id(id)));
+                    out = Some(PlacedAction::MakeType {
+                        id: type_id(id),
+                        edit: self.then_edit,
+                    });
                 }
                 cancel = ui.button("Cancel").clicked();
             });

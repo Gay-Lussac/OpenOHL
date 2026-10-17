@@ -541,7 +541,14 @@ Each phase is a deliverable of its own, checked and committed.
    guide](../user-guide/structure-app.md)); `missing(level)` lives in
    `ols-structure-edit`, not in `StructureType`; the mechanism found by a
    trial solve is not among the advice yet; Load cases, Results and In
-   the line are placeholders.
+   the line are placeholders. *Split built* (2026-10-17): the line
+   application's structure screen (the Edit tool, **Strings and
+   points…**) edits only the basics — attachment points, strings, wire
+   points and sets — tables left of the pylon's 3D view; the body and
+   design are edited only in the structure application (**Edit in the
+   structure application…**). Starting it shows why it fails (not found,
+   another build via `ols-structure --version`, its error output when it
+   stops at once).
 3. **Levels including poles**: pole outline at level 2 and pole design at
    level 3; `detail()` looks at poles; body generators, symmetry, member
    groups, body templates. *Body part built* (format version 3): member

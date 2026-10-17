@@ -19,12 +19,39 @@ Options:
 | `--sections FILE\|DIR` | the [section library](section-library.md) (a `.olssec` file or a folder of them) the members' areas come from; default: the `Sections` folder beside the file |
 | `--structure ID` | the placed structure whose loads these are: values typed over the load table are kept for it (below) |
 | `--line-values FILE` | the line's values at that placed structure (a line-values file, written by the line application); read again when it changes |
+| `--version` | prints the version and the build id — the git commit it was built from, e.g. `ols-structure 0.0.1 (build 1a2b3c4d5e6f)` — and stops |
 
-From the line application, **Edit…** on a structure (in its properties,
-or on the Structure types page) starts it on the structure's file; saved
-here, the line follows ([desktop application](desktop-app.md#the-pylon-workspace)).
-From a placed structure's properties it also hands over that place's
-loads ([below](#started-for-a-placed-structure)).
+## Starting it
+
+From the line application, **Edit…** on a structure (in its properties)
+and **Edit in the structure application…** (on the [structure
+screen](desktop-app.md#the-structure-screen), the Structure types page
+and the Structures table) start it on the structure's file; saved here,
+the line follows. From a placed structure's properties it also hands
+over that place's loads ([below](#started-for-a-placed-structure)). A
+structure without a type has no file: the line application asks for a
+type id first (**Make it a structure file and edit it…**).
+
+The line application only edits a structure's basics (attachment
+points, strings, wire points and sets); its body — joints, members,
+sections, materials, supports, generators, the pole, extensions — and
+its design are edited here.
+
+Build it next to the line application, from the same code (in the OLS
+CAD folder; **Start OLS CAD.command** does this):
+
+```bash
+cargo build --release -p ols-app -p ols-structure-app
+```
+
+The line application looks for `ols-structure` in the program the
+`OLS_STRUCTURE_APP` environment variable names, then next to `ols-cad`,
+then on the `PATH`. Before it starts it, it runs `ols-structure
+--version`: when the build differs from its own it starts it anyway and
+shows a warning (rebuild both). Not found, or stopped with an error right
+away: a window says why — where it looked and how to build it, or what
+the application wrote to its error output. The line application's log
+(info level) records each start, close and failure.
 
 ## Started for a placed structure
 

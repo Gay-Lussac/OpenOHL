@@ -2,15 +2,20 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The pylon workspace of a structure type (`.olss`): the type in its own
-//! axes (x right of the line, y ahead, z up, 0;0 at the centre), drawn in
-//! its own 3D view, with tables of its joints, members, points, wire
-//! points and strings. Joints, points and wire points are picked and
-//! dragged in the view (snapped to a grid or to a joint); members are
-//! added between two picked joints; strings from presets. Every change is
-//! made in the file as edited (the library page saves it, and every
-//! structure of the type follows); the level of detail shown is worked
-//! out from what the file holds.
+//! The structure screen of the line application (the Edit tool on a
+//! structure, Strings and points… in Properties): a structure type
+//! (`.olss`) in its own axes (x right of the line, y ahead, z up, 0;0 at
+//! the centre) — the tables on the left, its 3D view on the right (the
+//! divider dragged, its place kept for the session). Only the basics are
+//! edited here: the attachment points, the strings (insulators) and the
+//! wire points with their sets. The body (joints, members, sections,
+//! materials, supports, generators, pole, extensions, load cases) is
+//! drawn for context and edited in the structure application
+//! (`ols-structure`): **Edit in the structure application…**. Points and
+//! wire points are picked and dragged in the view (snapped to a grid or
+//! to a joint); strings come from presets. Every change is made in the
+//! file as edited (the library page saves it, and every structure of the
+//! type follows).
 
 use eframe::egui;
 use eframe::egui_wgpu;
@@ -23,15 +28,17 @@ use toml_edit::DocumentMut;
 /// (`ols-structure-edit`): one implementation for both.
 pub use ols_structure_edit::{Geometry, Handle, Removal, geometry};
 
-/// The table shown under the view.
+/// The label of the button opening the structure application.
+pub const EDIT_IN_APP: &str = "Edit in the structure application…";
+
+/// The 3D view's name (for screen readers and tests).
+pub const VIEW_LABEL: &str = "Pylon in 3D";
+
+/// The table shown left of the view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Sheet {
-    /// Joints.
-    #[default]
-    Joints,
-    /// Members.
-    Members,
     /// Attachment points of the structure (where insulators hang).
+    #[default]
     Points,
     /// Insulators (strings).
     Strings,
@@ -53,6 +60,9 @@ pub enum Request {
     },
     /// Open the insulator library (to import, export, edit assemblies).
     OpenInsulators,
+    /// Open the structure in the structure application (its body, the
+    /// design: what this screen does not edit).
+    EditInStructureApp,
 }
 
 /// A drag moving a joint or a (wire) point.
@@ -97,6 +107,9 @@ pub struct Workspace {
     pub message: Option<(String, bool)>,
     /// What it asks of the application (taken by it).
     pub request: Option<Request>,
+    /// Its own **Edit in the structure application…** button (a structure
+    /// without a file has its own: make it a file first).
+    pub app_button: bool,
 }
 
 impl Default for Workspace {
@@ -119,6 +132,7 @@ impl Default for Workspace {
             message: None,
             ahead: 0.0,
             request: None,
+            app_button: true,
         }
     }
 }
@@ -230,9 +244,10 @@ impl Workspace {
         s
     }
 
-    /// The workspace: level, tools, the view and the tables. `doc` is the
-    /// file as edited; `true` when it was changed. `used_by`: the
-    /// structures of the line with this type.
+    /// The structure screen: its level and what it holds, Edit in the
+    /// structure application…, the tools; the tables on the left, the view
+    /// on the right. `doc` is the file as edited; `true` when it was
+    /// changed. `note`: the structures of the line with this type.
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -247,29 +262,49 @@ impl Workspace {
             return false;
         };
         let mut changed = false;
-        // The level, worked out from the content, and what it lacks.
+        // The level, worked out from the content; the basics it holds; the
+        // body (drawn only) and the structure application for it.
         ui.horizontal_wrapped(|ui| {
             let d = t.detail();
             ui.strong(format!("Level {} — {}", d.level(), d.name()));
-            let missing = t.missing_for_design();
-            if !missing.is_empty() && !t.members.is_empty() {
-                ui.label(
-                    egui::RichText::new(format!("for a full design: {}", missing.join(", ")))
-                        .weak(),
-                );
-            }
             ui.separator();
+            let sets = t.wires.iter().filter(|w| w.set.is_some()).count();
             ui.label(format!(
-                "{} joint(s), {} member(s), {} point(s), {} wire point(s), {} string(s)",
-                t.nodes.len(),
-                t.members.len(),
+                "{} attachment point(s), {} string(s), {} wire point(s), {} set(s)",
                 t.points.len(),
+                t.strings.len(),
                 t.wires.len(),
-                t.strings.len()
+                sets
             ));
             ui.separator();
             ui.label(note);
+            ui.separator();
+            if self.app_button
+                && ui
+                    .button(EDIT_IN_APP)
+                    .on_hover_text(
+                        "The body (joints, members, sections, materials, supports, generators, \
+                         pole, extensions) and its design (load cases, analysis) are edited \
+                         in the structure application, a window of its own; saved there, the \
+                         line follows",
+                    )
+                    .clicked()
+            {
+                self.request = Some(Request::EditInStructureApp);
+            }
         });
+        if !t.members.is_empty() || !t.nodes.is_empty() {
+            ui.label(
+                egui::RichText::new(format!(
+                    "Body: {} joint(s), {} member(s) — drawn here, edited in the structure \
+                     application",
+                    t.nodes.len(),
+                    t.members.len()
+                ))
+                .small()
+                .weak(),
+            );
+        }
         changed |= self.tools(ui, doc, &t);
         if let Some((m, error)) = &self.message {
             let text = egui::RichText::new(m).small();
@@ -281,9 +316,13 @@ impl Workspace {
         }
         changed |= self.confirm_ui(ui, doc, &t);
         let g = geometry(&t, insulators);
-        egui::Panel::bottom(egui::Id::new("type-workspace-tables"))
+        // Split: the tables left, the view right (the divider is dragged;
+        // egui keeps its place for the session).
+        let width = ui.available_width();
+        egui::Panel::left(egui::Id::new("type-workspace-tables"))
             .resizable(true)
-            .default_size(180.0)
+            .default_size((width * 0.45).max(280.0))
+            .min_size(220.0)
             .show(ui, |ui| {
                 changed |= self.tables(ui, doc, &t, &g, insulators);
             });
@@ -307,63 +346,36 @@ impl Workspace {
                     .max_decimals(3)
                     .suffix(" m"),
             )
-            .on_hover_text("A dragged joint or point snaps to this grid (0: none), or onto a joint");
+            .on_hover_text("A dragged point snaps to this grid (0: none), or onto a joint");
             ui.separator();
             if ui
-                .button("Add joint")
-                .on_hover_text("A joint above the joint picked (or at the centre)")
+                .button("+ Attachment point")
+                .on_hover_text(
+                    "A point where strings hang, beside the point picked (or at the top of the \
+                     centre); drag it in the view or type where it is",
+                )
                 .clicked()
             {
                 let at = match self.selected.last() {
-                    Some(Handle::Joint(id)) => t
-                        .nodes
+                    Some(Handle::Point(l)) => t
+                        .points
                         .iter()
-                        .find(|n| &n.id == id)
-                        .map(|n| n.point.map(|v| v.si()))
-                        .map(|p| [p[0], p[1], p[2] + 1.0]),
+                        .find(|p| &p.label == l)
+                        .map(|p| p.position().map(|v| v.si()))
+                        .map(|p| [-p[0], p[1], p[2]]),
                     _ => None,
                 }
-                .unwrap_or([0.0; 3]);
-                let id = edit::add_joint(doc, Some(t), at);
-                self.selected = vec![Handle::Joint(id.clone())];
-                self.message = Some((format!("added joint {id}"), false));
-                changed = true;
-            }
-            let joints: Vec<&String> = self
-                .selected
-                .iter()
-                .filter_map(|h| match h {
-                    Handle::Joint(id) => Some(id),
-                    _ => None,
-                })
-                .collect();
-            if ui
-                .add_enabled(joints.len() == 2, egui::Button::new("Member"))
-                .on_hover_text("A member between the two joints picked (Shift + click the second)")
-                .on_disabled_hover_text("Pick two joints (Shift + click the second)")
-                .clicked()
-            {
-                let (a, b) = (joints[0].clone(), joints[1].clone());
-                match edit::add_member(doc, t, &a, &b) {
-                    Ok(id) => {
-                        self.message = Some((format!("added member {id} ({a}–{b})"), false));
-                        // The second joint stays picked: the next member
-                        // starts there.
-                        self.selected = vec![Handle::Joint(b)];
-                        changed = true;
-                    }
-                    Err(e) => self.message = Some((e, true)),
-                }
-            }
-            if let [Handle::Joint(j)] = self.selected.clone().as_slice()
-                && ui
-                    .button("Point here")
-                    .on_hover_text("A point where strings hang, on this joint (it moves with it)")
-                    .clicked()
-            {
-                let l = edit::add_point_at_joint(doc, t, j);
+                .unwrap_or_else(|| {
+                    let top = t
+                        .points
+                        .iter()
+                        .map(|p| p.position()[2].si())
+                        .fold(f64::NAN, f64::max);
+                    [0.0, 0.0, if top.is_finite() { top } else { 20.0 }]
+                });
+                let l = edit::add_point(doc, t, at);
                 self.selected = vec![Handle::Point(l.clone())];
-                self.message = Some((format!("added point {l} on joint {j}"), false));
+                self.message = Some((format!("added attachment point {l}"), false));
                 changed = true;
             }
             ui.separator();
@@ -476,12 +488,20 @@ impl Workspace {
         t: &StructureType,
         g: &Geometry,
     ) -> bool {
-        let Some(rs) = rs else {
-            ui.centered_and_justified(|ui| ui.label("The pylon's 3D view needs a GPU (wgpu)."));
-            return false;
-        };
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, VIEW_LABEL));
+        let Some(rs) = rs else {
+            ui.painter_at(rect).text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "The pylon's 3D view needs a GPU (wgpu).",
+                egui::FontId::proportional(13.0),
+                ui.visuals().text_color(),
+            );
+            return false;
+        };
         let foot = t.foot_level();
         let camera = self.camera.get_or_insert_with(|| {
             let mut b: Option<Bounds> = None;
@@ -512,12 +532,19 @@ impl Workspace {
         let projector = cam.projector(size);
         let project = |p: [f64; 3]| projector(p).map(|(q, _)| q);
         let mut changed = false;
+        // Only the basics are picked: points and wire points (the body is
+        // edited in the structure application).
+        let basics = Geometry {
+            joints: Vec::new(),
+            members: Vec::new(),
+            ..g.clone()
+        };
         // Picking: a click picks, Shift + click adds.
         if response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
         {
             let shift = ui.input(|i| i.modifiers.shift);
-            match pick(g, &project, local(pos), 12.0) {
+            match pick(&basics, &project, local(pos), 12.0) {
                 Some(h) if shift => {
                     if let Some(k) = self.selected.iter().position(|x| *x == h) {
                         self.selected.remove(k);
@@ -531,11 +558,37 @@ impl Workspace {
             }
             self.dirty = true;
         }
-        // A drag from a joint or point moves it; elsewhere it turns the view.
-        if response.drag_started_by(egui::PointerButton::Primary)
-            && let Some(pos) = response.interact_pointer_pos()
-            && let Some(h) = pick(g, &project, local(pos), 12.0)
-            && !matches!(h, Handle::Member(_))
+        // A drag from a point or wire point moves it (one on a joint moves
+        // with the body: not here); elsewhere it turns the view.
+        let on_body = |h: &Handle| match h {
+            Handle::Point(l) => t
+                .points
+                .iter()
+                .find(|p| &p.label == l)
+                .and_then(|p| p.node.as_ref().or(p.member.as_ref()))
+                .cloned(),
+            _ => None,
+        };
+        let grabbed = if response.drag_started_by(egui::PointerButton::Primary) {
+            response
+                .interact_pointer_pos()
+                .and_then(|pos| pick(&basics, &project, local(pos), 12.0))
+        } else {
+            None
+        };
+        if let Some(h) = &grabbed
+            && let Some(on) = on_body(h)
+        {
+            self.selected = vec![h.clone()];
+            self.message = Some((
+                format!(
+                    "{} sits on {on} of the body: it moves with the body (Edit in the structure \
+                     application…)",
+                    h.describe()
+                ),
+                true,
+            ));
+        } else if let Some(h) = grabbed
             && let Some(at) = position(g, &h)
         {
             let eye = cam.eye();
@@ -709,7 +762,7 @@ impl Workspace {
             rect.left_bottom() + egui::vec2(8.0, -8.0),
             egui::Align2::LEFT_BOTTOM,
             "x right of the line (red), y ahead (green), z up (blue) — drag: turn, right-drag: pan, \
-             wheel: zoom; drag a joint or point to move it; Shift + click: pick another",
+             wheel: zoom; drag a point or wire point to move it; Shift + click: pick another",
             egui::FontId::proportional(11.0),
             egui::Color32::GRAY,
         );
@@ -725,10 +778,8 @@ impl Workspace {
         insulators: &InsulatorLibrary,
     ) -> bool {
         let mut changed = false;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             for (s, name, tip) in [
-                (Sheet::Joints, "Joints", "The pylon's joints"),
-                (Sheet::Members, "Members", "The pylon's members"),
                 (
                     Sheet::Points,
                     "Attachment points",
@@ -766,109 +817,6 @@ impl Workspace {
             .id_salt("type-workspace-sheet")
             .auto_shrink(false)
             .show(ui, |ui| match self.sheet {
-                Sheet::Joints => {
-                    egui::Grid::new("type-joints").striped(true).show(ui, |ui| {
-                        for h in ["joint", "x", "y", "z", "support"] {
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for n in &t.nodes {
-                            let h = Handle::Joint(n.id.clone());
-                            if ui.selectable_label(self.selected.contains(&h), &n.id).clicked() {
-                                self.selected = vec![h.clone()];
-                                self.dirty = true;
-                            }
-                            let mut p = n.point.map(|v| v.si());
-                            let mut moved = false;
-                            for v in &mut p {
-                                moved |= coord(ui, v);
-                            }
-                            if moved && edit::move_to(doc, t, &h, p).is_ok() {
-                                changed = true;
-                            }
-                            let support = n
-                                .support
-                                .as_ref()
-                                .map_or("—".to_owned(), |s| s.as_str().map_or(s.to_string(), str::to_owned));
-                            let mut chosen = support.clone();
-                            egui::ComboBox::from_id_salt(("support", &n.id))
-                                .selected_text(&chosen)
-                                .width(80.0)
-                                .show_ui(ui, |ui| {
-                                    for s in ["—", "pinned", "fixed"] {
-                                        ui.selectable_value(&mut chosen, s.to_owned(), s);
-                                    }
-                                });
-                            if chosen != support {
-                                edit::set_support(doc, &n.id, (chosen != "—").then_some(chosen.as_str()));
-                                changed = true;
-                            }
-                            ui.end_row();
-                        }
-                    });
-                }
-                Sheet::Members => {
-                    let sections: Vec<String> = t
-                        .sections
-                        .iter()
-                        .filter_map(|s| s.get("id")?.as_str().map(str::to_owned))
-                        .collect();
-                    egui::Grid::new("type-members").striped(true).show(ui, |ui| {
-                        for h in ["member", "from", "to", "length", "section", "kind"] {
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for (m, geo) in t.members.iter().zip(&g.members) {
-                            let h = Handle::Member(m.id.clone());
-                            if ui.selectable_label(self.selected.contains(&h), &m.id).clicked() {
-                                self.selected = vec![h];
-                                self.dirty = true;
-                            }
-                            ui.label(&m.nodes[0]);
-                            ui.label(&m.nodes[1]);
-                            let l = (0..3).map(|k| (geo.2[k] - geo.1[k]).powi(2)).sum::<f64>().sqrt();
-                            ui.label(format!("{l:.3} m"));
-                            let current = m.section.clone().unwrap_or_else(|| "—".into());
-                            let mut chosen = current.clone();
-                            egui::ComboBox::from_id_salt(("section", &m.id))
-                                .selected_text(&chosen)
-                                .width(110.0)
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut chosen, "—".to_owned(), "— (a stick)");
-                                    for s in &sections {
-                                        ui.selectable_value(&mut chosen, s.clone(), s);
-                                    }
-                                });
-                            let kind = m.kind.clone().unwrap_or_else(|| "truss".into());
-                            let mut new_kind = kind.clone();
-                            egui::ComboBox::from_id_salt(("kind", &m.id))
-                                .selected_text(&new_kind)
-                                .width(70.0)
-                                .show_ui(ui, |ui| {
-                                    for k in ["truss", "frame", "cable"] {
-                                        ui.selectable_value(&mut new_kind, k.to_owned(), k);
-                                    }
-                                });
-                            if chosen != current {
-                                edit::set_member_section(doc, &m.id, (chosen != "—").then_some(chosen.as_str()));
-                                changed = true;
-                            }
-                            if new_kind != kind {
-                                edit::set_member_kind(doc, &m.id, &new_kind);
-                                changed = true;
-                            }
-                            ui.end_row();
-                        }
-                    });
-                    if sections.is_empty() {
-                        ui.label(
-                            egui::RichText::new(
-                                "No [[section]] yet: add sections and materials in Fields for a full design.",
-                            )
-                            .weak(),
-                        );
-                    }
-                }
                 Sheet::Points => {
                     egui::Grid::new("type-points").striped(true).show(ui, |ui| {
                         for h in ["attachment point", "x", "y", "z", "on", "insulators"] {
@@ -1410,23 +1358,27 @@ node = "N3"
         StructureType::parse(std::path::Path::new("p.olss"), &doc.to_string()).unwrap()
     }
 
-    /// The workspace's edits are those of the structure application: a
-    /// joint, a member, a point on it and an I-string under it read back
-    /// (the edits themselves are tested in `ols-structure-edit`).
+    /// The screen's edits are those of the structure application, on the
+    /// basics: an attachment point, an I-string under it with a set on its
+    /// wire point, the point moved (its wire point follows), read back (the
+    /// edits themselves are tested in `ols-structure-edit`); the body is
+    /// left as it was.
     #[test]
-    fn the_workspace_uses_the_shared_edits() {
+    fn the_screen_uses_the_shared_edits_on_the_basics() {
         let mut doc: DocumentMut = PYLON.parse().unwrap();
         let t = read(&doc);
-        let id = edit::add_joint(&mut doc, Some(&t), [6.0, 0.0, 30.0]);
+        let a2 = edit::add_point(&mut doc, &t, [6.0, 0.0, 30.0]);
         let t = read(&doc);
-        edit::add_member(&mut doc, &t, "N2", &id).unwrap();
+        let w = edit::add_strings(&mut doc, &t, std::slice::from_ref(&a2), 4.0).unwrap();
         let t = read(&doc);
-        let a2 = edit::add_point_at_joint(&mut doc, &t, &id);
+        let set = edit::add_set(&mut doc, &t, &w).unwrap();
         let t = read(&doc);
-        let w = edit::add_strings(&mut doc, &t, &[a2], 4.0).unwrap();
+        edit::move_to(&mut doc, &t, &Handle::Point(a2), [7.0, 0.0, 30.0]).unwrap();
         let t = read(&doc);
         let g = geometry(&t, &InsulatorLibrary::default());
-        assert_eq!(g.at(&w), Some([6.0, 0.0, 26.0]));
-        assert_eq!(compass_radius(&g), 7.5_f64.max(0.35 * 30.0));
+        assert_eq!(g.at(&w), Some([7.0, 0.0, 26.0]));
+        assert_eq!(t.wires[0].set, Some(set));
+        assert_eq!((t.nodes.len(), t.members.len()), (3, 2));
+        assert_eq!(compass_radius(&g), 8.75_f64.max(0.35 * 30.0));
     }
 }
