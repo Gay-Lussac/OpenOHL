@@ -7585,7 +7585,7 @@ fn pylons_are_built_from_templates_and_placed_on_the_alignment() {
     }
     harness.run();
     harness
-        .get_by_label("Build it again (replace the type)")
+        .get_by_label("Build it again (keep what was added)")
         .click();
     harness.run();
     assert!((z(&mut harness) - (low + 2.0)).abs() < 1e-6);
