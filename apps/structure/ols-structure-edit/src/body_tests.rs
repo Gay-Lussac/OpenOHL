@@ -202,6 +202,48 @@ fn crossarms_and_peak() {
     assert!(joined(&p, "body-L2-3", "peak-tip"));
 }
 
+/// A rectangular arm on a point at the top of the body: its other tip one
+/// level down (not above the body), and a peak still finds the body's top.
+#[test]
+fn a_rectangular_arm_at_the_top_and_a_peak() {
+    let mut doc: DocumentMut = EMPTY.parse().unwrap();
+    applied(
+        &mut doc,
+        &frustum(&[(5.0, Bracing::X, true), (10.0, Bracing::X, true)]),
+    );
+    let t = read(&doc);
+    edits::add_point(&mut doc, &t, [6.0, 0.0, 10.0]);
+    let t = read(&doc);
+    let rect = Generator {
+        id: "arm".into(),
+        kind: Kind::Crossarm(Crossarm {
+            points: vec!["A1".into()],
+            shape: ArmShape::Rectangular,
+        }),
+    };
+    let r = generate(&t, &rect).unwrap();
+    assert_eq!((r.joints.len(), r.members.len()), (2, 7));
+    assert_eq!(joint(&r, "arm-A1-bottom"), [6.0, 0.0, 5.0]);
+    for root in ["body-L2-1", "body-L2-4"] {
+        assert!(joined(&r, root, "arm-A1"), "{root}");
+    }
+    for root in ["body-L1-1", "body-L1-4"] {
+        assert!(joined(&r, root, "arm-A1-bottom"), "{root}");
+    }
+    applied(&mut doc, &rect);
+    let t = read(&doc);
+    let peak = Generator {
+        id: "peak".into(),
+        kind: Kind::Peak(Peak {
+            points: Vec::new(),
+            height: 3.0,
+        }),
+    };
+    let p = generate(&t, &peak).unwrap();
+    assert_eq!(joint(&p, "peak-tip"), [0.0, 0.0, 13.0]);
+    assert_eq!(p.members.len(), 4);
+}
+
 /// A face copied to the opposite one: what is on it and not there yet
 /// (a hand-made redundant), mirrored.
 #[test]
