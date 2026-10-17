@@ -315,6 +315,8 @@ pub struct Ready {
     pub open_page: Option<(Tab, Option<String>)>,
     /// A structure without a type in the pylon editor.
     pub placed: Option<crate::placed_editor::PlacedEditor>,
+    /// Structure files open in the structure application (Edit), watched.
+    pub structure_apps: crate::structure_app::StructureApps,
     /// A menu was open last frame.
     pub menu_open: bool,
     /// Table pages opened.
@@ -414,6 +416,7 @@ impl Ready {
             jumper_via: Vec::new(),
             open_page: None,
             placed: None,
+            structure_apps: Default::default(),
             coord_dialog: None,
             route_choice: None,
             // Step 1 of a new project: its route (then its alignment).
@@ -1902,6 +1905,24 @@ impl Ready {
         action: crate::library::PageAction,
     ) {
         use crate::library::PageAction;
+        // Edit… on a structure file: the structure application, nothing
+        // saved yet.
+        if let PageAction::EditInStructureApp(p) = &action {
+            let id = self
+                .model
+                .types
+                .as_ref()
+                .and_then(|(t, _)| t.iter().find(|s| t.path(&s.id) == Some(p.as_path())))
+                .map_or_else(
+                    || {
+                        p.file_stem()
+                            .map_or(String::new(), |s| s.to_string_lossy().into_owned())
+                    },
+                    |s| s.id.clone(),
+                );
+            self.edit_file_in_structure_app(&p.clone(), &id);
+            return;
+        }
         // The project keeps its libraries: the working copy saved goes in.
         let in_project = match self.model.store_libraries() {
             Ok(n) => n > 0,
@@ -1919,7 +1940,9 @@ impl Ready {
                 ),
                 None,
             ),
-            PageAction::Saved(p) => (format!("saved {}", p.display()), None),
+            PageAction::Saved(p) | PageAction::EditInStructureApp(p) => {
+                (format!("saved {}", p.display()), None)
+            }
             PageAction::UseForModel(p) => {
                 let before = self.model.sources.clone();
                 kind.use_for(&mut self.model.sources, &p);
@@ -2765,6 +2788,83 @@ impl Ready {
         self.open_page = Some((Tab::Library(kind), None));
     }
 
+    /// **Edit**: structure type `id` in the structure application, on its
+    /// file (in a project, the working copy); saved there, it comes back
+    /// into the line ([`Ready::structure_apps_frame`]).
+    pub fn edit_in_structure_app(&mut self, id: &str) {
+        let Some(path) = self
+            .model
+            .types
+            .as_ref()
+            .and_then(|(t, _)| t.path(id))
+            .map(std::path::Path::to_path_buf)
+        else {
+            self.status = Some((format!("structure type {id}: no file read"), true));
+            return;
+        };
+        self.edit_file_in_structure_app(&path, id);
+    }
+
+    /// The structure application on the structure file `path` (structure
+    /// `id`).
+    pub fn edit_file_in_structure_app(&mut self, path: &std::path::Path, id: &str) {
+        let insulators = crate::model::insulators_dir(&self.model.sources);
+        let ahead = self.model.line.display.ahead_deg;
+        self.status = Some(
+            match self
+                .structure_apps
+                .launch(path, id, Some(&insulators), ahead)
+            {
+                Ok(()) => (
+                    format!(
+                        "structure {id} opened in the structure application: saved there, \
+                         the line follows"
+                    ),
+                    false,
+                ),
+                Err(e) => (e, true),
+            },
+        );
+    }
+
+    /// Each frame: the structure files open in the structure application
+    /// looked at (twice a second); one saved there goes into the project
+    /// and the libraries are read again, as a save of the Structure types
+    /// page.
+    pub fn structure_apps_frame(&mut self, ctx: &egui::Context) {
+        if !self.structure_apps.active() {
+            return;
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        for (path, id) in self.structure_apps.poll() {
+            self.structure_file_saved(&path, &id);
+        }
+    }
+
+    /// Structure file `path` (structure `id`) saved outside: stored into
+    /// the project, the libraries read again; the Structure types page
+    /// shows the new text when it has no changes of its own.
+    pub fn structure_file_saved(&mut self, path: &std::path::Path, id: &str) {
+        use crate::library::{LibraryKind, PageAction};
+        let kind = LibraryKind::StructureTypes;
+        self.library_saved(kind, PageAction::Saved(path.to_path_buf()));
+        if let Some(page) = self.libraries.get_mut(&kind)
+            && page.file.as_deref() == Some(path)
+        {
+            if page.dirty() {
+                self.status = Some((
+                    format!(
+                        "structure {id} was saved in the structure application; the Structure \
+                         types page has changes of its own (Discard to see the saved file)"
+                    ),
+                    true,
+                ));
+            } else {
+                page.open(path);
+            }
+        }
+    }
+
     /// Opens structure `id` (one without a type) in the pylon editor.
     pub fn edit_structure(&mut self, id: &str) {
         if self
@@ -3199,6 +3299,10 @@ impl Ready {
             }
             Action::EditType { id } => {
                 self.edit_type(&id);
+                return true;
+            }
+            Action::EditInStructureApp { id } => {
+                self.edit_in_structure_app(&id);
                 return true;
             }
             Action::EditStructure { id } => {
@@ -7201,6 +7305,7 @@ impl eframe::App for App {
             State::Ready(ready) => {
                 ready.remote_frame();
                 ready.solving_frame(ui.ctx());
+                ready.structure_apps_frame(ui.ctx());
                 history_window(ui.ctx(), ready);
                 crate::versions::window(ui.ctx(), ready);
                 goto_key(ui.ctx(), ready);

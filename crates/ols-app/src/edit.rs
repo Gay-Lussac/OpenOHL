@@ -315,6 +315,12 @@ pub enum Action {
         /// Structure type.
         id: String,
     },
+    /// Open structure type `id` in the structure application (no edit by
+    /// itself; saved there, the line follows).
+    EditInStructureApp {
+        /// Structure type.
+        id: String,
+    },
     /// Open structure `id` (one without a type) in the pylon editor (no
     /// edit by itself).
     EditStructure {

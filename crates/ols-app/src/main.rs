@@ -57,6 +57,7 @@ mod scene;
 mod selection;
 mod span_tool;
 mod spot;
+mod structure_app;
 mod structure_desk;
 mod structure_picker;
 mod surfaces;
