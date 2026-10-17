@@ -11,8 +11,11 @@
 //! waiting.
 //!
 //! On a **placed structure** (Properties › Edit…) the application gets
-//! that place's loads: the line's values there in every load case
-//! (`ols_structure_link::placed_values`) written beside the structure
+//! that place's loads: the line's values there in the cases the line
+//! sends to its structures (Criteria › Loads for structures: the load
+//! cases, all by default, then weather cases chosen on their own with all
+//! factors 1; `ols_structure_link::structure_cases`,
+//! `ols_structure_link::placed_values`) written beside the structure
 //! file as `<stem>.<structure>.line-values.json`
 //! (`ols_structure_loads::line_values_path`) and passed with
 //! `--line-values FILE --structure ID`; written again (in the background)
@@ -36,7 +39,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui;
-use ols_loads::CaseLoads;
+use ols_structure_link::StructureCaseLoads;
 use ols_structure_loads::PlacedValues;
 
 use crate::model::Model;
@@ -121,10 +124,18 @@ impl Placed {
             .save(&self.values)
     }
 
-    /// The line-values file from the line's structure loads `loads`.
-    pub fn write(&self, loads: &[CaseLoads], line: &ols_line::Line) -> Result<(), String> {
-        ols_structure_link::placed_values(loads, line, &self.structure, &self.line)
-            .save(&self.values)
+    /// The line-values file from the line's structure loads `loads` in
+    /// the cases it sends to its structures.
+    pub fn write(&self, loads: &StructureCaseLoads, line: &ols_line::Line) -> Result<(), String> {
+        ols_structure_link::placed_values(
+            &loads.load,
+            &loads.weather,
+            &loads.missing,
+            line,
+            &self.structure,
+            &self.line,
+        )
+        .save(&self.values)
     }
 }
 
@@ -156,6 +167,12 @@ pub fn arguments(
     a
 }
 
+/// Why a line without load cases and without weather cases chosen for the
+/// structures sends no values.
+pub const NO_CASES: &str = "the line has no load cases and no weather case is chosen for the \
+    structures: tick weather cases in Criteria › Loads for structures (each sent with all \
+    factors 1), or give load cases (Criteria › Load cases, Criteria › Design code)";
+
 /// What the line's structure loads are computed from: a copy of the
 /// line, its cables, weather and load cases (taken on the main thread,
 /// computed on another).
@@ -177,19 +194,31 @@ impl LineInputs {
         }
     }
 
-    /// The structures' loads in every load case (as Checks › Structure
-    /// loads computes them; seconds for a long line).
-    pub fn compute(&self) -> Result<Vec<CaseLoads>, String> {
-        let path = self.load_cases.as_ref().ok_or(
-            "no load case file: Criteria › Load cases (a .olslc file next to the line, or the \
-             project's own)",
-        )?;
-        let set = ols_loads::LoadCases::load(path)?;
-        ols_loads::structure_loads(
+    /// The structures' loads in the cases the line sends to them
+    /// (Criteria › Loads for structures: its load cases, all by default,
+    /// then the weather cases chosen on their own), as Checks › Structure
+    /// loads computes them (seconds for a long line). Err: no case to send
+    /// (no load case file and no weather case chosen, or none chosen).
+    pub fn compute(&self) -> Result<StructureCaseLoads, String> {
+        let load_cases = match &self.load_cases {
+            Some(path) => ols_loads::LoadCases::load(path)?.cases,
+            None => Vec::new(),
+        };
+        let names: Vec<String> = self.weather.iter().map(|w| w.name.clone()).collect();
+        let cases =
+            ols_structure_link::structure_cases(&load_cases, &self.line.structure_loads, &names);
+        if cases.is_empty() {
+            return Err(if self.load_cases.is_none() {
+                NO_CASES.into()
+            } else {
+                "no case chosen for the structures: Criteria › Loads for structures".into()
+            });
+        }
+        ols_structure_link::structure_case_loads(
             &self.line,
             &self.library,
             &self.weather,
-            &set.cases,
+            cases,
             &ols_loads::default_budget(),
         )
     }
@@ -479,6 +508,9 @@ struct Running {
     stderr: Option<Stderr>,
 }
 
+/// The names of a file's load cases, or why they could not be read.
+type CaseNames = Result<Vec<String>, String>;
+
 /// A structure file being edited in the structure application.
 struct Watched {
     /// The file.
@@ -520,9 +552,27 @@ pub struct StructureApps {
     /// the program.
     #[cfg(test)]
     pub dry_run: Option<Vec<Vec<OsString>>>,
+    /// The names of the load cases (Criteria › Loads for structures): the
+    /// file, its time when read, its cases' names or why not.
+    load_case_names: Option<(PathBuf, Option<SystemTime>, CaseNames)>,
 }
 
 impl StructureApps {
+    /// The names of the load cases of `path` (the line's `.olslc`), read
+    /// again when the file changed.
+    pub fn load_case_names(&mut self, path: &Path) -> Result<Vec<String>, String> {
+        let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+        match &self.load_case_names {
+            Some((p, m, names)) if p == path && *m == modified => names.clone(),
+            _ => {
+                let names = ols_loads::LoadCases::load(path)
+                    .map(|set| set.cases.into_iter().map(|c| c.name).collect::<Vec<_>>());
+                self.load_case_names = Some((path.to_path_buf(), modified, names.clone()));
+                names
+            }
+        }
+    }
+
     /// Starts the structure application on `path` (structure `id`), with
     /// the insulator assemblies of `insulators`, the angle `ahead`, the
     /// section library `sections` and, on a placed structure, its line
@@ -903,6 +953,144 @@ pub fn report_window(ctx: &egui::Context, apps: &mut StructureApps) {
     }
 }
 
+/// Criteria › Loads for structures: what the line sends to the placed
+/// structures (the cases of the structure application): its load cases
+/// (all by default) and weather cases on their own, all factors 1 (none
+/// by default). A tick menu (it stays open while ticking); each tick is
+/// one undoable edit of the line's settings (`structure_loads`).
+pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
+    crate::menu::options_menu(ui, "Loads for structures", |ui| {
+        ui.set_max_width(420.0);
+        ui.label(
+            egui::RichText::new(
+                "What the line sends to the placed structures (Edit… on a placed structure: \
+                 the cases of the structure application). Load cases (Criteria › Load cases, \
+                 Criteria › Design code) add factors and combinations on top of the weather \
+                 cases; a weather case on its own is sent with all factors 1, the wires as \
+                 strung.",
+            )
+            .small()
+            .weak(),
+        );
+        let before = r.model.line.structure_loads.clone();
+        let mut choice = before.clone();
+        let editable = r.model.can_edit();
+        if let Err(why) = &editable {
+            crate::menu::error_label(ui, format!("read-only: {why}"));
+        }
+        ui.add_enabled_ui(editable.is_ok(), |ui| {
+            ui.separator();
+            ui.label(egui::RichText::new("Load cases").strong());
+            let names = match r.model.sources.load_cases.clone() {
+                None => {
+                    ui.label(
+                        egui::RichText::new("no load case file (Criteria › Load cases)").weak(),
+                    );
+                    Vec::new()
+                }
+                Some(path) => match r.structure_apps.load_case_names(&path) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        crate::menu::error_label(ui, e);
+                        Vec::new()
+                    }
+                },
+            };
+            if !names.is_empty() {
+                ui.horizontal(|ui| {
+                    if ui
+                        .button("all")
+                        .on_hover_text("Every load case, also those added later (the default)")
+                        .clicked()
+                    {
+                        choice.load_cases = None;
+                    }
+                    if ui.button("none").clicked() {
+                        choice.load_cases = Some(Vec::new());
+                    }
+                });
+            }
+            // The chosen not in the file: shown, to be unticked.
+            let gone: Vec<String> = choice
+                .load_cases
+                .iter()
+                .flatten()
+                .filter(|n| !names.contains(n))
+                .cloned()
+                .collect();
+            for name in names.iter().chain(&gone) {
+                let mut on = choice.sends_load_case(name);
+                let text = if gone.contains(name) {
+                    format!("{name} (not in the load cases)")
+                } else {
+                    name.clone()
+                };
+                if ui.checkbox(&mut on, text).changed() {
+                    let mut list: Vec<String> =
+                        choice.load_cases.clone().unwrap_or_else(|| names.clone());
+                    list.retain(|n| n != name);
+                    if on {
+                        list.push(name.clone());
+                    }
+                    // In the file's order; every one of them: all.
+                    list.sort_by_key(|n| names.iter().position(|x| x == n).unwrap_or(usize::MAX));
+                    choice.load_cases = (!names.iter().all(|n| list.contains(n))
+                        || list.len() != names.len())
+                    .then_some(list);
+                }
+            }
+            ui.separator();
+            ui.label(egui::RichText::new("Weather cases (all factors 1)").strong());
+            if ui.button("none").clicked() {
+                choice.weather_cases.clear();
+            }
+            let weather: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+            let gone: Vec<String> = choice
+                .weather_cases
+                .iter()
+                .filter(|n| !weather.contains(n))
+                .cloned()
+                .collect();
+            for name in weather.iter().chain(&gone) {
+                let mut on = choice.weather_cases.contains(name);
+                let text = if gone.contains(name) {
+                    format!("{name} (not in the weather cases)")
+                } else {
+                    name.clone()
+                };
+                if ui.checkbox(&mut on, text).changed() {
+                    choice.weather_cases.retain(|n| n != name);
+                    if on {
+                        choice.weather_cases.push(name.clone());
+                        choice.weather_cases.sort_by_key(|n| {
+                            weather.iter().position(|x| x == n).unwrap_or(usize::MAX)
+                        });
+                    }
+                }
+            }
+            if names.is_empty() && choice.weather_cases.is_empty() {
+                ui.label(
+                    egui::RichText::new(
+                        "No load case and no weather case: the structures get no values from \
+                         the line.",
+                    )
+                    .small()
+                    .color(ui.visuals().warn_fg_color),
+                );
+            }
+        });
+        if choice != before
+            && let Ok(e) = &r.model.editing
+        {
+            let command = e.session.structure_loads_command(choice);
+            r.perform(crate::edit::Action::Command {
+                what: "loads for structures".into(),
+                command,
+            });
+        }
+    });
+}
+
 /// The file's time and text (none and empty when it cannot be read).
 fn read(path: &Path) -> (Option<SystemTime>, String) {
     let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
@@ -911,7 +1099,6 @@ fn read(path: &Path) -> (Option<SystemTime>, String) {
 
 #[cfg(test)]
 mod tests {
-    use eframe::egui;
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;
 
@@ -1132,6 +1319,34 @@ mod tests {
             v.cases
         );
         assert!(v.others.iter().any(|o| o.structure == "T4"));
+        assert_eq!(
+            v.sources,
+            [ols_structure_loads::CaseSource::LoadCase; 3],
+            "every load case by default, no weather case"
+        );
+        // A weather case chosen on its own: sent after the load cases.
+        let mut inputs = LineInputs::of(&model);
+        inputs.line.structure_loads.weather_cases = vec!["glaze ice".into()];
+        assert!(inputs.write_all(std::slice::from_ref(&placed)).is_empty());
+        let v = PlacedValues::load(&placed.values).unwrap();
+        assert_eq!(v.cases, ["everyday", "wind", "ice", "weather: glaze ice"]);
+        assert_eq!(
+            v.source("weather: glaze ice"),
+            ols_structure_loads::CaseSource::WeatherCase
+        );
+        // No load cases and no weather case chosen: no values, the file
+        // says to tick weather cases.
+        let mut inputs = LineInputs::of(&model);
+        inputs.load_cases = None;
+        assert_eq!(inputs.write_all(std::slice::from_ref(&placed)).len(), 1);
+        let v = PlacedValues::load(&placed.values).unwrap();
+        assert!(v.cases.is_empty());
+        assert!(v.note.unwrap().contains(NO_CASES), "note");
+        // Without load cases, the weather cases chosen alone.
+        inputs.line.structure_loads.weather_cases = vec!["high wind".into()];
+        assert!(inputs.write_all(std::slice::from_ref(&placed)).is_empty());
+        let v = PlacedValues::load(&placed.values).unwrap();
+        assert_eq!(v.cases, ["weather: high wind"]);
         // Typed loads saved there: a change of T2's loads.
         let mut apps = StructureApps::default();
         apps.watch(&path, "type-02", None, Some(placed.clone()));

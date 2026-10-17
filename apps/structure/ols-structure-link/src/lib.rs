@@ -11,9 +11,15 @@
 //!   (`ols_loads::structure_loads`) as [`LineValues`].
 //! - [`fe_loads`]: one case of a [`LoadTable`] as the loads of the
 //!   structure's finite-element model (`ols_structures_fe`).
+//! - [`structure_cases`]: the cases the line sends to the placed
+//!   structures (its `structure_loads` setting): the load cases chosen,
+//!   then the weather cases chosen on their own
+//!   (`ols_loads::LoadCase::from_weather`, all factors 1);
+//!   [`structure_case_loads`] computes their loads.
 //! - [`placed_values`]: the same with the placed structure's line, its
 //!   type and the other places of the type, as the line-values file the
-//!   line application hands to the structure application.
+//!   line application hands to the structure application, each case
+//!   marked with its source ([`CaseSource`]).
 //! - [`analyse_cases`]: cases of a [`LoadTable`] solved on the
 //!   structure's model, the results as plain data ([`CaseResult`]).
 //! - [`SectionAreas`]: the members' areas from the section library, for
@@ -35,12 +41,12 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use ols_core::budget::Budget;
-use ols_line::Line;
-use ols_loads::CaseLoads;
+use ols_line::{Line, StructureLoads};
+use ols_loads::{CaseLoads, LoadCase};
 pub use ols_sections::SectionLibrary;
 use ols_structure_loads::{
-    At, Direction, LinePoint, LineQuantity, LineValue, LineValues, LoadTable, MemberAreas,
-    OtherPlace, PlacedValues,
+    At, CaseSource, Direction, LinePoint, LineQuantity, LineValue, LineValues, LoadTable,
+    MemberAreas, OtherPlace, PlacedValues,
 };
 use ols_structures::StructureType;
 use ols_structures_fe::{Loads, Model, NodalLoad};
@@ -98,16 +104,134 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
     out
 }
 
+/// The cases the line sends to the placed structures.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StructureCases {
+    /// The load cases chosen, in the file's order.
+    pub load: Vec<LoadCase>,
+    /// The weather cases chosen, each on its own (all factors 1), in the
+    /// order of the line's weather cases.
+    pub weather: Vec<LoadCase>,
+    /// What was chosen and is not there (a load case or weather case
+    /// since removed), in words.
+    pub missing: Vec<String>,
+}
+
+impl StructureCases {
+    /// No case to send.
+    pub fn is_empty(&self) -> bool {
+        self.load.is_empty() && self.weather.is_empty()
+    }
+}
+
+/// The cases the line sends to the placed structures as `choice` says
+/// (the line's `structure_loads`): of `load_cases` (the line's `.olslc`)
+/// those chosen (all by default), then each weather case chosen on its own
+/// ([`LoadCase::from_weather`]: `weather: <name>`, all factors 1; named
+/// `weather case: <name>` if a load case has that name), in the order of
+/// `weather` (the names of the line's weather cases). Chosen names not
+/// there are listed in [`StructureCases::missing`].
+pub fn structure_cases(
+    load_cases: &[LoadCase],
+    choice: &StructureLoads,
+    weather: &[String],
+) -> StructureCases {
+    let load: Vec<LoadCase> = load_cases
+        .iter()
+        .filter(|c| choice.sends_load_case(&c.name))
+        .cloned()
+        .collect();
+    let mut missing: Vec<String> = choice
+        .load_cases
+        .iter()
+        .flatten()
+        .filter(|n| !load_cases.iter().any(|c| &c.name == *n))
+        .map(|n| format!("load case \"{n}\""))
+        .collect();
+    missing.extend(
+        choice
+            .weather_cases
+            .iter()
+            .filter(|n| !weather.contains(n))
+            .map(|n| format!("weather case \"{n}\"")),
+    );
+    let weather = weather
+        .iter()
+        .filter(|w| choice.weather_cases.contains(w))
+        .map(|w| {
+            let mut c = LoadCase::from_weather(w);
+            if load.iter().any(|l| l.name == c.name) {
+                c.name = format!("weather case: {w}");
+            }
+            c
+        })
+        .collect();
+    StructureCases {
+        load,
+        weather,
+        missing,
+    }
+}
+
+/// The loads of the cases sent to the placed structures: of the load
+/// cases, then of the weather cases on their own.
+#[derive(Debug, Clone, Default)]
+pub struct StructureCaseLoads {
+    /// Per load case sent.
+    pub load: Vec<CaseLoads>,
+    /// Per weather case sent on its own.
+    pub weather: Vec<CaseLoads>,
+    /// What was chosen and is not there ([`StructureCases::missing`]).
+    pub missing: Vec<String>,
+}
+
+/// The structure loads (`ols_loads::structure_loads`, every case solved
+/// in one go) of `cases` on `line` with its cables `library` and weather
+/// cases `weather`. Expected cost: that of the structure loads, about one
+/// solve of every section per case (seconds for a long line), bounded by
+/// `budget` per section.
+pub fn structure_case_loads(
+    line: &Line,
+    library: &ols_cables::Library,
+    weather: &[ols_weather::WeatherCase],
+    cases: StructureCases,
+    budget: &Budget,
+) -> Result<StructureCaseLoads, String> {
+    let n = cases.load.len();
+    let all: Vec<LoadCase> = cases.load.into_iter().chain(cases.weather).collect();
+    let mut load = ols_loads::structure_loads(line, library, weather, &all, budget)?;
+    let weather = load.split_off(n);
+    Ok(StructureCaseLoads {
+        load,
+        weather,
+        missing: cases.missing,
+    })
+}
+
 /// The line-values file of placed structure `structure` in line
-/// `line_name`: its values ([`line_values`]), the line's load cases, its
-/// structure type and the other placed structures of that type with
-/// their values; the note names the sections a load case did not solve.
+/// `line_name`: its values ([`line_values`]) in the load cases `loads`,
+/// then in the weather cases sent on their own `weather` (sources marked),
+/// its structure type and the other placed structures of that type with
+/// their values; the note names the sections a case did not solve and
+/// what was chosen and is not there (`missing`).
 pub fn placed_values(
     loads: &[CaseLoads],
+    weather: &[CaseLoads],
+    missing: &[String],
     line: &Line,
     structure: &str,
     line_name: &str,
 ) -> PlacedValues {
+    let sources: Vec<CaseSource> = std::iter::repeat_n(CaseSource::LoadCase, loads.len())
+        .chain(std::iter::repeat_n(CaseSource::WeatherCase, weather.len()))
+        .collect();
+    let all: Vec<CaseLoads>;
+    let loads = if weather.is_empty() {
+        loads
+    } else {
+        all = loads.iter().chain(weather).cloned().collect();
+        &all
+    };
     let structure_type = line
         .structures
         .iter()
@@ -128,7 +252,7 @@ pub fn placed_values(
         })
         .collect();
     // Sections a case did not solve: their loads are missing.
-    let failed: Vec<String> = loads
+    let mut failed: Vec<String> = loads
         .iter()
         .filter(|c| !c.failed.is_empty())
         .map(|c| {
@@ -140,16 +264,18 @@ pub fn placed_values(
             )
         })
         .collect();
+    if !missing.is_empty() {
+        failed.push(format!(
+            "chosen for the structures and not in the line: {}",
+            missing.join(", ")
+        ));
+    }
     PlacedValues {
         cases: loads.iter().map(|c| c.case.name.clone()).collect(),
+        sources,
         values: line_values(loads, line, structure),
         others,
-        note: (!failed.is_empty()).then(|| {
-            format!(
-                "values missing where the line did not solve — {}",
-                failed.join(" · ")
-            )
-        }),
+        note: (!failed.is_empty()).then(|| format!("values missing — {}", failed.join(" · "))),
         ..PlacedValues::pending(structure, line_name, &structure_type, "")
     }
 }

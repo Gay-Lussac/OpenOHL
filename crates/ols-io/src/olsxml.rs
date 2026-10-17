@@ -858,6 +858,7 @@ pub fn to_xml(line: &Line) -> String {
         spacers,
         defaults,
         circuit_starts,
+        structure_loads,
         condition_cases: _,
     } = line;
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<line");
@@ -977,6 +978,34 @@ pub fn to_xml(line: &Line) -> String {
             let _ = write!(out, " max_virtual_compression_pa=\"{}\"", s.si());
         }
         out.push_str("/>\n");
+    }
+    if !structure_loads.is_default() {
+        let ols_line::StructureLoads {
+            load_cases,
+            weather_cases,
+        } = structure_loads;
+        out.push_str("  <structure_loads");
+        attr(
+            &mut out,
+            "load_cases",
+            if load_cases.is_some() {
+                "listed"
+            } else {
+                "all"
+            },
+        );
+        out.push_str(">\n");
+        for c in load_cases.iter().flatten() {
+            out.push_str("    <load_case");
+            attr(&mut out, "name", c);
+            out.push_str("/>\n");
+        }
+        for c in weather_cases {
+            out.push_str("    <weather_case");
+            attr(&mut out, "name", c);
+            out.push_str("/>\n");
+        }
+        out.push_str("  </structure_loads>\n");
     }
     out.push_str("</line>\n");
     out
@@ -1099,6 +1128,33 @@ fn read_alignment_point(e: &Element) -> Result<AlignmentPoint, String> {
         position: point(e)?,
         structure: owned(e, "structure"),
         description: owned(e, "description").unwrap_or_default(),
+    })
+}
+
+/// `<structure_loads load_cases="all|listed">` with its `<load_case
+/// name>` and `<weather_case name>`.
+fn read_structure_loads(e: &Element) -> Result<ols_line::StructureLoads, String> {
+    check(e, &["load_cases"], &["load_case", "weather_case"])?;
+    let names = |tag: &str| {
+        e.children_named(tag)
+            .map(|c| {
+                check(c, &["name"], &[])?;
+                Ok(text(c, "name")?.to_owned())
+            })
+            .collect::<Result<Vec<String>, String>>()
+    };
+    let load_cases = match owned(e, "load_cases").as_deref() {
+        None | Some("all") => None,
+        Some("listed") => Some(names("load_case")?),
+        Some(other) => {
+            return Err(format!(
+                "structure_loads load_cases \"{other}\": all or listed"
+            ));
+        }
+    };
+    Ok(ols_line::StructureLoads {
+        load_cases,
+        weather_cases: names("weather_case")?,
     })
 }
 
@@ -1723,6 +1779,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             "bimetallic",
             "solver",
             "circuit_start",
+            "structure_loads",
         ],
     )?;
     // A route; files of version 2: its own alignment and structures
@@ -1868,6 +1925,10 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             .children_named("circuit_start")
             .map(read_section_point)
             .collect::<Result<_, _>>()?,
+        structure_loads: match root.child("structure_loads") {
+            None => ols_line::StructureLoads::default(),
+            Some(e) => read_structure_loads(e)?,
+        },
         systems: root
             .children_named("system")
             .map(read_system)

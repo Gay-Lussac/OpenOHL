@@ -1826,6 +1826,45 @@ fn settings_changed_by_two_users_are_both_kept() {
     assert_eq!(read.solver.jumper_loads, ols_line::JumperLoads::Pull);
 }
 
+/// What the line sends to the placed structures (load cases, weather
+/// cases on their own): its own settings row (`structure_loads`), put
+/// alone, read back when the project opens again, no section solved
+/// again; undone and redone.
+#[test]
+fn structure_loads_are_a_settings_row() {
+    let (path, mut s) = project("structure-loads");
+    assert!(s.line().structure_loads.is_default());
+    let choice = ols_line::StructureLoads {
+        load_cases: Some(vec!["wind".into()]),
+        weather_cases: vec!["ice".into(), "wind".into()],
+    };
+    let command = s.structure_loads_command(choice.clone());
+    let Command::Batch { commands } = &command else {
+        panic!("{command:?}")
+    };
+    assert!(
+        matches!(&commands[..], [Command::Put { kind: Kind::Meta, id, .. }] if id == "structure_loads"),
+        "{commands:?}"
+    );
+    let applied = s.apply("ana", command).unwrap();
+    assert!(applied.sections.is_empty(), "{:?}", applied.sections);
+    assert_eq!(s.line().structure_loads, choice);
+    let row = &s.objects[&(Kind::Meta, "structure_loads".to_owned())].value;
+    assert_eq!(
+        row,
+        &serde_json::json!({ "structure_loads": {
+            "load_cases": ["wind"], "weather_cases": ["ice", "wind"]
+        } })
+    );
+    drop(s);
+    let mut s = Session::open(&path).unwrap();
+    assert_eq!(s.line().structure_loads, choice);
+    s.undo("ana").unwrap();
+    assert!(s.line().structure_loads.is_default());
+    s.redo("ana").unwrap();
+    assert_eq!(s.line().structure_loads, choice);
+}
+
 /// A project still to be upgraded to alignment points keeps its library
 /// files when it opens (the upgrade rewrites the line's objects only).
 #[test]

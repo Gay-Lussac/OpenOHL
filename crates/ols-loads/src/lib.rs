@@ -122,7 +122,34 @@ pub struct LoadCase {
     pub tags: Vec<String>,
 }
 
+/// The name of the load case of weather case `weather` on its own
+/// ([`LoadCase::from_weather`]).
+pub const WEATHER_CASE_PREFIX: &str = "weather: ";
+
+/// The tag of a load case made of a weather case on its own.
+pub const WEATHER_CASE_TAG: &str = "weather case";
+
 impl LoadCase {
+    /// Weather case `weather` on its own as a load case (the line's
+    /// weather cases sent to the structures, Criteria › Weather cases for
+    /// structures): named `weather: <name>`, the wires as strung
+    /// (initial), every factor 1 (strength too), tagged
+    /// [`WEATHER_CASE_TAG`]. Load cases (`.olslc`) add factors and
+    /// combinations on top.
+    pub fn from_weather(weather: &str) -> Self {
+        Self {
+            name: format!("{WEATHER_CASE_PREFIX}{weather}"),
+            description: format!("weather case \"{weather}\", factors 1"),
+            weather: weather.to_owned(),
+            condition: WireCondition::Initial,
+            vertical: 1.0,
+            transverse: 1.0,
+            longitudinal: 1.0,
+            strength: 1.0,
+            tags: vec![WEATHER_CASE_TAG.to_owned()],
+        }
+    }
+
     /// Checks the factors.
     pub fn validate(&self) -> Result<(), String> {
         if self.name.trim().is_empty() {

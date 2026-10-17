@@ -24,7 +24,7 @@ All examples on this page are invented (structures `T1`, `T2`, sections
                                   LINE  (.ols.json / OLS XML / project rows)
  ┌──────────────────────────────────────────────────────────────────────────────────┐
  │ meta: name, crs, display, systems[], creep_stretch, bimetallic, solver,          │
- │       defaults, circuit_starts[]                                                 │
+ │       defaults, circuit_starts[], structure_loads                                │
  │                                                                                  │
  │  Route {id, name} ◄──route── Alignment ──points[] (ids)──► AlignmentPoint {id}   │
  │     ▲                     (one route)      (a point: 0..n alignments) structure?┐ │
@@ -167,6 +167,7 @@ files](../user-guide/line-file.md).
 | `bimetallic` | `BimetallicModel` | Pa | outer-strand behaviour of bimetallic cables above the transition temperature, for cables that do not say | — |
 | `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); in the project's line settings and OLS XML `<solver taps>` | — |
 | `circuit_starts` | `[SectionPoint]` | — | circuit ends that are starts (power flows in); each a point of a section, given once (validated) | structures + sets |
+| `structure_loads` | `StructureLoads` | — | what the line sends to the placed structures, the cases of their line-values file (Criteria › Loads for structures, a tick menu): `load_cases` — the load cases (`.olslc`) sent, by name (absent: all, the default); `weather_cases` — the weather cases sent on their own, by name (default none), each as `ols_loads::LoadCase::from_weather` (`weather: <name>`, initial, every factor 1); sent load cases first, then the weather cases (`ols_structure_link::structure_cases`); a name no longer in the line is skipped and named in the file's note. Line file `{"structure_loads": {"load_cases": [...], "weather_cases": [...]}}` (left out when default); project `meta` row `structure_loads`; OLS XML `<structure_loads load_cases="all\|listed">` with `<load_case name>` and `<weather_case name>` | load case and weather case **names** |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
 **Plugin values** (`fields`, `ols_line::Fields`): structures, sections,
@@ -852,13 +853,19 @@ member whose section is not in the library has no area).
 
 **Line-values file** (`<stem>.<placed structure>.line-values.json`
 beside the structure file, `ols_structure_loads::PlacedValues`, JSON,
-`format = "ols-structure-line-values"`, version 1): what the line
-application hands to the structure application for **Edit…** on a placed
-structure — `structure` (placed structure id), `line` (project line, or
-the line file's name), `structure_type`, `cases` (the line's load cases),
-`values` (`LineValues`), `others` (`OtherPlace`: the other placed
-structures of the type with their `LineValues`), `note` (why there are
-no values: being computed, no load case file). Derived data, rewritten
+`format = "ols-structure-line-values"`, version 2; version 1 files are
+read too): what the line application hands to the structure application
+for **Edit…** on a placed structure — `structure` (placed structure id),
+`line` (project line, or the line file's name), `structure_type`,
+`cases` (the cases the line sends, its `structure_loads`: the load cases
+chosen, then the weather cases chosen on their own, `weather: <name>`),
+`sources` (version 2, in the order of `cases`: `load_case` or
+`weather_case`, `ols_structure_loads::CaseSource`; absent in version 1:
+every case a load case), `values` (`LineValues`), `others`
+(`OtherPlace`: the other placed structures of the type with their
+`LineValues`), `note` (why there are no values: being computed, no load
+case and no weather case chosen; sections not solved; chosen cases no
+longer in the line). Derived data, rewritten
 when the line changes; never stored in the project.
 
 ### Structure exports (IFC, SAF, CSV)
@@ -896,7 +903,7 @@ Structures), SAF 2.2.0 xlsx, CSV tables. Mapping and what is lost:
 |---|---|
 | `ols_meta(key, value)` | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
-| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts` (`{"solver": …}`) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
+| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts`, `structure_loads` (`{"solver": …}`; `structure_loads` solves nothing again) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
 | `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.olsload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.olspd`), `rules` (`.olsr`), `galloping` (`.olsg`), `ambient` (`.olsta`), `costs` (`.olscost`), `poles` (`.olsp`), `femodels` (`.olsfe`), `sections` (`.olssec`, the section library), `loads` (`*.loads.csv`: values typed over a structure's load table in the structure application, per structure type and per placed structure, [below](#structure-load-cases-load_case-olsslc)); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels`, `loads` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels`, `loads` next to the `structures`; `sections` in its own folder), which it reads from then on |
 | `spatial_index` | plan bounds and tile of every object (ADR-0008) |

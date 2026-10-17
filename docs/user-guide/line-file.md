@@ -145,6 +145,8 @@ The weather cases come from the line's `creep_stretch` (Criteria › Creep-Stret
 
 The line's **bimetallic conductor model** (`bimetallic`, optional): what the outer strands of its bimetallic cables do above the transition temperature, for the cables whose wire library entry does not say — `{ "behavior": "bird_cage" }` or `{ "behavior": "compression", "max_virtual_compression": 68947400000.0 }` (Pa; default compression with 68 947.4 MPa). Set in the app with Criteria › Bimetallic conductor model; see [Wire library](wire-library.md).
 
+The line's **loads for structures** (`structure_loads`, optional): what it sends to its placed structures — `{ "load_cases": ["wind"], "weather_cases": ["glaze ice"] }` (by name; `load_cases` left out: every load case, the default; `weather_cases`: weather cases sent on their own, each with all factors 1, default none). Set in the app with Criteria › Loads for structures; see [Loads for structures](desktop-app.md#loads-for-structures).
+
 | Method | |
 |---|---|
 | FE | the section's finite-element model: suspension strings swing, each span its own tension; after creep or load the unstressed lengths are longer by the permanent stretch |

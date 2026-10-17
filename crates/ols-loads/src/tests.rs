@@ -91,6 +91,34 @@ fn structures_carry_the_wires() {
     assert!(csv.starts_with("case,structure,point,label,sets"));
 }
 
+/// A weather case on its own as a load case: named after it, as strung,
+/// every factor 1; its loads those of the example's load case of the same
+/// weather case with factors 1 ("everyday"), factored = unfactored.
+#[test]
+fn a_weather_case_on_its_own_is_a_load_case_of_factors_one() {
+    let (line, library, weather, cases) = setup();
+    let c = LoadCase::from_weather("everyday");
+    assert_eq!(c.name, "weather: everyday");
+    assert_eq!(c.weather, "everyday");
+    assert_eq!(c.condition, WireCondition::Initial);
+    assert_eq!(
+        [c.vertical, c.transverse, c.longitudinal, c.strength],
+        [1.0; 4]
+    );
+    assert_eq!(c.tags, [WEATHER_CASE_TAG]);
+    c.validate().unwrap();
+    let budget = ols_wirefe::default_fe_budget();
+    let own = structure_loads(&line, &library, &weather, &[c], &budget).unwrap();
+    let file = structure_loads(&line, &library, &weather, &cases.cases[..1], &budget).unwrap();
+    assert_eq!(own[0].case.name, "weather: everyday");
+    assert_eq!(own[0].loads.len(), file[0].loads.len());
+    for (a, b) in own[0].loads.iter().zip(&file[0].loads) {
+        assert_eq!((&a.structure, &a.point), (&b.structure, &b.point));
+        assert_eq!(a.local, b.local);
+        assert_eq!(a.factored, a.local);
+    }
+}
+
 #[test]
 fn an_unknown_weather_case_is_said() {
     let (line, library, weather, mut cases) = setup();

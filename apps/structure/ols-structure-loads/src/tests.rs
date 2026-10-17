@@ -451,3 +451,27 @@ fn a_table_read_back_types_only_what_differs() {
         .collect();
     assert_eq!(read, typed);
 }
+
+/// A line-values file of version 1 (no sources) still reads, every case a
+/// load case; version 2 marks the weather cases sent on their own and
+/// reads back the same.
+#[test]
+fn line_values_files_mark_the_source_of_each_case() {
+    let v1 = r#"{"format": "ols-structure-line-values", "version": 1, "structure": "T2",
+        "cases": ["everyday", "wind"]}"#;
+    let old = PlacedValues::parse(v1).unwrap();
+    assert!(old.sources.is_empty());
+    assert_eq!(old.source("wind"), CaseSource::LoadCase);
+    let mut new = PlacedValues::pending("T2", "line", "type-02", "");
+    new.cases = vec!["wind".into(), "weather: glaze ice".into()];
+    new.sources = vec![CaseSource::LoadCase, CaseSource::WeatherCase];
+    let text = new.to_json();
+    assert!(text.contains("\"version\": 2"), "{text}");
+    assert!(text.contains("\"weather_case\""), "{text}");
+    let read = PlacedValues::parse(&text).unwrap();
+    assert_eq!(read, new);
+    assert_eq!(read.source("weather: glaze ice"), CaseSource::WeatherCase);
+    assert_eq!(read.source("wind").label(), "load case");
+    let newer = text.replace("\"version\": 2", "\"version\": 3");
+    assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
+}

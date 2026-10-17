@@ -154,10 +154,44 @@ pub struct Line {
     /// on them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub circuit_starts: Vec<SectionPoint>,
+    /// What the line sends to the placed structures (Criteria › Loads
+    /// for structures): which load cases, which weather cases on their
+    /// own.
+    #[serde(default, skip_serializing_if = "StructureLoads::is_default")]
+    pub structure_loads: StructureLoads,
     /// Those weather cases themselves, given by the program solving the
     /// line ([`crate::Line::set_weather_cases`]); not stored.
     #[serde(skip)]
     pub condition_cases: condition::ConditionCases,
+}
+
+/// What the line sends to the placed structures, the cases of their
+/// line-values file (Criteria › Loads for structures): the load cases
+/// (`.olslc`, from a file or a design code) chosen, then the weather
+/// cases chosen on their own (each a case with all factors 1).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StructureLoads {
+    /// The load cases sent, by name; none: all of them (the default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_cases: Option<Vec<String>>,
+    /// The weather cases sent on their own, by name (default none).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weather_cases: Vec<String>,
+}
+
+impl StructureLoads {
+    /// All load cases, no weather case on its own.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Whether load case `name` is sent.
+    pub fn sends_load_case(&self, name: &str) -> bool {
+        self.load_cases
+            .as_ref()
+            .is_none_or(|l| l.iter().any(|c| c == name))
+    }
 }
 
 fn default_jumper_temperature() -> f64 {

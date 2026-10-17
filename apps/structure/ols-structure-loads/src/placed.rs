@@ -9,16 +9,20 @@
 //! ```json
 //! {
 //!   "format": "ols-structure-line-values",
-//!   "version": 1,
+//!   "version": 2,
 //!   "structure": "T2",
 //!   "line": "synthetic-line-typed",
 //!   "structure_type": "type-02",
-//!   "cases": ["everyday", "wind", "ice"],
+//!   "cases": ["everyday", "wind", "weather: glaze ice"],
+//!   "sources": ["load_case", "load_case", "weather_case"],
 //!   "values": { "points": [...], "values": [...] },
 //!   "others": [{ "structure": "T5", "values": {...} }],
 //!   "note": null
 //! }
 //! ```
+//!
+//! Version 2 added `sources` (the source of each case, in the order of
+//! `cases`); a version 1 file has none: every case a load case.
 
 use std::path::{Path, PathBuf};
 
@@ -29,8 +33,32 @@ use crate::table::LineValues;
 
 /// `format` of a line-values file.
 pub const LINE_VALUES_FILE_FORMAT: &str = "ols-structure-line-values";
-/// `version` of a line-values file.
-pub const LINE_VALUES_FILE_VERSION: u32 = 1;
+/// `version` of a line-values file (2: `sources`; version 1 files are
+/// read too).
+pub const LINE_VALUES_FILE_VERSION: u32 = 2;
+
+/// Where a case of the line comes from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaseSource {
+    /// A load case of the line (`.olslc`, from a file or a design code):
+    /// a weather case, a wire condition and factors.
+    #[default]
+    LoadCase,
+    /// A weather case of the line on its own, all factors 1 (Criteria ›
+    /// Loads for structures in the line application).
+    WeatherCase,
+}
+
+impl CaseSource {
+    /// In words, for tables.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LoadCase => "load case",
+            Self::WeatherCase => "weather case",
+        }
+    }
+}
 
 /// Another placed structure using the same structure file, with its
 /// values (for the envelope over the places, a reporting option only).
@@ -62,9 +90,14 @@ pub struct PlacedValues {
     /// The structure type (file) it uses.
     #[serde(default)]
     pub structure_type: String,
-    /// The line's load cases, in order.
+    /// The line's cases, in order: its load cases, then the weather
+    /// cases sent on their own.
     #[serde(default)]
     pub cases: Vec<String>,
+    /// Where each of `cases` comes from, in their order (version 2;
+    /// missing ones: a load case).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<CaseSource>,
     /// The values at this placed structure.
     #[serde(default)]
     pub values: LineValues,
@@ -86,10 +119,21 @@ impl PlacedValues {
             line: line.into(),
             structure_type: structure_type.into(),
             cases: Vec::new(),
+            sources: Vec::new(),
             values: LineValues::default(),
             others: Vec::new(),
             note: Some(note.into()),
         }
+    }
+
+    /// Where case `case` comes from (a case not listed, or of a version 1
+    /// file: a load case).
+    pub fn source(&self, case: &str) -> CaseSource {
+        self.cases
+            .iter()
+            .position(|c| c == case)
+            .and_then(|k| self.sources.get(k).copied())
+            .unwrap_or_default()
     }
 
     /// Reads a file's text (its format and version checked).

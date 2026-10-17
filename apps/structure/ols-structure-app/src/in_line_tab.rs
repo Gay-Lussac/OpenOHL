@@ -108,7 +108,12 @@ impl StructureApp {
                         ("point", "A point or wire point of the structure"),
                         ("sets", "The sets hanging there"),
                         ("phases", "The phases hanging there (the line's labels)"),
-                        ("case", "The line's load case"),
+                        (
+                            "case",
+                            "The line's case: a load case, or a weather case sent on its own \
+                             (all factors 1)",
+                        ),
+                        ("source", "Load case or weather case"),
                     ] {
                         ui.strong(h).on_hover_text(tip);
                     }
@@ -128,6 +133,7 @@ impl StructureApp {
                             ui.label(&sets);
                             ui.label(p.phases.join(", "));
                             ui.label(c);
+                            ui.label(info.source(c).label());
                             for (q, _, _) in QUANTITIES {
                                 ui.label(kn(values.get(c, &p.label, &p.sets, q)));
                             }

@@ -6915,6 +6915,7 @@ fn menus(
             r.design_code.open = true;
             ui.close();
         }
+        crate::structure_app::loads_menu(ui, r);
     });
     ui.menu_button("Checks", |ui| {
         ui.label(

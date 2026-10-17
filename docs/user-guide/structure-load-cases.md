@@ -99,7 +99,11 @@ longitudinal ahead, vertical down.
 | `ice` | The ice on the wires, down | not yet: typed |
 
 The line's [structure loads](loads.md#structure-loads) give the first six
-at every point. A value the line does not give makes a row marked **no
+at every point, in each case the line sends (Criteria › Loads for
+structures, see [Loads for structures](desktop-app.md#loads-for-structures)):
+its load cases (all by default) and the weather cases ticked to be sent
+on their own, named `weather: <name>`, every factor 1 (factored =
+unfactored). A recipe names the line's case by that name. A value the line does not give makes a row marked **no
 line value** (its force 0); so does every line value of a structure
 opened on its own. Such values can be typed into the table.
 
