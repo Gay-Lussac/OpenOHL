@@ -3819,6 +3819,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-structure-link"
+version = "0.0.1"
+dependencies = [
+ "ols-line",
+ "ols-loads",
+ "ols-structure-loads",
+ "ols-structures-fe",
+]
+
+[[package]]
+name = "ols-structure-loads"
+version = "0.0.1"
+dependencies = [
+ "ols-core",
+ "ols-structures",
+ "serde",
+ "serde_json",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "ols-structure-tests"
+version = "0.0.1"
+dependencies = [
+ "ols-cables",
+ "ols-line",
+ "ols-loads",
+ "ols-structure-link",
+ "ols-structure-loads",
+ "ols-structures",
+ "ols-structures-fe",
+ "ols-weather",
+ "ols-wirefe",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
 name = "ols-structures"
 version = "0.0.1"
 dependencies = [
