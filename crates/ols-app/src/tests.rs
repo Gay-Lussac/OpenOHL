@@ -12995,3 +12995,309 @@ fn load_types_are_the_templates_and_the_projects_own() {
         70.0
     );
 }
+
+/// The example's typed line as a project, its types (and one more, a copy
+/// of type-02 with two extensions, `ext-02`) copied into it.
+fn typed_project(name: &str) -> model::Model {
+    let ex = root().join("examples/synthetic-line");
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-{name}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(dir.join("Structures")).unwrap();
+    for e in std::fs::read_dir(ex.join("Structures")).unwrap() {
+        let p = e.unwrap().path();
+        std::fs::copy(&p, dir.join("Structures").join(p.file_name().unwrap())).unwrap();
+    }
+    let text = std::fs::read_to_string(ex.join("Structures/type-02.olss")).unwrap();
+    let body = text
+        .lines()
+        .skip_while(|l| l.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replacen("id = \"type-02\"", "id = \"ext-02\"", 1)
+        .replacen(
+            "name = \"type-02 (2 structures, e.g. T2)\"",
+            "name = \"Tall suspension tower\"",
+            1,
+        );
+    std::fs::write(
+        dir.join("Structures/ext-02.olss"),
+        format!(
+            "# A taller copy of type-02 for road crossings.\n{body}\n\n\
+             [[extension]]\nname = \"+3\"\ndz = \"3 m\"\n\n\
+             [[extension]]\nname = \"+6\"\ndz = \"6 m\"\n"
+        ),
+    )
+    .unwrap();
+    let file = dir.join("p.ols");
+    let line = ols_line::Line::load(&ex.join("synthetic-line-typed.ols.json")).unwrap();
+    ols_session::Session::open(&file)
+        .unwrap()
+        .import(&line, "tester")
+        .unwrap();
+    solved_all(
+        model::load(
+            Sources {
+                file,
+                library: Some(root().join("libraries/cables")),
+                weather: Some(ex.join("weather-cases.olswc")),
+                point_budget: 1000,
+                corridor: 60.0,
+                user: Some("tester".into()),
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap(),
+    )
+}
+
+/// The structure picker lists the library's types with what they are,
+/// filters on any words of their id, name, kind or description and sorts
+/// by a column; the description comes from the notes at the top of the
+/// file, the level and what the next one lacks from the content.
+#[test]
+fn the_structure_picker_lists_filters_and_sorts_the_types() {
+    use crate::structure_picker::{Column, Picker, TypeRow};
+    let m = typed_project("picker-list");
+    let mut p = Picker::new("t", Some("type-02"), None, true, true);
+    let all = p.shown_ids(&m, "");
+    assert_eq!(all.len(), 7, "{all:?}");
+    assert_eq!(all[0], "ext-02");
+    assert_eq!(p.shown_ids(&m, "taller ROAD"), ["ext-02"]);
+    assert_eq!(p.shown_ids(&m, "suspension tower"), ["ext-02"]);
+    assert_eq!(p.shown_ids(&m, "e.g. T3"), ["type-03"]);
+    assert!(p.shown_ids(&m, "nothing like this").is_empty());
+    // The most used first.
+    p.sort = (Column::Used, false);
+    assert_eq!(p.shown_ids(&m, "")[0], "type-02");
+    let (types, insulators) = m.types.as_ref().unwrap();
+    let t = types.get("ext-02").unwrap();
+    let row = TypeRow::of(t, insulators, types.path("ext-02"));
+    assert_eq!(
+        row.description,
+        "A taller copy of type-02 for road crossings."
+    );
+    assert_eq!(row.extensions.len(), 2);
+    assert_eq!(row.level, t.detail().level());
+    assert!(row.height > 10.0, "{}", row.height);
+    let t1 = types.get("type-01").unwrap();
+    let row = TypeRow::of(t1, insulators, types.path("type-01"));
+    assert_eq!(row.level, 1);
+    assert_eq!(row.lacks.len(), 1, "{:?}", row.lacks);
+    assert!(row.sets > 0 && row.wire_points >= row.sets);
+}
+
+/// Add structure: the type's button opens the structure picker; a filter
+/// typed narrows the table, a row clicked shows it, Choose puts it (and
+/// the extension ticked) in the window, and the structure is added with
+/// that type. Escape closes the picker, not the window (OLS_RENDER_PNG: an
+/// image of the picker).
+#[test]
+fn add_structure_chooses_its_type_in_the_structure_picker() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = typed_project("picker-add");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    crate::structure_picker::Picker::set_filter(&harness.ctx, "");
+    let (t4, t5) = {
+        let r = harness.state_mut().ready().unwrap();
+        let l = &r.model.line;
+        (
+            l.structure("T4").unwrap().position,
+            l.structure("T5").unwrap().position,
+        )
+    };
+    let at = [2.0 * t5[0] - t4[0], 2.0 * t5[1] - t4[1], t5[2]];
+    use_tool(&mut harness, Tool::AddStructure, Selection::None, Some(at));
+    let button = {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Structure(f)) = &r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        let id = f
+            .structure_type
+            .clone()
+            .expect("the nearest structure's type");
+        let name = r
+            .model
+            .types
+            .as_ref()
+            .unwrap()
+            .0
+            .get(&id)
+            .unwrap()
+            .name
+            .clone();
+        format!("{id} — {name} …")
+    };
+    harness.get_by_label(&button).click();
+    harness.run();
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .structure_picker
+            .is_some()
+    );
+    harness.get_by_label("Choose");
+    // Escape: the picker closes, the structure window stays.
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.structure_picker.is_none());
+        assert!(matches!(r.editor, Some(Form::Structure(_))));
+    }
+    harness.get_by_label(&button).click();
+    harness.run();
+    // The filter has the keyboard: typed, the table narrows.
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::Text("crossings".into()));
+    harness.run();
+    assert_eq!(
+        crate::structure_picker::Picker::filter(&harness.ctx),
+        "crossings"
+    );
+    harness.get_by_label("1 of 7 types");
+    assert!(harness.query_by_label("type-03").is_none());
+    harness.get_by_label("ext-02").click();
+    harness.run();
+    // Its details under the preview; the extension chosen here.
+    assert_eq!(
+        harness.query_all_by_label("Tall suspension tower").count(),
+        2
+    );
+    assert_eq!(
+        harness
+            .query_all_by_label("A taller copy of type-02 for road crossings.")
+            .count(),
+        2
+    );
+    harness.get_by_label("+6").click();
+    harness.run();
+    if let Some(dir) = std::env::var_os("OLS_RENDER_PNG")
+        && let Ok(image) = harness.render()
+    {
+        let path = PathBuf::from(dir).join("ols-cad-structure-picker.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    harness.get_by_label("Choose").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.structure_picker.is_none(), "Choose closes it");
+        let Some(Form::Structure(f)) = &r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert_eq!(f.structure_type.as_deref(), Some("ext-02"));
+        assert_eq!(f.extension.as_deref(), Some("+6"));
+    }
+    harness.get_by_label("ext-02 — Tall suspension tower …");
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_none(), "{:?}", r.status);
+    let s = r.model.line.structure("T8").unwrap();
+    assert_eq!(s.structure_type.as_deref(), Some("ext-02"));
+    assert_eq!(s.extension.as_deref(), Some("+6"));
+    // The filter is remembered for the session.
+    assert_eq!(
+        crate::structure_picker::Picker::filter(&harness.ctx),
+        "crossings"
+    );
+}
+
+/// The Structures table's type cell opens the structure picker; the type
+/// (and extension) chosen are pending edits of the row, applied as one
+/// change that one undo takes back.
+#[test]
+fn the_structures_table_chooses_a_type_in_the_structure_picker() {
+    use crate::tables::{TableKind, TypeCell};
+    let model = typed_project("picker-table");
+    // Short steps: two clicks a double-click.
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 1000.0))
+        .with_step_dt(0.02)
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    crate::structure_picker::Picker::set_filter(&harness.ctx, "");
+    harness.state_mut().ready().unwrap().open_page =
+        Some((crate::app::Tab::Table(TableKind::Structures), None));
+    harness.run();
+    harness.run();
+    // T1 alone has type-01: its cell opens the picker on it.
+    harness.get_by_label("type-01 …").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let (cell, picker) = r.tables[&TableKind::Structures]
+            .type_picker
+            .as_ref()
+            .expect("the picker");
+        assert!(matches!(cell, TypeCell::Row { key, .. } if key == "T1"));
+        assert_eq!(picker.selected.as_deref(), Some("type-01"));
+    }
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let page = &r.tables[&TableKind::Structures];
+        assert!(page.type_picker.is_none(), "Cancel closes it");
+        assert_eq!(page.pending(), 0, "{:?}", page.edits);
+    }
+    // T4 (type-02): ext-02 with +3, chosen by a double-click on its row.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.tables
+            .get_mut(&TableKind::Structures)
+            .unwrap()
+            .open_type_picker(
+                TypeCell::Row {
+                    key: "T4".into(),
+                    structure_type: "type-02".into(),
+                    extension: String::new(),
+                },
+                "type-02",
+                "",
+            );
+    }
+    harness.run();
+    harness.get_by_label("ext-02").click();
+    harness.run();
+    harness.get_by_label("+3").click();
+    harness.run();
+    harness.get_by_label("ext-02").click();
+    harness.get_by_label("ext-02").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let page = &r.tables[&TableKind::Structures];
+        assert!(
+            page.type_picker.is_none(),
+            "a double-click chooses: {:?} {:?}",
+            page.type_picker
+                .as_ref()
+                .map(|p| (&p.1.selected, &p.1.extension)),
+            page.edits
+        );
+        let e = &page.edits["T4"];
+        assert_eq!(e[&TableKind::Structures.column("type")], "ext-02");
+        assert_eq!(e[&TableKind::Structures.column("extension")], "+3");
+    }
+    apply_table(&mut harness, TableKind::Structures, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r.model.line.structure("T4").unwrap();
+        assert_eq!(s.structure_type.as_deref(), Some("ext-02"));
+        assert_eq!(s.extension.as_deref(), Some("+3"));
+    }
+    press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
+    let r = harness.state_mut().ready().unwrap();
+    let s = r.model.line.structure("T4").unwrap();
+    assert_eq!(s.structure_type.as_deref(), Some("type-02"), "one undo");
+    assert_eq!(s.extension, None);
+}

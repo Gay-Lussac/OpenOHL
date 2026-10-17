@@ -58,6 +58,7 @@ mod selection;
 mod span_tool;
 mod spot;
 mod structure_desk;
+mod structure_picker;
 mod surfaces;
 mod survey_io;
 mod tables;
