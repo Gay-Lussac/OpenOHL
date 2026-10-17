@@ -56,6 +56,10 @@ fn formats() -> Vec<(&'static str, Parse)> {
                 .map_err(|e| e.to_string())
         }),
         (
+            "examples/synthetic-line/Structures/type-02-model.olsfe",
+            |t| ols_structures_fe::model::Model::parse(t).map(drop),
+        ),
+        (
             "examples/synthetic-line/Structures/steel-pole-30m.olsp",
             |t| ols_structures_fe::pole::Pole::parse(t).map(drop),
         ),

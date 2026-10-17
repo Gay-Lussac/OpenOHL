@@ -3,8 +3,8 @@
 A review of the data the program keeps — the line model (`ols-line`),
 the project file (`ols-session`), OLS XML and the library formats — after
 the points-and-objects work. It says what holds up, what is broken, and
-what is worth changing, most urgent first. §1 and §2 are done (marked ✓;
-how, in [Done](#done)); §3 and §4 are open. The [data model
+what is worth changing, most urgent first. §1, §2 and §4 are done
+(marked ✓; how, in [Done](#done)); §3 is open. The [data model
 map](data-model.md) describes the model as it is.
 
 ## What holds up
@@ -85,7 +85,7 @@ These change the line file (a new version, older files still read).
 | 4.3 ✓ | **Typos**: unknown keys refused in cables, rules, galloping, classes, `.olsload`, load cases, models; silently ignored in weather, thermal ambient, structures, insulators, poles, pylon templates | refuse everywhere (warn first for a release) |
 | 4.4 ✓ | **Names**: format ids singular and plural (`ols-wire` holds `[[cable]]`, `ols-weather-cases`), constants named three ways, extensions as literals in ~30 places (no constant for `.olslc`, `.olspd`) | constants in each crate, used everywhere; ids kept (they are in files) |
 | 4.5 ✓ | **Shipped libraries**: the app looks for `libraries/structures`, `libraries/insulators`, `libraries/clearance-rules`, which do not exist; an empty `libraries/phase-distance` is left over | ship small synthetic examples or drop the lookups |
-| 4.6 | **Examples and schemas lag**: the synthetic line files are version 2; the XSD namespace says 1 while its `version` is the line file's (4); `.olsfe` has no example; JSON Schema only for `.olsw` | rewrite the examples at the current version; say in the XSD that `version` follows the line file |
+| 4.6 ✓ | **Examples and schemas lag**: the synthetic line files are version 2; the XSD namespace says 1 while its `version` is the line file's (4); `.olsfe` has no example; JSON Schema only for `.olsw` | rewrite the examples at the current version; say in the XSD that `version` follows the line file |
 
 ## Done
 
@@ -121,6 +121,27 @@ On 2026-10-17, each step its own commit, the line file now version 5:
 - **2.11** `Calculation { condition, method }`, written as before.
 - **2.12** version 5.
 
+Then §4:
+
+- **4.1** `ols_core::units::si` reads plain `f64` fields from a number
+  (SI) or text with a unit; `.olsload` takes units (its templates are
+  written so), a galloping `tilt` angle text. Prices and `_kv` keys
+  keep their unit in the file's currency or the key's name.
+- **4.2** every header through `check_header` (both optional, newer
+  refused), the six copies gone.
+- **4.3** a mistyped key refused everywhere — `.olsload` and objects on
+  points were the ones letting typos through (a flattened shape); a test
+  checks every library format.
+- **4.4** `*_FILE_FORMAT` / `*_FILE_VERSION` / `*_FILE_EXTENSION` in
+  each crate, used for every extension.
+- **4.5** example insulators shipped (`libraries/insulators`); the
+  structure-type and clearance-rule folders no longer looked for (they
+  belong to a project and to a design code).
+- **4.6** the example lines written at version 5 (their version 2 form
+  kept as test data, read to the same line); an `.olsfe` example; the
+  XSD says its `version` is the line file's. A JSON Schema stays for
+  `.olsw` only.
+
 Found on the way and fixed: turning a jumper along its circuit now turns
 all its points' places (only its supports were turned, and a tap end
 stayed at its old end); the clearance check took every clamp on a span as
@@ -130,6 +151,5 @@ a tap (a spacer's clamp would have hidden the wire near it).
 
 1. ~~The fixes of §1~~ (done).
 2. ~~§2~~ (done, line file version 5).
-3. §4.1 units in `.olsload`, §4.2–4.3 header and typo policy; §4.6 the
-   examples rewritten at version 5.
+3. ~~§4~~ (done).
 4. §3.2–3.4 when several people work on one project at once.
