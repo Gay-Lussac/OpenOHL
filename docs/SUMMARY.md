@@ -13,6 +13,7 @@
 - [Design codes](user-guide/design-codes.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
 - [Structure analysis (.olsfe, .olsp)](user-guide/structure-analysis.md)
+- [Section library (.olssec)](user-guide/section-library.md)
 - [Terrain and ground clearance](user-guide/terrain.md)
 - [Thermal rating (.olsta)](user-guide/thermal.md)
 - [Bill of materials and cost estimate (.olscost)](user-guide/bom-and-cost.md)

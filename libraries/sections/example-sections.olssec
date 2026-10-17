@@ -1,0 +1,104 @@
+# Example section library. Every profile and material below is INVENTED
+# (odd dimensions on purpose): it shows the format, it is not a supplier's
+# table. Put your own profiles in a .olssec file of your project.
+format = "ols-sections"
+version = 1
+name = "Example sections (invented)"
+description = "Synthetic profiles showing each shape"
+default_material = "steel-example"
+
+[[material]]
+id = "steel-example"
+name = "Example steel (invented)"
+elasticity = "205 GPa"
+shear_modulus = "79 GPa"
+density = "7850 kg/m3"
+yield = "330 MPa"
+ultimate = "470 MPa"
+partial_factors = { gamma_m0 = 1.05, gamma_m1 = 1.1 }
+
+[[material]]
+id = "alloy-example"
+name = "Example aluminium alloy (invented)"
+elasticity = "69 GPa"
+density = "2700 kg/m3"
+yield = "190 MPa"
+
+[[section]]
+id = "EA-61x7"
+name = "Equal angle 61 × 7 (invented)"
+shape = "equal_angle"
+h = "61 mm"
+t = "7 mm"
+r = "8 mm"
+
+[[section]]
+id = "UA-83x52x6"
+name = "Unequal angle 83 × 52 × 6 (invented)"
+shape = "unequal_angle"
+h = "83 mm"
+b = "52 mm"
+t = "6 mm"
+r = "7 mm"
+
+[[section]]
+id = "CH-157"
+name = "Channel 157 (invented)"
+shape = "channel"
+h = "157 mm"
+b = "63 mm"
+tw = "7.3 mm"
+tf = "10.1 mm"
+r = "9 mm"
+
+[[section]]
+id = "IS-213"
+name = "I section 213 (invented)"
+shape = "i_section"
+h = "213 mm"
+b = "107 mm"
+tw = "6.1 mm"
+tf = "9.3 mm"
+r = "11 mm"
+
+[[section]]
+id = "RHS-121x79x5"
+name = "Rectangular tube 121 × 79 × 5 (invented)"
+shape = "rectangular_hollow"
+h = "121 mm"
+b = "79 mm"
+t = "5 mm"
+
+[[section]]
+id = "CHS-167x7"
+name = "Round tube 167 × 7 (invented)"
+shape = "circular_hollow"
+material = "alloy-example"
+d = "167 mm"
+t = "7 mm"
+
+[[section]]
+id = "RB-23"
+name = "Round bar 23 (invented)"
+shape = "round_bar"
+d = "23 mm"
+
+[[section]]
+id = "POLE-12-430"
+name = "Twelve-sided pole shaft 430 × 6 (invented)"
+description = "A pole's section at one height"
+shape = "polygonal_hollow"
+sides = 12
+d = "430 mm"
+t = "6 mm"
+
+[[section]]
+id = "GEN-1"
+name = "General section with given values (invented)"
+shape = "general"
+h = "100 mm"
+b = "52 mm"
+area = "1310 mm2"
+iy = "212 cm4"
+iz = "37 cm4"
+it = "4.1 cm4"
