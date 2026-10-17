@@ -210,7 +210,7 @@ fn rich_line() -> Line {
     }));
     line.jumpers.push(tap);
     line.solver.taps = ols_line::TapLoads::Once;
-    line.sections[0].add_spread_load(&ols_line::SpreadLoad {
+    line.sections[0].add_spread_load(&ols_line::legacy::SpreadLoad {
         span: 0,
         start: ols_line::SpanPlace::at_fraction(0.1),
         end: ols_line::SpanPlace::at_distance(50.0),

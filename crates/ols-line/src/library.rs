@@ -830,7 +830,7 @@ mod tests {
         // T1's dead-end strings are free members.
         assert!(resolved.structures[0].strings.iter().all(|s| s.strain));
         for fraction in [0.001, 0.999] {
-            resolved.sections[0].add_point_load(&crate::SpanLoad {
+            resolved.sections[0].add_point_load(&crate::legacy::SpanLoad {
                 span: 0,
                 fraction,
                 vertical: 55.0,

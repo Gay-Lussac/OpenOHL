@@ -53,7 +53,7 @@ use crate::{Line, LineError, Point, Section, Stringing};
 pub const LUMP_AT_CLAMP: f64 = 1.0;
 
 /// Axial stiffness used for insulator strings, N (composite long-rod order).
-pub const DEFAULT_INSULATOR_STIFFNESS: f64 = 5e7;
+pub const DEFAULT_INSULATOR_STIFFNESS: f64 = ols_structures::insulators::DEFAULT_AXIAL_STIFFNESS;
 
 /// A wire point hangs from its insulator point (suspension string) when it
 /// is below it and swung less than 45° (horizontal offset < vertical drop).
@@ -3417,7 +3417,7 @@ mod tests {
             sagged: None,
         };
         let before = solve(&clipped, 0.0);
-        clipped.sections[0].add_point_load(&crate::SpanLoad {
+        clipped.sections[0].add_point_load(&crate::legacy::SpanLoad {
             span: 0,
             fraction: 0.5,
             vertical: 3000.0,
@@ -4125,7 +4125,7 @@ mod span_tests {
         let cable = lib.get(&base.sections[0].cable).unwrap();
         let q = cable.weight().si() * f64::from(base.sections[0].bundle.max(1));
         let mut whole = base.clone();
-        whole.sections[0].add_spread_load(&crate::SpreadLoad {
+        whole.sections[0].add_spread_load(&crate::legacy::SpreadLoad {
             span: 0,
             start: crate::SpanPlace::at_fraction(0.0),
             end: crate::SpanPlace::at_fraction(1.0),
@@ -4141,7 +4141,7 @@ mod span_tests {
         );
         // Over the first half: the low point towards it.
         let mut half = base.clone();
-        half.sections[0].add_spread_load(&crate::SpreadLoad {
+        half.sections[0].add_spread_load(&crate::legacy::SpreadLoad {
             span: 0,
             start: crate::SpanPlace::at_fraction(0.0),
             end: crate::SpanPlace::at_fraction(0.5),

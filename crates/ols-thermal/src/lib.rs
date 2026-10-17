@@ -56,15 +56,15 @@ pub use ambient::{Ambient, AmbientCases, Sun};
 pub use solar::{Atmosphere, SolarPosition};
 
 /// Emissivity used when neither the cable nor the ambient case gives one.
-pub const DEFAULT_EMISSIVITY: f64 = ols_line::DEFAULT_THERMAL[0];
+pub const DEFAULT_EMISSIVITY: f64 = ols_line::Defaults::PROGRAM.thermal_emissivity;
 /// Solar absorptivity used when neither the cable nor the ambient case
 /// gives one.
-pub const DEFAULT_ABSORPTIVITY: f64 = ols_line::DEFAULT_THERMAL[1];
+pub const DEFAULT_ABSORPTIVITY: f64 = ols_line::Defaults::PROGRAM.thermal_absorptivity;
 /// Surface roughness \\( R_s \\) (CIGRE) when none is given: a stranded
 /// conductor with round outer wires (above 0.05).
-pub const DEFAULT_ROUGHNESS: f64 = ols_line::DEFAULT_THERMAL[2];
+pub const DEFAULT_ROUGHNESS: f64 = ols_line::Defaults::PROGRAM.thermal_roughness;
 /// Time step of [`transient`] by default, s.
-pub const DEFAULT_TIME_STEP: f64 = ols_line::DEFAULT_THERMAL[4];
+pub const DEFAULT_TIME_STEP: f64 = ols_line::Defaults::PROGRAM.thermal_time_step;
 
 /// The thermal rating method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
