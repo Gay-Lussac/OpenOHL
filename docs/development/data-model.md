@@ -243,7 +243,7 @@ open (`ols_meta` keys `routes_alignments`, `alignment_points`).
 | `omit_sets` | `[u32]` | — | typed: the type's wire points with these sets left out, with what hangs only for them | sets in the type |
 | `members` | `[[x,y,z]]` | m | stick drawing polylines (views and drawings only) | — |
 
-A structure without a type holds its own `points`, `wires`, `strings` and `members`; the desktop app edits them as a structure type in local axes (`to_local`/`to_global`) and writes them back with one `Put`. *Make it a type* writes that document as a `.olss`, sets `type` and empties the structure's own lists. A type built from a pylon template records it in `[template]` (`id`, `role` suspension/strain, `string_length`, `string_weight`, `values` by parameter) and has sets from the template's slots: suspension = slot, strain back = slot + `back_offset` (20), ahead = slot + `ahead_offset` (40).
+A structure without a type holds its own `points`, `wires`, `strings` and `members`; the desktop app edits them as a structure type in local axes (`to_local`/`to_global`) and writes them back with one `Put`. *Make it a type* writes that document as a `.olss`, sets `type` and empties the structure's own lists. A type built from a pylon template records it in `[template]` (`id`, `role` suspension/strain, `string_length`, `string_weight`, `values` by parameter) and has sets from the template's slots: suspension = slot, strain back = slot + `back_offset` (20), ahead = slot + `ahead_offset` (40). Built again, only the header, `[template]` and the points, strings and wire points the template makes (by label) are replaced; the rest of the file is kept (`ols-app` `pylon_builder::rebuilt`).
 
 | Entity.field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
