@@ -741,6 +741,9 @@ pub struct StructureType {
     /// Level of the feet in local z (default 0: z = 0 is the ground).
     #[serde(default)]
     pub foot: Option<Length>,
+    /// What it is, in words (free text).
+    #[serde(default)]
+    pub description: String,
     /// Where the data comes from.
     #[serde(default)]
     pub source: Option<String>,

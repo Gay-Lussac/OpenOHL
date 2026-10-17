@@ -147,7 +147,8 @@ pub struct TypeRow {
     pub height: f64,
     /// Its extensions: name and height added, m.
     pub extensions: Vec<(String, f64)>,
-    /// What it is (the comments at the top of its file, else its source).
+    /// What it is (its `description`, else the comments at the top of its
+    /// file, else its source).
     pub description: String,
     /// Where it comes from.
     pub source: String,
@@ -206,7 +207,9 @@ impl TypeRow {
                 .iter()
                 .map(|e| (e.name.clone(), e.dz.si()))
                 .collect(),
-            description: if notes.is_empty() {
+            description: if !t.description.trim().is_empty() {
+                t.description.trim().to_owned()
+            } else if notes.is_empty() {
                 source.clone()
             } else {
                 notes

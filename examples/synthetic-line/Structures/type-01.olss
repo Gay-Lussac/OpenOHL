@@ -3,6 +3,7 @@ format = "ols-structure"
 version = 2
 id = "type-01"
 name = "type-01 (1 structures, e.g. T1)"
+description = "Synthetic example structure (stick figure)"
 kind = "other"
 source = "derived from: T1"
 
