@@ -25,8 +25,8 @@ renamed later; they are not renamed now.
 
 1. **Levels.** Level 1: only the attachment points are described; the
    structure is a stick figure and cannot be verified. Level 2: the real
-   geometry of the structure, possibly with maximum loads given as data,
-   but no detailed construction and no code check. Level 3: every part
+   geometry of the structure, but no detailed construction and no code
+   check (maximum loads only on its strings, decision 13). Level 3: every part
    and joint detail; the structure can be computed (FE) and verified by a
    code (for example SIA 263 for steel in Switzerland).
 2. **Poles have the same three levels.** 1: the attachment points
@@ -67,9 +67,13 @@ renamed later; they are not renamed now.
     imported, stored like the other library kinds of the project file
     (per project line).
 12. **Export** to IFC, Tekla and RFEM; PLS-TOWER later.
-13. **Capacities** are derived (computed) only at level 3. Levels 1 and 2
-    carry geometry; level 2 may carry given maximum loads as data. (How
-    this meets today's capacity data is open question 2.)
+13. **Capacities.** At levels 1 and 2 maximum loads may be given on the
+    strings (their insulators and fittings), but not for the structure
+    itself: its integrity cannot be checked below level 3. The
+    structure's capacity is computed only at level 3. Weather cases and
+    the load cases at the suspension points can be defined from level 1,
+    and exported, so a structure designed in another program gets its
+    loads from the line (an application feature).
 14. **Symmetry** is an option for joints and members, to ease building.
     The application must be easy to use.
 15. **Structure–line interaction** has four levels, as in PLS-CADD: 1
@@ -100,8 +104,8 @@ Where today's code differs from the decisions:
 - **Capacity is read at any level.** `[capacity]` (Method 1 allowable
   spans, Method 2 load trees) and `[[wind.band]]` are read at any level;
   a level 1 structure with a capacity is checked by Methods 1 and 2 in a
-  line. Decision 13 says capacities are derived only at level 3 (open
-  question 2).
+  line. Decision 13 allows maximum loads only on the strings below level
+  3 (open question 2).
 - **Poles have no level.** A structure naming a `pole` (`.olsp`) is
   checked by the pole check, but `detail()` does not look at `pole`.
   Decision 2 gives poles levels 1 to 3.
@@ -513,12 +517,13 @@ Each phase is a deliverable of its own, checked and committed.
 
    Also undecided: leg extensions (one leg longer than the others on a
    slope) are not modelled today; are they part of this?
-2. **Capacity data at levels 1 and 2.** Decision 13: capacities only
-   from level 3. Today `[capacity]` (Method 1 spans, Method 2 load
-   trees) and wind bands are read at any level and used in line checks.
-   Confirm: are these kept at levels 1 and 2 as **given data** (from
-   the supplier's documents, like the maximum loads of level 2), or
-   should they be refused below level 3?
+2. **Today's structure capacity below level 3.** Decision 13 allows
+   maximum loads on strings only. Today `[capacity]` (Method 1 allowable
+   spans, Method 2 load trees at the points) and wind bands are read at
+   any level and used in the line checks. When the levels are built:
+   refuse them below level 3, keep them read but unused with a note, or
+   turn a Method 2 load tree into maximum loads on the strings? No check
+   changes until then.
 3. **Code-check plugin interface** (e.g. SIA 263): which data the core
    hands to the plugin (member forces, buckling lengths, sections, joint
    details), what comes back (usage per member and joint, formulas),
