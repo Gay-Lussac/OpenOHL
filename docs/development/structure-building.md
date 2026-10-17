@@ -97,6 +97,18 @@ renamed later; they are not renamed now.
 19. **Interaction levels 3 and 4** treat a structure below level 3 as
     rigid, and the result says so.
 
+20. **A structure file may describe a family.** One file holds a pylon
+    family; a few parameters chosen per position (body extension, leg
+    extensions) adapt it to the ground. Leg extensions are part of this.
+    In the line, every placed structure is **unique to its position**:
+    the parameters chosen there give one concrete structure, with its own
+    name, loads, model and results.
+21. **Choosing a structure** (line application): a window with a table
+    of the available structures (id, name, kind, level, sets, height,
+    extensions, description, uses in the line), a filter, and a preview
+    on the right; it replaces the drop-down of Add structure and the
+    structures table.
+
 ## Today
 
 ### The three levels, as the code has them
@@ -144,7 +156,7 @@ member is added, the FE model is the same, and the wind bands are not
 raised ("Height extensions are not added to the bands yet",
 `loads.md`). Extensions are also used by automatic spotting (candidates
 by structure and extension) and by the bill of materials (a price per
-extension). Decision 17: extension bodies at level 3.
+extension). Decisions 17 and 20: extension bodies at level 3, leg extensions included.
 
 ### Gaps
 
@@ -282,7 +294,7 @@ TAK) and id renames in the tables.
   (all feet in one click).
 - **Joint details** (bolts, plates, eccentricities) as far as the code
   check needs them; their content follows the code check plugin
-  (open question 2).
+  (open question 1).
 - **Poles**: wall, material and the data the pole check needs.
 
 ### 1.4 What is missing for each level
@@ -421,7 +433,7 @@ check is changed now.
 Member and joint verification by a code (e.g. SIA 263 for steel) is a
 **plugin**: the core gives member forces, lengths, sections and joint
 data; the plugin gives usages and the formulas used. Its interface is
-open question 2.
+open question 1.
 
 ### 3.3 Independent verification
 
@@ -456,7 +468,7 @@ Changes in `.olss` (version 2 → 3; older versions read as before):
 | pole outline (diameters by height, shape) | `StructureType` | poles at level 2 (decision 2) |
 | `[[load_case]]` with `[[load_case.load]]` (what, factor, one-sided share, direction, points or members, surface pressure) | `StructureType` | §2.1; replaces `[[load]]` (read as case `model`) |
 | typed `TypeSection` reference (section library id) and `TypeMaterial` | `structures.rs`, shared with `ols-structures-fe` | §1.3, §4.2 |
-| joint details | `TypeNode` | level 3 code checks (open question 2) |
+| joint details | `TypeNode` | level 3 code checks (open question 1) |
 | extension members | `Extension` | decision 17 |
 | `missing(level)` | `StructureType` | §1.4 |
 
@@ -505,7 +517,7 @@ Each phase is a deliverable of its own, checked and committed.
 6. **Replace structure** in the line application (§1.6).
 7. **Exports**: IFC with member solids, Tekla, RFEM; PLS-TOWER later.
 8. **Code checks**: the plugin interface for member and joint checks
-   (open question 2), then a first code (e.g. SIA 263); capacity
+   (open question 1), then a first code (e.g. SIA 263); capacity
    derived from a level 3 design.
 9. **Structure–line interaction levels 3 and 4**: the stiffness matrix
    at the suspension points from level 3 structures, then the coupled
@@ -514,14 +526,11 @@ Each phase is a deliverable of its own, checked and committed.
 
 ## Open questions
 
-1. **Leg extensions** (one leg longer than the others on a slope) are
-   not modelled today: part of the extension bodies (decision 17), or
-   later?
-2. **Code-check plugin interface** (e.g. SIA 263): which data the core
+1. **Code-check plugin interface** (e.g. SIA 263): which data the core
    hands to the plugin (member forces, buckling lengths, sections, joint
    details), what comes back (usage per member and joint, formulas),
    and whether any engine change is needed for it — asked before it is
    built.
-3. **Stored load overrides**: where the values typed over an evaluated
+2. **Stored load overrides**: where the values typed over an evaluated
    load table are kept (with the placed structure in the line, or in a
    load file per place), and what happens to them when the line changes.
