@@ -78,21 +78,14 @@ impl Default for ThermalWindow {
 }
 
 impl ThermalWindow {
-    /// Opens the window; the first time with the `.olsta` file next to the
-    /// model, if there is one.
+    /// Opens the window; the first time with the project's `.olsta` file
+    /// (next to a line file), if there is one.
     pub fn show(&mut self, model: &Model) {
         self.open = true;
-        if self.file.is_none() {
-            let dir = ols_core::files::dir_of(&model.sources.file);
-            if let Some(p) = ols_core::files::files_with_extension(
-                &dir,
-                ols_thermal::ambient::AMBIENT_FILE_EXTENSION,
-            )
-            .into_iter()
-            .next()
-            {
-                self.choose(p);
-            }
+        if self.file.is_none()
+            && let Some(p) = model.project_files("ambient").into_iter().next()
+        {
+            self.choose(p);
         }
     }
 

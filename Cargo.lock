@@ -3514,6 +3514,7 @@ dependencies = [
  "ols-session",
  "ols-spotting",
  "ols-structures",
+ "ols-structures-fe",
  "ols-terrain",
  "ols-thermal",
  "ols-weather",

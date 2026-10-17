@@ -13,6 +13,8 @@ model = "DL380-tangent.olsfe"   # optional: a separate model, relative to the .o
 pole = "wood-14m"               # id of a .olsp file in the same folder
 ```
 
+In a project, the `.olsfe` and `.olsp` files of the structure folder are copied into the project file when it opens, and read from there after (see [Library editors](desktop-app.md#library-editors)); a model in a subfolder is not, so keep them next to the `.olss`.
+
 All values in these files are **your data** (drawings, supplier tables, the pole manufacturer or the design code). OLS CAD ships only invented examples: `examples/synthetic-line/Structures/type-02.olss` (a small lattice tower, its members in the type) and `steel-pole-30m.olsp`.
 
 ## Structure models (.olsfe)

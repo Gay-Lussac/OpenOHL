@@ -28,6 +28,7 @@ ols-clearance.workspace = true
 ols-io.workspace = true
 ols-server.workspace = true
 ols-loads.workspace = true
+ols-structures-fe.workspace = true
 ols-thermal.workspace = true
 ols-bom.workspace = true
 ols-spotting.workspace = true

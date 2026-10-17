@@ -673,7 +673,7 @@ pub fn remember_weather(session: &ols_session::Session, path: &Path) {
 }
 
 /// The libraries a project keeps: kind (in the project) and file extension.
-pub const PROJECT_LIBRARIES: [(&str, &str); 5] = [
+pub const PROJECT_LIBRARIES: [(&str, &str); 11] = [
     ("cables", ols_cables::WIRE_FILE_EXTENSION),
     (
         "structures",
@@ -685,7 +685,26 @@ pub const PROJECT_LIBRARIES: [(&str, &str); 5] = [
     ),
     ("weather", ols_weather::WEATHER_FILE_EXTENSION),
     ("loadcases", ols_loads::LOAD_CASE_FILE_EXTENSION),
+    ("rules", ols_clearance::rules::RULE_FILE_EXTENSION),
+    (
+        "galloping",
+        ols_clearance::galloping::GALLOPING_FILE_EXTENSION,
+    ),
+    ("ambient", ols_thermal::ambient::AMBIENT_FILE_EXTENSION),
+    ("costs", ols_bom::cost::COST_FILE_EXTENSION),
+    ("poles", ols_structures_fe::pole::POLE_FILE_EXTENSION),
+    ("femodels", ols_structures_fe::model::MODEL_FILE_EXTENSION),
 ];
+
+/// The folder of library `kind` in the working folder and in an export:
+/// poles and structure models go next to the structure types that name
+/// them.
+pub fn library_folder(kind: &str) -> &str {
+    match kind {
+        "poles" | "femodels" => "structures",
+        _ => kind,
+    }
+}
 
 /// Where the working copies of projects' libraries go.
 fn libraries_root() -> PathBuf {
@@ -758,13 +777,19 @@ fn project_libraries(
         .is_some();
     let work = library_workdir(&sources.file);
     let _ = std::fs::remove_dir_all(&work);
+    // Poles and structure models: from the structure types' folder (before
+    // it points to the working copies).
+    let (structures_given, structures_from) =
+        (sources.structures.is_some(), structures_dir(sources));
     for (kind, ext) in PROJECT_LIBRARIES {
         let given = match kind {
             "cables" => sources.library.is_some(),
             "structures" => sources.structures.is_some(),
             "insulators" => sources.insulators.is_some(),
             "loadcases" => sources.load_cases.is_some(),
-            _ => sources.weather.is_some(),
+            "weather" => sources.weather.is_some(),
+            "poles" | "femodels" => structures_given,
+            _ => false,
         };
         let stored = session.library_files(kind).map_err(|e| e.to_string())?;
         let mut kept_in_files = false;
@@ -782,12 +807,16 @@ fn project_libraries(
                         .into_iter()
                         .next()
                 }),
-                _ => sources.weather.clone().or_else(|| {
+                "weather" => sources.weather.clone().or_else(|| {
                     remembered
                         .as_deref()
                         .map(PathBuf::from)
                         .filter(|p| p.is_absolute() && p.is_file())
                 }),
+                "poles" | "femodels" => own(structures_from.clone(), "structures"),
+                // Clearance rules, galloping, ambient cases, unit costs:
+                // the files next to the project (none are shipped).
+                _ => Some(model_dir(sources)),
             };
             let files = from
                 .as_deref()
@@ -842,12 +871,18 @@ fn project_libraries(
                     "structures" => sources.structures = Some(dir),
                     _ => sources.insulators = Some(dir),
                 }
-            } else if own {
-                // None of its own yet: not those of another project.
-                match kind {
-                    "weather" => sources.weather = None,
-                    _ => sources.load_cases = None,
+            } else if matches!(kind, "weather" | "loadcases") {
+                if own {
+                    // None of its own yet: not those of another project.
+                    match kind {
+                        "weather" => sources.weather = None,
+                        _ => sources.load_cases = None,
+                    }
                 }
+            } else {
+                // Its own empty folder: none read from next to the project.
+                let dir = work.join(library_folder(kind));
+                std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
             }
             continue;
         }
@@ -871,7 +906,7 @@ fn project_libraries(
                 }
             }
         }
-        let dir = work.join(kind);
+        let dir = work.join(library_folder(kind));
         std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         for (name, text) in &stored {
             if !ols_session::safe_file_name(name) {
@@ -894,7 +929,7 @@ fn project_libraries(
                     .unwrap_or_else(|| stored[0].0.clone());
                 sources.load_cases = Some(dir.join(name));
             }
-            _ => {
+            "weather" => {
                 // The file given, else the one used last, else the first.
                 let wanted = sources
                     .weather
@@ -907,6 +942,8 @@ fn project_libraries(
                     .unwrap_or_else(|| stored[0].0.clone());
                 sources.weather = Some(dir.join(name));
             }
+            // Read from the working folder ([`Model::project_files`]).
+            _ => {}
         }
         log(format!("{kind}: {} file(s) from the project", stored.len()));
     }
@@ -951,6 +988,23 @@ impl Model {
         })
     }
 
+    /// The files of library `kind` (clearance rules, galloping, ambient
+    /// cases, unit costs): the project's working copies, else (a line
+    /// file, or kept in their files) those next to the model.
+    pub fn project_files(&self, kind: &str) -> Vec<PathBuf> {
+        let ext = PROJECT_LIBRARIES
+            .iter()
+            .find(|(k, _)| *k == kind)
+            .map_or("", |(_, e)| e);
+        let dir = self
+            .library_dir
+            .as_ref()
+            .map(|w| w.join(library_folder(kind)))
+            .filter(|d| d.is_dir())
+            .unwrap_or_else(|| model_dir(&self.sources));
+        files_with_extension(&dir, ext)
+    }
+
     /// Keeps the working copies of the project's libraries in the project
     /// (after a library page or the weather case table saved one): every
     /// file of the working folder put, files no longer there removed.
@@ -963,7 +1017,7 @@ impl Model {
         let mut ops = Vec::new();
         let mut n = 0;
         for (kind, ext) in PROJECT_LIBRARIES {
-            let dir = work.join(kind);
+            let dir = work.join(library_folder(kind));
             if !dir.is_dir() {
                 continue;
             }
@@ -1015,7 +1069,7 @@ impl Model {
             if files.is_empty() {
                 continue;
             }
-            let to = dir.join(kind);
+            let to = dir.join(library_folder(kind));
             std::fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
             for (name, text) in files {
                 // A name from the project file (a crafted one: "../…", an

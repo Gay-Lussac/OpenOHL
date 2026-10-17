@@ -8,12 +8,13 @@
 //! and the wind — the final state of each case, or every wind pressure
 //! from 0 up to it in steps, from the left and/or the right
 //! ([`ols_clearance::zone`]). The rules are kept with the project, in a
-//! rule file next to the model (`<model>.vertical-clearances.olsr`,
-//! `<model>.radial-clearances.olsr`), which `ols line --rules` reads too.
+//! rule file of its clearance rules (`<model>.vertical-clearances.olsr`,
+//! `<model>.radial-clearances.olsr`; next to a line file), which `ols line
+//! --rules` reads too.
 //! The check runs on its own thread: the wind positions are solved, the
 //! LiDAR points read again from the point cloud around the wires.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
@@ -117,14 +118,42 @@ impl ZoneWindow {
         }
     }
 
-    /// The project's rule file of a window: next to the model.
-    pub fn project_file(model_file: &Path, measure: Measure) -> PathBuf {
+    /// The project's rule file of a window: in the project's clearance
+    /// rules (its working copy), else next to the model.
+    pub fn project_file(model: &Model, measure: Measure) -> PathBuf {
+        let model_file = &model.sources.file;
         let name = model_file
             .file_name()
             .map_or(String::from("line"), |n| n.to_string_lossy().into_owned());
         let stem = name.split('.').next().unwrap_or("line").to_owned();
-        ols_core::files::dir_of(model_file)
-            .join(format!("{stem}.{}-clearances.olsr", measure.as_str()))
+        let dir = model
+            .library_dir
+            .as_ref()
+            .filter(|_| model.editing.is_ok())
+            .map(|w| w.join("rules"))
+            .filter(|d| d.is_dir())
+            .unwrap_or_else(|| ols_core::files::dir_of(model_file));
+        dir.join(format!("{stem}.{}-clearances.olsr", measure.as_str()))
+    }
+
+    /// Another project line worked on (it has its own rule files): a
+    /// window on the project's rule file starts again, reading the line's.
+    pub fn line_changed(&mut self, model: &Model) {
+        let ours = match (&self.file, &model.library_dir) {
+            (Some(f), Some(w)) => f.starts_with(w),
+            _ => false,
+        };
+        if !ours {
+            return;
+        }
+        if let Some(r) = &self.running {
+            r.cancel.cancel();
+        }
+        let open = self.open;
+        *self = Self::new(self.zone.measure);
+        if open {
+            self.show(model);
+        }
     }
 
     /// Opens the window; the first time, reads the project's rule file.
@@ -138,7 +167,7 @@ impl ZoneWindow {
         self.zone = Zone::with_defaults(self.zone.measure, &model.line.defaults);
         let file = self
             .file
-            .get_or_insert_with(|| Self::project_file(&model.sources.file, self.zone.measure))
+            .get_or_insert_with(|| Self::project_file(model, self.zone.measure))
             .clone();
         if file.exists() {
             match RuleSet::load_with(&file, &(&model.line.defaults).into()) {
@@ -299,16 +328,26 @@ impl ZoneWindow {
         // Kept with the project once the mouse is released.
         if self.dirty && !ctx.input(|i| i.pointer.any_down()) {
             self.dirty = false;
-            self.save();
+            self.save(model);
         }
         out
     }
 
-    fn save(&mut self) {
+    /// Writes the rule file; the project's working copy goes into the
+    /// project.
+    fn save(&mut self, model: &mut Model) {
         let Some(file) = &self.file else {
             return;
         };
+        let in_project = model
+            .library_dir
+            .as_ref()
+            .is_some_and(|w| file.starts_with(w));
         self.status = Some(match self.rule_set().save(file) {
+            Ok(()) if in_project => match model.store_libraries() {
+                Ok(_) => ("kept in the project".to_owned(), false),
+                Err(e) => (format!("keeping the rules in the project: {e}"), true),
+            },
             Ok(()) => (format!("kept in {}", file.display()), false),
             Err(e) => (e, true),
         });

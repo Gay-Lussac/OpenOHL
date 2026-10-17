@@ -75,11 +75,7 @@ impl SpotWindow {
                 .unwrap_or_default();
         }
         if self.cost_path.is_none() {
-            self.cost_path = model.sources.file.parent().and_then(|d| {
-                ols_core::files::files_with_extension(d, ols_bom::cost::COST_FILE_EXTENSION)
-                    .into_iter()
-                    .next()
-            });
+            self.cost_path = model.project_files("costs").into_iter().next();
         }
     }
 
