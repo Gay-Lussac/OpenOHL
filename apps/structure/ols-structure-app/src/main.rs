@@ -2,9 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols-structure` — the structure application of OLS CAD: one structure
-//! file (`.olss`) in its own window, built from level 1 (stick figure) to
-//! level 3 (full design).
+//! `ols-structure` — OLS Structure, the structure application of OLS CAD:
+//! one structure file (`.olss`) in its own window, built from level 1
+//! (stick figure) to level 3 (full design). The menus are at the top, the
+//! panels under them can be moved, closed and shown again (View).
 //!
 //! ```bash
 //! ols-structure examples/synthetic-line/Structures/type-02.olss
@@ -30,7 +31,9 @@ mod export_menu;
 mod extensions_panel;
 mod generators_ui;
 mod in_line_tab;
+mod layout;
 mod load_cases_tab;
+mod menus;
 mod pole_panel;
 mod results_tab;
 mod tables;
@@ -43,6 +46,8 @@ use eframe::egui;
 
 #[cfg(test)]
 mod body_ui_tests;
+#[cfg(test)]
+mod layout_tests;
 #[cfg(test)]
 mod load_tests;
 #[cfg(test)]
@@ -63,8 +68,8 @@ pub const VERSION: &str = concat!(
     ")"
 );
 
-/// OLS CAD structure application: a structure file (.olss) in 3D and in
-/// tables, every edit undoable.
+/// OLS Structure, the structure application of OLS CAD: a structure file
+/// (.olss) in 3D and in tables, every edit undoable.
 #[derive(Parser)]
 #[command(name = "ols-structure", version = VERSION)]
 struct Args {
@@ -107,15 +112,16 @@ fn main() -> std::process::ExitCode {
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("OLS CAD structure")
+            .with_title("OLS Structure")
             .with_inner_size([1300.0, 900.0]),
         ..Default::default()
     };
     let result = eframe::run_native(
-        "OLS CAD structure",
+        "OLS Structure",
         options,
         Box::new(move |cc| {
             let mut app = app::StructureApp::new(cc.wgpu_render_state.clone());
+            app.restore(cc.storage);
             app.ahead = args.ahead;
             app.insulators_dir = args.insulators.clone();
             app.sections_path = args.sections.clone();

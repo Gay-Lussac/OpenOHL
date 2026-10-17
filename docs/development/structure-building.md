@@ -301,7 +301,7 @@ TAK) and id renames in the tables.
   joint or member, or a joint is made under it.
 - **Poles** (decision 2): the outside lines — diameters or
   circumferences by height, the cross-section shape — instead of the
-  `.olsp` text. Edited in the Body tab.
+  `.olsp` text. Edited in the Pole panel (Body menu).
 - **`[[body]]` polylines** give level 2 only when they span 3D
   (decision 3).
 - **Maximum loads** may be given at level 2 as data (decision 1).
@@ -404,7 +404,7 @@ Opened alone (no line), the recipes that need line values are listed as
 
 ### 2.3 The load table
 
-- Shown in the Load cases tab and in the line application per placed
+- Shown in the Load table panel and in the line application per placed
   structure.
 - **Editable**: a value typed over an evaluated one is kept as given and
   marked as such.
@@ -561,7 +561,7 @@ Each phase is a deliverable of its own, checked and committed.
    made (what was set on it kept, what others use kept and reported);
    edits mirrored by the symmetry and **Make symmetric**; groups with a
    section and kind per group written on each member (no `[[group]]`
-   table); the Body tab's Generators (preview, Apply = one undo step),
+   table); the Generators panel (preview, Apply = one undo step),
    group column and filter, Shift + click in tables, Design › Groups
    ([user guide](../user-guide/structure-app.md#the-body-tab)). *Poles
    and extensions built*: the `[pole]` table (`ols_structures::pole`:
@@ -579,13 +579,13 @@ Each phase is a deliverable of its own, checked and committed.
    hand or built in one go, legs, the view standing on an extension)
    ([user guide](../user-guide/structure-app.md#poles-and-extensions)).
    Not yet: redundants in the panels, plan bracing, a crossarm with
-   several points on one arm; the Results tab solving on an extension;
-   the pole check in the structure application's Results tab; wind bands
+   several points on one arm; the FE results panel solving on an extension;
+   the pole check in the structure application's FE results panel; wind bands
    raised by an extension.
 4. **Load-case recipes**: `[[load_case]]` (format version 3), evaluation
    in the core from the line values at each placed structure, the load
    table (editable, CSV / XLSX import and export), surface loads; the
-   Results tab and `ols structures check`; the report.
+   FE results panel and `ols structures check`; the report.
 5. **Section library**: the library kind in the project file, sections
    referred to by id, typed sections and materials; surface areas from
    the profiles; body wind (decision 10). *Done:* the format and
@@ -600,7 +600,7 @@ Each phase is a deliverable of its own, checked and committed.
    structural analysis model with load cases), IFC2x3 Coordination View
    2.0 (members, for Tekla Structures' IFC object conversion), SAF 2.2.0
    (xlsx) and CSV tables ([Structure exports](structure-exports.md)).
-   The application exports the Load cases tab's table (a placed
+   The application exports the Load table panel's table (a placed
    structure's line values and typed values). *Open*: imports tried in
    RFEM 6 and Tekla Structures; PLS-TOWER.
 8. **Code checks**: the plugin interface for member and joint checks

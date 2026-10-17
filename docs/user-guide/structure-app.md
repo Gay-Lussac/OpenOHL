@@ -1,6 +1,7 @@
-# The structure application
+# OLS Structure
 
-`ols-structure` edits one structure file (`.olss`) in a window of its
+**OLS Structure** (the program `ols-structure`), the structure
+application of OLS CAD, edits one structure file (`.olss`) in a window of its
 own, from level 1 (a stick figure: the points where insulators hang) to
 level 3 (a full design: every member with its section, the supports).
 See [Building structures](../development/structure-building.md) for
@@ -63,19 +64,47 @@ ols-structure Structures/type-02.olss --structure T2 \
     --line-values Structures/type-02.T2.line-values.json --sections Sections
 ```
 
-- The header says **loads of T2 in *line*** (a link to **In the line**).
+- The **Level** panel says **loads of T2 in *line*** (a link to the
+  **Line values** panel).
 - The line application computes the loads the wires and strings put on
   T2 in every load case of the line (Criteria › Load cases; as Checks ›
   Structure loads does, in the background) and writes them beside the
-  structure file as `<name>.<structure>.line-values.json`. Until they are
-  there the header says they are being computed; without a load case
-  file it says so. When the line changes while the application is open
-  (and stays unchanged for a second), the line application computes them
-  again and rewrites the file; the application reads it again within
-  half a second and evaluates the recipes with the new values.
-- The **load table** takes the line's values: rows that take one are
-  marked `line` instead of **no line value**.
-- **In the line** lists the line's values per point (with its sets and
+  structure file as `<name>.<structure>.line-values.json`. When the line
+  changes while the application is open (and stays unchanged for a
+  second), the line application computes them again and rewrites the
+  file; the application reads it again within half a second (**In the
+  line › Read the line's values again** reads it now).
+- A **status block** at the top of the Load recipes, Load table and Line
+  values panels says, in plain words, what the line gave or why not:
+  *The line gives the forces at 2 point(s) of T2 in 3 case(s): …*; *The
+  line's values for T2 are being computed…*; *The line gives no values
+  for T7: the project has no load cases. Add them in the line
+  application (Criteria › Load cases, or a design-code plugin)…*; a case
+  of the line without values (its sections not solved in it); opened
+  alone, *No line values: open this from a placed structure (select it
+  in the line, Properties › Edit…) to get its forces*, with the cases
+  stored in the file from the line, if any.
+- The **load table** starts with the **line's forces**, without any
+  recipe: every case the line transmits × every attachment point, the
+  transverse, longitudinal and vertical force as the line computed them
+  (factored where the line's case has factors; the unfactored ones, the
+  sets and the phases in the note), marked `line` (column **from**: *line
+  load case*). The structure's recipes follow as cases of their own (they
+  may still take line values); a line case with the name of a recipe is
+  called *NAME (line)*. **FE results** can run the line's cases directly.
+- **Store in the structure file…** (by the load table, or **Load cases ›
+  Store the line's cases in the file…**): a tick per line case; **Store**
+  writes the cases ticked into the structure file as `[[load_case]]`
+  tables of given values — a `value` and `direction` per point and
+  component, `line_case`, and a description saying the line, the place
+  and the date — in one undo step. The file then has these forces
+  without the line (exports, design elsewhere). Stored again, cases of
+  the same names are replaced (asked first: **Replace and store**).
+- **Take the line's load cases as they are** (Load cases menu, and in the
+  Load recipes panel while the structure has no recipe) writes instead
+  one recipe per line case taking the line's factored values at every
+  point: the forces then follow the line.
+- **Line values** lists the line's values per point (with its sets and
   phases) and load case: transverse, longitudinal, vertical, unfactored
   and factored by the line's load case, in kN. **Other places of this
   structure** lists the other placed structures of the same type with
@@ -93,41 +122,89 @@ the type follows in the line.
 
 ## The window
 
-- **Header**: **Level N — name** (worked out from the file, never
+At the top, the **menus**: **File** (Open, Save, Save as, Export ›,
+Close), **Edit** (Undo, Redo, Pick nothing), **View**, then one menu per
+part of the work — **Geometry**, **Body**, **Design**, **Load cases**,
+**Results**, **In the line** — and **Help** (About OLS Structure);
+**⟲ Undo**, **⟳ Redo** and **Save** at their right. Each work menu lists
+its **panels** (*Joints…*, *Generators…*, *Pole…*: opened if closed and
+brought to the front) and its **actions** (Geometry: *Add a point*, *I
+insulator below the point*, *V insulators to one wire point*, *Delete
+what is picked…*; Body: *Add a joint*, *Member between the two joints*,
+*Point on the joint*, *Symmetry* ›, *Make symmetric*, *Delete what is
+picked…*; Load cases: *Store the line's cases in the file…*, *Take the
+line's load cases as they are*, *Add a load case*, *Import / Export load
+recipes…*, *Import a load table…*, *Export the load table…*; Results:
+*Run the cases*, *Cancel the run*; In the line: *Read the line's values
+again*); an action brings its panel to the front.
+
+Under the menus, the **panels**, docked as in the line application:
+drag a panel's tab to move it (beside another, above, below, into
+another group, or out as a window of its own), drag the borders to size
+them, close one with its ×. **View** ticks each panel to show or hide it
+(the menu stays open while ticking), **Reset layout** puts every panel
+back, and **Fit the view** shows the whole structure. The arrangement is
+kept for the next start. By default the tables are on the **left** and
+the **3D view on the right** (about 45 / 55): the Level panel at the top
+left, the geometry, body and design panels under it, the load and result
+panels below them. The last message (what an action did, or why not) is
+at the bottom of the window.
+
+| Menu | Panels |
+|---|---|
+| — | **Level**, **3D view** |
+| **Geometry** (level 1) | **Points & insulators** (Attachment points, Insulators), **Wire points & sets** (Wire points, Set points), **Structure fields** |
+| **Body** (level 2) | **Joints**, **Members**, **Generators**, **Pole**, **Extensions** |
+| **Design** (level 3) | **Supports**, **Member sections**, **Groups**, **Sections & materials**, **Pole design** |
+| **Load cases** | **Load recipes**, **Load table** |
+| **Results** | **FE results** |
+| **In the line** | **Line values** |
+
+The level of the file decides the panel in front when it opens: Points &
+insulators at level 1, Joints at level 2 (the Pole for a pole), Supports
+at level 3 (Pole design for a pole). Panels closed by default (Structure
+fields, Pole, Extensions, Sections & materials, Pole design) open from
+their menu or from View.
+
+- **Level** panel: **Level N — name** (worked out from the file, never
   stated), the structure's id and name, its file, *\* unsaved*. Under it,
   **for level N + 1:** what the next level still lacks — no member yet,
   a member without a section (one item per member), no `[[section]]`, no
-  supported joint. Each item is a link: it opens the tab and table where
-  it is done and picks its row. **advice (n)** (folded) lists what reads
+  supported joint. Each item is a link: it brings the panel and table
+  where it is done to the front (opening it if it was closed) and picks
+  its row. **advice (n)** (folded) lists what reads
   but is worth a look, never counted in the level: a point on no joint
   or member (it carries no load in an analysis), a joint on one member
   or none, two members crossing without a joint (X-bracing bolted at the
   crossing is a common case).
-- **3D view** on top, in the structure's own axes: x to the right of the
+- **3D view**, in the structure's own axes: x to the right of the
   line (red), y ahead (green), z up (blue), 0;0 at the centre, the ground
   grid at the level of the feet and a compass. A click picks a joint,
   point, wire point or member, Shift + click picks another; a drag from a
   joint or point moves it (snapped to the grid set, or onto a joint) — one
   undo step per drag; elsewhere a drag turns the view, a right-drag pans,
-  the wheel zooms. **Fit** shows the whole structure.
-- **Tabs** underneath:
+  the wheel zooms. **Fit** (and View › Fit the view) shows the whole
+  structure. The loads of the case shown (while a load panel was the last
+  clicked) or the results (while FE results was) are drawn over the
+  structure.
+- **Panels of tables**:
 
-| Tab | Tables | Tools |
+| Menu | Tables | Tools |
 |---|---|---|
 | **Geometry** (level 1) | Attachment points, Insulators (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, description), Wire points (counterweight), Set points, Structure (name, height, feet, height extensions) | **+ Point**, **I** and **V** presets for the points picked, **Delete…** (lists what goes with it first) |
-| **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, section, made by; a group filter), Generators, Extensions (each one's piece and legs) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-tab)) |
+| **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, section, made by; a group filter), Generators, Extensions (each one's piece and legs) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
 | **Design** (level 3) | Pole (pole structures: material, section or wall, strength), Supports (**Support the feet** pins the lowest joints), Members (section, kind, buckling factor k), Groups (a section and kind per member group), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
-| **Load cases** (any level) | **Recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.olsslc` or CSV), **Import / Export table…** (CSV); the case shown drawn as arrows (**m per kN**) |
-| **Results** (level 3) | Per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage | **▶ Run** (one case or every case), **Cancel**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
-| **In the line** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
+| **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.olsslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
+| **Results** (level 3): **FE results** | Per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage | **▶ Run** (one case or every case), **Cancel**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
+| **In the line**: **Line values** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
 
-## The Body tab
+## The Body panels
 
 The body is built from a few dimensions with **generators**, then
 completed by hand; the file keeps each generator's inputs, so it can be
 built again ([format](structure-library.md#body-generators-groups-and-symmetry)).
 
-- **Generators** (a table of the Body tab): **New** › *legs and panels*,
+- **Generators** (a panel of the Body menu): **New** › *legs and panels*,
   *crossarms*, *peak* or *copy a face* opens a form with the generator's
   inputs; what it would build is drawn in the view (turquoise) and
   counted under the form, or why it cannot be built is said. **Apply**
@@ -172,7 +249,7 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
 
 ## Poles and extensions
 
-- **Body › Pole** (a structure of kind pole, or with a pole): the
+- **Body › Pole…** (a structure of kind pole, or with a pole): the
   pole's cross-section (round, or a polygon with its sides), its
   embedment, and its **outline** — a row per height with its z and
   diameter (dragged or typed; the circumference shown), 🗑 per row,
@@ -182,14 +259,14 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   shown as such; **Bring it into this file** writes its outline and
   fields into the structure file (one undo step; the pole check gives
   the same numbers). Diameters at two heights make level 2.
-- **Design › Pole**: the material (wood, steel, concrete, other), a
+- **Design › Pole design…**: the material (wood, steel, concrete, other), a
   **section** of the section library next to the file (a polygonal
   hollow section with the pole's sides, or a circular hollow one for a
   round pole: its wall, and its material's elasticity and density), or
   the wall typed; fibre stress, moment capacity, elasticity, density,
   drag. Under them what level 3 still lacks, or *The pole check can read
   the pole (level 3)*.
-- **Body › Extensions**: the extensions (**+ Extension**: +3 m, +6 m…),
+- **Body › Extensions…**: the extensions (**+ Extension**: +3 m, +6 m…),
   the one picked with its `dz` and **show in 3D** — the view then shows
   the structure standing on it, its piece below the feet (lilac) and its
   legs lowered, as the finite-element model has it. Its **piece**: built
@@ -207,7 +284,7 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
 
 ## Load cases
 
-The **Recipes** part edits the structure's `[[load_case]]` tables
+The **Load recipes** panel edits the structure's `[[load_case]]` tables
 ([Structure load cases](structure-load-cases.md)): pick the case under
 **Recipe**, type its fields, and one row per load (`what`, `side` and
 `direction` are chosen from a list; a value takes its unit, `2 kN` or
@@ -220,12 +297,15 @@ in red and the table below keeps the cases that read.
 with the name of one in the structure replaces it, the others are added
 (one undo step). **Export recipes…** writes them as `.olsslc` or CSV.
 
-The **Load table** part shows the recipes evaluated: per case (or every
-case) and per point, member or joint, the transverse, longitudinal and
-vertical load in kN, where it comes from (`line`, `recipe`, `typed`),
-the member's **area** a surface load acts on, and why a row has no
-value. Opened on its own, the structure has no
-line: every load taking a line value shows **no line value**. Type the
+The **Load table** panel shows first the line's forces (started for a
+placed structure, [above](#started-for-a-placed-structure)), then the
+recipes evaluated: per case (or every case) and per point, member or
+joint, the transverse, longitudinal and vertical load in kN, where the
+case comes from (**from**: *line load case*, *recipe*, *typed*), where the
+value comes from (`line`, `recipe`, `typed`), the member's **area** a
+surface load acts on, and why a row has no value. Opened on its own, the
+structure has no line: every load taking a line value shows **no line
+value**. Type the
 values (drag or click a number), or **Import table…** a CSV with the
 table's columns (from **Export table…**, another program or a client's
 load tree): what it has beyond the evaluation becomes typed values.
@@ -310,9 +390,9 @@ square of the same area, its values given).
 Under the entries:
 
 - **Section library**: by default the window's (`--sections`, else the
-  `Sections` folder beside the file — the one the Load cases tab uses);
+  `Sections` folder beside the file — the one the load panels use);
   **Choose library…** takes another file.
-- **Loads**: by default the **Load cases tab's table**: for a placed
+- **Loads**: by default the **Load table panel's table**: for a placed
   structure (opened with **Edit…** from the line) the line's values at
   that place, and the values typed over the table; for a structure opened
   on its own the recipes without line values (loads needing a line value
@@ -320,7 +400,7 @@ Under the entries:
   case `model`. **Choose load table…** takes a load table written as CSV
   instead ([Structure load cases](structure-load-cases.md)).
 
-The message under the header says what was written. What each format
+The message at the bottom of the window says what was written. What each format
 holds and leaves out: [Structure exports](../development/structure-exports.md).
 
 The same from the command line:

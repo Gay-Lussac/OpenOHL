@@ -1,6 +1,6 @@
 [package]
 name = "ols-structure-app"
-description = "OLS CAD structure application: a structure file (.olss) in its own window, from level 1 to level 3"
+description = "OLS Structure, the structure application of OLS CAD: a structure file (.olss) in its own window, from level 1 to level 3"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -23,6 +23,10 @@ ols-structure-link.workspace = true
 ols-structure-export.workspace = true
 ols-render.workspace = true
 eframe.workspace = true
+# The movable panels (as the line application), their arrangement kept
+# between runs.
+egui_dock = { workspace = true, features = ["serde"] }
+serde.workspace = true
 clap.workspace = true
 toml_edit = "0.25"
 # Native file dialogs (Open, Save as).

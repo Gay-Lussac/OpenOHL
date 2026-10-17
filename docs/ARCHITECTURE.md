@@ -81,7 +81,7 @@ other way round, and its tests run on their own.
 | `ols-structure-link` | Where the application meets the core: the line's structure loads as line values, a table case as finite-element loads (later the section library and saving back) |
 | `ols-structure-tests` | Tests of the application with the core (test-only) |
 | `ols-structure-edit` | The edits of a structure file (`toml_edit`, comments kept), undo and redo of whole edits, what each level still lacks (`missing(level)`); no UI. `ols-app`'s structure screen calls the same edits (on the basics: points, strings, wire points, sets) |
-| `ols-structure-app` | The structure application `ols-structure` (egui): a `.olss` in 3D with the Geometry, Body, Design, Load cases, Results and In the line tabs |
+| `ols-structure-app` | OLS Structure, the structure application `ols-structure` (egui): a `.olss` in 3D, the Geometry, Body, Design, Load cases, Results and In the line menus at the top, their panels docked and movable under them |
 
 ## Session & collaboration
 

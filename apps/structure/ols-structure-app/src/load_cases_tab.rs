@@ -2,11 +2,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The Load cases tab: the recipes of the structure (`[[load_case]]`),
-//! each change one edit of the file, and the load table evaluated from
-//! them, with values typed over it kept as overrides. Recipes are
+//! The Load recipes and Load table panels: the recipes of the structure
+//! (`[[load_case]]`), each change one edit of the file, and the load
+//! table — first the line's forces at the attachment points (a placed
+//! structure: every case the line transmits, as the line computed them),
+//! then the recipes evaluated — with values typed over it kept as
+//! overrides. The line's cases can be stored in the structure file as
+//! cases of given values (the file then needs no line). Recipes are
 //! imported and exported as `.olsslc` or CSV, the table as CSV. The loads
-//! of the case shown are drawn as arrows in the view.
+//! of the case shown are drawn as arrows in the view. A status block at
+//! the top of the panels (and of Line values) says what the line gave, or
+//! why not.
 //!
 //! Overrides live in the session and are kept beside the structure file
 //! as `<stem>.loads.csv` (the table's CSV, typed rows only) when it is
@@ -36,16 +42,6 @@ use crate::app::{StructureApp, error_label};
 /// Colour of the load arrows.
 const ARROW: [u8; 4] = [235, 100, 235, 255];
 
-/// The part of the tab shown.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum LoadSheet {
-    /// The recipes.
-    #[default]
-    Recipes,
-    /// The evaluated load table.
-    Table,
-}
-
 /// The recipes as read, the table as evaluated and with the overrides.
 #[derive(Debug, Clone)]
 struct Evaluated {
@@ -53,12 +49,15 @@ struct Evaluated {
     recipes: Result<Vec<LoadCaseRecipe>, String>,
     evaluated: LoadTable,
     table: LoadTable,
+    /// The line's cases in the table: (its name in the table, the line's
+    /// case).
+    line_cases: Vec<(String, String)>,
 }
 
-/// The state of the Load cases tab.
+/// The state of the Load recipes and Load table panels.
 pub struct LoadCasesTab {
-    /// The part shown.
-    pub sheet: LoadSheet,
+    /// "Store in the structure file": the line's cases ticked to store.
+    pub store: Option<StoreForm>,
     /// The recipe shown (its place in the file).
     pub recipe: usize,
     /// The case shown in the table and drawn (none: every case, no arrows).
@@ -94,7 +93,7 @@ pub struct LoadCasesTab {
 impl Default for LoadCasesTab {
     fn default() -> Self {
         Self {
-            sheet: LoadSheet::default(),
+            store: None,
             recipe: 0,
             shown: None,
             line: LineValues::default(),
@@ -162,17 +161,21 @@ impl LoadCasesTab {
         let t = f.structure();
         let recipes = StructureLoadCases::from_structure(t);
         let cases = recipes.as_deref().unwrap_or(&[]);
+        let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
+        let order = self.info.as_ref().map_or(&[][..], |i| &i.cases[..]);
+        let (mut evaluated, line_cases) = line_rows(&self.line, order, &names);
         // Member areas only when a load needs them (the model is built).
         let surface = cases
             .iter()
             .any(|c| c.loads.iter().any(|l| l.members.is_some()));
-        let evaluated = if surface {
+        let of_recipes = if surface {
             let dir = f.path().and_then(Path::parent);
             let areas = SectionAreas::new(t, &f.text(), dir, &self.sections);
             evaluate_with_areas(cases, t, &self.line, &areas)
         } else {
             evaluate_with_areas(cases, t, &self.line, &ols_structure_loads::NoAreas)
         };
+        evaluated.rows.extend(of_recipes.rows);
         let mut table = evaluated.clone();
         table.apply(&self.overrides);
         self.cache = Some(Evaluated {
@@ -180,6 +183,7 @@ impl LoadCasesTab {
             recipes,
             evaluated,
             table,
+            line_cases,
         });
     }
 
@@ -467,20 +471,9 @@ const LOAD_TIPS: [(&str, &str); 13] = [
 ];
 
 impl StructureApp {
-    /// The Load cases tab.
-    pub fn load_cases_ui(&mut self, ui: &mut egui::Ui) {
-        let Some(f) = &self.file else {
-            return;
-        };
-        self.loads.refresh(f);
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.loads.sheet, LoadSheet::Recipes, "Recipes")
-                .on_hover_text("The structure's load cases: each a list of loads ([[load_case]])");
-            ui.selectable_value(&mut self.loads.sheet, LoadSheet::Table, "Load table")
-                .on_hover_text(
-                    "The recipes evaluated: per case, the loads at each point or member",
-                );
-            ui.separator();
+    /// The case shown and the arrows, at the top of both panels.
+    fn loads_header(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
             self.case_choice(ui);
             ui.checkbox(&mut self.loads.arrows, "Arrows")
                 .on_hover_text("The loads of the case shown as arrows in the view");
@@ -490,11 +483,30 @@ impl StructureApp {
                     .text("m per kN"),
             );
         });
+    }
+
+    /// The Load recipes panel.
+    pub fn load_recipes_ui(&mut self, ui: &mut egui::Ui) {
+        let Some(f) = &self.file else {
+            return;
+        };
+        self.loads.refresh(f);
+        self.line_status_ui(ui);
+        self.loads_header(ui);
         ui.separator();
-        match self.loads.sheet {
-            LoadSheet::Recipes => self.recipes_sheet(ui),
-            LoadSheet::Table => self.table_sheet(ui),
-        }
+        self.recipes_sheet(ui);
+    }
+
+    /// The Load table panel.
+    pub fn load_table_ui(&mut self, ui: &mut egui::Ui) {
+        let Some(f) = &self.file else {
+            return;
+        };
+        self.loads.refresh(f);
+        self.line_status_ui(ui);
+        self.loads_header(ui);
+        ui.separator();
+        self.table_sheet(ui);
     }
 
     /// The case shown (in the table and as arrows), or every case.
@@ -543,20 +555,14 @@ impl StructureApp {
     }
 
     fn recipes_sheet(&mut self, ui: &mut egui::Ui) {
-        let Some(f) = &mut self.file else {
-            return;
-        };
+        let (mut add, mut import, mut export) = (false, false, false);
         ui.horizontal_wrapped(|ui| {
             if ui
                 .button("+ Case")
                 .on_hover_text("A new load case without loads")
                 .clicked()
             {
-                let (k, name) =
-                    f.edit("add load case", |doc, _| edit::add_load_case(doc, "case 1"));
-                self.loads.recipe = k;
-                self.loads.shown = Some(name.clone());
-                self.message = Some((format!("added load case \"{name}\""), false));
+                add = true;
             }
             if ui
                 .button("Import recipes…")
@@ -565,46 +571,59 @@ impl StructureApp {
                      the name of one here replaces it, the others are added",
                 )
                 .clicked()
-                && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Structure load cases", &["olsslc", "csv"])
-                    .pick_file()
             {
-                let r = import_recipes(f, &p);
-                self.message = Some(match r {
-                    Ok((a, r)) => (
-                        format!("imported {a} new and {r} replaced load case(s)"),
-                        false,
-                    ),
-                    Err(e) => (e, true),
-                });
+                import = true;
             }
             if ui
                 .button("Export recipes…")
                 .on_hover_text("The load cases as a structure load-case file (.olsslc) or CSV")
                 .clicked()
-                && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Structure load cases", &["olsslc"])
-                    .add_filter("CSV", &["csv"])
-                    .set_file_name(format!("{}.olsslc", f.structure().id))
-                    .save_file()
             {
-                self.message = Some(match export_recipes(f, &p) {
-                    Ok(()) => (format!("written {}", p.display()), false),
-                    Err(e) => (e, true),
-                });
+                export = true;
             }
         });
+        if add {
+            self.add_case();
+            return;
+        }
+        if import {
+            self.import_recipes_dialog();
+            return;
+        }
+        if export {
+            self.export_recipes_dialog();
+        }
+        let Some(f) = &mut self.file else {
+            return;
+        };
         if let Err(e) = self.loads.recipes() {
             error_label(ui, format!("the load cases do not read: {e}"));
         }
         // As the buttons above left them.
         let cases = edit::load_cases(f.doc());
         if cases.is_empty() {
+            let line = self.loads.line_cases();
             ui.label(
-                "No load case yet: + Case adds one, Import recipes… takes them from another \
-                 structure. A case is a list of loads: a value the line gives (or one of its \
-                 own), a factor, a one-sided share, the points or members it acts on.",
+                "This structure has no load cases of its own (recipes) yet. The line's forces \
+                 are in the load table without any; a recipe makes a case of its own: a value \
+                 the line gives (or one of its own), a factor, a one-sided share, the points \
+                 or members it acts on. + Case adds one, Import recipes… takes them from \
+                 another structure.",
             );
+            if ui
+                .add_enabled(
+                    !line.is_empty(),
+                    egui::Button::new("Take the line's load cases as they are"),
+                )
+                .on_hover_text(
+                    "One recipe per load case of the line: its factored transverse, \
+                     longitudinal and vertical loads at every point (one undo step)",
+                )
+                .on_disabled_hover_text("The line gives no load case (see above)")
+                .clicked()
+            {
+                self.take_line_cases();
+            }
             return;
         }
         let k = self.loads.recipe.min(cases.len() - 1);
@@ -785,22 +804,22 @@ impl StructureApp {
     }
 
     fn table_sheet(&mut self, ui: &mut egui::Ui) {
-        let Some(f) = &self.file else {
-            return;
-        };
+        let (mut import, mut export, mut store) = (false, false, false);
         ui.horizontal_wrapped(|ui| {
-            if self.loads.line.values.is_empty() {
-                let text = match &self.loads.placed {
-                    None => {
-                        "Opened on its own: the line gives no values, so loads that take one \
-                         show \"no line value\". Type values in the table or import one."
-                    }
-                    Some(_) => {
-                        "No values from the line (yet): see In the line. Loads that take one \
-                         show \"no line value\"."
-                    }
-                };
-                ui.label(egui::RichText::new(text).weak());
+            if ui
+                .add_enabled(
+                    !self.loads.line_cases().is_empty(),
+                    egui::Button::new("Store in the structure file…"),
+                )
+                .on_hover_text(
+                    "The line's cases (ticked) written into the structure file as cases of \
+                     given values: the file then has its forces without the line (exports, \
+                     design elsewhere); one undo step",
+                )
+                .on_disabled_hover_text("No line values: nothing to store")
+                .clicked()
+            {
+                store = true;
             }
             if let Some((note, error)) = &self.loads.sections_note {
                 let text = egui::RichText::new(note).weak().small();
@@ -817,33 +836,26 @@ impl StructureApp {
                      evaluation is kept as typed values",
                 )
                 .clicked()
-                && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("CSV", &["csv"])
-                    .pick_file()
             {
-                self.message = Some(match self.loads.import_table(f, &p) {
-                    Ok(n) => (
-                        format!("imported {}: {n} typed value(s)", p.display()),
-                        false,
-                    ),
-                    Err(e) => (e, true),
-                });
+                import = true;
             }
             if ui
                 .button("Export table…")
                 .on_hover_text("The load table as CSV (forces in N, vertical down)")
                 .clicked()
-                && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("CSV", &["csv"])
-                    .set_file_name(format!("{}-loads.csv", f.structure().id))
-                    .save_file()
             {
-                self.message = Some(match self.loads.export_table(&p) {
-                    Ok(()) => (format!("written {}", p.display()), false),
-                    Err(e) => (e, true),
-                });
+                export = true;
             }
         });
+        if store {
+            self.open_store();
+        }
+        if import {
+            self.import_table_dialog();
+        }
+        if export {
+            self.export_table_dialog();
+        }
         let shown = self.loads.shown.clone().filter(|s| !s.is_empty());
         let rows: Vec<LoadRow> = self
             .loads
@@ -854,6 +866,7 @@ impl StructureApp {
             .cloned()
             .collect();
         let missing = rows.iter().filter(|r| r.missing.is_some()).count();
+        let line_names: Vec<String> = self.loads.line_table_names();
         ui.label(format!(
             "{} row(s), {} typed, {missing} without a value — forces in kN, transverse to the \
              right of the line, longitudinal ahead, vertical down",
@@ -871,6 +884,11 @@ impl StructureApp {
                     .show(ui, |ui| {
                         for (h, tip) in [
                             ("case", ""),
+                            (
+                                "from",
+                                "line load case: the line's forces as it computed them; \
+                                 recipe: a case of the structure file",
+                            ),
                             ("load", "The recipe's load (none: a row of its own)"),
                             ("at", "point, member (a surface load, its total) or joint"),
                             ("label", ""),
@@ -895,6 +913,13 @@ impl StructureApp {
                         ui.end_row();
                         for r in &rows {
                             ui.label(&r.case);
+                            ui.label(if line_names.contains(&r.case) {
+                                "line load case"
+                            } else if r.load.is_some() {
+                                "recipe"
+                            } else {
+                                "typed"
+                            });
                             ui.label(r.load.map_or(String::new(), |l| l.to_string()));
                             ui.label(r.at.as_str());
                             ui.label(&r.label);
@@ -996,4 +1021,634 @@ pub fn export_recipes(f: &StructureFile, path: &Path) -> Result<(), String> {
         StructureLoadCases::new(&format!("{} load cases", t.name), cases).to_toml()
     };
     std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// How the description of a case stored from the line starts.
+pub const STORED_FROM_LINE: &str = "Stored from the line";
+
+/// The line's forces as rows of the load table: per line case (in the
+/// line's order, then any other) and attachment point, the transverse,
+/// longitudinal and vertical forces as the line computed them — factored
+/// where the line factors the case. A line case with the name of a
+/// recipe (`recipes`) is called "NAME (line)". The rows and the line's
+/// cases as (name in the table, line case).
+pub fn line_rows(
+    line: &LineValues,
+    order: &[String],
+    recipes: &[String],
+) -> (LoadTable, Vec<(String, String)>) {
+    let mut cases: Vec<String> = order
+        .iter()
+        .filter(|c| line.values.iter().any(|v| &v.case == *c))
+        .cloned()
+        .collect();
+    for v in &line.values {
+        if !cases.contains(&v.case) {
+            cases.push(v.case.clone());
+        }
+    }
+    let mut table = LoadTable::default();
+    let mut names = Vec::new();
+    for c in cases {
+        let name = if recipes.contains(&c) {
+            format!("{c} (line)")
+        } else {
+            c.clone()
+        };
+        for p in &line.points {
+            let get = |q| line.get(&c, &p.label, &p.sets, q);
+            let factored = [
+                LineQuantity::TransverseFactored,
+                LineQuantity::LongitudinalFactored,
+                LineQuantity::VerticalFactored,
+            ]
+            .map(get);
+            let plain = [
+                LineQuantity::Transverse,
+                LineQuantity::Longitudinal,
+                LineQuantity::Vertical,
+            ]
+            .map(get);
+            let is_factored = factored.iter().any(Option::is_some);
+            let force = if is_factored { factored } else { plain };
+            if force.iter().all(Option::is_none) {
+                continue;
+            }
+            let mut note = Vec::new();
+            if !p.sets.is_empty() {
+                note.push(format!(
+                    "sets {}",
+                    p.sets
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            if !p.phases.is_empty() {
+                note.push(format!("phases {}", p.phases.join(", ")));
+            }
+            if is_factored {
+                if plain.iter().any(Option::is_some) {
+                    note.push(format!(
+                        "factored (unfactored {} kN)",
+                        plain
+                            .map(|v| v.map_or("—".into(), |v| format!("{:.3}", v / 1000.0)))
+                            .join("; ")
+                    ));
+                } else {
+                    note.push("factored".into());
+                }
+            } else {
+                note.push("unfactored".into());
+            }
+            table.rows.push(LoadRow {
+                case: name.clone(),
+                load: None,
+                at: At::Point,
+                label: p.label.clone(),
+                force: force.map(|v| v.unwrap_or(0.0)),
+                source: Source::Line,
+                evaluated: None,
+                missing: None,
+                note: note.join("; "),
+                area: None,
+            });
+        }
+        names.push((name, c));
+    }
+    (table, names)
+}
+
+/// The date of `secs` since 1970 (UTC), as YYYY-MM-DD.
+fn date(secs: i64) -> String {
+    // Days to the civil date (Howard Hinnant's algorithm).
+    let z = secs.div_euclid(86_400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// "Store in the structure file": the line's cases, each ticked or not.
+#[derive(Debug, Clone, Default)]
+pub struct StoreForm {
+    /// (name in the table, line case, ticked).
+    pub cases: Vec<(String, String, bool)>,
+    /// Stored cases of these names are there: replace them (asked).
+    pub replace: Vec<String>,
+}
+
+/// How a status reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    /// Values there.
+    Good,
+    /// Nothing wrong, nothing there.
+    Info,
+    /// Something to do.
+    Warn,
+}
+
+impl LoadCasesTab {
+    /// The line's cases with values, in the table: (name in the table,
+    /// line case).
+    pub fn line_cases(&self) -> Vec<(String, String)> {
+        self.cache
+            .as_ref()
+            .map(|c| c.line_cases.clone())
+            .unwrap_or_default()
+    }
+
+    /// The names of the line's cases in the table.
+    pub fn line_table_names(&self) -> Vec<String> {
+        self.line_cases().into_iter().map(|(n, _)| n).collect()
+    }
+
+    /// What the line gave, or why not, in plain words (each line a
+    /// sentence), and how it reads.
+    pub fn line_status(&self) -> Vec<(String, Tone)> {
+        let id = self
+            .placed
+            .clone()
+            .or(self.info.as_ref().map(|i| i.structure.clone()))
+            .unwrap_or_default();
+        if let Some(e) = &self.values_error {
+            return vec![(
+                format!(
+                    "The line's values for {id} do not read: {e}. Edit… on the placed structure \
+                     in the line application writes them again."
+                ),
+                Tone::Warn,
+            )];
+        }
+        let Some(info) = &self.info else {
+            return vec![if id.is_empty() {
+                (
+                    "No line values: open this from a placed structure (select it in the line, \
+                     Properties › Edit…) to get its forces."
+                        .to_owned(),
+                    Tone::Info,
+                )
+            } else {
+                (
+                    format!(
+                        "Waiting for the line's values of {id}: the line application writes \
+                         them when it has solved the line."
+                    ),
+                    Tone::Info,
+                )
+            }];
+        };
+        let values = &info.values;
+        if values.values.is_empty() {
+            let note = info.note.clone().unwrap_or_default();
+            if note.contains("being computed") {
+                return vec![(
+                    format!("The line's values for {id} are being computed…"),
+                    Tone::Info,
+                )];
+            }
+            let why = note
+                .strip_prefix("no values from the line: ")
+                .unwrap_or(&note)
+                .to_owned();
+            let text = if note.contains("no load case file") {
+                format!(
+                    "The line gives no values for {id}: the project has no load cases. Add \
+                     them in the line application (Criteria › Load cases, or a design-code \
+                     plugin); the values come here when the line is solved again."
+                )
+            } else if !why.is_empty() {
+                format!("The line gives no values for {id}: {why}")
+            } else if values.points.is_empty() {
+                format!("The line gives no values for {id}: no wire hangs on it.")
+            } else {
+                format!("The line gives no values for {id}.")
+            };
+            return vec![(text, Tone::Warn)];
+        }
+        let line = self.line_cases();
+        let mut out = vec![(
+            format!(
+                "The line gives the forces at {} point(s) of {id} in {} case(s): {} — the load \
+                 table's first cases.",
+                values.points.len(),
+                line.len(),
+                line.iter()
+                    .map(|(n, _)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Tone::Good,
+        )];
+        let without: Vec<&str> = info
+            .cases
+            .iter()
+            .filter(|c| !values.values.iter().any(|v| &v.case == *c))
+            .map(String::as_str)
+            .collect();
+        if !without.is_empty() {
+            out.push((
+                format!(
+                    "No values in case(s) {}: the line's sections there are not solved in that \
+                     case (solve the line again in the line application).",
+                    without.join(", ")
+                ),
+                Tone::Warn,
+            ));
+        }
+        out
+    }
+}
+
+impl StructureApp {
+    /// The status block at the top of the load panels: what the line gave
+    /// or why not; the cases stored from the line.
+    pub fn line_status_ui(&mut self, ui: &mut egui::Ui) {
+        let mut lines = self.loads.line_status();
+        if let Some(f) = &self.file {
+            let stored: Vec<String> = edit::load_cases(f.doc())
+                .iter()
+                .filter(|c| c.get("description").starts_with(STORED_FROM_LINE))
+                .map(|c| c.get("name").to_owned())
+                .collect();
+            if !stored.is_empty() {
+                lines.push((
+                    format!(
+                        "Stored in this file from the line: {} (as they were when stored).",
+                        stored.join(", ")
+                    ),
+                    Tone::Info,
+                ));
+            }
+        }
+        let worst = if lines.iter().any(|l| l.1 == Tone::Warn) {
+            Tone::Warn
+        } else if lines.iter().any(|l| l.1 == Tone::Good) {
+            Tone::Good
+        } else {
+            Tone::Info
+        };
+        let stroke = match worst {
+            Tone::Warn => egui::Color32::from_rgb(255, 170, 60),
+            Tone::Good => egui::Color32::from_rgb(110, 200, 120),
+            Tone::Info => ui.visuals().widgets.noninteractive.bg_stroke.color,
+        };
+        egui::Frame::group(ui.style())
+            .stroke(egui::Stroke::new(1.5, stroke))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                for (text, tone) in lines {
+                    let t = egui::RichText::new(text).strong();
+                    match tone {
+                        Tone::Warn => ui.colored_label(egui::Color32::from_rgb(255, 170, 60), t),
+                        _ => ui.label(t),
+                    };
+                }
+            });
+    }
+
+    /// Load cases › Add a load case (+ Case).
+    pub fn add_case(&mut self) {
+        let Some(f) = &mut self.file else {
+            return;
+        };
+        let (k, name) = f.edit("add load case", |doc, _| edit::add_load_case(doc, "case 1"));
+        self.loads.recipe = k;
+        self.loads.shown = Some(name.clone());
+        self.message = Some((format!("added load case \"{name}\""), false));
+    }
+
+    /// Load cases › Take the line's load cases as they are: one recipe
+    /// per line case, its factored loads at every point (one edit).
+    pub fn take_line_cases(&mut self) {
+        let cases: Vec<String> = self.loads.line_cases().into_iter().map(|c| c.1).collect();
+        let Some(f) = &mut self.file else {
+            return;
+        };
+        if cases.is_empty() {
+            self.message = Some(("the line gives no load case".into(), true));
+            return;
+        }
+        let written = f.edit("take the line's load cases", |doc, _| {
+            edit::take_line_load_cases(doc, &cases)
+        });
+        self.message = Some(if written.is_empty() {
+            (
+                "every line case has a recipe of its name already".into(),
+                true,
+            )
+        } else {
+            (
+                format!("load cases taken from the line: {}", written.join(", ")),
+                false,
+            )
+        });
+    }
+
+    /// Import recipes…: a file chosen.
+    pub fn import_recipes_dialog(&mut self) {
+        let Some(f) = &mut self.file else {
+            return;
+        };
+        if let Some(p) = rfd::FileDialog::new()
+            .add_filter("Structure load cases", &["olsslc", "csv"])
+            .pick_file()
+        {
+            self.message = Some(match import_recipes(f, &p) {
+                Ok((a, r)) => (
+                    format!("imported {a} new and {r} replaced load case(s)"),
+                    false,
+                ),
+                Err(e) => (e, true),
+            });
+        }
+    }
+
+    /// Export recipes…: where chosen.
+    pub fn export_recipes_dialog(&mut self) {
+        let Some(f) = &self.file else {
+            return;
+        };
+        if let Some(p) = rfd::FileDialog::new()
+            .add_filter("Structure load cases", &["olsslc"])
+            .add_filter("CSV", &["csv"])
+            .set_file_name(format!("{}.olsslc", f.structure().id))
+            .save_file()
+        {
+            self.message = Some(match export_recipes(f, &p) {
+                Ok(()) => (format!("written {}", p.display()), false),
+                Err(e) => (e, true),
+            });
+        }
+    }
+
+    /// Import table…: a CSV chosen.
+    pub fn import_table_dialog(&mut self) {
+        let Some(f) = &self.file else {
+            return;
+        };
+        if let Some(p) = rfd::FileDialog::new()
+            .add_filter("CSV", &["csv"])
+            .pick_file()
+        {
+            self.message = Some(match self.loads.import_table(f, &p) {
+                Ok(n) => (
+                    format!("imported {}: {n} typed value(s)", p.display()),
+                    false,
+                ),
+                Err(e) => (e, true),
+            });
+        }
+    }
+
+    /// Export table…: where chosen.
+    pub fn export_table_dialog(&mut self) {
+        let Some(f) = &self.file else {
+            return;
+        };
+        if let Some(p) = rfd::FileDialog::new()
+            .add_filter("CSV", &["csv"])
+            .set_file_name(format!("{}-loads.csv", f.structure().id))
+            .save_file()
+        {
+            self.message = Some(match self.loads.export_table(&p) {
+                Ok(()) => (format!("written {}", p.display()), false),
+                Err(e) => (e, true),
+            });
+        }
+    }
+
+    /// Store in the structure file…: the window, every line case ticked.
+    pub fn open_store(&mut self) {
+        if let Some(f) = &self.file {
+            self.loads.refresh(f);
+        }
+        self.loads.store = Some(StoreForm {
+            cases: self
+                .loads
+                .line_cases()
+                .into_iter()
+                .map(|(n, c)| (n, c, true))
+                .collect(),
+            replace: Vec::new(),
+        });
+    }
+
+    /// Stores the line's cases `chosen` (line case names) in the
+    /// structure file as cases of given values: the table's forces of
+    /// each (values typed over them included), a case of the same name
+    /// replaced (one edit). How many were added and replaced.
+    pub fn store_line_cases(&mut self, chosen: &[String]) -> Result<(usize, usize), String> {
+        let Some(f) = &mut self.file else {
+            return Err("no structure open".into());
+        };
+        self.loads.refresh(f);
+        let line = self
+            .loads
+            .info
+            .as_ref()
+            .map(|i| i.line.clone())
+            .unwrap_or_default();
+        let place = self.loads.placed.clone().unwrap_or_default();
+        let today = date(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs() as i64),
+        );
+        let cases: Vec<edit::GivenCase> = self
+            .loads
+            .line_cases()
+            .into_iter()
+            .filter(|(_, c)| chosen.contains(c))
+            .map(|(name, c)| edit::GivenCase {
+                name: c.clone(),
+                line_case: c.clone(),
+                description: format!(
+                    "{STORED_FROM_LINE} {line}, placed structure {place}, on {today}: its \
+                     forces at each point (as the line computed them)"
+                ),
+                forces: self
+                    .loads
+                    .table()
+                    .case(&name)
+                    .filter(|r| r.load.is_none() && r.at == At::Point && r.missing.is_none())
+                    .map(|r| (r.label.clone(), r.force))
+                    .collect(),
+            })
+            .collect();
+        if cases.is_empty() {
+            return Err("no line case chosen".into());
+        }
+        let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
+        let r = f.edit(
+            &format!("store {} from the line", names.join(", ")),
+            |doc, _| edit::store_given_cases(doc, &cases),
+        );
+        self.message = Some(match &r {
+            Ok((a, rep)) => (
+                format!(
+                    "stored in the structure file: {} ({a} new, {rep} replaced) — save to keep \
+                     them",
+                    names.join(", ")
+                ),
+                false,
+            ),
+            Err(e) => (e.clone(), true),
+        });
+        r
+    }
+
+    /// The "Store in the structure file" window: a tick per line case,
+    /// Store (a stored case of the same name: asks first).
+    pub(crate) fn store_window(&mut self, ctx: &egui::Context) {
+        let Some(mut form) = self.loads.store.take() else {
+            return;
+        };
+        let existing: Vec<String> = self
+            .file
+            .as_ref()
+            .map(|f| {
+                edit::load_cases(f.doc())
+                    .iter()
+                    .map(|c| c.get("name").to_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut open = true;
+        let mut store: Option<Vec<String>> = None;
+        egui::Window::new("Store in the structure file")
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.label(
+                    "The line's cases ticked are written into the structure file as load cases \
+                     of given values (a value and direction per point and component): the file \
+                     then has these forces without the line. One undo step; Save keeps them.",
+                );
+                egui::ScrollArea::vertical()
+                    .max_height(200.0)
+                    .id_salt("store-cases")
+                    .show(ui, |ui| {
+                        for (name, case, on) in &mut form.cases {
+                            let label = if existing.contains(case) {
+                                format!("{name} (replaces the case {case} of the file)")
+                            } else {
+                                name.clone()
+                            };
+                            ui.checkbox(on, label);
+                        }
+                    });
+                let chosen: Vec<String> = form
+                    .cases
+                    .iter()
+                    .filter(|c| c.2)
+                    .map(|c| c.1.clone())
+                    .collect();
+                let replaced: Vec<String> = chosen
+                    .iter()
+                    .filter(|c| existing.contains(c))
+                    .cloned()
+                    .collect();
+                if !form.replace.is_empty() && form.replace != replaced {
+                    form.replace.clear();
+                }
+                if form.replace.is_empty() {
+                    if ui
+                        .add_enabled(!chosen.is_empty(), egui::Button::new("Store"))
+                        .on_disabled_hover_text("Tick a case")
+                        .clicked()
+                    {
+                        if replaced.is_empty() {
+                            store = Some(chosen);
+                        } else {
+                            form.replace = replaced;
+                        }
+                    }
+                } else {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 170, 60),
+                        format!(
+                            "The file has cases of these names: {}. Replace them?",
+                            form.replace.join(", ")
+                        ),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button("Replace and store").clicked() {
+                            store = Some(chosen.clone());
+                        }
+                        if ui.button("Cancel").clicked() {
+                            form.replace.clear();
+                        }
+                    });
+                }
+            });
+        if let Some(chosen) = store {
+            let _ = self.store_line_cases(&chosen);
+            return;
+        }
+        if open {
+            self.loads.store = Some(form);
+        }
+    }
+}
+
+#[cfg(test)]
+mod line_rows_tests {
+    use ols_structure_loads::{LinePoint, LineValue};
+
+    use super::*;
+
+    /// Two line cases at two points: a row each, factored where the line
+    /// factors; a line case named as a recipe is called "(line)".
+    #[test]
+    fn the_line_forces_are_rows() {
+        let mut line = LineValues::default();
+        for (label, set) in [("A1", 1), ("A11", 11)] {
+            line.points.push(LinePoint {
+                label: label.into(),
+                sets: vec![set],
+                phases: vec!["L1".into()],
+            });
+            for (case, q, v) in [
+                ("wind", LineQuantity::TransverseFactored, 1500.0),
+                ("wind", LineQuantity::Transverse, 1000.0),
+                ("ice", LineQuantity::Vertical, 8000.0),
+            ] {
+                line.values.push(LineValue {
+                    case: case.into(),
+                    point: Some(label.into()),
+                    set: None,
+                    quantity: q,
+                    value: v,
+                });
+            }
+        }
+        let order = ["ice".to_owned(), "wind".to_owned(), "none".to_owned()];
+        let (t, names) = line_rows(&line, &order, &["wind".to_owned()]);
+        assert_eq!(
+            names,
+            [
+                ("ice".to_owned(), "ice".to_owned()),
+                ("wind (line)".to_owned(), "wind".to_owned())
+            ]
+        );
+        assert_eq!(t.rows.len(), 4);
+        assert_eq!(t.rows[0].force, [0.0, 0.0, 8000.0]);
+        assert_eq!(t.rows[0].source, Source::Line);
+        assert!(t.rows[0].note.contains("unfactored"), "{}", t.rows[0].note);
+        assert_eq!(t.rows[3].case, "wind (line)");
+        assert_eq!(t.rows[3].label, "A11");
+        assert_eq!(t.rows[3].force, [1500.0, 0.0, 0.0]);
+        assert!(t.rows[3].note.contains("sets 11; phases L1; factored"));
+        assert_eq!(date(0), "1970-01-01");
+        assert_eq!(date(1_792_195_200), "2026-10-17");
+    }
 }

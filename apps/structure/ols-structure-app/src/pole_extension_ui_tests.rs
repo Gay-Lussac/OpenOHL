@@ -10,8 +10,8 @@
 use egui_kittest::kittest::Queryable;
 use ols_structures::{Detail, PoleRef};
 
-use crate::app::{Sheet, Tab};
-use crate::tests::{copy_of, harness};
+use crate::layout::Panel;
+use crate::tests::{copy_of, harness, menu};
 
 fn near(a: &[(f64, f64)], b: &[(f64, f64)]) -> bool {
     a.len() == b.len()
@@ -40,11 +40,8 @@ fn a_pole_outline_is_edited() {
     let mut h = harness(&path);
     // The named .olsp: level 3.
     h.get_by_label("Level 3 — full design");
-    h.get_by_label("Body").click();
-    h.run();
-    h.get_by_label("Pole").click();
-    h.run();
-    assert_eq!(h.state().sheets[1], Sheet::Pole);
+    menu(&mut h, "Body", "Pole…");
+    assert_eq!(h.state_mut().focused(), Some(Panel::Pole));
     h.get_by_label("Bring it into this file").click();
     h.run();
     assert!(near(&rings(&h), &[(0.0, 0.7), (27.0, 0.3)]));
@@ -70,11 +67,8 @@ fn a_pole_outline_is_edited() {
         2 + 8
     );
     // Design › Pole: the pole check can read it.
-    h.state_mut().tab = Tab::Design;
-    h.run();
-    h.get_by_label("Pole").click();
-    h.run();
-    assert_eq!(h.state().sheets[2], Sheet::PoleDesign);
+    menu(&mut h, "Design", "Pole design…");
+    assert_eq!(h.state_mut().focused(), Some(Panel::PoleDesign));
     h.get_by_label("The pole check can read the pole (level 3).");
     let t = h.state().file.as_ref().unwrap().structure().clone();
     assert_eq!(t.detail(), Detail::Design);
@@ -85,11 +79,8 @@ fn a_pole_outline_is_edited() {
 fn an_extension_gets_its_piece_and_a_leg() {
     let path = copy_of("type-02.olss", "ext-ui");
     let mut h = harness(&path);
-    h.get_by_label("Body").click();
-    h.run();
-    h.get_by_label("Extensions").click();
-    h.run();
-    assert_eq!(h.state().sheets[1], Sheet::Extensions);
+    menu(&mut h, "Body", "Extensions…");
+    assert_eq!(h.state_mut().focused(), Some(Panel::Extensions));
     h.get_by_label("+ Extension").click();
     h.run();
     assert_eq!(h.state().ext.picked.as_deref(), Some("+3"));

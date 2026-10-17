@@ -655,7 +655,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?`, `made_by?` | m | pylon joints (detail 2–3); `made_by`: the `[[generator]]` that wrote it |
 | `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`), `reference?`, `roll?`, `k?`, `pretension?`, `group?`, `made_by?` | — | pylon members; `group`: its member group (no table of groups: a section per group is written on each member); `made_by` as for joints. `ols_structures_fe` leaves `group` and `made_by` out of the model |
 | `[[generator]]` | tables (`generators`, kept unread by the core): `id`, `kind` (`panels` / `crossarm` / `peak` / `copy_face`) and its inputs | m | a body generator's record, read by `ols-structure-edit` (`body::Generator`): panels `bottom?`, `feet`, `waist` (a length or [across, along]), `panel` [{`top`, `bracing` (`single`/`x`/`k`/`diamond`/`warren`), `horizontal`}]; crossarm `points`, `shape` (`triangular`/`rectangular`); peak `points` or `height`; copy_face `body` (a panels generator), `face` (`x+`/`x-`/`y+`/`y-`) |
-| `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body tab's option |
+| `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body menu's Symmetry option |
 | `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1) |
 | `[[load_case]]` | tables (`load_cases`, kept unread by the core) | N, Pa | the structure's load-case recipes, read by the structure application (`ols-structure-loads`; below) |
 | `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
@@ -710,7 +710,12 @@ reads the structure only; `detail()` stays the source of the level.
 The recipes are edited by place (`load_cases`, `add_load_case`,
 `add_load`, `set_load_case_field`, `set_load_field`, `remove_load`,
 `remove_load_case`; `merge_load_cases` takes the cases of a `.olsslc`
-text: same name replaces, others are added). The pole (`pole`:
+text: same name replaces, others are added; `store_given_cases` writes
+the line's forces as cases of given values — a `value` and `direction`
+(`x`, `y`, `-z`) per point and non-zero component, `line_case`, a
+`description` starting "Stored from the line" — through it;
+`take_line_load_cases` one recipe per line case taking its factored
+values at every point). The pole (`pole`:
 `add_outline_row`, `set_outline_row` — refused when the heights would
 not rise —, `remove_outline_row`, `set_shape`, `set_field`, `remove_pole`,
 `bring_in` a `.olsp`'s text as a two-height outline from the feet) and
@@ -815,7 +820,11 @@ per line load case, point or set and quantity) into a `LoadTable`
 (rows: `case`, `load`, `at` point/member/joint, `label`, `force`
 transverse/longitudinal/vertical down N, `source` recipe/line/typed,
 `evaluated`, `missing`, `note`, `area` — a surface load's member area,
-m²). The table is a result, not stored in the structure file. Typed
+m²). Started for a placed structure, the structure application puts
+the line's forces first (a row per line case and point, source `line`,
+no recipe; a line case named as a recipe is "NAME (line)"). The table
+is a result, not stored in the structure file (the line's cases can be
+stored as `[[load_case]]` of given values, above). Typed
 values (`Override`: case, load, at, label, force) are kept by the
 structure application beside the structure file as **`<stem>.loads.csv`**
 (the table's CSV, typed rows only; the structure on its own) or

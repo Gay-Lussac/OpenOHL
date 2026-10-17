@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The Pole panels: in the Body tab the pole's outside lines (its
+//! The Pole panels: in Pole (Body menu) the pole's outside lines (its
 //! outline by height, round or polygonal; drawn in 3D as a wireframe),
-//! in the Design tab what the pole check needs (material, wall or a
-//! hollow section of the section library, strength). A `.olsp` pole
+//! in Pole design (Design menu) what the pole check needs (material,
+//! wall or a hollow section of the section library, strength). A `.olsp` pole
 //! named by the file is brought into it in one step. Every change is one
 //! edit of the file (one undo step; a value dragged is one step).
 

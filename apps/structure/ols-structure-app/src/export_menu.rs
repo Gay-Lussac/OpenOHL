@@ -5,7 +5,7 @@
 //! File › Export: the structure as IFC (IFC4 with the analysis model, IFC4
 //! members, IFC2x3 for Tekla Structures), SAF (RFEM, SCIA…) or CSV tables
 //! (`ols-structure-export`). By default with the window's section library
-//! and its load table (the Load cases tab: a placed structure's line
+//! and its load table (the Load table panel: a placed structure's line
 //! values and the values typed); another library or a load table (CSV)
 //! can be chosen here.
 
@@ -23,7 +23,7 @@ pub struct ExportSettings {
     /// Section library chosen (a file or folder); none: the window's
     /// (`--sections`, else `Sections/` beside the file).
     pub sections: Option<PathBuf>,
-    /// Load table chosen (CSV); none: the Load cases tab's table.
+    /// Load table chosen (CSV); none: the Load table panel's table.
     pub loads: Option<PathBuf>,
 }
 
@@ -45,7 +45,7 @@ impl StructureApp {
             ui.separator();
             let sections = match &self.export.sections {
                 Some(p) => p.display().to_string(),
-                None => "the window's (Load cases tab)".into(),
+                None => "the window's (as the load panels)".into(),
             };
             ui.label(format!("Section library: {sections}"));
             ui.horizontal(|ui| {
@@ -62,7 +62,7 @@ impl StructureApp {
             });
             let loads = match &self.export.loads {
                 Some(p) => p.display().to_string(),
-                None => "the Load cases tab's table".into(),
+                None => "the Load table panel's table".into(),
             };
             ui.label(format!("Loads: {loads}"));
             ui.horizontal(|ui| {
@@ -73,7 +73,7 @@ impl StructureApp {
                 {
                     self.export.loads = Some(p);
                 }
-                if self.export.loads.is_some() && ui.button("The tab's table").clicked() {
+                if self.export.loads.is_some() && ui.button("The panel's table").clicked() {
                     self.export.loads = None;
                 }
             });

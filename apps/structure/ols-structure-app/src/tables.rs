@@ -2,7 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The tabs under the view: their tools and tables. Every change is one
+//! The panels of tables (Geometry, Body, Design): their tools and tables,
+//! and the actions their menus share with the tools. Every change is one
 //! edit of the file (one undo step; a value dragged is one step).
 
 use eframe::egui;
@@ -11,7 +12,8 @@ use ols_structure_edit::{
 };
 use ols_structures::{AssemblyKind, InsulatorLibrary, StructureType};
 
-use crate::app::{Sheet, StructureApp, Tab, error_label, tab_index};
+use crate::app::{Sheet, StructureApp, error_label};
+use crate::layout::{Area, Panel};
 
 /// A length typed or dragged in a table.
 fn coord(ui: &mut egui::Ui, v: &mut f64) -> egui::Response {
@@ -60,146 +62,43 @@ pub(crate) fn row(
 }
 
 impl StructureApp {
-    /// The tab shown.
-    pub fn tab_ui(&mut self, ui: &mut egui::Ui) {
+    /// A panel of tables: its tools, the table chosen (when it has
+    /// several), the table.
+    pub fn sheet_panel(&mut self, ui: &mut egui::Ui, panel: Panel) {
         let Some(f) = &self.file else {
             return;
         };
         let t = f.structure().clone();
         let g = geometry(&t, &self.insulators);
-        // Shown while the Generators table is.
-        self.body.preview.clear();
-        match self.tab {
-            Tab::Geometry | Tab::Body | Tab::Design => {}
-            Tab::LoadCases => {
-                self.load_cases_ui(ui);
-                return;
-            }
-            Tab::Results => {
-                self.results_ui(ui);
-                return;
-            }
-            Tab::InTheLine => {
-                self.in_the_line_ui(ui);
-                return;
-            }
+        if panel == Panel::Generators {
+            // Shown while the generator's form is.
+            self.body.preview.clear();
         }
-        self.tools(ui, &t);
-        if self.tab == Tab::Body {
+        let area = panel.area().unwrap_or_default();
+        if matches!(
+            panel,
+            Panel::PointsInsulators | Panel::WiresSets | Panel::Joints | Panel::Members
+        ) {
+            self.tools(ui, &t, area);
+        }
+        if matches!(panel, Panel::Joints | Panel::Members) {
             self.body_tools(ui, &t);
         }
-        self.confirm_ui(ui, &t);
-        let k = tab_index(self.tab);
-        let pole = crate::pole_panel::has_pole(&t);
-        let mut sheets: Vec<(Sheet, &str, &str)> = match self.tab {
-            Tab::Geometry => [
-                (
-                    Sheet::Points,
-                    "Attachment points",
-                    "Where insulators hang on the structure",
-                ),
-                (
-                    Sheet::Strings,
-                    "Insulators",
-                    "Each from a point (or another insulator's wire point) to its wire point",
-                ),
-                (
-                    Sheet::Wires,
-                    "Wire points",
-                    "Where an insulator ends: placed by its insulator(s)",
-                ),
-                (
-                    Sheet::Sets,
-                    "Set points",
-                    "Where a wire is strung: a set number on a wire point",
-                ),
-                (
-                    Sheet::Structure,
-                    "Structure",
-                    "Its name, height, feet and height extensions",
-                ),
-            ]
-            .to_vec(),
-            Tab::Body => [
-                (Sheet::Joints, "Joints", "The body's joints"),
-                (
-                    Sheet::Members,
-                    "Members",
-                    "The body's members between two joints, with their groups",
-                ),
-                (
-                    Sheet::Generators,
-                    "Generators",
-                    "Build the body from a few dimensions: legs and panels, crossarms, a peak, a face copied; rebuild it",
-                ),
-                (
-                    Sheet::Extensions,
-                    "Extensions",
-                    "Height extensions: each one's piece below the feet (joints, members) and its leg extensions",
-                ),
-            ]
-            .to_vec(),
-            _ => [
-                (
-                    Sheet::Supports,
-                    "Supports",
-                    "Which joints are supported, and how",
-                ),
-                (
-                    Sheet::Design,
-                    "Members",
-                    "Each member's section, kind and buckling factor",
-                ),
-                (
-                    Sheet::Groups,
-                    "Groups",
-                    "A section and kind for every member of a group",
-                ),
-                (
-                    Sheet::Sections,
-                    "Sections",
-                    "The [[section]] tables of the file",
-                ),
-                (
-                    Sheet::Materials,
-                    "Materials",
-                    "The [[material]] tables of the file",
-                ),
-            ]
-            .to_vec(),
+        let sheets = panel.sheets();
+        let Some(mut sheet) = self.sheet(panel) else {
+            return;
         };
-        if pole && self.tab == Tab::Body {
-            sheets.insert(
-                0,
-                (
-                    Sheet::Pole,
-                    "Pole",
-                    "The pole's outside lines: diameters by height, round or polygonal",
-                ),
-            );
+        if sheets.len() > 1 {
+            ui.horizontal(|ui| {
+                for (s, name, tip) in sheets {
+                    ui.selectable_value(&mut sheet, *s, *name)
+                        .on_hover_text(*tip);
+                }
+            });
+            self.sheets.insert(panel, sheet);
         }
-        if pole && self.tab == Tab::Design {
-            sheets.insert(
-                0,
-                (
-                    Sheet::PoleDesign,
-                    "Pole",
-                    "What the pole check needs: material, wall or section, strength",
-                ),
-            );
-        }
-        if !sheets.iter().any(|s| s.0 == self.sheets[k]) {
-            self.sheets[k] = sheets[0].0;
-        }
-        ui.horizontal(|ui| {
-            for (s, name, tip) in &sheets {
-                ui.selectable_value(&mut self.sheets[k], *s, *name)
-                    .on_hover_text(*tip);
-            }
-        });
-        let sheet = self.sheets[k];
         egui::ScrollArea::both()
-            .id_salt(("sheet", k))
+            .id_salt(("sheet", panel))
             .auto_shrink(false)
             .show(ui, |ui| match sheet {
                 Sheet::Structure => self.structure_sheet(ui, &t),
@@ -221,48 +120,164 @@ impl StructureApp {
             });
     }
 
-    /// The tools of the tab: snap, add, presets, delete, fit.
-    fn tools(&mut self, ui: &mut egui::Ui, t: &StructureType) {
+    /// The points (or wire points) picked: where insulators start.
+    pub fn picked_tops(&self) -> Vec<String> {
+        self.selected
+            .iter()
+            .filter_map(|h| match h {
+                Handle::Point(l) | Handle::Wire(l) => Some(l.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The joints picked, in order.
+    pub fn picked_joints(&self) -> Vec<String> {
+        self.selected
+            .iter()
+            .filter_map(|h| match h {
+                Handle::Joint(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Geometry › Add a point (+ Point): at the top of the stick figure.
+    pub fn add_point(&mut self) {
         let Some(f) = &mut self.file else {
             return;
         };
-        let tab = self.tab;
-        ui.horizontal_wrapped(|ui| {
-            if tab != Tab::Design {
-                ui.label("snap");
-                ui.add(
-                    egui::DragValue::new(&mut self.grid)
-                        .range(0.0..=5.0)
-                        .speed(0.01)
-                        .max_decimals(3)
-                        .suffix(" m"),
-                )
-                .on_hover_text("A dragged joint or point snaps to this grid (0: none), or onto a joint");
-                ui.separator();
+        let t = f.structure();
+        let top = t
+            .points
+            .iter()
+            .map(|p| p.position()[2].si())
+            .fold(t.height.map_or(10.0, |h| h.si()), f64::max);
+        let l = f.edit("add point", |doc, t| {
+            edit::add_point(doc, t, [2.0, 0.0, top])
+        });
+        self.selected = vec![Handle::Point(l.clone())];
+        self.message = Some((format!("added point {l}"), false));
+    }
+
+    /// I (one point picked) or V (two): insulators down to a new wire
+    /// point.
+    pub fn add_insulators(&mut self) {
+        let tops = self.picked_tops();
+        let name = match tops.len() {
+            1 => "I",
+            2 => "V",
+            _ => return,
+        };
+        let Some(f) = &mut self.file else {
+            return;
+        };
+        let length = self.string_length;
+        match f.edit(&format!("{name} insulator"), |doc, t| {
+            edit::add_strings(doc, t, &tops, length)
+        }) {
+            Ok(w) => {
+                self.message = Some((
+                    format!("added the insulators to wire point {w}: put its set in Set points"),
+                    false,
+                ));
+                self.selected = vec![Handle::Wire(w)];
             }
-            if tab == Tab::Geometry {
+            Err(e) => self.message = Some((e, true)),
+        }
+    }
+
+    /// Body › Add a joint: above the joint picked (or at the centre).
+    pub fn add_joint(&mut self) {
+        let Some(f) = &mut self.file else {
+            return;
+        };
+        let at = match self.selected.last() {
+            Some(Handle::Joint(id)) => f
+                .structure()
+                .nodes
+                .iter()
+                .find(|n| &n.id == id)
+                .map(|n| n.point.map(|v| v.si()))
+                .map(|p| [p[0], p[1], p[2] + 1.0]),
+            _ => None,
+        }
+        .unwrap_or([0.0; 3]);
+        let ids = f.edit("add joint", |doc, t| edit::symmetry::add_joint(doc, t, at));
+        self.selected = vec![Handle::Joint(ids[0].clone())];
+        self.message = Some((format!("added joint {}", ids.join(", ")), false));
+    }
+
+    /// Body › Member: between the two joints picked.
+    pub fn add_member(&mut self) {
+        let joints = self.picked_joints();
+        let ([a, b], Some(f)) = (
+            <[String; 2]>::try_from(joints).unwrap_or_default(),
+            &mut self.file,
+        ) else {
+            return;
+        };
+        if a.is_empty() {
+            return;
+        }
+        match f.edit("add member", |doc, t| {
+            edit::symmetry::add_member(doc, t, &a, &b)
+        }) {
+            Ok(ids) => {
+                let more = if ids.len() > 1 {
+                    format!(" and its images {}", ids[1..].join(", "))
+                } else {
+                    String::new()
+                };
+                self.message = Some((format!("added member {} ({a}–{b}){more}", ids[0]), false));
+                // The next member starts at the second joint.
+                self.selected = vec![Handle::Joint(b)];
+            }
+            Err(e) => self.message = Some((e, true)),
+        }
+    }
+
+    /// Body › Point on the joint: a point on the joint picked.
+    pub fn point_here(&mut self) {
+        let (Some(f), [Handle::Joint(j)]) = (&mut self.file, self.selected.as_slice()) else {
+            return;
+        };
+        let j = j.clone();
+        let l = f.edit("add point", |doc, t| edit::add_point_at_joint(doc, t, &j));
+        self.selected = vec![Handle::Point(l.clone())];
+        self.message = Some((format!("added point {l} on joint {j}"), false));
+    }
+
+    /// Delete…: what is picked, asked first.
+    pub fn ask_delete(&mut self) {
+        if let (Some(f), [h]) = (&self.file, self.selected.as_slice()) {
+            self.confirm = Some(edit::symmetry::removal(f.structure(), h));
+        }
+    }
+
+    /// The tools of a Geometry or Body panel: snap, add, presets, delete,
+    /// fit, what is picked.
+    fn tools(&mut self, ui: &mut egui::Ui, _t: &StructureType, area: Area) {
+        ui.horizontal_wrapped(|ui| {
+            ui.label("snap");
+            ui.add(
+                egui::DragValue::new(&mut self.grid)
+                    .range(0.0..=5.0)
+                    .speed(0.01)
+                    .max_decimals(3)
+                    .suffix(" m"),
+            )
+            .on_hover_text("A dragged joint or point snaps to this grid (0: none), or onto a joint");
+            ui.separator();
+            if area == Area::Geometry {
                 if ui
                     .button("+ Point")
                     .on_hover_text("A point where insulators hang, at the top of the stick figure (move it in the view or the table)")
                     .clicked()
                 {
-                    let top = t
-                        .points
-                        .iter()
-                        .map(|p| p.position()[2].si())
-                        .fold(t.height.map_or(10.0, |h| h.si()), f64::max);
-                    let l = f.edit("add point", |doc, t| edit::add_point(doc, t, [2.0, 0.0, top]));
-                    self.selected = vec![Handle::Point(l.clone())];
-                    self.message = Some((format!("added point {l}"), false));
+                    self.add_point();
                 }
-                let tops: Vec<String> = self
-                    .selected
-                    .iter()
-                    .filter_map(|h| match h {
-                        Handle::Point(l) | Handle::Wire(l) => Some(l.clone()),
-                        _ => None,
-                    })
-                    .collect();
+                let tops = self.picked_tops();
                 ui.separator();
                 ui.label("insulator");
                 ui.add(
@@ -286,92 +301,44 @@ impl StructureApp {
                         })
                         .clicked()
                     {
-                        let length = self.string_length;
-                        match f.edit(&format!("{name} insulator"), |doc, t| {
-                            edit::add_strings(doc, t, &tops, length)
-                        }) {
-                            Ok(w) => {
-                                self.message = Some((
-                                    format!("added the insulators to wire point {w}: put its set in Set points"),
-                                    false,
-                                ));
-                                self.selected = vec![Handle::Wire(w)];
-                            }
-                            Err(e) => self.message = Some((e, true)),
-                        }
+                        self.add_insulators();
                     }
                 }
             }
-            if tab == Tab::Body {
+            if area == Area::Body {
                 if ui
                     .button("Add joint")
                     .on_hover_text("A joint above the joint picked (or at the centre)")
                     .clicked()
                 {
-                    let at = match self.selected.last() {
-                        Some(Handle::Joint(id)) => t
-                            .nodes
-                            .iter()
-                            .find(|n| &n.id == id)
-                            .map(|n| n.point.map(|v| v.si()))
-                            .map(|p| [p[0], p[1], p[2] + 1.0]),
-                        _ => None,
-                    }
-                    .unwrap_or([0.0; 3]);
-                    let ids = f.edit("add joint", |doc, t| edit::symmetry::add_joint(doc, t, at));
-                    self.selected = vec![Handle::Joint(ids[0].clone())];
-                    self.message = Some((format!("added joint {}", ids.join(", ")), false));
+                    self.add_joint();
                 }
-                let joints: Vec<String> = self
-                    .selected
-                    .iter()
-                    .filter_map(|h| match h {
-                        Handle::Joint(id) => Some(id.clone()),
-                        _ => None,
-                    })
-                    .collect();
+                let joints = self.picked_joints();
                 if ui
                     .add_enabled(joints.len() == 2, egui::Button::new("Member"))
                     .on_hover_text("A member between the two joints picked")
                     .on_disabled_hover_text("Pick two joints (Shift + click the second)")
                     .clicked()
                 {
-                    let (a, b) = (joints[0].clone(), joints[1].clone());
-                    match f.edit("add member", |doc, t| edit::symmetry::add_member(doc, t, &a, &b)) {
-                        Ok(ids) => {
-                            let more = if ids.len() > 1 {
-                                format!(" and its images {}", ids[1..].join(", "))
-                            } else {
-                                String::new()
-                            };
-                            self.message = Some((format!("added member {} ({a}–{b}){more}", ids[0]), false));
-                            // The next member starts at the second joint.
-                            self.selected = vec![Handle::Joint(b)];
-                        }
-                        Err(e) => self.message = Some((e, true)),
-                    }
+                    self.add_member();
                 }
-                if let [Handle::Joint(j)] = self.selected.clone().as_slice()
+                if matches!(self.selected.as_slice(), [Handle::Joint(_)])
                     && ui
                         .button("Point here")
                         .on_hover_text("A point where insulators hang, on this joint (it moves with it)")
                         .clicked()
                 {
-                    let l = f.edit("add point", |doc, t| edit::add_point_at_joint(doc, t, j));
-                    self.selected = vec![Handle::Point(l.clone())];
-                    self.message = Some((format!("added point {l} on joint {j}"), false));
+                    self.point_here();
                 }
             }
-            if tab != Tab::Design {
-                ui.separator();
-                if ui
-                    .add_enabled(self.selected.len() == 1, egui::Button::new("Delete…"))
-                    .on_hover_text("Delete what is picked, with what goes with it (asks first)")
-                    .on_disabled_hover_text("Pick one thing")
-                    .clicked()
-                {
-                    self.confirm = Some(edit::symmetry::removal(t, &self.selected[0]));
-                }
+            ui.separator();
+            if ui
+                .add_enabled(self.selected.len() == 1, egui::Button::new("Delete…"))
+                .on_hover_text("Delete what is picked, with what goes with it (asks first)")
+                .on_disabled_hover_text("Pick one thing")
+                .clicked()
+            {
+                self.ask_delete();
             }
             if ui.button("Fit").on_hover_text("Show the whole structure").clicked() {
                 self.view_fit = true;
@@ -388,38 +355,6 @@ impl StructureApp {
                     .color(egui::Color32::from_rgb(255, 235, 60)),
                 );
             }
-        });
-        if std::mem::take(&mut self.view_fit) {
-            self.fit();
-        }
-    }
-
-    /// A deletion: what goes with it, Delete or Cancel.
-    fn confirm_ui(&mut self, ui: &mut egui::Ui, _t: &StructureType) {
-        let (Some(r), Some(f)) = (self.confirm.clone(), &mut self.file) else {
-            return;
-        };
-        egui::Frame::group(ui.style()).show(ui, |ui| {
-            ui.label("Delete, with everything that goes with it:");
-            egui::ScrollArea::vertical()
-                .max_height(90.0)
-                .id_salt("removal")
-                .show(ui, |ui| {
-                    for l in r.lines() {
-                        ui.label(l);
-                    }
-                });
-            ui.horizontal(|ui| {
-                if ui.button("Delete").clicked() {
-                    f.edit("delete", |doc, _| edit::remove(doc, &r));
-                    self.selected.clear();
-                    self.message = Some((format!("deleted {}", r.lines().join("; ")), false));
-                    self.confirm = None;
-                }
-                if ui.button("Cancel").clicked() {
-                    self.confirm = None;
-                }
-            });
         });
     }
 
