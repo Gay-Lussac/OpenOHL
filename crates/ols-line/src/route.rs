@@ -560,18 +560,19 @@ impl Line {
         let Some(w) = section.points.get(p.span..=p.span + 1) else {
             return false;
         };
-        match (p.at.station, p.at.distance) {
-            (Some(st), _) => self
+        match p.at {
+            crate::SpanPlace::Station(st) => self
                 .span_stations(&w[0].structure, &w[1].structure)
                 .is_none_or(|(a, b)| a.min(b) < st && st < a.max(b)),
-            (None, Some(d)) => match (self.wire_point(&w[0]), self.wire_point(&w[1])) {
+            crate::SpanPlace::Distance(d) => match (self.wire_point(&w[0]), self.wire_point(&w[1]))
+            {
                 (Some(a), Some(b)) => {
                     let (a, b) = (a.position, b.position);
                     d < (b[0] - a[0]).hypot(b[1] - a[1])
                 }
                 _ => true,
             },
-            (None, None) => true,
+            crate::SpanPlace::Fraction(_) => true,
         }
     }
 
@@ -583,7 +584,7 @@ impl Line {
         &self,
         section: &'s crate::Section,
     ) -> std::borrow::Cow<'s, crate::Section> {
-        let any = section.span_points.iter().any(|p| p.at.station.is_some());
+        let any = section.span_points.iter().any(|p| p.at.station().is_some());
         if !any {
             return std::borrow::Cow::Borrowed(section);
         }
@@ -593,7 +594,7 @@ impl Line {
             self.span_stations(&w[0].structure, &w[1].structure)
         };
         let resolve = |span: usize, p: &mut crate::SpanPlace| {
-            if let (Some(st), Some((a, b))) = (p.station, stations(span))
+            if let (Some(st), Some((a, b))) = (p.station(), stations(span))
                 && (b - a).abs() > 1e-9
             {
                 *p = crate::SpanPlace::at_fraction(((st - a) / (b - a)).clamp(0.0, 1.0));

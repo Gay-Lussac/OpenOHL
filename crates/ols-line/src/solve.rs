@@ -4218,7 +4218,7 @@ mod span_tests {
         });
         by_station.validate().unwrap();
         let resolved = by_station.section_with_fractions(&by_station.sections[0]);
-        assert!((resolved.span_points[0].at.fraction - 0.5).abs() < 1e-9);
+        assert!((resolved.span_points[0].at.fraction().unwrap() - 0.5).abs() < 1e-9);
         let at = shape(&by_station).span_points[0].1;
         let st = shape(&by_station);
         assert!((along(at, &st) - 0.5).abs() < 0.02, "{}", along(at, &st));

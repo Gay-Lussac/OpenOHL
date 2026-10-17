@@ -282,10 +282,11 @@ pub struct JumperShape {
 /// a length along it over the jumper's `length`; a distance along the line
 /// over its ends' horizontal distance `horizontal`.
 pub fn place_fraction(at: &crate::JumperPlace, length: f64, horizontal: f64) -> f64 {
-    let f = match (at.distance, at.length) {
-        (Some(d), _) if horizontal > 0.0 => d / horizontal,
-        (None, Some(l)) if length > 0.0 => l / length,
-        (Some(_) | None, _) => at.fraction,
+    let f = match *at {
+        crate::JumperPlace::Distance(d) if horizontal > 0.0 => d / horizontal,
+        crate::JumperPlace::Length(l) if length > 0.0 => l / length,
+        crate::JumperPlace::Fraction(f) => f,
+        crate::JumperPlace::Distance(_) | crate::JumperPlace::Length(_) => 0.0,
     };
     f.clamp(0.0, 1.0)
 }
@@ -2248,10 +2249,7 @@ mod tests {
         let host = line.jumpers[0].id.clone();
         line.jumpers[0].points.push(crate::JumperPoint {
             label: "K".into(),
-            at: crate::JumperPlace {
-                fraction: 0.5,
-                ..Default::default()
-            },
+            at: crate::JumperPlace::Fraction(0.5),
             description: String::new(),
             object: Some(crate::LineObject::clamp(20.0)),
         });
@@ -2342,10 +2340,7 @@ mod tests {
         let (_, bare) = solve_all(&line, &calm);
         line.jumpers[0].points.push(crate::JumperPoint {
             label: "B".into(),
-            at: crate::JumperPlace {
-                fraction: 0.5,
-                ..Default::default()
-            },
+            at: crate::JumperPlace::Fraction(0.5),
             description: String::new(),
             object: Some(crate::LineObject::body(
                 200.0,
@@ -2386,7 +2381,7 @@ mod tests {
         // A rigid jumper shares it by where it is.
         let mut rigid = line.clone();
         rigid.jumpers[0].rigid = true;
-        rigid.jumpers[0].points[0].at.fraction = 0.25;
+        rigid.jumpers[0].points[0].at = crate::JumperPlace::Fraction(0.25);
         let (_, r) = solve_all(&rigid, &calm);
         let mut plain = rigid.clone();
         plain.jumpers[0].points.clear();
@@ -2396,32 +2391,8 @@ mod tests {
         // sections moves their clamps a little.)
         assert!((extra(0) - 150.0).abs() < 0.5 && (extra(1) - 50.0).abs() < 0.5);
         // By a length along it.
-        assert!(
-            (place_fraction(
-                &crate::JumperPlace {
-                    fraction: 0.0,
-                    length: Some(2.0),
-                    distance: None
-                },
-                8.0,
-                6.0
-            ) - 0.25)
-                .abs()
-                < 1e-12
-        );
-        assert!(
-            (place_fraction(
-                &crate::JumperPlace {
-                    fraction: 0.0,
-                    length: Some(2.0),
-                    distance: Some(3.0)
-                },
-                8.0,
-                6.0
-            ) - 0.5)
-                .abs()
-                < 1e-12
-        );
+        assert!((place_fraction(&crate::JumperPlace::Length(2.0), 8.0, 6.0) - 0.25).abs() < 1e-12);
+        assert!((place_fraction(&crate::JumperPlace::Distance(3.0), 8.0, 6.0) - 0.5).abs() < 1e-12);
     }
 
     #[test]

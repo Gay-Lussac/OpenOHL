@@ -12051,7 +12051,7 @@ fn spacers_are_laid_between_span_points() {
             .iter()
             .find(|p| p.label == "M")
             .unwrap();
-        assert!(p.at.distance.is_some());
+        assert!(p.at.distance().is_some());
         // Solved where it is: on the wire.
         let shape = r.model.shape(&s0, r.case).unwrap();
         assert!(shape.span_points.iter().any(|(l, _)| l == "M"));
@@ -12168,7 +12168,7 @@ fn spacers_are_laid_between_span_points() {
     {
         let r = harness.state_mut().ready().unwrap();
         let p = &r.model.line.sections[0].span_points[k];
-        assert_eq!((p.at.fraction, p.at.distance), (0.2, None));
+        assert_eq!(p.at, ols_line::SpanPlace::Fraction(0.2));
     }
     // Deleting a span point takes its spacer.
     {

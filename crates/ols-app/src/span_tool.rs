@@ -171,16 +171,10 @@ impl SpanForm {
             0.0
         };
         match (self.by, self.stations) {
-            (PlaceBy::Station, Some((a, b))) => SpanPlace {
-                fraction,
-                station: Some(round(a + fraction * (b - a), 0.001)),
-                ..SpanPlace::default()
-            },
-            (PlaceBy::Distance, _) => SpanPlace {
-                fraction,
-                distance: Some(d),
-                ..SpanPlace::default()
-            },
+            (PlaceBy::Station, Some((a, b))) => {
+                SpanPlace::Station(round(a + fraction * (b - a), 0.001))
+            }
+            (PlaceBy::Distance, _) => SpanPlace::Distance(d),
             _ => SpanPlace::at_fraction(fraction),
         }
     }
@@ -193,20 +187,9 @@ impl SpanForm {
             0.0
         };
         match self.by {
-            PlaceBy::Distance => JumperPlace {
-                fraction,
-                distance: Some(round(d, 0.001)),
-                length: None,
-            },
-            PlaceBy::Length => JumperPlace {
-                fraction,
-                length: Some(round(fraction * self.length, 0.001)),
-                distance: None,
-            },
-            _ => JumperPlace {
-                fraction,
-                ..JumperPlace::default()
-            },
+            PlaceBy::Distance => JumperPlace::Distance(round(d, 0.001)),
+            PlaceBy::Length => JumperPlace::Length(round(fraction * self.length, 0.001)),
+            _ => JumperPlace::Fraction(fraction),
         }
     }
 

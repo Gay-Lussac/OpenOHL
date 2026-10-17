@@ -185,11 +185,7 @@ fn rich_line() -> Line {
     });
     line.jumpers[0].points.push(ols_line::JumperPoint {
         label: "J1".into(),
-        at: ols_line::JumperPlace {
-            fraction: 0.3,
-            length: Some(2.0),
-            distance: None,
-        },
+        at: ols_line::JumperPlace::Length(2.0),
         description: "a ball".into(),
         object: Some(ols_line::LineObject::body(
             40.0,

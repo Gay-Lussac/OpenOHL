@@ -836,38 +836,76 @@ impl Stringing {
 
 /// A place along a jumper, from its `from` end: a fraction of its length,
 /// a length along it (m), or a horizontal distance along the line (m,
-/// from `from`'s clamp) — a distance wins over a length, which wins over
-/// the fraction.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct JumperPlace {
+/// from `from`'s clamp). Written `{"fraction": 0.5}`, `{"length": 3}` or
+/// `{"distance": 2.5}`; files before version 5 could give several, read
+/// by their priority (a distance over a length over the fraction).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", from = "JumperPlaceFile")]
+pub enum JumperPlace {
     /// Fraction of its length from `from`, 0–1.
-    #[serde(default)]
-    pub fraction: f64,
+    Fraction(f64),
     /// Length along it from `from`, m.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub length: Option<f64>,
+    Length(f64),
     /// Horizontal distance from `from`'s clamp along the line, m.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub distance: Option<f64>,
+    Distance(f64),
+}
+
+impl Default for JumperPlace {
+    fn default() -> Self {
+        Self::Fraction(0.0)
+    }
+}
+
+/// A jumper place as files give it (one key, or several before
+/// version 5).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JumperPlaceFile {
+    #[serde(default)]
+    fraction: f64,
+    #[serde(default)]
+    length: Option<f64>,
+    #[serde(default)]
+    distance: Option<f64>,
+}
+
+impl From<JumperPlaceFile> for JumperPlace {
+    fn from(f: JumperPlaceFile) -> Self {
+        match (f.distance, f.length) {
+            (Some(d), _) => Self::Distance(d),
+            (None, Some(l)) => Self::Length(l),
+            (None, None) => Self::Fraction(f.fraction),
+        }
+    }
 }
 
 impl JumperPlace {
+    /// The place given by a fraction, a length and a distance as files
+    /// before version 5 could: a distance over a length over the
+    /// fraction.
+    pub fn from_parts(fraction: f64, length: Option<f64>, distance: Option<f64>) -> Self {
+        JumperPlaceFile {
+            fraction,
+            length,
+            distance,
+        }
+        .into()
+    }
+
     /// It holds: a fraction 0–1, a length or a distance ≥ 0.
     pub fn is_valid(&self) -> bool {
-        match (self.distance, self.length) {
-            (Some(d), _) => d.is_finite() && d >= 0.0,
-            (None, Some(l)) => l.is_finite() && l >= 0.0,
-            (None, None) => (0.0..=1.0).contains(&self.fraction),
+        match *self {
+            Self::Distance(d) | Self::Length(d) => d.is_finite() && d >= 0.0,
+            Self::Fraction(f) => (0.0..=1.0).contains(&f),
         }
     }
 
-    /// Readable: `0.25`, `3 m along` or `2.5 m from from`.
+    /// Readable: `0.25`, `3 m along` or `2.5 m from the clamp`.
     pub fn text(&self) -> String {
-        match (self.distance, self.length) {
-            (Some(d), _) => format!("{d} m from the clamp"),
-            (None, Some(l)) => format!("{l} m along"),
-            (None, None) => format!("{}", self.fraction),
+        match self {
+            Self::Distance(d) => format!("{d} m from the clamp"),
+            Self::Length(l) => format!("{l} m along"),
+            Self::Fraction(f) => format!("{f}"),
         }
     }
 }
@@ -890,62 +928,117 @@ pub struct JumperPoint {
 
 /// A place along a span: a horizontal fraction of it from its back point,
 /// a horizontal distance from that point (m), or a station of the line
-/// (m, along the alignment the span's structures stand on) — a station
-/// wins over a distance, which wins over the fraction.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SpanPlace {
+/// (m, along the alignment the span's structures stand on). Written
+/// `{"fraction": 0.4}`, `{"distance": 30}` or `{"station": 1520}`; files
+/// before version 5 could give several, read by their priority (a station
+/// over a distance over the fraction).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", from = "SpanPlaceFile")]
+pub enum SpanPlace {
     /// Horizontal fraction of the span from its back point, 0–1.
-    #[serde(default)]
-    pub fraction: f64,
+    Fraction(f64),
     /// Horizontal distance from the back point, m.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub distance: Option<f64>,
+    Distance(f64),
     /// Station of the line, m ([`Line::span_stations`]).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub station: Option<f64>,
+    Station(f64),
+}
+
+impl Default for SpanPlace {
+    fn default() -> Self {
+        Self::Fraction(0.0)
+    }
+}
+
+/// A span place as files give it (one key, or several before version 5).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SpanPlaceFile {
+    #[serde(default)]
+    fraction: f64,
+    #[serde(default)]
+    distance: Option<f64>,
+    #[serde(default)]
+    station: Option<f64>,
+}
+
+impl From<SpanPlaceFile> for SpanPlace {
+    fn from(f: SpanPlaceFile) -> Self {
+        match (f.station, f.distance) {
+            (Some(s), _) => Self::Station(s),
+            (None, Some(d)) => Self::Distance(d),
+            (None, None) => Self::Fraction(f.fraction),
+        }
+    }
 }
 
 impl SpanPlace {
     /// At `fraction` of the span.
     pub fn at_fraction(fraction: f64) -> Self {
-        Self {
+        Self::Fraction(fraction)
+    }
+
+    /// The place given by a fraction, a distance and a station as files
+    /// before version 5 could: a station over a distance over the
+    /// fraction.
+    pub fn from_parts(fraction: f64, distance: Option<f64>, station: Option<f64>) -> Self {
+        SpanPlaceFile {
             fraction,
-            ..Self::default()
+            distance,
+            station,
         }
+        .into()
     }
 
     /// At `distance` m from the back point.
     pub fn at_distance(distance: f64) -> Self {
-        Self {
-            distance: Some(distance),
-            ..Self::default()
-        }
+        Self::Distance(distance)
     }
 
     /// At station `station` m of the line.
     pub fn at_station(station: f64) -> Self {
-        Self {
-            station: Some(station),
-            ..Self::default()
+        Self::Station(station)
+    }
+
+    /// The fraction, when given by one.
+    pub fn fraction(&self) -> Option<f64> {
+        match self {
+            Self::Fraction(f) => Some(*f),
+            _ => None,
         }
     }
 
-    /// Its fraction of a span `horizontal` m long.
+    /// The distance, when given by one.
+    pub fn distance(&self) -> Option<f64> {
+        match self {
+            Self::Distance(d) => Some(*d),
+            _ => None,
+        }
+    }
+
+    /// The station, when given by one.
+    pub fn station(&self) -> Option<f64> {
+        match self {
+            Self::Station(s) => Some(*s),
+            _ => None,
+        }
+    }
+
+    /// Its fraction of a span `horizontal` m long (a station: turned into
+    /// a fraction first, [`Line::section_with_fractions`]; 0 here).
     pub fn fraction_of(&self, horizontal: f64) -> f64 {
-        match self.distance {
-            Some(d) if horizontal > 0.0 => d / horizontal,
-            Some(_) => 0.0,
-            None => self.fraction,
+        match *self {
+            Self::Fraction(f) => f,
+            Self::Distance(d) if horizontal > 0.0 => d / horizontal,
+            Self::Distance(_) | Self::Station(_) => 0.0,
         }
     }
 
     /// Readable: `0.25`, `120 m` or `st. 1520 m`.
     pub fn text(&self) -> String {
-        match (self.station, self.distance) {
-            (Some(s), _) => format!("st. {s} m"),
-            (None, Some(d)) => format!("{d} m"),
-            (None, None) => format!("{}", self.fraction),
+        match self {
+            Self::Station(s) => format!("st. {s} m"),
+            Self::Distance(d) => format!("{d} m"),
+            Self::Fraction(f) => format!("{f}"),
         }
     }
 }
@@ -1512,11 +1605,7 @@ pub struct SpanLoad {
 impl SpanLoad {
     /// Its place along the span.
     pub fn place(&self) -> SpanPlace {
-        SpanPlace {
-            fraction: self.fraction,
-            distance: self.distance,
-            station: self.station,
-        }
+        SpanPlace::from_parts(self.fraction, self.distance, self.station)
     }
 
     /// Downward and horizontal forces, N, on the whole bundle in a case,
@@ -2526,17 +2615,15 @@ impl Line {
             let spans = sec.points.len() - 1;
             check_stringing(&sec.stringing, spans)
                 .map_err(|m| LineError::Invalid(format!("section {}: {m}", sec.id)))?;
-            let place_ok = |p: &SpanPlace| match (p.station, p.distance) {
-                (Some(s), _) => s.is_finite(),
-                (None, Some(d)) => d.is_finite() && d > 0.0,
-                (None, None) => 0.0 < p.fraction && p.fraction < 1.0,
+            let place_ok = |p: &SpanPlace| match *p {
+                SpanPlace::Station(s) => s.is_finite(),
+                SpanPlace::Distance(d) => d.is_finite() && d > 0.0,
+                SpanPlace::Fraction(f) => 0.0 < f && f < 1.0,
             };
             // A span's ends are places too (a spread object from or to
             // a clamp).
-            let end_ok = |p: &SpanPlace| {
-                *p == SpanPlace::default()
-                    || (p.station.is_none() && p.distance.is_none() && p.fraction == 1.0)
-            };
+            let end_ok =
+                |p: &SpanPlace| matches!(*p, SpanPlace::Fraction(f) if f == 0.0 || f == 1.0);
             let mut labels = std::collections::BTreeSet::new();
             for p in &sec.span_points {
                 if p.label.trim().is_empty() || !labels.insert(p.label.as_str()) {
@@ -3454,5 +3541,39 @@ mod tests {
         d.validate().unwrap();
         d.jumper_clamp_length = 1.5;
         assert!(d.validate().is_err());
+    }
+
+    /// Places are one of their kinds, written with one key; files before
+    /// version 5 giving several are read by their priority.
+    #[test]
+    fn places_are_one_kind_and_older_ones_read_by_priority() {
+        let read = |t: &str| serde_json::from_str::<SpanPlace>(t).unwrap();
+        assert_eq!(read(r#"{"fraction":0.4}"#), SpanPlace::Fraction(0.4));
+        assert_eq!(
+            read(r#"{"fraction":0.4,"distance":30.0}"#),
+            SpanPlace::Distance(30.0)
+        );
+        assert_eq!(
+            read(r#"{"fraction":0.4,"distance":30.0,"station":1520.0}"#),
+            SpanPlace::Station(1520.0)
+        );
+        assert_eq!(
+            serde_json::to_string(&SpanPlace::Distance(30.0)).unwrap(),
+            r#"{"distance":30.0}"#
+        );
+        assert!(serde_json::from_str::<SpanPlace>(r#"{"far":1}"#).is_err());
+        let jread = |t: &str| serde_json::from_str::<JumperPlace>(t).unwrap();
+        assert_eq!(
+            jread(r#"{"fraction":0.5,"length":2.0}"#),
+            JumperPlace::Length(2.0)
+        );
+        assert_eq!(
+            jread(r#"{"fraction":0.5,"length":2.0,"distance":3.0}"#),
+            JumperPlace::Distance(3.0)
+        );
+        assert_eq!(
+            serde_json::to_string(&JumperPlace::Fraction(0.5)).unwrap(),
+            r#"{"fraction":0.5}"#
+        );
     }
 }
