@@ -3819,6 +3819,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-structure-app"
+version = "0.0.1"
+dependencies = [
+ "clap",
+ "eframe",
+ "egui_kittest",
+ "env_logger",
+ "log",
+ "ols-core",
+ "ols-render",
+ "ols-structure-edit",
+ "ols-structures",
+ "rfd",
+ "toml_edit",
+]
+
+[[package]]
+name = "ols-structure-edit"
+version = "0.0.1"
+dependencies = [
+ "ols-core",
+ "ols-structures",
+ "toml_edit",
+]
+
+[[package]]
 name = "ols-structure-link"
 version = "0.0.1"
 dependencies = [

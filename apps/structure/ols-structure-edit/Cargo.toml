@@ -1,0 +1,17 @@
+[package]
+name = "ols-structure-edit"
+description = "OLS CAD structure application: the edits of a structure file (.olss), undo and redo, what each level still lacks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ols-core.workspace = true
+ols-structures.workspace = true
+toml_edit = "0.25"
+
+[lints]
+workspace = true
