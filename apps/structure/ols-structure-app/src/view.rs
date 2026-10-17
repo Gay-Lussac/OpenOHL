@@ -44,6 +44,8 @@ pub struct View {
     /// The scene needs building.
     dirty: bool,
     drag: Option<Move>,
+    /// A tab's drawing over the structure (loads, results), by its key.
+    overlay: Option<(u64, GpuScene)>,
 }
 
 /// What the view needs to draw and edit.
@@ -60,6 +62,9 @@ pub struct ViewInput<'a> {
     pub ahead: f64,
     /// What the last action did (or why not: `true`).
     pub message: &'a mut Option<(String, bool)>,
+    /// A tab's drawing over the structure (loads, results) and its key
+    /// (built again when the key changes).
+    pub overlay: Option<(u64, Scene)>,
 }
 
 impl View {
@@ -221,7 +226,18 @@ impl View {
             (rect.width() * ppp).round().max(1.0) as u32,
             (rect.height() * ppp).round().max(1.0) as u32,
         ];
-        let layers: Vec<&GpuScene> = self.gpu.iter().collect();
+        match v.overlay {
+            Some((key, scene)) if self.overlay.as_ref().is_none_or(|o| o.0 != key) => {
+                self.overlay = Some((key, GpuScene::new(device, &scene)));
+            }
+            Some(_) => {}
+            None => self.overlay = None,
+        }
+        let layers: Vec<&GpuScene> = self
+            .gpu
+            .iter()
+            .chain(self.overlay.as_ref().map(|o| &o.1))
+            .collect();
         let texture = renderer.render(device, &rs.queue, &layers, &camera, px);
         let view = texture.create_view(&eframe::wgpu::TextureViewDescriptor {
             format: Some(eframe::wgpu::TextureFormat::Rgba8Unorm),

@@ -9,6 +9,8 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+ols-core.workspace = true
+ols-structures.workspace = true
 ols-structure-loads.workspace = true
 ols-line.workspace = true
 ols-loads.workspace = true

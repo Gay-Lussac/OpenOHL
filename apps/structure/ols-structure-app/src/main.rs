@@ -14,6 +14,8 @@
 //! and reads the file again when it is saved.
 
 mod app;
+mod load_cases_tab;
+mod results_tab;
 mod tables;
 mod view;
 
@@ -22,6 +24,8 @@ use std::path::PathBuf;
 use clap::Parser;
 use eframe::egui;
 
+#[cfg(test)]
+mod load_tests;
 #[cfg(test)]
 mod tests;
 

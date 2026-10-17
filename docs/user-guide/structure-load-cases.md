@@ -8,10 +8,12 @@ vertical load. Specification: [Building structures](../development/structure-bui
 §2 (decisions 5 to 7).
 
 Status: the recipes, their files, the evaluation and the table's CSV
-are built (`apps/structure/ols-structure-loads`); the application's
-window and the line application's use of the table come later. XLSX
-import and export of the table and of the recipes come later too; CSV
-works today.
+are built (`apps/structure/ols-structure-loads`), and the structure
+application edits them in its **Load cases** tab and solves the table's
+cases in its **Results** tab ([The structure application](structure-app.md#load-cases)).
+The line application's use of the table (the line values of a placed
+structure in the window) comes later; so do XLSX import and export of
+the table and of the recipes. CSV works today.
 
 ## Recipes
 
@@ -134,9 +136,17 @@ One row per case, load and point (or member, or joint):
 | `note` | |
 
 **Typed values** stay as given and are marked `typed`; the evaluated
-value is kept beside them. Evaluated again (new line values), the typed
-values are put back over the new table. A typed row with no load number
-is a load of its own (e.g. from a client's load tree).
+value is kept beside them. Evaluated again (new line values, a recipe
+changed), the typed values are put back over the new table. A typed row
+with no load number is a load of its own (e.g. from a client's load
+tree).
+
+The structure application keeps the typed values beside the structure
+file as `<name>.loads.csv` (`type-02.olss` → `type-02.loads.csv`): the
+table's CSV with only the typed rows, written when the structure is
+saved and read when it is opened. A table read back from CSV types what
+it has beyond the evaluation (other values, rows of its own), so a table
+exported and imported again is the same table.
 
 The table is written and read as CSV with these columns (numbers in N);
 a spreadsheet with the same columns reads back.

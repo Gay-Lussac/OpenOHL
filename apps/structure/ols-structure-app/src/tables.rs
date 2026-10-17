@@ -49,18 +49,6 @@ fn row(
     }
 }
 
-const PLACEHOLDER_LOADS: &str = "Load cases come with the load-case recipes (phase 4 of the \
-     structure spec): each case a list of loads — a value the line gives at the placed \
-     structure (the largest tension, wind, ice) or a value of its own, a factor, a one-sided \
-     share, the points or members it acts on — evaluated by the core into a load table per \
-     placed structure, editable, exported and imported (CSV / XLSX).";
-
-const PLACEHOLDER_RESULTS: &str = "Results come with phase 4: the FE check (first order or \
-     P-Delta) and the pole check run per load case on a level 3 structure, with the deformed \
-     shape, usage colours and reactions in the view, and a report of the structure. Today the \
-     line application gives the usage of each placed structure (Structure loads › Usage), and \
-     `ols structures fe FILE.olss` computes the file's own [[load]] case.";
-
 const PLACEHOLDER_LINE: &str = "Started from a line (Edit on a structure in the line \
      application), this tab will list the places using this structure and their loads per \
      case, through the link to the line application (phase 4). Today: saved changes go back \
@@ -77,24 +65,11 @@ impl StructureApp {
         match self.tab {
             Tab::Geometry | Tab::Body | Tab::Design => {}
             Tab::LoadCases => {
-                ui.label(PLACEHOLDER_LOADS);
-                if !t.load_cases.is_empty() {
-                    ui.label(format!(
-                        "This file holds {} load-case recipe(s) ([[load_case]]): \
-                         shown and edited here once this tab is built.",
-                        t.load_cases.len()
-                    ));
-                }
-                if !t.loads.is_empty() {
-                    ui.label(format!(
-                        "This file holds {} nodal force(s) ([[load]]): read as one case, \"model\".",
-                        t.loads.len()
-                    ));
-                }
+                self.load_cases_ui(ui);
                 return;
             }
             Tab::Results => {
-                ui.label(PLACEHOLDER_RESULTS);
+                self.results_ui(ui);
                 return;
             }
             Tab::InTheLine => {

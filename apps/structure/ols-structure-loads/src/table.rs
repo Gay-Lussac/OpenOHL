@@ -328,6 +328,31 @@ pub struct Override {
     pub force: [f64; 3],
 }
 
+impl Override {
+    /// The override of a row: its place and force.
+    pub fn of(r: &LoadRow) -> Self {
+        Self {
+            case: r.case.clone(),
+            load: r.load,
+            at: r.at,
+            label: r.label.clone(),
+            force: r.force,
+        }
+    }
+
+    /// Whether it is typed over `r` (same case, load and place).
+    pub fn is_over(&self, r: &LoadRow) -> bool {
+        self.case == r.case && self.load == r.load && self.at == r.at && self.label == r.label
+    }
+
+    /// The overrides as a table of typed rows (to keep them as CSV).
+    pub fn table(overrides: &[Override]) -> LoadTable {
+        let mut t = LoadTable::default();
+        t.apply(overrides);
+        t
+    }
+}
+
 /// The loads of a structure: per case, per point (or member, or joint).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct LoadTable {
@@ -397,18 +422,39 @@ impl LoadTable {
         }
     }
 
+    /// What this table (read back, e.g. from CSV) types over `evaluated`:
+    /// its rows with a value that `evaluated` has not (another value, a
+    /// row it lacks, a value where it has none, or a row typed there and
+    /// not here). `evaluated.apply` of them gives this table again.
+    pub fn overrides_over(&self, evaluated: &LoadTable) -> Vec<Override> {
+        let same = |a: [f64; 3], b: [f64; 3]| {
+            a.iter()
+                .zip(b)
+                .all(|(x, y)| (x - y).abs() <= 1e-9 * x.abs().max(y.abs()).max(1.0))
+        };
+        self.rows
+            .iter()
+            .filter(|r| r.missing.is_none())
+            .filter(|r| {
+                let e = evaluated.rows.iter().find(|e| {
+                    e.case == r.case && e.load == r.load && e.at == r.at && e.label == r.label
+                });
+                !e.is_some_and(|e| {
+                    e.missing.is_none()
+                        && same(e.force, r.force)
+                        && (r.source != Source::Typed || e.source == Source::Typed)
+                })
+            })
+            .map(Override::of)
+            .collect()
+    }
+
     /// The typed rows, as overrides (to keep with the placed structure).
     pub fn overrides(&self) -> Vec<Override> {
         self.rows
             .iter()
             .filter(|r| r.source == Source::Typed && r.case != MODEL_CASE)
-            .map(|r| Override {
-                case: r.case.clone(),
-                load: r.load,
-                at: r.at,
-                label: r.label.clone(),
-                force: r.force,
-            })
+            .map(Override::of)
             .collect()
     }
 }
