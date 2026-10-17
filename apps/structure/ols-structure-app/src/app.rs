@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, SystemTime};
 use eframe::egui;
 use eframe::egui_wgpu;
 use ols_structure_edit::{
-    Handle, Missing, Need, Place, Removal, StructureFile, geometry, missing, next_level,
+    Handle, Missing, Need, Place, Removal, StructureFile, geometry_with, missing, next_level,
 };
 use ols_structure_loads::PlacedValues;
 use ols_structures::InsulatorLibrary;
@@ -94,6 +94,12 @@ pub enum Sheet {
     Sections,
     /// Materials.
     Materials,
+    /// The pole's outline (Body tab).
+    Pole,
+    /// The pole's design (Design tab).
+    PoleDesign,
+    /// Height extensions, their pieces and legs (Body tab).
+    Extensions,
 }
 
 /// The structure application.
@@ -153,6 +159,10 @@ pub struct StructureApp {
     title: String,
     /// The Body tab's tools: generator form, preview, group filter.
     pub body: crate::body_tab::BodyState,
+    /// The Pole panels (the section library next to the file).
+    pub pole: crate::pole_panel::PoleState,
+    /// The Extensions panel (the extension shown in 3D).
+    pub ext: crate::extensions_panel::ExtensionsState,
 }
 
 impl StructureApp {
@@ -187,6 +197,8 @@ impl StructureApp {
             drawn: None,
             title: String::new(),
             body: Default::default(),
+            pole: Default::default(),
+            ext: Default::default(),
         }
     }
 
@@ -240,6 +252,8 @@ impl StructureApp {
                     self.message = Some((format!("typed loads not read: {e}"), true));
                 }
                 self.body = Default::default();
+                self.pole = Default::default();
+                self.ext = Default::default();
             }
             Err(e) => self.open_error = Some(e),
         }
@@ -644,6 +658,16 @@ impl StructureApp {
             (_, Place::Joints) => (Tab::Body, Sheet::Joints),
             (_, Place::Points) => (Tab::Geometry, Sheet::Points),
             (_, Place::Sections) => (Tab::Design, Sheet::Sections),
+            (Need::Level, Place::Pole)
+                if self
+                    .file
+                    .as_ref()
+                    .is_some_and(|f| f.structure().detail().level() >= 2) =>
+            {
+                (Tab::Design, Sheet::PoleDesign)
+            }
+            (_, Place::Pole) => (Tab::Body, Sheet::Pole),
+            (_, Place::Extensions) => (Tab::Body, Sheet::Extensions),
         };
         self.tab = tab;
         self.sheets[tab_index(tab)] = sheet;
@@ -762,14 +786,15 @@ impl eframe::App for StructureApp {
             return;
         };
         let t = f.structure().clone();
-        let g = geometry(&t, &self.insulators);
-        // Drawn again when the file, what is picked, the compass or the
-        // preview change.
+        let shown = self.ext.shown.clone().filter(|n| t.extension(n).is_some());
+        let g = geometry_with(&t, &self.insulators, shown.as_deref());
+        // Drawn again when the file, what is picked, the compass, the
+        // preview or the extension shown change.
         let key = (
             f.text(),
             self.selected.clone(),
             self.ahead.to_bits(),
-            self.body.preview_stamp(),
+            self.body.preview_stamp() ^ shown.as_ref().map_or(0, |n| n.len() + 1),
         );
         if self.drawn.as_ref() != Some(&key) {
             self.view.redraw();

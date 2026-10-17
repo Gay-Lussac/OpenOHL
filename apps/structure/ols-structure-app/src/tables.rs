@@ -90,8 +90,9 @@ impl StructureApp {
         }
         self.confirm_ui(ui, &t);
         let k = tab_index(self.tab);
-        let sheets: &[(Sheet, &str, &str)] = match self.tab {
-            Tab::Geometry => &[
+        let pole = crate::pole_panel::has_pole(&t);
+        let mut sheets: Vec<(Sheet, &str, &str)> = match self.tab {
+            Tab::Geometry => [
                 (
                     Sheet::Points,
                     "Attachment points",
@@ -117,8 +118,9 @@ impl StructureApp {
                     "Structure",
                     "Its name, height, feet and height extensions",
                 ),
-            ],
-            Tab::Body => &[
+            ]
+            .to_vec(),
+            Tab::Body => [
                 (Sheet::Joints, "Joints", "The body's joints"),
                 (
                     Sheet::Members,
@@ -130,8 +132,14 @@ impl StructureApp {
                     "Generators",
                     "Build the body from a few dimensions: legs and panels, crossarms, a peak, a face copied; rebuild it",
                 ),
-            ],
-            _ => &[
+                (
+                    Sheet::Extensions,
+                    "Extensions",
+                    "Height extensions: each one's piece below the feet (joints, members) and its leg extensions",
+                ),
+            ]
+            .to_vec(),
+            _ => [
                 (
                     Sheet::Supports,
                     "Supports",
@@ -157,13 +165,34 @@ impl StructureApp {
                     "Materials",
                     "The [[material]] tables of the file",
                 ),
-            ],
+            ]
+            .to_vec(),
         };
+        if pole && self.tab == Tab::Body {
+            sheets.insert(
+                0,
+                (
+                    Sheet::Pole,
+                    "Pole",
+                    "The pole's outside lines: diameters by height, round or polygonal",
+                ),
+            );
+        }
+        if pole && self.tab == Tab::Design {
+            sheets.insert(
+                0,
+                (
+                    Sheet::PoleDesign,
+                    "Pole",
+                    "What the pole check needs: material, wall or section, strength",
+                ),
+            );
+        }
         if !sheets.iter().any(|s| s.0 == self.sheets[k]) {
             self.sheets[k] = sheets[0].0;
         }
         ui.horizontal(|ui| {
-            for (s, name, tip) in sheets {
+            for (s, name, tip) in &sheets {
                 ui.selectable_value(&mut self.sheets[k], *s, *name)
                     .on_hover_text(*tip);
             }
@@ -186,6 +215,9 @@ impl StructureApp {
                 Sheet::Design => self.design_sheet(ui, &t),
                 Sheet::Sections => self.items_sheet(ui, "section"),
                 Sheet::Materials => self.items_sheet(ui, "material"),
+                Sheet::Pole => self.pole_sheet(ui, &t),
+                Sheet::PoleDesign => self.pole_design_sheet(ui, &t),
+                Sheet::Extensions => self.extensions_sheet(ui, &t),
             });
     }
 

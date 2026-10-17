@@ -52,4 +52,6 @@ pub fn analyse(
 }
 
 #[cfg(test)]
+mod pole_extension_tests;
+#[cfg(test)]
 mod tests;

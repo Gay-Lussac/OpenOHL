@@ -33,6 +33,12 @@
 //! moment = "180 kN m"
 //! ```
 //!
+//! **In the structure file**: a structure may describe its pole itself
+//! (`[pole]`, [`ols_structures::pole`]): its outline by height, round or
+//! polygonal, and the same level 3 fields. [`structure_pole`] reads
+//! either into the same [`Pole`] ([`Pole::from_inline`]); a two-height
+//! outline from the ground line gives exactly the `.olsp` taper.
+//!
 //! **Check** ([`check_pole`]): at heights from the ground line to the top,
 //! the bending moment of the factored loads above (r × F about the pole
 //! axis, both directions, their resultant) plus the wind on the pole
@@ -45,6 +51,8 @@ use std::path::Path;
 
 use ols_core::budget::Budget;
 use ols_core::units::{Density, Length, Stress};
+use ols_sections::SectionLibrary;
+use ols_structures::{InlinePole, PoleRef, StructureType};
 use serde::Deserialize;
 
 use crate::model::{Analysis, Member, MemberKind, Model, NodalLoad, Node, Section};
@@ -152,6 +160,13 @@ pub struct Pole {
     pub density: f64,
     /// Shape factor on the wind pressure.
     pub drag: f64,
+    /// A regular polygon's number of sides (none: round); its diameters
+    /// are across flats.
+    pub sides: Option<u32>,
+    /// The diameter by height above ground (m, m), rising heights, when
+    /// it is not the linear taper from the ground line to the top (empty:
+    /// that taper).
+    pub profile: Vec<(f64, f64)>,
 }
 
 impl Pole {
@@ -194,6 +209,112 @@ impl Pole {
             elasticity: f.elasticity.map(|e| e.si()),
             density: f.density.si(),
             drag: f.drag.unwrap_or(1.0),
+            sides: None,
+            profile: Vec::new(),
+        };
+        pole.check()?;
+        Ok(pole)
+    }
+
+    /// The pole a structure file describes (`[pole]`), its id `id`: the
+    /// outline's heights above the feet (`foot`, local z) give the
+    /// diameters by height above the ground line; the level 3 fields read
+    /// as in a `.olsp` file. A `section` of `library` (a polygonal or
+    /// circular hollow section) gives the wall, and its material the
+    /// elasticity and density not given. Checked as a `.olsp` pole.
+    pub fn from_inline(
+        id: &str,
+        name: &str,
+        p: &InlinePole,
+        foot: f64,
+        library: &SectionLibrary,
+    ) -> Result<Self, String> {
+        let bad = |m: String| format!("pole of {id}: {m}");
+        let missing = p.missing_for_design();
+        if !missing.is_empty() {
+            return Err(bad(format!("not complete: {}", missing.join("; "))));
+        }
+        let rings: Vec<(f64, f64)> = p.rings().iter().map(|(z, d)| (z - foot, *d)).collect();
+        if rings[0].0 < -1e-3 {
+            return Err(bad("the outline starts below the feet".into()));
+        }
+        let (first, last) = (rings[0], rings[rings.len() - 1]);
+        let height = last.0;
+        let ground = p.diameter_at(foot).expect("an outline");
+        // The plain taper from the ground line: no profile (the .olsp
+        // formula); anything else by height.
+        let profile = if rings.len() == 2 && first.0.abs() < 1e-9 {
+            Vec::new()
+        } else {
+            rings.clone()
+        };
+        let material: PoleMaterial = toml::Value::String(p.material.clone().unwrap_or_default())
+            .try_into()
+            .map_err(|e: toml::de::Error| bad(e.message().to_owned()))?;
+        let (mut wall, mut elasticity, mut density) = (
+            p.wall.map(|w| w.si()),
+            p.elasticity.map(|e| e.si()),
+            p.density.map(|d| d.si()),
+        );
+        if let Some(sid) = &p.section {
+            let s = library
+                .section(sid)
+                .ok_or_else(|| bad(format!("section {sid} is not in the section library")))?;
+            let t = match (&s.shape, p.polygon_sides()) {
+                (ols_sections::Shape::PolygonalHollow { sides, t, .. }, Some(n)) if *sides == n => {
+                    *t
+                }
+                (ols_sections::Shape::CircularHollow { t, .. }, None) => *t,
+                _ => {
+                    return Err(bad(format!(
+                        "section {sid} is not a hollow section of the pole's shape"
+                    )));
+                }
+            };
+            wall = wall.or(Some(t));
+            if let Some(m) = library.material_of(s) {
+                elasticity = elasticity.or(Some(m.elasticity));
+                density = density.or(Some(m.density));
+            }
+        }
+        let moment_capacity = match &p.moment_capacity {
+            Some(v) => Some(
+                v.clone()
+                    .try_into::<Moment>()
+                    .map_err(|e| bad(format!("moment_capacity: {}", e.message())))?
+                    .0,
+            ),
+            None => None,
+        };
+        let capacity = p
+            .capacity
+            .iter()
+            .map(|t| {
+                toml::Value::Table(t.clone())
+                    .try_into::<CapacityFile>()
+                    .map(|c| (c.height.si(), c.moment.0))
+                    .map_err(|e| bad(format!("capacity: {}", e.message())))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let embedment = p.embedment.map_or(0.0, |e| e.si());
+        let pole = Pole {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            material,
+            source: None,
+            length: height + embedment,
+            embedment,
+            top_diameter: last.1,
+            ground_diameter: ground,
+            wall,
+            fibre_stress: p.fibre_stress.map(|s| s.si()),
+            moment_capacity,
+            capacity,
+            elasticity,
+            density: density.unwrap_or(0.0),
+            drag: p.drag.unwrap_or(1.0),
+            sides: p.polygon_sides(),
+            profile,
         };
         pole.check()?;
         Ok(pole)
@@ -260,8 +381,23 @@ impl Pole {
         self.length - self.embedment
     }
 
-    /// Diameter at height `h` above ground, m (linear taper).
+    /// Diameter at height `h` above ground, m (linear taper, or the
+    /// profile: linear between its heights, held beyond them).
     pub fn diameter_at(&self, h: f64) -> f64 {
+        if let (Some(first), Some(last)) = (self.profile.first(), self.profile.last()) {
+            if h <= first.0 {
+                return first.1;
+            }
+            if h >= last.0 {
+                return last.1;
+            }
+            for w in self.profile.windows(2) {
+                if h <= w[1].0 {
+                    let t = (h - w[0].0) / (w[1].0 - w[0].0);
+                    return w[0].1 + (w[1].1 - w[0].1) * t;
+                }
+            }
+        }
         let t = (h / self.height()).clamp(0.0, 1.0);
         self.ground_diameter + (self.top_diameter - self.ground_diameter) * t
     }
@@ -291,29 +427,76 @@ impl Pole {
         self.moment_capacity.unwrap_or(f64::INFINITY)
     }
 
-    /// Elastic section modulus at diameter `d`, m³.
+    /// Elastic section modulus at diameter `d`, m³: a polygon's farthest
+    /// fibre is a corner (the smaller of its moduli).
     fn modulus(&self, d: f64) -> f64 {
         let i = self.second_moment(d);
-        i / (d / 2.0)
+        match self.sides {
+            Some(n) => i / (d / 2.0 / (std::f64::consts::PI / f64::from(n)).cos()),
+            None => i / (d / 2.0),
+        }
     }
 
-    /// Second moment of area at diameter `d`, m⁴.
-    fn second_moment(&self, d: f64) -> f64 {
-        let pi = std::f64::consts::PI;
+    /// Second moment of area at diameter `d`, m⁴ (a regular polygon: the
+    /// same about every axis through its centre, A·(12 r² + a²)/48 for
+    /// inradius r and side a).
+    pub(crate) fn second_moment(&self, d: f64) -> f64 {
         match self.wall {
-            Some(t) => pi / 64.0 * (d.powi(4) - (d - 2.0 * t).powi(4)),
-            None => pi / 64.0 * d.powi(4),
+            Some(t) => self.solid_second_moment(d) - self.solid_second_moment(d - 2.0 * t),
+            None => self.solid_second_moment(d),
+        }
+    }
+
+    fn solid_second_moment(&self, d: f64) -> f64 {
+        match self.sides {
+            Some(n) => {
+                let (r, tan) = (d / 2.0, (std::f64::consts::PI / f64::from(n)).tan());
+                let a = f64::from(n) * r * r * tan;
+                a * r * r * (3.0 + tan * tan) / 12.0
+            }
+            None => std::f64::consts::PI / 64.0 * d.powi(4),
         }
     }
 
     /// Area at diameter `d`, m².
-    fn area(&self, d: f64) -> f64 {
-        let pi = std::f64::consts::PI;
+    pub(crate) fn area(&self, d: f64) -> f64 {
         match self.wall {
-            Some(t) => pi / 4.0 * (d * d - (d - 2.0 * t).powi(2)),
-            None => pi / 4.0 * d * d,
+            Some(t) => self.solid_area(d) - self.solid_area(d - 2.0 * t),
+            None => self.solid_area(d),
         }
     }
+
+    fn solid_area(&self, d: f64) -> f64 {
+        match self.sides {
+            Some(n) => {
+                let r = d / 2.0;
+                f64::from(n) * r * r * (std::f64::consts::PI / f64::from(n)).tan()
+            }
+            None => std::f64::consts::PI / 4.0 * d * d,
+        }
+    }
+}
+
+/// The pole of structure `t` for the pole check (none: it has none): its
+/// `[pole]` table ([`Pole::from_inline`]), or the `.olsp` file it names —
+/// by file name when the name ends in `.olsp`, else by id among the
+/// `.olsp` files of `dir` (the structure file's folder).
+pub fn structure_pole(
+    t: &StructureType,
+    dir: &Path,
+    library: &SectionLibrary,
+) -> Option<Result<Pole, String>> {
+    Some(match t.pole.as_ref()? {
+        PoleRef::Inline(p) => Pole::from_inline(&t.id, &t.name, p, t.foot_level(), library),
+        PoleRef::File(name) if name.ends_with(&format!(".{POLE_FILE_EXTENSION}")) => {
+            Pole::load(&dir.join(name))
+        }
+        PoleRef::File(id) => load_poles(dir).and_then(|list| {
+            list.into_iter().find(|p| &p.id == id).ok_or_else(|| {
+                format!("pole {id}: no .olsp file with this id in {}", dir.display())
+            })
+        }),
+    })
 }
 
 /// Every pole (`*.olsp`) of a directory, sorted by file name.

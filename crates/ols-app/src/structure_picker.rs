@@ -184,7 +184,11 @@ impl TypeRow {
             ols_structures::Detail::Stick => {
                 vec!["the pylon's joints and members (or [[body]] polylines)".to_owned()]
             }
-            ols_structures::Detail::Outline => t.missing_for_design(),
+            ols_structures::Detail::Outline => match t.pole.as_ref().and_then(|p| p.inline()) {
+                // A pole's outline: what its design lacks.
+                Some(p) if t.members.is_empty() => p.missing_for_design(),
+                _ => t.missing_for_design(),
+            },
             ols_structures::Detail::Design => Vec::new(),
         };
         let source = t.source.clone().unwrap_or_default();

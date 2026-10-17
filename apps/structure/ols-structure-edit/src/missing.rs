@@ -6,7 +6,7 @@
 //! [`StructureType::detail`]), and advice: what reads but is worth a look
 //! (shown, never counted in the level).
 
-use ols_structures::{Detail, StructureType};
+use ols_structures::{Detail, PoleRef, StructureType};
 
 use crate::geometry::Handle;
 
@@ -31,6 +31,10 @@ pub enum Place {
     Members,
     /// Sections and materials.
     Sections,
+    /// The pole (its outline, its design).
+    Pole,
+    /// The height extensions (their bodies and legs).
+    Extensions,
 }
 
 /// One thing missing, or one piece of advice.
@@ -73,19 +77,39 @@ const CROSSING: f64 = 1e-3;
 /// then the advice: a point on no joint or member (it carries no load in
 /// the analysis), a joint on one member (or none), members crossing
 /// without a joint.
+///
+/// A pole (`[pole]`) has its own items: level 2 its outline, level 3 its
+/// material, strength and (steel) wall. At level 3 an extension without
+/// members is advice (the model leaves it out), an extension's member
+/// without a section or an extension body without a support a lack.
 pub fn missing(t: &StructureType, level: u8) -> Vec<Missing> {
     let mut out = Vec::new();
     let now = t.detail().level();
+    let pole = t.pole.as_ref().and_then(PoleRef::inline);
     if level >= 2 && now < 2 {
-        let why = if t.body.is_empty() {
-            "no member: add joints and members (Body), or a 3D [[body]]"
-        } else {
-            "the [[body]] polylines lie in one plane: members (Body) or a 3D body"
+        let why = match (pole, t.body.is_empty()) {
+            (Some(_), _) => {
+                "no pole outline: diameters at two heights at least (Body › Pole), or members"
+            }
+            (None, true) => "no member: add joints and members (Body), or a 3D [[body]]",
+            (None, false) => "the [[body]] polylines lie in one plane: members (Body) or a 3D body",
         };
-        out.push(Missing::level(why, None, Place::Members));
+        let place = if pole.is_some() {
+            Place::Pole
+        } else {
+            Place::Members
+        };
+        out.push(Missing::level(why, None, place));
     }
     if level >= 3 && now < 3 {
-        if t.members.is_empty() {
+        if let Some(p) = pole {
+            for why in p.missing_for_design() {
+                out.push(Missing::level(why, None, Place::Pole));
+            }
+        }
+        if t.members.is_empty() && pole.is_some() {
+            // The pole is the design.
+        } else if t.members.is_empty() {
             if level == 3 && now == 2 {
                 out.push(Missing::level(
                     "no member (a [[body]] is only drawn): joints and members (Body)",
@@ -106,6 +130,35 @@ pub fn missing(t: &StructureType, level: u8) -> Vec<Missing> {
                     "no supported joint: a support on the feet (Design)",
                     None,
                     Place::Joints,
+                ));
+            }
+        }
+    }
+    if level >= 3 && !t.members.is_empty() {
+        for e in &t.extensions {
+            if !e.has_body() {
+                out.push(Missing::advice(
+                    format!(
+                        "extension {} has no members: the FE model leaves it out",
+                        e.name
+                    ),
+                    None,
+                    Place::Extensions,
+                ));
+                continue;
+            }
+            for m in e.members.iter().filter(|m| m.section.is_none()) {
+                out.push(Missing::level(
+                    format!("extension {}: member {} has no section", e.name, m.id),
+                    None,
+                    Place::Extensions,
+                ));
+            }
+            if !e.nodes.iter().any(|n| n.support.is_some()) {
+                out.push(Missing::level(
+                    format!("extension {}: no supported joint", e.name),
+                    None,
+                    Place::Extensions,
                 ));
             }
         }

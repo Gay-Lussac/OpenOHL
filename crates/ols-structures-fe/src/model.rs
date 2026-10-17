@@ -69,6 +69,7 @@ use std::path::Path;
 
 use ols_core::units::{Angle, Area, Density, Force, Length, SecondMoment, SectionModulus, Stress};
 use ols_sections::SectionLibrary;
+use ols_structures::structures::STRUCTURE_FILE_EXTENSION;
 use serde::Deserialize;
 
 use crate::units::Moment;
@@ -79,11 +80,6 @@ pub const MODEL_FILE_FORMAT: &str = "ols-structure-model";
 pub const MODEL_FILE_VERSION: u32 = 1;
 /// File extension of structure models.
 pub const MODEL_FILE_EXTENSION: &str = "olsfe";
-/// The structure library's extension (`ols_structures`'
-/// `STRUCTURE_FILE_EXTENSION`; this crate does not depend on it): a
-/// structure type's own model.
-const STRUCTURE_FILE_EXTENSION: &str = "olss";
-
 /// Gravity, m/s².
 const G: f64 = ols_core::units::STANDARD_GRAVITY;
 
@@ -712,7 +708,39 @@ impl Model {
 
     /// The same, a member's section looked up in `library` first.
     pub fn from_structure_type_with(text: &str, library: &SectionLibrary) -> Result<Self, String> {
-        let file: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
+        Self::from_structure_type_extended(text, library, None)
+    }
+
+    /// The model of a structure file standing on its extension
+    /// `extension` (none: as written): the extension's joints and members
+    /// added, the supports and leg joints as
+    /// [`ols_structures::StructureType::extended`] makes them (the rule
+    /// of [`ols_structures::extensions`]); an extension without a body or
+    /// legs gives the model as written. A member's section is looked up
+    /// in `library` first.
+    pub fn from_structure_type_extended(
+        text: &str,
+        library: &SectionLibrary,
+        extension: Option<&str>,
+    ) -> Result<Self, String> {
+        let mut file: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
+        if let Some(name) = extension {
+            use ols_structures::LibraryItem;
+            let t = ols_structures::StructureType::parse(Path::new("structure.olss"), text)
+                .map_err(|e| e.message)?;
+            let e = t
+                .extension(name)
+                .ok_or_else(|| format!("no extension \"{name}\""))?;
+            if e.changes_model() {
+                let x = t.extended(Some(name))?;
+                with_extension(&mut file, name, &x);
+            }
+        }
+        Self::from_structure_table(file, library)
+    }
+
+    /// The model of a structure file's tables.
+    fn from_structure_table(file: toml::Table, library: &SectionLibrary) -> Result<Self, String> {
         let mut model = toml::Table::new();
         for key in [
             "name", "source", "analysis", "material", "section", "member", "load",
@@ -797,12 +825,25 @@ impl Model {
 
     /// The same, a member's section looked up in `library` first.
     pub fn load_with(path: &Path, library: &SectionLibrary) -> Result<Self, String> {
+        Self::load_extended(path, library, None)
+    }
+
+    /// The same; a structure file standing on its extension `extension`
+    /// ([`Model::from_structure_type_extended`]; a model file has no
+    /// extensions: refused with one).
+    pub fn load_extended(
+        path: &Path,
+        library: &SectionLibrary,
+        extension: Option<&str>,
+    ) -> Result<Self, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         if path
             .extension()
             .is_some_and(|e| e == STRUCTURE_FILE_EXTENSION)
         {
-            Self::from_structure_type_with(&text, library)
+            Self::from_structure_type_extended(&text, library, extension)
+        } else if let Some(e) = extension {
+            Err(format!("a model file has no extension \"{e}\""))
         } else {
             Self::parse_with(&text, library)
         }
@@ -1054,4 +1095,59 @@ pub(crate) fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
         a[2] * b[0] - a[0] * b[2],
         a[0] * b[1] - a[1] * b[0],
     ]
+}
+
+/// The tables of a structure file with extension `name` as `x` makes it:
+/// the extension's own `node` and `member` tables added (all their
+/// fields), the supports of the joints standing on it dropped, the joints
+/// a leg lowers moved.
+fn with_extension(file: &mut toml::Table, name: &str, x: &ols_structures::ExtendedBody) {
+    let own = |key: &str| -> Vec<toml::Value> {
+        file.get("extension")
+            .and_then(toml::Value::as_array)
+            .and_then(|a| {
+                a.iter()
+                    .find(|e| e.get("name").and_then(toml::Value::as_str) == Some(name))
+            })
+            .and_then(|e| e.get(key))
+            .and_then(toml::Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let (own_nodes, own_members) = (own("node"), own("member"));
+    let mut nodes = file
+        .get("node")
+        .and_then(toml::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    nodes.extend(own_nodes);
+    for n in nodes.iter_mut().filter_map(toml::Value::as_table_mut) {
+        let id = n
+            .get("id")
+            .and_then(toml::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        if x.unsupported.contains(&id) {
+            n.remove("support");
+            n.remove("spring");
+        }
+        if x.lowered.iter().any(|(j, _)| *j == id)
+            && let Some(at) = x.nodes.iter().find(|m| m.id == id)
+        {
+            let point: Vec<toml::Value> = at
+                .point
+                .iter()
+                .map(|v| toml::Value::String(format!("{} m", v.si())))
+                .collect();
+            n.insert("point".into(), point.into());
+        }
+    }
+    file.insert("node".into(), nodes.into());
+    let mut members = file
+        .get("member")
+        .and_then(toml::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    members.extend(own_members);
+    file.insert("member".into(), members.into());
 }

@@ -65,7 +65,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below), optional `weight` (a counterweight hanging at it). |
 | `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `wind_area` (default: its insulator's, else none), optional `compression` (what it may take; none: tension only), `strain` (a strain string, else suspension), `angle` (from straight down, default 0: hanging) and `direction` (in plan, default 0: ahead). Files written before gave a strain string a `side` (`ahead`/`back`): read as level, direction 0° or 180°. |
 | `attachment` | no | Files of version 1: attachment points (`set`, `phase`, `point`, `insulator` or `string`, `side`), read as before (below). |
-| `extension` | no | Named body extensions: `dz` lengthens the body below z = 0, so everything above the feet rises by it. |
+| `extension` | no | Named body extensions: `dz` lengthens the body below z = 0, so everything above the feet rises by it. Version 3: an extension may carry its own joints, members and leg extensions ([Extension bodies](#extension-bodies-and-leg-extensions)). |
 | `foot` | no | Level of the feet in local z (default 0: z = 0 is the ground). |
 | `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest point) and a crossarm from the mast to every point. |
 | `height` | no | Mast top (local z) for the generated stick drawing. |
@@ -74,7 +74,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `generator`, `symmetry` | no | Version 3: the body generators with their inputs, and the mirror symmetry kept while editing ([Body generators](#body-generators-groups-and-symmetry)). |
 | `section`, `material`, `analysis`, `load` | no | A full design's sections, materials, analysis options and own loads — see [Structure analysis](structure-analysis.md). |
 | `model` | no | A separate structure model (`.olsfe`, path relative to this file) for the finite-element check, instead of the members here. |
-| `pole` | no | Pole id (a `.olsp` file in the same folder) for the pole check — see [Structure analysis](structure-analysis.md). |
+| `pole` | no | The pole: `pole = "id"` (a `.olsp` file in the same folder, by its id or its file name) or, version 3, a `[pole]` table in the file with its outline and design ([Poles](#poles)) — checked by the pole check, see [Structure analysis](structure-analysis.md). |
 
 ### Points, strings and wire points
 
@@ -92,7 +92,9 @@ A structure file describes its structure at one of three levels. The level is **
 |---|---|---|
 | **1 — stick figure** | Only the points, strings and wire points: a mast from the centre to the top and crossarms to the points are drawn — or `[[body]]` polylines that all lie in one plane (a face of the pylon). | Placing the wires, drawings, the 3D view. |
 | **2 — sticks of the pylon** | Joints (`[[node]]`) and members (`[[member]]`) without sections, or `[[body]]` polylines that make a 3D object (their points, all together, not in one plane — more than 1 mm off it). | Drawings and the 3D view with the pylon's members; distances to the structure (planned). |
-| **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint — or a separate `model = "….olsfe"`. | Structure analysis (finite elements) and fabrication. |
+| **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint — or a separate `model = "….olsfe"`. An extension with a body: its members with sections and a supported joint too. | Structure analysis (finite elements) and fabrication. |
+
+A **pole** has the same three levels ([Poles](#poles)): without an outline it adds nothing (level 1); its outline — diameters at two heights at least — makes level 2; with what the pole check needs (material, strength, a steel pole's wall) level 3. A pole named by a `.olsp` file is level 3. The structure's level is the higher of its members' and its pole's.
 
 ```toml
 [[node]]                             # a joint, local axes
@@ -171,6 +173,82 @@ made_by = "body"                     # written by generator body: a rebuild repl
 - **Rebuild** replaces only what the generator made: a joint or member it makes again (same id) keeps what was set on it (section, kind, group, support…); one it no longer makes goes, unless a member made by hand, another generator's member or a point uses it — then it stays, as made by hand, and is reported. Hand-made joints and members are never touched.
 - **Groups**: there is no table of groups; a group is the members naming it. A section set for a group is written on each of its members, so the finite-element model and the level read the members only (the FE model leaves `group` and `made_by` out).
 - **Symmetry**: joints are matched by position (within 1 mm); see [the Body tab](structure-app.md#the-body-tab).
+
+### Poles
+
+A pole structure names its pole — `pole = "steel-pole-30m"` (the `.olsp` file with that id next to the structure; or `pole = "steel-pole-30m.olsp"`, by file name), level 3 — or, version 3, describes it in the structure file:
+
+```toml
+version = 3
+
+[pole]
+shape = "polygon"                    # or "round" (default)
+sides = 12                           # a polygon's number of sides (3 or more)
+embedment = "3 m"                    # depth in the ground (optional): length = height + this
+
+# Level 3: the fields of a .olsp file, same names and meaning
+material = "steel"                   # wood | steel | concrete | other
+wall = "8 mm"                        # or section = "P-12x500" (below); none: solid
+elasticity = "210 GPa"               # P-Delta
+density = "7850 kg/m3"               # the pole's weight
+drag = 0.8                           # shape factor on the wind (default 1)
+# fibre_stress = "55 MPa"            # wood: the moment capacity from the taper
+# moment_capacity = "900 kN m"       # at the ground line
+
+[[pole.outline]]                     # level 2: the outside lines, from the feet up
+z = "0 m"                            # local z of the structure (the feet: the ground line)
+diameter = "700 mm"                  # or circumference; a polygon: across flats
+
+[[pole.outline]]
+z = "27 m"
+diameter = "300 mm"
+
+[[pole.capacity]]                    # or: the moment capacity by height above the ground line
+height = "0 m"
+moment = "900 kN m"
+```
+
+- **Outline**: heights rise from row to row (by more than 1 mm); a row gives its `diameter` or its `circumference` (a polygon's perimeter: across flats = perimeter / (n · tan(π/n))). Between the heights the diameter is linear; below the lowest and above the top it is held. The pole's height above ground is the top's z less the feet's.
+- **Level 3** needs the `material`, a strength (`fibre_stress`, `moment_capacity` or `[[pole.capacity]]`) and, for a steel pole, its `wall` (or a `section`). A wood, concrete or other pole without a wall is solid.
+- **`section`**: a hollow section of the project's section library ([Section library](section-library.md)) — `polygonal_hollow` with the pole's sides, or `circular_hollow` for a round pole. Its wall `t` is the pole's wall (unless `wall` is given), and its material's elasticity and density are taken when not given here. The section's own diameter is not used: the outline gives the diameters.
+- **A polygon's section** at each height: a regular polygon of the outline's width across flats, hollow by the wall; its second moment is the same about every axis through the centre (A·(12 r² + a²)/48 for inradius r and side a, as the section library computes it), its elastic modulus taken at a corner (the smaller).
+
+The structure application edits the pole (**Body › Pole**, **Design › Pole**) and brings a named `.olsp` into the file in one step: its diameters at the ground line and the top become a two-height outline from the feet, its other fields are copied, and the pole check gives the same numbers.
+
+### Extension bodies and leg extensions
+
+At levels 1 and 2 an extension is a `name` and a `dz`. At level 3 (version 3) it may carry its own **piece** — the joints and members between the ground and the feet — and **leg extensions**, one leg longer than the others (decision 20: one file describes a family; each placed structure stands on the extension chosen at its place):
+
+```toml
+[[extension]]
+name = "+3"
+dz = "3 m"
+
+[[extension.node]]                   # the piece: z from the feet less dz to the feet
+id = "X3-J1"
+point = ["3.3 m", "3.3 m", "-3 m"]
+support = "pinned"                   # the piece carries the supports
+
+[[extension.member]]                 # between the piece's joints and the body's, by id
+id = "X3-M1"
+nodes = ["X3-J1", "body-L0-1"]
+section = "L80"
+group = "X3-leg"
+
+[[extension.leg]]                    # one leg longer: A, B, C, D or a joint id
+leg = "A"
+dz = "1 m"
+```
+
+**The rule**, in the structure's own axes (the body is not moved; placed, the whole rises by the extension's `dz` as before):
+
+1. **A body extension** adds its joints and members to the body's. A body joint a member of the extension reaches stands on the extension: its support (and spring) is dropped; the extension's own joints carry the supports written on them. Its joints lie between the feet less `dz` and the feet; its ids are unique among the body's; its `dz` is above 0.
+2. **A leg extension** lowers one support joint by its `dz`. Leg **A** is the joint in the quarter x > 0, y > 0, **B** x < 0, y > 0, **C** x < 0, y < 0, **D** x > 0, y < 0 — among the supported joints (after rule 1) when there are any, else among all joints — the lowest one there (two equally low: name the joint by its id). The joint slides along its **leg member** — of the members ending at it, the one rising most steeply to a joint above — until it is `dz` lower, so the leg member is stretched along its own line; with no member rising from it, it moves straight down. Every member ending at it follows.
+3. A placed structure standing on an extension with a piece or legs is analysed on that model ([Structure analysis](structure-analysis.md#extensions-in-the-model)); an extension without them uses the model as written (as before).
+
+At level 3 every extension piece gets all its parameters: an extension's member without a section, or a piece without a supported joint, keeps the structure at level 2. An extension without members stays allowed at level 3 — the structure application lists it as advice ("the FE model leaves it out").
+
+The structure application's **Body › Extensions** adds a piece by hand or builds it in one go: under every foot of the body (its supported joints, else its lowest joints) a joint `dz` lower along the foot's leg (the same leg rule) with the foot's support, a leg member to the foot (group `X<name>-leg`), the faces between neighbouring feet braced (one diagonal or X, horizontals at the bottom on request, group `X<name>-bracing`), sections as the body's last member; ids `X<name>-J<n>` and `X<name>-M<n>` (`+3` → `X3-J1`).
 
 ### Capacity
 

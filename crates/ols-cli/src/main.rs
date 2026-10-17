@@ -471,8 +471,9 @@ enum StructuresCommand {
     /// forces and usage under the loads of one structure (a CSV of `ols
     /// line --loads-csv`) or the model's own loads.
     Fe(structure_fe::FeArgs),
-    /// Pole check (.olsp): bending moment along the pole from the loads at
-    /// a structure type's attachments, wind, P-Delta.
+    /// Pole check (.olsp, or the type's own [pole]): bending moment along
+    /// the pole from the loads at a structure type's attachments, wind,
+    /// P-Delta.
     Pole(structure_fe::PoleArgs),
 }
 

@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 ols-core.workspace = true
 ols-sections.workspace = true
+ols-structures.workspace = true
 nalgebra.workspace = true
 serde.workspace = true
 toml.workspace = true

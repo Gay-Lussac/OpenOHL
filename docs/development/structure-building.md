@@ -130,9 +130,9 @@ Where today's code differs from the decisions:
   a level 1 structure with a capacity is checked by Methods 1 and 2 in a
   line. Decisions 13 and 18 say how this changes when the levels are
   built.
-- **Poles have no level.** A structure naming a `pole` (`.olsp`) is
-  checked by the pole check, but `detail()` does not look at `pole`.
-  Decision 2 gives poles levels 1 to 3.
+- ~~**Poles have no level.**~~ *Built* (phase 3): `detail()` looks at
+  the pole (`pole_detail`): a `[pole]` outline makes level 2, a pole the
+  check can read (or a named `.olsp`) level 3.
 - **Any `[[body]]` polyline gives level 2**, also a flat one. Decision 3:
   only a 3D body (being fixed, see Gaps).
 
@@ -150,13 +150,22 @@ Where today's code differs from the decisions:
 
 An `[[extension]]` has a `name` and a `dz`. A placed structure may name
 one (`extension = "+3"`). The body is then longer below the reference
-level z = 0, so every point above the feet rises by `dz`. The same
-points, strings, joints and members are used for every extension: no
-member is added, the FE model is the same, and the wind bands are not
-raised ("Height extensions are not added to the bands yet",
-`loads.md`). Extensions are also used by automatic spotting (candidates
-by structure and extension) and by the bill of materials (a price per
-extension). Decisions 17 and 20: extension bodies at level 3, leg extensions included.
+level z = 0, so every point above the feet rises by `dz`. Extensions are
+also used by automatic spotting (candidates by structure and extension)
+and by the bill of materials (a price per extension); the wind bands are
+not raised ("Height extensions are not added to the bands yet",
+`loads.md`).
+
+*Built* (phase 3, decisions 17 and 20): an extension may carry its own
+piece (`[[extension.node]]`, `[[extension.member]]`) and leg extensions
+(`[[extension.leg]]`, a leg A–D or a joint id and its `dz`);
+`StructureType::extended` applies the rule (the piece added, the body
+joints it reaches lose their supports, a leg's support slides `dz` lower
+along its leg member — [user
+guide](../user-guide/structure-library.md#extension-bodies-and-leg-extensions));
+`Model::from_structure_type_extended` builds the model on it and
+`ols-loads` checks each placed structure on its extension's model. An
+extension without a piece or legs behaves as before.
 
 ### Gaps
 
@@ -177,8 +186,9 @@ extension). Decisions 17 and 20: extension bodies at level 3, leg extensions inc
    width × length × sin²θ, half to each joint; no shielding, one `drag`
    per structure); the wind bands stay out of the model. Load-case
    recipes (surface loads per case) still to come.
-7. **Extensions are not in the FE model.** Decision 17: extension
-   bodies, built with the levels.
+7. ~~**Extensions are not in the FE model.**~~ *Built* (phase 3):
+   extension pieces and leg extensions in the model of each placed
+   structure.
 8. ~~**Level 2 has no generator.**~~ *Built* (phase 3, body part): legs
    and panels with bracing patterns, crossarms, peaks, copying a face,
    rebuild, symmetry and member groups in the structure application.
@@ -193,8 +203,11 @@ extension). Decisions 17 and 20: extension bodies at level 3, leg extensions inc
     exports](structure-exports.md)).
 11. **No report of a structure**: results are console text or one usage
     line per placed structure.
-12. **Poles are text files** (`.olsp`), not edited in the app, and have
-    no level.
+12. ~~**Poles are text files** (`.olsp`), not edited in the app, and
+    have no level.~~ *Built* (phase 3): a `[pole]` table in the structure
+    file (outline by height, round or polygonal; the `.olsp` fields), its
+    levels, edited in Body › Pole and Design › Pole; a `.olsp` still
+    reads and can be brought into the file.
 13. **The level says what is present, not whether it works**: a level 3
     structure may still be a mechanism; that shows only when solved.
 14. **No way to replace a structure** by another one keeping its wires
@@ -411,7 +424,7 @@ Run per structure, per case, with the engine used in the line run:
 | Loads at points along members | level 3 | being fixed (shared to the member's joints) |
 | Surface loads on members (wind, snow) | level 3 (profile areas) | no |
 | Body wind | level 3 (profile areas, decision 10) | yes, in the FE check: member wind on profiles from the section library (`Model::member_wind`); wind bands kept out of the model |
-| Extensions in the model | level 3 extension bodies (decision 17) | no |
+| Extensions in the model | level 3 extension bodies (decision 17) | yes: `Model::from_structure_type_extended`, per placed structure in the line run (`ols-loads`), `ols structures fe --extension` |
 | Capacity derived from the design | level 3 | no: the load tree or allowable spans found by scaling a case until the worst member reaches 100 % |
 
 Every run keeps the exit clauses and budgets of
@@ -543,10 +556,25 @@ Each phase is a deliverable of its own, checked and committed.
    section and kind per group written on each member (no `[[group]]`
    table); the Body tab's Generators (preview, Apply = one undo step),
    group column and filter, Shift + click in tables, Design › Groups
-   ([user guide](../user-guide/structure-app.md#the-body-tab)). Not yet:
-   poles and their levels, redundants in the panels, plan bracing,
-   leg extensions as bodies (decision 17), a crossarm with several
-   points on one arm.
+   ([user guide](../user-guide/structure-app.md#the-body-tab)). *Poles
+   and extensions built*: the `[pole]` table (`ols_structures::pole`:
+   outline by height, round or polygonal, the level 3 fields of a
+   `.olsp`), `detail()` looking at it, the pole check reading it through
+   the same conversion as a `.olsp` (`ols_structures_fe::pole::
+   structure_pole`, `Pole::from_inline`: the example pole gives the same
+   numbers), `ols structures pole --type` with the type's own pole;
+   extension pieces and leg extensions (`ols_structures::extensions`,
+   the rule in the user guide) in the FE model of each placed structure;
+   `missing(level)` for poles and extensions; the edits (`pole`,
+   `extension_edits`, one undo step each) and the app's **Body › Pole**,
+   **Design › Pole** (a hollow section of the section library next to
+   the file, or the wall typed) and **Body › Extensions** (the piece by
+   hand or built in one go, legs, the view standing on an extension)
+   ([user guide](../user-guide/structure-app.md#poles-and-extensions)).
+   Not yet: redundants in the panels, plan bracing, a crossarm with
+   several points on one arm; the Results tab solving on an extension;
+   the pole check in the structure application's Results tab; wind bands
+   raised by an extension.
 4. **Load-case recipes**: `[[load_case]]` (format version 3), evaluation
    in the core from the line values at each placed structure, the load
    table (editable, CSV / XLSX import and export), surface loads; the

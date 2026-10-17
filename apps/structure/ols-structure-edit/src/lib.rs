@@ -11,19 +11,23 @@
 //! ([`missing()`]); the edits of its load-case recipes
 //! ([`load_cases`](mod@load_cases)); and the body tools: generators
 //! ([`body`], [`generators`], [`mod@rebuild`]), mirror symmetry
-//! ([`symmetry`]) and member groups ([`mod@groups`]).
+//! ([`symmetry`]) and member groups ([`mod@groups`]); the pole's outline
+//! and design ([`mod@pole`]) and the extensions' bodies and legs
+//! ([`extension_edits`]).
 //!
 //! Axes are the structure's own: x right of the line, y ahead, z up,
 //! 0;0 at the centre.
 
 pub mod body;
 pub mod edits;
+pub mod extension_edits;
 pub mod file;
 pub mod generators;
 pub mod geometry;
 pub mod groups;
 pub mod load_cases;
 pub mod missing;
+pub mod pole;
 pub mod rebuild;
 pub mod symmetry;
 
@@ -40,7 +44,9 @@ pub use edits::{
 };
 pub use file::StructureFile;
 pub use generators::{Body, generate};
-pub use geometry::{Geometry, Handle, compass_radius, geometry, pick, polar, position};
+pub use geometry::{
+    Geometry, Handle, compass_radius, geometry, geometry_with, pick, polar, position,
+};
 pub use groups::{Group, groups, set_group, set_group_kind, set_group_section};
 pub use load_cases::{
     CASE_FIELDS, CaseText, LOAD_FIELDS, add_load, add_load_case, load_cases, merge_load_cases,
@@ -51,5 +57,7 @@ pub use rebuild::{Report, apply, rebuild, rebuild_all, remove_generator};
 
 #[cfg(test)]
 mod body_tests;
+#[cfg(test)]
+mod pole_extension_tests;
 #[cfg(test)]
 mod tests;
