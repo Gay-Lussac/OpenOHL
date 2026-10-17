@@ -45,7 +45,7 @@ Each load is given:
 - **in the structure's axes:** transverse (along the structure's local x, to the right of the line looking ahead — `orientation_deg`), longitudinal (ahead), and vertical (down);
 - **unfactored, and factored** by the load case's vertical, transverse and longitudinal factors.
 
-A section that does not solve in a load case is listed, with why. Its loads are then missing.
+A section that does not solve in a load case is listed, with why. Its loads are then missing, and every structure it ends at or hangs on (and, for a jumper held by strings, every structure holding it) is **incomplete** in that case: its loads are those computed — nothing is made up for the missing wire — but they lack that wire's forces. The incomplete structures are listed per case with the sections or jumpers they miss ("T3: incomplete — not checked: S3 not solved in ice"), and their rows on the Structure loads page are grey with the missing wires named.
 
 **In the application:** Checks › **Compute structure loads** runs in the background (the model is not changed) and opens the **Structure loads** page. It shows one load case at a time (factored, or unfactored), a filter by structure, a structure's link to go to it, and **Export CSV…** for every case.
 
@@ -73,15 +73,19 @@ Two more checks come from an analysis, when the type names a structure model or 
 - **fe** — the type's finite-element model (its members when it is a full design, or `model = "….olsfe"`) solved with the factored loads at its points (and the member wind on profiles from the section library); usage: the member using most of its capacity.
 - **pole** — the type's pole (`pole = "id"`): bending moment along the pole from the factored loads and the wind on the pole, P-Delta amplified, against its moment capacity.
 
-A structure's usage is the largest of its checks. A structure without a type, or whose type gives nothing to check against, is listed as not checked. A load case with sections that did not solve misses their loads: it is said so.
+A structure's usage is the largest of its checks. A structure without a type, or whose type gives nothing to check against, is listed as not checked.
 
-**In the application:** on the Structure loads page, **Usage** shows every structure worst first — for the governing load case of each (or one load case): usage (red over 100 %, orange from 90 %), each method's usage (spans, loads, fe, pole), what governs (e.g. "weight span 640 m of 600 m", "1:2 transverse 31.2 kN of 30.0 kN × 0.9"), the load case, line angle, wind and weight spans — and **Export CSV…**.
+**Incomplete structures.** A structure whose loads in a load case lack a section or jumper that did not solve there is **incomplete** in that case: each of its checks (spans, loads, fe, pole) is computed from the loads there are and marked incomplete — the usage may be too low, so it is never shown as a pass, whatever its number. A structure every wire of which failed has no load at all and is listed all the same.
 
-**From the command line:** the loads run prints the ten structures using most of their capacity; `--usage-csv usage.csv` writes every load case and structure:
+**In the application:** on the Structure loads page, **Usage** shows every structure worst first — for the governing load case of each (or one load case): usage (red over 100 %, orange from 90 %), each method's usage (spans, loads, fe, pole), what governs (e.g. "weight span 640 m of 600 m", "1:2 transverse 31.2 kN of 30.0 kN × 0.9"), the load case, line angle, wind and weight spans — and **Export CSV…**. An incomplete structure's row is grey and italic: its usage reads **not checked** (the usage of the loads there are on hover) and "governs" names what is missing, e.g. "not checked: S12 not solved in ice". In the governing view a structure incomplete in any load case is shown so, with those cases. The summary counts the structures not checked because of a wire not solved.
+
+**Colour structures by usage** (a tick on the Usage view) colours the structures in the plan and 3D views by their usage in the load case chosen there (the governing one: their worst; incomplete in any case is incomplete): green below 90 %, orange from 90 % to 100 %, red over 100 %, a neutral grey-blue for **not checked: a wire not solved**, dark grey for no capacity to check. A legend sits at the bottom right of both views.
+
+**From the command line:** the loads run prints the ten structures using most of their capacity (an incomplete one marked "(incomplete)") and lists the incomplete structures per case; `--usage-csv usage.csv` writes every load case and structure:
 
 ```bash
 ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --usage-csv usage.csv
 ```
 
-The CSV columns: `case,structure,type,line_angle_deg,wind_span,weight_span_min,weight_span_max,spans_usage,loads_usage,fe_usage,pole_usage,usage,governs,notes` (usages in %).
+The CSV columns: `case,structure,type,line_angle_deg,wind_span,weight_span_min,weight_span_max,spans_usage,loads_usage,fe_usage,pole_usage,usage,governs,notes,incomplete` (usages in %). `incomplete` is empty when the structure's loads in that case are complete, else it names what is missing: `incomplete: section S12 not solved (why); jumper J3 not solved (why)` — the usages of that row are then those of the loads there are.
 

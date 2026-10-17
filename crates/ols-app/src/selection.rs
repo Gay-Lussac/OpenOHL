@@ -736,6 +736,25 @@ fn other_case_candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<(Cand
                             .map(|c| (c, k)),
                     );
                 }
+                // Sections not solved in this case, drawn dashed in their
+                // place: every copy picks the span (its properties say why).
+                for (id, _) in &solved.unsolved {
+                    if !model.section_cases(id, case).contains(&k) {
+                        continue;
+                    }
+                    let Some(drawn) = model.unsolved_drawn(id, k, side) else {
+                        continue;
+                    };
+                    for (n, points) in drawn.spans.iter().enumerate() {
+                        let sel = Selection::Span {
+                            section: id.clone(),
+                            span: n,
+                        };
+                        for w in points.windows(2) {
+                            out.push(((sel.clone(), w[0], w[1]), k));
+                        }
+                    }
+                }
             }
             if snaps.on(Snap::Jumper) && !(k == case && side == 0) && model.shown(case).contains(&k)
             {

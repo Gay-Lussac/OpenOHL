@@ -466,12 +466,48 @@ fn line_values_files_mark_the_source_of_each_case() {
     new.cases = vec!["wind".into(), "weather: glaze ice".into()];
     new.sources = vec![CaseSource::LoadCase, CaseSource::WeatherCase];
     let text = new.to_json();
-    assert!(text.contains("\"version\": 2"), "{text}");
+    assert!(text.contains("\"version\": 3"), "{text}");
     assert!(text.contains("\"weather_case\""), "{text}");
+    // Nothing missing: no `missing` written.
+    assert!(!text.contains("missing"), "{text}");
     let read = PlacedValues::parse(&text).unwrap();
     assert_eq!(read, new);
     assert_eq!(read.source("weather: glaze ice"), CaseSource::WeatherCase);
     assert_eq!(read.source("wind").label(), "load case");
-    let newer = text.replace("\"version\": 2", "\"version\": 3");
+    let newer = text.replace("\"version\": 3", "\"version\": 4");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
+}
+
+/// Version 3: per case the sections and jumpers at the structure that did
+/// not solve; a case with some is incomplete, the others not; a version 2
+/// file has none.
+#[test]
+fn line_values_files_carry_the_wires_missing_per_case() {
+    let v2 = r#"{"format": "ols-structure-line-values", "version": 2, "structure": "T2",
+        "cases": ["everyday", "ice"], "sources": ["load_case", "load_case"]}"#;
+    let old = PlacedValues::parse(v2).unwrap();
+    assert!(old.missing.is_empty());
+    assert_eq!(old.incomplete("ice"), None);
+    let mut new = PlacedValues::pending("T2", "line", "type-02", "");
+    new.cases = vec!["everyday".into(), "ice".into()];
+    new.missing = vec![MissingWire {
+        case: "ice".into(),
+        kind: "section".into(),
+        id: "S12".into(),
+        reason: "did not converge".into(),
+    }];
+    let text = new.to_json();
+    assert!(text.contains("\"missing\""), "{text}");
+    let read = PlacedValues::parse(&text).unwrap();
+    assert_eq!(read, new);
+    assert_eq!(
+        read.incomplete("ice").as_deref(),
+        Some("incomplete: S12 not solved")
+    );
+    assert_eq!(read.incomplete("everyday"), None);
+    assert_eq!(read.incomplete_cases(), ["ice"]);
+    assert_eq!(
+        read.missing[0].describe(),
+        "section S12 not solved (did not converge)"
+    );
 }

@@ -12,7 +12,9 @@
 //! imported and exported as `.olsslc` or CSV, the table as CSV. The loads
 //! of the case shown are drawn as arrows in the view. A status block at
 //! the top of the panels (and of Line values) says what the line gave, or
-//! why not.
+//! why not, and which cases are incomplete (a section or jumper at the
+//! structure not solved there: those cases' rows say "incomplete: S12 not
+//! solved").
 //!
 //! Overrides live in the session and are kept beside the structure file
 //! as `<stem>.loads.csv` (the table's CSV, typed rows only) when it is
@@ -33,14 +35,17 @@ use ols_render::Scene;
 use ols_structure_edit::{self as edit, Geometry, StructureFile};
 use ols_structure_link::{SectionAreas, SectionLibrary};
 use ols_structure_loads::{
-    At, LineQuantity, LineValues, LoadCaseRecipe, LoadRow, LoadTable, Override, PlacedValues,
-    Source, StructureLoadCases, evaluate_with_areas,
+    At, LineQuantity, LineValues, LoadCaseRecipe, LoadRow, LoadTable, MissingWire, Override,
+    PlacedValues, Source, StructureLoadCases, evaluate_with_areas, incomplete_text,
 };
 
 use crate::app::{StructureApp, error_label};
 
 /// Colour of the load arrows.
 const ARROW: [u8; 4] = [235, 100, 235, 255];
+
+/// Colour of what is incomplete (a line case with wires not solved).
+pub(crate) const INCOMPLETE: egui::Color32 = egui::Color32::from_rgb(255, 120, 100);
 
 /// The recipes as read, the table as evaluated and with the overrides.
 #[derive(Debug, Clone)]
@@ -163,7 +168,8 @@ impl LoadCasesTab {
         let cases = recipes.as_deref().unwrap_or(&[]);
         let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
         let order = self.info.as_ref().map_or(&[][..], |i| &i.cases[..]);
-        let (mut evaluated, line_cases) = line_rows(&self.line, order, &names);
+        let missing = self.info.as_ref().map_or(&[][..], |i| &i.missing[..]);
+        let (mut evaluated, line_cases) = line_rows(&self.line, order, &names, missing);
         // Member areas only when a load needs them (the model is built).
         let surface = cases
             .iter()
@@ -984,6 +990,13 @@ impl StructureApp {
                                 Some(m) => {
                                     ui.colored_label(egui::Color32::from_rgb(255, 170, 60), m)
                                 }
+                                None if r.note.starts_with("incomplete:") => {
+                                    ui.colored_label(INCOMPLETE, &r.note).on_hover_text(
+                                        "A section or jumper at this structure did not solve in \
+                                         this case of the line: its forces are missing, the \
+                                         values are too low",
+                                    )
+                                }
                                 None => ui.label(&r.note),
                             };
                             let is_typed = self.loads.overrides.iter().any(|o| o.is_over(r));
@@ -1053,12 +1066,15 @@ pub const STORED_FROM_LINE: &str = "Stored from the line";
 /// line's order, then any other) and attachment point, the transverse,
 /// longitudinal and vertical forces as the line computed them — factored
 /// where the line factors the case. A line case with the name of a
-/// recipe (`recipes`) is called "NAME (line)". The rows and the line's
-/// cases as (name in the table, line case).
+/// recipe (`recipes`) is called "NAME (line)". A case with wires at the
+/// structure not solved (`missing`) has its rows' note start with
+/// `incomplete: S12 not solved` (its forces lack theirs). The rows and
+/// the line's cases as (name in the table, line case).
 pub fn line_rows(
     line: &LineValues,
     order: &[String],
     recipes: &[String],
+    missing: &[MissingWire],
 ) -> (LoadTable, Vec<(String, String)>) {
     let mut cases: Vec<String> = order
         .iter()
@@ -1098,6 +1114,9 @@ pub fn line_rows(
                 continue;
             }
             let mut note = Vec::new();
+            if let Some(i) = incomplete_text(missing, &c) {
+                note.push(i);
+            }
             if !p.sets.is_empty() {
                 note.push(format!(
                     "sets {}",
@@ -1193,6 +1212,19 @@ impl LoadCasesTab {
         self.line_cases().into_iter().map(|(n, _)| n).collect()
     }
 
+    /// `incomplete: S12 not solved, …` when case `case` of the table (its
+    /// name there) is a line case whose values lack a wire not solved at
+    /// the structure (none: complete, or not a line case).
+    pub fn incomplete(&self, case: &str) -> Option<String> {
+        let info = self.info.as_ref()?;
+        let line_case = self
+            .line_cases()
+            .into_iter()
+            .find(|(n, _)| n == case)
+            .map_or_else(|| case.to_owned(), |(_, c)| c);
+        info.incomplete(&line_case)
+    }
+
     /// What the line gave, or why not, in plain words (each line a
     /// sentence), and how it reads.
     pub fn line_status(&self) -> Vec<(String, Tone)> {
@@ -1282,6 +1314,21 @@ impl LoadCasesTab {
                     "No values in case(s) {}: the line's sections there are not solved in that \
                      case (solve the line again in the line application).",
                     without.join(", ")
+                ),
+                Tone::Warn,
+            ));
+        }
+        // Cases whose values lack a wire not solved: incomplete.
+        for case in info.incomplete_cases() {
+            let wires: Vec<String> = info
+                .missing_in(case)
+                .map(ols_structure_loads::MissingWire::describe)
+                .collect();
+            out.push((
+                format!(
+                    "Case {case} incomplete: {} — the line's forces at {id} lack its wires, \
+                     the values (and the results of the case) are too low; not checked.",
+                    wires.join("; ")
                 ),
                 Tone::Warn,
             ));
@@ -1630,7 +1677,8 @@ mod line_rows_tests {
     use super::*;
 
     /// Two line cases at two points: a row each, factored where the line
-    /// factors; a line case named as a recipe is called "(line)".
+    /// factors; a line case named as a recipe is called "(line)"; a case
+    /// with a wire not solved is marked incomplete on its rows.
     #[test]
     fn the_line_forces_are_rows() {
         let mut line = LineValues::default();
@@ -1655,7 +1703,13 @@ mod line_rows_tests {
             }
         }
         let order = ["ice".to_owned(), "wind".to_owned(), "none".to_owned()];
-        let (t, names) = line_rows(&line, &order, &["wind".to_owned()]);
+        let missing = [MissingWire {
+            case: "ice".into(),
+            kind: "section".into(),
+            id: "S12".into(),
+            reason: "did not converge".into(),
+        }];
+        let (t, names) = line_rows(&line, &order, &["wind".to_owned()], &missing);
         assert_eq!(
             names,
             [
@@ -1667,6 +1721,13 @@ mod line_rows_tests {
         assert_eq!(t.rows[0].force, [0.0, 0.0, 8000.0]);
         assert_eq!(t.rows[0].source, Source::Line);
         assert!(t.rows[0].note.contains("unfactored"), "{}", t.rows[0].note);
+        // The ice case lacks S12: its rows say so first; wind's not.
+        assert!(
+            t.rows[0].note.starts_with("incomplete: S12 not solved; "),
+            "{}",
+            t.rows[0].note
+        );
+        assert!(!t.rows[3].note.contains("incomplete"));
         assert_eq!(t.rows[3].case, "wind (line)");
         assert_eq!(t.rows[3].label, "A11");
         assert_eq!(t.rows[3].force, [1500.0, 0.0, 0.0]);

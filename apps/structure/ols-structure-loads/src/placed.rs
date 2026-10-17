@@ -9,7 +9,7 @@
 //! ```json
 //! {
 //!   "format": "ols-structure-line-values",
-//!   "version": 2,
+//!   "version": 3,
 //!   "structure": "T2",
 //!   "line": "synthetic-line-typed",
 //!   "structure_type": "type-02",
@@ -17,12 +17,18 @@
 //!   "sources": ["load_case", "load_case", "weather_case"],
 //!   "values": { "points": [...], "values": [...] },
 //!   "others": [{ "structure": "T5", "values": {...} }],
-//!   "note": null
+//!   "note": null,
+//!   "missing": [
+//!     { "case": "ice", "kind": "section", "id": "S3", "reason": "…" }
+//!   ]
 //! }
 //! ```
 //!
 //! Version 2 added `sources` (the source of each case, in the order of
-//! `cases`); a version 1 file has none: every case a load case.
+//! `cases`); a version 1 file has none: every case a load case. Version 3
+//! added `missing` (also on each of `others`): per case, the sections and
+//! jumpers at the structure that did not solve — the values of that case
+//! lack their forces (incomplete); older files have none.
 
 use std::path::{Path, PathBuf};
 
@@ -33,9 +39,61 @@ use crate::table::LineValues;
 
 /// `format` of a line-values file.
 pub const LINE_VALUES_FILE_FORMAT: &str = "ols-structure-line-values";
-/// `version` of a line-values file (2: `sources`; version 1 files are
-/// read too).
-pub const LINE_VALUES_FILE_VERSION: u32 = 2;
+/// `version` of a line-values file (2: `sources`; 3: `missing`; older
+/// files are read too).
+pub const LINE_VALUES_FILE_VERSION: u32 = 3;
+
+/// A section or jumper at the placed structure that did not solve in one
+/// of the line's cases: the values of that case lack its forces.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MissingWire {
+    /// The line's case.
+    pub case: String,
+    /// `section` or `jumper`.
+    #[serde(default = "section_kind")]
+    pub kind: String,
+    /// Its id in the line.
+    pub id: String,
+    /// Why it did not solve.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reason: String,
+}
+
+fn section_kind() -> String {
+    "section".into()
+}
+
+impl MissingWire {
+    /// `S12 not solved` (a jumper: `jumper J1 not solved`).
+    pub fn short(&self) -> String {
+        if self.kind == "section" {
+            format!("{} not solved", self.id)
+        } else {
+            format!("{} {} not solved", self.kind, self.id)
+        }
+    }
+
+    /// `section S12 not solved (reason)`.
+    pub fn describe(&self) -> String {
+        if self.reason.is_empty() {
+            format!("{} {} not solved", self.kind, self.id)
+        } else {
+            format!("{} {} not solved ({})", self.kind, self.id, self.reason)
+        }
+    }
+}
+
+/// The text of the wires missing in case `case` of `missing`:
+/// `incomplete: S12 not solved, …` (none: complete).
+pub fn incomplete_text(missing: &[MissingWire], case: &str) -> Option<String> {
+    let here: Vec<String> = missing
+        .iter()
+        .filter(|m| m.case == case)
+        .map(MissingWire::short)
+        .collect();
+    (!here.is_empty()).then(|| format!("incomplete: {}", here.join(", ")))
+}
 
 /// Where a case of the line comes from.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +128,9 @@ pub struct OtherPlace {
     /// Its values.
     #[serde(default)]
     pub values: LineValues,
+    /// The wires missing from its values, per case (version 3).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing: Vec<MissingWire>,
 }
 
 /// The values the line gives at one placed structure, as a file: which
@@ -107,6 +168,11 @@ pub struct PlacedValues {
     /// Why there are no values (yet): being computed, no load case file, …
     #[serde(default)]
     pub note: Option<String>,
+    /// Per case, the sections and jumpers at this structure that did not
+    /// solve: that case's values lack their forces (version 3; older
+    /// files: none).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing: Vec<MissingWire>,
 }
 
 impl PlacedValues {
@@ -123,7 +189,35 @@ impl PlacedValues {
             values: LineValues::default(),
             others: Vec::new(),
             note: Some(note.into()),
+            missing: Vec::new(),
         }
+    }
+
+    /// The wires missing from the values of case `case`.
+    pub fn missing_in<'a>(&'a self, case: &'a str) -> impl Iterator<Item = &'a MissingWire> {
+        self.missing.iter().filter(move |m| m.case == case)
+    }
+
+    /// `incomplete: S12 not solved, …` for case `case` (none: its values
+    /// are complete).
+    pub fn incomplete(&self, case: &str) -> Option<String> {
+        incomplete_text(&self.missing, case)
+    }
+
+    /// The line's cases with wires missing, in their order.
+    pub fn incomplete_cases(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for c in self
+            .cases
+            .iter()
+            .map(String::as_str)
+            .chain(self.missing.iter().map(|m| m.case.as_str()))
+        {
+            if !out.contains(&c) && self.missing_in(c).next().is_some() {
+                out.push(c);
+            }
+        }
+        out
     }
 
     /// Where case `case` comes from (a case not listed, or of a version 1

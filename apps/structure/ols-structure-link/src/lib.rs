@@ -19,7 +19,8 @@
 //! - [`placed_values`]: the same with the placed structure's line, its
 //!   type and the other places of the type, as the line-values file the
 //!   line application hands to the structure application, each case
-//!   marked with its source ([`CaseSource`]).
+//!   marked with its source ([`CaseSource`]) and, per case, the wires at
+//!   the structure that did not solve ([`missing_wires`]).
 //! - [`analyse_cases`]: cases of a [`LoadTable`] solved on the
 //!   structure's model, the results as plain data ([`CaseResult`]).
 //! - [`SectionAreas`]: the members' areas from the section library, for
@@ -46,7 +47,7 @@ use ols_loads::{CaseLoads, LoadCase};
 pub use ols_sections::SectionLibrary;
 use ols_structure_loads::{
     At, CaseSource, Direction, LinePoint, LineQuantity, LineValue, LineValues, LoadTable,
-    MemberAreas, OtherPlace, PlacedValues,
+    MemberAreas, MissingWire, OtherPlace, PlacedValues,
 };
 use ols_structures::StructureType;
 use ols_structures_fe::{Loads, Model, NodalLoad};
@@ -213,7 +214,10 @@ pub fn structure_case_loads(
 /// then in the weather cases sent on their own `weather` (sources marked),
 /// its structure type and the other placed structures of that type with
 /// their values; the note names the sections a case did not solve and
-/// what was chosen and is not there (`missing`).
+/// what was chosen and is not there (`missing`), and per case the
+/// sections and jumpers at the structure that did not solve are listed
+/// ([`PlacedValues::missing`], [`missing_wires`]): those cases' values
+/// are incomplete.
 pub fn placed_values(
     loads: &[CaseLoads],
     weather: &[CaseLoads],
@@ -249,6 +253,7 @@ pub fn placed_values(
         .map(|s| OtherPlace {
             structure: s.id.clone(),
             values: line_values(loads, line, &s.id),
+            missing: missing_wires(loads, &s.id),
         })
         .collect();
     // Sections a case did not solve: their loads are missing.
@@ -276,8 +281,26 @@ pub fn placed_values(
         values: line_values(loads, line, structure),
         others,
         note: (!failed.is_empty()).then(|| format!("values missing — {}", failed.join(" · "))),
+        missing: missing_wires(loads, structure),
         ..PlacedValues::pending(structure, line_name, &structure_type, "")
     }
+}
+
+/// Per case of `loads`, the sections and jumpers at placed structure
+/// `structure` that did not solve (`ols_loads::CaseLoads::missing`): that
+/// case's values at it lack their forces.
+pub fn missing_wires(loads: &[CaseLoads], structure: &str) -> Vec<MissingWire> {
+    loads
+        .iter()
+        .flat_map(|c| {
+            c.missing_at(structure).map(|m| MissingWire {
+                case: c.case.name.clone(),
+                kind: m.kind.as_str().to_owned(),
+                id: m.id.clone(),
+                reason: m.reason.clone(),
+            })
+        })
+        .collect()
 }
 
 /// The section library at `path` (a `.olssec` file, or every one of a

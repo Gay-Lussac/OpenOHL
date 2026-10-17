@@ -1199,6 +1199,12 @@ impl TabViewer for Viewer<'_> {
                 if let Some(id) = r.loads.ui(ui, &r.model) {
                     r.go_to(Selection::Structure(id));
                 }
+                // Colour structures by usage: the views follow.
+                let marks = r.loads.usage_marks();
+                if marks != r.model.usage_marks {
+                    r.model.usage_marks = marks;
+                    r.view3d.dirty.insert(Layer::Structures);
+                }
                 None
             }
             Tab::People => {

@@ -1426,7 +1426,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 for (case, s) in governing.iter().take(10) {
                     let g = s.governing().expect("checked");
                     println!(
-                        "  {:<12} {:>12}  {:<20} {}",
+                        "  {:<12} {:>12}  {:<20} {}{}",
                         s.structure,
                         if g.usage.is_finite() {
                             format!("{:.1} %", g.usage * 100.0)
@@ -1434,8 +1434,32 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                             "not allowed".into()
                         },
                         case,
-                        g.governs
+                        g.governs,
+                        if s.is_incomplete() {
+                            "  (incomplete)"
+                        } else {
+                            ""
+                        }
                     );
+                }
+            }
+            // Structures whose loads miss a wire not solved: not checked
+            // in that case, whatever their usage.
+            let incomplete: Vec<String> = usage
+                .iter()
+                .flat_map(|c| {
+                    c.structures.iter().filter(|s| s.is_incomplete()).map(|s| {
+                        format!("{} in {} ({})", s.structure, c.case, s.not_checked_text())
+                    })
+                })
+                .collect();
+            if !incomplete.is_empty() {
+                println!(
+                    "structure usage incomplete (a section or jumper not solved), {}:",
+                    incomplete.len()
+                );
+                for line in incomplete.iter().take(20) {
+                    println!("  {line}");
                 }
             }
             extra_tables.push(ols_io::tables::Table::from_csv(

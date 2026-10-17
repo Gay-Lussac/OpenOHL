@@ -173,6 +173,7 @@ impl Analyses {
                     method: Method::Fe,
                     usage: w.usage.unwrap_or(0.0),
                     governs: format!("member {} {}", model.members[w.member].id, w.governs),
+                    incomplete: false,
                 }),
                 None => {
                     notes.push("model: no member has a capacity".into());
@@ -183,6 +184,7 @@ impl Analyses {
                 method: Method::Fe,
                 usage: f64::INFINITY,
                 governs: format!("model: {e}"),
+                incomplete: false,
             }),
         }
     }
@@ -236,11 +238,13 @@ impl Analyses {
                     method: Method::Pole,
                     usage: c.usage,
                     governs: format!("pole {}: {}", pole.id, c.governs),
+                    incomplete: false,
                 },
                 Err(e) => Check {
                     method: Method::Pole,
                     usage: f64::INFINITY,
                     governs: e,
+                    incomplete: false,
                 },
             },
         )

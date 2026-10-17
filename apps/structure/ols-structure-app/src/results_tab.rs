@@ -7,7 +7,10 @@
 //! own, each case under a time budget), and per case the largest
 //! displacement, Σ loads against Σ reactions, the reactions, the members'
 //! forces and usage and the governing member; in the view the deformed
-//! shape and the members coloured by usage.
+//! shape and the members coloured by usage. A line case whose values lack
+//! a wire the line did not solve is marked incomplete ("not checked —
+//! incomplete: S12 not solved"), its usage only that of the loads there
+//! are.
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
@@ -394,6 +397,7 @@ impl StructureApp {
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 for (k, (name, r)) in results.iter().enumerate() {
+                    let incomplete = self.loads.incomplete(name);
                     ui.horizontal(|ui| {
                         if ui
                             .selectable_label(self.results.shown == k, name.as_str())
@@ -401,7 +405,23 @@ impl StructureApp {
                         {
                             self.results.shown = k;
                         }
+                        if let Some(text) = &incomplete {
+                            // The usage of loads lacking a wire: not a pass.
+                            ui.colored_label(
+                                crate::load_cases_tab::INCOMPLETE,
+                                format!("not checked — {text}"),
+                            );
+                        }
                         match r {
+                            Ok(r) if incomplete.is_some() => {
+                                if let Some(g) = r.governing() {
+                                    ui.weak(format!(
+                                        "({:.0} % of the loads there are — member {})",
+                                        g.usage.unwrap_or(0.0) * 100.0,
+                                        g.id
+                                    ));
+                                }
+                            }
                             Ok(r) => match r.governing() {
                                 Some(g) => {
                                     let u = g.usage.unwrap_or(0.0);
@@ -433,6 +453,15 @@ impl StructureApp {
                 return;
             }
         };
+        if let Some(text) = self.loads.incomplete(name) {
+            ui.colored_label(
+                crate::load_cases_tab::INCOMPLETE,
+                format!(
+                    "{name}: {text} — the line's forces lack that wire: the results are \
+                     incomplete (too low), not checked"
+                ),
+            );
+        }
         case_ui(ui, r);
     }
 }

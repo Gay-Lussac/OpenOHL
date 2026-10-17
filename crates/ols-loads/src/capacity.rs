@@ -38,6 +38,11 @@
 //!
 //! A structure's usage is the largest of its checks; a structure without
 //! a type or a type with nothing to check against is listed, not checked.
+//! A structure whose loads in a case miss a wire that did not solve
+//! ([`crate::CaseLoads::missing`]) is **incomplete** in that case: its
+//! checks are computed from the loads there are (nothing made up) and
+//! marked ([`Check::incomplete`], [`StructureUsage::missing`],
+//! [`UsageStatus::Incomplete`]) — never a plain pass.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -83,6 +88,36 @@ pub struct Check {
     pub usage: f64,
     /// What governs, in words (e.g. "weight span 640 m of 600 m").
     pub governs: String,
+    /// Computed from incomplete loads: a section or jumper at the
+    /// structure did not solve in this case ([`StructureUsage::missing`]),
+    /// so the usage may be too low.
+    pub incomplete: bool,
+}
+
+/// What a structure's checks in one load case come to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageStatus {
+    /// Nothing to check against (no type, no capacity).
+    NotChecked,
+    /// A wire at the structure did not solve: its loads are incomplete
+    /// and the checks cannot pass (whatever their usage).
+    Incomplete,
+    /// Every check within its capacity (100 % or less).
+    Pass,
+    /// A check over 100 %.
+    Over,
+}
+
+impl UsageStatus {
+    /// In words.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotChecked => "not checked",
+            Self::Incomplete => "incomplete",
+            Self::Pass => "pass",
+            Self::Over => "over",
+        }
+    }
 }
 
 /// A structure in one load case.
@@ -109,6 +144,10 @@ pub struct StructureUsage {
     pub pole: Option<Check>,
     /// Why something is not checked.
     pub notes: Vec<String>,
+    /// The sections and jumpers at the structure that did not solve in
+    /// this case: their forces are missing from its loads, and its checks
+    /// are incomplete.
+    pub missing: Vec<crate::MissingWire>,
 }
 
 impl StructureUsage {
@@ -123,6 +162,57 @@ impl StructureUsage {
         .into_iter()
         .flatten()
         .max_by(|a, b| a.usage.total_cmp(&b.usage))
+    }
+
+    /// Whether its loads miss a wire that did not solve.
+    pub fn is_incomplete(&self) -> bool {
+        !self.missing.is_empty()
+    }
+
+    /// What its checks come to: incomplete whenever a wire is missing
+    /// (even with no check, or one over 100 %: the loads are not all
+    /// there), else not checked, over or pass.
+    pub fn status(&self) -> UsageStatus {
+        if self.is_incomplete() {
+            return UsageStatus::Incomplete;
+        }
+        match self.governing() {
+            None => UsageStatus::NotChecked,
+            Some(g) if g.usage > 1.0 => UsageStatus::Over,
+            Some(_) => UsageStatus::Pass,
+        }
+    }
+
+    /// The missing wires in words: `incomplete: section S12 not solved
+    /// (reason); …` (empty when complete).
+    pub fn incomplete_text(&self) -> String {
+        if self.missing.is_empty() {
+            return String::new();
+        }
+        format!(
+            "incomplete: {}",
+            self.missing
+                .iter()
+                .map(crate::MissingWire::describe)
+                .collect::<Vec<_>>()
+                .join("; ")
+        )
+    }
+
+    /// The missing wires, short: `not checked: S12 not solved` (empty when
+    /// complete).
+    pub fn not_checked_text(&self) -> String {
+        if self.missing.is_empty() {
+            return String::new();
+        }
+        format!(
+            "not checked: {}",
+            self.missing
+                .iter()
+                .map(crate::MissingWire::short)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 }
 
@@ -329,6 +419,11 @@ pub fn usage_with_sections(
                     .or_default()
                     .push((label, v));
             }
+            // A structure every wire of which did not solve has no load
+            // at all: listed (incomplete) all the same.
+            for m in &r.missing {
+                by_structure.entry(m.structure.as_str()).or_default();
+            }
             let structures = by_structure
                 .into_iter()
                 .map(|(id, points)| {
@@ -416,6 +511,7 @@ pub fn usage_with_sections(
                                     "line angle {line_angle_deg:.1}° beyond the type's {:.1}°",
                                     c.max_angle().unwrap_or(0.0)
                                 ),
+                                incomplete: false,
                             },
                             Some(allowed) => {
                                 let mut worst = (
@@ -455,6 +551,7 @@ pub fn usage_with_sections(
                                     method: Method::Spans,
                                     usage: worst.0,
                                     governs: worst.1,
+                                    incomplete: false,
                                 }
                             }
                         }
@@ -525,6 +622,7 @@ pub fn usage_with_sections(
                             method: Method::Loads,
                             usage: worst.0,
                             governs: worst.1,
+                            incomplete: false,
                         }
                     });
                     let factored: Vec<crate::analysis::Factored> = points
@@ -536,6 +634,15 @@ pub fn usage_with_sections(
                     });
                     let pole = type_def
                         .and_then(|t| analyses.pole(t, &factored, &r.case, case, &mut notes));
+                    let missing: Vec<crate::MissingWire> = r.missing_at(id).cloned().collect();
+                    let mark = |c: Option<Check>| {
+                        c.map(|mut c| {
+                            c.incomplete = !missing.is_empty();
+                            c
+                        })
+                    };
+                    let (spans_check, loads_check, fe, pole) =
+                        (mark(spans_check), mark(loads_check), mark(fe), mark(pole));
                     StructureUsage {
                         structure: id.to_owned(),
                         structure_type: type_id,
@@ -547,6 +654,7 @@ pub fn usage_with_sections(
                         fe,
                         pole,
                         notes,
+                        missing,
                     }
                 })
                 .collect();
@@ -578,16 +686,36 @@ pub fn governing(cases: &[CaseUsage]) -> Vec<(&str, &StructureUsage)> {
     out.into_iter().map(|(c, s, _)| (c, s)).collect()
 }
 
+/// The load cases in which structure `structure` is incomplete (a wire at
+/// it did not solve), with the missing wires, in the cases' order.
+pub fn incomplete_cases<'a>(
+    cases: &'a [CaseUsage],
+    structure: &str,
+) -> Vec<(&'a str, &'a StructureUsage)> {
+    cases
+        .iter()
+        .filter_map(|c| {
+            c.structures
+                .iter()
+                .find(|s| s.structure == structure && s.is_incomplete())
+                .map(|s| (c.case.as_str(), s))
+        })
+        .collect()
+}
+
 /// The usage as CSV, one row per load case and structure:
 /// `case,structure,type,line_angle_deg,wind_span,weight_span_min,
 /// weight_span_max,spans_usage,loads_usage,fe_usage,pole_usage,usage,
-/// governs,notes`
-/// (usages in %, empty when not checked).
+/// governs,notes,incomplete`
+/// (usages in %, empty when not checked; `incomplete`: the wires missing
+/// from the structure's loads in that case, `incomplete: section S12 not
+/// solved (reason); …`, empty when its loads are complete — the usages
+/// are then those of the loads there are).
 pub fn usage_csv(cases: &[CaseUsage]) -> String {
     use ols_core::text::csv_field;
     let mut out = String::from(
         "case,structure,type,line_angle_deg,wind_span,weight_span_min,weight_span_max,\
-         spans_usage,loads_usage,fe_usage,pole_usage,usage,governs,notes\n",
+         spans_usage,loads_usage,fe_usage,pole_usage,usage,governs,notes,incomplete\n",
     );
     let pct = |c: &Option<Check>| {
         c.as_ref()
@@ -603,7 +731,7 @@ pub fn usage_csv(cases: &[CaseUsage]) -> String {
                 });
             let _ = writeln!(
                 out,
-                "{},{},{},{:.2},{:.1},{lo},{hi},{},{},{},{},{},{},{}",
+                "{},{},{},{:.2},{:.1},{lo},{hi},{},{},{},{},{},{},{},{}",
                 csv_field(&c.case),
                 csv_field(&s.structure),
                 csv_field(s.structure_type.as_deref().unwrap_or("")),
@@ -616,6 +744,7 @@ pub fn usage_csv(cases: &[CaseUsage]) -> String {
                 g.map_or(String::new(), |g| format!("{:.1}", g.usage * 100.0)),
                 csv_field(g.map_or("", |g| g.governs.as_str())),
                 csv_field(&s.notes.join("; ")),
+                csv_field(&s.incomplete_text()),
             );
         }
     }

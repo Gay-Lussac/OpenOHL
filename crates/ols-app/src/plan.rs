@@ -314,6 +314,50 @@ impl PlanView {
                     );
                 }
             }
+            // Sections not solved in a case they are drawn in: dashed red
+            // where they were (last solved shape, another case's, or the
+            // chords); a click picks the span, its properties say why.
+            let [r, g, b] = crate::scene::UNSOLVED_COLOR;
+            let hover = response.hover_pos();
+            let mut why: Option<String> = None;
+            for (section, k_case, drawn) in model.unsolved_shown(case) {
+                for (k, points) in drawn.spans.iter().enumerate() {
+                    let selected = matches!(selection, Selection::Span { section: s, span: n }
+                        if *s == section && *n == k);
+                    let pts: Vec<egui::Pos2> = points.iter().map(|p| to_screen(*p)).collect();
+                    // Hovered: a tooltip says why it is not solved.
+                    if let Some(h) = hover
+                        && why.is_none()
+                        && pts.windows(2).any(|w| {
+                            ols_core::geometry::distance_to_segment(
+                                [f64::from(h.x), f64::from(h.y)],
+                                [f64::from(w[0].x), f64::from(w[0].y)],
+                                [f64::from(w[1].x), f64::from(w[1].y)],
+                            ) <= 6.0
+                        })
+                    {
+                        why = Some(format!(
+                            "{section} not solved in {}: {} — drawn dashed: {}",
+                            model.cases[k_case].case.name, drawn.reason, drawn.from
+                        ));
+                    }
+                    let (w, col) = if selected {
+                        (4.0, egui::Color32::WHITE)
+                    } else {
+                        (2.0, egui::Color32::from_rgb(r, g, b))
+                    };
+                    styled_wire(
+                        &painter,
+                        &pts,
+                        &crate::scene::UNSOLVED_DASHES,
+                        None,
+                        egui::Stroke::new(w, col),
+                    );
+                }
+            }
+            if let Some(text) = why {
+                response.clone().on_hover_text_at_pointer(text);
+            }
         }
         for solved in model.cases.get(case).into_iter().flat_map(|c| c.drawn()) {
             for j in &solved.jumpers {
@@ -408,6 +452,10 @@ impl PlanView {
                     egui::Color32::WHITE
                 } else if off {
                     faded
+                } else if let Some(m) = model.usage_marks.get(&s.id) {
+                    // Coloured by usage (a legend below).
+                    let [r, g, b] = m.color();
+                    egui::Color32::from_rgb(r, g, b)
                 } else {
                     egui::Color32::from_gray(215)
                 },
@@ -456,6 +504,9 @@ impl PlanView {
                     c,
                 );
             }
+        }
+        if !model.usage_marks.is_empty() {
+            crate::loads::paint_usage_legend(&painter, rect);
         }
         // Scale bar.
         let target = 120.0 / scale;

@@ -773,3 +773,92 @@ fn structure_analysis_with_an_extension_body() {
     assert_eq!(seen, 2 * usage.len());
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// A section that does not solve (here: a cable not in the library) is
+/// listed at every structure it ends at or hangs on: their loads and
+/// usage in that case are incomplete — the checks keep the numbers of
+/// the loads there are, marked, never a plain pass — the others' not;
+/// the usage CSV says why in its `incomplete` column.
+#[test]
+fn a_section_not_solved_makes_its_structures_incomplete() {
+    let c = capacity(
+        "[[capacity.spans]]\nangle = \"0 deg\"\nwind_span = \"4000 m\"\nweight_span = \"6000 m\"\n\
+         [[capacity.spans]]\nangle = \"90 deg\"\nwind_span = \"4000 m\"\nweight_span = \"6000 m\"\n",
+    );
+    let (mut line, types) = typed(c);
+    for s in line.sections.iter_mut().filter(|s| s.id == "S3") {
+        s.cable = "no-such-cable".into();
+    }
+    let (_, library, weather, cases) = setup();
+    let budget = ols_wirefe::default_fe_budget();
+    let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    let ends = section_structures(&line, "S3");
+    assert_eq!(ends, ["T3", "T6", "T7"]);
+    for c in &loads {
+        assert!(
+            c.failed.iter().any(|f| f.starts_with("S3:")),
+            "{:?}",
+            c.failed
+        );
+        for id in &ends {
+            let m: Vec<&MissingWire> = c.missing_at(id).collect();
+            assert!(
+                m.iter()
+                    .any(|m| m.kind == WireKind::Section && m.id == "S3"),
+                "{id}: {m:?}"
+            );
+            assert!(m[0].describe().starts_with("section S3 not solved ("));
+        }
+        for id in ["T1", "T2", "T4", "T5"] {
+            assert!(!c.is_incomplete(id), "{id} in {}", c.case.name);
+        }
+    }
+    let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+    for c in &usage {
+        for s in &c.structures {
+            let incomplete = ends.contains(&s.structure);
+            assert_eq!(s.is_incomplete(), incomplete, "{s:?}");
+            if incomplete {
+                assert_eq!(s.status(), capacity::UsageStatus::Incomplete);
+                // The numbers as computed, marked.
+                let g = s.spans.as_ref().expect("checked");
+                assert!(g.incomplete && g.usage.is_finite());
+                assert!(s.not_checked_text().contains("S3 not solved"));
+            } else {
+                assert_eq!(s.status(), capacity::UsageStatus::Pass, "{s:?}");
+                assert!(!s.spans.as_ref().unwrap().incomplete);
+            }
+        }
+        // T7 only carries S3: listed though it has no load left.
+        assert!(c.structures.iter().any(|s| s.structure == "T7"));
+    }
+    assert_eq!(
+        capacity::incomplete_cases(&usage, "T6").len(),
+        usage.len(),
+        "every case"
+    );
+    assert!(capacity::incomplete_cases(&usage, "T1").is_empty());
+    let csv = capacity::usage_csv(&usage);
+    let header = csv.lines().next().unwrap();
+    assert!(header.ends_with(",notes,incomplete"), "{header}");
+    let t6 = csv.lines().find(|l| l.starts_with("everyday,T6,")).unwrap();
+    assert!(t6.contains("incomplete: section S3 not solved ("), "{t6}");
+    let t1 = csv.lines().find(|l| l.starts_with("everyday,T1,")).unwrap();
+    assert!(t1.ends_with(','), "{t1}");
+}
+
+/// A load case in which every section fails (after creep with no creep
+/// case) makes every structure incomplete in that case only.
+#[test]
+fn a_case_with_sections_not_solved_is_incomplete_only_there() {
+    let (mut line, library, weather, cases) = setup();
+    line.creep_stretch.creep_case = None;
+    let budget = ols_wirefe::default_fe_budget();
+    let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    let (everyday, ice) = (&loads[0], &loads[2]);
+    assert_eq!(ice.case.name, "ice");
+    assert!(everyday.missing.is_empty(), "{:?}", everyday.missing);
+    for s in &line.structures {
+        assert!(ice.is_incomplete(&s.id), "{}", s.id);
+    }
+}

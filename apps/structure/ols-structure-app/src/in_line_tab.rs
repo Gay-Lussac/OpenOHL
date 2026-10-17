@@ -4,8 +4,10 @@
 
 //! The Line values panel (In the line menu): the status of the line's
 //! values, the values the line gives at the placed structure (from its
-//! line-values file, `--line-values`), per point and case, and the other
-//! places of the same structure file with their governing values.
+//! line-values file, `--line-values`), per point and case — a case whose
+//! values lack a wire not solved marked "incomplete: S12 not solved" —
+//! and the other places of the same structure file with their governing
+//! values.
 
 use eframe::egui;
 use ols_structure_loads::{LineQuantity, LineValues};
@@ -114,6 +116,11 @@ impl StructureApp {
                              (all factors 1)",
                         ),
                         ("source", "Load case or weather case"),
+                        (
+                            "complete",
+                            "incomplete: a section or jumper at this structure did not solve in \
+                             that case of the line — its forces are missing, the values too low",
+                        ),
                     ] {
                         ui.strong(h).on_hover_text(tip);
                     }
@@ -132,8 +139,19 @@ impl StructureApp {
                             ui.label(&p.label);
                             ui.label(&sets);
                             ui.label(p.phases.join(", "));
-                            ui.label(c);
+                            let incomplete = info.incomplete(c);
+                            if incomplete.is_some() {
+                                ui.colored_label(crate::load_cases_tab::INCOMPLETE, c);
+                            } else {
+                                ui.label(c);
+                            }
                             ui.label(info.source(c).label());
+                            match &incomplete {
+                                Some(text) => {
+                                    ui.colored_label(crate::load_cases_tab::INCOMPLETE, text)
+                                }
+                                None => ui.label("yes"),
+                            };
                             for (q, _, _) in QUANTITIES {
                                 ui.label(kn(values.get(c, &p.label, &p.sets, q)));
                             }
