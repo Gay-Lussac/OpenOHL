@@ -195,8 +195,7 @@ pub fn viewer_html_with(
         let color = jumper
             .and_then(|j| j.color.clone())
             .or_else(|| {
-                let from = &jumper?.from;
-                let section = line.sections.iter().find(|s| s.points.contains(from))?;
+                let section = line.jumper_section(jumper?)?;
                 Some(line.section_color(section))
             })
             .unwrap_or_else(|| crate::NEUTRAL_COLOR.to_owned());

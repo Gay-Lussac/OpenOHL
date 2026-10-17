@@ -222,13 +222,18 @@ pub fn ui(
             let jumpers: Vec<&ols_line::Jumper> = line
                 .jumpers
                 .iter()
-                .filter(|jp| jp.from.structure == id || jp.to.structure == id)
+                .filter(|jp| jp.points().any(|p| p.structure == id))
                 .collect();
             if !jumpers.is_empty() {
                 ui.separator();
                 ui.label(egui::RichText::new("Jumpers at this structure").strong());
                 for jp in jumpers {
-                    let text = format!("{}: set {} → set {}", jp.id, jp.from.set, jp.to.set);
+                    // Its ends here by their set; a tap by where it is.
+                    let end = |e: &ols_line::JumperEnd| match e {
+                        ols_line::JumperEnd::Wire(p) => format!("set {}", p.set),
+                        ols_line::JumperEnd::Tap { .. } => e.to_string(),
+                    };
+                    let text = format!("{}: {} → {}", jp.id, end(&jp.from), end(&jp.to));
                     if ui.link(text).clicked() {
                         next = Some(Selection::Jumper(jp.id.clone()));
                     }
@@ -381,7 +386,7 @@ pub fn ui(
                 section: section.clone(),
                 point: label.clone(),
             });
-            for j in line.jumpers.iter().filter(|j| [&j.from_tap, &j.to_tap].into_iter().flatten().any(|t| *t == tap)) {
+            for j in line.jumpers.iter().filter(|j| j.taps().any(|t| *t == tap)) {
                 if ui.link(format!("jumper {} (on this tap)", j.id)).clicked() {
                     next = Some(Selection::Jumper(j.id.clone()));
                 }
@@ -425,7 +430,7 @@ pub fn ui(
                 jumper: jumper.clone(),
                 point: label.clone(),
             };
-            for j in line.jumpers.iter().filter(|j| [&j.from_tap, &j.to_tap].into_iter().flatten().any(|t| *t == tap)) {
+            for j in line.jumpers.iter().filter(|j| j.taps().any(|t| *t == tap)) {
                 if ui.link(format!("jumper {} (on this tap)", j.id)).clicked() {
                     next = Some(Selection::Jumper(j.id.clone()));
                 }
@@ -676,11 +681,22 @@ pub fn ui(
             description(ui, &j.description);
             ui.horizontal(|ui| {
                 for end in [&j.from, &j.to] {
-                    if ui
-                        .link(format!("{} set {}", end.structure, end.set))
-                        .clicked()
-                    {
-                        next = Some(Selection::Structure(end.structure.clone()));
+                    if ui.link(end.to_string()).clicked() {
+                        next = Some(match end {
+                            ols_line::JumperEnd::Wire(p) => Selection::Structure(p.structure.clone()),
+                            ols_line::JumperEnd::Tap {
+                                tap: ols_line::Tap::Span(r),
+                            } => Selection::SpanPoint {
+                                section: r.section.clone(),
+                                label: r.point.clone(),
+                            },
+                            ols_line::JumperEnd::Tap {
+                                tap: ols_line::Tap::Jumper { jumper, point },
+                            } => Selection::JumperPoint {
+                                jumper: jumper.clone(),
+                                label: point.clone(),
+                            },
+                        });
                     }
                 }
             });

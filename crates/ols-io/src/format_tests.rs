@@ -204,7 +204,7 @@ fn rich_line() -> Line {
     tap.sag = None;
     tap.length = Some(12.5);
     tap.points.clear();
-    tap.from_tap = Some(ols_line::Tap::Span(ols_line::SpanPointRef {
+    tap.from = ols_line::JumperEnd::tap(ols_line::Tap::Span(ols_line::SpanPointRef {
         section: line.sections[1].id.clone(),
         point: "C1".into(),
     }));
@@ -270,7 +270,7 @@ fn rich_line() -> Line {
     // A jumper held by support clamps: one on the string to "tip\nnext" of
     // T2, one on a string of the `from` end's structure (no structure
     // given).
-    let from = line.jumpers[0].from.structure.clone();
+    let from = line.jumpers[0].from.structure().unwrap().to_owned();
     let t = line.structures.iter_mut().find(|s| s.id == from).unwrap();
     let top = t.points[0].clone();
     t.wires.push(ols_line::WirePoint {

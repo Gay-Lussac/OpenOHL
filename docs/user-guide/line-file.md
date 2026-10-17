@@ -107,7 +107,9 @@ How the wire is held at each point of a section follows from these. The usual ca
 
 **Files of version 2** had `routes` that were their own alignment (`alignment` points, `structures` listed) or followed their structures, and the line's own `alignment` without routes. They are read as routes and alignments of the same ids: a route that followed its structures gets points tied under them; the line's own alignment becomes the route and alignment `main`; a structure the alignments would not put on its routes gives them itself.
 
-**Files of version 3** had alignments holding their points (`[x, y, z]` or `{ "position", "structure", "routes" }`) on one or more `routes`. Their points become alignment points of their own (`P1`, `P2`…); points of different alignments at the same place (within 1 mm, tied to the same structure or one of them free) become one shared point; an alignment on several routes becomes one alignment per route through the same points (`a`, `a (route)`…); a point's own routes go to the structure tied to it (a free point's are dropped). Projects are converted the same way when they open. Files are written as version 4.
+**Files of version 3** had alignments holding their points (`[x, y, z]` or `{ "position", "structure", "routes" }`) on one or more `routes`. Their points become alignment points of their own (`P1`, `P2`…); points of different alignments at the same place (within 1 mm, tied to the same structure or one of them free) become one shared point; an alignment on several routes becomes one alignment per route through the same points (`a`, `a (route)`…); a point's own routes go to the structure tied to it (a free point's are dropped). Projects are converted the same way when they open.
+
+**Files of version 4** gave a jumper's tap as `from_tap` / `to_tap` beside a placeholder `from` / `to`, and a place could carry a fraction beside a distance or a station (the station, else the distance, was used). They are read as a tap end and a place of one kind. Files are written as version 5.
 
 `cargo run -p ols-cli -- line FILE --stations` prints the stationing, offsets and line angles along every alignment (with its route), and for each structure the other routes it is also on.
 
@@ -203,7 +205,7 @@ A jumper is a slack cable joining two wire points: the ends of two sections at a
 | `id` | yes | Unique id. |
 | `description` | no | What it is, in words (free text). |
 | `cable` | yes | Cable id from the wire libraries. |
-| `from`, `to` | yes | Wire points `{ "structure", "set" }`. |
+| `from`, `to` | yes | The ends: wire points `{ "structure", "set" }`, or a **tap** — a clamp on a span point, `{ "tap": { "span": { "section", "point" } } }`, or on another jumper's point, `{ "tap": { "jumper": { "jumper", "point" } } }`; the point holds a clamp object. A jumper on a tap is given by its `length` (or `rigid`); its section is solved by finite elements. |
 | `length` | one of | Unstressed (cut) length, m, at `temperature`. |
 | `rigid` | one of | `true`: a rigid jumper (a tube or bar), the straight member between its solved clamps; it takes no `length` or `sag`, does not change with the temperature, and is never taut. |
 | `sag` | one of | Or the largest vertical distance below the end-to-end chord, m, in still air at `temperature`; the cut length is found from it (jumpers without support). |

@@ -879,7 +879,7 @@ fn renaming_keeps_the_place_and_what_refers_to_it_follows() {
             .all(|x| x.points.iter().all(|p| p.structure != "T3"))
     );
     assert!(l.sections[0].points.iter().any(|p| p.structure == "Y3"));
-    assert_eq!(l.jumpers[0].from.structure, "Y3");
+    assert_eq!(l.jumpers[0].from.structure(), Some("Y3"));
     // The points tied to it follow the new name; it stays on its routes.
     assert!(
         l.alignment_points
@@ -925,7 +925,7 @@ fn renaming_keeps_the_place_and_what_refers_to_it_follows() {
     .unwrap();
     let p = &s.line().sections[2].points[0];
     assert_eq!((p.structure.as_str(), p.set), ("T3", 5));
-    assert_eq!(s.line().jumpers[0].from.set, 5);
+    assert_eq!(s.line().jumpers[0].from.point().unwrap().set, 5);
     let sys = s.line().systems[0].id.clone();
     s.apply(
         "ben",
@@ -1321,13 +1321,13 @@ fn tapped_jumpers_follow_what_they_hang_on() {
     a.support = None;
     a.sag = None;
     a.length = Some(12.0);
-    a.from_tap = Some(ols_line::Tap::Span(ols_line::SpanPointRef {
+    a.from = ols_line::JumperEnd::tap(ols_line::Tap::Span(ols_line::SpanPointRef {
         section: s1.clone(),
         point: "TAP".into(),
     }));
     let mut b = a.clone();
     b.id = "JB".into();
-    b.from_tap = Some(ols_line::Tap::Jumper {
+    b.from = ols_line::JumperEnd::tap(ols_line::Tap::Jumper {
         jumper: host.clone(),
         point: "K".into(),
     });
@@ -1355,8 +1355,9 @@ fn tapped_jumpers_follow_what_they_hang_on() {
             .iter()
             .find(|j| j.id == id)
             .unwrap()
-            .from_tap
-            .clone()
+            .from
+            .as_tap()
+            .cloned()
     };
     assert!(matches!(tap_of(&s, "JA"), Some(ols_line::Tap::Span(r)) if r.section == "S1x"));
     s.apply(
@@ -1437,12 +1438,12 @@ fn tapped_on_s2(s: &mut Session) {
     let mut a = line.jumpers[0].clone();
     a.id = "JA".into();
     // On S2's own circuit.
-    a.to = ols_line::SectionPoint::new("T3", 11);
+    a.to = ols_line::JumperEnd::wire("T3", 11);
     a.supports.clear();
     a.support = None;
     a.sag = None;
     a.length = Some(12.0);
-    a.from_tap = Some(ols_line::Tap::Span(ols_line::SpanPointRef {
+    a.from = ols_line::JumperEnd::tap(ols_line::Tap::Span(ols_line::SpanPointRef {
         section: "S2".into(),
         point: "TAP".into(),
     }));
@@ -1455,7 +1456,7 @@ fn tapped_on_s2(s: &mut Session) {
     let mut b = a.clone();
     b.id = "JB".into();
     b.points.clear();
-    b.from_tap = Some(ols_line::Tap::Jumper {
+    b.from = ols_line::JumperEnd::tap(ols_line::Tap::Jumper {
         jumper: "JA".into(),
         point: "K".into(),
     });

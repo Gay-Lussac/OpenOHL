@@ -436,11 +436,15 @@ pub fn solve_states(
             .jumpers
             .iter()
             .filter(|j| {
-                [&j.from, &j.to].iter().all(|end| {
-                    line.sections
+                [&j.from, &j.to].into_iter().all(|end| match end {
+                    ols_line::JumperEnd::Wire(at) => line
+                        .sections
                         .iter()
-                        .filter(|s| s.points.iter().any(|p| p == *end))
-                        .all(|s| kept.contains(&s.id))
+                        .filter(|s| s.points.contains(at))
+                        .all(|s| kept.contains(&s.id)),
+                    ols_line::JumperEnd::Tap { tap } => line
+                        .tap_section(tap, 0)
+                        .is_none_or(|s| kept.contains(&s.id)),
                 })
             })
             .cloned()

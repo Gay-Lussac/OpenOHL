@@ -80,8 +80,8 @@ pub fn end_loads<'a>(
             continue;
         };
         let (Some(a), Some(b)) = (
-            approximate_end(line, &j.from, j.from_tap.as_ref(), 0),
-            approximate_end(line, &j.to, j.to_tap.as_ref(), 0),
+            approximate_end(line, &j.from, 0),
+            approximate_end(line, &j.to, 0),
         ) else {
             continue;
         };
@@ -147,12 +147,9 @@ pub fn end_loads<'a>(
             ends[0] += load * to_from;
             ends[1] += load * to_to;
         }
-        for (k, (key, share)) in [
-            (LoadAt::of(&j.from, j.from_tap.as_ref()), from),
-            (LoadAt::of(&j.to, j.to_tap.as_ref()), to),
-        ]
-        .into_iter()
-        .enumerate()
+        for (k, (key, share)) in [(LoadAt::of(&j.from), from), (LoadAt::of(&j.to), to)]
+            .into_iter()
+            .enumerate()
         {
             let e = out.entry(key).or_insert([0.0; 3]);
             for i in 0..3 {
@@ -166,14 +163,9 @@ pub fn end_loads<'a>(
 /// Where a jumper's end is in still air, roughly: its wire point's
 /// position, or a tap's — between the wire points of the span it is on,
 /// by its place (a jumper's: along that jumper, at most 16 deep).
-pub fn approximate_end(
-    line: &Line,
-    point: &SectionPoint,
-    tap: Option<&crate::Tap>,
-    depth: usize,
-) -> Option<Point> {
-    match tap {
-        None => line.wire_point(point).map(|w| w.position),
+pub fn approximate_end(line: &Line, end: &crate::JumperEnd, depth: usize) -> Option<Point> {
+    match end.as_tap() {
+        None => line.wire_point(end.point()?).map(|w| w.position),
         Some(crate::Tap::Span(r)) => {
             let s = line.sections.iter().find(|s| s.id == r.section)?;
             let s = line.section_with_fractions(s);
@@ -193,8 +185,8 @@ pub fn approximate_end(
             point: label,
         }) if depth < 16 => {
             let h = line.jumpers.iter().find(|x| &x.id == jumper)?;
-            let a = approximate_end(line, &h.from, h.from_tap.as_ref(), depth + 1)?;
-            let b = approximate_end(line, &h.to, h.to_tap.as_ref(), depth + 1)?;
+            let a = approximate_end(line, &h.from, depth + 1)?;
+            let b = approximate_end(line, &h.to, depth + 1)?;
             let p = h.points.iter().find(|p| &p.label == label)?;
             let chord = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
             let f = place_fraction(
@@ -945,22 +937,23 @@ fn rod_ends(
     let ei = jumper_bending_stiffness(jumper, cable, &line.defaults);
     let angle = line.defaults.jumper_exit_angle_deg;
     Stiff {
-        start: clamp_direction(
-            line,
-            shapes,
-            &jumper.from,
-            jumper.angle_from_deg.unwrap_or(angle),
-            load,
-        ),
+        start: jumper.from.point().and_then(|p| {
+            clamp_direction(
+                line,
+                shapes,
+                p,
+                jumper.angle_from_deg.unwrap_or(angle),
+                load,
+            )
+        }),
         // Arriving at the clamp: against the direction it holds.
-        end: clamp_direction(
-            line,
-            shapes,
-            &jumper.to,
-            jumper.angle_to_deg.unwrap_or(angle),
-            load,
-        )
-        .map(|d| -d),
+        end: jumper
+            .to
+            .point()
+            .and_then(|p| {
+                clamp_direction(line, shapes, p, jumper.angle_to_deg.unwrap_or(angle), load)
+            })
+            .map(|d| -d),
         ei,
     }
 }
@@ -1087,8 +1080,14 @@ fn cut_length(
     let sag = jumper
         .sag
         .ok_or_else(|| invalid("needs a length or a sag".into()))?;
-    let a = end_position(line, shapes, &jumper.from).map_err(|e| invalid(e.to_string()))?;
-    let b = end_position(line, shapes, &jumper.to).map_err(|e| invalid(e.to_string()))?;
+    let at = |end: &crate::JumperEnd| {
+        let p = end
+            .point()
+            .ok_or_else(|| invalid("on a tap: give its length".into()))?;
+        end_position(line, shapes, p).map_err(|e| invalid(e.to_string()))
+    };
+    let a = at(&jumper.from)?;
+    let b = at(&jumper.to)?;
     let still = CableProperties {
         unstressed_length: 1.0,
         axial_stiffness: cable.axial_stiffness().si(),
@@ -1129,12 +1128,7 @@ pub fn solve_jumper_in(
     // Its ends are the solved clamps: a section through an end that did not
     // solve leaves no clamp (the attachment's data point would be a wrong,
     // plausible-looking end).
-    for end in [&jumper.from, &jumper.to]
-        .into_iter()
-        .zip([&jumper.from_tap, &jumper.to_tap])
-        .filter(|(_, tap)| tap.is_none())
-        .map(|(e, _)| e)
-    {
+    for end in jumper.points() {
         if let Some(s) = line
             .sections
             .iter()
@@ -1146,12 +1140,14 @@ pub fn solve_jumper_in(
             )));
         }
     }
-    let end = |point: &SectionPoint, tap: &Option<crate::Tap>| match tap {
-        None => end_position(line, shapes, point).map_err(|e| invalid(e.to_string())),
-        Some(t) => tap_position(line, shapes, context, t).map_err(invalid),
+    let end = |end: &crate::JumperEnd| match end {
+        crate::JumperEnd::Wire(point) => {
+            end_position(line, shapes, point).map_err(|e| invalid(e.to_string()))
+        }
+        crate::JumperEnd::Tap { tap } => tap_position(line, shapes, context, tap).map_err(invalid),
     };
-    let a = end(&jumper.from, &jumper.from_tap)?;
-    let b = end(&jumper.to, &jumper.to_tap)?;
+    let a = end(&jumper.from)?;
+    let b = end(&jumper.to)?;
     // The jumpers hanging on its points (whole bundle), by where they are.
     let hanging = |length: f64| -> Vec<(f64, Vector3<f64>)> {
         let horizontal = (b - a).xy().norm();
@@ -1208,10 +1204,10 @@ pub fn solve_jumper_in(
     let load = wire_load_in_line_wind(case, cable, d, along);
     // A tap is a hinge: no direction held there.
     let hinged = |mut s: Stiff| {
-        if jumper.from_tap.is_some() {
+        if jumper.from.as_tap().is_some() {
             s.start = None;
         }
-        if jumper.to_tap.is_some() {
+        if jumper.to.as_tap().is_some() {
             s.end = None;
         }
         s
@@ -1576,7 +1572,7 @@ const MAX_CUTS: usize = 20_000;
 /// are solved in its design case); the line's creep-stretch and bimetallic
 /// settings and creep cases. Equal keys, equal cuts.
 fn design_key(line: &Line, library: &ols_cables::Library, jumper: &Jumper) -> String {
-    let ends = |p: &SectionPoint| *p == jumper.from || *p == jumper.to;
+    let ends = |p: &SectionPoint| jumper.is_at(p);
     let sections: Vec<&crate::Section> = line
         .sections
         .iter()
@@ -1586,8 +1582,7 @@ fn design_key(line: &Line, library: &ols_cables::Library, jumper: &Jumper) -> St
         .iter()
         .flat_map(|s| s.points.iter().map(|p| p.structure.as_str()))
         .collect();
-    ids.insert(&jumper.from.structure);
-    ids.insert(&jumper.to.structure);
+    ids.extend(jumper.points().map(|p| p.structure.as_str()));
     for c in &jumper.supports {
         ids.insert(c.structure_id(jumper));
     }
@@ -1654,11 +1649,7 @@ fn design_shapes(
     );
     line.sections
         .iter()
-        .filter(|s| {
-            s.points
-                .iter()
-                .any(|p| *p == jumper.from || *p == jumper.to)
-        })
+        .filter(|s| s.points.iter().any(|p| jumper.is_at(p)))
         .map(|s| crate::solve::solve_one(line, s, library, &case))
         .collect()
 }
@@ -1787,7 +1778,10 @@ mod tests {
             line.jumpers[0].length = Some((b - a).norm() * (1.0 + 5e-5));
             let shapes = shapes(&line, t0);
             let ends = |p: &crate::SectionPoint| super::end_position(&line, &shapes, p).unwrap();
-            (a, b) = (ends(&line.jumpers[0].from), ends(&line.jumpers[0].to));
+            (a, b) = (
+                ends(line.jumpers[0].from.point().unwrap()),
+                ends(line.jumpers[0].to.point().unwrap()),
+            );
         }
         line.jumpers[0].length = Some((b - a).norm() * (1.0 + 5e-5));
         let j = solve_jumpers(&line, &lib, &still(t0), &shapes(&line, t0))
@@ -1860,7 +1854,7 @@ mod tests {
         let end = line
             .sections
             .iter()
-            .find(|s| s.points.contains(&j.from))
+            .find(|s| s.points.contains(j.from.point().unwrap()))
             .unwrap()
             .id
             .clone();
@@ -1940,7 +1934,7 @@ mod tests {
             })
             .unwrap();
         let far = s.points.last().unwrap().structure.clone();
-        assert!(far != line.jumpers[0].from.structure);
+        assert!(far != line.jumpers[0].from.point().unwrap().structure);
         let st = line.structures.iter_mut().find(|t| t.id == far).unwrap();
         st.position[2] += 2.0;
         for a in st
@@ -2054,11 +2048,11 @@ mod tests {
                 .collect()
         };
         let w = down(&line, &calm);
-        let (a, b) = (w[&j.from], w[&j.to]);
+        let (a, b) = (w[j.from.point().unwrap()], w[j.to.point().unwrap()]);
         assert!(a > 0.0 && (a - b).abs() < 1e-9, "{a} {b}");
         let mut iced = calm.clone();
         iced.ice_thickness = ols_core::units::Length::from_si(0.02);
-        assert!(down(&line, &iced)[&j.from] > 2.0 * a);
+        assert!(down(&line, &iced)[j.from.point().unwrap()] > 2.0 * a);
         // A support a quarter along: the first end carries an eighth.
         line.jumpers[0].support = Some(JumperSupport {
             point: [0.0, 0.0, 0.0],
@@ -2067,8 +2061,8 @@ mod tests {
             fraction: 0.25,
         });
         let w = down(&line, &calm);
-        assert!((w[&j.from] / (2.0 * a) - 0.125).abs() < 1e-9);
-        assert!((w[&j.to] / (2.0 * a) - 0.375).abs() < 1e-9);
+        assert!((w[j.from.point().unwrap()] / (2.0 * a) - 0.125).abs() < 1e-9);
+        assert!((w[j.to.point().unwrap()] / (2.0 * a) - 0.375).abs() < 1e-9);
         // The clamp it hangs on, lower than without it.
         line.jumpers[0].support = None;
         let (with, _) = solve_all(&line, &calm);
@@ -2080,7 +2074,7 @@ mod tests {
                 .sections
                 .iter()
                 .enumerate()
-                .find(|(_, s)| s.points.contains(&j.from))
+                .find(|(_, s)| s.points.contains(j.from.point().unwrap()))
                 .unwrap();
             let i = sec.points.iter().position(|p| *p == j.from).unwrap();
             shapes[k].clamps[i]
@@ -2115,15 +2109,15 @@ mod tests {
         });
         let mut j = line.jumpers[0].clone();
         j.id = "JT".into();
-        j.from_tap = Some(crate::Tap::Span(crate::SpanPointRef {
+        j.from = crate::JumperEnd::tap(crate::Tap::Span(crate::SpanPointRef {
             section: s1.clone(),
             point: "TAP".into(),
         }));
         j.supports.clear();
         j.support = None;
         j.sag = None;
-        let a = approximate_end(&line, &j.from, j.from_tap.as_ref(), 0).unwrap();
-        let b = approximate_end(&line, &j.to, None, 0).unwrap();
+        let a = approximate_end(&line, &j.from, 0).unwrap();
+        let b = approximate_end(&line, &j.to, 0).unwrap();
         let chord = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
         j.length = Some(1.05 * chord);
         line.jumpers.push(j);
@@ -2224,7 +2218,7 @@ mod tests {
         assert!(ruling.validate().is_err());
         // One conductor path with its wire.
         let paths = crate::electrical::conductor_paths(&line);
-        let to = line.jumpers.last().unwrap().to.clone();
+        let to = line.jumpers.last().unwrap().to.point().unwrap().clone();
         let other = line
             .sections
             .iter()
@@ -2260,14 +2254,14 @@ mod tests {
         j.supports.clear();
         j.support = None;
         j.sag = None;
-        j.from_tap = Some(crate::Tap::Jumper {
+        j.from = crate::JumperEnd::tap(crate::Tap::Jumper {
             jumper: host.clone(),
             point: "K".into(),
         });
         // To the host's `from` end, 3 % slack.
         j.to = line.jumpers[0].from.clone();
-        let a = approximate_end(&line, &j.from, j.from_tap.as_ref(), 0).unwrap();
-        let b = approximate_end(&line, &j.to, None, 0).unwrap();
+        let a = approximate_end(&line, &j.from, 0).unwrap();
+        let b = approximate_end(&line, &j.to, 0).unwrap();
         j.length = Some(1.03 * (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt());
         line.jumpers.push(j);
         line.validate().unwrap();
@@ -2300,7 +2294,7 @@ mod tests {
                 description: String::new(),
                 object: Some(crate::LineObject::clamp(1.0)),
             });
-        ring.jumpers[0].from_tap = Some(crate::Tap::Jumper {
+        ring.jumpers[0].from = crate::JumperEnd::tap(crate::Tap::Jumper {
             jumper: "JJ".into(),
             point: "Q".into(),
         });
@@ -2375,7 +2369,7 @@ mod tests {
         // The estimate: half on each end without supports.
         let est = |line: &Line| end_loads(line, &calm, |id| lib.get(id));
         let bare_line = crate::tests::example();
-        let at = crate::solve::LoadAt::Clamp(j.from.clone());
+        let at = crate::solve::LoadAt::of(&j.from);
         let more = est(&line)[&at][2] - est(&bare_line)[&at][2];
         assert!((more + 100.0).abs() < 1.0, "{more}");
         // A rigid jumper shares it by where it is.
@@ -2405,7 +2399,7 @@ mod tests {
         let calm = still(15.0);
         let mut windy = still(15.0);
         windy.wind_pressure = ols_core::units::Stress::from_pascals(600.0);
-        let at = crate::solve::LoadAt::Clamp(j.from.clone());
+        let at = crate::solve::LoadAt::of(&j.from);
         let quiet = end_loads(&line, &calm, |id| lib.get(id))[&at];
         let blown = end_loads(&line, &windy, |id| lib.get(id))[&at];
         assert!(quiet[0] == 0.0 && quiet[1] == 0.0 && quiet[2] < 0.0);
@@ -2433,7 +2427,7 @@ mod tests {
                 .sections
                 .iter()
                 .enumerate()
-                .find(|(_, s)| s.points.contains(&j.from))
+                .find(|(_, s)| s.points.contains(j.from.point().unwrap()))
                 .unwrap();
             let i = sec.points.iter().position(|p| *p == j.from).unwrap();
             shapes[k].clamps[i]
@@ -2558,8 +2552,8 @@ mod tests {
         line.validate().unwrap();
         let (shapes, jumpers) = solve_all(&line, &still(15.0));
         // From its tension string's line (clamp to top).
-        let clamp = end_position(&line, &shapes, &line.jumpers[0].from).unwrap();
-        let axis = string_axis(&line, &line.jumpers[0].from, clamp).unwrap();
+        let clamp = end_position(&line, &shapes, line.jumpers[0].from.point().unwrap()).unwrap();
+        let axis = string_axis(&line, line.jumpers[0].from.point().unwrap(), clamp).unwrap();
         // The tangent at the clamp, from the first two pieces.
         let p = &jumpers[0].points;
         let (d0, d1) = (
@@ -2587,38 +2581,49 @@ mod tests {
         let line = crate::tests::example();
         let (shapes, _) = solve_all(&line, &still(15.0));
         let j = &line.jumpers[0];
-        let clamp = end_position(&line, &shapes, &j.from).unwrap();
-        let s = string_axis(&line, &j.from, clamp).expect("a tension string");
+        let clamp = end_position(&line, &shapes, j.from.point().unwrap()).unwrap();
+        let s = string_axis(&line, j.from.point().unwrap(), clamp).expect("a tension string");
         let down = Vector3::new(0.0, 0.0, -15.0);
-        let d = clamp_direction(&line, &shapes, &j.from, 30.0, down).unwrap();
+        let d = clamp_direction(&line, &shapes, j.from.point().unwrap(), 30.0, down).unwrap();
         assert!((d.angle(&s).to_degrees() - 30.0).abs() < 1e-9);
         // In the vertical plane through the string, below it.
         let n = s.cross(&Vector3::z());
         assert!(d.dot(&n).abs() < 1e-9 && d.z < s.z, "{d:?} {s:?}");
         // Wind across the string: turned towards where the load pushes.
         let across = Vector3::new(-s.y, s.x, 0.0).normalize();
-        let windy = clamp_direction(&line, &shapes, &j.from, 30.0, down + across * 8.0).unwrap();
+        let windy = clamp_direction(
+            &line,
+            &shapes,
+            j.from.point().unwrap(),
+            30.0,
+            down + across * 8.0,
+        )
+        .unwrap();
         assert!((windy.angle(&s).to_degrees() - 30.0).abs() < 1e-9);
         assert!(windy.dot(&across) > 0.1, "{windy:?}");
         // 0°: along the string.
-        let along = clamp_direction(&line, &shapes, &j.from, 0.0, down).unwrap();
+        let along = clamp_direction(&line, &shapes, j.from.point().unwrap(), 0.0, down).unwrap();
         assert!(along.angle(&s) < 1e-9);
         // The string's top 2 m higher: the jumper leaves steeper upwards.
         let mut steep = line.clone();
-        let st = steep.structure(&j.from.structure).unwrap();
-        let w = st.wire_at_set(j.from.set).unwrap().label.clone();
+        let st = steep.structure(&j.from.point().unwrap().structure).unwrap();
+        let w = st
+            .wire_at_set(j.from.point().unwrap().set)
+            .unwrap()
+            .label
+            .clone();
         let top = st.strings_to(&w).next().unwrap().top.clone();
         let st = steep
             .structures
             .iter_mut()
-            .find(|x| x.id == j.from.structure)
+            .find(|x| x.id == j.from.point().unwrap().structure)
             .unwrap();
         st.points
             .iter_mut()
             .find(|p| p.label == top)
             .unwrap()
             .position[2] += 2.0;
-        let up = clamp_direction(&steep, &shapes, &j.from, 30.0, down).unwrap();
+        let up = clamp_direction(&steep, &shapes, j.from.point().unwrap(), 30.0, down).unwrap();
         assert!(up.z > d.z, "{} vs {}", up.z, d.z);
     }
 

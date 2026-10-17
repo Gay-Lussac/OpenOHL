@@ -2377,14 +2377,16 @@ pub enum LoadAt {
 }
 
 impl LoadAt {
-    /// Where the end of a jumper at `point` (or its tap) loads.
-    pub fn of(point: &crate::SectionPoint, tap: Option<&crate::Tap>) -> Self {
-        match tap {
-            None => Self::Clamp(point.clone()),
-            Some(crate::Tap::Span(r)) => Self::Span(r.clone()),
-            Some(crate::Tap::Jumper { jumper, point }) => {
-                Self::Jumper(jumper.clone(), point.clone())
-            }
+    /// Where jumper end `end` loads.
+    pub fn of(end: &crate::JumperEnd) -> Self {
+        match end {
+            crate::JumperEnd::Wire(p) => Self::Clamp(p.clone()),
+            crate::JumperEnd::Tap {
+                tap: crate::Tap::Span(r),
+            } => Self::Span(r.clone()),
+            crate::JumperEnd::Tap {
+                tap: crate::Tap::Jumper { jumper, point },
+            } => Self::Jumper(jumper.clone(), point.clone()),
         }
     }
 
@@ -2400,10 +2402,7 @@ impl LoadAt {
 pub fn needs_pull(line: &Line) -> bool {
     line.solver.jumper_loads == crate::JumperLoads::Pull
         || (line.solver.taps == crate::TapLoads::Loop
-            && line
-                .jumpers
-                .iter()
-                .any(|j| j.from_tap.is_some() || j.to_tap.is_some()))
+            && line.jumpers.iter().any(crate::Jumper::on_tap))
 }
 
 /// Jumper loads on what they hang on (the whole bundle's, N).
@@ -2481,10 +2480,7 @@ pub fn jumper_pull(
         let mut failed: std::collections::BTreeSet<LoadAt> = Default::default();
         let mut pulled: JumperLoadMap = Default::default();
         for (j, r) in line.jumpers.iter().zip(&solved) {
-            let ends = [
-                LoadAt::of(&j.from, j.from_tap.as_ref()),
-                LoadAt::of(&j.to, j.to_tap.as_ref()),
-            ];
+            let ends = [LoadAt::of(&j.from), LoadAt::of(&j.to)];
             match r {
                 Ok(s) => {
                     for (p, f) in ends.into_iter().zip(s.end_forces) {

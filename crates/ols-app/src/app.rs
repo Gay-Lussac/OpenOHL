@@ -1563,14 +1563,13 @@ impl Ready {
                     ));
                     return;
                 }
-                let none = ols_line::SectionPoint::new(String::new(), 0);
                 let first = match (self.jumper_from.take(), self.jumper_tap.take()) {
                     (_, Some(t)) if t == tap => {
                         self.status = Some(("Add jumper: cancelled".into(), false));
                         return;
                     }
-                    (_, Some(t)) => Some((none.clone(), Some(t))),
-                    (Some(p), None) => Some((p, None)),
+                    (_, Some(t)) => Some(ols_line::JumperEnd::tap(t)),
+                    (Some(p), None) => Some(ols_line::JumperEnd::Wire(p)),
                     (None, None) => None,
                 };
                 match first {
@@ -1584,11 +1583,11 @@ impl Ready {
                         ));
                         self.jumper_tap = Some(tap);
                     }
-                    Some((p, t)) => {
+                    Some(from) => {
                         match crate::editors::new_tap_jumper(
                             model,
-                            (&p, t.as_ref()),
-                            (&none, Some(&tap)),
+                            from,
+                            ols_line::JumperEnd::tap(tap.clone()),
                         ) {
                             Ok(j) => {
                                 let id = j.id.clone();
@@ -1616,8 +1615,11 @@ impl Ready {
             {
                 let p = ols_line::SectionPoint::new(structure.clone(), *set);
                 let tap = self.jumper_tap.take().expect("checked");
-                let none = ols_line::SectionPoint::new(String::new(), 0);
-                match crate::editors::new_tap_jumper(model, (&none, Some(&tap)), (&p, None)) {
+                match crate::editors::new_tap_jumper(
+                    model,
+                    ols_line::JumperEnd::tap(tap.clone()),
+                    ols_line::JumperEnd::Wire(p),
+                ) {
                     Ok(j) => {
                         let id = j.id.clone();
                         if self.perform(crate::edit::Action::Command {
@@ -3270,7 +3272,13 @@ impl Ready {
         }
         let line = &self.model.line;
         let (target, structure) = if let Some(j) = line.jumpers.iter().find(|j| j.id == id) {
-            (Selection::Jumper(j.id.clone()), j.from.structure.clone())
+            (
+                Selection::Jumper(j.id.clone()),
+                line.end_structures(&j.from)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default(),
+            )
         } else if let Some(s) = line.sections.iter().find(|s| s.id == id) {
             (
                 Selection::Span {
@@ -3331,7 +3339,7 @@ fn delete_action(line: &ols_line::Line, target: &Selection) -> Option<crate::edi
                 .jumpers
                 .iter()
                 .filter(|x| {
-                    [&x.from_tap, &x.to_tap].into_iter().flatten().any(|t| {
+                    x.taps().any(|t| {
                         matches!(t, ols_line::Tap::Jumper { jumper: h, point } if h == jumper && point == label)
                     })
                 })
@@ -4553,13 +4561,7 @@ fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 "A jumper starting from a clamp on a span or on another jumper (a tap: a hinge, \
                  forces only): what the wire it hangs on carries.",
             );
-            let taps = r
-                .model
-                .line
-                .jumpers
-                .iter()
-                .filter(|j| j.from_tap.is_some() || j.to_tap.is_some())
-                .count();
+            let taps = r.model.line.jumpers.iter().filter(|j| j.on_tap()).count();
             for (choice, text, help) in [
                 (
                     ols_line::TapLoads::Loop,

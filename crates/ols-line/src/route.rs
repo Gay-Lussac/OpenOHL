@@ -747,8 +747,8 @@ impl Line {
             .jumpers
             .iter()
             .map(|j| {
-                let mut at = self.end_structures(&j.from, j.from_tap.as_ref());
-                at.extend(self.end_structures(&j.to, j.to_tap.as_ref()));
+                let mut at = self.end_structures(&j.from);
+                at.extend(self.end_structures(&j.to));
                 (j.id.clone(), union(&mut at.iter().map(String::as_str)))
             })
             .collect();

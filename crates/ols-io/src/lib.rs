@@ -166,8 +166,7 @@ impl ExportModel {
                 }
                 for j in jumpers {
                     let def = line.jumpers.iter().find(|d| d.id == j.jumper);
-                    let from =
-                        def.and_then(|d| line.sections.iter().find(|s| s.points.contains(&d.from)));
+                    let from = def.and_then(|d| line.jumper_section(d));
                     wires.push(ExportWire {
                         section: format!("jumper:{}", j.jumper),
                         span: 0,

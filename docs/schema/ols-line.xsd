@@ -190,6 +190,17 @@
     <xs:attribute name="description" type="xs:string"/>
   </xs:complexType>
 
+  <xs:complexType name="tap">
+    <xs:annotation>
+      <xs:documentation>A jumper's tap end: a clamp on a span point
+        (section, point) or on another jumper's point (jumper,
+        point).</xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="section" type="xs:string"/>
+    <xs:attribute name="jumper" type="xs:string"/>
+    <xs:attribute name="point" type="xs:string" use="required"/>
+  </xs:complexType>
+
   <xs:complexType name="sectionPoint">
     <xs:annotation>
       <xs:documentation>A wire point by its structure and set (version 1
@@ -490,31 +501,25 @@
         <xs:element name="jumper" minOccurs="0" maxOccurs="unbounded">
           <xs:complexType>
             <xs:sequence>
-              <xs:element name="from" type="ols:sectionPoint"/>
-              <xs:element name="to" type="ols:sectionPoint"/>
+              <!-- Each end: a wire point (`from` / `to`), or a tap
+                   (`from_tap` / `to_tap`): a clamp on a span point
+                   (section, point) or on another jumper's point (jumper,
+                   point). Files before version 5 gave a placeholder `from`
+                   beside a tap; the tap is read. -->
+              <xs:choice>
+                <xs:element name="from" type="ols:sectionPoint"/>
+                <xs:element name="from_tap" type="ols:tap"/>
+              </xs:choice>
+              <xs:choice>
+                <xs:element name="to" type="ols:sectionPoint"/>
+                <xs:element name="to_tap" type="ols:tap"/>
+              </xs:choice>
               <xs:element name="support" minOccurs="0">
                 <xs:complexType>
                   <xs:attribute name="length" type="xs:double" use="required"/>
                   <xs:attribute name="weight" type="xs:double" default="0"/>
                   <xs:attribute name="fraction" type="xs:double" default="0.5"/>
                   <xs:attributeGroup ref="ols:xyz"/>
-                </xs:complexType>
-              </xs:element>
-              <!-- A tap end (instead of `from` / `to`): a clamp on a span
-                   point (section, point) or on another jumper's point
-                   (jumper, point). -->
-              <xs:element name="from_tap" minOccurs="0">
-                <xs:complexType>
-                  <xs:attribute name="section" type="xs:string"/>
-                  <xs:attribute name="jumper" type="xs:string"/>
-                  <xs:attribute name="point" type="xs:string" use="required"/>
-                </xs:complexType>
-              </xs:element>
-              <xs:element name="to_tap" minOccurs="0">
-                <xs:complexType>
-                  <xs:attribute name="section" type="xs:string"/>
-                  <xs:attribute name="jumper" type="xs:string"/>
-                  <xs:attribute name="point" type="xs:string" use="required"/>
                 </xs:complexType>
               </xs:element>
               <!-- Support clamps, in order from `from`: each on the strings to a

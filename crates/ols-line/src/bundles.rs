@@ -125,7 +125,8 @@ impl BundleLines {
             };
             let mut lines = line.jumper_bundle(def).polylines(&j.points);
             for (end, at_start) in [(&def.from, true), (&def.to, false)] {
-                if let Some(corners) = clamps.get(&key(end))
+                if let Some(p) = end.point()
+                    && let Some(corners) = clamps.get(&key(p))
                     && corners.len() == lines.len()
                 {
                     snap_ends(&mut lines, corners, at_start);

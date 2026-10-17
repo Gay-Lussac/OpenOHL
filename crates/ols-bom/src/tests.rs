@@ -119,8 +119,8 @@ fn synthetic_line_lengths() {
     let jumper = bom.cables.iter().find(|c| c.role == "jumper").unwrap();
     let j = &line.jumpers[0];
     let chord = distance(
-        line.wire_point(&j.from).unwrap().position,
-        line.wire_point(&j.to).unwrap().position,
+        line.wire_point(j.from.point().unwrap()).unwrap().position,
+        line.wire_point(j.to.point().unwrap()).unwrap().position,
     );
     assert!((jumper.length_m - (chord + 8.0 * 1.5 * 1.5 / (3.0 * chord))).abs() < 1e-9);
 }

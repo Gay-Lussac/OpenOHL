@@ -2974,8 +2974,8 @@ fn jumpers_are_added_where_none_are() {
         // T1 and T5: both ends of S1 and S2 — at T1 here.
         assert_eq!(r.model.line.jumpers.len(), n + 1, "{:?}", r.status);
         let j = r.model.line.jumpers.last().unwrap();
-        assert_eq!(j.from.structure, "T1");
-        assert_eq!(j.to.structure, "T1");
+        assert_eq!(j.from.structure(), Some("T1"));
+        assert_eq!(j.to.structure(), Some("T1"));
         assert!(j.sag.is_some());
         assert_solved_fully(&r.model);
     }
@@ -8186,12 +8186,12 @@ fn local_jumper_failures() {
         };
         println!(
             "{id} at {}: length {:?} sag {:?} t {} bundle {b}; from {} to {}",
-            j.from.structure,
+            j.from,
             j.length,
             j.sag,
             j.temperature,
-            ends(&j.from),
-            ends(&j.to)
+            ends(j.from.point().unwrap()),
+            ends(j.to.point().unwrap())
         );
         for (case, _, m) in &chords[id] {
             println!("    {case}: {m}");
@@ -9452,7 +9452,13 @@ fn swapped_sets_take_their_wires_along() {
         assert_eq!(y.points, want, "{}", x.id);
     }
     for (x, y) in before.jumpers.iter().zip(&after.jumpers) {
-        assert_eq!((swap(&x.from), swap(&x.to)), (y.from.clone(), y.to.clone()));
+        assert_eq!(
+            (swap(x.from.point().unwrap()), swap(x.to.point().unwrap())),
+            (
+                y.from.point().unwrap().clone(),
+                y.to.point().unwrap().clone()
+            )
+        );
     }
 }
 
@@ -10886,8 +10892,8 @@ fn a_jumper_is_laid_through_suspension_strings() {
     let model = synthetic_project_with("jumper-through", |l| {
         let j = l.jumpers.remove(0);
         let (a, b) = (
-            l.wire_point(&j.from).unwrap().position,
-            l.wire_point(&j.to).unwrap().position,
+            l.wire_point(j.from.point().unwrap()).unwrap().position,
+            l.wire_point(j.to.point().unwrap()).unwrap().position,
         );
         let mid = [
             0.5 * (a[0] + b[0]),
@@ -10897,7 +10903,7 @@ fn a_jumper_is_laid_through_suspension_strings() {
         let st = l
             .structures
             .iter_mut()
-            .find(|s| s.id == j.from.structure)
+            .find(|s| Some(s.id.as_str()) == j.from.structure())
             .unwrap();
         st.points.push(ols_line::StructurePoint {
             description: String::new(),
@@ -10939,7 +10945,11 @@ fn a_jumper_is_laid_through_suspension_strings() {
     let (from, to, n) = {
         let r = harness.state_mut().ready().unwrap();
         let j = r.model.line.jumpers[0].clone();
-        (j.from, j.to, r.model.line.jumpers.len())
+        (
+            j.from.point().unwrap().clone(),
+            j.to.point().unwrap().clone(),
+            r.model.line.jumpers.len(),
+        )
     };
     let end = |p: &ols_line::SectionPoint| string_at(&p.structure, p.set);
     use_tool(&mut harness, Tool::AddJumper, end(&from), None);
@@ -12277,7 +12287,7 @@ fn a_jumper_starts_from_a_tap_on_another_jumper() {
     let (host, end) = {
         let r = harness.state_mut().ready().unwrap();
         let j = &r.model.line.jumpers[0];
-        (j.id.clone(), j.from.clone())
+        (j.id.clone(), j.from.point().unwrap().clone())
     };
     {
         let r = harness.state_mut().ready().unwrap();
@@ -12331,7 +12341,7 @@ fn a_jumper_starts_from_a_tap_on_another_jumper() {
         assert_eq!(r.model.line.jumpers.len(), n + 1, "{:?}", r.status);
         let j = r.model.line.jumpers.last().unwrap().clone();
         assert!(
-            matches!(&j.from_tap, Some(ols_line::Tap::Jumper { jumper, point }) if *jumper == host && point == "K")
+            matches!(j.from.as_tap(), Some(ols_line::Tap::Jumper { jumper, point }) if *jumper == host && point == "K")
         );
         assert!(j.length.is_some() && j.sag.is_none());
         r.model.ensure_solved(r.case);

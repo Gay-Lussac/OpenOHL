@@ -298,18 +298,15 @@ pub fn conductor_paths(line: &Line) -> Vec<Vec<String>> {
     for j in &line.jumpers {
         // Each end's section: at its section point, or that a tap hangs on
         // (a tap joins the jumper to its wire).
-        let end = |p: &crate::SectionPoint, tap: Option<&crate::Tap>| match tap {
-            None => at
+        let end = |e: &crate::JumperEnd| match e {
+            crate::JumperEnd::Wire(p) => at
                 .get(&(p.structure.as_str(), p.set))
                 .and_then(|v| v.first().copied()),
-            Some(t) => line
-                .tap_section(t, 0)
+            crate::JumperEnd::Tap { tap } => line
+                .tap_section(tap, 0)
                 .and_then(|s| line.sections.iter().position(|x| x.id == s.id)),
         };
-        if let (Some(a), Some(b)) = (
-            end(&j.from, j.from_tap.as_ref()),
-            end(&j.to, j.to_tap.as_ref()),
-        ) {
+        if let (Some(a), Some(b)) = (end(&j.from), end(&j.to)) {
             union(a, b);
         }
     }
@@ -383,19 +380,16 @@ pub fn circuits(line: &Line) -> Vec<Circuit> {
             }
         }
         // (A jumper on a tap branches off: not a link of the path.)
-        for j in line
-            .jumpers
-            .iter()
-            .filter(|j| j.from_tap.is_none() && j.to_tap.is_none())
-        {
-            if next.contains_key(&j.from) && next.contains_key(&j.to) {
+        for j in &line.jumpers {
+            let (Some(from), Some(to)) = (j.from.point(), j.to.point()) else {
+                continue;
+            };
+            if next.contains_key(from) && next.contains_key(to) {
                 let e = Edge::Jumper(j.id.clone());
-                next.get_mut(&j.from)
+                next.get_mut(from)
                     .expect("known")
-                    .push((j.to.clone(), e.clone()));
-                next.get_mut(&j.to)
-                    .expect("known")
-                    .push((j.from.clone(), e));
+                    .push((to.clone(), e.clone()));
+                next.get_mut(to).expect("known").push((from.clone(), e));
             }
         }
         let ends: Vec<SectionPoint> = next
@@ -498,7 +492,9 @@ pub fn directions(line: &Line) -> Directions {
             let Some(j) = line.jumpers.iter().find(|j| &j.id == id) else {
                 continue;
             };
-            if let (Some(a), Some(b)) = (place(&j.from), place(&j.to)) {
+            if let (Some(a), Some(b)) =
+                (j.from.point().and_then(place), j.to.point().and_then(place))
+            {
                 out.jumpers.insert(id.clone(), a <= b);
             }
         }
