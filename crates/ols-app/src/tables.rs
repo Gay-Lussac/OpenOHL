@@ -1197,6 +1197,11 @@ impl TableKind {
         }
     }
 
+    /// The column called `name`, if it has one.
+    pub fn column_of(self, name: &str) -> Option<usize> {
+        self.columns().iter().position(|c| c.0 == name)
+    }
+
     /// The column called `name`.
     pub fn column(self, name: &str) -> usize {
         self.columns()
@@ -4282,6 +4287,39 @@ pub struct TablePage {
     pub alignment: String,
     /// The colour tool, open for a colour cell.
     pub color: Option<(ColorCell, crate::color_tool::ColorTool)>,
+    /// The structure picker, open for a structure's type (Structures).
+    pub type_picker: Option<(TypeCell, crate::structure_picker::Picker)>,
+}
+
+/// A structure's type cell the structure picker writes to (with its
+/// extension cell).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TypeCell {
+    /// The row `key`, whose type and extension were these.
+    Row {
+        /// The row's key.
+        key: String,
+        /// Its type (empty: none).
+        structure_type: String,
+        /// Its extension (empty: the base).
+        extension: String,
+    },
+    /// New row `index`.
+    New {
+        /// The new row.
+        index: usize,
+    },
+}
+
+/// What the table pages share with the application: the colour tool's
+/// palette, the GPU and the structure picker's preview.
+pub struct TableTools<'a> {
+    /// The colour tool's palette.
+    pub palette: &'a mut crate::color_tool::Palette,
+    /// The GPU (the structure picker's 3D preview).
+    pub rs: Option<&'a eframe::egui_wgpu::RenderState>,
+    /// The structure picker's preview.
+    pub preview: &'a mut crate::preview3d::Preview,
 }
 
 /// A colour cell the colour tool writes to.
@@ -4364,6 +4402,54 @@ impl TablePage {
         }
     }
 
+    /// Opens the structure picker for a structure's type cell, showing
+    /// `structure_type` and `extension` (the cells' texts) chosen.
+    pub fn open_type_picker(&mut self, cell: TypeCell, structure_type: &str, extension: &str) {
+        let what = match &cell {
+            TypeCell::Row { key, .. } => key.clone(),
+            TypeCell::New { .. } => "new row".into(),
+        };
+        let none = |t: &str| (!t.trim().is_empty()).then(|| t.trim().to_owned());
+        self.type_picker = Some((
+            cell,
+            crate::structure_picker::Picker::new(
+                format!("Structure type — {what}"),
+                none(structure_type).as_deref(),
+                none(extension).as_deref(),
+                true,
+                true,
+            ),
+        ));
+    }
+
+    /// Writes a type (and extension) chosen in the structure picker to its
+    /// cells (typed edits, pending until Apply).
+    pub fn write_type(&mut self, cell: &TypeCell, structure_type: &str, extension: &str) {
+        let (t, e) = (
+            TableKind::Structures.column("type"),
+            TableKind::Structures.column("extension"),
+        );
+        match cell {
+            TypeCell::Row {
+                key,
+                structure_type: old_type,
+                extension: old_extension,
+            } => {
+                self.set(key, t, structure_type, old_type);
+                self.set(key, e, extension, old_extension);
+            }
+            TypeCell::New { index } => {
+                if let Some(row) = self.added.get_mut(*index) {
+                    for (c, v) in [(t, structure_type), (e, extension)] {
+                        if let Some(x) = row.get_mut(c) {
+                            *x = v.to_owned();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Sets a cell of an existing row (back to its value: not pending).
     pub fn set(&mut self, key: &str, column: usize, text: &str, original: &str) {
         if text == original {
@@ -4408,7 +4494,7 @@ impl TablePage {
         model: &Model,
         case: usize,
         selection: &Selection,
-        palette: &mut crate::color_tool::Palette,
+        tools: &mut TableTools<'_>,
     ) -> Option<TableAction> {
         // Weather cases are a file of the model, not part of the project.
         let editable = match kind {
@@ -4679,6 +4765,10 @@ impl TablePage {
         let added = self.added.len();
         // A colour cell's tool button clicked: the cell and its text.
         let mut open_tool: Option<(ColorCell, String)> = None;
+        // A structure's type cell clicked: the cell, its type and extension.
+        let mut open_picker: Option<(TypeCell, String, String)> = None;
+        let type_column = (kind == TableKind::Structures).then(|| kind.column("type"));
+        let extension_column = kind.column_of("extension");
         // The grid: a line at every column edge and under every row, from
         // the columns' widths (each cell `width` wide, 2 apart, after the
         // two row buttons) — every row the same widths whatever its cells.
@@ -4759,6 +4849,24 @@ impl TablePage {
                                             [col.1, row_height],
                                             egui::Label::new(egui::RichText::new("new").weak()),
                                         );
+                                        continue;
+                                    }
+                                    if Some(c) == type_column {
+                                        if type_cell(
+                                            ui,
+                                            [col.1, row_height],
+                                            &self.added[k][c],
+                                            Some(egui::Color32::LIGHT_GREEN),
+                                        ) {
+                                            let e = extension_column
+                                                .and_then(|e| self.added[k].get(e).cloned())
+                                                .unwrap_or_default();
+                                            open_picker = Some((
+                                                TypeCell::New { index: k },
+                                                self.added[k][c].clone(),
+                                                e,
+                                            ));
+                                        }
                                         continue;
                                     }
                                     if let Some(list) = choices_of(c, &self.added[k]) {
@@ -4923,6 +5031,32 @@ impl TablePage {
                                 let default = edited.is_none()
                                     && row.defaulted.get(c).copied().unwrap_or(false);
                                 let dim = ui.visuals().weak_text_color();
+                                if Some(c) == type_column {
+                                    if type_cell(
+                                        ui,
+                                        [col.1, row_height],
+                                        &text,
+                                        edited.is_some().then_some(egui::Color32::YELLOW),
+                                    ) {
+                                        let e = extension_column.unwrap_or(c);
+                                        let shown_extension = self
+                                            .edits
+                                            .get(&row.key)
+                                            .and_then(|x| x.get(&e))
+                                            .cloned()
+                                            .unwrap_or_else(|| row.cells[e].clone());
+                                        open_picker = Some((
+                                            TypeCell::Row {
+                                                key: row.key.clone(),
+                                                structure_type: original.clone(),
+                                                extension: row.cells[e].clone(),
+                                            },
+                                            text.clone(),
+                                            shown_extension,
+                                        ));
+                                    }
+                                    continue;
+                                }
                                 if let Some(list) = choices_of(c, &row.cells) {
                                     let color = match (edited, default) {
                                         (Some(_), _) => Some(egui::Color32::YELLOW),
@@ -5006,9 +5140,31 @@ impl TablePage {
         if let Some((cell, text)) = open_tool {
             self.open_color_tool(kind, cell, &text);
         }
+        if let Some((cell, t, e)) = open_picker {
+            self.open_type_picker(cell, &t, &e);
+        }
+        if let Some((cell, picker)) = &mut self.type_picker {
+            let id = egui::Id::new(("structure-picker", kind));
+            match picker.show(ui.ctx(), id, model, tools.rs, tools.preview) {
+                Some(crate::structure_picker::Outcome::Choose {
+                    structure_type,
+                    extension,
+                }) => {
+                    let cell = cell.clone();
+                    self.write_type(
+                        &cell,
+                        structure_type.as_deref().unwrap_or(""),
+                        extension.as_deref().unwrap_or(""),
+                    );
+                    self.type_picker = None;
+                }
+                Some(crate::structure_picker::Outcome::Cancel) => self.type_picker = None,
+                None => {}
+            }
+        }
         if let Some((cell, tool)) = &mut self.color {
             let id = egui::Id::new(("colour-tool", kind));
-            match tool.show(ui.ctx(), id, palette) {
+            match tool.show(ui.ctx(), id, tools.palette) {
                 Some(crate::color_tool::Outcome::Pick(c)) => {
                     let cell = cell.clone();
                     self.write_color(&cell, c);
@@ -5020,6 +5176,22 @@ impl TablePage {
         }
         action
     }
+}
+
+/// A structure's type cell: a button showing the type (marked in `mark`
+/// when changed or new); whether it was clicked (open the structure
+/// picker).
+fn type_cell(ui: &mut egui::Ui, size: [f32; 2], text: &str, mark: Option<egui::Color32>) -> bool {
+    let shown = if text.is_empty() { "—" } else { text };
+    let mut t = egui::RichText::new(format!("{shown} …"));
+    if let Some(c) = mark {
+        t = t.color(c);
+    }
+    ui.add_sized(size, egui::Button::new(t).truncate())
+        .on_hover_text(format!(
+            "{shown}\nClick to choose from the table of structure types (with a preview)"
+        ))
+        .clicked()
 }
 
 /// A colour cell: its text typed on its colour (dimmed for a `default`

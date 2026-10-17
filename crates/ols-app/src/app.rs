@@ -176,6 +176,10 @@ pub struct Ready {
     pub circuit_warned: Option<Vec<crate::editors::CircuitMate>>,
     /// The structure window's preview (its camera, its image).
     pub structure_preview: crate::preview3d::Preview,
+    /// The structure picker, open for the structure window.
+    pub structure_picker: Option<crate::structure_picker::Picker>,
+    /// The structure pickers' preview (its camera, its image).
+    pub picker_preview: crate::preview3d::Preview,
     /// The window of the angles around structures (the angle ahead being
     /// typed), when open.
     pub angles_window: Option<f64>,
@@ -342,6 +346,8 @@ impl Ready {
             reroute: false,
             circuit_warned: None,
             structure_preview: Default::default(),
+            structure_picker: None,
+            picker_preview: Default::default(),
             angles_window: None,
             hotbar: crate::tools::Hotbar::default(),
             inventory: false,
@@ -1217,7 +1223,12 @@ impl TabViewer for Viewer<'_> {
             Tab::Table(kind) => {
                 let kind = *kind;
                 let page = r.tables.entry(kind).or_default();
-                match page.ui(ui, kind, &r.model, r.case, &r.selection, self.palette) {
+                let mut tools = crate::tables::TableTools {
+                    palette: self.palette,
+                    rs: self.rs,
+                    preview: &mut r.picker_preview,
+                };
+                match page.ui(ui, kind, &r.model, r.case, &r.selection, &mut tools) {
                     Some(crate::tables::TableAction::Select(s)) => {
                         r.go_to(s);
                     }
@@ -5511,6 +5522,9 @@ fn structure_spot(model: &crate::model::Model) -> [f64; 3] {
 
 fn editor_window(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgpu::RenderState>) {
     use crate::editors::{Form, Outcome};
+    if !matches!(r.editor, Some(Form::Structure(_))) {
+        r.structure_picker = None;
+    }
     let Some(mut form) = r.editor.clone() else {
         return;
     };
@@ -5519,6 +5533,8 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wg
         let mut extra = crate::editors::FormExtra {
             rs,
             preview: &mut r.structure_preview,
+            picker: &mut r.structure_picker,
+            picker_preview: &mut r.picker_preview,
         };
         outcome = form.ui(ui, &r.model, r.case, &mut extra);
         if let Some(mates) = &r.circuit_warned {

@@ -346,6 +346,10 @@ pub struct FormExtra<'a> {
     pub rs: Option<&'a eframe::egui_wgpu::RenderState>,
     /// The structure window's preview.
     pub preview: &'a mut crate::preview3d::Preview,
+    /// The structure picker, open for the structure window.
+    pub picker: &'a mut Option<crate::structure_picker::Picker>,
+    /// The structure picker's preview.
+    pub picker_preview: &'a mut crate::preview3d::Preview,
 }
 
 /// An editor window's content.
@@ -2902,6 +2906,23 @@ fn structure_ui(
         .map(|(s, _)| s.iter().collect())
         .unwrap_or_default();
     let mut new_pylon = false;
+    // The structure picker (opened from the type's button): its choice
+    // goes in the form.
+    if let Some(picker) = extra.picker.as_mut() {
+        let id = egui::Id::new("structure-picker-editor");
+        match picker.show(ui.ctx(), id, model, extra.rs, extra.picker_preview) {
+            Some(crate::structure_picker::Outcome::Choose {
+                structure_type,
+                extension,
+            }) => {
+                f.structure_type = structure_type;
+                f.extension = extension;
+                *extra.picker = None;
+            }
+            Some(crate::structure_picker::Outcome::Cancel) => *extra.picker = None,
+            None => {}
+        }
+    }
     if types.is_empty() && f.new {
         ui.colored_label(
             egui::Color32::YELLOW,
@@ -2929,19 +2950,24 @@ fn structure_ui(
                     "A structure type of the library (its points and strings come from it), \
                      or none: its points given here, its strings added with Add string",
                 );
-                egui::ComboBox::from_id_salt("structure-type")
-                    .selected_text(f.structure_type.as_deref().unwrap_or("(none: points given here)"))
-                    .height(400.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut f.structure_type, None, "(none: points given here)");
-                        for t in &types {
-                            ui.selectable_value(
-                                &mut f.structure_type,
-                                Some(t.id.clone()),
-                                format!("{} — {}", t.id, t.name),
-                            );
-                        }
-                    });
+                if crate::structure_picker::button(
+                    ui,
+                    model,
+                    f.structure_type.as_deref(),
+                    None,
+                    "(none: points given here)",
+                    200.0,
+                )
+                .clicked()
+                {
+                    *extra.picker = Some(crate::structure_picker::Picker::new(
+                        format!("Structure type — {}", f.id),
+                        f.structure_type.as_deref(),
+                        f.extension.as_deref(),
+                        true,
+                        true,
+                    ));
+                }
                 ui.end_row();
                 let extensions: Vec<String> = f
                     .structure_type
