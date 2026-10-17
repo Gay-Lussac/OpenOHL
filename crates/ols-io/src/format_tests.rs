@@ -85,11 +85,13 @@ fn rich_line() -> Line {
         weight: 100.0,
         ..Default::default()
     });
-    let ball = &mut line.sections[0].loads[0];
-    ball.diameter = 0.6;
+    let ball = line.sections[0].objects_mut().next().unwrap();
+    ball.shape = ols_line::Shape::Areas {
+        wind_area: 0.25,
+        ice_area: 1.1,
+    };
     ball.drag = Some(0.8);
-    ball.wind_area = Some(0.25);
-    ball.ice_area = Some(1.1);
+    ball.type_id = Some("marker-ball-600".into());
     let sec = &mut line.sections[0];
     sec.stringing = Stringing::UnstressedLengths {
         lengths: vec![300.1, 299.987654321, 0.1 + 0.2, 1e-7],
@@ -140,13 +142,14 @@ fn rich_line() -> Line {
     line.defaults.spacer_compression = 8000.0;
     line.defaults.thermal_albedo = 0.3;
     line.defaults.clearance_search_margin = 7.0;
-    line.sections[0].loads[0].distance = Some(30.0);
+    line.sections[0].span_points[0].at = ols_line::SpanPlace::at_distance(30.0);
     for sec in &mut line.sections[..2] {
         sec.span_points.push(ols_line::SpanPoint {
             label: "P1".into(),
             span: 0,
             at: ols_line::SpanPlace::at_distance(40.0),
             description: "a third".into(),
+            object: Default::default(),
         });
     }
     line.sections[0].span_points.push(ols_line::SpanPoint {
@@ -154,9 +157,50 @@ fn rich_line() -> Line {
         span: 0,
         at: ols_line::SpanPlace::at_station(123.5),
         description: String::new(),
+        object: Default::default(),
     });
-    line.sections[0].loads[0].station = Some(110.0);
-    line.sections[0].spread_loads.push(ols_line::SpreadLoad {
+    line.sections[1].span_points.push(ols_line::SpanPoint {
+        label: "C1".into(),
+        span: 0,
+        at: ols_line::SpanPlace::at_station(110.0),
+        description: String::new(),
+        object: Some(ols_line::LineObject {
+            clamp_length: Some(0.25),
+            ..ols_line::LineObject::clamp(30.0)
+        }),
+    });
+    line.sections[1].span_points.push(ols_line::SpanPoint {
+        label: "C2".into(),
+        span: 0,
+        at: ols_line::SpanPlace::at_fraction(0.7),
+        description: String::new(),
+        object: Some(ols_line::LineObject::body(
+            150.0,
+            ols_line::Shape::Cylinder {
+                diameter: 0.25,
+                length: 0.6,
+                axis: ols_line::Axis::Vertical,
+            },
+        )),
+    });
+    line.jumpers[0].points.push(ols_line::JumperPoint {
+        label: "J1".into(),
+        at: ols_line::JumperPlace {
+            fraction: 0.3,
+            length: Some(2.0),
+            distance: None,
+        },
+        description: "a ball".into(),
+        object: Some(ols_line::LineObject::body(
+            40.0,
+            ols_line::Shape::Box {
+                along: 0.3,
+                across: 0.2,
+                height: 0.4,
+            },
+        )),
+    });
+    line.sections[0].add_spread_load(&ols_line::SpreadLoad {
         span: 0,
         start: ols_line::SpanPlace::at_fraction(0.1),
         end: ols_line::SpanPlace::at_distance(50.0),

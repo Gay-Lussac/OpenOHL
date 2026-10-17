@@ -361,31 +361,26 @@ const SPAN_OBJECTS: &[Column] = &[
         "kind",
         90.0,
         Derived,
-        "span point, point load or spread load",
+        "a bare point, a point with its object (body or clamp, its type), or a spread between two points",
     ),
     (
         "label",
         110.0,
         Yes,
-        "label (a span point's: fixed, spacers use it)",
+        "label (a point's: fixed, spacers and spreads use it)",
     ),
     (
         "at",
         100.0,
         Yes,
-        "where: a fraction (0.25), a distance from the back structure (120 m) or a station (st. 1520 m); a spread load's start",
+        "a point: where — a fraction (0.25), a distance from the back structure (120 m) or a station (st. 1520 m); a spread: the point it starts at",
     ),
-    (
-        "end",
-        100.0,
-        Yes,
-        "a spread load's end, written the same way",
-    ),
+    ("end", 100.0, Yes, "a spread: the point it ends at"),
     (
         "load",
         80.0,
         Yes,
-        "a point load's weight, N; a spread load's, N/m",
+        "an object's weight, N; a spread's load, N/m",
     ),
     (
         "diameter m",
@@ -5074,42 +5069,41 @@ fn span_object_rows(model: &Model) -> Vec<Row> {
                     label: p.label.clone(),
                 },
                 [
-                    "span point".into(),
+                    match &p.object {
+                        None => "point".into(),
+                        Some(o) => format!(
+                            "{} ({})",
+                            o.kind.as_str(),
+                            o.type_id.clone().unwrap_or_else(|| o.shape.as_str().into())
+                        ),
+                    },
                     p.label.clone(),
                     p.at.text(),
                     String::new(),
-                    String::new(),
-                    String::new(),
+                    p.object.as_ref().map_or(String::new(), |o| f(o.weight, 1)),
+                    match p.object.as_ref().map(|o| o.shape) {
+                        Some(ols_line::Shape::Sphere { diameter }) => f(diameter, 3),
+                        _ => String::new(),
+                    },
                 ],
             ));
         }
-        for (k, l) in s.loads.iter().enumerate() {
-            rows.push(row(
-                'l',
-                k,
-                l.span,
-                span_of(l.span),
-                [
-                    "point load".into(),
-                    l.label.clone(),
-                    l.place().text(),
-                    String::new(),
-                    f(l.vertical, 1),
-                    f(l.diameter, 3),
-                ],
-            ));
-        }
-        for (k, l) in s.spread_loads.iter().enumerate() {
+        for (k, l) in s.spreads.iter().enumerate() {
+            let span = s
+                .span_points
+                .iter()
+                .find(|p| p.label == l.from)
+                .map_or(0, |p| p.span);
             rows.push(row(
                 's',
                 k,
-                l.span,
-                span_of(l.span),
+                span,
+                span_of(span),
                 [
-                    "spread load".into(),
+                    "spread".into(),
                     l.label.clone(),
-                    l.start.text(),
-                    l.end.text(),
+                    l.from.clone(),
+                    l.to.clone(),
                     f(l.load, 2),
                     String::new(),
                 ],
@@ -5171,23 +5165,33 @@ fn span_object_commands<'a>(
                     ));
                 }
                 p.at = parse_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
-            }
-            'l' => {
-                let l = s.loads.get_mut(k).ok_or_else(|| format!("{name}: gone"))?;
-                l.label = c.get(3).trim().to_owned();
-                let p = parse_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
-                (l.fraction, l.distance, l.station) = (p.fraction, p.distance, p.station);
-                l.vertical = num(&c.get(6), &format!("{name} load"))?;
-                l.diameter = opt_num(&c.get(7), &format!("{name} diameter"))?.unwrap_or(0.0);
+                if let Some(o) = &mut p.object {
+                    if let Some(w) = opt_num(&c.get(6), &format!("{name} weight"))? {
+                        o.weight = w;
+                    }
+                    let d = opt_num(&c.get(7), &format!("{name} diameter"))?;
+                    match (d, &mut o.shape) {
+                        (Some(d), ols_line::Shape::Sphere { diameter }) => *diameter = d,
+                        (Some(d), shape @ ols_line::Shape::Point) if d > 0.0 => {
+                            *shape = ols_line::Shape::Sphere { diameter: d };
+                        }
+                        (Some(d), _) if c.changed(7) && d > 0.0 => {
+                            return Err(format!(
+                                "{name}: its shape is not a sphere (change it in its window)"
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
             }
             _ => {
                 let l = s
-                    .spread_loads
+                    .spreads
                     .get_mut(k)
                     .ok_or_else(|| format!("{name}: gone"))?;
                 l.label = c.get(3).trim().to_owned();
-                l.start = parse_place(&c.get(4)).map_err(|e| format!("{name} start: {e}"))?;
-                l.end = parse_place(&c.get(5)).map_err(|e| format!("{name} end: {e}"))?;
+                l.from = c.get(4).trim().to_owned();
+                l.to = c.get(5).trim().to_owned();
                 l.load = num(&c.get(6), &format!("{name} load"))?;
             }
         }
@@ -5227,15 +5231,11 @@ fn span_object_commands<'a>(
             k += 1;
             keep('p', k - 1)
         });
+        // Spreads go with their points.
         k = 0;
-        s.loads.retain(|_| {
+        s.spreads.retain(|x| {
             k += 1;
-            keep('l', k - 1)
-        });
-        k = 0;
-        s.spread_loads.retain(|_| {
-            k += 1;
-            keep('s', k - 1)
+            keep('s', k - 1) && !labels.contains(&x.from) && !labels.contains(&x.to)
         });
     }
     for (id, s) in sections {

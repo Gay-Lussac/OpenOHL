@@ -779,15 +779,13 @@ fn build(
             axial_stiffness: ea,
             load: gravity,
         };
-        // (place along the wire, force, span point it is) — point loads,
-        // span points, the ends of spread loads.
+        // (place along the wire, force, span point it is) — the span
+        // points, with the forces of their objects.
         let mut sites: Vec<(f64, Vector3<f64>, Option<String>)> = Vec::new();
         // Spread loads: (from, to along the wire, per metre).
         let mut spread: Vec<(f64, f64, Vector3<f64>)> = Vec::new();
         let mut shape = None;
-        let here = section.loads.iter().any(|l| l.span == s)
-            || section.spread_loads.iter().any(|l| l.span == s)
-            || section.span_points.iter().any(|p| p.span == s);
+        let here = section.span_points.iter().any(|p| p.span == s);
         if with_loads && here {
             let solved = shape_props
                 .solve(d, None, &element_budget)
@@ -809,27 +807,26 @@ fn build(
             };
             let bundle = f64::from(section.bundle.max(1));
             sites = section
-                .loads
+                .span_points
                 .iter()
-                .filter(|l| l.span == s)
-                .map(|l| {
-                    let [down, across] = l.forces(case, cable.diameter.si());
+                .filter(|p| p.span == s)
+                .map(|p| {
+                    let [down, across] = p
+                        .object
+                        .as_ref()
+                        .map_or([0.0; 2], |o| o.forces(case, cable.diameter.si()));
                     (
-                        along(&l.place()),
+                        along(&p.at),
                         // The model is one subconductor: its share.
                         (left * across - Vector3::new(0.0, 0.0, down)) / bundle,
-                        None,
+                        Some(p.label.clone()),
                     )
                 })
                 .collect();
-            for p in section.span_points.iter().filter(|p| p.span == s) {
-                sites.push((along(&p.at), Vector3::zeros(), Some(p.label.clone())));
-            }
-            for l in section.spread_loads.iter().filter(|l| l.span == s) {
+            // Their ends are points (sites already).
+            for l in section.spread_loads().iter().filter(|l| l.span == s) {
                 let (a0, b0) = (along(&l.start), along(&l.end));
                 let (from, to) = (a0.min(b0), a0.max(b0));
-                sites.push((from, Vector3::zeros(), None));
-                sites.push((to, Vector3::zeros(), None));
                 // Per metre of unstressed wire, its share.
                 spread.push((from, to, Vector3::new(0.0, 0.0, -l.load / bundle)));
             }
@@ -3040,8 +3037,8 @@ mod tests {
             }
         }
         // Point loads are on the whole bundle too.
-        for l in &mut bundled.sections[0].loads {
-            l.vertical *= 3.0;
+        for o in bundled.sections[0].objects_mut() {
+            o.weight *= 3.0;
         }
         bundled.validate().unwrap();
         let a = solve_line(&single, &lib, &windy).remove(0).unwrap();
@@ -3065,7 +3062,7 @@ mod tests {
         let mut line = crate::tests::example();
         // Jumpers hang their weight on the clamps after stringing.
         line.jumpers.clear();
-        assert!(!line.sections[0].loads.is_empty());
+        assert!(line.sections[0].objects().next().is_some());
         // Wind on the strings swings the clamps further.
         let mut catching = line.clone();
         for s in &mut catching.structures {
@@ -3088,8 +3085,8 @@ mod tests {
         let mut bundled = line.clone();
         bundled.sections[0].bundle = 3;
         bundled.sections[0].bundle_spacing = Some(0.4);
-        for l in &mut bundled.sections[0].loads {
-            l.vertical *= 3.0;
+        for o in bundled.sections[0].objects_mut() {
+            o.weight *= 3.0;
         }
         for s in &mut bundled.structures {
             for a in &mut s.strings {
@@ -3117,10 +3114,10 @@ mod tests {
             ..still.clone()
         };
         let line = crate::tests::example();
-        let ball = &line.sections[0].loads[0];
-        let span = ball.span;
+        let span = line.sections[0].objects().next().unwrap().0.span;
         let mut sized = line.clone();
-        sized.sections[0].loads[0].diameter = 0.6;
+        sized.sections[0].objects_mut().next().unwrap().shape =
+            crate::Shape::Sphere { diameter: 0.6 };
         let solve = |l: &Line, c: &WeatherCase| solve_line(l, &lib, c).remove(0).unwrap();
         let mid = |s: &SectionShape| v(s.spans[span].mid_point);
         let rest = mid(&solve(&line, &still));
@@ -3160,7 +3157,7 @@ mod tests {
                 ..Default::default()
             });
         }
-        line.sections[0].loads.clear();
+        line.sections[0].clear_point_loads();
         line.validate().unwrap();
         line
     }
@@ -3211,7 +3208,7 @@ mod tests {
         let mut i_line = crate::tests::example();
         // Jumpers hang their weight on the clamps after stringing.
         i_line.jumpers.clear();
-        i_line.sections[0].loads.clear();
+        i_line.sections[0].clear_point_loads();
         let i_across = across(&solve(&i_line, 400.0), &solve(&i_line, 0.0));
         let v_across = across(&blown, &calm);
         assert!(
@@ -3281,7 +3278,7 @@ mod tests {
             weight: 100.0,
             ..Default::default()
         });
-        line.sections[0].loads.clear();
+        line.sections[0].clear_point_loads();
         line.validate().unwrap();
         line
     }
@@ -3352,7 +3349,7 @@ mod tests {
             sagged: None,
         };
         let before = solve(&clipped, 0.0);
-        clipped.sections[0].loads.push(crate::SpanLoad {
+        clipped.sections[0].add_point_load(&crate::SpanLoad {
             span: 0,
             fraction: 0.5,
             vertical: 3000.0,
@@ -3374,7 +3371,7 @@ mod tests {
             ..WeatherCase::still("wind", Temperature::from_celsius(15.0))
         };
         let mut line = crate::tests::example();
-        line.sections[0].loads.clear();
+        line.sections[0].clear_point_loads();
         let plain = solve_line(&line, &lib, &windy).remove(0).unwrap();
         let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
         let w = t2.wires.iter_mut().find(|w| w.set == Some(1)).unwrap();
@@ -3521,7 +3518,7 @@ mod tests {
             horizontal_tension: 25_000.0,
             temperature: 15.0,
         };
-        line.sections[0].loads.clear();
+        line.sections[0].clear_point_loads();
         let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
         let shape = solve_line(&line, &library(), &case).remove(0).unwrap();
         for span in &shape.spans {
@@ -3545,7 +3542,7 @@ mod tests {
             temperature: 15.0,
             span: Some(1),
         };
-        line.sections[0].loads.clear();
+        line.sections[0].clear_point_loads();
         let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
         let shape = solve_line(&line, &library(), &case).remove(0).unwrap();
         assert!(
@@ -3567,7 +3564,7 @@ mod tests {
     fn sections_in_the_blocks_roll_clipped_ones_do_not() {
         let lib = library();
         let mut line = crate::tests::example();
-        line.sections[0].loads.clear();
+        line.sections[0].clear_point_loads();
         line.sections[0].stringing = Stringing::Tension {
             horizontal_tension: 25_000.0,
             temperature: 15.0,
@@ -3725,7 +3722,7 @@ mod tests {
     fn attachment_loads_balance_the_section() {
         let lib = library();
         let mut line = crate::tests::example();
-        line.sections[0].loads.clear();
+        line.sections[0].clear_point_loads();
         let cable = lib.get(&line.sections[0].cable).unwrap();
         let budget = default_fe_budget();
         let still = WeatherCase::still("t", Temperature::from_celsius(15.0));
@@ -3774,7 +3771,7 @@ mod tests {
         let lib = library();
         let mut line = crate::tests::example();
         // Point loads (S1's marker ball) are the finite elements' only.
-        line.sections[0].loads.clear();
+        line.sections[0].clear_point_loads();
         let cable = lib.get(&line.sections[0].cable).unwrap();
         let budget = default_fe_budget();
         for t in [15.0, 60.0] {
@@ -3828,7 +3825,7 @@ mod tests {
         for calculation in [Calculation::InitialRs, Calculation::InitialFe] {
             let mut cable = lib.get("acsr-drake-26-7").unwrap().clone();
             let mut line = crate::tests::example();
-            line.sections[0].loads.clear();
+            line.sections[0].clear_point_loads();
             line.sections[0].calculation = calculation;
             let free = sag(&line, &cable);
             // The line's choice for a cable without its own …
@@ -4060,7 +4057,7 @@ mod span_tests {
         let cable = lib.get(&base.sections[0].cable).unwrap();
         let q = cable.weight().si() * f64::from(base.sections[0].bundle.max(1));
         let mut whole = base.clone();
-        whole.sections[0].spread_loads.push(crate::SpreadLoad {
+        whole.sections[0].add_spread_load(&crate::SpreadLoad {
             span: 0,
             start: crate::SpanPlace::at_fraction(0.0),
             end: crate::SpanPlace::at_fraction(1.0),
@@ -4076,7 +4073,7 @@ mod span_tests {
         );
         // Over the first half: the low point towards it.
         let mut half = base.clone();
-        half.sections[0].spread_loads.push(crate::SpreadLoad {
+        half.sections[0].add_spread_load(&crate::SpreadLoad {
             span: 0,
             start: crate::SpanPlace::at_fraction(0.0),
             end: crate::SpanPlace::at_fraction(0.5),
@@ -4105,16 +4102,23 @@ mod span_tests {
             span: 0,
             at: crate::SpanPlace::at_fraction(0.25),
             description: String::new(),
+            object: Default::default(),
         });
         pointed.sections[0].span_points.push(crate::SpanPoint {
             label: "P2".into(),
             span: 0,
             at: crate::SpanPlace::at_distance(0.6 * horizontal),
             description: String::new(),
+            object: Default::default(),
         });
         let s = shape(&pointed);
-        assert_eq!(s.span_points.len(), 2);
-        for ((label, at), f) in s.span_points.iter().zip([0.25, 0.6]) {
+        let mine: Vec<&(String, Point)> = s
+            .span_points
+            .iter()
+            .filter(|(l, _)| l == "P1" || l == "P2")
+            .collect();
+        assert_eq!(mine.len(), 2);
+        for ((label, at), f) in mine.into_iter().zip([0.25, 0.6]) {
             assert!(
                 (along(*at, &s) - f).abs() < 0.01,
                 "{label} {}",
@@ -4138,6 +4142,7 @@ mod span_tests {
             span: 0,
             at: crate::SpanPlace::at_station(0.5 * (sa + sb)),
             description: String::new(),
+            object: Default::default(),
         });
         by_station.validate().unwrap();
         let resolved = by_station.section_with_fractions(&by_station.sections[0]);
@@ -4234,6 +4239,7 @@ mod spacer_tests {
                 span: 0,
                 at: crate::SpanPlace::at_fraction(0.5),
                 description: String::new(),
+                object: Default::default(),
             });
         }
         line.spacers.push(crate::Spacer {

@@ -39,7 +39,7 @@ All examples on this page are invented (structures `T1`, `T2`, sections
  │  Section ──points[] : SectionPoint {structure, set}──► WirePoint.set     │  │    │
  │   │  cable ───────────────────────────────────────────────────────┐      │  │    │
  │   │  system ─► System.id,  phase_label ─► SystemPhase.label       │      │  │    │
- │   └─ stringing, loads[] (SpanLoad), calculation                   │      │  │    │
+ │   └─ stringing, span_points[] (+ object), spreads[], calculation │      │  │    │
  │                                                                   │      │  │    │
  │  Jumper ── from / to : SectionPoint ─► WirePoint.set              │      │  │    │
  │   │  cable ───────────────────────────────────────────────────────┤      │  │    │
@@ -286,9 +286,8 @@ once resolved every structure is checked in full (`check_strings`).
 | `bundle_rotation_deg` | f64? | ° CCW looking ahead | rotation of the arrangement | — |
 | `points` | `[SectionPoint]` | — | attachment points in line order; first and last are strain points | structure id + set |
 | `stringing` | `Stringing` | — | how it is strung (below) | — |
-| `loads` | `[SpanLoad]` | — | point loads in spans: `fraction` (horizontal, from the back point), `distance` (m) or `station` (m, of the line along the alignment both structures stand on — turned into a fraction when solved, `Line::section_with_fractions`); a station wins over a distance, a distance over the fraction | span index |
-| `spread_loads` | `[SpreadLoad]` | N/m | loads spread along part of a span: `start`, `end` (each a place: `fraction`, `distance` or `station`), `load` (downward, N/m of conductor, whole bundle); on the wire pieces they cover (FE) | span index |
-| `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place) where spacers are clamped; nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers name them |
+| `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place — `fraction` (horizontal, from the back point), `distance` (m) or `station` (m, of the line along the alignment both structures stand on, turned into a fraction when solved, `Line::section_with_fractions`); a station wins over a distance, a distance over the fraction), each with its `object` (one per point: a body or a clamp, `objects::LineObject`) or bare (a spread's end, a spacer's end); nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers and spreads name them |
+| `spreads` | `[SpreadObject]` | N/m | objects spread between two points of one span: `from`, `to` (point labels), `type` (library id), `load` (downward, N/m of conductor, whole bundle); on the wire pieces they cover (FE) | point labels |
 | `color` | string? | — | `#rrggbb`, overrides the phase colour | — |
 | `calculation` | `Calculation` | — | condition and method, kebab-case (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
 
@@ -303,9 +302,32 @@ structure `structure`. Spans are between consecutive points.
 | `sag` | `sag` (m), `temperature` (°C), `span` (index, optional) | in the blocks: sagged in the ruling span or in span `span` |
 | `unstressed_lengths` | `lengths` (m, one per span), `temperature` (°C), `sagged` (optional nested `Stringing`) | clipped in: each span keeps its own unstressed length |
 
-`SpanLoad`: `span` (index), `fraction` (0–1 from the back point),
-`vertical` (N, whole bundle), `label`, `diameter` (m, sphere), `drag`,
-`wind_area` (m²), `ice_area` (m²).
+`LineObject` (`objects.rs`): `kind` (`body` | `clamp` — a clamp holds a
+jumper or a spacer, a hinge passing forces only), `type` (the library
+type it was taken from; its values are its own), `weight` (N, whole
+bundle), its shape flattened (`shape` = `point` | `sphere` (`diameter`) |
+`cylinder` (`diameter`, `length`, `axis` along / across / vertical) |
+`box` (`along`, `across`, `height`) | `areas` (`wind_area`, `ice_area`)),
+`drag`, `clamp_length`. Loads in a case (`LineObject::forces`): weight,
+the wire's radial ice on its surface (a sphere's shell; a layer on the
+other shapes' surfaces), the wind on its iced projected area across the
+line, times its drag.
+
+Older files (and OLS XML `<load>`, `<spread_load>`) gave point loads
+(`loads`: `SpanLoad` — `span`, place, `vertical`, `label`, `diameter`,
+`drag`, `wind_area`, `ice_area`) and spread loads (`spread_loads`:
+`span`, `start`, `end`, `load`, `label`): read into a point `L1`, `L2`…
+holding a body (a sphere of the diameter, or the given areas; the label
+its description), and into two bare points `S1`, `S2`… with a spread
+between them; written in the new form.
+
+### Point and spread load library (`.olsload`)
+
+`ols-point-spread-loads`, version 1 (`objects::ObjectLibrary`): `name`
+and `[[type]]`s — `id`, `name`, `description`, `kind` (`body`, `clamp`,
+`spread`), `weight`, the shape as on objects, `drag`, `clamp_length`, a
+spread type's `load` (N/m). Shipped templates (typical values, to check):
+`libraries/objects/templates.olsload`.
 
 ### Jumper and JumperClamp (`lib.rs`, `jumper.rs`)
 
@@ -321,6 +343,7 @@ structure `structure`. Spans are between consecutive points.
 | `rigid` | bool | — | a tube or bar: no length, sag or supports | — |
 | `support` | `JumperSupport`? | — | one support string from a point: `point` (m), `length` (m), `weight` (N), `fraction` (0–1) | — |
 | `supports` | `[JumperClamp]` | — | or: support clamps on a structure's strings, in order from `from` | — |
+| `points` | `[JumperPoint]` | — | labelled points along it (`at`: `JumperPlace` — `fraction` of its length from `from`, `length` along it, m, or `distance`, m horizontally from `from`'s clamp; a distance wins over a length, a length over the fraction), each with its `object` or bare | label unique on the jumper |
 | `bending_stiffness` | f64? | N·m² | EI; default estimated from the cable; 0: hinged | — |
 | `stiffness_factor` | f64? | 0–1 | share of the solid-bar EI for the estimate | — |
 | `angle_from_deg`, `angle_to_deg` | f64? | ° | exit angle at a section's end clamp from its tension string's line (clamp → top; none: the conductor's axis), turned towards the case's load in the conductor's plane (−90…90) | — |

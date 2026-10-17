@@ -34,9 +34,14 @@ pub mod export;
 pub mod incremental;
 pub mod jumper;
 pub mod library;
+pub mod objects;
 mod rod;
 pub mod route;
 pub mod solve;
+
+pub use objects::{
+    Axis, LineObject, ObjectKind, ObjectLibrary, ObjectType, Shape, SpreadObject, TypeKind,
+};
 
 pub use assembly::{AttachmentV1, InsulatorString, StructurePoint, WirePoint};
 pub use route::{
@@ -281,6 +286,10 @@ pub struct Jumper {
     /// The same at `to`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle_to_deg: Option<f64>,
+    /// Labelled points along it, each with its object (a body, a clamp)
+    /// or bare.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub points: Vec<JumperPoint>,
     /// Display colour (`#rrggbb`); default: the colour of the section at
     /// `from`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -706,6 +715,60 @@ impl Stringing {
     }
 }
 
+/// A place along a jumper, from its `from` end: a fraction of its length,
+/// a length along it (m), or a horizontal distance along the line (m,
+/// from `from`'s clamp) — a distance wins over a length, which wins over
+/// the fraction.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JumperPlace {
+    /// Fraction of its length from `from`, 0–1.
+    #[serde(default)]
+    pub fraction: f64,
+    /// Length along it from `from`, m.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<f64>,
+    /// Horizontal distance from `from`'s clamp along the line, m.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<f64>,
+}
+
+impl JumperPlace {
+    /// It holds: a fraction 0–1, a length or a distance ≥ 0.
+    pub fn is_valid(&self) -> bool {
+        match (self.distance, self.length) {
+            (Some(d), _) => d.is_finite() && d >= 0.0,
+            (None, Some(l)) => l.is_finite() && l >= 0.0,
+            (None, None) => (0.0..=1.0).contains(&self.fraction),
+        }
+    }
+
+    /// Readable: `0.25`, `3 m along` or `2.5 m from from`.
+    pub fn text(&self) -> String {
+        match (self.distance, self.length) {
+            (Some(d), _) => format!("{d} m from the clamp"),
+            (None, Some(l)) => format!("{l} m along"),
+            (None, None) => format!("{}", self.fraction),
+        }
+    }
+}
+
+/// A labelled point along a jumper, with its object or bare.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JumperPoint {
+    /// Label, unique on the jumper.
+    pub label: String,
+    /// Where along it.
+    pub at: JumperPlace,
+    /// What it is, in words.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    /// The object on it (one per point).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<LineObject>,
+}
+
 /// A place along a span: a horizontal fraction of it from its back point,
 /// a horizontal distance from that point (m), or a station of the line
 /// (m, along the alignment the span's structures stand on) — a station
@@ -782,6 +845,10 @@ pub struct SpanPoint {
     /// What it is, in words.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    /// The object on it (one per point): a body or a clamp; none: a bare
+    /// point (the end of a spread object, a spacer's end).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<LineObject>,
 }
 
 /// A load spread along part of a span (e.g. a heated stretch, a cable
@@ -1372,9 +1439,122 @@ fn is_zero(x: &f64) -> bool {
     *x == 0.0
 }
 
+impl SpanLoad {
+    /// The object it is: a body, a sphere of its diameter (a point
+    /// without one), or of its given areas.
+    pub fn object(&self) -> LineObject {
+        use std::f64::consts::PI;
+        let d = self.diameter.max(0.0);
+        let shape = match (self.wind_area, self.ice_area) {
+            (None, None) if d > 0.0 => Shape::Sphere { diameter: d },
+            (None, None) => Shape::Point,
+            (w, i) => Shape::Areas {
+                wind_area: w.unwrap_or(PI / 4.0 * d * d),
+                ice_area: i.unwrap_or(PI * d * d),
+            },
+        };
+        LineObject {
+            drag: self.drag,
+            ..LineObject::body(self.vertical, shape)
+        }
+    }
+}
+
+/// `prefix` and the first number not a label of `taken`.
+fn free_label(taken: &[SpanPoint], prefix: &str) -> String {
+    (1..)
+        .map(|k| format!("{prefix}{k}"))
+        .find(|l| !taken.iter().any(|p| &p.label == l))
+        .expect("a free label")
+}
+
+impl Section {
+    /// Adds point load `l` (as older files gave it): a point labelled
+    /// `L1`, `L2`… holding its object, its label as the point's
+    /// description.
+    pub fn add_point_load(&mut self, l: &SpanLoad) -> String {
+        let label = free_label(&self.span_points, "L");
+        self.span_points.push(SpanPoint {
+            label: label.clone(),
+            span: l.span,
+            at: l.place(),
+            description: l.label.clone(),
+            object: Some(l.object()),
+        });
+        label
+    }
+
+    /// Adds spread load `l` (as older files gave it): two bare points at
+    /// its ends and a spread object between them.
+    pub fn add_spread_load(&mut self, l: &SpreadLoad) {
+        let mut ends = Vec::new();
+        for at in [l.start, l.end] {
+            let label = free_label(&self.span_points, "S");
+            self.span_points.push(SpanPoint {
+                label: label.clone(),
+                span: l.span,
+                at,
+                description: String::new(),
+                object: None,
+            });
+            ends.push(label);
+        }
+        self.spreads.push(SpreadObject {
+            label: l.label.clone(),
+            from: ends[0].clone(),
+            to: ends[1].clone(),
+            type_id: None,
+            load: l.load,
+        });
+    }
+
+    /// Its points' objects, to change them.
+    pub fn objects_mut(&mut self) -> impl Iterator<Item = &mut LineObject> {
+        self.span_points
+            .iter_mut()
+            .filter_map(|p| p.object.as_mut())
+    }
+
+    /// Removes its points holding a body (its point loads).
+    pub fn clear_point_loads(&mut self) {
+        self.span_points.retain(|p| {
+            !p.object
+                .as_ref()
+                .is_some_and(|o| o.kind == ObjectKind::Body)
+        });
+    }
+
+    /// The points with a body or a clamp: (span, place, object).
+    pub fn objects(&self) -> impl Iterator<Item = (&SpanPoint, &LineObject)> {
+        self.span_points
+            .iter()
+            .filter_map(|p| p.object.as_ref().map(|o| (p, o)))
+    }
+
+    /// Its spread objects as loads between the places of their points
+    /// (those whose points are not on one span left out: the validation
+    /// refuses them).
+    pub fn spread_loads(&self) -> Vec<SpreadLoad> {
+        self.spreads
+            .iter()
+            .filter_map(|s| {
+                let p = |l: &str| self.span_points.iter().find(|p| p.label == l);
+                let (a, b) = (p(&s.from)?, p(&s.to)?);
+                (a.span == b.span).then(|| SpreadLoad {
+                    span: a.span,
+                    start: a.at,
+                    end: b.at,
+                    load: s.load,
+                    label: s.label.clone(),
+                })
+            })
+            .collect()
+    }
+}
+
 /// A wire section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "SectionFile")]
 pub struct Section {
     /// What it is, in words (free text).
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -1414,15 +1594,13 @@ pub struct Section {
     pub points: Vec<SectionPoint>,
     /// Stringing.
     pub stringing: Stringing,
-    /// Point loads (marker balls, lights, …).
-    #[serde(default)]
-    pub loads: Vec<SpanLoad>,
-    /// Loads spread along parts of spans.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub spread_loads: Vec<SpreadLoad>,
-    /// Points on its spans where spacers are clamped.
+    /// Labelled points on its spans, each with its object (a body, a
+    /// clamp) or bare.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub span_points: Vec<SpanPoint>,
+    /// Objects spread between two of its points.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spreads: Vec<SpreadObject>,
     /// Display colour (`#rrggbb`), overriding the phase colour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
@@ -1437,6 +1615,76 @@ pub struct Section {
 
 fn one() -> u32 {
     1
+}
+
+/// A section as written in files, older ones included: point loads and
+/// spread loads of their own (before points and objects) are read into
+/// points with objects ([`Section`]).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SectionFile {
+    #[serde(default)]
+    description: String,
+    id: String,
+    cable: String,
+    #[serde(default)]
+    circuit: String,
+    #[serde(default)]
+    phase_label: String,
+    #[serde(default)]
+    system: Option<String>,
+    #[serde(default = "one")]
+    bundle: u32,
+    #[serde(default)]
+    bundle_spacing: Option<f64>,
+    #[serde(default)]
+    bundle_rotation_deg: Option<f64>,
+    points: Vec<SectionPoint>,
+    stringing: Stringing,
+    #[serde(default)]
+    loads: Vec<SpanLoad>,
+    #[serde(default)]
+    spread_loads: Vec<SpreadLoad>,
+    #[serde(default)]
+    span_points: Vec<SpanPoint>,
+    #[serde(default)]
+    spreads: Vec<SpreadObject>,
+    #[serde(default)]
+    color: Option<String>,
+    #[serde(default)]
+    calculation: condition::Calculation,
+    #[serde(default)]
+    fields: Fields,
+}
+
+impl From<SectionFile> for Section {
+    fn from(f: SectionFile) -> Self {
+        let mut s = Section {
+            description: f.description,
+            id: f.id,
+            cable: f.cable,
+            circuit: f.circuit,
+            phase_label: f.phase_label,
+            system: f.system,
+            bundle: f.bundle,
+            bundle_spacing: f.bundle_spacing,
+            bundle_rotation_deg: f.bundle_rotation_deg,
+            points: f.points,
+            stringing: f.stringing,
+            span_points: f.span_points,
+            spreads: f.spreads,
+            color: f.color,
+            calculation: f.calculation,
+            fields: f.fields,
+        };
+        for l in f.loads {
+            s.add_point_load(&l);
+        }
+        for l in f.spread_loads {
+            s.add_spread_load(&l);
+        }
+        s
+    }
 }
 
 impl Structure {
@@ -2073,31 +2321,12 @@ impl Line {
                 (None, Some(d)) => d.is_finite() && d > 0.0,
                 (None, None) => 0.0 < p.fraction && p.fraction < 1.0,
             };
-            if let Some(l) = sec.loads.iter().find(|l| {
-                l.span >= spans
-                    || !place_ok(&l.place())
-                    || !(l.diameter >= 0.0 && l.diameter.is_finite())
-                    || [l.drag, l.wind_area, l.ice_area]
-                        .iter()
-                        .flatten()
-                        .any(|x| !(*x >= 0.0 && x.is_finite()))
-            }) {
-                return invalid(format!(
-                    "section {}: load {:?} is not inside a span, or has a negative size",
-                    sec.id, l.label
-                ));
-            }
-            if let Some(l) = sec.spread_loads.iter().find(|l| {
-                l.span >= spans
-                    || !(place_ok(&l.start) || l.start == SpanPlace::default())
-                    || !(place_ok(&l.end) || l.end.fraction == 1.0)
-                    || !(l.load.is_finite() && l.load >= 0.0)
-            }) {
-                return invalid(format!(
-                    "section {}: spread load {:?} is not inside a span, or is negative",
-                    sec.id, l.label
-                ));
-            }
+            // A span's ends are places too (a spread object from or to
+            // a clamp).
+            let end_ok = |p: &SpanPlace| {
+                *p == SpanPlace::default()
+                    || (p.station.is_none() && p.distance.is_none() && p.fraction == 1.0)
+            };
             let mut labels = std::collections::BTreeSet::new();
             for p in &sec.span_points {
                 if p.label.trim().is_empty() || !labels.insert(p.label.as_str()) {
@@ -2106,10 +2335,31 @@ impl Line {
                         sec.id, p.label
                     ));
                 }
-                if p.span >= spans || !place_ok(&p.at) {
+                if p.span >= spans || !(place_ok(&p.at) || (p.object.is_none() && end_ok(&p.at))) {
                     return invalid(format!(
                         "section {}: span point {} is not inside a span",
                         sec.id, p.label
+                    ));
+                }
+                if let Some(o) = &p.object {
+                    o.validate().map_err(|e| {
+                        LineError::Invalid(format!(
+                            "section {}: the object on {}: {e}",
+                            sec.id, p.label
+                        ))
+                    })?;
+                }
+            }
+            for s in &sec.spreads {
+                let at = |l: &str| sec.span_points.iter().find(|p| p.label == l);
+                let ok = match (at(&s.from), at(&s.to)) {
+                    (Some(a), Some(b)) => a.span == b.span && s.from != s.to,
+                    _ => false,
+                };
+                if !ok || !(s.load.is_finite() && s.load >= 0.0) {
+                    return invalid(format!(
+                        "section {}: spread {:?} needs two points of one span and a load ≥ 0",
+                        sec.id, s.label
                     ));
                 }
             }
@@ -2151,6 +2401,26 @@ impl Line {
             }
             if j.from == j.to {
                 return bad("both ends are the same wire point");
+            }
+            let mut labels = std::collections::BTreeSet::new();
+            for p in &j.points {
+                if p.label.trim().is_empty() || !labels.insert(p.label.as_str()) {
+                    return bad(&format!(
+                        "point labels must be given and unique ({:?})",
+                        p.label
+                    ));
+                }
+                if !p.at.is_valid() {
+                    return bad(&format!("point {} is not along it", p.label));
+                }
+                if let Some(o) = &p.object {
+                    o.validate().map_err(|e| {
+                        LineError::Invalid(format!(
+                            "jumper {}: the object on {}: {e}",
+                            j.id, p.label
+                        ))
+                    })?;
+                }
             }
             match (j.rigid, j.length, j.sag) {
                 (true, None, None) => {}
@@ -2257,6 +2527,7 @@ mod tests {
                 span: 0,
                 at: SpanPlace::at_fraction(1.0 / 3.0),
                 description: String::new(),
+                object: Default::default(),
             });
         }
         line.spacers.push(Spacer {
@@ -2309,6 +2580,7 @@ mod tests {
             span: 0,
             at: SpanPlace::at_fraction(0.5),
             description: String::new(),
+            object: Default::default(),
         });
         assert!(
             far.validate()
@@ -2326,14 +2598,14 @@ mod tests {
         assert!(out.validate().is_err());
         // A spread load and a point load placed by distance.
         let mut loaded = line.clone();
-        loaded.sections[0].spread_loads.push(SpreadLoad {
+        loaded.sections[0].add_spread_load(&SpreadLoad {
             span: 0,
             start: SpanPlace::at_distance(20.0),
             end: SpanPlace::at_fraction(0.5),
             load: 15.0,
             label: "tray".into(),
         });
-        loaded.sections[0].loads.push(SpanLoad {
+        loaded.sections[0].add_point_load(&SpanLoad {
             span: 0,
             distance: Some(40.0),
             vertical: 50.0,
@@ -2343,7 +2615,7 @@ mod tests {
         assert!((SpanPlace::at_distance(30.0).fraction_of(120.0) - 0.25).abs() < 1e-12);
         assert_eq!(SpanPlace::at_fraction(0.4).fraction_of(120.0), 0.4);
         let mut negative = loaded.clone();
-        negative.sections[0].spread_loads[0].load = -1.0;
+        negative.sections[0].spreads[0].load = -1.0;
         assert!(negative.validate().is_err());
         // Defaults: 10 000 N, written and read back, changed.
         let d = Defaults::default();
@@ -2464,7 +2736,7 @@ mod tests {
         assert_eq!(point.forces(&ice, 0.025), [55.0, 0.0]);
         // Negative sizes are refused.
         let mut line = example();
-        line.sections[0].loads[0].diameter = -1.0;
+        line.sections[0].objects_mut().next().unwrap().shape = Shape::Sphere { diameter: -1.0 };
         assert!(line.validate().is_err());
     }
 
@@ -2583,7 +2855,7 @@ mod tests {
                 .contains("no wire point with set 999")
         );
         let mut line = example();
-        line.sections[0].loads.push(SpanLoad {
+        line.sections[0].add_point_load(&SpanLoad {
             span: 99,
             fraction: 0.5,
             vertical: 55.0,

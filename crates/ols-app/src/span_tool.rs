@@ -202,6 +202,7 @@ impl SpanForm {
                         span: self.span,
                         at: self.place(*d),
                         description: String::new(),
+                        object: Default::default(),
                     });
                 }
                 format!("span points {} on section {}", labels.join(", "), s.id)
@@ -209,7 +210,7 @@ impl SpanForm {
             SpanWhat::Load => {
                 for (k, d) in ds.iter().enumerate() {
                     let p = self.place(*d);
-                    s.loads.push(SpanLoad {
+                    s.add_point_load(&SpanLoad {
                         span: self.span,
                         fraction: p.fraction,
                         distance: p.distance,
@@ -228,7 +229,7 @@ impl SpanForm {
                 if self.to <= self.from {
                     return Err("a spread load ends after it starts".into());
                 }
-                s.spread_loads.push(SpreadLoad {
+                s.add_spread_load(&SpreadLoad {
                     span: self.span,
                     start: self.place(self.from),
                     end: self.place(self.to),

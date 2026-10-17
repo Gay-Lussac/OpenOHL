@@ -471,9 +471,8 @@ fn write_section(out: &mut String, s: &Section) {
         bundle_rotation_deg,
         points,
         stringing,
-        loads,
-        spread_loads,
         span_points,
+        spreads,
         color,
         calculation,
         fields,
@@ -497,76 +496,158 @@ fn write_section(out: &mut String, s: &Section) {
         section_point(out, "point", p, "    ");
     }
     write_stringing(out, stringing, "    ");
-    for l in loads {
-        let SpanLoad {
-            span,
-            fraction,
-            distance,
-            station,
-            vertical,
-            label,
-            diameter,
-            drag,
-            wind_area,
-            ice_area,
-        } = l;
-        let _ = write!(out, "    <load span=\"{span}\"");
-        write_place(
-            out,
-            "",
-            &ols_line::SpanPlace {
-                fraction: *fraction,
-                distance: *distance,
-                station: *station,
-            },
-        );
-        let _ = write!(out, " vertical=\"{}\"", num(*vertical));
-        nonempty(out, "label", label);
-        if *diameter != 0.0 {
-            let _ = write!(out, " diameter=\"{}\"", num(*diameter));
-        }
-        for (name, value) in [
-            ("drag", drag),
-            ("wind_area", wind_area),
-            ("ice_area", ice_area),
-        ] {
-            if let Some(v) = value {
-                let _ = write!(out, " {name}=\"{}\"", num(*v));
-            }
-        }
-        out.push_str("/>\n");
-    }
-    for l in spread_loads {
-        let ols_line::SpreadLoad {
-            span,
-            start,
-            end,
-            load,
-            label,
-        } = l;
-        let _ = write!(out, "    <spread_load span=\"{span}\"");
-        write_place(out, "start_", start);
-        write_place(out, "end_", end);
-        let _ = write!(out, " load=\"{}\"", num(*load));
-        nonempty(out, "label", label);
-        out.push_str("/>\n");
-    }
     for p in span_points {
         let ols_line::SpanPoint {
             label,
             span,
             at,
             description,
+            object,
         } = p;
         out.push_str("    <span_point");
         attr(out, "label", label);
         let _ = write!(out, " span=\"{span}\"");
         write_place(out, "", at);
         nonempty(out, "description", description);
+        match object {
+            None => out.push_str("/>\n"),
+            Some(o) => {
+                out.push_str(">\n");
+                write_object(out, o, "      ");
+                out.push_str("    </span_point>\n");
+            }
+        }
+    }
+    for s in spreads {
+        let ols_line::SpreadObject {
+            label,
+            from,
+            to,
+            type_id,
+            load,
+        } = s;
+        out.push_str("    <spread");
+        nonempty(out, "label", label);
+        attr(out, "from", from);
+        attr(out, "to", to);
+        opt_text(out, "type", type_id.as_deref());
+        attr(out, "load", &num(*load));
         out.push_str("/>\n");
     }
     write_fields(out, fields);
     out.push_str("  </section>\n");
+}
+
+/// An object on a point: `<object kind type weight shape …sizes drag
+/// clamp_length/>`.
+fn write_object(out: &mut String, o: &ols_line::LineObject, indent: &str) {
+    let ols_line::LineObject {
+        kind,
+        type_id,
+        weight,
+        shape,
+        drag,
+        clamp_length,
+    } = o;
+    let _ = write!(out, "{indent}<object");
+    attr(out, "kind", kind.as_str());
+    opt_text(out, "type", type_id.as_deref());
+    attr(out, "weight", &num(*weight));
+    attr(out, "shape", shape.as_str());
+    match *shape {
+        ols_line::Shape::Point => {}
+        ols_line::Shape::Sphere { diameter } => attr(out, "diameter", &num(diameter)),
+        ols_line::Shape::Cylinder {
+            diameter,
+            length,
+            axis,
+        } => {
+            attr(out, "diameter", &num(diameter));
+            attr(out, "length", &num(length));
+            attr(out, "axis", &enum_name(&axis));
+        }
+        ols_line::Shape::Box {
+            along,
+            across,
+            height,
+        } => {
+            attr(out, "along", &num(along));
+            attr(out, "across", &num(across));
+            attr(out, "height", &num(height));
+        }
+        ols_line::Shape::Areas {
+            wind_area,
+            ice_area,
+        } => {
+            attr(out, "wind_area", &num(wind_area));
+            attr(out, "ice_area", &num(ice_area));
+        }
+    }
+    opt_num(out, "drag", *drag);
+    opt_num(out, "clamp_length", *clamp_length);
+    out.push_str("/>\n");
+}
+
+fn read_object(e: &Element) -> Result<ols_line::LineObject, String> {
+    check(
+        e,
+        &[
+            "kind",
+            "type",
+            "weight",
+            "shape",
+            "diameter",
+            "length",
+            "axis",
+            "along",
+            "across",
+            "height",
+            "wind_area",
+            "ice_area",
+            "drag",
+            "clamp_length",
+        ],
+        &[],
+    )?;
+    fn named<T: serde::de::DeserializeOwned>(name: &str, v: &str) -> Result<T, String> {
+        serde_json::from_value(serde_json::Value::String(v.to_owned()))
+            .map_err(|_| format!("<object>: {name} \"{v}\" unknown"))
+    }
+    let shape = match e.attr("shape").unwrap_or("point") {
+        "point" => ols_line::Shape::Point,
+        "sphere" => ols_line::Shape::Sphere {
+            diameter: number(e, "diameter")?,
+        },
+        "cylinder" => ols_line::Shape::Cylinder {
+            diameter: number(e, "diameter")?,
+            length: number(e, "length")?,
+            axis: match e.attr("axis") {
+                None => ols_line::Axis::Along,
+                Some(a) => named("axis", a)?,
+            },
+        },
+        "box" => ols_line::Shape::Box {
+            along: number(e, "along")?,
+            across: number(e, "across")?,
+            height: number(e, "height")?,
+        },
+        "areas" => ols_line::Shape::Areas {
+            wind_area: number(e, "wind_area")?,
+            ice_area: number(e, "ice_area")?,
+        },
+        other => return Err(format!("<object>: shape \"{other}\" unknown")),
+    };
+    Ok(ols_line::LineObject {
+        kind: match e.attr("kind") {
+            None => ols_line::ObjectKind::Body,
+            Some(k) => named("kind", k)?,
+        },
+        type_id: owned(e, "type"),
+        weight: optional(e, "weight")?.unwrap_or(0.0),
+        shape,
+        drag: optional(e, "drag")?,
+        clamp_length: optional(e, "clamp_length")?,
+    })
 }
 
 fn write_jumper(out: &mut String, j: &Jumper) {
@@ -586,6 +667,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         stiffness_factor,
         angle_from_deg,
         angle_to_deg,
+        points,
         color,
         bundle,
         bundle_spacing,
@@ -645,6 +727,28 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         attr(out, "at", &num(*at));
         attr(out, "clamp_length", &num(*clamp_length));
         out.push_str("/>\n");
+    }
+    for p in points {
+        let ols_line::JumperPoint {
+            label,
+            at,
+            description,
+            object,
+        } = p;
+        out.push_str("    <jumper_point");
+        attr(out, "label", label);
+        attr(out, "fraction", &num(at.fraction));
+        opt_num(out, "length", at.length);
+        opt_num(out, "distance", at.distance);
+        nonempty(out, "description", description);
+        match object {
+            None => out.push_str("/>\n"),
+            Some(o) => {
+                out.push_str(">\n");
+                write_object(out, o, "      ");
+                out.push_str("    </jumper_point>\n");
+            }
+        }
     }
     write_fields(out, fields);
     out.push_str("  </jumper>\n");
@@ -1220,6 +1324,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
             "load",
             "spread_load",
             "span_point",
+            "spread",
             "field",
         ],
     )?;
@@ -1228,7 +1333,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
         Some(c) => serde_json::from_value(serde_json::Value::String(c.to_owned()))
             .map_err(|_| format!("<section>: calculation \"{c}\" unknown"))?,
     };
-    Ok(Section {
+    let mut section = Section {
         description: owned(e, "description").unwrap_or_default(),
         id: text(e, "id")?.to_owned(),
         cable: text(e, "cable")?.to_owned(),
@@ -1243,69 +1348,9 @@ fn read_section(e: &Element) -> Result<Section, String> {
             .map(read_section_point)
             .collect::<Result<_, _>>()?,
         stringing: read_stringing(one(e, "stringing")?)?,
-        loads: e
-            .children_named("load")
-            .map(|l| {
-                check(
-                    l,
-                    &[
-                        "span",
-                        "fraction",
-                        "distance",
-                        "station",
-                        "vertical",
-                        "label",
-                        "diameter",
-                        "drag",
-                        "wind_area",
-                        "ice_area",
-                    ],
-                    &[],
-                )?;
-                Ok(SpanLoad {
-                    span: number(l, "span")?,
-                    fraction: optional(l, "fraction")?.unwrap_or(0.0),
-                    vertical: number(l, "vertical")?,
-                    label: owned(l, "label").unwrap_or_default(),
-                    diameter: optional(l, "diameter")?.unwrap_or(0.0),
-                    drag: optional(l, "drag")?,
-                    wind_area: optional(l, "wind_area")?,
-                    ice_area: optional(l, "ice_area")?,
-                    distance: optional(l, "distance")?,
-                    station: optional(l, "station")?,
-                })
-            })
-            .collect::<Result<_, String>>()?,
         color: owned(e, "color"),
         calculation,
         fields: read_fields(e)?,
-        spread_loads: e
-            .children_named("spread_load")
-            .map(|l| {
-                check(
-                    l,
-                    &[
-                        "span",
-                        "start_fraction",
-                        "start_distance",
-                        "start_station",
-                        "end_fraction",
-                        "end_distance",
-                        "end_station",
-                        "load",
-                        "label",
-                    ],
-                    &[],
-                )?;
-                Ok(ols_line::SpreadLoad {
-                    span: number(l, "span")?,
-                    start: read_place(l, "start_")?,
-                    end: read_place(l, "end_")?,
-                    load: number(l, "load")?,
-                    label: owned(l, "label").unwrap_or_default(),
-                })
-            })
-            .collect::<Result<_, String>>()?,
         span_points: e
             .children_named("span_point")
             .map(|p| {
@@ -1319,17 +1364,100 @@ fn read_section(e: &Element) -> Result<Section, String> {
                         "station",
                         "description",
                     ],
-                    &[],
+                    &["object"],
                 )?;
                 Ok(ols_line::SpanPoint {
                     label: text(p, "label")?.to_owned(),
                     span: number(p, "span")?,
                     at: read_place(p, "")?,
                     description: owned(p, "description").unwrap_or_default(),
+                    object: p.child("object").map(read_object).transpose()?,
                 })
             })
             .collect::<Result<_, String>>()?,
-    })
+        spreads: e
+            .children_named("spread")
+            .map(|s| {
+                check(s, &["label", "from", "to", "type", "load"], &[])?;
+                Ok(ols_line::SpreadObject {
+                    label: owned(s, "label").unwrap_or_default(),
+                    from: text(s, "from")?.to_owned(),
+                    to: text(s, "to")?.to_owned(),
+                    type_id: owned(s, "type"),
+                    load: number(s, "load")?,
+                })
+            })
+            .collect::<Result<_, String>>()?,
+    };
+    // Older documents: point and spread loads of their own, read into
+    // points with objects.
+    let loads: Vec<SpanLoad> = e
+        .children_named("load")
+        .map(|l| {
+            check(
+                l,
+                &[
+                    "span",
+                    "fraction",
+                    "distance",
+                    "station",
+                    "vertical",
+                    "label",
+                    "diameter",
+                    "drag",
+                    "wind_area",
+                    "ice_area",
+                ],
+                &[],
+            )?;
+            Ok(SpanLoad {
+                span: number(l, "span")?,
+                fraction: optional(l, "fraction")?.unwrap_or(0.0),
+                vertical: number(l, "vertical")?,
+                label: owned(l, "label").unwrap_or_default(),
+                diameter: optional(l, "diameter")?.unwrap_or(0.0),
+                drag: optional(l, "drag")?,
+                wind_area: optional(l, "wind_area")?,
+                ice_area: optional(l, "ice_area")?,
+                distance: optional(l, "distance")?,
+                station: optional(l, "station")?,
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    for l in &loads {
+        section.add_point_load(l);
+    }
+    let spread: Vec<ols_line::SpreadLoad> = e
+        .children_named("spread_load")
+        .map(|l| {
+            check(
+                l,
+                &[
+                    "span",
+                    "start_fraction",
+                    "start_distance",
+                    "start_station",
+                    "end_fraction",
+                    "end_distance",
+                    "end_station",
+                    "load",
+                    "label",
+                ],
+                &[],
+            )?;
+            Ok(ols_line::SpreadLoad {
+                span: number(l, "span")?,
+                start: read_place(l, "start_")?,
+                end: read_place(l, "end_")?,
+                load: number(l, "load")?,
+                label: owned(l, "label").unwrap_or_default(),
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    for l in &spread {
+        section.add_spread_load(l);
+    }
+    Ok(section)
 }
 
 fn read_jumper(e: &Element) -> Result<Jumper, String> {
@@ -1352,8 +1480,28 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             "bundle_rotation_deg",
             "description",
         ],
-        &["from", "to", "support", "clamp", "field"],
+        &["from", "to", "support", "clamp", "jumper_point", "field"],
     )?;
+    let points = e
+        .children_named("jumper_point")
+        .map(|p| {
+            check(
+                p,
+                &["label", "fraction", "length", "distance", "description"],
+                &["object"],
+            )?;
+            Ok(ols_line::JumperPoint {
+                label: text(p, "label")?.to_owned(),
+                at: ols_line::JumperPlace {
+                    fraction: optional(p, "fraction")?.unwrap_or(0.0),
+                    length: optional(p, "length")?,
+                    distance: optional(p, "distance")?,
+                },
+                description: owned(p, "description").unwrap_or_default(),
+                object: p.child("object").map(read_object).transpose()?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let supports = e
         .children_named("clamp")
         .map(|c| {
@@ -1399,6 +1547,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         stiffness_factor: optional(e, "stiffness_factor")?,
         angle_from_deg: optional(e, "angle_from_deg")?,
         angle_to_deg: optional(e, "angle_to_deg")?,
+        points,
         color: owned(e, "color"),
         bundle: optional(e, "bundle")?,
         bundle_spacing: optional(e, "bundle_spacing")?,
