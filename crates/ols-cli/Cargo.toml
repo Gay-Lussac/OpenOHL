@@ -27,6 +27,7 @@ ols-wirefe.workspace = true
 ols-line.workspace = true
 ols-structures.workspace = true
 ols-structures-fe.workspace = true
+ols-sections.workspace = true
 ols-terrain.workspace = true
 ols-clearance.workspace = true
 ols-thermal.workspace = true
@@ -43,9 +44,6 @@ nalgebra.workspace = true
 serde.workspace = true
 toml.workspace = true
 clap.workspace = true
-
-[dev-dependencies]
-ols-sections.workspace = true
 
 [lints]
 workspace = true

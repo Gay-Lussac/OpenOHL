@@ -76,20 +76,27 @@ impl LoadsPage {
             .map(|(t, _)| t.clone())
             .unwrap_or_default();
         let weather: Vec<_> = model.cases.iter().map(|c| c.case.clone()).collect();
+        // The structure models' section library (the project's).
+        let sections = model
+            .section_library()
+            .map_err(|e| format!("section library: {e}"));
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.structures);
         let (tx, rx) = channel();
         let c = ctx.clone();
         std::thread::spawn(move || {
-            let r = ols_loads::LoadCases::load(&path).and_then(|set| {
-                ols_loads::structure_loads(
-                    &line,
-                    &library,
-                    &weather,
-                    &set.cases,
-                    &ols_loads::default_budget(),
-                )
-            });
+            let r = sections
+                .clone()
+                .and_then(|_| ols_loads::LoadCases::load(&path))
+                .and_then(|set| {
+                    ols_loads::structure_loads(
+                        &line,
+                        &library,
+                        &weather,
+                        &set.cases,
+                        &ols_loads::default_budget(),
+                    )
+                });
             let mut r = r;
             if let Ok(loads) = &mut r {
                 ols_loads::add_structure_wind(loads, &line, &types, &weather);
@@ -101,7 +108,12 @@ impl LoadsPage {
             }
             let usage = r.as_ref().map_or_else(
                 |_| Vec::new(),
-                |loads| ols_loads::capacity::usage(&line, &types, &library, &weather, loads),
+                |loads| {
+                    let sections = sections.clone().unwrap_or_default();
+                    ols_loads::capacity::usage_with_sections(
+                        &line, &types, &sections, &library, &weather, loads,
+                    )
+                },
             );
             let _ = tx.send((r, usage));
             c.request_repaint();

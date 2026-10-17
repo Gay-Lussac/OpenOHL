@@ -2810,6 +2810,83 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// The section library (`.olssec`) in the `Sections/` folder next to the
+/// project is copied into it when it opens; then the project's copy is
+/// read (the folder gone), and a project without one has none.
+#[test]
+fn the_project_keeps_its_section_library() {
+    let ex = root().join("examples/synthetic-line");
+    let dir = std::env::temp_dir().join(format!("ols-app-{}-sections", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    let name = "example-sections.olssec";
+    std::fs::copy(
+        root().join("libraries/sections").join(name),
+        dir.join("Sections").join(name),
+    )
+    .unwrap();
+    let file = dir.join("p.ols");
+    let line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    ols_session::Session::open(&file)
+        .unwrap()
+        .import(&line, "tester")
+        .unwrap();
+    let open = || {
+        model::load(
+            Sources {
+                file: file.clone(),
+                library: Some(root().join("libraries/cables")),
+                weather: Some(ex.join("weather-cases.olswc")),
+                point_budget: 1000,
+                corridor: 60.0,
+                user: Some("tester".into()),
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap()
+    };
+    let m = open();
+    let session = &m.editing.as_ref().unwrap().session;
+    let files = session.library_files("sections").unwrap();
+    assert!(files.iter().any(|(n, _)| n == name), "{files:?}");
+    let work = m.library_dir.clone().unwrap();
+    assert!(work.join("sections").join(name).is_file());
+    assert!(m.section_library().unwrap().section("EA-61x7").is_some());
+    drop(m);
+    // The folder gone: the project's copy.
+    std::fs::remove_dir_all(dir.join("Sections")).unwrap();
+    let m = open();
+    let lib = m.section_library().unwrap();
+    assert!(lib.section("EA-61x7").is_some());
+    let mut out = dir.join("export");
+    m.export_libraries(&out).unwrap();
+    out.push("sections");
+    assert!(out.join(name).is_file(), "exported with the others");
+    drop(m);
+    // Another project with no section library next to it: none.
+    let other = dir.join("q.ols");
+    ols_session::Session::open(&other)
+        .unwrap()
+        .import(&line, "tester")
+        .unwrap();
+    let m = model::load(
+        Sources {
+            file: other,
+            library: Some(root().join("libraries/cables")),
+            point_budget: 1000,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    let session = &m.editing.as_ref().unwrap().session;
+    assert!(session.library_files("sections").unwrap().is_empty());
+    assert!(m.section_library().unwrap().sections.is_empty());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Lines: new lines started from the one worked on, shown next to it (two
 /// ticked in a row: the menu stays open), worked on one at a time (each
 /// its own undo), brought up to date from the main line, submitted for

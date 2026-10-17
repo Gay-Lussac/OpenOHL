@@ -57,7 +57,7 @@ ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-cs
 
 The CSV columns: `case,structure,point,label,sets,x,y,z,transverse,longitudinal,vertical,factored_transverse,factored_longitudinal,factored_vertical` (`point`: the point's label, empty for the wind on the structure; `sets`: the wire ends hanging there, separated by spaces).
 
-**Wind on the structures themselves:** a structure type may give the area the wind blows on, by height band (`[[wind.band]]`, see [Structure libraries](structure-library.md#wind-on-the-structure)). In every load case with wind, each band adds a load across the line — wind pressure × drag coefficient × area, on the wind side of the weather case — at the band's mid-height on the structure's centre line, listed without a point ("wind on the structure"), factored by the transverse factor. The capacity checks' load trees are per point and leave these out. Height extensions are not added to the bands yet.
+**Wind on the structures themselves:** a structure type may give the area the wind blows on, by height band (`[[wind.band]]`, see [Structure libraries](structure-library.md#wind-on-the-structure)). In every load case with wind, each band adds a load across the line — wind pressure × drag coefficient × area, on the wind side of the weather case — at the band's mid-height on the structure's centre line, listed without a point ("wind on the structure"), factored by the transverse factor. The capacity checks' load trees are per point and leave these out, and so does the **fe** check: it takes the member wind on the profiles instead, when the members' sections come from the [section library](section-library.md) (see [Member wind](structure-analysis.md#member-wind-body-wind-at-level-3)). Height extensions are not added to the bands yet.
 
 Not yet included: jumper loads.
 
@@ -70,7 +70,7 @@ With the loads, OLS CAD checks how much of its capacity every structure uses, fr
 
 Two more checks come from an analysis, when the type names a structure model or a pole (see [Structure analysis](structure-analysis.md)):
 
-- **fe** — the type's finite-element model (its members when it is a full design, or `model = "….olsfe"`) solved with the factored loads at its points; usage: the member using most of its capacity.
+- **fe** — the type's finite-element model (its members when it is a full design, or `model = "….olsfe"`) solved with the factored loads at its points (and the member wind on profiles from the section library); usage: the member using most of its capacity.
 - **pole** — the type's pole (`pole = "id"`): bending moment along the pole from the factored loads and the wind on the pole, P-Delta amplified, against its moment capacity.
 
 A structure's usage is the largest of its checks. A structure without a type, or whose type gives nothing to check against, is listed as not checked. A load case with sections that did not solve misses their loads: it is said so.

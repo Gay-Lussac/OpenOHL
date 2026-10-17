@@ -48,6 +48,14 @@ Against the section's capacity times the load case's strength factor \\( \phi \\
 
 The Euler load with an effective length factor \\( k \\) is a simple stand-in: a design code's column curve (imperfections, residual stresses, slenderness of angle sections, eccentric connections) is not modelled — the user can give the code's allowable compression per section instead. A structure's FE usage is its worst member.
 
+## Member wind
+
+A member whose section comes from the section library has a profile; the wind on it (`Model::member_wind`) follows the cross-flow principle: with the unit wind direction \\( \hat{\mathbf w} \\), the member's axis \\( \hat{\mathbf x} \\) and the wind's component normal to it \\( \mathbf w_n = \hat{\mathbf w} - (\hat{\mathbf w}\cdot\hat{\mathbf x})\hat{\mathbf x} \\) (length \\( \sin\theta \\)), the force on the member is
+
+\\[ \mathbf F = q\, c_d\, d\, L \sin\theta \; \mathbf w_n \qquad (|\mathbf F| = q\, c_d\, d\, L \sin^2\theta), \\]
+
+\\( q \\) the wind pressure (times the load case's transverse factor), \\( c_d \\) the model's `drag` (default 1), \\( d \\) the profile's outline width across \\( \mathbf w_n \\) in the member's local y–z plane, \\( L \\) its length. Half of \\( \mathbf F \\) goes to each joint: statically equivalent for the rest of the structure (a cantilever's base moment is exactly \\( q d L^2/2 \\)), the member's own bending under the uniform load left out. No shielding between members, no solidity ratio, no code shape factors; the type's height-band wind (`[[wind.band]]`) is never put on the model, so the two are not added.
+
 ## Pole check
 
 A pole (`.olsp`) is a shaft with a linear taper between the ground-line diameter \\( D_0 \\) and the top diameter \\( D_1 \\) over the height above ground \\( H = \ell - e \\) (length less embedment). At heights \\( h \\) from the ground line to the top (41 sections):

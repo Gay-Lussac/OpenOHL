@@ -487,6 +487,7 @@ fn amplification(
         analysis: Analysis {
             nonlinear: true,
             self_weight: true,
+            ..Analysis::default()
         },
         ..Model::default()
     };

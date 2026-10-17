@@ -31,6 +31,7 @@ ols-loads.workspace = true
 ols-structures-fe.workspace = true
 # The edits of a structure file, shared with the structure application.
 ols-structure-edit.workspace = true
+ols-sections.workspace = true
 ols-thermal.workspace = true
 ols-bom.workspace = true
 ols-spotting.workspace = true

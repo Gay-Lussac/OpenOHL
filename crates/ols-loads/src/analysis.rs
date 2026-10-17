@@ -6,11 +6,15 @@
 //! type's finite-element model (its members, when it is a full design, or
 //! a separate `model = "….olsfe"`) and its pole (`pole =
 //! "id"`, a `.olsp` file next to the type), loaded once per usage run and
-//! solved with each load case's factored attachment loads.
+//! solved with each load case's factored attachment loads. A member's
+//! section is looked up in the project's section library first, then in
+//! the type's `[[section]]` tables; when the model has profiles from the
+//! library, the weather case's wind on them is added (member wind).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use ols_sections::SectionLibrary;
 use ols_structures::{StructureLibrary, StructureType};
 use ols_structures_fe::check::worst;
 use ols_structures_fe::{Loads, Model, Pole, PoleLoad};
@@ -32,8 +36,9 @@ pub(crate) struct Analyses {
 }
 
 impl Analyses {
-    /// Reads the models and poles the types name (each file once).
-    pub fn load(types: &StructureLibrary) -> Self {
+    /// Reads the models and poles the types name (each file once), the
+    /// members' sections from `sections` first.
+    pub fn load(types: &StructureLibrary, sections: &SectionLibrary) -> Self {
         let mut out = Self::default();
         let mut pole_dirs: BTreeMap<PathBuf, Result<Vec<Pole>, String>> = BTreeMap::new();
         for t in types.iter() {
@@ -44,12 +49,13 @@ impl Analyses {
                 .unwrap_or_default();
             if let Some(file) = &t.model {
                 out.models
-                    .insert(t.id.clone(), Model::load(&dir.join(file)));
+                    .insert(t.id.clone(), Model::load_with(&dir.join(file), sections));
             } else if t.detail() == ols_structures::Detail::Design
                 && let Some(path) = types.path(&t.id)
             {
                 // A full design in the type's own file.
-                out.models.insert(t.id.clone(), Model::load(path));
+                out.models
+                    .insert(t.id.clone(), Model::load_with(path, sections));
             }
             if let Some(id) = &t.pole {
                 let poles = pole_dirs
@@ -68,12 +74,17 @@ impl Analyses {
     }
 
     /// The finite-element check of a structure of type `t` (none: the
-    /// type has no model, or no member a capacity).
+    /// type has no model, or no member a capacity). Members with a
+    /// profile from the section library take the wind of `weather`
+    /// (across the line, times the transverse factor); the type's wind
+    /// bands are never in the model, so the body wind is not counted
+    /// twice.
     pub fn fe(
         &self,
         t: &StructureType,
         loads: &[Factored],
         case: &LoadCase,
+        weather: Option<&WeatherCase>,
         notes: &mut Vec<String>,
     ) -> Option<Check> {
         let model = match self.models.get(&t.id)? {
@@ -90,6 +101,28 @@ impl Analyses {
                 None => notes.push(format!(
                     "model: no node for point {label} (its load left out)"
                 )),
+            }
+        }
+        if let Some(w) = weather
+            && model.has_profiles()
+        {
+            // The wind blows across the line: from the right, to −x.
+            let wind = model.member_wind(
+                w.wind_pressure.si() * case.transverse,
+                [-w.wind_from.to_left(), 0.0, 0.0],
+            );
+            if !wind.is_empty() {
+                let total: f64 = wind.iter().map(|l| l.force[0]).sum();
+                notes.push(format!(
+                    "model: member wind from the section profiles, {:.1} kN across the line{}",
+                    total.abs() / 1000.0,
+                    if t.wind.is_some() {
+                        " (the type's wind bands not in the model)"
+                    } else {
+                        ""
+                    }
+                ));
+                nodal.extend(wind);
             }
         }
         let loads = Loads {

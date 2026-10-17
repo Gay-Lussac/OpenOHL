@@ -69,7 +69,8 @@ All examples on this page are invented (structures `T1`, `T2`, sections
    .olspt PylonTemplate: parameter[], attachment[] (slot, across, up),
                         earth[], strings ─► builds a level-1 .olss
    .olssec SectionLibrary: material[], section[] (shape, dimensions,
-                        material ─► material id); not referred to yet
+                        material ─► material id) ◄── member section
+                        (.olss / .olsfe; the library first, then [[section]])
 ```
 
 Arrows point from the referring field to what it names. Everything inside
@@ -482,7 +483,7 @@ Derived, never stored:
 | LoadCase (`.olslc`) | `weather` | WeatherCase | `name` |
 | StructureType | `capacity.attachment[].point` | TypePoint | label |
 | TypePoint | `node` / `member` | TypeNode / TypeMember | `id` |
-| TypeMember | `nodes`, `section` | TypeNode, `[[section]]` | `id` |
+| TypeMember (and `.olsfe` `[[member]]`) | `nodes`, `section` | TypeNode; the section library's Section (`.olssec`) first, else `[[section]]` (resolved by `ols_structures_fe::Model::parse_with`; the structure type alone does not check a section id) | `id` |
 | StructureType | `model`, `pole` | `.olsfe` file (relative path), `.olsp` id | — |
 
 Labels are scoped to their structure (or type), span point labels to
@@ -554,7 +555,7 @@ One directory per kind; TOML with units in the values. Each item has an
 | (pylon templates: shipped `libraries/pylon-templates`, the project's `Pylon templates` folder; not kept in the project file) | `.olspt` | `ols-pylon-template` | one | `ols_structures::templates::PylonTemplate` | [Pylon templates](../user-guide/structure-library.md#pylon-templates-olspt) |
 | `WeatherCases` | `.olswc` | `ols-weather-cases` | several (`[[case]]`) | `ols_weather::WeatherCase` | [Weather cases](../user-guide/weather.md) |
 | `LoadCases` | `.olslc` | `ols-load-cases` | several (`[[case]]`) | `ols_loads::LoadCase` | [Load cases](../user-guide/loads.md) |
-| (section library: shipped `libraries/sections`; not in the project file or the app yet) | `.olssec` | `ols-sections` | several (`[[section]]`, `[[material]]`) | `ols_sections::Section`, `ols_sections::Material` (crate `ols-sections`) | [Section library](../user-guide/section-library.md) |
+| (section library: project kind `sections`; shipped example `libraries/sections`, never copied into a project) | `.olssec` | `ols-sections` | several (`[[section]]`, `[[material]]`) | `ols_sections::Section`, `ols_sections::Material` (crate `ols-sections`) | [Section library](../user-guide/section-library.md) |
 | (structure application; not a library kind yet) | `.olsslc` | `ols-structure-load-cases` | several (`[[load_case]]`) | `ols_structure_loads::LoadCaseRecipe` | [Structure load cases](../user-guide/structure-load-cases.md) |
 
 Other data files: structure models `.olsfe` (`ols-structure-model`) and
@@ -635,7 +636,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |
 | `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?` | m | pylon joints (detail 2–3) |
 | `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`), `reference?`, `roll?`, `k?`, `pretension?` | — | pylon members |
-| `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` |
+| `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1) |
 | `[[load_case]]` | tables (`load_cases`, kept unread by the core) | N, Pa | the structure's load-case recipes, read by the structure application (`ols-structure-loads`; below) |
 | `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
 | `wind` | `band[]`: `from`, `to`, `area`, `drag` | m, m² | wind on the structure itself |
@@ -673,7 +674,7 @@ structure's own items.
 ### Section library (`.olssec`)
 
 Source: `crates/ols-sections` (a core crate: the level 3 checks inside
-the line will read it through `ols-structures-fe`), `SectionLibrary`.
+the line read it through `ols-structures-fe`), `SectionLibrary`.
 Format `ols-sections`, version 1 (constants `SECTION_FILE_FORMAT`,
 `SECTION_FILE_VERSION`, `SECTION_FILE_EXTENSION`). Full reference:
 [Section library](../user-guide/section-library.md).
@@ -697,11 +698,24 @@ the section's plane (body wind from the profiles, decision 10 of
 order (`merge`: project first, then user; the earlier id wins);
 `missing_materials()` lists sections whose material is in none.
 
-**Not referred to yet.** The plan (structure-building §1.3, §4.2): a
-member or group's `section = "<id>"` resolves in the project's section
-library first, then in the structure's own `[[section]]` tables; in a
-project the library is a library kind of the project file, per project
-line.
+**Referred to by structures** (structure-building §1.3, §4.2): a
+member's `section = "<id>"` (of a `.olss` full design or an `.olsfe`)
+resolves in the section library first, then in the structure's own
+`[[section]]` tables (`Model::parse_with`, `from_structure_type_with`,
+`load_with` take the `SectionLibrary`; the plain forms an empty one). A
+library section becomes `ols_structures_fe::Section::from_library`: the
+profile's area, iy, iz, torsion constant (iy + iz without one), minor
+principal second moment (`i_min`, buckling), elastic moduli, and its
+material's E, G, density and yield; it keeps the profile
+(`Section::profile`), which gives the member wind
+(`Model::member_wind`, `Model::has_profiles`; `[analysis] drag`, default
+1). A library id replaces a table of the same id; an id in neither, or a
+library section's material missing, is refused, naming it. In a project
+the library is the library kind `sections` of the project file, per
+project line ([Project file tables](#project-file-tables-cratesols-session));
+the app reads it with `Model::section_library` and gives it to the line's
+structure checks (`ols_loads::capacity::usage_with_sections`). Member
+groups (one section for many members) come later and resolve the same way.
 
 ### Insulator assembly (`.olsi`)
 
@@ -772,7 +786,7 @@ case `model` (joints). CSV of the table and the recipes; XLSX later.
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
 | `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ols_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts` (`{"solver": …}`) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
-| `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.olsload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.olspd`), `rules` (`.olsr`), `galloping` (`.olsg`), `ambient` (`.olsta`), `costs` (`.olscost`), `poles` (`.olsp`), `femodels` (`.olsfe`); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels` from its structure folder) and writes each line's files to a working folder (`poles`, `femodels` next to the `structures`), which it reads from then on |
+| `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.olsload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.olspd`), `rules` (`.olsr`), `galloping` (`.olsg`), `ambient` (`.olsta`), `costs` (`.olscost`), `poles` (`.olsp`), `femodels` (`.olsfe`), `sections` (`.olssec`, the section library); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels` next to the `structures`; `sections` in its own folder), which it reads from then on |
 | `spatial_index` | plan bounds and tile of every object (ADR-0008) |
 | `vc_*`, `edit_grant`, `surface`, point cloud tables | versions and reviews, edit rights, terrain surfaces, LiDAR ([Versions](../user-guide/versions.md), ADR-0007) |
 

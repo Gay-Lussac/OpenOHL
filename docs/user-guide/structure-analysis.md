@@ -29,6 +29,7 @@ name = "Example tower"
 [analysis]
 nonlinear = true          # P-Delta (default); false: first order
 self_weight = true        # members' weight × the load case's vertical factor (default)
+drag = 1.0                # member wind: drag factor on the profiles (default 1)
 
 [[material]]
 id = "steel"
@@ -59,7 +60,7 @@ attachment = "A1"         # carries the type's point A1 (version 1: [set, phase]
 [[member]]
 id = "leg1"
 nodes = ["B1", "L1A"]
-section = "leg"
+section = "leg"           # the section library's first, then a [[section]] table
 kind = "truss"            # truss (default) | frame | cable
 k = 1.0                   # effective length factor for buckling
 # frame: reference = [0, 0, 1] (a direction in the local x–y plane), roll = "0 deg"
@@ -74,9 +75,52 @@ Units: lengths, areas (`mm2`, `cm2`, `m2`), stresses, forces as elsewhere; secon
 
 **Attachments**: a node with `attachment = "label"` (in a structure type, also a `[[point]]` with `node = "…"`) receives the factored loads at that point of the structure type (where strings hang): transverse along x, longitudinal along y, vertical downwards. A `[[point]]` along a member (`member`, `at`) shares its loads to the member's two joints: (1 − `at`) to the first, `at` to the second — the same forces on the rest of the structure as a joint there, without the bending of that member between its joints. Version 1 models' `attachment = [set, phase]` names the point `A<set>-<phase>`. A loaded point without a node or member in the model is reported in the usage notes and its load is left out.
 
+**Sections from the section library**: a member's `section = "<id>"` is
+looked up first in the project's [section library](section-library.md)
+(`.olssec`), then in the file's own `[[section]]` tables; a library
+section of the same id as a table replaces it. Its properties are the
+profile's (area, iy, iz, the torsion constant — iy + iz for a `general`
+section without one —, the minor principal second moment for buckling,
+the elastic moduli) and its material's (E, G, density, yield; no
+allowables, so the capacity comes from the yield). A library section's
+material missing, or an id in neither place, is refused, naming it. A
+member whose section comes from the library has a **profile**: it takes
+the member wind (below). Without a section library (a line file with no
+`Sections/` folder, `ols structures fe` without `--sections`) the tables
+alone are read, as before.
+
 **Members**: trusses take axial force only; frames are 3D beams (six degrees of freedom at their nodes); cables take tension only and may be pretensioned — a cable that would be compressed goes slack. Truss-only nodes have no rotations; a node held by nothing in one direction is a mechanism and is named in the error.
 
-**Usage** per member, against the section's capacity times the load case's strength factor: tension against the allowable tension (else area × yield); compression against the allowable compression (else area × yield), but not above the Euler load π²EI/(kL)²; frames add N, My and Mz ratios. Without a design-code column curve, the Euler check is optimistic for stocky members — write the code's allowable compression in the section for a design check. Wind on the tower body is not included yet (only the attachment loads and the members' weight).
+**Usage** per member, against the section's capacity times the load case's strength factor: tension against the allowable tension (else area × yield); compression against the allowable compression (else area × yield), but not above the Euler load π²EI/(kL)²; frames add N, My and Mz ratios. Without a design-code column curve, the Euler check is optimistic for stocky members — write the code's allowable compression in the section for a design check.
+
+## Member wind (body wind at level 3)
+
+When members have profiles from the section library, the wind of the load
+case blows on them: per member, the weather case's wind pressure × the
+load case's transverse factor × `drag` × the profile's **width** seen by
+the wind × the member's length × sin²θ (θ between the wind and the
+member: only the wind's component normal to the member counts), normal to
+the member in the plane of the member and the wind; half goes to each of
+its joints. The width is the profile's outline across the wind's
+direction in the member's local y–z plane (the section's y and z, the
+same axes as `iy`, `iz`: set by `reference` and `roll`). In the line run
+the wind blows across the line from the weather case's wind side, as on
+the wires and the poles.
+
+Approximations: no member shields another (a lattice's far face takes the
+full wind), no solidity or shape factors from a code — `drag` (one factor
+for the whole structure, default 1) is the only one; an angle's legs do
+not shield each other ([Wind on the profile](section-library.md#wind-on-the-profile));
+the load is lumped at the joints, so a member's own bending under its
+wind is left out (the joints carry the same forces).
+
+The type's wind bands (`[[wind.band]]`) are loads at no point of the
+structure: they are in the structure loads (and the CSV), never in the FE
+model, so the body wind is not counted twice. The usage notes say when
+the member wind was used: `model: member wind from the section profiles,
+12.3 kN across the line (the type's wind bands not in the model)`.
+Without profiles (sections from the tables only) there is no member wind
+and nothing changes.
 
 ## Poles (.olsp)
 
@@ -113,8 +157,9 @@ One model with the loads of one structure, from the CSV of `ols line --loads-csv
 ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-csv loads.csv
 ols structures fe Structures/type-02.olss --loads loads.csv --structure T2 [--case wind] [--csv members.csv]
 ols structures fe Structures/type-02.olss           # the model's own [[load]]s (an .olsfe works too)
+ols structures fe Structures/type-02.olss --sections Sections --wind 840 --wind-dir 180
 ols structures pole Structures/steel-pole-30m.olsp --type Structures/type-05.olss \
     --loads loads.csv --structure T6 --wind-pressure 840
 ```
 
-`ols structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--top N` (members printed per case); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.
+`ols structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--top N` (members printed per case), `--sections` (a `.olssec` file or folder: the section library, looked up first), `--wind` (member wind: factored pressure, Pa, added to every case; needs members with profiles) and `--wind-dir` (where it blows to, degrees from x — right of the line — towards y, ahead; default 0); `ols line` takes `--sections` too (default: the `Sections` folder next to the line or project file); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.
