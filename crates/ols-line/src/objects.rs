@@ -16,6 +16,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+// Library values with their unit (`"0.6 m"`, `"70 N"`), plain numbers SI.
+use ols_core::units::{Area, Force, ForcePerLength, Length, si};
+
 /// What an object on a point is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,13 +64,16 @@ pub enum Shape {
     /// A sphere (a marker ball).
     Sphere {
         /// Diameter, m.
+        #[serde(deserialize_with = "si::de::<_, Length>")]
         diameter: f64,
     },
     /// A cylinder (a light, a clamp).
     Cylinder {
         /// Diameter, m.
+        #[serde(deserialize_with = "si::de::<_, Length>")]
         diameter: f64,
         /// Length, m.
+        #[serde(deserialize_with = "si::de::<_, Length>")]
         length: f64,
         /// Its axis.
         #[serde(default)]
@@ -76,17 +82,22 @@ pub enum Shape {
     /// A box.
     Box {
         /// Along the wire, m.
+        #[serde(deserialize_with = "si::de::<_, Length>")]
         along: f64,
         /// Across the line, m.
+        #[serde(deserialize_with = "si::de::<_, Length>")]
         across: f64,
         /// Height, m.
+        #[serde(deserialize_with = "si::de::<_, Length>")]
         height: f64,
     },
     /// Given areas.
     Areas {
         /// Wind area (bare), m².
+        #[serde(deserialize_with = "si::de::<_, Area>")]
         wind_area: f64,
         /// Surface taking the ice, m².
+        #[serde(deserialize_with = "si::de::<_, Area>")]
         ice_area: f64,
     },
 }
@@ -246,7 +257,7 @@ pub struct LineObject {
     #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
     pub type_id: Option<String>,
     /// Weight, N (the whole bundle's).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "si::de::<_, Force>")]
     pub weight: f64,
     /// Its shape, for the wind and the ice.
     #[serde(default, flatten)]
@@ -255,7 +266,11 @@ pub struct LineObject {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drag: Option<f64>,
     /// A clamp's length along the wire, m.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "si::de_opt::<_, Length>"
+    )]
     pub clamp_length: Option<f64>,
     /// A clamp on a jumper held up (a support), and by what.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -336,6 +351,7 @@ pub struct SpreadObject {
     #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
     pub type_id: Option<String>,
     /// Downward load, N per metre of conductor (the whole bundle's).
+    #[serde(deserialize_with = "si::de::<_, ForcePerLength>")]
     pub load: f64,
 }
 
@@ -355,7 +371,7 @@ pub struct ObjectType {
     /// What it makes.
     pub kind: TypeKind,
     /// Weight, N (bodies and clamps).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "si::de::<_, Force>")]
     pub weight: f64,
     /// Shape (bodies, clamps; none: a point).
     #[serde(default, flatten, skip_serializing_if = "Option::is_none")]
@@ -364,10 +380,18 @@ pub struct ObjectType {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drag: Option<f64>,
     /// A clamp's length along the wire, m.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "si::de_opt::<_, Length>"
+    )]
     pub clamp_length: Option<f64>,
     /// A spread type's load, N/m.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "si::de_opt::<_, ForcePerLength>"
+    )]
     pub load: Option<f64>,
 }
 
@@ -636,5 +660,58 @@ mod legacy_tests {
         // (Its forces: as the old point load's, `a_marker_ball_takes_wind_and_ice`.)
         // The example line (older form) reads.
         assert!(example.sections[0].objects().next().is_some());
+    }
+
+    /// Library values may carry their unit; plain numbers are SI.
+    #[test]
+    fn library_values_take_units() {
+        let lib = super::ObjectLibrary::parse(
+            r#"
+format = "ols-point-spread-loads"
+version = 1
+[[type]]
+id = "ball"
+name = "Ball"
+kind = "body"
+weight = "0.07 kN"
+shape = "sphere"
+diameter = "600 mm"
+[[type]]
+id = "light"
+name = "Light"
+kind = "body"
+weight = 150.0
+shape = "cylinder"
+diameter = "250 mm"
+length = 0.6
+[[type]]
+id = "clamp"
+name = "Clamp"
+kind = "clamp"
+weight = "20 N"
+clamp_length = "150 mm"
+[[type]]
+id = "tray"
+name = "Tray"
+kind = "spread"
+load = "0.0125 kN/m"
+"#,
+        );
+        let e = lib.as_ref().err().cloned().unwrap_or_default();
+        let lib = lib.expect(&e);
+        let o = lib.types[0].object().unwrap();
+        assert!((o.weight - 70.0).abs() < 1e-9);
+        assert_eq!(o.shape, Shape::Sphere { diameter: 0.6 });
+        assert!(
+            matches!(lib.types[1].shape, Some(Shape::Cylinder { diameter, length, .. }) if (diameter - 0.25).abs() < 1e-12 && length == 0.6)
+        );
+        assert!(lib.types[3].load.is_some_and(|l| (l - 12.5).abs() < 1e-9));
+        // A unit of the wrong kind is refused.
+        assert!(
+            super::ObjectLibrary::parse(
+                "[[type]]\nid = \"x\"\nname = \"x\"\nkind = \"body\"\nweight = \"3 m\""
+            )
+            .is_err()
+        );
     }
 }

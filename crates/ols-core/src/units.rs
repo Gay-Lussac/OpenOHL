@@ -711,6 +711,56 @@ pub const QUANTITY_KINDS: &[&str] = &[
     Temperature::KIND,
 ];
 
+/// Serde helpers for a plain `f64` field kept in SI: read from an SI number
+/// or from text with a unit of quantity `Q` (`"0.6 m"`, `"70 N"`), as the
+/// quantity types are; written as the plain number.
+///
+/// ```
+/// #[derive(serde::Deserialize)]
+/// struct T {
+///     #[serde(deserialize_with = "ols_core::units::si::de::<_, ols_core::units::Length>")]
+///     d: f64,
+/// }
+/// let t: T = serde_json::from_str(r#"{"d": "600 mm"}"#).unwrap();
+/// assert_eq!(t.d, 0.6);
+/// ```
+pub mod si {
+    use super::Quantity;
+    use serde::{Deserialize, Deserializer};
+
+    /// An `f64` in SI from a number or text with a unit of `Q`.
+    pub fn de<'de, D: Deserializer<'de>, Q: Quantity + Deserialize<'de>>(
+        d: D,
+    ) -> Result<f64, D::Error> {
+        Q::deserialize(d).map(Quantity::si)
+    }
+
+    /// An angle in degrees: a plain number is degrees (files give angles
+    /// so), text takes its unit (`"10°"`, `"0.17 rad"`).
+    pub fn de_degrees<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Given {
+            Number(f64),
+            Text(String),
+        }
+        match Given::deserialize(d)? {
+            Given::Number(x) => Ok(x),
+            Given::Text(t) => t
+                .parse::<super::Angle>()
+                .map(|a| a.degrees())
+                .map_err(serde::de::Error::custom),
+        }
+    }
+
+    /// The same for an optional field (with `default`).
+    pub fn de_opt<'de, D: Deserializer<'de>, Q: Quantity + Deserialize<'de>>(
+        d: D,
+    ) -> Result<Option<f64>, D::Error> {
+        Option::<Q>::deserialize(d).map(|q| q.map(Quantity::si))
+    }
+}
+
 /// Converts text such as `"1000 ft"` of the named quantity kind to the unit `to`.
 ///
 /// Meant for dynamic callers (scripts, validation cases, file import); Rust

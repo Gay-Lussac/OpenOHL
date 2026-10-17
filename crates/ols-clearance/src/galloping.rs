@@ -31,7 +31,7 @@
 //! #               + log.factor·n·d·ln(log.scale·D / (n²·d)) + constant
 //! major = { sag = 1.25, constant = "0.3 m" }
 //! minor = { major = 0.4 }       # minor axis B: the same terms, + major·A
-//! tilt = 10.0                   # major axis from vertical, °, top to the right
+//! tilt = 10.0                   # major axis from vertical, ° (or "10°"), top to the right
 //! centre_above_rest = 0.3       # ellipse centre above the wire, × A
 //! along = "sine"                # size along the span: sine (loops) or constant
 //! ```
@@ -274,7 +274,8 @@ struct RawMethod {
     loops: u32,
     major: RawAxis,
     minor: RawAxis,
-    #[serde(default)]
+    // Degrees, or text with its unit ("10°").
+    #[serde(default, deserialize_with = "ols_core::units::si::de_degrees")]
     tilt: f64,
     #[serde(default)]
     centre_above_rest: f64,
@@ -688,7 +689,7 @@ mod tests {
     fn axes_from_sag_by_hand() {
         // Invented coefficients: A = 1.25 D + 0.3 m, B = 0.4 A.
         let p = params(
-            "[[method]]\nname = \"one\"\nloops = 1\nmajor = { sag = 1.25, constant = \"0.3 m\" }\nminor = { major = 0.4 }\ntilt = 10.0\ncentre_above_rest = 0.5\n",
+            "[[method]]\nname = \"one\"\nloops = 1\nmajor = { sag = 1.25, constant = \"0.3 m\" }\nminor = { major = 0.4 }\ntilt = \"10°\"\ncentre_above_rest = 0.5\n",
         );
         let m = &p.methods[0];
         let e = m.ellipse(10.0, 400.0, 0.03, 0.5);

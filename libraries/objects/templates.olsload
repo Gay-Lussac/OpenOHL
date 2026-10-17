@@ -10,28 +10,26 @@ id = "marker-ball-600"
 name = "Marker ball 600 mm"
 description = "Aircraft warning sphere, 600 mm"
 kind = "body"
-weight = 70.0
+weight = "70 N"
 shape = "sphere"
-diameter = 0.6
-
+diameter = "0.6 m"
 [[type]]
 id = "marker-ball-800"
 name = "Marker ball 800 mm"
 description = "Aircraft warning sphere, 800 mm"
 kind = "body"
-weight = 110.0
+weight = "110 N"
 shape = "sphere"
-diameter = 0.8
-
+diameter = "0.8 m"
 [[type]]
 id = "obstruction-light"
 name = "Obstruction light"
 description = "Light on the wire, a cylinder along it"
 kind = "body"
-weight = 150.0
+weight = "150 N"
 shape = "cylinder"
-diameter = 0.25
-length = 0.6
+diameter = "0.25 m"
+length = "0.6 m"
 axis = "along"
 
 [[type]]
@@ -39,17 +37,16 @@ id = "bird-diverter"
 name = "Bird diverter"
 description = "Spiral or flapper: its wind area given"
 kind = "body"
-weight = 5.0
+weight = "5 N"
 shape = "areas"
-wind_area = 0.03
-ice_area = 0.06
-
+wind_area = "0.03 m²"
+ice_area = "0.06 m²"
 [[type]]
 id = "weight-50kg"
 name = "Weight 50 kg"
 description = "A weight without wind area"
 kind = "body"
-weight = 490.0
+weight = "490 N"
 shape = "point"
 
 [[type]]
@@ -57,32 +54,29 @@ id = "tap-clamp"
 name = "Tap clamp"
 description = "Holds a jumper starting from the wire (a hinge: forces only)"
 kind = "clamp"
-weight = 30.0
+weight = "30 N"
 shape = "cylinder"
-diameter = 0.08
-length = 0.25
+diameter = "0.08 m"
+length = "0.25 m"
 axis = "along"
-clamp_length = 0.25
-
+clamp_length = "0.25 m"
 [[type]]
 id = "spacer-clamp"
 name = "Spacer clamp"
 description = "Holds an interphase spacer's end (a hinge: forces only)"
 kind = "clamp"
-weight = 20.0
+weight = "20 N"
 shape = "point"
-clamp_length = 0.15
-
+clamp_length = "0.15 m"
 [[type]]
 id = "heated-stretch"
 name = "Heated stretch"
 description = "Extra load along a stretch of wire"
 kind = "spread"
-load = 5.0
-
+load = "5 N/m"
 [[type]]
 id = "lashed-cable"
 name = "Lashed cable"
 description = "A cable lashed on the wire"
 kind = "spread"
-load = 8.0
+load = "8 N/m"
