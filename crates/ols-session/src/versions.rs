@@ -69,7 +69,7 @@ pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS vc_blob (
         name TEXT PRIMARY KEY, kind TEXT NOT NULL, revision TEXT,
         protected INTEGER NOT NULL DEFAULT 0, user TEXT NOT NULL,
         time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        note TEXT NOT NULL DEFAULT '');";
+        note TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '');";
 
 /// The first branch of every project.
 pub const MAIN: &str = "main";

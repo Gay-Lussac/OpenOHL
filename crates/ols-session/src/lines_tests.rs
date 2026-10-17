@@ -219,7 +219,10 @@ fn files_of_schema_2_become_lines() {
              ALTER TABLE oplog DROP COLUMN line;
              DROP TABLE spatial_index;
              DELETE FROM vc_ref WHERE name <> 'main';
-             UPDATE ols_meta SET value = '2' WHERE key = 'session_schema';",
+             UPDATE ols_meta SET value = '2' WHERE key = 'session_schema';
+             CREATE TABLE line_snapshot (
+                 name TEXT PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                 user TEXT NOT NULL, note TEXT NOT NULL, json TEXT NOT NULL);",
         )
         .unwrap();
         c.execute(
@@ -231,6 +234,14 @@ fn files_of_schema_2_become_lines() {
     let mut s = Session::open(&path).unwrap();
     assert_eq!(s.current_line(), "main");
     assert_eq!(s.line(), &example());
+    // The frozen copies' table is gone once they are lines.
+    let gone = !rusqlite::Connection::open(&path)
+        .unwrap()
+        .prepare("SELECT 1 FROM sqlite_master WHERE name = 'line_snapshot'")
+        .unwrap()
+        .exists([])
+        .unwrap();
+    assert!(gone);
     let lines = s.lines().unwrap();
     assert_eq!(lines.len(), 2);
     assert_eq!(

@@ -237,7 +237,14 @@ impl Session {
         mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>>,
     ) -> Result<(), SessionError> {
         // Frozen project lines of earlier files: editable lines now.
-        let saved: Vec<(String, String, String, String)> = {
+        // (Files made since schema 4 have no such table.)
+        let has_saved = self
+            .conn
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'line_snapshot'")?
+            .exists([])?;
+        let saved: Vec<(String, String, String, String)> = if !has_saved {
+            Vec::new()
+        } else {
             let mut stmt = self
                 .conn
                 .prepare("SELECT name, user, note, json FROM line_snapshot ORDER BY time, name")?;
@@ -266,6 +273,9 @@ impl Session {
             tx.execute("DELETE FROM line_snapshot WHERE name = ?1", params![name])?;
             tx.commit()?;
             by_line.insert(new, objects);
+        }
+        if has_saved {
+            self.conn.execute("DROP TABLE line_snapshot", [])?;
         }
         // Branches without a working state: their last revision's.
         for r in self.refs()? {
