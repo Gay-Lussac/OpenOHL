@@ -468,10 +468,273 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether `path` names a project file (`.ols`).
+pub fn is_project(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e == "ols")
+}
+
+/// Opens an existing project file to read it (one that is missing is not
+/// created). Opening upgrades a project file of an older build, as the
+/// desktop application does.
+pub fn open_existing(path: &Path) -> Result<Session, String> {
+    if !path.is_file() {
+        return Err(format!("{}: no such project file", path.display()));
+    }
+    Session::open(path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The library kinds a project keeps with its line (as the desktop
+/// application's `PROJECT_LIBRARIES`), each written to its folder of the
+/// working copies: poles, structure models and load tables go with the
+/// structure types.
+const PROJECT_LIBRARY_KINDS: [(&str, &str); 13] = [
+    ("cables", "cables"),
+    ("structures", "structures"),
+    ("insulators", "insulators"),
+    ("weather", "weather"),
+    ("loadcases", "loadcases"),
+    ("rules", "rules"),
+    ("galloping", "galloping"),
+    ("ambient", "ambient"),
+    ("costs", "costs"),
+    ("poles", "structures"),
+    ("femodels", "structures"),
+    ("sections", "sections"),
+    ("loads", "structures"),
+];
+
+/// The libraries given on the command line (`None`: not given).
+#[derive(Default, Clone, Copy)]
+pub struct GivenLibraries<'a> {
+    /// `--library`: the wire library.
+    pub cables: Option<&'a Path>,
+    /// `--structures`.
+    pub structures: Option<&'a Path>,
+    /// `--insulators`.
+    pub insulators: Option<&'a Path>,
+    /// `--sections`.
+    pub sections: Option<&'a Path>,
+}
+
+/// The libraries of `ols line` and `ols zones`: for a project file, those
+/// it keeps with its current line (as the desktop application reads
+/// them), written to a working folder that is removed when this is
+/// dropped; a library given on the command line wins, and a kind the
+/// project does not hold is looked up as for a line file (the shipped
+/// wire and insulator libraries, the `Structures` and `Sections` folders
+/// next to the file). Nothing is written to the project file.
+pub struct Libraries {
+    /// The working folder of the project's files (removed on drop).
+    work: Option<PathBuf>,
+    /// Wire library (file or folder).
+    pub cables: PathBuf,
+    /// Structure type folder.
+    pub structures: PathBuf,
+    /// Insulator assembly folder.
+    pub insulators: PathBuf,
+    /// Section library, if any.
+    pub sections: Option<PathBuf>,
+    /// Where each came from, one line per kind: "cables: the project's
+    /// (2 files)".
+    pub sources: Vec<String>,
+}
+
+impl Drop for Libraries {
+    fn drop(&mut self) {
+        if let Some(w) = &self.work {
+            let _ = std::fs::remove_dir_all(w);
+        }
+    }
+}
+
+/// "1 file", "2 files".
+fn files(n: usize) -> String {
+    format!("{n} file{}", if n == 1 { "" } else { "s" })
+}
+
+impl Libraries {
+    /// The libraries of `file` (a line or project file) with those given.
+    pub fn resolve(file: &Path, given: GivenLibraries) -> Result<Self, String> {
+        use ols_core::files::shipped_library;
+        let mut stored: Vec<(&str, usize)> = Vec::new();
+        let mut work = None;
+        if is_project(file) {
+            let session = open_existing(file)?;
+            let mut held = Vec::new();
+            for (kind, folder) in PROJECT_LIBRARY_KINDS {
+                let f = session.library_files(kind).map_err(|e| e.to_string())?;
+                if !f.is_empty() {
+                    stored.push((kind, f.len()));
+                    held.push((folder, f));
+                }
+            }
+            if !held.is_empty() {
+                let dir = working_folder(file);
+                let _ = std::fs::remove_dir_all(&dir);
+                // Removed on drop from here on, also when writing fails.
+                work = Some(dir.clone());
+                let write = || -> Result<(), String> {
+                    for (folder, f) in &held {
+                        let d = dir.join(folder);
+                        std::fs::create_dir_all(&d).map_err(|e| format!("{}: {e}", d.display()))?;
+                        for (name, text) in f {
+                            if !ols_session::safe_file_name(name) {
+                                return Err(format!(
+                                    "library file \"{name}\": not a plain file name"
+                                ));
+                            }
+                            std::fs::write(d.join(name), text)
+                                .map_err(|e| format!("{}: {e}", d.join(name).display()))?;
+                        }
+                    }
+                    Ok(())
+                };
+                if let Err(e) = write() {
+                    let _ = std::fs::remove_dir_all(&dir);
+                    return Err(e);
+                }
+            }
+        }
+        let held = |kind: &str| stored.iter().find(|(k, _)| *k == kind).map(|(_, n)| *n);
+        let mut sources = Vec::new();
+        let project = |kind: &str| -> Option<(PathBuf, String)> {
+            let n = held(kind)?;
+            let dir = work.as_ref()?.join(kind);
+            Some((dir, format!("{kind}: the project's ({})", files(n))))
+        };
+        let given_text =
+            |kind: &str, p: &Path, flag: &str| format!("{kind}: {} ({flag})", p.display());
+        let (cables, line) = match (given.cables, project("cables")) {
+            (Some(p), _) => (p.to_path_buf(), given_text("cables", p, "--library")),
+            (None, Some(x)) => x,
+            (None, None) => {
+                let p = shipped_library("cables");
+                let t = format!("cables: {} (shipped)", p.display());
+                (p, t)
+            }
+        };
+        sources.push(line);
+        let (structures, line) = match (given.structures, project("structures")) {
+            (Some(p), _) => (p.to_path_buf(), given_text("structures", p, "--structures")),
+            (None, Some((dir, mut t))) => {
+                // Poles, structure models and load tables beside them.
+                for kind in ["poles", "femodels", "loads"] {
+                    if let Some(n) = held(kind) {
+                        t.push_str(&format!(", {kind} {}", files(n)));
+                    }
+                }
+                (dir, t)
+            }
+            (None, None) => {
+                let p = structures_dir(file, None);
+                let t = format!("structures: {} (next to the file)", p.display());
+                (p, t)
+            }
+        };
+        sources.push(line);
+        let (insulators, line) = match (given.insulators, project("insulators")) {
+            (Some(p), _) => (p.to_path_buf(), given_text("insulators", p, "--insulators")),
+            (None, Some(x)) => x,
+            (None, None) => {
+                let p = shipped_library("insulators");
+                let t = format!("insulators: {} (shipped)", p.display());
+                (p, t)
+            }
+        };
+        sources.push(line);
+        let (sections, line) = match (given.sections, project("sections")) {
+            (Some(p), _) => (
+                Some(p.to_path_buf()),
+                given_text("sections", p, "--sections"),
+            ),
+            (None, Some((dir, t))) => (Some(dir), t),
+            (None, None) => match file.parent().map(|d| d.join("Sections")) {
+                Some(d) if d.is_dir() => {
+                    let t = format!("sections: {} (next to the file)", d.display());
+                    (Some(d), t)
+                }
+                _ => (None, "sections: none".to_owned()),
+            },
+        };
+        sources.push(line);
+        Ok(Libraries {
+            work,
+            cables,
+            structures,
+            insulators,
+            sections,
+            sources,
+        })
+    }
+
+    /// A file named on the command line: the path when it exists, else
+    /// the project's own file of `kind` of that name (its working copy);
+    /// with "(the project's)" when it is one.
+    pub fn named(&self, kind: &str, given: &Path) -> (PathBuf, bool) {
+        if !given.exists()
+            && let (Some(work), Some(name)) = (&self.work, given.file_name())
+        {
+            let own = work.join(kind).join(name);
+            if own.is_file() {
+                return (own, true);
+            }
+        }
+        (given.to_path_buf(), false)
+    }
+
+    /// A file for the summary: "NAME (the project's)" for a working copy
+    /// of one of the project's files, else its path.
+    pub fn describe(&self, p: &Path) -> String {
+        match (&self.work, p.file_name()) {
+            (Some(w), Some(name)) if p.starts_with(w) => {
+                format!("{} (the project's)", name.to_string_lossy())
+            }
+            _ => p.display().to_string(),
+        }
+    }
+
+    /// The project's first file of `kind` (its working copy), if it holds
+    /// one.
+    pub fn first(&self, kind: &str) -> Option<PathBuf> {
+        let dir = self.work.as_ref()?.join(kind);
+        let mut f: Vec<PathBuf> = std::fs::read_dir(dir)
+            .ok()?
+            .filter_map(|e| Some(e.ok()?.path()))
+            .filter(|p| p.is_file())
+            .collect();
+        f.sort();
+        f.into_iter().next()
+    }
+
+    /// Prints where each library came from.
+    pub fn print(&self, kinds: &[&str]) {
+        println!("libraries:");
+        for s in &self.sources {
+            if kinds.iter().any(|k| s.starts_with(&format!("{k}:"))) {
+                println!("  {s}");
+            }
+        }
+    }
+}
+
+/// A working folder of its own for the libraries of project `file`.
+fn working_folder(file: &Path) -> PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let stem = file
+        .file_stem()
+        .map_or("project".into(), |s| s.to_string_lossy().into_owned());
+    std::env::temp_dir().join(format!(
+        "ols-cli-libraries-{stem}-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ))
+}
+
 /// Loads a line from a line file or a project file (`.ols`).
 pub fn load_line(path: &Path) -> Result<ols_line::Line, String> {
-    if path.extension().is_some_and(|e| e == "ols") {
-        let s = open(path)?;
+    if is_project(path) {
+        let s = open_existing(path)?;
         if !s.has_line() {
             return Err(format!("{}: the project holds no line", path.display()));
         }

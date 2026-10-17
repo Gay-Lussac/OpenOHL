@@ -172,6 +172,10 @@ ols zones examples/synthetic-line/synthetic-line.ols.json --rules rules.olsr \
 
 ```text
 vertical clearances: Demo (rules.olsr) — 1 rule row(s); zone ±0 m in slices of 0 m, wind stepped by 100 Pa from the left and the right, method fe
+libraries:
+  cables: libraries/cables (shipped)
+  structures: examples/synthetic-line/Structures (next to the file)
+  insulators: libraries/insulators (shipped)
 weather: examples/synthetic-line/weather-cases.olswc — 5 case(s), 2 wind position(s)
 ground: survey file examples/synthetic-line/synthetic-survey.csv
 points: not needed
@@ -195,21 +199,28 @@ are.
 
 | Option | Meaning |
 |---|---|
-| `--rules FILE` | The rule file (`.olsr`). |
+| `--rules FILE` | The rule file (`.olsr`); for a project, also the name of one of its own rule files. |
 | `--measure vertical\|radial` | The measure, for a rule file with both. |
-| `--weather FILE` | Weather cases (`.olswc`). Default: the file of the same name as the rule file, next to it or in a `weather` folder beside it (a design code's preset), else the project's weather case file used last. |
+| `--weather FILE` | Weather cases (`.olswc`; for a project, also the name of one of its own). Default: the file of the same name as the rule file, next to it or in a `weather` folder beside it (a design code's preset), else the project's weather case file used last, else the project's first weather case file. |
 | `--case NAME` | Only these weather cases (wildcards; repeatable). Default: every case the rules name. |
 | `--cloud SPEC` | Point cloud: `FILE.ols`, `FILE.ols#name` or `FILE.copc.laz`. Default: the project's own point cloud, if it holds one. `--no-cloud` reads none. |
 | `--terrain FILE`, `--surface NAME` | The ground: survey points, or a surface stored in the project. Default: the project's surface of the checks, else its active surface (as set by an earlier build), else the ground classes of the point cloud along the spans (lowest point per square metre, triangles of up to 50 m) — as the program builds it. |
 | `--lidar-classes FILE` | Class scheme (`.olsc`); default the point cloud's own, else ASPRS. |
-| `--library`, `--structures`, `--insulators` | As for `ols line`: the shipped wire and insulator libraries, the `Structures` folder next to the file. |
+| `--library`, `--structures`, `--insulators` | As for `ols line`: for a project, the libraries it keeps with its current line; else (and for a kind the project holds none of) the shipped wire and insulator libraries, the `Structures` folder next to the file. |
 | `--search-distance M`, `--circuits NAME`, `--method fe\|rs` | Override the rule file's `[check]` (`--circuits` repeatable; `""`: the sections without a circuit). |
 | `--csv FILE` | Every finding: `status` (`violation`, then `ok` for each rule's lowest clearance that keeps it), rule, section, span, case, wind pressure and side, target, class, clearance and required distance, count, the wire and target points. |
 | `--time-limit S` | Stop after this many seconds (default 600): solving every wind position and reading the points. |
 
-The report lists the sections solved, the wind positions, the LiDAR points
-read and the time taken, then the findings as the window shows them:
-the violations, worst first, then each rule's lowest clearance. The exit
+The report says where each library came from (`cables: the project's
+(2 files)`, `--library`, shipped, next to the file), lists the sections
+solved, the wind positions, the LiDAR points read and the time taken, then
+the findings as the window shows them: the violations, worst first, then
+each rule's lowest clearance. A rule of several voltages makes one row per
+voltage; the summary keeps them together: one line `NAME: nothing within
+reach (220, 380 kV)` per rule name, and one note `no wire of 150, 125,
+110 kV: 12 rule rows not used` for the rows of voltages the line does not
+have (a note repeated is printed once with its count). The CSV keeps one
+row per finding. The exit
 status is **0** with no violation, **1** with violations, **2** on an
 error (a rule file with both measures, no weather case, the time limit) —
 for scripts and batch runs.

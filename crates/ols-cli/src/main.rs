@@ -196,25 +196,27 @@ enum Command {
 }
 
 /// Arguments of `ols line`.
-#[derive(clap::Args)]
+#[derive(clap::Args, Clone)]
 struct LineArgs {
     /// Line file (.ols.json) or project file (.ols).
     file: PathBuf,
-    /// Wire library: .olsw file or directory (default: the shipped
-    /// libraries/cables, in the current folder or next to the program).
+    /// Wire library: .olsw file or directory (default: a project's own,
+    /// else the shipped libraries/cables, in the current folder or next to
+    /// the program).
     #[arg(long)]
     library: Option<PathBuf>,
     /// Structure type directory (.olss pylon files), for typed structures
-    /// (default: the `Structures` folder next to the line or project file).
+    /// (default: a project's own, else the `Structures` folder next to the
+    /// line or project file).
     #[arg(long)]
     structures: Option<PathBuf>,
     /// Section library (.olssec file or folder) the structure models'
-    /// members refer to (default: the `Sections` folder next to the line
-    /// or project file, if there is one).
+    /// members refer to (default: a project's own, else the `Sections`
+    /// folder next to the line or project file, if there is one).
     #[arg(long)]
     sections: Option<PathBuf>,
-    /// Insulator assembly library directory (.olsi) (default: the shipped
-    /// libraries/insulators).
+    /// Insulator assembly library directory (.olsi) (default: a project's
+    /// own, else the shipped libraries/insulators).
     #[arg(long)]
     insulators: Option<PathBuf>,
     /// Cable temperature, °C.
@@ -237,9 +239,10 @@ struct LineArgs {
     /// iced diameter for the wind, none = bare diameter).
     #[arg(long)]
     ice_density: Option<f64>,
-    /// Weather case file (.olswc): solve and check its cases (all, or those
-    /// chosen with --case / --tag) instead of the single case of
-    /// --temperature, --wind-pressure and the ice options.
+    /// Weather case file (.olswc; for a project, also the name of one of
+    /// its own): solve and check its cases (all, or those chosen with
+    /// --case / --tag) instead of the single case of --temperature,
+    /// --wind-pressure and the ice options.
     #[arg(long)]
     weather: Option<PathBuf>,
     /// Weather case to run, by name (`*` and `?` wildcards; repeatable).
@@ -257,8 +260,9 @@ struct LineArgs {
     /// Write one row per span (tensions, sag, mid and low points) as CSV.
     #[arg(long)]
     spans_csv: Option<PathBuf>,
-    /// Load cases (.olslc): the loads on the structures in each (their
-    /// weather cases from --weather).
+    /// Load cases (.olslc; for a project, also the name of one of its
+    /// own): the loads on the structures in each (their weather cases from
+    /// --weather).
     #[arg(long, requires = "weather")]
     load_cases: Option<PathBuf>,
     /// Write the structure loads (every attachment, every load case) as CSV.
@@ -307,8 +311,9 @@ struct LineArgs {
     /// --rules).
     #[arg(long)]
     clearance: Option<f64>,
-    /// Clearance rules (.olsr): vertical and radial clearances to the
-    /// ground, LiDAR classes, other lines and wires of this line.
+    /// Clearance rules (.olsr; for a project, also the name of one of its
+    /// own): vertical and radial clearances to the ground, LiDAR classes,
+    /// other lines and wires of this line.
     #[arg(long)]
     rules: Option<PathBuf>,
     /// Another line (.ols.json) for wire-to-wire clearances (repeatable);
@@ -612,7 +617,9 @@ enum PointcloudCommand {
 
 #[derive(Subcommand)]
 enum PluginCommand {
-    /// Load a WebAssembly plugin from its directory and print what it reports.
+    /// Load a WebAssembly plugin of any world (design code, check, file
+    /// format, terrain, project or the minimal one, from its manifest's
+    /// extension points) from its directory and print what it reports.
     Info {
         /// Directory containing `ols-plugin.toml`.
         dir: PathBuf,
@@ -1198,6 +1205,37 @@ fn sagtension(job: &std::path::Path, units: Units, csv: Option<&std::path::Path>
 }
 
 fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
+    // A project's own libraries (unless given), and its own weather case,
+    // load case and rule files by name; the working copies are removed
+    // when `libs` is dropped, at the end.
+    let libs = match project::Libraries::resolve(
+        &args.file,
+        project::GivenLibraries {
+            cables: args.library.as_deref(),
+            structures: args.structures.as_deref(),
+            insulators: args.insulators.as_deref(),
+            sections: args.sections.as_deref(),
+        },
+    ) {
+        Ok(l) => l,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let own = |kind: &str, p: &Option<PathBuf>| p.as_deref().map(|p| libs.named(kind, p).0);
+    let resolved = LineArgs {
+        library: Some(libs.cables.clone()),
+        structures: Some(libs.structures.clone()),
+        insulators: Some(libs.insulators.clone()),
+        sections: libs.sections.clone(),
+        weather: own("weather", &args.weather),
+        load_cases: own("loadcases", &args.load_cases),
+        rules: own("rules", &args.rules),
+        ..args.clone()
+    };
+    let args = &resolved;
+    libs.print(&["cables", "structures", "insulators", "sections"]);
     let LineArgs {
         file,
         library,
@@ -1893,19 +1931,31 @@ fn structures_derive(file: &std::path::Path, out: &std::path::Path, inline: bool
 }
 
 fn plugin_info(dir: &std::path::Path) -> ExitCode {
+    // The world from the manifest's extension points.
     let result = ols_plugins::WasmHost::new().and_then(|host| {
-        let mut plugin = host.load(dir)?;
-        let info = plugin.describe()?;
-        Ok((plugin.manifest().clone(), info))
+        let d = host.describe_any(dir)?;
+        Ok((ols_plugins::Manifest::load(dir)?, d))
     });
     match result {
-        Ok((manifest, info)) => {
-            println!("name         {}", info.name);
-            println!("version      {}", info.version);
-            println!("description  {}", info.description);
+        Ok((manifest, d)) => {
+            println!("name         {}", d.info.name);
+            println!("version      {}", d.info.version);
+            println!("description  {}", d.info.description);
+            println!("world        {}", d.worlds.join(", "));
+            println!(
+                "extensions   {}",
+                if manifest.plugin.extension_points.is_empty() {
+                    "none".to_owned()
+                } else {
+                    manifest.plugin.extension_points.join(", ")
+                }
+            );
             println!("tier         {}", manifest.plugin.tier);
             println!("sdk          {}", manifest.plugin.sdk);
             println!("entry        {}", manifest.entry_path().display());
+            for line in &d.details {
+                println!("  {line}");
+            }
             ExitCode::SUCCESS
         }
         Err(error) => {

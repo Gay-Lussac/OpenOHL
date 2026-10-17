@@ -42,8 +42,9 @@ cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
 | Command | What it does | See |
 |---|---|---|
 | `ols sagtension` | sag-tension of one tension section from a job file | below |
-| `ols line` | solves a line file in 3D: clearances, structure loads, usage, exports | [Line files](line-file.md), [Terrain and ground clearance](terrain.md), [Load cases](loads.md) |
-| `ols zones` | vertical and radial clearances to the ground and LiDAR classes in the wind, by a rule file (the desktop clearance windows' check) | [Terrain and ground clearance](terrain.md#vertical-and-radial-clearances-without-the-window-ols-zones) |
+| `ols line` | solves a line file in 3D: clearances, structure loads, usage, exports; given a project, with the libraries it keeps | [Line files](line-file.md), [Terrain and ground clearance](terrain.md), [Load cases](loads.md), [Project files](project.md) |
+| `ols zones` | vertical and radial clearances to the ground and LiDAR classes in the wind, by a rule file (the desktop clearance windows' check); given a project, with the libraries it keeps | [Terrain and ground clearance](terrain.md#vertical-and-radial-clearances-without-the-window-ols-zones) |
+| `ols plugin info` | loads a plugin of any kind (design code, check, file format, terrain, project, minimal) and prints what it describes: name, version, world, formats or checks | [Plugins](../development/plugins.md) |
 | `ols drawing` | plan and profile sheets and profile exports | [Drawings](drawings.md) |
 | `ols structures` | derive structure types; frame/truss and pole analysis | [Structure libraries](structure-library.md), [Structure analysis](structure-analysis.md) |
 | `ols code` | weather and load cases from a design-code plugin | [Design codes](design-codes.md) |

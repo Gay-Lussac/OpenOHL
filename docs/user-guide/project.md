@@ -15,6 +15,24 @@ ols project export project.ols --out line.ols.json
 ols line project.ols --temperature 80          # every command taking a line file takes a project too
 ```
 
+**`ols line` and `ols zones` read the project's libraries.** Given a
+project file, they take the libraries the project keeps with its current
+line, as the desktop application does: the wire library, structure types
+(with their poles and structure models), insulator assemblies and section
+library — written to a temporary folder for the run and removed at its
+end. A library given on the command line (`--library`, `--structures`,
+`--insulators`, `--sections`) wins; a kind the project holds none of is
+looked up as for a line file (the shipped wire and insulator libraries,
+the `Structures` and `Sections` folders next to the file). `--weather`,
+`--load-cases` and `--rules` also take the name of one of the project's
+own files (`--weather cases.olswc`), and `ols zones` falls back on the
+project's first weather case file. The summary says where each library
+came from (`cables: the project's (2 files)`). The commands write nothing
+to the project; opening a project file of an older build upgrades it (as
+the desktop application does, e.g. the library files of session schema 3
+become objects of each project line), and a project file that does not
+exist is not created.
+
 ## Commands
 
 Every change is a command (JSON with an `op`), validated before it is

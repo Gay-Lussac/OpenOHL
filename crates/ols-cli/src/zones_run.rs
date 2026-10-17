@@ -34,23 +34,24 @@ const CHECK_SURFACE_SETTING: &str = "app.check_surface";
 const SURFACES_SETTING: &str = "app.surfaces";
 
 /// Arguments of `ols zones`.
-#[derive(clap::Args)]
+#[derive(clap::Args, Clone)]
 pub struct ZonesArgs {
     /// Line file (.ols.json) or project file (.ols).
     pub file: PathBuf,
-    /// Clearance rules (.olsr): the rules of one measure (vertical or
-    /// radial) with ground or LiDAR class targets; its `[check]` (circuits,
-    /// method, search distance) and `[wind]` are used.
+    /// Clearance rules (.olsr; for a project, also the name of one of its
+    /// own): the rules of one measure (vertical or radial) with ground or
+    /// LiDAR class targets; its `[check]` (circuits, method, search
+    /// distance) and `[wind]` are used.
     #[arg(long)]
     pub rules: PathBuf,
     /// The measure checked, when the rule file has both: vertical or
     /// radial.
     #[arg(long)]
     pub measure: Option<String>,
-    /// Weather case file (.olswc) (default: the file of the same name as
-    /// the rule file, next to it or in a `weather` folder beside it — a
-    /// design code's preset; else the project's weather case file used
-    /// last).
+    /// Weather case file (.olswc; for a project, also the name of one of
+    /// its own) (default: the file of the same name as the rule file, next
+    /// to it or in a `weather` folder beside it — a design code's preset;
+    /// else the project's weather case file used last, else its first).
     #[arg(long)]
     pub weather: Option<PathBuf>,
     /// Weather case to check, by name (`*` and `?` wildcards; repeatable;
@@ -77,16 +78,17 @@ pub struct ZonesArgs {
     /// else ASPRS LAS 1.4): the classes of the rules' roles.
     #[arg(long)]
     pub lidar_classes: Option<PathBuf>,
-    /// Wire library: .olsw file or directory (default: the shipped
-    /// libraries/cables).
+    /// Wire library: .olsw file or directory (default: a project's own,
+    /// else the shipped libraries/cables).
     #[arg(long)]
     pub library: Option<PathBuf>,
-    /// Structure type directory (.olss), for typed structures (default:
-    /// the `Structures` folder next to the line or project file).
+    /// Structure type directory (.olss), for typed structures (default: a
+    /// project's own, else the `Structures` folder next to the line or
+    /// project file).
     #[arg(long)]
     pub structures: Option<PathBuf>,
-    /// Insulator assembly library directory (.olsi) (default: the shipped
-    /// libraries/insulators).
+    /// Insulator assembly library directory (.olsi) (default: a project's
+    /// own, else the shipped libraries/insulators).
     #[arg(long)]
     pub insulators: Option<PathBuf>,
     /// LiDAR points farther from the wires are ignored, m (overrides the
@@ -157,29 +159,29 @@ fn measure_of(set: &RuleSet, asked: Option<&str>) -> Result<Measure, String> {
 
 /// Opens a project file (`None`: a line file).
 fn session_of(file: &Path) -> Result<Option<ols_session::Session>, String> {
-    if file.extension().is_none_or(|e| e != "ols") {
+    if !crate::project::is_project(file) {
         return Ok(None);
     }
-    ols_session::Session::open(file)
-        .map(Some)
-        .map_err(|e| format!("{}: {e}", file.display()))
+    crate::project::open_existing(file).map(Some)
 }
 
 /// The weather cases: given, the preset's (same name as the rule file),
-/// else the project's used last; with where they come from.
+/// else the project's used last, else the project's first weather case
+/// file; with where they come from.
 fn weather_cases(
     args: &ZonesArgs,
     session: Option<&ols_session::Session>,
+    libs: &crate::project::Libraries,
 ) -> Result<(WeatherCases, String), String> {
     if let Some(p) = &args.weather {
-        return Ok((WeatherCases::load(p)?, p.display().to_string()));
+        return Ok((WeatherCases::load(p)?, libs.describe(p)));
     }
     let ext = ols_weather::WEATHER_FILE_EXTENSION;
     if let (Some(dir), Some(stem)) = (args.rules.parent(), args.rules.file_stem()) {
         let name = format!("{}.{ext}", stem.to_string_lossy());
         for p in [dir.join(&name), dir.join("../weather").join(&name)] {
             if p.is_file() {
-                return Ok((WeatherCases::load(&p)?, p.display().to_string()));
+                return Ok((WeatherCases::load(&p)?, libs.describe(&p)));
             }
         }
     }
@@ -196,6 +198,9 @@ fn weather_cases(
             let set = WeatherCases::parse(text).map_err(|e| format!("{name}: {e}"))?;
             return Ok((set, format!("{name} (the project's)")));
         }
+    }
+    if let Some(p) = libs.first("weather") {
+        return Ok((WeatherCases::load(&p)?, libs.describe(&p)));
     }
     Err("no weather case file: give --weather".into())
 }
@@ -282,7 +287,21 @@ fn ground_of(
 
 /// Runs the check and prints its report (and writes the CSV).
 pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
-    use ols_core::files::shipped_library;
+    // A project's own libraries (unless given), and its own rule and
+    // weather case files by name.
+    let libs = crate::project::Libraries::resolve(
+        &args.file,
+        crate::project::GivenLibraries {
+            cables: args.library.as_deref(),
+            structures: args.structures.as_deref(),
+            insulators: args.insulators.as_deref(),
+            sections: None,
+        },
+    )?;
+    let mut own = args.clone();
+    own.rules = libs.named("rules", &args.rules).0;
+    own.weather = args.weather.as_deref().map(|w| libs.named("weather", w).0);
+    let args = &own;
     if !(args.time_limit.is_finite() && args.time_limit > 0.0) {
         return Err("--time-limit must be > 0 s".into());
     }
@@ -299,17 +318,9 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
             e
         }
     };
-    let library = args
-        .library
-        .clone()
-        .unwrap_or_else(|| shipped_library("cables"));
-    let insulators = args
-        .insulators
-        .clone()
-        .unwrap_or_else(|| shipped_library("insulators"));
-    let structures = crate::project::structures_dir(&args.file, args.structures.as_deref());
-    let (mut line, _) = crate::project::load_resolved(&args.file, &structures, &insulators)?;
-    let library = ols_cables::Library::load(&library).map_err(|e| e.to_string())?;
+    let (library, insulators, structures) = (&libs.cables, &libs.insulators, &libs.structures);
+    let (mut line, _) = crate::project::load_resolved(&args.file, structures, insulators)?;
+    let library = ols_cables::Library::load(library).map_err(|e| e.to_string())?;
     let session = session_of(&args.file)?;
 
     // The rules, their measure, zone, wind and check.
@@ -336,7 +347,7 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         return Err(format!(
             "no {} rule to the ground or to LiDAR classes in {}{}",
             measure.as_str(),
-            args.rules.display(),
+            libs.describe(&args.rules),
             if imported.notes.is_empty() {
                 String::new()
             } else {
@@ -370,7 +381,7 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
     let rules = imported.rules;
 
     // The weather cases and the wind positions.
-    let (weather, weather_from) = weather_cases(args, session.as_ref())?;
+    let (weather, weather_from) = weather_cases(args, session.as_ref(), &libs)?;
     line.set_weather_cases(&weather.cases);
     let cases = weather.select(&args.case, &[])?;
     let states = zone::wind_states(&cases, |n| rules.iter().any(|r| r.applies(n)), &wind);
@@ -407,16 +418,17 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         "{} clearances: {} — {} rule row(s){}",
         measure.as_str(),
         if set.name.is_empty() {
-            args.rules.display().to_string()
+            libs.describe(&args.rules)
         } else {
-            format!("{} ({})", set.name, args.rules.display())
+            format!("{} ({})", set.name, libs.describe(&args.rules))
         },
         rules.len(),
         describe_check(&z, &wind, &check)
     );
-    for n in &imported.notes {
+    for n in condense_notes(&imported.notes) {
         println!("  note: {n}");
     }
+    libs.print(&["cables", "structures", "insulators"]);
     println!(
         "weather: {weather_from} — {} case(s), {} wind position(s)",
         cases.len(),
@@ -549,7 +561,7 @@ fn print_report(r: &ZoneCheckResult, scheme: &ols_lidar::ClassScheme) {
     for f in &r.failed {
         println!("  not solved: {f}");
     }
-    for n in &r.zone.notes {
+    for n in condense_notes(&r.zone.notes) {
         println!("  note: {n}");
     }
     let n = r.violations();
@@ -586,11 +598,128 @@ fn print_report(r: &ZoneCheckResult, scheme: &ols_lidar::ClassScheme) {
             }
         );
     }
-    for (k, low) in r.zone.lowest.iter().enumerate() {
-        if low.is_none() {
-            println!("  {}: nothing within reach", r.rules[k].name);
+    let empty: Vec<(&str, Option<f64>)> = r
+        .zone
+        .lowest
+        .iter()
+        .enumerate()
+        .filter(|(_, low)| low.is_none())
+        .map(|(k, _)| (r.rules[k].name.as_str(), r.rules[k].voltage))
+        .collect();
+    for line in nothing_within_reach(&empty, &r.zone.notes) {
+        println!("  {line}");
+    }
+}
+
+/// A note "\"NAME\": no wire of 150 kV" (a rule row that checks no wire,
+/// section or jumper of its voltage): (name, wire kind, voltage text).
+fn unused_row(note: &str) -> Option<(&str, &str, &str)> {
+    let rest = note.strip_prefix('"')?;
+    let (name, rest) = rest.split_once("\": no ")?;
+    let (kind, rest) = rest.split_once(" of ")?;
+    let kv = rest.strip_suffix(" kV")?;
+    (matches!(kind, "wire" | "section" | "jumper") && kv.parse::<f64>().is_ok())
+        .then_some((name, kind, kv))
+}
+
+/// The notes of a check for the summary: the rule rows of a voltage the
+/// line does not have (one per rule and voltage) in one note per wire
+/// kind — "no wire of 150, 125, 110 kV: 12 rule rows not used" — and a
+/// note repeated once with its count. The CSV keeps every finding.
+pub fn condense_notes(notes: &[String]) -> Vec<String> {
+    // Kind -> (voltages in order, rows); other notes -> count, in order.
+    let mut unused: Vec<(&str, Vec<&str>, usize)> = Vec::new();
+    let mut others: Vec<(&str, usize)> = Vec::new();
+    // Where each group goes among the notes (the first of it).
+    let mut order: Vec<(bool, usize)> = Vec::new();
+    for n in notes {
+        if let Some((_, kind, kv)) = unused_row(n) {
+            match unused.iter_mut().position(|(k, _, _)| *k == kind) {
+                Some(i) => {
+                    let (_, kvs, rows) = &mut unused[i];
+                    if !kvs.contains(&kv) {
+                        kvs.push(kv);
+                    }
+                    *rows += 1;
+                }
+                None => {
+                    order.push((true, unused.len()));
+                    unused.push((kind, vec![kv], 1));
+                }
+            }
+        } else {
+            match others.iter_mut().position(|(t, _)| *t == n.as_str()) {
+                Some(i) => others[i].1 += 1,
+                None => {
+                    order.push((false, others.len()));
+                    others.push((n, 1));
+                }
+            }
         }
     }
+    order
+        .into_iter()
+        .map(|(is_unused, i)| {
+            if is_unused {
+                let (kind, kvs, rows) = &unused[i];
+                format!(
+                    "no {kind} of {} kV: {rows} rule row{} not used",
+                    kvs.join(", "),
+                    if *rows == 1 { "" } else { "s" }
+                )
+            } else {
+                match others[i] {
+                    (text, 1) => text.to_owned(),
+                    (text, n) => format!("{text} ({n} times)"),
+                }
+            }
+        })
+        .collect()
+}
+
+/// The summary's "nothing within reach" lines: one per rule name (in
+/// order), with the voltages of its rows when it has several — the rows
+/// that check no wire of their voltage left out (a note says so); `rows`:
+/// the name and voltage of each rule row without a clearance found.
+pub fn nothing_within_reach(rows: &[(&str, Option<f64>)], notes: &[String]) -> Vec<String> {
+    let unused: Vec<(&str, &str)> = notes
+        .iter()
+        .filter_map(|n| unused_row(n))
+        .map(|(name, _, kv)| (name, kv))
+        .collect();
+    let mut by_name: Vec<(&str, Vec<String>, usize)> = Vec::new();
+    for (name, kv) in rows {
+        let kv = kv.map(|v| v.to_string());
+        if let Some(v) = &kv
+            && unused.contains(&(*name, v.as_str()))
+        {
+            continue;
+        }
+        let i = match by_name.iter().position(|(n, _, _)| n == name) {
+            Some(i) => i,
+            None => {
+                by_name.push((name, Vec::new(), 0));
+                by_name.len() - 1
+            }
+        };
+        let (_, kvs, count) = &mut by_name[i];
+        *count += 1;
+        if let Some(v) = kv
+            && !kvs.contains(&v)
+        {
+            kvs.push(v);
+        }
+    }
+    by_name
+        .into_iter()
+        .map(|(name, kvs, count)| {
+            if count > 1 && !kvs.is_empty() {
+                format!("{name}: nothing within reach ({} kV)", kvs.join(", "))
+            } else {
+                format!("{name}: nothing within reach")
+            }
+        })
+        .collect()
 }
 
 /// The CSV header of [`csv`].
@@ -628,4 +757,51 @@ pub fn csv(r: &ZoneCheckResult, scheme: &ols_lidar::ClassScheme) -> String {
         );
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A rule of many voltages: one note for the rows of voltages the line
+    /// lacks, one "nothing within reach" line per rule name.
+    #[test]
+    fn summary_groups_rule_rows_by_name() {
+        let mut notes: Vec<String> = [150.0, 125.0, 110.0, 150.0]
+            .iter()
+            .map(|v| format!("\"Trees\": no wire of {v} kV"))
+            .collect();
+        notes.push("\"Roads\": no wire of 110 kV".into());
+        notes.push("\"Ground\": none of its weather cases is in the model".into());
+        notes.push("\"Ground\": none of its weather cases is in the model".into());
+        notes.push("\"Earth\": no jumper of 16.7 kV".into());
+        assert_eq!(
+            condense_notes(&notes),
+            [
+                "no wire of 150, 125, 110 kV: 5 rule rows not used",
+                "\"Ground\": none of its weather cases is in the model (2 times)",
+                "no jumper of 16.7 kV: 1 rule row not used",
+            ]
+        );
+        // Of the rows without a clearance: those of a voltage not on the
+        // line are in the note; the others grouped by name.
+        let rows = [
+            ("Trees", Some(150.0)),
+            ("Trees", Some(220.0)),
+            ("Trees", Some(380.0)),
+            ("Trees", Some(220.0)),
+            ("Roads", Some(110.0)),
+            ("Ground", None),
+        ];
+        assert_eq!(
+            nothing_within_reach(&rows, &notes),
+            [
+                "Trees: nothing within reach (220, 380 kV)",
+                "Ground: nothing within reach",
+            ]
+        );
+        // "any voltage" is not a voltage: kept as it is.
+        let any = vec!["\"X\": no wire of any voltage".to_owned()];
+        assert_eq!(condense_notes(&any), any);
+    }
 }

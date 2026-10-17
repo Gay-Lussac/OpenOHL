@@ -1077,6 +1077,121 @@ pub fn discover_codes(roots: &[PathBuf]) -> Vec<Found> {
         .collect()
 }
 
+/// What a plugin of any world says about itself
+/// ([`WasmHost::describe_any`]).
+#[derive(Debug, Clone)]
+pub struct Description {
+    /// The worlds it was loaded in (`code-plugin`, `io-plugin`,
+    /// `terrain-plugin`, `project-plugin`, `check-plugin` or the minimal
+    /// `plugin`).
+    pub worlds: Vec<&'static str>,
+    /// Name, version and description from its `describe` (from the
+    /// manifest for a check plugin, which has none).
+    pub info: PluginInfo,
+    /// What else it offers, one line each: its formats, checks, the size of
+    /// its parameter template.
+    pub details: Vec<String>,
+}
+
+/// "format geojson: GeoJSON (.geojson, importer)".
+fn format_line(
+    id: &str,
+    description: &str,
+    extension: &str,
+    direction: Option<Direction>,
+) -> String {
+    let direction = match direction {
+        Some(Direction::Importer) => ", importer",
+        Some(Direction::Exporter) => ", exporter",
+        None => "",
+    };
+    format!("format {id}: {description} (.{extension}{direction})")
+}
+
+impl WasmHost {
+    /// Loads the plugin in `dir` in the world of each extension point its
+    /// manifest lists (`design-code`, `io`, `terrain`, `project`, `check`;
+    /// none of these: the minimal `plugin` world) and says what it
+    /// describes: `ols plugin info`.
+    pub fn describe_any(&self, dir: &Path) -> Result<Description, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        let has = |p: &str| manifest.plugin.extension_points.iter().any(|e| e == p);
+        let mut worlds = Vec::new();
+        let mut info: Option<PluginInfo> = None;
+        let mut details = Vec::new();
+        if has(DESIGN_CODE) {
+            let c = self.load_code(dir)?.describe()?;
+            details.push(format!(
+                "parameter template: {} lines",
+                c.parameters_template.lines().count()
+            ));
+            info.get_or_insert(PluginInfo {
+                name: c.name,
+                version: c.version,
+                description: c.description,
+            });
+            worlds.push("code-plugin");
+        }
+        if has("io") {
+            let mut p = self.load_io(dir)?;
+            let i = p.describe()?;
+            for f in p.formats()? {
+                details.push(format_line(
+                    &f.id,
+                    &f.description,
+                    &f.extension,
+                    Some(f.direction),
+                ));
+            }
+            info.get_or_insert(i);
+            worlds.push("io-plugin");
+        }
+        if has("terrain") {
+            let mut p = self.load_terrain(dir)?;
+            let i = p.describe()?;
+            for f in p.formats()? {
+                details.push(format_line(
+                    &f.id,
+                    &f.description,
+                    &f.extension,
+                    Some(f.direction),
+                ));
+            }
+            info.get_or_insert(i);
+            worlds.push("terrain-plugin");
+        }
+        if has("project") {
+            let mut p = self.load_project(dir)?;
+            let i = p.describe()?;
+            for (id, description, extension) in p.formats()? {
+                details.push(format_line(&id, &description, &extension, None));
+            }
+            info.get_or_insert(i);
+            worlds.push("project-plugin");
+        }
+        if has(CHECK) {
+            for c in self.load_check(dir)?.checks()? {
+                details.push(format!("check {}: {}", c.id, c.title));
+            }
+            worlds.push("check-plugin");
+        }
+        if worlds.is_empty() {
+            info = Some(self.load(dir)?.describe()?);
+            worlds.push("plugin");
+        }
+        let info = info.unwrap_or_else(|| PluginInfo {
+            name: manifest.plugin.name.clone(),
+            version: manifest.plugin.version.clone(),
+            description: manifest.plugin.description.clone(),
+        });
+        Ok(Description {
+            worlds,
+            info,
+            details,
+        })
+    }
+}
+
 /// A checked plugin, compiled, with its store ([`WasmHost::prepare`]).
 struct Prepared {
     manifest: Manifest,
@@ -1097,6 +1212,23 @@ impl WasmProjectPlugin {
     /// The plugin's manifest.
     pub fn manifest(&self) -> &Manifest {
         &self.manifest
+    }
+
+    /// Calls `describe`.
+    pub fn describe(&mut self) -> Result<PluginInfo, PluginError> {
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        let info = self
+            .instance
+            .call_describe(&mut self.store)
+            .map_err(|e| classify(e, &name, "describe", limits))?;
+        // Same WIT record, generated once per world.
+        Ok(PluginInfo {
+            name: info.name,
+            version: info.version,
+            description: info.description,
+        })
     }
 
     /// Calls `formats` (their id, description, extension).
@@ -1146,6 +1278,23 @@ impl WasmTerrainPlugin {
 
     fn arm(&mut self) {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
+    }
+
+    /// Calls `describe`.
+    pub fn describe(&mut self) -> Result<PluginInfo, PluginError> {
+        self.arm();
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        let info = self
+            .instance
+            .call_describe(&mut self.store)
+            .map_err(|e| classify(e, &name, "describe", limits))?;
+        // Same WIT record, generated once per world.
+        Ok(PluginInfo {
+            name: info.name,
+            version: info.version,
+            description: info.description,
+        })
     }
 
     /// Calls `formats`.
