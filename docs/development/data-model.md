@@ -132,7 +132,7 @@ files](../user-guide/line-file.md).
 | `structures` | `[Structure]` | — | towers and poles | — |
 | `sections` | `[Section]` | — | wire sections | structures + sets |
 | `jumpers` | `[Jumper]` | — | jumpers between wire points | structures + sets |
-| `spacers` | `[Spacer]` | m, N | interphase spacers: an insulator between span points of two sections of one span (`a`, `b`: section id + span point label; insulator label or weight, wind area, stiffness; `length` (none: the still-air distance at stringing); `compression` limit, N, from the project defaults when made; both sections by finite elements, ruling span refused); solved by `solve::solve_spacer_group` (the sections joined, in turn, Aitken's relaxation), reported on the section at `a` (`SectionShape::spacers`: ends, axial force, slack, over its limit) | sections + span point labels |
+| `spacers` | `[Spacer]` | m, N | interphase spacers: an insulator between span points of two sections of one span (`a`, `b`: section id + span point label, each point holding a clamp object — required; files before give bare ends a clamp of no weight, `Line::clamp_spacer_ends`; insulator label or weight, wind area, stiffness; `length` (none: the still-air distance at stringing); `compression` limit, N, from the project defaults when made; both sections by finite elements, ruling span refused); solved by `solve::solve_spacer_group` (the sections joined, in turn, Aitken's relaxation), reported on the section at `a` (`SectionShape::spacers`: ends, axial force, slack, over its limit) | sections + span point labels |
 | `defaults` | `Defaults` | N | the project's default values (Criteria › Default values; `ols_line::DEFAULT_FIELDS`): what new objects start with and what the calculations take where nothing else gives a value — `spacer_compression` (10 000 N), `jumper_exit_angle_deg` (30°), `jumper_stiffness_factor` (0.2), `jumper_clamp_length` (0.1 m, new clamps), `insulator_stiffness` (EA 5·10⁷ N), `air_density_factor` (Q 0.613), `thermal_emissivity` / `_absorptivity` (0.8), `thermal_roughness` (0.1), `thermal_albedo` (0.1), `thermal_time_step` (10 s), `clearance_wind_step` (50 Pa), `clearance_vertical_band` (0.5 m), `clearance_search_margin` (5 m), `clearance_zone_width` / `_depth` (1 m / 0.2 m, new windows); exported / imported as `.olsdef` (`ols-defaults`, TOML, sections `[spacer]`, `[jumper]`, `[insulator]`, `[weather]`, `[thermal]`, `[clearance]`, values in their units); OLS XML `<defaults section_key=…>` (only those not the program's). Display settings stay per user | — |
 | `systems` | `[System]` | — | electrical systems | — |
 | `display` | `Display` | — | phase colours, `ahead_deg` | phase labels |
@@ -297,7 +297,7 @@ once resolved every structure is checked in full (`check_strings`).
 | `bundle_rotation_deg` | f64? | ° CCW looking ahead | rotation of the arrangement | — |
 | `points` | `[SectionPoint]` | — | attachment points in line order; first and last are strain points | structure id + set |
 | `stringing` | `Stringing` | — | how it is strung (below) | — |
-| `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place — `fraction` (horizontal, from the back point), `distance` (m) or `station` (m, of the line along the alignment both structures stand on, turned into a fraction when solved, `Line::section_with_fractions`; with no alignment through both, at the back point) — one of them, `{"distance": 30}` (`SpanPlace` enum; files before version 5 giving several are read with a station over a distance over the fraction), each with its `object` (one per point: a body or a clamp, `objects::LineObject`) or bare (a spread's end, a spacer's end); nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers and spreads name them |
+| `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place — `fraction` (horizontal, from the back point), `distance` (m) or `station` (m, of the line along the alignment both structures stand on, turned into a fraction when solved, `Line::section_with_fractions`; with no alignment through both, at the back point) — one of them, `{"distance": 30}` (`SpanPlace` enum; files before version 5 giving several are read with a station over a distance over the fraction), each with its `object` (one per point: a body or a clamp, `objects::LineObject`) or bare (a spread's end); nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers and spreads name them |
 | `spreads` | `[SpreadObject]` | N/m | objects spread between two points of one span: `from`, `to` (point labels), `type` (library id), `load` (downward, N/m of conductor, whole bundle); on the wire pieces they cover (FE) | point labels |
 | `color` | string? | — | `#rrggbb`, overrides the phase colour | — |
 | `calculation` | `Calculation` | — | condition and method, kebab-case (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
@@ -483,7 +483,7 @@ of it is one log entry, undone together.
 | Structure | its own items; every **section** through it (and their spacers); every **jumper** at it, held by its strings (a support), or at a point of those sections, and the jumpers on **taps** of those sections (and those hanging on them); alignment points tied to it are **detached** (they stay in place) |
 | Wire point with a set (`delete_attachment`) | its strings and the set-less wire points only it uses (own items removed; a type's items added to `omit_sets`); the sections through it (and their spacers); the jumpers at it or at those sections, and those on taps of those sections (as for a structure) |
 | Section | its spacers; the jumpers at any of its points; the jumpers on taps on its span points, and those hanging on them (`jumpers_hanging`, those hanging first) |
-| Span point, jumper point | edited inside its section / jumper (a `put`): a point a spacer, spread or tap uses cannot be removed or relabelled (validation refuses; the tables keep such labels fixed) |
+| Span point, jumper point | edited inside its section / jumper (a `put`): a point a spacer, spread or tap uses cannot be removed alone (validation refuses; the table takes them with it); relabelled with `rename_point` (`Line::relabel_point`: its spreads, spacers and taps follow; the Span points table uses it too) |
 | Spacer | nothing else |
 | Route | its alignments on no other route; it is taken out of the alignments, points and structures that stay |
 | Alignment (also: its last point) | its points (asked first) |
@@ -504,7 +504,9 @@ points, jumper ends and clamps, tied alignment points and
 jumper, the taps on it; of a route, the alignments, points and structures
 on it; a rename is a put under the new id and a delete of the old one;
 `rename_attachment` (set renumbering) updates the sections, jumpers and
-circuit starts there; `rename_system` updates the sections given it. Library items are
+circuit starts there; `rename_point` (a span or jumper point's label)
+updates its spreads, the spacers on it and the jumpers tapped on it;
+`rename_system` updates the sections given it. Library items are
 not renamed through the session: a changed library id leaves dangling
 references that `Line::resolve` / validation report.
 

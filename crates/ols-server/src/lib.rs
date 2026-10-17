@@ -293,6 +293,8 @@ impl Op {
                 Command::SetStringing { section, .. } => {
                     out.push((Kind::Section, section.clone()));
                 }
+                // The point's host (what names the point follows).
+                Command::RenamePoint { kind, id, .. } => out.push((*kind, id.clone())),
                 Command::TieAlignmentPoint {
                     route, structure, ..
                 } => {

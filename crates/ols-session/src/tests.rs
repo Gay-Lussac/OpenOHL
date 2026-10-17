@@ -1624,3 +1624,42 @@ fn a_newer_project_file_is_left_unchanged() {
         .collect();
     assert_eq!(tables, ["ols_meta"]);
 }
+
+/// Relabelling a point: the jumpers tapped on it follow (on a span, on
+/// a jumper); a label taken is refused.
+#[test]
+fn relabelling_a_point_takes_what_names_it() {
+    let (_p, mut s) = project("relabel");
+    tapped_on_s2(&mut s);
+    let relabel = |kind, id: &str, label: &str, new: &str| Command::RenamePoint {
+        kind,
+        id: id.into(),
+        label: label.into(),
+        new_label: new.into(),
+    };
+    s.apply("ana", relabel(Kind::Section, "S2", "TAP", "T-OFF"))
+        .unwrap();
+    let ja = |s: &Session, id: &str| {
+        s.line()
+            .jumpers
+            .iter()
+            .find(|j| j.id == id)
+            .unwrap()
+            .clone()
+    };
+    assert!(
+        matches!(ja(&s, "JA").from.as_tap(), Some(ols_line::Tap::Span(r)) if r.point == "T-OFF")
+    );
+    s.apply("ana", relabel(Kind::Jumper, "JA", "K", "K2"))
+        .unwrap();
+    assert_eq!(ja(&s, "JA").points[0].label, "K2");
+    assert!(
+        matches!(ja(&s, "JB").from.as_tap(), Some(ols_line::Tap::Jumper { point, .. }) if point == "K2")
+    );
+    assert!(
+        s.apply("ana", relabel(Kind::Jumper, "JA", "K2", "K2"))
+            .is_err()
+    );
+    s.undo("ana").unwrap();
+    assert_eq!(ja(&s, "JA").points[0].label, "K");
+}

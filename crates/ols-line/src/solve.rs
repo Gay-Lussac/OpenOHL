@@ -4307,7 +4307,8 @@ mod spacer_tests {
                 span: 0,
                 at: crate::SpanPlace::at_fraction(0.5),
                 description: String::new(),
-                object: Default::default(),
+                // A spacer's end: a clamp (of no weight here).
+                object: Some(crate::LineObject::clamp(0.0)),
             });
         }
         line.spacers.push(crate::Spacer {
