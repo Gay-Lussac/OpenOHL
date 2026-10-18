@@ -26,7 +26,7 @@ With `nonlinear = true` (the default), the tangent stiffness includes the **geom
 
 This captures both P-Δ (sway of the member chords) and P-δ (bowing within a frame member, refined by more elements). Displacements remain small (no corotational update of the geometry); the analysis is a *second-order elastic* analysis in the sense of McGuire et al., ch. 9.
 
-**Newton iterations**: the out-of-balance forces \\( \mathbf r = \mathbf F - \mathbf K_T(N)\\,\mathbf u \\) are solved with the tangent \\( \mathbf K_T = \mathbf K_e + \mathbf K_g(N) \\) (the change of \\( N \\) with \\( \mathbf u \\) is not in the tangent), \\( \mathbf u \mathrel{+}= \mathbf K_T^{-1}\mathbf r \\), the axial forces and slack cables updated, until \\( |\mathbf r| \le 10^{-9}|\mathbf F| \\) and the slack set is stable. Where the axial forces are statically determinate (a cantilever column) the second iteration is final; otherwise the iterations converge linearly with the ratio of the loads to the buckling load. A negative pivot in the factorisation means the tangent stiffness is no longer positive definite: the loads are above an **elastic buckling** load, reported as such.
+**Newton iterations**: the out-of-balance forces \\( \mathbf r = \mathbf F - \mathbf K_T(N)\\,\mathbf u \\) are solved with the tangent \\( \mathbf K_T = \mathbf K_e + \mathbf K_g(N) \\) (the change of \\( N \\) with \\( \mathbf u \\) is not in the tangent), \\( \mathbf u \mathrel{+}= \mathbf K_T^{-1}\mathbf r \\), the axial forces and slack cables updated, until \\( |\mathbf r| \le 10^{-9} \\) of the larger of \\( |\mathbf F| \\) and the largest pretension, and the slack set is stable. Where the axial forces are statically determinate (a cantilever column) the second iteration is final; otherwise the iterations converge linearly with the ratio of the loads to the buckling load. A negative pivot in the factorisation means the tangent stiffness is no longer positive definite: the loads are above an **elastic buckling** load, reported as such.
 
 **Exit clauses** (`ohl_core::budget`): 200 iterations and 30 s by default; when one stops the solve, the error says which and how large the out-of-balance forces still were.
 
@@ -91,15 +91,15 @@ A member whose section comes from the section library has a profile; the wind on
 
 ## Pole check
 
-A pole (`.ohlp`) is a shaft with a linear taper between the ground-line diameter \\( D_0 \\) and the top diameter \\( D_1 \\) over the height above ground \\( H = \ell - e \\) (length less embedment). At heights \\( h \\) from the ground line to the top (41 sections):
+A pole (`.ohlp`) is a shaft with a linear taper between the ground-line diameter \\( D_0 \\) and the top diameter \\( D_1 \\) over the height above ground \\( H = \ell - e \\) (length less embedment). A structure may describe its pole itself (`[pole]` in the structure file): its outline by height, round or polygonal, linear between the heights given; it is read into the same pole. At heights \\( h \\) from the ground line to the top (41 sections):
 
 \\[ \mathbf M(h) = \sum_{z_i > h} (\mathbf r_i - h\hat{\mathbf z}) \times \mathbf F_i + \int_h^H p\\,c_d\\,D(z)\\,(z-h)\\,\mathrm dz\\;\hat{\mathbf z} \times \hat{\mathbf w} \\]
 
 with the factored attachment loads \\( \mathbf F_i \\) at the type's attachment points \\( \mathbf r_i \\) (horizontal loads × height, vertical loads × their offset from the axis), the wind pressure \\( p \\) of the weather case times the transverse factor, the drag factor \\( c_d \\) and the wind direction \\( \hat{\mathbf w} \\) (across the line). The bending moment is \\( |(M_x, M_y)| \\); torsion is not checked.
 
-**P-Delta amplification**: when the pole gives its modulus \\( E \\), a frame model of the pole above ground (12 tapered steps plus a node at every load, fixed at the ground line, solid or hollow circular sections, its own weight) is solved first order and second order with the same loads (offsets as moments); the ratio of the ground-line moments multiplies the moment at every height — exact at the ground line, a simplification above.
+**P-Delta amplification**: when the pole gives its modulus \\( E \\), a frame model of the pole above ground (12 tapered steps plus a node at every load, fixed at the ground line, solid or hollow, round or polygonal sections, its own weight when it gives a density) is solved first order and second order with the same loads (offsets as moments); the ratio of the ground-line moments multiplies the moment at every height — exact at the ground line, a simplification above.
 
-**Capacity** at height \\( h \\): the table of the pole (linear between heights), else for wood \\( f_b\\,\pi D(h)^3/32 \\) with the user's fibre stress \\( f_b \\), else the ground-line moment capacity. Usage: \\( \max_h M(h)/(\phi\\,M_c(h)) \\) — for a tapered wood pole the critical section can lie above the ground line.
+**Capacity** at height \\( h \\): the table of the pole (linear between heights), else for wood \\( f_b \\) times the section modulus at \\( D(h) \\) (\\( \pi D(h)^3/32 \\) for a solid round pole) with the user's fibre stress \\( f_b \\), else the ground-line moment capacity. Usage: \\( \max_h M(h)/(\phi\\,M_c(h)) \\) — for a tapered wood pole the critical section can lie above the ground line.
 
 Not included: foundation (embedment) check, shear, deflection limits, guyed poles (use an `.ohlfe` model with cables), the wind on crossarms and equipment.
 

@@ -18,7 +18,7 @@ Transactions on Geoscience and Remote Sensing* 41(4), 2003):
    window (20 m). Opening removes objects smaller than the window.
 3. A cell whose lowest point stands above the opened surface by more than
    \\( \Delta h_k = s\\,(w_k - w_{k-1})\\,c + \Delta h_0 \\) (at most
-   \\( \Delta h_{max} \\); slope \\( s \\) = 0.3, \\( \Delta h_0 \\) = 0.3 m,
+   \\( \Delta h_{max} \\); \\( \Delta h_0 \\) for the first window; slope \\( s \\) = 0.3, \\( \Delta h_0 \\) = 0.3 m,
    \\( \Delta h_{max} \\) = 3 m) holds no ground; the opened surface is the
    input of the next window.
 4. The lowest points of the remaining cells make a TIN (no triangle sides
@@ -39,8 +39,8 @@ apart (planarity, linearity, returns) is not part of this base.
 Throughput (release build, one core): 4 million points over \\( 10^6 \\)
 cells in 1.2 s, about 3 million points a second. Points are held in memory
 (32 bytes each; `--max-points`, default 200 million); grids over
-\\( 10^8 \\) cells are refused. Exit clauses: a time limit, checked per grid
-row and every \\( 2^{20} \\) points.
+\\( 10^8 \\) cells are refused. Exit clauses: a time limit (30 minutes in
+`ohl lidar classify`), checked per grid row and every \\( 2^{20} \\) points.
 
 The result is written as LAS/LAZ 1.4 (point format 6) or stored as a new
 point cloud in the project file.
