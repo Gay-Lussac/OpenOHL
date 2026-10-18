@@ -8,7 +8,12 @@ A structure type says how much of the structure its file describes
 2. **sticks of the pylon** — joints and members without sections, or
    `[[body]]` polylines that make a 3D object (their vertices, all together,
    not in one plane within 1 mm: `StructureType::body_is_3d`);
-3. **full design** — every member with its section and a supported joint (or a separate `.ohlfe` model).
+3. **full design** — every member with its section and a supported joint
+   (or a separate `.ohlfe` model); extension bodies need the same. Only a
+   joint's `support` counts (`StructureType::missing_for_design`): a
+   structure standing only on springs (`spring`) stays at level 2 today.
+   A pole is a full design when the pole check can read it (a `.ohlp`
+   named, or a complete `[pole]`); the higher of the two levels counts.
 
 The level follows from the file's content (`StructureType::detail()`), so it
 rises as a pylon is filled in.

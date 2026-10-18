@@ -289,8 +289,9 @@ open (`ols_meta` keys `routes_alignments`, `alignment_points`).
 | `omit` | `[string]` | — | typed: the type's points, strings or wire points left out | labels in the type |
 | `omit_sets` | `[u32]` | — | typed: the type's wire points with these sets left out, with what hangs only for them | sets in the type |
 | `members` | `[[x,y,z]]` | m | stick drawing polylines (views and drawings only) | — |
+| `routes` | `[string]` | — | routes it is on, given by itself (else worked out from the alignments, below) | `Route.id` |
 
-A structure without a type holds its own `points`, `wires`, `strings` and `members`; the desktop app edits them as a structure type in local axes (`to_local`/`to_global`) and writes them back with one `Put`. *Make it a type* writes that document as a `.ohls`, sets `type` and empties the structure's own lists. A type built from a pylon template records it in `[template]` (`id`, `role` suspension/strain, `string_length`, `string_weight`, `values` by parameter) and has sets from the template's slots: suspension = slot, strain back = slot + `back_offset` (20), ahead = slot + `ahead_offset` (40). Built again, only the header, `[template]` and the points, strings and wire points the template makes (by label) are replaced; the rest of the file is kept (`ohl-app` `pylon_builder::rebuilt`).
+A structure without a type holds its own `points`, `wires`, `strings` and `members`; the desktop app edits them as a structure type in local axes (`to_local`/`to_global`) and writes them back with one `Put`. *Make it a type* writes that document as a `.ohls`, sets `type` and empties the structure's own lists. A type built from a pylon template records it in `[template]` (`id`, `role` suspension/strain, `string_length`, `string_weight`, `values` by parameter) and has sets from the template's slots: suspension = slot, strain: the first string (180°) slot + `first_offset` (20), the second (0°) slot + `second_offset` (40); files before give `back_offset` / `ahead_offset`. Built again, only the header, `[template]` and the points, strings and wire points the template makes (by label) are replaced; the rest of the file is kept (`ohl-app` `pylon_builder::rebuilt`).
 
 | Entity.field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
@@ -366,7 +367,7 @@ once resolved every structure is checked in full (`check_strings`).
 | `points` | `[SectionPoint]` | — | attachment points in line order; first and last are strain points | structure id + set |
 | `stringing` | `Stringing` | — | how it is strung (below) | — |
 | `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place — `fraction` (horizontal, from the back point), `distance` (m) or `station` (m, of the line along the alignment both structures stand on, turned into a fraction when solved, `Line::section_with_fractions`; with no alignment through both, at the back point) — one of them, `{"distance": 30}` (`SpanPlace` enum; files before version 5 giving several are read with a station over a distance over the fraction), each with its `object` (one per point: a body or a clamp, `objects::LineObject`) or bare (a spread's end); nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers and spreads name them |
-| `spreads` | `[SpreadObject]` | N/m | objects spread between two points of one span: `from`, `to` (point labels), `type` (library id), `load` (downward, N/m of conductor: the whole bundle's, shared by its subconductors), `per_subconductor` (optional, default false, written only when true: `load` is on each subconductor, the bundle carrying `load` × `bundle`, `SpreadObject::bundle_load`); on the wire pieces they cover (FE; `Section::spread_loads` gives each as the whole bundle's, the model of one subconductor takes its share) | point labels |
+| `spreads` | `[SpreadObject]` | N/m | objects spread between two points of one span: `label` (optional), `from`, `to` (point labels), `type` (library id), `load` (downward, N/m of conductor: the whole bundle's, shared by its subconductors), `per_subconductor` (optional, default false, written only when true: `load` is on each subconductor, the bundle carrying `load` × `bundle`, `SpreadObject::bundle_load`); on the wire pieces they cover (FE; `Section::spread_loads` gives each as the whole bundle's, the model of one subconductor takes its share) | point labels |
 | `color` | string? | — | `#rrggbb`, overrides the phase colour | — |
 | `calculation` | `Calculation` | — | `{condition, method}` (`condition::Condition` × `Method`), written by its name: condition and method joined (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
 
@@ -625,8 +626,8 @@ cases, unit costs and galloping parameters as library files (below).
 
 `ohl-phase-distance`, version 1: a check plugin's values for the
 distance between conductors in the span, read and written by the
-plugin (its layout is the plugin's; a Swiss LeV plugin, kept apart from
-the public code, defines one). OpenOHL only measures
+plugin (its layout is the plugin's; a national-code plugin kept outside
+the repository defines one). OpenOHL only measures
 (`ohl_clearance::phase_distance`) and keeps a project's edited copy as
 a library file of kind `phase-distance`. The check pairs conductors
 between the same two structures (and, when asked, nearby conductors
@@ -683,7 +684,7 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 | Field (TOML key) | Type | Unit | Meaning |
 |---|---|---|---|
 | `format`, `version` | optional | — | `"ohl-structure"`, 1 to 5 (`STRUCTURE_FILE_VERSION`; 5 adds the member kind `tension`, written only when a member is made `tension`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ohl_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
-| `id`, `name` | string | — | unique id (referred to by `Structure.type`), display name |
+| `id`, `name`, `description` | string | — | unique id (referred to by `Structure.type`), display name, free text |
 | `kind` | `lattice` / `pole` / `portal` / `other` | — | family |
 | `height` | length? | m | mast top for the default stick drawing |
 | `foot` | length? | m | local z of the feet (default 0: ground) |
@@ -707,9 +708,11 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 
 **Detail level** (`StructureType::detail`, never stored — an older
 `detail` key is read and ignored): 3 *full design* when `model` is given
-or every member has a section and a joint is supported (every extension
-piece too: its members with sections and a supported joint,
-`StructureType::members_designed`); 2 *outline* when
+or `StructureType::missing_for_design` finds nothing: there are members,
+every member has a section and a joint has a `support` (every extension
+piece too: its members with sections and a joint with a `support`;
+`StructureType::members_designed`). A joint with only a `spring` does not
+count, so a structure standing only on springs stays at level 2. 2 *outline* when
 there are members or body polylines that are not all in one plane
 (within 1 mm, `StructureType::body_is_3d`); else 1 *stick figure*. The
 pole gives its own level (`StructureType::pole_detail`): a named `.ohlp`
@@ -741,7 +744,8 @@ set_group_section, set_group_kind}`. `StructureFile` refuses a file whose
 `[[generator]]` or `[[symmetry]]` tables do not read (`body::check`).
 `missing(t, level) -> Vec<Missing>` lists what the next level lacks
 (`Need::Level`: no member, a member without a section — one item per
-member —, no `[[section]]`, no supported joint; a pole's outline, its
+member —, no `[[section]]`, no supported joint (a `support`; a `spring`
+alone does not count); a pole's outline, its
 material, strength, wall (`Place::Pole`); an extension member without a
 section or a piece without a supported joint (`Place::Extensions`)) and
 advice (an extension without members at level 3: the FE model leaves it
@@ -989,8 +993,8 @@ section indices, kind, local axes `[x, y, z]` as the FE model takes
 them, length, k, pretension) and `load_cases` (`self_weight` factor,
 loads at a joint, at a point along a member, or uniform per metre along
 one; structure axes, z up). Formats: IFC4 (members and the structural
-analysis model), IFC2x3 Coordination View 2.0 (members, for Tekla
-Structures), SAF 2.2.0 xlsx, CSV tables. Mapping and what is lost:
+analysis model), IFC2x3 Coordination View 2.0 (members only, for
+programs that read that view), SAF 2.2.0 xlsx, CSV tables. Mapping and what is lost:
 [Structure exports](structure-exports.md).
 
 ## Where data lives
@@ -1009,7 +1013,7 @@ Structures), SAF 2.2.0 xlsx, CSV tables. Mapping and what is lost:
 
 | Table | Content |
 |---|---|
-| `ols_meta(key, value)` | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … |
+| `ols_meta(key, value)` (the table keeps its old name) | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
 | `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ohl_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts`, `structure_loads` (`{"solver": …}`; `structure_loads` solves nothing again) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
@@ -1055,7 +1059,7 @@ one, its `type` and `extension` or its own points, strings and wire
 points; `wires`: a typed new structure's wire points as placed,
 `{label, set}` — the session does not read the structure library;
 `sets`: `{from, to}` old set → new set, `to` left out: removed;
-`confirm`), `rename`, `rename_attachment`, `rename_system`,
+`confirm`), `rename`, `rename_attachment`, `rename_point`, `rename_system`,
 `replace_line`, `batch`. Each is expanded into puts and deletes, the whole
 line is validated, and the log keeps the command, its inverse, the objects
 changed and the sections to recalculate. Example (synthetic):
@@ -1100,7 +1104,8 @@ Plugin tiers and manifests: [Writing plugins](plugins.md) and ADR-0003.
 The project's own default values (`defaults`) and calculation options
 (`solver`) are in the line a plugin receives.
 WebAssembly interface: `crates/ohl-plugins/wit/plugin.wit` and
-`code.wit` (package `ohl:plugin@0.1.0`). A WebAssembly plugin never gets
+`code.wit` (package `ohl:plugin@0.1.0`; a manifest `ohl-plugin.toml`
+targets it with `sdk = "0.3"`). A WebAssembly plugin never gets
 Rust structs or the project file: it exchanges **text in the file formats
 above**.
 
@@ -1110,7 +1115,7 @@ above**.
 | `io-plugin` (`io`) export | the **export model** JSON: `{"format": "ohl-export-model", "version": 1, "crs", "line": <line file, structure types placed>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "system", "voltage_kv", "horizontal_tension_n", "max_tension_n", "sag_m", "points": [[x,y,z]…]}], "strings": [{"structure", "label", "by", "force_n", "swing_deg", "swing_across_deg", "swing_along_deg", "max_load_n", "max_swing_deg", "max_swing_across_deg", "max_swing_along_deg"}]}]}` (strings: each once, as solved, with its limits — not checked by OpenOHL; `null`: not given), plus options | file bytes |
 | `io-plugin` import | file bytes, options (`into`: a line file to update) | a **line file** JSON, validated by the host like any line file |
 | `terrain-plugin` (`terrain`) | file bytes | surfaces: `name`, `points` (x, y, z flat, m), `triangles` (indices) |
-| `project-plugin` (`project`) | file bytes | `project { line: <line file JSON>, libraries: [{kind, name, text}], notes }`; `kind` as in `library_file` |
+| `project-plugin` (`project`) | file bytes | `project { line: <line file JSON>, libraries: [{kind, name, text}], notes }`; `kind` as in the project's `library` objects |
 | `code-plugin` (`design-code`) | a parameter file (TOML text) | `generated { weather-cases: <.ohlwc text>, load-cases: <.ohllc text>, notes, clearance-presets: [{ name, measure: vertical / radial, rules: <.ohlr text>, weather-cases: <.ohlwc text> }] }` (interface 0.2) |
 | `check-plugin` / `code-check-plugin` (`check`) | `checks()`: nothing; `value-tables` / `edit-value`: a values file's text (e.g. `.ohlpd`); `evaluate`: the values, the user's choices, a `conductor-pair` (same system / span, kV, plugin column values, altitude, diameters, masses, spacer sags) and per station 6 numbers (distance, system angle, both local sags, both string lengths) | the check list (id, title, menu; the app's Checks menu is built from it); tables; the edited file; per station the required distance and the check's own values, the rule applied |
 

@@ -2,7 +2,8 @@
 
 Status: **specification** (2026-10-17). The project owner decided the
 points listed under [Decisions](#decisions-2026-10-17); nothing here is
-built yet unless "Today" says so. The questions still open are at the
+built unless "Today" or a *Built* mark says so (built means in active
+development, not approved yet). The questions still open are at the
 end.
 
 Asked by the user: the specification of the interface that takes a
@@ -66,7 +67,7 @@ renamed later; they are not renamed now.
     copied). It is a library shared by a whole project, exported and
     imported, stored like the other library kinds of the project file
     (per project line).
-12. **Export** to IFC, Tekla and RFEM; other tower programs later.
+12. **Export** to IFC and to analysis and steel-detailing programs; other tower programs later.
 13. **Capacities.** At levels 1 and 2 maximum loads may be given on the
     strings (their insulators and fittings), but not for the structure
     itself: its integrity cannot be checked below level 3. The
@@ -120,8 +121,8 @@ renamed later; they are not renamed now.
 | Level | `Detail` | Reached when | What it adds |
 |---|---|---|---|
 | 1 stick figure | `Stick` | always (no members, no `[[body]]`) | `[[point]]`, `[[wire]]`, `[[string]]` (or version 1 `[[attachment]]`), `height`, `foot`, `[[extension]]`. Drawn as a mast to `height` and a crossarm to every point. |
-| 2 sticks of the pylon | `Outline` | any `[[member]]` or any `[[body]]` polyline | `[[node]]` joints and `[[member]]`s without sections, or `[[body]]` polylines; points may sit on a joint (`node`) or along a member (`member`, `at`). |
-| 3 full design | `Design` | `model = "….ohlfe"` named, **or** `missing_for_design()` empty: members exist, every member has a `section`, at least one joint has a `support` | `[[section]]`, `[[material]]`, member `kind` (truss / frame / cable), `k`, `reference`, `roll`, `pretension`, supports and springs, `[analysis]`, `[[load]]`. |
+| 2 sticks of the pylon | `Outline` | any `[[member]]`, or `[[body]]` polylines that make a 3D object (`body_is_3d`) | `[[node]]` joints and `[[member]]`s without sections, or `[[body]]` polylines; points may sit on a joint (`node`) or along a member (`member`, `at`). |
+| 3 full design | `Design` | `model = "….ohlfe"` named, **or** `missing_for_design()` empty: members exist, every member has a `section`, at least one joint has a `support` (a `spring` alone does not count: a structure standing only on springs stays at level 2), the same for each extension body | `[[section]]`, `[[material]]`, member `kind` (truss / frame / cable / tension), `k`, `reference`, `roll`, `pretension`, supports and springs, `[analysis]`, `[[load]]`. |
 
 Where today's code differs from the decisions:
 
@@ -133,8 +134,9 @@ Where today's code differs from the decisions:
 - ~~**Poles have no level.**~~ *Built* (phase 3): `detail()` looks at
   the pole (`pole_detail`): a `[pole]` outline makes level 2, a pole the
   check can read (or a named `.ohlp`) level 3.
-- **Any `[[body]]` polyline gives level 2**, also a flat one. Decision 3:
-  only a 3D body (being fixed, see Gaps).
+- ~~**Any `[[body]]` polyline gives level 2**, also a flat one.~~ *Built*
+  (decision 3): only `[[body]]` polylines that make a 3D object
+  (`body_is_3d`); a flat face stays level 1.
 
 ### What exists per level
 
@@ -169,18 +171,20 @@ extension without a piece or legs behaves as before.
 
 ### Gaps
 
-1. **No computation of a structure in the app.** The FE and pole checks
-   run only per placed structure, from the line. The structure desk
-   edits but does not compute.
-2. **One load set per structure.** `[[load]]` is a list of nodal forces —
-   one unnamed case, no factors, no wind. The CLI's other source is a CSV
-   exported from a line run.
-3. **Points along a member carry no load in the FE model** — *being
-   fixed*: the load is shared to the member's two joints.
-4. **Rebuilding from a template replaces the file** — *being fixed*: a
-   rebuild keeps the joints and members made by hand.
-5. **Flat `[[body]]` polylines count as level 2** — *being fixed*: only
-   a 3D body gives level 2 (decision 3).
+1. ~~**No computation of a structure in the app.**~~ *Built* (phase
+   4): OHL-Structure's FE results panel solves the load table's cases
+   (`ohl_structure_link::analyse_cases`). The pole check runs only per
+   placed structure, from the line; OHL-Design's structure desk edits but
+   does not compute.
+2. ~~**One load set per structure.**~~ *Built* (phase 4): load-case
+   recipes (`[[load_case]]`); the old `[[load]]` nodal forces are read as
+   one case named `model`.
+3. ~~**Points along a member carry no load in the FE model.**~~ *Built*:
+   the load is shared to the member's two joints.
+4. ~~**Rebuilding from a template replaces the file.**~~ *Built*: a
+   rebuild keeps what was added by hand (`pylon_builder.rs`, `rebuilt`).
+5. ~~**Flat `[[body]]` polylines count as level 2.**~~ *Built*: only a 3D
+   body gives level 2 (decision 3, `body_is_3d`).
 6. **Wind on the body in the FE model** — *built for the FE check*: the
    member wind on profiles from the section library (pressure × drag ×
    width × length × sin²θ, half to each joint; no shielding, one `drag`
@@ -210,8 +214,8 @@ extension without a piece or legs behaves as before.
     reads and can be brought into the file.
 13. **The level says what is present, not whether it works**: a level 3
     structure may still be a mechanism; that shows only when solved.
-14. **No way to replace a structure** by another one keeping its wires
-    (decision 8).
+14. ~~**No way to replace a structure** by another one keeping its
+    wires (decision 8).~~ *Built* (§1.6).
 
 ## Goal and principles
 
@@ -303,7 +307,7 @@ TAK) and id renames in the tables.
   circumferences by height, the cross-section shape — instead of the
   `.ohlp` text. Edited in the Pole panel (Body menu).
 - **`[[body]]` polylines** give level 2 only when they span 3D
-  (decision 3).
+  (decision 3). *Built* (`body_is_3d`).
 - **Maximum loads** may be given at level 2 as data (decision 1).
 
 ### 1.3 Design (level 3)
@@ -333,13 +337,13 @@ and what to pick (row, joint, member). Two kinds:
 ### 1.5 Import and export
 
 - **Export** (decision 12): **IFC** (members as solids with their
-  profiles), **Tekla** and **RFEM** (model, sections, supports, load
-  cases), written from the public documentation of each format.
-  other tower programs later.
+  profiles), and the formats of steel-detailing and analysis programs
+  (model, sections, supports, load cases), written from the public
+  documentation of each format; other tower programs later.
   *Built* ([Structure exports](structure-exports.md)): IFC4 with member
-  solids and the structural analysis model (RFEM), IFC2x3 members (Tekla
-  Structures converts only IFC2x3), SAF xlsx (RFEM and other SAF
-  programs), CSV tables.
+  solids and the structural analysis model, IFC2x3 members (for detailing programs
+  that convert only IFC2x3), SAF xlsx (analysis programs that read
+  SAF), CSV tables.
 - **Import**: another program's tower XML stays a local importer; DXF 3D lines and
   CSV / XLSX tables of joints and members into level 2; merge an
   `.ohlfe` into the structure.
@@ -421,8 +425,8 @@ Run per structure, per case, with the engine used in the line run:
 |---|---|---|
 | FE first order / P-Delta | level 3 (or `model`) | yes (`ohl_structures_fe::analyse`) |
 | Pole check, P-Delta amplification | pole at level 3 | yes (`check_pole`) |
-| Loads at points along members | level 3 | being fixed (shared to the member's joints) |
-| Surface loads on members (wind, snow) | level 3 (profile areas) | no |
+| Loads at points along members | level 3 | yes (shared to the member's joints) |
+| Surface loads on members (wind, snow) | level 3 (profile areas) | yes, in the load-case recipes: a pressure on the members' area from the section library (`ohl-structure-loads`; `ohl_structure_link::SectionAreas`); rows marked "no area" without one |
 | Body wind | level 3 (profile areas, decision 10) | yes, in the FE check: member wind on profiles from the section library (`Model::member_wind`); wind bands kept out of the model |
 | Extensions in the model | level 3 extension bodies (decision 17) | yes: `Model::from_structure_type_extended`, per placed structure in the line run (`ohl-loads`), `ohl structures fe --extension` |
 | Capacity derived from the design | level 3 | no: the load tree or allowable spans found by scaling a case until the worst member reaches 100 % |
@@ -469,7 +473,7 @@ open question 1.
 - **Hand-check summary** in the report: per governing member its force,
   length, k·L, section values, capacity formula and numbers; equilibrium
   of the whole (Σ loads = Σ reactions per direction).
-- **Export to RFEM / Tekla** (§1.5) with the load cases, so the same
+- **Export to analysis and steel-detailing programs** (§1.5) with the load cases, so the same
   structure can be computed there.
 - **Re-run**: the report's inputs reproduce its numbers.
 
@@ -494,12 +498,12 @@ Changes in `.ohls` (version 2 → 3; older versions read as before):
 | member `group` *(built)* | `TypeMember` | sections and reports per group |
 | `[[symmetry]]` (optional) *(built: `mirror` x / y / xy, `groups`)* | `StructureType` | mirrored joints and members |
 | generator record and member `made_by` *(built: `[[generator]]`, `made_by` on members and joints)* | `StructureType`, `TypeMember`, `TypeNode` | rebuild without losing hand edits |
-| pole outline (diameters by height, shape) | `StructureType` | poles at level 2 (decision 2) |
-| `[[load_case]]` with `[[load_case.load]]` (what, factor, one-sided share, direction, points or members, surface pressure) | `StructureType` | §2.1; replaces `[[load]]` (read as case `model`) |
+| pole outline (diameters by height, shape) *(built: `[pole]`)* | `StructureType` | poles at level 2 (decision 2) |
+| `[[load_case]]` with `[[load_case.load]]` (what, factor, one-sided share, direction, points or members, surface pressure) *(built; kept raw in `StructureType`, read by `ohl-structure-loads`)* | `StructureType` | §2.1; replaces `[[load]]` (read as case `model`) |
 | typed `TypeSection` reference (section library id) and `TypeMaterial` | `structures.rs`, shared with `ohl-structures-fe` | §1.3, §4.2 |
 | joint details | `TypeNode` | level 3 code checks (open question 1) |
-| extension members | `Extension` | decision 17 |
-| `missing(level)` | `StructureType` | §1.4 |
+| extension members *(built: `[[extension.node]]`, `[[extension.member]]`, `[[extension.leg]]`)* | `Extension` | decision 17 |
+| `missing(level)` *(built in `ohl-structure-edit`, not in `StructureType`)* | `StructureType` | §1.4 |
 
 The evaluated load table of a placed structure (§2.2) is a result, not
 stored in the structure file; values typed over it are stored with the
@@ -530,8 +534,8 @@ structure is written to OHL XML) follow every change.
 
 Each phase is a deliverable of its own, checked and committed.
 
-1. **Being fixed now**: loads at points along members shared to the
-   member's joints; template rebuild keeping hand-made joints and
+1. **First fixes** (*built*): loads at points along members shared to
+   the member's joints; template rebuild keeping hand-made joints and
    members; flat `[[body]]` polylines no longer level 2.
 2. **Separate structure application**: its own binary on the workspace
    crates; started from **Edit** in the line application or by opening
@@ -541,7 +545,7 @@ Each phase is a deliverable of its own, checked and committed.
    guide](../user-guide/structure-app.md)); `missing(level)` lives in
    `ohl-structure-edit`, not in `StructureType`; the mechanism found by a
    trial solve is not among the advice yet; Load cases, Results and In
-   the line are placeholders. *Split built* (2026-10-17): the line
+   the line were placeholders then (built since: phase 4, [crates](structure-app.md)). *Split built* (2026-10-17): the line
    application's structure screen (the Edit tool, **Strings and
    points…**) edits only the basics — attachment points, strings, wire
    points and sets — tables left of the pylon's 3D view; the body and
@@ -594,15 +598,15 @@ Each phase is a deliverable of its own, checked and committed.
    *Open:* typed sections edited in the structure application, member
    groups.
 6. **Replace structure** in the line application (§1.6).
-7. **Exports**: IFC with member solids, Tekla, RFEM; other tower programs later.
+7. **Exports**: IFC with member solids, steel-detailing and analysis programs; other tower programs later.
    *Built*: `ohl-structure-export` (File › Export, tool
    `ohl-structure-export`): IFC4 (members with profile solids and the
    structural analysis model with load cases), IFC2x3 Coordination View
-   2.0 (members, for Tekla Structures' IFC object conversion), SAF 2.2.0
+   2.0 (members, for a detailing program's IFC object conversion), SAF 2.2.0
    (xlsx) and CSV tables ([Structure exports](structure-exports.md)).
    The application exports the Load table panel's table (a placed
    structure's line values and typed values). *Open*: imports tried in
-   RFEM 6 and Tekla Structures; other tower programs.
+   another program; other tower programs.
 8. **Code checks**: the plugin interface for member and joint checks
    (open question 1), then a first code (e.g. SIA 263); capacity
    derived from a level 3 design.

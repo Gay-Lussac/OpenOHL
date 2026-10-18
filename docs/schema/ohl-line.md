@@ -2,7 +2,7 @@
 
 OHL XML is the whole line model — the content of a [line file](../user-guide/line-file.md) (`.ohl.json`) — as XML, for tools that prefer XML. It holds the same data: a file written by OpenOHL and read back gives the same line, number for number.
 
-- **Namespace:** `urn:openohl:ohl-line:1`
+- **Namespace:** `urn:openohl:ohl-line:1`. Documents of before 2026-10-18 (OLS XML: namespace `urn:ols-cad:ols-line:1`, format `ols-line`) are read too.
 - **Schema:** [`docs/schema/ohl-line.xsd`](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/schema/ohl-line.xsd) (XML Schema 1.0)
 - **Write:** `ohl line LINE --export line.xml` (format `ohl-xml`, the default for `.xml`) or File › Export › The line… in the application.
 - **Read:** `ohl import line.xml --out line.ohl.json`, `ohl project import-file line.xml --into p.ohl --user ann`, or File › Import › Into the line… in the application. The reader also recognises LandXML files (root `LandXML`, see [Import and export](../user-guide/import-export.md#landxml)).
@@ -34,7 +34,7 @@ The names are those of the line file:
              height_adjust="0.5">                <!-- feet 0.5 m above the ground -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
-    <string label="S1" top="A1" wire="W1" insulator="…" weight="…" wind_area="…"
+    <string label="S1" top="A1" wire="W1" insulator="…" length="…" angle_deg="…" direction_deg="…" weight="…" wind_area="…"
             stiffness="…" compression="…" strain="true"
             max_load="120000" max_swing_deg="60"
             max_swing_across_deg="55" max_swing_along_deg="30"/>  <!-- top: a point or a wire; max_*: limits not checked (version 6) -->
@@ -86,13 +86,13 @@ The names are those of the line file:
   <spacer id="SP1" weight="120" compression="10000">   <!-- an interphase spacer -->
     <end section="S1" point="P1"/> <end section="S2" point="P1"/>
   </spacer>
-  <defaults spacer_compression="10000"/>        <!-- the project's default values -->
   <circuit_start structure="T7" set="1"/>       <!-- a circuit's end that is a start -->
   <phase_color label="L1" color="#8b4513"/>     <!-- display colours -->
   <creep_stretch creep_case="…">
     <load_case name="…"/>
   </creep_stretch>
-  <solver jumper_loads="pull"/>                 <!-- Criteria › Calculation options; default estimate -->
+  <defaults spacer_compression="10000"/>        <!-- the project's default values -->
+  <solver jumper_loads="pull" taps="once"/>     <!-- Criteria › Calculation options; defaults estimate, loop -->
   <bimetallic behavior="bird_cage"/>            <!-- or compression, max_virtual_compression_pa="…" -->
   <structure_loads load_cases="listed">         <!-- Criteria › Loads for structures; default all, no weather case -->
     <load_case name="…"/> <weather_case name="…"/>

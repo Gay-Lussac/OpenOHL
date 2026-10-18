@@ -232,11 +232,11 @@ The host (`ohl_io::checks`, `WasmHost::load_check`) measures
 (`ohl_clearance::phase_distance`), calls the plugin once per pair, one
 instance per core (`WasmHost::another_check`, compiled once), and keeps
 each pair's worst station and the length below — see [Distance between
-conductors: the core's part](phase-distance-check.md). A Swiss LeV
-plugin (kept apart from the public code) runs such a check. On an
+conductors: the core's part](phase-distance-check.md). A national-code
+plugin kept outside the repository runs such a check. On an
 existing line (930 conductors, 5593 pairs) a plugin's check takes about
 as long as the same computation built into OpenOHL (0.8 s against
-0.65–0.9 s; with nearby pairs, 10 475, 0.9 s against 0.65–0.7 s), plus
+0.65–0.9 s; with nearby pairs, about 10 500, 0.9 s against 0.65–0.7 s), plus
 about 0.3 s to load the plugin once.
 
 ## String limits: what a plugin sees
@@ -250,6 +250,6 @@ A string (insulator) may carry limits that **OpenOHL does not check** — the te
 
 ## Python plugins
 
-Python plugins are scripts (`tier = "python"`, `entry` the script). Outside the application they use the `ohl` package built from `crates/ohl-py`; inside it, the Python console runs them (Plugins › Python console › Plugin scripts) with the `ohl` module of the application, which also reads and edits the open project ([Python console](../user-guide/desktop-app.md#python-console)). See `plugins/examples/hello-python`.
+Python plugins are scripts (`tier = "python"`, `entry` the script). Outside the application they use the `ohl` module built from `crates/ohl-py` (package `openohl`); inside it, the Python console runs them (Plugins › Python console › Plugin scripts) with the `ohl` module of the application, which also reads and edits the open project ([Python console](../user-guide/desktop-app.md#python-console)). See `plugins/examples/hello-python`.
 
 The desktop application embeds Python through its `python` feature (on by default): building it needs a shared Python 3.10+ (`PYO3_PYTHON` chooses which; a static one, such as Anaconda's, cannot be embedded). Without the feature (`--no-default-features`), the console says so.

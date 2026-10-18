@@ -8,7 +8,8 @@ the XSD; the solve takes the span points' objects and the spreads.
 Phase 2 built: objects on jumper points load the jumper (the rod model,
 loads held nowhere), their points reported solved, the clamps carrying
 them (pull, or the estimate shared by position; rigid jumpers by
-position). Phase 3 built: taps (`Jumper::from_tap` / `to_tap`) on span points and
+position). Phase 3 built: taps (a jumper end `JumperEnd::Tap` with a `Tap`; before
+line file version 5 `from_tap` / `to_tap`, still read) on span points and
 jumper points holding a clamp, hinged ends, jumpers solved level by
 level after what they hang on, the full loop by default and one
 calculation as an option (Criteria › Calculation options), the loads
@@ -60,7 +61,8 @@ One idea, **a labelled point on a wire**, on two hosts:
 | jumper point | a jumper | fraction of its length from `from`, or a length along it from `from` |
 
 - Label unique on its host (section or jumper); referenced as
-  `{section, point}` or `{jumper, point}` (`PointRef`).
+  `{section, point}` or `{jumper, point}` (`Tap::Span(SpanPointRef)`,
+  `Tap::Jumper`).
 - A point is only a place: no mass, no load. It is drawn (a dot), listed,
   selectable in every weather case drawn, and placed with the span tool
   (a right-click on a span or a jumper, where clicked).
@@ -116,7 +118,7 @@ follow.
 ## 3. Jumpers from a point (taps)
 
 A jumper end (`from` or `to`) becomes either, as now, **a section end**
-(structure + set), or **a point with a clamp object** (`PointRef`):
+(structure + set), or **a point with a clamp object** (`Tap`):
 
 - on a **span** (a T-off / tap from a conductor in the span),
 - on **another jumper** (a jumper branching from a jumper).
