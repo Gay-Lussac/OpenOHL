@@ -1,0 +1,23 @@
+[package]
+name = "ohl-drawing"
+description = "OpenOHL plan and profile drawings per route (SVG, DXF, PDF, PNG, CSV, XML)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+ohl-line.workspace = true
+ohl-terrain.workspace = true
+miniz_oxide = "0.8"
+resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts", "raster-images"] }
+
+[dev-dependencies]
+ohl-cables.workspace = true
+ohl-weather.workspace = true
+
+[lints]
+workspace = true

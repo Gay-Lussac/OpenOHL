@@ -5,7 +5,7 @@
 """Independent reference values for benchmarks/sagtension/section.toml.
 
 Tension section with equal horizontal tension in every span and a conserved
-total unstressed length (see crates/ols-sagtension/src/section.rs). Uses the
+total unstressed length (see crates/ohl-sagtension/src/section.rs). Uses the
 numerical integrals of reference_change_of_state.py and a secant root on
 log(H) with a fixed iteration cap. Also prints the classic ruling span and
 the tension obtained by treating the section as one level ruling span.

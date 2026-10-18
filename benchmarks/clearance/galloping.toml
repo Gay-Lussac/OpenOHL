@@ -1,4 +1,4 @@
-# Galloping ellipses (ols_clearance::galloping). The coefficients are
+# Galloping ellipses (ohl_clearance::galloping). The coefficients are
 # invented, not from any method: the cases check the geometry — axes from
 # the sag, the ellipse placed on the wire, swept along the span, and the gap
 # between the ellipses of two wires.

@@ -1,0 +1,26 @@
+[package]
+name = "ohl-structure-export"
+description = "OpenOHL structure application: a level 3 structure exported as IFC (IFC4, IFC2x3), SAF (xlsx) and CSV tables"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ohl-structure-export"
+path = "src/main.rs"
+
+[dependencies]
+ohl-core.workspace = true
+ohl-sections.workspace = true
+ohl-structure-link.workspace = true
+ohl-structure-loads.workspace = true
+ohl-structures.workspace = true
+clap.workspace = true
+# The SAF workbook (a zip of XML parts), as ohl-io's XLSX writer.
+zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[lints]
+workspace = true

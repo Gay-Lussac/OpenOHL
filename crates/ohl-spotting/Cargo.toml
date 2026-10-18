@@ -1,0 +1,24 @@
+[package]
+name = "ohl-spotting"
+description = "OpenOHL optimum structure spotting: least-cost structure positions along a route profile (dynamic programming)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+ohl-cables.workspace = true
+ohl-line.workspace = true
+ohl-structures.workspace = true
+ohl-terrain.workspace = true
+ohl-sagtension.workspace = true
+ohl-bom.workspace = true
+
+[dev-dependencies]
+ohl-weather.workspace = true
+
+[lints]
+workspace = true

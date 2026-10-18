@@ -1,0 +1,17 @@
+[package]
+name = "ohl-structures"
+description = "OpenOHL structure type library (.ohls) and insulator assembly library (.ohli)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

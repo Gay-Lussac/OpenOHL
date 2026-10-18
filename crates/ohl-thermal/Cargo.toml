@@ -1,0 +1,22 @@
+[package]
+name = "ohl-thermal"
+description = "OpenOHL thermal rating of conductors: IEEE 738, CIGRE TB 601 / TB 207, clearance-limited temperature"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+ohl-cables.workspace = true
+ohl-line.workspace = true
+ohl-clearance.workspace = true
+ohl-terrain.workspace = true
+ohl-weather.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

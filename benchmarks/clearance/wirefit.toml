@@ -1,4 +1,4 @@
-# Catenaries fitted to LiDAR wire points (ols_clearance::wirefit): points
+# Catenaries fitted to LiDAR wire points (ohl_clearance::wirefit): points
 # sampled exactly on a known catenary z = z0 + c (cosh((s − s0)/c) − 1)
 # must give it back, and its sag (largest distance below the chord from
 # s = 0 to the span) must match a brute-force evaluation

@@ -1,0 +1,28 @@
+[package]
+name = "ohl-io"
+description = "OpenOHL import/export: format interface, registry, built-in formats (CSV, KML/KMZ, OHL XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC, XLSX), plugin formats"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-cables.workspace = true
+ohl-clearance.workspace = true
+ohl-core.workspace = true
+ohl-crs.workspace = true
+ohl-line.workspace = true
+ohl-loads.workspace = true
+ohl-plugins.workspace = true
+ohl-session.workspace = true
+ohl-terrain.workspace = true
+ohl-weather.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde.workspace = true
+serde_json.workspace = true
+zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[lints]
+workspace = true

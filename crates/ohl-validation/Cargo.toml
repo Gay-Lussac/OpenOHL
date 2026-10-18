@@ -1,0 +1,28 @@
+[package]
+name = "ohl-validation"
+description = "OpenOHL validation framework: reference cases, runner and reports"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-crs.workspace = true
+ohl-core.workspace = true
+ohl-sagtension.workspace = true
+ohl-cables.workspace = true
+ohl-weather.workspace = true
+ohl-wireloads.workspace = true
+ohl-spotting.workspace = true
+ohl-wirefe.workspace = true
+ohl-thermal.workspace = true
+ohl-structures-fe.workspace = true
+ohl-clearance.workspace = true
+nalgebra.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true
