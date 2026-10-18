@@ -7484,7 +7484,7 @@ fn menus(
         if ui
             .button("Python console")
             .on_hover_text(
-                "Scripts driving the project through the ols module: read the line and results, \
+                "Scripts driving the project through the ohl module: read the line and results, \
                  edit with session commands (undoable)",
             )
             .clicked()
