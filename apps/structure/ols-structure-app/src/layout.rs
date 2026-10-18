@@ -417,7 +417,11 @@ pub fn focused(dock: &mut DockState<Panel>) -> Option<Panel> {
 /// A menu (or a submenu) of options to tick: ticking a box never closes
 /// it, only a click outside it or a command (which closes it itself) does
 /// (the same as the line application's).
-pub fn options_menu<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) {
+pub fn options_menu<'a, R>(
+    ui: &mut egui::Ui,
+    title: impl egui::IntoAtoms<'a>,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) {
     use egui::containers::menu::{MenuButton, MenuConfig, SubMenuButton, is_in_menu};
     let config = MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
     if is_in_menu(ui) {

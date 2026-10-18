@@ -93,6 +93,8 @@ impl Tool {
     }
 
     /// Icon in a slot (glyphs of egui's default fonts).
+    // A text fallback: the slots and menus show the SVG ([`Tool::image`]).
+    #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
             Tool::Select => "⬉",
@@ -330,13 +332,11 @@ fn slot_frame(
         egui::StrokeKind::Inside,
     );
     if let Some(t) = tool {
-        p.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            t.icon(),
-            egui::FontId::proportional(22.0),
-            egui::Color32::WHITE,
-        );
+        // The icon of assets/icons/tools/, white on the dark slot.
+        let icon = egui::Rect::from_center_size(rect.center(), egui::vec2(26.0, 26.0));
+        t.image(ui.ctx(), 26.0)
+            .tint(egui::Color32::WHITE)
+            .paint_at(ui, icon);
     }
     if let Some(n) = number {
         p.text(
@@ -347,6 +347,12 @@ fn slot_frame(
             egui::Color32::from_gray(170),
         );
     }
+    // Named for screen readers (and tests): the tool, or an empty slot.
+    let label = tool.map_or_else(
+        || "slot: empty".to_owned(),
+        |t| format!("slot: {}", t.name()),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
     match tool {
         Some(t) => response.on_hover_text(match t.key() {
             Some(k) => format!("{} ({k}) — {}", t.name(), t.help()),

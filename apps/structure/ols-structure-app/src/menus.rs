@@ -14,12 +14,40 @@ use ols_structure_edit::Mirror;
 use ols_structure_edit::body::symmetry_option;
 
 use crate::app::{StructureApp, error_label};
+use crate::icons::Icon;
 use crate::layout::{Area, Panel, close_panel, open_panel, options_menu};
 
 /// A menu entry: true when clicked (the menu closes).
 fn item(ui: &mut egui::Ui, label: &str, enabled: bool, tip: &str, why_not: &str) -> bool {
+    item_with(ui, None, label, enabled, tip, why_not)
+}
+
+/// A menu entry with its icon (of `assets/icons/tools/`).
+fn icon_item(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    label: &str,
+    enabled: bool,
+    tip: &str,
+    why_not: &str,
+) -> bool {
+    item_with(ui, Some(icon), label, enabled, tip, why_not)
+}
+
+fn item_with(
+    ui: &mut egui::Ui,
+    icon: Option<Icon>,
+    label: &str,
+    enabled: bool,
+    tip: &str,
+    why_not: &str,
+) -> bool {
+    let button = match icon {
+        Some(i) => i.button(ui, label),
+        None => egui::Button::new(label),
+    };
     let r = ui
-        .add_enabled(enabled, egui::Button::new(label))
+        .add_enabled(enabled, button)
         .on_hover_text(tip)
         .on_disabled_hover_text(why_not);
     if r.clicked() {
@@ -243,11 +271,13 @@ impl StructureApp {
     /// The menu of `area`: its panels, then its actions.
     fn area_menu(&mut self, ui: &mut egui::Ui, area: Area) {
         for p in Panel::of(area) {
-            if ui
-                .button(format!("{}…", p.title()))
-                .on_hover_text(p.tip())
-                .clicked()
-            {
+            let title = format!("{}…", p.title());
+            let button = match p {
+                Panel::Generators => Icon::Generator.button(ui, title),
+                Panel::Supports => Icon::Support.button(ui, title),
+                _ => egui::Button::new(title),
+            };
+            if ui.add(button).on_hover_text(p.tip()).clicked() {
                 self.focus(p);
                 ui.close();
             }
@@ -312,8 +342,9 @@ impl StructureApp {
 
     fn body_actions(&mut self, ui: &mut egui::Ui) {
         let joints = self.picked_joints().len();
-        if item(
+        if icon_item(
             ui,
+            Icon::AddJoint,
             "Add a joint",
             true,
             "A joint above the joint picked (or at the centre)",
@@ -322,8 +353,9 @@ impl StructureApp {
             self.add_joint();
             self.focus(Panel::Joints);
         }
-        if item(
+        if icon_item(
             ui,
+            Icon::AddMember,
             "Member between the two joints",
             joints == 2,
             "A member between the two joints picked",
@@ -332,8 +364,9 @@ impl StructureApp {
             self.add_member();
             self.focus(Panel::Members);
         }
-        if item(
+        if icon_item(
             ui,
+            Icon::PointOnJoint,
             "Point on the joint",
             joints == 1 && self.selected.len() == 1,
             "A point where insulators hang, on the joint picked (it moves with it)",
@@ -346,7 +379,13 @@ impl StructureApp {
             .file
             .as_ref()
             .and_then(|f| symmetry_option(f.structure()));
-        options_menu(ui, "Symmetry", |ui| {
+        let symmetry = (
+            Icon::Symmetry
+                .image(ui.ctx(), 16.0)
+                .tint(ui.visuals().text_color()),
+            "Symmetry",
+        );
+        options_menu(ui, symmetry, |ui| {
             let mut chosen = now;
             ui.radio_value(&mut chosen, None, "none");
             for m in Mirror::ALL {
@@ -501,8 +540,13 @@ impl StructureApp {
                 .resizable(false)
                 .open(&mut open)
                 .show(ctx, |ui| {
-                    ui.heading("OHL-Structure");
-                    ui.label(format!("Version {}", crate::VERSION));
+                    ui.horizontal(|ui| {
+                        ui.add(crate::icons::mark(ui.ctx(), 48.0));
+                        ui.vertical(|ui| {
+                            ui.heading("OHL-Structure");
+                            ui.label(format!("Version {}", crate::VERSION));
+                        });
+                    });
                     ui.label(
                         "The structure application of OpenOHL: one structure file (.olss), from \
                          level 1 (stick figure) to level 3 (full design), its loads and its \

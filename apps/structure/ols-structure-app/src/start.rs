@@ -160,6 +160,8 @@ impl StructureApp {
         let mut open: Option<PathBuf> = None;
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
+            // The OpenOHL mark above the name.
+            ui.add(crate::icons::mark(ui.ctx(), 64.0));
             ui.heading("OHL-Structure");
             ui.label("A structure file (.olss): its points and insulators, its body, its design.");
             ui.add_space(12.0);

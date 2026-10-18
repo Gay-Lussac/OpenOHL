@@ -906,6 +906,93 @@ fn the_hotbar_is_remembered() {
     assert_eq!(crate::tools::Hotbar::load(&storage), Some(h));
 }
 
+/// The hotbar and the inventory show the tool icons of `assets/` (images,
+/// no glyphs of the font, which showed as □ for several tools); the
+/// Tools menu too.
+#[test]
+fn the_hotbar_shows_image_icons() {
+    use crate::tools::Tool;
+    let gpu = ols_render::headless_device().is_ok();
+    assert!(
+        gpu || std::env::var_os("OLS_REQUIRE_GPU_TESTS").is_none(),
+        "no GPU"
+    );
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let model = synthetic();
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    let hotbar = harness.state_mut().ready().unwrap().hotbar.clone();
+    let icons = |h: &Harness<'_, App>| -> Vec<String> {
+        h.ctx
+            .tex_manager()
+            .read()
+            .allocated()
+            .filter_map(|(_, m)| m.name.strip_prefix("icon:").map(str::to_owned))
+            .collect()
+    };
+    for t in hotbar.slots.iter().flatten() {
+        harness.get_by_label(&format!("slot: {}", t.name()));
+        assert!(icons(&harness).iter().any(|n| n == t.key_name()), "{t:?}");
+    }
+    for t in Tool::ALL {
+        assert!(
+            harness.query_by_label_contains(t.icon()).is_none(),
+            "{t:?}: a glyph shown"
+        );
+    }
+    // The inventory: every tool's icon.
+    press(&mut harness, egui::Key::E, egui::Modifiers::NONE);
+    harness.run();
+    for t in Tool::ALL {
+        assert!(icons(&harness).iter().any(|n| n == t.key_name()), "{t:?}");
+    }
+    if gpu && let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ohl-design-hotbar-inventory.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    // The Tools menu: names without glyphs, the icons beside them.
+    harness.get_by_label("Tools").click();
+    harness.run();
+    harness.get_by_label("Replace structure");
+    if gpu && let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ohl-design-tools-menu.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+}
+
+/// The start page shows the OpenOHL mark above the name.
+#[test]
+fn the_start_page_shows_the_mark() {
+    let gpu = ols_render::headless_device().is_ok();
+    let mut builder = Harness::builder().with_size(egui::vec2(1000.0, 700.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::empty(Sources::default(), cc.wgpu_render_state.clone()));
+    harness.run();
+    harness.get_by_label("New project…");
+    let mark = harness
+        .ctx
+        .tex_manager()
+        .read()
+        .allocated()
+        .any(|(_, m)| m.name == "icon:openohl-mark");
+    assert!(mark, "the mark on the start page");
+    if gpu && let Some(dir) = std::env::var_os("OLS_RENDER_PNG") {
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(dir).join("ohl-design-start-page.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+}
+
 /// Choosing a slot only holds the tool; a right-click uses it.
 #[test]
 fn tools_act_on_a_right_click_only() {

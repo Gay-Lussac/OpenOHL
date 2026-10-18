@@ -37,6 +37,7 @@ mod body_tab;
 mod export_menu;
 mod extensions_panel;
 mod generators_ui;
+mod icons;
 mod in_line_tab;
 mod layout;
 mod libraries;
@@ -137,7 +138,8 @@ fn main() -> std::process::ExitCode {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(APP_NAME)
-            .with_inner_size([1300.0, 900.0]),
+            .with_inner_size([1300.0, 900.0])
+            .with_icon(icons::window_icon()),
         ..Default::default()
     };
     let result = eframe::run_native(

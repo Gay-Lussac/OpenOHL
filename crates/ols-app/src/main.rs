@@ -37,6 +37,7 @@ mod edit;
 mod editors;
 mod files;
 mod galloping;
+mod icons;
 mod job;
 mod library;
 mod loads;
@@ -209,7 +210,8 @@ fn main() -> std::process::ExitCode {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(APP_NAME)
-            .with_inner_size([1500.0, 950.0]),
+            .with_inner_size([1500.0, 950.0])
+            .with_icon(icons::window_icon()),
         ..Default::default()
     };
     let result = eframe::run_native(

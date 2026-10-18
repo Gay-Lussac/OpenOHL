@@ -113,6 +113,11 @@ impl StructureApp {
         ui.horizontal_wrapped(|ui| {
             let now = symmetry_option(t);
             let mut chosen = now;
+            ui.add(
+                crate::icons::Icon::Symmetry
+                    .image(ui.ctx(), 16.0)
+                    .tint(ui.visuals().text_color()),
+            );
             ui.label("symmetry").on_hover_text(
                 "Joints and members added, moved or deleted take their mirror images along \
                  (about x = 0: left and right of the line; about y = 0: ahead and back)",
