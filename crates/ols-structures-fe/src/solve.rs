@@ -472,31 +472,94 @@ pub(crate) fn settle<S>(
 /// two halves of a slack diagonal through a held joint stretch alike, by
 /// half of the diagonal's own stretch.
 ///
-/// Also per member its shortening strain (compression over EA) when it is
-/// an active tension-only member in compression, else 0 ([`settle`]).
+/// Tension-only members on one line through a joint ([`chains`]) are one
+/// tie — a diagonal in two halves through its crossing with the other: it
+/// goes or comes back as a whole, by its stretch end to end (the sum of
+/// its members' stretches, an active one's N·L/EA) over its flexibility
+/// Σ L/EA, a force. A half alone would hang from the crossing joint.
+///
+/// Also per member its shortening strain (its tie's compression over its
+/// EA) when its tie is active and compressed, else 0 ([`settle`]).
 fn next_active_set(model: &Model, s: &Solution, inactive: &[bool]) -> (Vec<bool>, Vec<f64>) {
     let largest = s.members.iter().map(|f| f.axial.abs()).fold(0.0, f64::max);
     let tolerance = TENSION_TOLERANCE * largest;
     let stretch = slack_stretch(model, s, inactive);
     let mut shortening = vec![0.0; model.members.len()];
-    let next = model
-        .members
-        .iter()
-        .enumerate()
-        .map(|(k, m)| {
-            let sec = &model.sections[m.section];
-            if m.kind != MemberKind::Tension {
-                false
-            } else if inactive[k] {
-                sec.e * sec.area / model.length(m) * stretch[k] <= tolerance
+    let ea = |k: usize| {
+        let sec = &model.sections[model.members[k].section];
+        sec.e * sec.area
+    };
+    let mut next = vec![false; model.members.len()];
+    for tie in chains(model) {
+        // Its stretch end to end and its flexibility.
+        let (mut long, mut flex) = (0.0, 0.0);
+        for &k in &tie {
+            let f = model.length(&model.members[k]) / ea(k);
+            flex += f;
+            long += if inactive[k] {
+                stretch[k]
             } else {
-                let n = s.members[k].axial;
-                shortening[k] = (-n / (sec.e * sec.area)).max(0.0);
-                n < -tolerance
+                s.members[k].axial * f
+            };
+        }
+        let force = long / flex;
+        let out = if tie.iter().all(|&k| inactive[k]) {
+            force <= tolerance
+        } else {
+            force < -tolerance
+        };
+        for &k in &tie {
+            next[k] = out;
+            if !inactive[k] {
+                shortening[k] = (-force / ea(k)).max(0.0);
             }
-        })
-        .collect();
+        }
+    }
     (next, shortening)
+}
+
+/// The tension-only members by tie: those that meet at a joint on one line
+/// (directions within 0.06°) are one tie, the others one each; in member
+/// order.
+pub(crate) fn chains(model: &Model) -> Vec<Vec<usize>> {
+    let tension: Vec<usize> = (0..model.members.len())
+        .filter(|&k| model.members[k].kind == MemberKind::Tension)
+        .collect();
+    let unit = |k: usize| {
+        let m = &model.members[k];
+        let d = crate::model::sub(model.nodes[m.j].point, model.nodes[m.i].point);
+        let l = crate::model::norm(d);
+        [d[0] / l, d[1] / l, d[2] / l]
+    };
+    let mut at_node: Vec<Vec<usize>> = vec![Vec::new(); model.nodes.len()];
+    for &k in &tension {
+        at_node[model.members[k].i].push(k);
+        at_node[model.members[k].j].push(k);
+    }
+    let mut group: Vec<usize> = (0..model.members.len()).collect();
+    fn root(group: &mut [usize], mut x: usize) -> usize {
+        while group[x] != x {
+            group[x] = group[group[x]];
+            x = group[x];
+        }
+        x
+    }
+    for members in &at_node {
+        for (a, &p) in members.iter().enumerate() {
+            for &q in &members[a + 1..] {
+                if crate::model::norm(crate::model::cross(unit(p), unit(q))) <= 1e-3 {
+                    let (x, y) = (root(&mut group, p), root(&mut group, q));
+                    group[x.max(y)] = x.min(y);
+                }
+            }
+        }
+    }
+    let mut ties: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+    for &k in &tension {
+        let r = root(&mut group, k);
+        ties.entry(r).or_default().push(k);
+    }
+    ties.into_values().collect()
 }
 
 /// The stretch (m) of each left-out member of `inactive` in solution `s`
