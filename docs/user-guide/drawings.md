@@ -68,8 +68,8 @@ For route `R` (`R-profile…` with `--profile-only`):
 - **PNG**: the SVG rendered at `--dpi`, with the computer's fonts.
   Images are limited to 40 million pixels: larger ones are drawn at a lower
   resolution (reported).
-- **DXF** (AutoCAD R12, ASCII): opens in every CAD program, and imports
-  into DWG-based ones (no DWG file is written). Entities are LINE,
+- **DXF** (AutoCAD R12, ASCII): a format most CAD programs read; not tried
+  in a given program yet (no DWG file is written). Entities are LINE,
   POLYLINE, TEXT and CIRCLE on layers `OLS_GROUND`, `OLS_WIRES`,
   `OLS_STRUCTURES`, `OLS_CLEARANCE`, `OLS_GRID`, `OLS_TITLE`… Colours are
   the nearest AutoCAD colour index; dashes are line types `OLS_DASH1`…
@@ -141,7 +141,7 @@ next export. It draws the weather case shown (solid).
 
 ## What is not there yet
 
-- No DWG files (the DXF imports into DWG-based programs); DXF has no line
+- No DWG files (DXF only); DXF has no line
   weights, true colours or logos.
 - The sheet layout and title block are fixed; company templates will come
   as a layout plugin.

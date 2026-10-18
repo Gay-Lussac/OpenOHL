@@ -45,8 +45,8 @@ to write the file (`<id>.olss`; an existing file is not replaced) and
 opens it.
 
 From the line application, **Open in OHL-Structure…** on a structure (in its properties)
-and **Edit in the structure application…** (on the [structure
-screen](desktop-app.md#the-structure-screen), the Structure types page
+and **Open this type in OHL-Structure…** (on the [structure
+screen](desktop-app.md#the-structure-screen), the Structure library page
 and the Structures table) start it on the structure's file; saved here,
 the line follows. From a placed structure's properties it also hands
 over that place's loads ([below](#started-for-a-placed-structure)). A
@@ -503,13 +503,15 @@ What applies here:
 edits included) for another program. It needs **level 3**: joints,
 members with sections, a supported joint.
 
-| Entry | File | For |
+| Entry | File | Meant for |
 |---|---|---|
-| **IFC4 — analysis model with load cases, and members** | `.ifc` | RFEM 6 (imports a structural analysis view as nodes and members), BIM viewers |
+| **IFC4 — analysis model with load cases, and members** | `.ifc` | RFEM 6 (its structural analysis view: nodes and members), BIM viewers |
 | **IFC4 — members with their profiles** | `.ifc` | BIM viewers, coordination |
-| **IFC2x3 — members for Tekla Structures** | `.ifc` | Tekla Structures: insert as a reference model, then *IFC object conversion* makes native parts (Tekla converts IFC2x3 only) |
+| **IFC2x3 — members for Tekla Structures** | `.ifc` | Tekla Structures, as a reference model (its *IFC object conversion* takes IFC2x3 only) |
 | **SAF (xlsx) — analysis model with load cases** | `.xlsx` | RFEM 6, SCIA and other programs reading the Structural Analysis Format |
 | **CSV tables** | a folder | anything else: `materials`, `sections`, `nodes`, `supports`, `members`, `load_cases`, `loads` |
+
+Pre-alpha, in active development: no exported file has been imported into RFEM, Tekla or SCIA yet.
 
 File-format plugins turned on are listed under the entries, greyed: they
 write the line's export model, not a structure.

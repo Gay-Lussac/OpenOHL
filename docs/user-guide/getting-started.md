@@ -1,6 +1,6 @@
 # Getting started
 
-OpenOHL is pre-alpha: the engines and the desktop application work on real lines, but every result must be checked by a qualified engineer. Build it with a Rust toolchain (`cargo`); the examples below run from the top of the source tree.
+OpenOHL is pre-alpha: the engines and both applications are in active development, nothing is approved yet, and every result must be checked by a qualified engineer. Build it with a Rust toolchain (`cargo`); the examples below run from the top of the source tree.
 
 ## OHL-Design, the line application
 
@@ -66,7 +66,7 @@ cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
 |---|---|---|
 | `ohl sagtension` | sag-tension of one tension section from a job file | below |
 | `ohl line` | solves a line file in 3D: clearances, structure loads, usage, exports; given a project, with the libraries it keeps | [Line files](line-file.md), [Terrain and ground clearance](terrain.md), [Load cases](loads.md), [Project files](project.md) |
-| `ohl zones` | vertical and radial clearances to the ground and LiDAR classes in the wind, by a rule file (the desktop clearance windows' check); given a project, with the libraries it keeps | [Terrain and ground clearance](terrain.md#vertical-and-radial-clearances-without-the-window-ols-zones) |
+| `ohl zones` | vertical and radial clearances to the ground and LiDAR classes in the wind, by a rule file (the desktop clearance windows' check); given a project, with the libraries it keeps | [Terrain and ground clearance](terrain.md#vertical-and-radial-clearances-without-the-window-ohl-zones) |
 | `ohl plugin info` | loads a plugin of any kind (design code, check, file format, terrain, project, minimal) and prints what it describes: name, version, world, formats or checks | [Plugins](../development/plugins.md) |
 | `ohl drawing` | plan and profile sheets and profile exports | [Drawings](drawings.md) |
 | `ohl structures` | derive structure types; frame/truss and pole analysis | [Structure libraries](structure-library.md), [Structure analysis](structure-analysis.md) |
