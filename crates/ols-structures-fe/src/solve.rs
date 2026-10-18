@@ -3,8 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Static solution: first order, or second order (P-Delta) by Newton
-//! iterations on the tangent K = Kₑ + K_g(N), and tension-only cables
-//! that go slack.
+//! iterations on the tangent K = Kₑ + K_g(N), tension-only cables that go
+//! slack, and the active-set iterations of tension-only members
+//! ([`MemberKind::Tension`]).
 
 use std::fmt;
 use std::time::Duration;
@@ -123,6 +124,20 @@ pub enum FeError {
         /// Negative pivots (buckling modes passed).
         modes: usize,
     },
+    /// The tension-only members do not settle: the active-set iterations
+    /// came back to a set they had solved before (a cycle), or took
+    /// [`TENSION_PASSES`] solves.
+    Unsettled {
+        /// The members going taut and slack in turn (at most
+        /// [`MECHANISM_JOINTS`] named).
+        members: Vec<String>,
+        /// How many flip in all.
+        flipping: usize,
+        /// Solves done.
+        passes: u32,
+        /// A cycle (else: out of passes).
+        cycle: bool,
+    },
     /// An exit clause stopped the iterations.
     Stopped {
         /// Which limit.
@@ -173,6 +188,26 @@ impl fmt::Display for FeError {
                 "unstable: axial compression above the elastic buckling load \
                  ({modes} buckling mode(s), iteration {iteration})"
             ),
+            FeError::Unsettled {
+                members,
+                flipping,
+                passes,
+                cycle,
+            } => write!(
+                f,
+                "tension-only members do not settle: {}{} go taut and slack in turn ({})",
+                members.join(", "),
+                if *flipping > members.len() {
+                    format!(", … ({flipping} in all)")
+                } else {
+                    String::new()
+                },
+                if *cycle {
+                    format!("back to a set of slack members solved before, after {passes} solves")
+                } else {
+                    format!("still changing after {passes} solves")
+                }
+            ),
             FeError::Stopped { stop, residual } => write!(
                 f,
                 "not converged: {stop}; out-of-balance forces still {:.2e} of the loads",
@@ -192,7 +227,8 @@ pub struct MemberForces {
     /// End forces on the member, local axes: node i (Fx, Fy, Fz, Mx, My,
     /// Mz), then node j.
     pub end_forces: [f64; 12],
-    /// A cable gone slack.
+    /// A cable gone slack, or a tension-only member left out as slack
+    /// (its forces 0).
     pub slack: bool,
 }
 
@@ -225,6 +261,10 @@ pub struct Solution {
     /// The joint directions held by the stabilisation, with the force each
     /// took (empty: the model solved as it is).
     pub stabilised: Vec<Stabilised>,
+    /// Solves of the active-set iterations of the tension-only members
+    /// ([`MemberKind::Tension`]): 0 for a model without any (solved
+    /// once, as always); [`Solution::iterations`] are those of the last.
+    pub passes: u32,
 }
 
 /// Per member: what does not change between iterations.
@@ -257,31 +297,338 @@ struct Prepared {
 /// 1000-member lattice tower: a few milliseconds), one or two iterations
 /// first order, a few tens with P-Delta; a stabilised model is solved
 /// twice. `budget` bounds the iterations of each solve.
+///
+/// A model with **tension-only members** ([`MemberKind::Tension`]) is
+/// solved by active-set iterations ([`TENSION_PASSES`]): solved, its
+/// compressed tension-only members left out and its left-out ones that
+/// would be stretched put back, and solved again, until the set does not
+/// change — first order, then (P-Delta) with the geometric stiffness from
+/// that set on, each solve converged before the set is updated. Each
+/// solve is stabilised as above on the model of its active members, so a
+/// joint held only by members gone slack is held in the directions they
+/// left free. A model without tension-only members is solved once, as
+/// always.
 pub fn solve(
     model: &Model,
     loads: &Loads,
     options: &Options,
     budget: &Budget,
 ) -> Result<Solution, FeError> {
-    match solve_with(model, loads, options, budget, &[]) {
+    if model.members.iter().any(|m| m.kind == MemberKind::Tension) {
+        return solve_tension_only(model, loads, options, budget);
+    }
+    solve_stabilised(model, loads, options, budget, &[])
+}
+
+/// Solves `model` with the members `inactive` left out (empty: none),
+/// stabilised when it fails as a mechanism or as unstable (see
+/// [`solve`]).
+fn solve_stabilised(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+    inactive: &[bool],
+) -> Result<Solution, FeError> {
+    match solve_with(model, loads, options, budget, &[], inactive) {
         Err(e @ (FeError::Mechanism { .. } | FeError::Unstable { .. })) if options.stabilise => {
-            let held = crate::stabilise::find(model);
+            let held = crate::stabilise::find(model, inactive);
             if held.is_empty() {
                 return Err(e);
             }
-            solve_with(model, loads, options, budget, &held)
+            solve_with(model, loads, options, budget, &held, inactive)
         }
         other => other,
     }
 }
 
-/// Solves `model` under `loads` with the joint directions `held`.
+/// Most solves of the active-set iterations of the tension-only members
+/// (first order and P-Delta together).
+pub const TENSION_PASSES: u32 = 100;
+
+/// A tension-only member is compressed (left out) when its force is below
+/// −this share of the largest axial force of the solve, and stretched (put
+/// back) when it would take more than this share: round-off on a member
+/// without force does not switch it.
+pub const TENSION_TOLERANCE: f64 = 1e-9;
+
+/// [`solve`] of a model with tension-only members: the active-set
+/// iterations.
+fn solve_tension_only(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+) -> Result<Solution, FeError> {
+    let (mut s, passes) = settle(model, options.nonlinear, |nonlinear, inactive| {
+        let opts = Options {
+            nonlinear,
+            ..*options
+        };
+        let s = solve_stabilised(model, loads, &opts, budget, inactive)?;
+        let (next, shortening) = next_active_set(model, &s, inactive);
+        Ok((s, next, shortening))
+    })?;
+    s.passes = passes;
+    Ok(s)
+}
+
+/// The active-set iterations: `step(nonlinear, inactive)` solves the
+/// model with the members `inactive` left out and gives its solution, the
+/// set to leave out next and per member how far it is compressed (its
+/// shortening strain; 0: not); repeated until the set does not change,
+/// first order, then (`nonlinear`) with P-Delta from the set found — a
+/// compressed tension-only member's geometric softening in the first
+/// solves would not be real.
+///
+/// Members left out together may leave a part free to move that one of
+/// them alone would hold — both diagonals of an X panel shortened by its
+/// legs under a heavy vertical load, of which one is stretched as soon as
+/// the panel sways. A solve that fails as a mechanism (or holding load,
+/// or buckling) after members were left out is therefore tried again
+/// with only the more compressed half of them left out, down to one; one
+/// member whose leaving fails the solve gives that error (the structure
+/// needs it in compression).
+///
+/// A set solved before in the same phase (a cycle) or [`TENSION_PASSES`]
+/// solves: [`FeError::Unsettled`]. The last solution and the solves done.
+pub(crate) fn settle<S>(
+    model: &Model,
+    nonlinear: bool,
+    mut step: impl FnMut(bool, &[bool]) -> Result<(S, Vec<bool>, Vec<f64>), FeError>,
+) -> Result<(S, u32), FeError> {
+    let mut inactive = vec![false; model.members.len()];
+    let mut passes = 0;
+    let phases: &[bool] = if nonlinear { &[false, true] } else { &[false] };
+    for (phase, &nonlinear) in phases.iter().enumerate() {
+        let mut seen: Vec<Vec<bool>> = Vec::new();
+        // The last set solved and its members' shortening.
+        let mut solved: Option<(Vec<bool>, Vec<f64>)> = None;
+        loop {
+            passes += 1;
+            let (s, next, shortening) = match step(nonlinear, &inactive) {
+                Ok(x) => x,
+                Err(
+                    e @ (FeError::Mechanism { .. }
+                    | FeError::Held { .. }
+                    | FeError::Unstable { .. }),
+                ) => {
+                    let Some((base, shortening)) = &solved else {
+                        return Err(e);
+                    };
+                    let mut newly: Vec<usize> = (0..inactive.len())
+                        .filter(|&k| inactive[k] && !base[k])
+                        .collect();
+                    if newly.len() <= 1 || passes >= TENSION_PASSES {
+                        return Err(e);
+                    }
+                    // The more compressed half stays out.
+                    newly.sort_by(|&a, &b| shortening[b].total_cmp(&shortening[a]));
+                    for &k in &newly[newly.len().div_ceil(2)..] {
+                        inactive[k] = false;
+                    }
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+            if next == inactive {
+                if phase + 1 == phases.len() {
+                    return Ok((s, passes));
+                }
+                break;
+            }
+            solved = Some((inactive.clone(), shortening));
+            seen.push(std::mem::replace(&mut inactive, next));
+            let cycle = seen.iter().position(|x| *x == inactive);
+            if cycle.is_some() || passes >= TENSION_PASSES {
+                // The members that change within the cycle (or in all).
+                let from = &seen[cycle.unwrap_or(0)..];
+                let flipping: Vec<String> = (0..model.members.len())
+                    .filter(|&k| from.iter().any(|x| x[k] != inactive[k]))
+                    .map(|k| model.members[k].id.clone())
+                    .collect();
+                return Err(FeError::Unsettled {
+                    members: flipping.iter().take(MECHANISM_JOINTS).cloned().collect(),
+                    flipping: flipping.len(),
+                    passes,
+                    cycle: cycle.is_some(),
+                });
+            }
+        }
+    }
+    unreachable!("the last phase returns")
+}
+
+/// The tension-only members to leave out after solution `s` of the model
+/// with `inactive` left out: an active one compressed (beyond
+/// [`TENSION_TOLERANCE`]) goes, a left-out one that would be stretched
+/// comes back.
+///
+/// A left-out member's stretch is that of its ends, except at a joint
+/// direction the solve held ([`Solution::stabilised`]): a joint held only
+/// by members gone slack has no position of its own there. It is placed
+/// where the left-out members at it would be in balance (their elastic
+/// energy least: the limit of giving them a vanishing stiffness), so the
+/// two halves of a slack diagonal through a held joint stretch alike, by
+/// half of the diagonal's own stretch.
+///
+/// Also per member its shortening strain (compression over EA) when it is
+/// an active tension-only member in compression, else 0 ([`settle`]).
+fn next_active_set(model: &Model, s: &Solution, inactive: &[bool]) -> (Vec<bool>, Vec<f64>) {
+    let largest = s.members.iter().map(|f| f.axial.abs()).fold(0.0, f64::max);
+    let tolerance = TENSION_TOLERANCE * largest;
+    let stretch = slack_stretch(model, s, inactive);
+    let mut shortening = vec![0.0; model.members.len()];
+    let next = model
+        .members
+        .iter()
+        .enumerate()
+        .map(|(k, m)| {
+            let sec = &model.sections[m.section];
+            if m.kind != MemberKind::Tension {
+                false
+            } else if inactive[k] {
+                sec.e * sec.area / model.length(m) * stretch[k] <= tolerance
+            } else {
+                let n = s.members[k].axial;
+                shortening[k] = (-n / (sec.e * sec.area)).max(0.0);
+                n < -tolerance
+            }
+        })
+        .collect();
+    (next, shortening)
+}
+
+/// The stretch (m) of each left-out member of `inactive` in solution `s`
+/// (0 for the others), its ends' held directions placed where the
+/// left-out members are in balance ([`next_active_set`]).
+fn slack_stretch(model: &Model, s: &Solution, inactive: &[bool]) -> Vec<f64> {
+    let unit = |k: usize| {
+        let m = &model.members[k];
+        let d = crate::model::sub(model.nodes[m.j].point, model.nodes[m.i].point);
+        let l = crate::model::norm(d);
+        Vector3::new(d[0] / l, d[1] / l, d[2] / l)
+    };
+    let ea_l = |k: usize| {
+        let m = &model.members[k];
+        let sec = &model.sections[m.section];
+        sec.e * sec.area / model.length(m)
+    };
+    let left_out: Vec<usize> = (0..model.members.len()).filter(|&k| inactive[k]).collect();
+    // The held translations at the ends of left-out members: the unknowns.
+    let mut touched = vec![false; model.nodes.len()];
+    for &k in &left_out {
+        touched[model.members[k].i] = true;
+        touched[model.members[k].j] = true;
+    }
+    let unknowns: Vec<(usize, Vector3<f64>)> = s
+        .stabilised
+        .iter()
+        .filter(|h| !h.at.rotation && touched[h.at.node])
+        .map(|h| (h.at.node, Vector3::from(h.at.direction)))
+        .collect();
+    let mut by_node: Vec<Vec<usize>> = vec![Vec::new(); model.nodes.len()];
+    for (u, (n, _)) in unknowns.iter().enumerate() {
+        by_node[*n].push(u);
+    }
+    // Per left-out member: its stretch with the joints as solved, and its
+    // terms in the unknowns (∂stretch/∂a).
+    let mut base = vec![0.0; model.members.len()];
+    let mut terms: Vec<Vec<(usize, f64)>> = vec![Vec::new(); model.members.len()];
+    for &k in &left_out {
+        let m = &model.members[k];
+        let e = unit(k);
+        let d = &s.displacements;
+        let du = Vector3::new(
+            d[m.j][0] - d[m.i][0],
+            d[m.j][1] - d[m.i][1],
+            d[m.j][2] - d[m.i][2],
+        );
+        base[k] = e.dot(&du);
+        for &u in &by_node[m.j] {
+            terms[k].push((u, e.dot(&unknowns[u].1)));
+        }
+        for &u in &by_node[m.i] {
+            terms[k].push((u, -e.dot(&unknowns[u].1)));
+        }
+    }
+    if !unknowns.is_empty() {
+        // Least Σ (EA/L)·stretch²: (Σ k g gᵀ) a = −Σ k c g, by groups of
+        // unknowns joined through left-out members.
+        let mut group: Vec<usize> = (0..unknowns.len()).collect();
+        fn root(group: &mut [usize], mut x: usize) -> usize {
+            while group[x] != x {
+                group[x] = group[group[x]];
+                x = group[x];
+            }
+            x
+        }
+        for &k in &left_out {
+            for w in terms[k].windows(2) {
+                let (a, b) = (root(&mut group, w[0].0), root(&mut group, w[1].0));
+                group[a] = b;
+            }
+        }
+        let mut members_of: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+        for &k in &left_out {
+            if let Some(&(u, _)) = terms[k].first() {
+                let r = root(&mut group, u);
+                members_of.entry(r).or_default().push(k);
+            }
+        }
+        let mut a = vec![0.0; unknowns.len()];
+        for (r, members) in members_of {
+            let ids: Vec<usize> = (0..unknowns.len())
+                .filter(|&u| root(&mut group, u) == r)
+                .collect();
+            let place = |u: usize| ids.iter().position(|&x| x == u).unwrap_or(0);
+            let n = ids.len();
+            let mut kk = nalgebra::DMatrix::<f64>::zeros(n, n);
+            let mut rhs = nalgebra::DVector::<f64>::zeros(n);
+            for &k in &members {
+                let w = ea_l(k);
+                for &(u, g) in &terms[k] {
+                    rhs[place(u)] -= w * base[k] * g;
+                    for &(v, h) in &terms[k] {
+                        kk[(place(u), place(v))] += w * g * h;
+                    }
+                }
+            }
+            // A direction no left-out member reaches stays where it is
+            // (a tiny regularisation keeps the matrix definite).
+            let big = (0..n).map(|i| kk[(i, i)]).fold(0.0, f64::max);
+            if big <= 0.0 {
+                continue;
+            }
+            for i in 0..n {
+                kk[(i, i)] += 1e-12 * big;
+            }
+            if let Some(c) = kk.cholesky() {
+                let x = c.solve(&rhs);
+                for (i, &u) in ids.iter().enumerate() {
+                    a[u] = x[i];
+                }
+            }
+        }
+        for &k in &left_out {
+            for &(u, g) in &terms[k] {
+                base[k] += g * a[u];
+            }
+        }
+    }
+    base
+}
+
+/// Solves `model` under `loads` with the joint directions `held` and the
+/// members `inactive` left out (tension-only members gone slack; empty:
+/// none).
 fn solve_with(
     model: &Model,
     loads: &Loads,
     options: &Options,
     budget: &Budget,
     held: &[Stabilisation],
+    inactive: &[bool],
 ) -> Result<Solution, FeError> {
     model.check().map_err(FeError::Invalid)?;
     let n_nodes = model.nodes.len();
@@ -415,7 +762,11 @@ fn solve_with(
     // Iterations.
     let mut u = vec![0.0; n_eq];
     let mut axial: Vec<f64> = model.members.iter().map(|m| m.pretension).collect();
+    // Slack cables, and the tension-only members left out.
     let mut slack = vec![false; model.members.len()];
+    for (s, &out) in slack.iter_mut().zip(inactive) {
+        *s = out;
+    }
     let mut slack_solved: Option<Vec<bool>> = None;
     let scale = f
         .iter()
@@ -511,6 +862,9 @@ fn solve_with(
             if m.kind == MemberKind::Cable {
                 slack[idx] = n < 0.0;
                 axial[idx] = n.max(0.0);
+            } else if slack[idx] {
+                // A tension-only member left out: no force.
+                axial[idx] = 0.0;
             } else {
                 axial[idx] = n;
             }
@@ -639,6 +993,7 @@ fn solve_with(
         residual,
         nonlinear: options.nonlinear,
         stabilised,
+        passes: 0,
     })
 }
 
@@ -787,7 +1142,7 @@ fn assemble(
                     }
                 }
             }
-            MemberKind::Truss | MemberKind::Cable => {
+            MemberKind::Truss | MemberKind::Cable | MemberKind::Tension => {
                 if slack[idx] {
                     continue;
                 }

@@ -639,6 +639,7 @@ pub fn ifc(s: &ExportStructure, o: &IfcOptions) -> Result<String, String> {
                 ExportKind::Truss => "PIN_JOINED_MEMBER",
                 ExportKind::Frame => "RIGID_JOINED_MEMBER",
                 ExportKind::Cable => "CABLE",
+                ExportKind::Tension => "TENSION_MEMBER",
             };
             let g = f.guid(&format!("curve:{}", m.id));
             let c = f.add(

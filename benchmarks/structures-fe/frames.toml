@@ -374,3 +374,71 @@ expected.n_BC = { value = -7071.067811865475, rel_tol = 1e-9 }
 expected.r_A_z = { value = 5000.0, rel_tol = 1e-9 }
 expected.r_B_z = { value = 5000.0, rel_tol = 1e-9 }
 expected.r_B_y = { value = 0.0, abs_tol = 1e-9 }
+
+[[case]]
+id = "structfe-008"
+title = "X-braced panel, tension-only diagonals: one carries the shear (5H/4), the other is slack"
+calculation = "structures.fe"
+reference = "Method of joints (statics) on the panel with the stretched diagonal alone, statically determinate: diagonal H/cos θ = 5H/4, top −H, far leg −H tan θ = −3H/4, near leg 0"
+notes = "Panel 4 m wide, 3 m high (diagonals 5 m), feet pinned, H = 10 kN along +x at the top-left joint D; diagonals AC and BD of kind tension; BD shortened in the first solve, left out, the panel solved again (2 solves); first order; nothing holds the panel across its plane (stabilised)"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "B"
+point = ["4 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "C"
+point = ["4 m", "0 m", "3 m"]
+[[node]]
+id = "D"
+point = ["0 m", "0 m", "3 m"]
+[[member]]
+id = "AD"
+nodes = ["A", "D"]
+section = "s"
+[[member]]
+id = "BC"
+nodes = ["B", "C"]
+section = "s"
+[[member]]
+id = "DC"
+nodes = ["D", "C"]
+section = "s"
+[[member]]
+id = "AC"
+nodes = ["A", "C"]
+section = "s"
+kind = "tension"
+[[member]]
+id = "BD"
+nodes = ["B", "D"]
+section = "s"
+kind = "tension"
+[[load]]
+node = "D"
+force = ["10 kN", "0 N", "0 N"]
+'''
+expected.n_AC = { value = 12500.0, rel_tol = 1e-9 }
+expected.n_BD = { value = 0.0, abs_tol = 1e-9 }
+expected.slack_BD = { value = 1.0, abs_tol = 1e-12 }
+expected.slack_AC = { value = 0.0, abs_tol = 1e-12 }
+expected.n_DC = { value = -10000.0, rel_tol = 1e-9 }
+expected.n_BC = { value = -7500.0, rel_tol = 1e-9 }
+expected.n_AD = { value = 0.0, abs_tol = 1e-6 }
+expected.r_A_x = { value = -10000.0, rel_tol = 1e-9 }
+expected.r_B_x = { value = 0.0, abs_tol = 1e-6 }
+expected.passes = { value = 2.0, abs_tol = 1e-12 }

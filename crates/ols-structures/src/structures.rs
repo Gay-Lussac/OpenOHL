@@ -184,14 +184,16 @@ use crate::{Library, LibraryItem};
 pub const STRUCTURE_FILE_EXTENSION: &str = "olss";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ols-structure";
-/// Newest format version read. Version 4 adds a string's optional limits,
+/// Newest format version read. Version 5 adds the member kind `tension`
+/// (a truss in tension only, slack in compression). Version 4 adds a
+/// string's optional limits,
 /// not checked by OLS CAD (`max_load`, `max_swing`, `max_swing_across`,
 /// `max_swing_along`: [`crate::InsulatorLimits`]). Version 3 adds what the structure
 /// application writes: a member's `group` and `made_by`, a joint's
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
-/// tables; versions 1 to 3 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 4;
+/// tables; versions 1 to 4 read as before.
+pub const STRUCTURE_FILE_VERSION: u32 = 5;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -385,7 +387,8 @@ pub struct TypeMember {
     /// the library first); needed for a full design.
     #[serde(default)]
     pub section: Option<String>,
-    /// `truss` (default), `frame` or `cable`.
+    /// `truss` (default), `frame`, `cable` or (version 5) `tension` (a
+    /// truss in tension only).
     #[serde(default)]
     pub kind: Option<String>,
     /// Frame: a direction in the local x–y plane.

@@ -463,7 +463,7 @@ pub struct MemberResult {
     pub usage: Option<f64>,
     /// What governs, in words.
     pub governs: String,
-    /// A cable gone slack.
+    /// A cable or a tension-only member gone slack.
     pub slack: bool,
 }
 
@@ -617,6 +617,9 @@ fn analyse_one(
         .map_err(|e| format!("did not solve: {e}"))?;
     let took = started.elapsed();
     if let Some(note) = ols_structures_fe::stabilisation_note(model, &solution) {
+        notes.push(note);
+    }
+    if let Some(note) = ols_structures_fe::tension_only_note(model, &solution) {
         notes.push(note);
     }
     let joints = model

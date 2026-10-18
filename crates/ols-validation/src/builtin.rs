@@ -798,7 +798,9 @@ impl Calculation for StructureFe {
     fn description(&self) -> &'static str {
         "Structure model under its own loads (inputs: model = .olsfe text, optional \
          self_weight factor); outputs u_<node>_<dof> (m, rad), n_<member> (N), \
-         r_<node>_<dof> (N, N m), usage_<member>, iterations"
+         r_<node>_<dof> (N, N m), usage_<member>, slack_<member> (cables and tension-only \
+         members: 1 slack, 0 taut), iterations, passes (solves of the tension-only members' \
+         active-set iterations; 0: none)"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
@@ -823,6 +825,12 @@ impl Calculation for StructureFe {
         }
         for (m, f) in model.members.iter().zip(&s.members) {
             out.insert(format!("n_{}", m.id), f.axial);
+            if matches!(
+                m.kind,
+                ols_structures_fe::MemberKind::Cable | ols_structures_fe::MemberKind::Tension
+            ) {
+                out.insert(format!("slack_{}", m.id), f64::from(u8::from(f.slack)));
+            }
         }
         for r in &s.reactions {
             let id = &model.nodes[r.node].id;
@@ -837,6 +845,7 @@ impl Calculation for StructureFe {
             }
         }
         out.insert("iterations".into(), s.iterations as f64);
+        out.insert("passes".into(), f64::from(s.passes));
         Ok(out)
     }
 }

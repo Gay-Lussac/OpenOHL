@@ -99,8 +99,10 @@ pub enum ExportKind {
     Truss,
     /// Beam: axial, bending, torsion.
     Frame,
-    /// Tension only.
+    /// Tension only (guys, with a pretension).
     Cable,
+    /// A truss in tension only (slack in compression).
+    Tension,
 }
 
 impl ExportKind {
@@ -110,6 +112,7 @@ impl ExportKind {
             Self::Truss => "truss",
             Self::Frame => "frame",
             Self::Cable => "cable",
+            Self::Tension => "tension",
         }
     }
 }
@@ -386,6 +389,7 @@ pub fn export_structure(
                     MemberKind::Truss => ExportKind::Truss,
                     MemberKind::Frame => ExportKind::Frame,
                     MemberKind::Cable => ExportKind::Cable,
+                    MemberKind::Tension => ExportKind::Tension,
                 },
                 axes: member_axes(a, b, m.reference, m.roll),
                 length: model.length(m),

@@ -172,6 +172,9 @@ impl Analyses {
                 if let Some(note) = ols_structures_fe::stabilisation_note(model, &solution) {
                     notes.push(format!("model: {note}"));
                 }
+                if let Some(note) = ols_structures_fe::tension_only_note(model, &solution) {
+                    notes.push(format!("model: {note}"));
+                }
                 match worst(&usage) {
                     Some(w) => Some(Check {
                         method: Method::Fe,

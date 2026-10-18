@@ -120,6 +120,12 @@ CAD, for plugins and reports) did so: line file **6** (OLS XML follows
 it), `.olss` **4**, `.olsi` **2**. The `.olss` and `.olsi` writers write
 the newer version only when a limit is given (an older program still
 reads the rest); the line file is always written at the current version.
+A new value counts as a new field: the member kind `tension` (a truss in
+tension only) made `.olss` **5** and `.olsfe` **2**; the structure
+application raises a file to 5 when it makes a member `tension`
+(`ols_structure_edit::set_member_kind`), and only then. The export
+model's member `kind` (CSV, IFC `TENSION_MEMBER`, SAF "Tension only")
+takes the value `tension` too.
 The export model JSON stays version 1 (keys only added: `strings` per
 case) and the plugin WIT is unchanged (no record passes strings).
 
@@ -592,7 +598,8 @@ One directory per kind; TOML with units in the values. Each item has an
 | (structure application: typed loads; project kind `loads`, beside the structure types) | `*.loads.csv` | CSV, the load table's columns | typed rows (`Override`) of one structure type or one placed structure | `ols_structure_loads::LoadTable` | [Structure load cases](../user-guide/structure-load-cases.md#the-load-table) |
 | (line application → structure application, derived, not kept) | `*.line-values.json` | `ols-structure-line-values` (JSON) | one placed structure | `ols_structure_loads::PlacedValues` | [Structure application](../user-guide/structure-app.md#started-for-a-placed-structure) |
 
-Other data files: structure models `.olsfe` (`ols-structure-model`) and
+Other data files: structure models `.olsfe` (`ols-structure-model`,
+version 2: the member kind `tension`) and
 poles `.olsp` (`ols-pole`) next to the `.olss`
 ([Structure analysis](../user-guide/structure-analysis.md)); clearance
 rules `.olsr`; thermal ambient `.olsta`; unit costs `.olscost`; galloping
@@ -674,7 +681,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `[[extension]]` | `Extension`: `name`, `dz`; version 3: `[[extension.node]]` (`TypeNode`), `[[extension.member]]` (`TypeMember`), `[[extension.leg]]` (`LegExtension`: `leg`, `dz`) | m | height extensions; at level 3 a piece below the feet (joints with z from `foot − dz` to `foot`, ids unique with the body's; members between its joints and the body's) and leg extensions. `StructureType::extended(ext) -> ExtendedBody` applies the rule (`crates/ols-structures/src/extensions.rs`, [user guide](../user-guide/structure-library.md#extension-bodies-and-leg-extensions)): the piece added, body joints it reaches lose their support, a leg's support joint slides `dz` lower along its steepest rising member; a placed structure on such an extension is analysed on `Model::from_structure_type_extended` (`ols_loads` keys its models by type and extension) |
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |
 | `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?`, `made_by?` | m | pylon joints (detail 2–3); `made_by`: the `[[generator]]` that wrote it |
-| `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`), `reference?`, `roll?`, `orientation?` (an angle's legs towards two structure directions, `"x+y-"`, instead of `reference` and `roll`), `k?`, `lk?` (effective length instead of k × length), `pretension?`, `capacity_tension?`, `capacity_compression?` (forces replacing the computed capacities in the usage), `dead_load_factor?` (on its self-weight, instead of `[analysis]`'s), `group?`, `made_by?` | m, N | pylon members; `group`: its member group (no table of groups: a section — or `lk`, the capacities, the dead-load factor — per group is written on each member); `made_by` as for joints. `ols_structures_fe` leaves `group` and `made_by` out of the model |
+| `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`; version 5, `.olsfe` version 2: `tension`, a truss in tension only — `MemberKind::Tension`, left out while compressed by the solver's active-set iterations, `MemberForces::slack`, `Solution::passes`), `reference?`, `roll?`, `orientation?` (an angle's legs towards two structure directions, `"x+y-"`, instead of `reference` and `roll`), `k?`, `lk?` (effective length instead of k × length), `pretension?`, `capacity_tension?`, `capacity_compression?` (forces replacing the computed capacities in the usage), `dead_load_factor?` (on its self-weight, instead of `[analysis]`'s), `group?`, `made_by?` | m, N | pylon members; `group`: its member group (no table of groups: a section — or `lk`, the capacities, the dead-load factor — per group is written on each member); `made_by` as for joints. `ols_structures_fe` leaves `group` and `made_by` out of the model |
 | `[[generator]]` | tables (`generators`, kept unread by the core): `id`, `kind` (`panels` / `crossarm` / `peak` / `copy_face`) and its inputs | m | a body generator's record, read by `ols-structure-edit` (`body::Generator`): panels `bottom?`, `feet`, `waist` (a length or [across, along]), `panel` [{`top`, `bracing` (`single`/`x`/`k`/`diamond`/`warren`), `horizontal`}]; crossarm `points`, `shape` (`triangular`/`rectangular`); peak `points` or `height`; copy_face `body` (a panels generator), `face` (`x+`/`x-`/`y+`/`y-`) |
 | `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body menu's Symmetry option |
 | `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1 —, `stabilise` — joint stabilisation, default true —, `dead_load_factor` — on the members' self-weight, default 1) |

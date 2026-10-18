@@ -431,7 +431,7 @@ pub fn sheets(s: &ExportStructure) -> Vec<Sheet> {
                     match m.kind {
                         ExportKind::Truss => "Axial force only",
                         ExportKind::Frame => "Standard",
-                        ExportKind::Cable => "Tension only",
+                        ExportKind::Cable | ExportKind::Tension => "Tension only",
                     }
                     .into(),
                 ),

@@ -36,12 +36,12 @@ pub use body::{
     Symmetry,
 };
 pub use edits::{
-    LIMITS_VERSION, LimitField, Removal, StringChange, add_item, add_joint, add_member, add_point,
-    add_point_at_joint, add_set, add_strings, assembly_text, delete_string, drop_set, item_fields,
-    item_ids, limit_fields, move_set, move_to, new_string, next_id, raise_version, removal, remove,
-    remove_extension, remove_item, set_analysis_field, set_counterweight, set_extension,
-    set_item_field, set_member_k, set_member_kind, set_member_section, set_set, set_string,
-    set_support, set_top_field,
+    LIMITS_VERSION, LimitField, MEMBER_KINDS, Removal, StringChange, TENSION_VERSION, add_item,
+    add_joint, add_member, add_point, add_point_at_joint, add_set, add_strings, assembly_text,
+    delete_string, drop_set, item_fields, item_ids, limit_fields, move_set, move_to, new_string,
+    next_id, raise_version, removal, remove, remove_extension, remove_item, set_analysis_field,
+    set_counterweight, set_extension, set_item_field, set_member_k, set_member_kind,
+    set_member_section, set_set, set_string, set_support, set_top_field,
 };
 pub use file::StructureFile;
 pub use generators::{Body, generate};

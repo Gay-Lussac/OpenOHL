@@ -1364,7 +1364,8 @@ impl StructureApp {
                 ),
                 (
                     "kind",
-                    "truss (axial only), frame (bending too) or cable (tension only)",
+                    "truss (axial only), frame (bending too), cable (tension only, a guy) or \
+                     tension (a truss in tension only: slack when compressed)",
                 ),
                 ("k", "Effective length factor for buckling (none: 1)"),
             ]
@@ -1408,8 +1409,9 @@ impl StructureApp {
                     .selected_text(&new_kind)
                     .width(70.0)
                     .show_ui(ui, |ui| {
-                        for k in ["truss", "frame", "cable"] {
-                            ui.selectable_value(&mut new_kind, k.to_owned(), k);
+                        for (k, what) in edit::MEMBER_KINDS {
+                            ui.selectable_value(&mut new_kind, k.to_owned(), k)
+                                .on_hover_text(what);
                         }
                     });
                 if new_kind != kind {

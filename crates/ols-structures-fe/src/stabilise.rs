@@ -93,11 +93,21 @@ pub struct Stabilised {
 }
 
 /// The stabilisations of `model`: every joint direction without stiffness
-/// of its own (module docs), in node order.
-pub(crate) fn find(model: &Model) -> Vec<Stabilisation> {
+/// of its own (module docs), in node order. `inactive`: per member, left
+/// out of the model (a tension-only member gone slack; empty: none) — a
+/// joint whose members are all inactive is held in every direction its
+/// supports do not hold.
+pub(crate) fn find(model: &Model, inactive: &[bool]) -> Vec<Stabilisation> {
     let n_nodes = model.nodes.len();
     let mut at_node: Vec<Vec<usize>> = vec![Vec::new(); n_nodes];
+    // Joints with members, active or not (they have equations).
+    let mut connected = vec![false; n_nodes];
     for (k, m) in model.members.iter().enumerate() {
+        connected[m.i] = true;
+        connected[m.j] = true;
+        if inactive.get(k).copied().unwrap_or(false) {
+            continue;
+        }
         at_node[m.i].push(k);
         at_node[m.j].push(k);
     }
@@ -111,10 +121,27 @@ pub(crate) fn find(model: &Model) -> Vec<Stabilisation> {
     let mut out = Vec::new();
     // Translations of joints without a frame.
     for (n, members) in at_node.iter().enumerate() {
-        if members.is_empty() || members.iter().any(|&k| frame(k)) {
+        let node = &model.nodes[n];
+        if members.is_empty() {
+            // Every member inactive: each axis its supports leave free.
+            if connected[n] {
+                for d in (0..3).filter(|&d| !node.fixed[d] && node.spring[d] <= 0.0) {
+                    let mut direction = [0.0; 3];
+                    direction[d] = 1.0;
+                    out.push(Stabilisation {
+                        node: n,
+                        rotation: false,
+                        direction,
+                        axis: Some(d),
+                        stiffness: 0.0,
+                    });
+                }
+            }
             continue;
         }
-        let node = &model.nodes[n];
+        if members.iter().any(|&k| frame(k)) {
+            continue;
+        }
         let mut s = Matrix3::zeros();
         let mut stiffest: f64 = 0.0;
         for &k in members {

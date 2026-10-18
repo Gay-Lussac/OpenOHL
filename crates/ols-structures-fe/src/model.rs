@@ -55,7 +55,7 @@
 //! id = "leg1"
 //! nodes = ["B1", "A1"]
 //! section = "L90x9"         # the section library's first, then [[section]]
-//! kind = "truss"            # truss (default) | frame | cable
+//! kind = "truss"            # truss (default) | frame | cable | tension
 //! reference = [0, 0, 1]     # frame: a direction in the local x–y plane
 //! roll = "0 deg"            # frame: turns the local y, z about x
 //! # orientation = "x+y-"    # instead: an angle's legs (local y, z) towards x+, y−
@@ -84,8 +84,9 @@ use crate::units::Moment;
 
 /// `format` of a structure model file.
 pub const MODEL_FILE_FORMAT: &str = "ols-structure-model";
-/// Newest format version read.
-pub const MODEL_FILE_VERSION: u32 = 1;
+/// Newest format version read. Version 2 adds the member kind `tension`
+/// (a truss in tension only); version 1 files read as before.
+pub const MODEL_FILE_VERSION: u32 = 2;
 /// File extension of structure models.
 pub const MODEL_FILE_EXTENSION: &str = "olsfe";
 /// Gravity, m/s².
@@ -279,6 +280,11 @@ pub enum MemberKind {
     Frame,
     /// Tension only (guys), with an optional pretension.
     Cable,
+    /// A truss in tension only (version 2; a tower program's "T-Only"
+    /// bracing): removed from the model while it would be compressed, by
+    /// the solver's active-set iterations ([`crate::solve()`]); no
+    /// pretension.
+    Tension,
 }
 
 impl MemberKind {
@@ -288,6 +294,7 @@ impl MemberKind {
             MemberKind::Truss => "truss",
             MemberKind::Frame => "frame",
             MemberKind::Cable => "cable",
+            MemberKind::Tension => "tension",
         }
     }
 }

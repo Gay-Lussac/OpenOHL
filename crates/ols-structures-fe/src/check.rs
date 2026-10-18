@@ -17,6 +17,8 @@
 //! - **Frames**: linear interaction N/N_c + M_y/M_y,c + M_z/M_z,c with the
 //!   largest end moments (the allowable moments, else W × yield).
 //! - **Cables**: tension only.
+//! - **Tension-only members**: as trusses while they take force; one left
+//!   out as slack uses 0 ("slack").
 
 use crate::model::{MemberKind, Model};
 use crate::solve::Solution;
@@ -53,6 +55,13 @@ pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<Me
         .map(|(idx, m)| {
             let s = &model.sections[m.section];
             let f = &solution.members[idx];
+            if m.kind == MemberKind::Tension && f.slack {
+                return MemberUsage {
+                    member: idx,
+                    usage: Some(0.0),
+                    governs: "slack".into(),
+                };
+            }
             let n = f.axial;
             let kn = |x: f64| x / 1000.0;
             // Axial: (ratio, words).
