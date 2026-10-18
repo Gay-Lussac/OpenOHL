@@ -2,7 +2,7 @@
 
 Besides the allowable spans and load trees of a structure type ([Structure libraries](structure-library.md#capacity)), OpenOHL can check a structure by **analysis**:
 
-- a **structure model**: a 3D finite-element model of a lattice tower, frame or guyed mast — member forces and how much of its capacity each member uses. It is the members of a type that is a full design ([detail level 3](structure-library.md#detail-levels): every member with a section, a supported joint), in the type's own `.ohls`; or a separate `.ohlfe` file the type names;
+- a **structure model**: a 3D finite-element model of a lattice tower, frame or guyed mast — member forces and how much of its capacity each member uses. It is the members of a type that is a full design ([detail level 3](structure-library.md#detail-levels): every member with a section, a joint with a `support` — springs alone do not count), in the type's own `.ohls`; or a separate `.ohlfe` file the type names;
 - a **pole** (`.ohlp`, or the structure's own `[pole]` table): wood, steel or concrete pole — bending moment along the pole against its moment capacity.
 
 Every structure of that type is then checked in every load case with the factored attachment loads ([Load cases](loads.md)). The theory is in [Structure analysis](../theory/structures-fe.md).

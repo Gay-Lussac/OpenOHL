@@ -68,11 +68,11 @@ For route `R` (`R-profile…` with `--profile-only`):
 - **PNG**: the SVG rendered at `--dpi`, with the computer's fonts.
   Images are limited to 40 million pixels: larger ones are drawn at a lower
   resolution (reported).
-- **DXF** (AutoCAD R12, ASCII): a format most CAD programs read; not tried
+- **DXF** (release 12, `AC1009`, ASCII): a format most CAD programs read; not tried
   in a given program yet (no DWG file is written). Entities are LINE,
   POLYLINE, TEXT and CIRCLE on layers `OHL_GROUND`, `OHL_WIRES`,
   `OHL_STRUCTURES`, `OHL_CLEARANCE`, `OHL_GRID`, `OHL_TITLE`… Colours are
-  the nearest AutoCAD colour index; dashes are line types `OHL_DASH1`…
+  the nearest of DXF's indexed colours; dashes are line types `OHL_DASH1`…
   R12 has no line weights, true colours or images, so pens become colours
   only and logos are left out. Three kinds of file:
   - the **sheets** in mm, as printed (what lies outside the panels is cut

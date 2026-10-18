@@ -3,7 +3,8 @@
 A **section library** holds standard profiles — angles, channels, I and
 H sections, tubes, round bars, pole shafts — and their materials. A
 structure at [level 3](structure-library.md#detail-levels) refers to its
-sections there by id, so a whole project shares one set of profiles
+sections there by id, so every structure of a project line shares one
+set of profiles
 (see [How structures refer to it](#how-structures-refer-to-it)).
 OpenOHL computes each profile's properties from its dimensions; values
 you give replace the computed ones.
@@ -126,9 +127,11 @@ its outline box.
 
 ## Several files
 
-A project and a user may each keep a section library. They are read in
-order — the project's first, then the user's — and a section or material
-whose id is already there is left out (the earlier one wins). In one file
+The applications and `ohl` read one section library: the project
+line's, or the file or folder given. Libraries can be merged in code
+(`SectionLibrary::merge`: a section or material whose id is already
+there is left out, the earlier one wins); a user's own section library
+beside the project's is not read yet. In one file
 an id given twice is an error; a folder of `.ohlsec` files is read in
 name order, an id in two of them an error. A material a section names
 may be in another file read together; a material missing from all of
@@ -165,5 +168,6 @@ folder (else the files next to it) is read directly. `ohl line` and `ohl
 structures fe` take `--sections <file|folder>`; `ohl line` reads the
 `Sections/` folder next to the line by default.
 
-Member groups (one section for many members) come with the structure
-application; a group's `section` will resolve the same way.
+Member groups (one section for many members) are set in the structure
+application (**Design › Groups**): the group's section is written on
+each of its members, so it resolves the same way.

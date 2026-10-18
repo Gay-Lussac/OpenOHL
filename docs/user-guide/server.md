@@ -1,6 +1,6 @@
 # Server mode (pre-alpha)
 
-Several people work on one project at the same time, like players on a game server: one computer **hosts** the project, the others **join** it. Every edit, from anyone, is validated by the server, applied in one order, written to the project file and sent to everyone (ADR-0005).
+Several people work on one project at the same time, like players on a game server: one computer **hosts** the project, the others **join** it. Every edit, from anyone, is checked by the server, applied in one order, written to the project file and sent to everyone (ADR-0005).
 
 ## Hosting
 
@@ -11,7 +11,7 @@ The project file stays on the hosting computer. The port must be reachable over 
 
 ## Invitations
 
-An invitation looks like `ohl://192.168.1.20:4433/3f2a9c1b07de/80854a…` (the address, an access code, and the fingerprint of the server's certificate). The connection is encrypted (QUIC, TLS 1.3), and the application only talks to the server whose certificate matches the fingerprint.
+An invitation looks like `ohl://192.168.1.20:4433/3f2a9c1b07de/80854a…` (the address, an access code, and the fingerprint of the server's certificate; older `ols://` invitations are still read). The connection is encrypted (QUIC, TLS 1.3), and the application only talks to the server whose certificate matches the fingerprint.
 
 | Invitation | Who joins with it |
 |---|---|
@@ -31,7 +31,7 @@ File › **Join a server…** (also on the start page): the invitation and your 
 - **Roles:** viewers read; designers edit; admins also change roles (People) and reverse anyone's edits (Versions › **History…**: **Reverse** one entry, or **Back to here**, the line as it was just after an entry; both are undoable).
 - **People** (View › People) lists who is connected: their role, their selection, what they are editing, and **Go to** to look where they look. Others are also shown in the plan view, as a diamond with their name.
 - **Soft locks:** a structure in someone's Move window is theirs until they close it. Others cannot open it, and the server refuses their edits of it.
-- **Versions** (Versions › Revisions and branches…): commits, branches, merges, reviews and edit rights go through the server too, and every replica keeps the same history. Every user works on their own project line (Versions › Project lines): edits go to it, and others see them when they work on or show that line. See [Project lines and phases](project-lines.md). See [Versions, branches and reviews](versions.md).
+- **Versions** (Versions › Revisions and branches…): commits, branches, merges, reviews and edit rights go through the server too, and every replica keeps the same history. Every user works on their own project line (Versions › Project lines): edits go to it, and others see them when they work on or show that line. See [Project lines and phases](project-lines.md) and [Versions, branches and reviews](versions.md).
 - Libraries and project lines also go through the server. What each person **displays** is their own: the surface used as the ground and the others shown, the LiDAR classes hidden, the share of points, the layers — remembered on their computer, never sent to the server. Importing terrain surfaces and point clouds is done on the hosting computer.
 
 ## Web client

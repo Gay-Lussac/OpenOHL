@@ -3,7 +3,8 @@
 A project file is one SQLite database (ADR-0004) holding the line model, its
 **operation log**, its users, and its **point clouds** (ADR-0007). Line files
 (`.ohl.json`) stay the open exchange format: import them into a project,
-export the project back.
+export the project back. Files with the older endings (`.ols`,
+`.ols.json`) are still read.
 
 ```bash
 ohl project import line.ohl.json --into project.ohl --user ana   # ana becomes admin
@@ -35,21 +36,28 @@ exist is not created.
 
 ## Commands
 
-Every change is a command (JSON with an `op`), validated before it is
+Every change is a command (JSON with an `op`), checked before it is
 applied: the whole line must stay valid (references, geometry rules), or the
 command is refused and nothing changes. A `batch` applies all its commands or
 none.
 
 | `op` | Fields | Effect |
 |---|---|---|
-| `put` | `kind`, `id`, `value` | Create or replace an object: `meta` (id `line`: `{name, crs, alignment, display}`), `route`, `structure` (with its attachments), `section` (with stringing and loads), `jumper` — `value` as in the line file. |
+| `put` | `kind`, `id`, `value` | Create or replace an object: `meta` (id `line`: `{name, crs, display}`; other line settings have rows of their own), `route`, `alignment`, `alignment_point`, `structure` (with its attachments), `section` (with stringing and loads), `jumper`, `spacer`, `library` (a library file of the project line, id `kind/name`, with its `text`) — the line's objects with `value` as in the line file. |
 | `delete` | `kind`, `id`, `confirm` | Delete an object; when it takes others with it, `confirm` is needed — see below. |
 | `move_structure` | `id`, `position` | Move a structure; its attachments move with it. |
 | `set_stringing` | `section`, `stringing` | Change a section's stringing. |
 | `delete_structure` | `id`, `confirm` | Same as `delete` with kind `structure`. |
+| `delete_attachment` | `structure`, `set`, `confirm` | Delete a wire point set of a structure and what hangs only from it; the sections and jumpers there go with it after confirmation. |
+| `replace_structure` | `id`, `structure` (`wires`, `sets`, `confirm`) | Replace a structure by another; it keeps its id, position, orientation and routes. |
+| `rename` | `kind`, `id`, `new_id` | Rename a structure, section or jumper; what refers to it follows. |
+| `rename_attachment` | `structure`, `set`, `new_set` | Renumber a structure's wire point set; sections and jumpers follow. |
+| `rename_point` | `kind`, `id`, `label`, `new_label` | Relabel a point of a section or jumper. |
+| `rename_system` | `id`, `new_id` | Rename an electrical system; its sections follow. |
+| `replace_line` | `line` | Replace the whole line, as one log entry. |
 | `align_under_structures` | `route` | Replace a route's alignment by points tied under each of its structures. |
-| `move_alignment_point` | `route`, `index`, `position` | Move an alignment point (`route: "line"` for the line's own alignment); a tied point is detached. |
-| `insert_alignment_point` / `remove_alignment_point` | `route`, `index` (`position`) | Add a free point before `index`, or remove one. |
+| `move_alignment_point` | `route`, `index`, `position` | Move an alignment point (`route`: the alignment's id; `"line"`, as in older projects, means `main`); a point shared by other alignments moves on all of them; a tied point is detached. |
+| `insert_alignment_point` / `remove_alignment_point` | `route`, `index` (`position`, or `point`) | Add a point before `index` (a free one, or an existing `point` shared with its other alignments), or remove one. |
 | `tie_alignment_point` / `detach_alignment_point` | `route`, `index` (`structure`) | Tie a point under a structure (it then follows it), or detach it (it stays in place). |
 | `batch` | `commands` | Several commands together. |
 

@@ -31,11 +31,12 @@ changes *phase 1* only.
   is submitted for review. A reviewer or an admin approves it, then merges
   it into the main line.
 
-What all lines share: the libraries (cables, structures, insulators, weather
-cases…), the terrain surfaces, the point clouds, the backgrounds and the
-project settings. What each line has of its own: the line itself
-(structures, sections, jumpers, routes, line settings) and its history of
-edits.
+What all lines share: the terrain surfaces, the point clouds, the
+backgrounds and the project settings. What each line has of its own: the
+line itself (structures, sections, jumpers, routes, line settings), its
+libraries (cables, structures, insulators, weather cases…) and its history
+of edits. A new line starts with the libraries of the line it is made from;
+a library changed on one line leaves the others as they are.
 
 ## The Versions menu
 
@@ -51,6 +52,8 @@ The menu stays open while you tick lines to show.
 | **Bring in changes from another line…** | Brings what changed on another line (by default the main line) into yours. |
 | **Submit this line for review into the main line…** | When a phase is ready to go into the main line (greyed out on the main line itself). |
 | ☐ *line* … | Tick to show a line next to yours, in its colour; untick to hide it. |
+| **History…** | The operation log: who did what; admins reverse entries. |
+| **Revisions and branches…** | Revisions, branches, tags, diff, merge, reviews and edit rights (see [Versions, branches and reviews](versions.md#in-the-desktop-app)). |
 
 ## The Project lines window
 

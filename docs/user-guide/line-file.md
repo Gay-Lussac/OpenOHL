@@ -30,9 +30,17 @@ cargo run -p ohl-cli -- line examples/synthetic-line/synthetic-line.ohl.json \
 | `structures` | yes | List of structures. |
 | `sections` | yes | List of wire sections. |
 | `jumpers` | no | Jumpers between wire points (below). |
+| `spacers` | no | Interphase spacers between span points of two sections of one span: `{ "id", "description", "a", "b", "insulator", "length", "weight", "wind_area", "stiffness", "compression" }` — `a`, `b`: `{ "section", "point" }` (a span point holding a clamp); `length` empty: the still-air distance at stringing; both sections solved by finite elements. Made in the app with the Add string tool ([Editing](desktop-app.md#editing)). |
 | `systems` | no | Electrical systems: phases or poles with their voltage ([below](#electrical-systems)). |
 | `circuit_starts` | no | The ends of electrical circuits that are starts: `[{ "structure", "set" }, …]` ([below](#electrical-systems)). A circuit none of whose ends is listed runs along the line. |
 | `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … }, "ahead_deg": 270 }` — wire colours (`#rrggbb`) by section `phase_label`; `ahead_deg`, the angle that means ahead along the line for angles in plan around a structure, which turn clockwise seen from above (default 0: right 90°; 270: right 0°, ahead 270°). |
+| `creep_stretch` | no | The weather cases for the permanent stretch due to creep and due to load ([below](#calculations-condition-and-method)). |
+| `bimetallic` | no | The line's bimetallic conductor model ([below](#calculations-condition-and-method)). |
+| `solver` | no | How the whole line is calculated (Criteria › Calculation options): `{ "jumper_loads": "estimate" \| "pull", "taps": "loop" \| "once" }` — what of the jumpers the sections carry at their clamps (default `estimate`), and how a jumper on a tap is solved (default `loop`). |
+| `defaults` | no | The project's default values (Criteria › Default values): `spacer_compression`, `jumper_exit_angle_deg`, `jumper_stiffness_factor`, `jumper_clamp_length`, `insulator_stiffness`, `air_density_factor`, `thermal_emissivity`, `thermal_absorptivity`, `thermal_roughness`, `thermal_albedo`, `thermal_time_step`, `clearance_wind_step`, `clearance_vertical_band`, `clearance_search_margin`, `clearance_zone_width`, `clearance_zone_depth`; those left out take the program's values. Exported and imported as a `.ohldef` file (`format = "ohl-defaults"`). |
+| `structure_loads` | no | What the line sends to its placed structures ([below](#calculations-condition-and-method)). |
+
+Files of version 2 and before may also have the line's own `alignment` (read as the route and alignment `main`, see below). Structures, sections, jumpers, spacers, systems, routes and alignments may carry `fields`: the values of table columns added by plugins.
 
 ## Structures
 
