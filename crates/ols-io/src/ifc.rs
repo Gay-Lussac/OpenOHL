@@ -363,7 +363,7 @@ pub fn document(model: &ExportModel, options: &Options) -> Result<String, String
     let (date, time) = crate::landxml::utc_now();
     let mut out = format!(
         "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [ReferenceView_V1.2]'),'2;1');\n\
-         FILE_NAME({},'{date}T{time}',(''),(''),'OLS CAD {}','OLS CAD','');\n\
+         FILE_NAME({},'{date}T{time}',(''),(''),'OpenOHL {}','OpenOHL','');\n\
          FILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\n",
         string(&line.name),
         env!("CARGO_PKG_VERSION")

@@ -1,6 +1,6 @@
 [package]
 name = "ols-loads"
-description = "OLS CAD load cases (weather × load factors × wire condition) and the loads on the structures"
+description = "OpenOHL load cases (weather × load factors × wire condition) and the loads on the structures"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

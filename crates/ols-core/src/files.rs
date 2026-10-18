@@ -2,13 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Files on disk: format headers, the libraries shipped with OLS CAD and
+//! Files on disk: format headers, the libraries shipped with OpenOHL and
 //! library folders.
 
 use std::path::{Path, PathBuf};
 
 /// Checks a file's `format` and `version` header — the one policy of every
-/// OLS CAD format: both optional; the format, given, must be `expected`;
+/// OpenOHL format: both optional; the format, given, must be `expected`;
 /// any version up to `supported` is read (older ones converted by the
 /// reader), a newer one refused. `what` names the kind of file in the
 /// message ("rule", "weather case", …).
@@ -24,14 +24,14 @@ pub fn check_header(
     }
     if version.is_some_and(|v| v > supported) {
         return Err(format!(
-            "{what} format version {} newer than supported ({supported}): written by a newer OLS CAD",
+            "{what} format version {} newer than supported ({supported}): written by a newer OpenOHL",
             version.unwrap_or_default()
         ));
     }
     Ok(())
 }
 
-/// A folder of the libraries shipped with OLS CAD (`libraries/<kind>`):
+/// A folder of the libraries shipped with OpenOHL (`libraries/<kind>`):
 /// in the current folder, else next to the program or above it (a build
 /// in `target/release` of the source tree); the relative path if neither
 /// exists.
@@ -86,7 +86,7 @@ mod tests {
         );
         assert_eq!(
             check_header(None, Some(2), "ols-x", 1, "x").unwrap_err(),
-            "x format version 2 newer than supported (1): written by a newer OLS CAD"
+            "x format version 2 newer than supported (1): written by a newer OpenOHL"
         );
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "ols-structures-fe"
-description = "OLS CAD structure analysis: 3D frame/truss/cable finite elements (P-Delta) and pole checks"
+description = "OpenOHL structure analysis: 3D frame/truss/cable finite elements (P-Delta) and pole checks"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

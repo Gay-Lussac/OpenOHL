@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A structure type file (`.olss`) opened on its own (`ols-cad
+//! A structure type file (`.olss`) opened on its own (`ohl-design
 //! pylon.olss`, File › Open): the structure screen of the Structure types
 //! page — its attachment points, strings, wire points and sets in tables
 //! beside its pylon in 3D — the whole window, without a line. Its body and

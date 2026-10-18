@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols sagtension`: sag-tension job for one tension section.
+//! `ohl sagtension`: sag-tension job for one tension section.
 //!
 //! Reads a TOML job (cable from a library, spans, weather cases, either a
 //! fixed stringing tension or tension criteria, chart temperatures) and
@@ -495,7 +495,7 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
     let reference = state(reference_case, cable);
 
     let mut out = String::new();
-    let _ = writeln!(out, "OLS CAD sag-tension — {}", path.display());
+    let _ = writeln!(out, "OpenOHL sag-tension — {}", path.display());
     let _ = writeln!(out, "Cable: {} ({})", cable.name, cable.id);
     let _ = writeln!(
         out,

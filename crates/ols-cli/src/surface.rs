@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols surface`: terrain surfaces (TINs) kept in a project file.
+//! `ohl surface`: terrain surfaces (TINs) kept in a project file.
 
 use std::path::{Path, PathBuf};
 

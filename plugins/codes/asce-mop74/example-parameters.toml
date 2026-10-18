@@ -1,5 +1,5 @@
 # ASCE Manual of Practice 74 (transmission line structural loading)
-# parameter file for the OLS CAD plugin "asce-mop74". SI units.
+# parameter file for the OpenOHL plugin "asce-mop74". SI units.
 #
 # !!! EVERY NUMBER IN THIS FILE IS AN INVENTED PLACEHOLDER. !!!
 # None is taken from ASCE MOP 74, ASCE 7 or any other standard or map.

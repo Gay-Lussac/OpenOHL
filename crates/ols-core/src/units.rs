@@ -297,7 +297,7 @@ macro_rules! quantity {
     };
 }
 
-/// Accepts either a plain number (SI units, as written by OLS CAD) or text
+/// Accepts either a plain number (SI units, as written by OpenOHL) or text
 /// with a unit (`"28.14 mm"`, as written by people in library files).
 struct QuantityVisitor<Q>(std::marker::PhantomData<Q>);
 

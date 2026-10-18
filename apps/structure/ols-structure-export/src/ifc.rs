@@ -329,12 +329,12 @@ pub fn ifc(s: &ExportStructure, o: &IfcOptions) -> Result<String, String> {
         "$".to_owned()
     } else {
         let person = f.add("IFCPERSON", "$,$,$,$,$,$,$,$");
-        let org = f.add("IFCORGANIZATION", "$,'OLS CAD',$,$,$");
+        let org = f.add("IFCORGANIZATION", "$,'OpenOHL',$,$,$");
         let user = f.add("IFCPERSONANDORGANIZATION", &format!("{person},{org},$"));
         let app = f.add(
             "IFCAPPLICATION",
             &format!(
-                "{org},{},'OLS CAD','ols-structure-export'",
+                "{org},{},'OpenOHL','ols-structure-export'",
                 string(env!("CARGO_PKG_VERSION"))
             ),
         );

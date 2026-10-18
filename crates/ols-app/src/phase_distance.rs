@@ -530,11 +530,14 @@ fn save_values(model: &mut Model, name: &str, text: &str) -> Result<(), String> 
     let time = e.session.now().map_err(|e| e.to_string())?;
     let body: String = text
         .lines()
-        .skip_while(|l| l.starts_with("# Edited in OLS CAD"))
+        .skip_while(|l| {
+            // The header's former wording, from before OpenOHL.
+            l.starts_with("# Edited in OHL-Design") || l.starts_with("# Edited in OLS CAD")
+        })
         .map(|l| format!("{l}\n"))
         .collect();
     let text = format!(
-        "# Edited in OLS CAD by {} on {time} (the project's copy of {name}).\n{body}",
+        "# Edited in OHL-Design by {} on {time} (the project's copy of {name}).\n{body}",
         e.user
     );
     e.session
@@ -1001,7 +1004,7 @@ impl PhaseDistanceWindow {
                 .map_or(CHECK_TITLE.to_owned(), |c| c.info.title.clone()),
             time: editing.session.now().map_err(|e| e.to_string())?,
             user: editing.user.clone(),
-            app: format!("OLS CAD {}", env!("CARGO_PKG_VERSION")),
+            app: format!("OHL-Design {}", env!("CARGO_PKG_VERSION")),
             plugin: self.check().ok().map(|c| c.plugin.clone()),
             status: ReportStatus::Draft,
             note,
@@ -1789,7 +1792,7 @@ impl PhaseDistanceWindow {
 }
 
 /// How the check computes, in brief (always shown at the top): the
-/// measuring (OLS CAD's), then the rules (the plugin's).
+/// measuring (OpenOHL's), then the rules (the plugin's).
 fn explanation(ui: &mut egui::Ui, rules: Option<&str>) {
     egui::CollapsingHeader::new("How it is computed")
         .id_salt("phase-distance-how")
@@ -1807,7 +1810,7 @@ fn explanation(ui: &mut egui::Ui, rules: Option<&str>) {
             }
             small(
                 ui,
-                "Measured by OLS CAD — pairs: the conductors between the same two structures \
+                "Measured by OpenOHL — pairs: the conductors between the same two structures \
                  (and, ticked, nearby spans within the distance); not two earth wires, one \
                  circuit's same phase, or two sharing a clamp; a bundle by its subconductors.",
             );

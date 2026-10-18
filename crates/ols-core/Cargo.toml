@@ -1,6 +1,6 @@
 [package]
 name = "ols-core"
-description = "OLS CAD core: data model, units, geometry and plugin registry"
+description = "OpenOHL core: data model, units, geometry and plugin registry"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

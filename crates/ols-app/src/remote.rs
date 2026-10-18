@@ -424,7 +424,7 @@ pub fn joined_file(dir: &Path, invitation: &Invitation, user: &str) -> PathBuf {
 
 /// The default folder of joined projects.
 pub fn default_joined_dir() -> PathBuf {
-    eframe::storage_dir("OLS CAD")
+    eframe::storage_dir(crate::STORAGE_ID)
         .map(|d| d.join("joined"))
         .unwrap_or_else(|| std::env::temp_dir().join("ols-cad-joined"))
 }

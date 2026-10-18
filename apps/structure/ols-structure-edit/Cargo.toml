@@ -1,6 +1,6 @@
 [package]
 name = "ols-structure-edit"
-description = "OLS CAD structure application: the edits of a structure file (.olss), undo and redo, what each level still lacks"
+description = "OpenOHL structure application: the edits of a structure file (.olss), undo and redo, what each level still lacks"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -29,7 +29,7 @@
 //! assembly is rated for (`max_load = "120 kN"`; a V-string: each leg's)
 //! and the swing angles it may take (`max_swing = "60 deg"` from straight
 //! down in any direction, `max_swing_across` / `max_swing_along`
-//! projected across / along the line). OLS CAD checks none of them: absent,
+//! projected across / along the line). OpenOHL checks none of them: absent,
 //! not given; given, a string naming the assembly takes them where it
 //! gives none of its own, for a plugin or a report to compare with the
 //! solved forces and swings.
@@ -101,7 +101,7 @@ pub struct InsulatorAssembly {
     #[serde(default)]
     pub half_width: Option<Length>,
     /// The tension it is rated for (a V-string: each leg's); not checked
-    /// by OLS CAD ([`InsulatorLimits`]).
+    /// by OpenOHL ([`InsulatorLimits`]).
     #[serde(default)]
     pub max_load: Option<Force>,
     /// The swing it may take from straight down, any direction (not
@@ -118,7 +118,7 @@ pub struct InsulatorAssembly {
 
 /// The optional limits of an insulator assembly or a structure type's
 /// string, in SI units (N, degrees) — the same four a line's string
-/// carries (`ols_line::StringLimits`). **Not checked by OLS CAD**:
+/// carries (`ols_line::StringLimits`). **Not checked by OpenOHL**:
 /// absent, not given; given, available to plugins and reports.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct InsulatorLimits {
@@ -202,7 +202,7 @@ impl InsulatorLimits {
 }
 
 impl InsulatorAssembly {
-    /// Its limits (not checked by OLS CAD).
+    /// Its limits (not checked by OpenOHL).
     pub fn limits(&self) -> InsulatorLimits {
         InsulatorLimits::of(
             self.max_load,
@@ -371,7 +371,7 @@ mod tests {
         assert!((v.vertical_drop() - 4.0).abs() < 1e-12);
     }
 
-    /// The limits (not checked by OLS CAD): absent stays absent and the
+    /// The limits (not checked by OpenOHL): absent stays absent and the
     /// file written stays version 1; given they survive the round trip in
     /// version 2; bad values and unknown keys refused; a newer version
     /// refused as newer.

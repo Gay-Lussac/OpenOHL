@@ -899,9 +899,9 @@ fn write_copc_inner(
     h.extend_from_slice(&[0u8; 16]); // project GUID
     h.extend_from_slice(&[1, 4]);
     let mut sys = [0u8; 32];
-    sys[..7].copy_from_slice(b"OLS CAD");
+    sys[..7].copy_from_slice(b"OpenOHL");
     h.extend_from_slice(&sys);
-    let software = format!("OLS CAD {}", env!("CARGO_PKG_VERSION"));
+    let software = format!("OpenOHL {}", env!("CARGO_PKG_VERSION"));
     let mut sw = [0u8; 32];
     let n = software.len().min(31);
     sw[..n].copy_from_slice(&software.as_bytes()[..n]);

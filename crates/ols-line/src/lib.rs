@@ -62,7 +62,7 @@ use legacy::{SpanLoad, SpreadLoad};
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ols-line";
 /// Latest line file version: 6 adds a string's optional limits, not
-/// checked by OLS CAD (`max_load`, `max_swing_deg`,
+/// checked by OpenOHL (`max_load`, `max_swing_deg`,
 /// `max_swing_across_deg`, `max_swing_along_deg`: [`StringLimits`]); 5 writes a jumper's tap end as its `from` /
 /// `to` ([`JumperEnd`]), its supports as points holding a held clamp
 /// ([`objects::Hold`]) and a place with one key ([`SpanPlace`],
@@ -1871,7 +1871,7 @@ impl Defaults {
     pub fn to_text(&self) -> String {
         use std::fmt::Write as _;
         let mut out = format!(
-            "# Default values of an OLS CAD project (Criteria › Default values).\n\
+            "# Default values of an OpenOHL project (Criteria › Default values).\n\
              format = \"{DEFAULTS_FILE_FORMAT}\"\nversion = {DEFAULTS_FILE_VERSION}\n"
         );
         let mut section = "";
@@ -2795,7 +2795,7 @@ impl Line {
     }
 
     /// The limits of string `label` of structure `structure` (not checked
-    /// by OLS CAD: for a plugin or a report to compare with the solved
+    /// by OpenOHL: for a plugin or a report to compare with the solved
     /// forces and swings). On a resolved line they include those its
     /// insulator gives ([`Line::resolve`]); none: no such string.
     pub fn string_limits(&self, structure: &str, label: &str) -> Option<StringLimits> {

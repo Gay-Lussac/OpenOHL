@@ -2,14 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols code`: design-code plugins — list them, write a parameter file
+//! `ohl code`: design-code plugins — list them, write a parameter file
 //! template, generate weather cases and load cases from a parameter file.
 
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 
-/// Where `ols code list` looks without `--dir`: the repository's code
+/// Where `ohl code list` looks without `--dir`: the repository's code
 /// plugins (when run from the repository).
 const DEFAULT_DIR: &str = "plugins/codes";
 
@@ -50,7 +50,7 @@ pub enum CodeCommand {
     },
 }
 
-/// Runs an `ols code` command.
+/// Runs an `ohl code` command.
 pub fn run(command: CodeCommand) -> Result<(), String> {
     match command {
         CodeCommand::List { dir } => list(&dir),

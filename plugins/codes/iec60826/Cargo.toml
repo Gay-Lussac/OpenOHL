@@ -1,6 +1,6 @@
 [package]
 name = "iec60826"
-description = "OLS CAD design-code plugin: IEC 60826 reliability-based loading"
+description = "OpenOHL design-code plugin: IEC 60826 reliability-based loading"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

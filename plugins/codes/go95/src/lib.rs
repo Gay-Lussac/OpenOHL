@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OLS CAD design-code plugin (`code-plugin` world): California Public
+//! OpenOHL design-code plugin (`code-plugin` world): California Public
 //! Utilities Commission General Order 95, overhead line construction.
 //!
 //! Method: Rule 43 loading districts by elevation (ice, wind pressure on

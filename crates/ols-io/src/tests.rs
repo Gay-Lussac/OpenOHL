@@ -112,7 +112,7 @@ fn model_json_has_every_wire_and_the_line() {
 }
 
 /// The export model gives plugins each string as solved with its limits
-/// (OLS CAD checks none): given ones in the case's strings and in the
+/// (OpenOHL checks none): given ones in the case's strings and in the
 /// line, absent ones null in the strings and absent in the line.
 #[test]
 fn model_json_has_the_strings_and_their_limits() {

@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Checks run by plugins (`check-plugin` world, extension point `check`):
-//! OLS CAD measures the line, the plugin holds the values and the rules.
+//! OpenOHL measures the line, the plugin holds the values and the rules.
 //! The first: the distance between conductors in the span
 //! (`phase-distance`, [`ols_clearance::phase_distance`]), its stations
 //! handed to the plugin pair by pair, one plugin instance per core.

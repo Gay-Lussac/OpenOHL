@@ -1,6 +1,6 @@
 [package]
 name = "ols-structure-tests"
-description = "OLS CAD structure application: tests of the application with the core"
+description = "OpenOHL structure application: tests of the application with the core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

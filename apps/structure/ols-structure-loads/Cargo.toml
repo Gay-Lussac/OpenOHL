@@ -1,6 +1,6 @@
 [package]
 name = "ols-structure-loads"
-description = "OLS CAD structure application: load-case recipes of a structure and its load table"
+description = "OpenOHL structure application: load-case recipes of a structure and its load table"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

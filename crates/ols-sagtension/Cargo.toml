@@ -1,6 +1,6 @@
 [package]
 name = "ols-sagtension"
-description = "OLS CAD sag-tension: catenary, change of state, ruling span"
+description = "OpenOHL sag-tension: catenary, change of state, ruling span"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

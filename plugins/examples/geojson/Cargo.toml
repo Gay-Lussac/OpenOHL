@@ -1,6 +1,6 @@
 [package]
 name = "geojson"
-description = "Example OLS CAD file-format plugin: GeoJSON export and import"
+description = "Example OpenOHL file-format plugin: GeoJSON export and import"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

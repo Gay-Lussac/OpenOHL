@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Clearance checks of `ols line`, for one or several weather cases.
+//! Clearance checks of `ohl line`, for one or several weather cases.
 //!
 //! [`prepare`] runs once: rules (from a file, and `--clearance` as a
 //! vertical ground rule), the class scheme, the ground surface (survey,

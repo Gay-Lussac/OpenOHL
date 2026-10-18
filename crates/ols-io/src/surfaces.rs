@@ -4,7 +4,7 @@
 
 //! Terrain surface (TIN) formats: built-in readers (LandXML, OBJ, survey
 //! points triangulated) and those of terrain plugins (`terrain-plugin`
-//! world) — to the rest of OLS CAD both look the same.
+//! world) — to the rest of OpenOHL both look the same.
 
 use std::cell::RefCell;
 use std::path::Path;

@@ -12693,7 +12693,7 @@ fn phase_distance_values_are_locked_but_an_admin_edits_them() {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].0, "lev-ch.olspd");
         assert!(files[0].1.contains("3.7 m"), "{}", files[0].1);
-        assert!(files[0].1.starts_with("# Edited in OLS CAD by"));
+        assert!(files[0].1.starts_with("# Edited in OHL-Design by"));
         // The next run uses them.
         if r.phase_distance.cases.is_empty() {
             r.phase_distance.cases.insert(0);
@@ -13242,7 +13242,7 @@ fn spacers_are_laid_between_span_points() {
 /// window and kept with OK (one command); the weather table's velocities
 /// from the project's Q where a case gives none, a vertical clearance
 /// window's zone from the project's width; the program's values are those
-/// of each part of OLS CAD.
+/// of each part of OpenOHL.
 #[test]
 fn the_project_default_values_are_used() {
     use crate::tables::TableKind;

@@ -5,7 +5,7 @@
 # A. E. Davison 1939; RUS Bulletin 1724E-200; CIGRE TB 322) from the source
 # itself, and check them against it.
 #
-#   ols clearance galloping synthetic-line.ols.json \
+#   ohl clearance galloping synthetic-line.ols.json \
 #       --weather weather-cases.olswc --params galloping-example.olsg
 format = "ols-galloping"
 version = 1

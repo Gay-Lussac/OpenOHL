@@ -1,6 +1,6 @@
 [package]
 name = "ols-structure-link"
-description = "OLS CAD structure application: where the application meets the core (line values, structure models)"
+description = "OpenOHL structure application: where the application meets the core (line values, structure models)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

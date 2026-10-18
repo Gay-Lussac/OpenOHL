@@ -66,14 +66,14 @@
 //!   `vertical_depth = "0.2 m"` cuts it along the line in slices of that
 //!   depth, the wire taken at its lowest over each slice.
 //! - `[wind]` (`steps`, `step`, `sides`): how the desktop clearance windows
-//!   apply the wind ([`WindSteps`]), and `ols zones`; `ols line` ignores it.
+//!   apply the wind ([`WindSteps`]), and `ohl zones`; `ohl line` ignores it.
 //! - `[check]` (`circuits`, `method`, `search_distance`): what the
 //!   desktop clearance windows solve and read ([`CheckScope`]): only the
 //!   circuits named (by circuit name; default every circuit), every
 //!   section by this calculation method (`"fe"` finite elements, `"rs"`
 //!   ruling span; default each section's own), LiDAR points only within
 //!   `search_distance` of the wires (default: as far as the rules reach);
-//!   `ols zones` too; `ols line` ignores it.
+//!   `ohl zones` too; `ohl line` ignores it.
 //!
 //! ## Clearances by voltage
 //!
@@ -679,7 +679,7 @@ impl WindSides {
 }
 
 /// How the wind of a weather case is applied by the clearance windows of
-/// the desktop application (`[wind]` of a rule file; `ols line` checks the
+/// the desktop application (`[wind]` of a rule file; `ohl line` checks the
 /// final state of each case only, with the case's own wind side).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WindSteps {
@@ -1033,14 +1033,14 @@ impl RuleSet {
         if let Some(w) = &self.wind {
             let _ = write!(
                 t,
-                "\n# How the desktop clearance windows apply the wind (ols line: the final state).\n[wind]\nsteps = {}\nstep = \"{} Pa\"\nsides = \"{}\"\n",
+                "\n# How the desktop clearance windows apply the wind (ohl line: the final state).\n[wind]\nsteps = {}\nstep = \"{} Pa\"\nsides = \"{}\"\n",
                 w.stepped,
                 w.step,
                 w.sides.as_str()
             );
         }
         if let Some(c) = self.check.as_ref().filter(|c| !c.is_empty()) {
-            t.push_str("\n# What the desktop clearance windows solve (ols line: every circuit, each section's method).\n[check]\n");
+            t.push_str("\n# What the desktop clearance windows solve (ohl line: every circuit, each section's method).\n[check]\n");
             if !c.circuits.is_empty() {
                 let _ = writeln!(
                     t,

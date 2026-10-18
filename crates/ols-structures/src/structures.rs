@@ -187,7 +187,7 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ols-structure";
 /// Newest format version read. Version 5 adds the member kind `tension`
 /// (a truss in tension only, slack in compression). Version 4 adds a
 /// string's optional limits,
-/// not checked by OLS CAD (`max_load`, `max_swing`, `max_swing_across`,
+/// not checked by OpenOHL (`max_load`, `max_swing`, `max_swing_across`,
 /// `max_swing_along`: [`crate::InsulatorLimits`]). Version 3 adds what the structure
 /// application writes: a member's `group` and `made_by`, a joint's
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
@@ -475,7 +475,7 @@ pub struct TypeString {
     #[serde(default)]
     pub side: Option<Side>,
     /// Version 4: the tension it is rated for (default: its insulator's;
-    /// not checked by OLS CAD, [`crate::InsulatorLimits`]).
+    /// not checked by OpenOHL, [`crate::InsulatorLimits`]).
     #[serde(default)]
     pub max_load: Option<ols_core::units::Force>,
     /// Version 4: the swing it may take from straight down, any direction
@@ -493,7 +493,7 @@ pub struct TypeString {
 }
 
 impl TypeString {
-    /// Its own limits (not its insulator's; not checked by OLS CAD).
+    /// Its own limits (not its insulator's; not checked by OpenOHL).
     pub fn limits(&self) -> crate::InsulatorLimits {
         crate::InsulatorLimits::of(
             self.max_load,
@@ -1219,7 +1219,7 @@ pub struct PlacedString {
     pub stiffness: Option<f64>,
     /// A strain string.
     pub strain: bool,
-    /// Its own limits (not checked by OLS CAD); its insulator's are the
+    /// Its own limits (not checked by OpenOHL); its insulator's are the
     /// assembly's ([`crate::InsulatorAssembly::limits`]), which a line
     /// takes where the string gives none (`ols_line::Line::resolve`).
     pub limits: crate::InsulatorLimits,
@@ -1964,7 +1964,7 @@ mod tests {
         assert!(newer.message.contains("newer"), "{}", newer.message);
     }
 
-    /// A string's limits (version 4, not checked by OLS CAD): read with
+    /// A string's limits (version 4, not checked by OpenOHL): read with
     /// units, absent staying absent; placed with its own only (its
     /// insulator's are the assembly's); bad values refused.
     #[test]

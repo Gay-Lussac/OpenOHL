@@ -9,7 +9,7 @@
 //! vertical, transverse and longitudinal loads (and a strength factor for
 //! the capacity checks). Load cases are data (`.olslc` files): a design
 //! code's combinations and partial factors are written there — by a code
-//! plugin or by hand from the standard (OLS CAD ships no code tables).
+//! plugin or by hand from the standard (OpenOHL ships no code tables).
 //!
 //! [`structure_loads`] solves every section in each load case (finite
 //! elements: strings swing, each span its own tension) and gives, at every

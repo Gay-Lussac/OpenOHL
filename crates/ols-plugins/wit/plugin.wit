@@ -1,6 +1,6 @@
-// OLS CAD plugin interface (ADR-0003).
+// OpenOHL plugin interface (ADR-0003).
 //
-// This is the stable contract between OLS CAD and WebAssembly plugins.
+// This is the stable contract between OpenOHL and WebAssembly plugins.
 // Breaking changes require a new major version of the package.
 
 package ols:plugin@0.1.0;
@@ -59,7 +59,7 @@ interface io-types {
 /// World of file-format plugins: export a solved model, import a file.
 ///
 /// The export model is JSON (format "ols-export-model", documented in the
-/// OLS CAD plugin guide): the line file, its coordinate system and, per
+/// OpenOHL plugin guide): the line file, its coordinate system and, per
 /// weather case, the solved wires as polylines.
 world io-plugin {
     use types.{plugin-info};
@@ -113,7 +113,7 @@ world terrain-plugin {
 
 /// Types of project plugins.
 interface project-types {
-    /// A library file of the project (as OLS CAD writes them).
+    /// A library file of the project (as OpenOHL writes them).
     record library-file {
         /// Library kind: "cables" (.olsw), "weather" (.olswc),
         /// "loadcases" (.olslc), "structures" (.olss), "insulators"

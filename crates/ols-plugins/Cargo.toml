@@ -1,6 +1,6 @@
 [package]
 name = "ols-plugins"
-description = "OLS CAD plugin manifests, discovery and WebAssembly component host"
+description = "OpenOHL plugin manifests, discovery and WebAssembly component host"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

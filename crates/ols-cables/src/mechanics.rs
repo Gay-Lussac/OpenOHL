@@ -30,7 +30,7 @@
 //!   permanent set, and back onto the initial curve if loaded beyond.
 //!
 //! Components without curves are linear (\\( P = EA\,\varepsilon \\)) in every state.
-//! Coefficients are data supplied with the cable (see `docs/theory`); OLS CAD
+//! Coefficients are data supplied with the cable (see `docs/theory`); OpenOHL
 //! ships no manufacturer curves.
 
 use ols_core::units::{Force, Quantity, Stress, Temperature};

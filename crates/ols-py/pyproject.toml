@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "ols-cad"
-description = "Python bindings for OLS CAD — Open Line System Computer Assisted Design"
+description = "Python bindings for OpenOHL (open-source overhead line design)"
 requires-python = ">=3.10"
 license = "MPL-2.0"
 dynamic = ["version"]

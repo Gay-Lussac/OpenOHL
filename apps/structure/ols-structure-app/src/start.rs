@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The start page (OLS Structure started without a file): **Open a
+//! The start page (OHL-Structure started without a file): **Open a
 //! structure…**, the files opened recently (kept in the window's storage)
 //! and **New structure…** — an empty level 1 structure (a stick figure
 //! with one point), or one built from a pylon template (`.olspt`, the
@@ -105,7 +105,7 @@ impl Default for NewStructure {
 /// where an insulator hangs, 10 m up.
 pub fn minimal(id: &str, name: &str) -> String {
     format!(
-        "# A new structure (OLS Structure): add points and insulators (Geometry), then its \
+        "# A new structure (OHL-Structure): add points and insulators (Geometry), then its \
          body (Body).\nformat = \"ols-structure\"\nversion = 2\nid = {id:?}\nname = {name:?}\n\
          kind = \"other\"\n\n[[point]]\nlabel = \"A1\"\npoint = [\"0 m\", \"0 m\", \"10 m\"]\n"
     )
@@ -160,7 +160,7 @@ impl StructureApp {
         let mut open: Option<PathBuf> = None;
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
-            ui.heading("OLS Structure");
+            ui.heading("OHL-Structure");
             ui.label("A structure file (.olss): its points and insulators, its body, its design.");
             ui.add_space(12.0);
             ui.horizontal(|ui| {
@@ -184,7 +184,7 @@ impl StructureApp {
                 }
                 if ui
                     .button("Plugins…")
-                    .on_hover_text("The plugin manager (shared with OLS CAD)")
+                    .on_hover_text("The plugin manager (shared with OHL-Design)")
                     .clicked()
                 {
                     self.plugins.open_manager();

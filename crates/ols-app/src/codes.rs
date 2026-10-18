@@ -259,7 +259,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plug
             ui.label(
                 egui::RichText::new(
                     "Weather cases and load cases from a design-code plugin and your parameter \
-                     file. OLS CAD ships no code tables: every value of the code comes from your \
+                     file. OpenOHL ships no code tables: every value of the code comes from your \
                      file — start from the plugin's template and replace its placeholders.",
                 )
                 .small()

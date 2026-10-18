@@ -1,9 +1,9 @@
-# Point and spread load templates shipped with OLS CAD: the most used
+# Point and spread load templates shipped with OpenOHL: the most used
 # objects on the wires, to start from. TYPICAL VALUES ONLY — check each
 # against the product you use (its data sheet) and make your own types.
 format = "ols-point-spread-loads"
 version = 1
-name = "OLS CAD templates"
+name = "OpenOHL templates"
 
 [[type]]
 id = "marker-ball-600"

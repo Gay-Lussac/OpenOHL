@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Gay-Lussac/OLS-CAD/docs/schema/ols-wire-1.schema.json",
-  "title": "OLS CAD wire library (.olsw), version 1",
-  "description": "A .olsw file is TOML. Parse it with any TOML library and validate the resulting object against this schema. Semantic checks (plausible ranges, rising curves, area within the diameter) are listed in docs/user-guide/wire-library.md and enforced by OLS CAD when loading.",
+  "$id": "https://github.com/Gay-Lussac/OpenOHL/docs/schema/ols-wire-1.schema.json",
+  "title": "OpenOHL wire library (.olsw), version 1",
+  "description": "A .olsw file is TOML. Parse it with any TOML library and validate the resulting object against this schema. Semantic checks (plausible ranges, rising curves, area within the diameter) are listed in docs/user-guide/wire-library.md and enforced by OpenOHL when loading.",
   "type": "object",
   "additionalProperties": false,
   "required": ["cable"],

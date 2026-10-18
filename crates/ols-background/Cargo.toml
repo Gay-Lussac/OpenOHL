@@ -1,6 +1,6 @@
 [package]
 name = "ols-background"
-description = "OLS CAD backgrounds kept in the project file: orthophotos (tiled, with a zoom pyramid) and drawings (DXF)"
+description = "OpenOHL backgrounds kept in the project file: orthophotos (tiled, with a zoom pyramid) and drawings (DXF)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

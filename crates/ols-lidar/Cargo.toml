@@ -1,6 +1,6 @@
 [package]
 name = "ols-lidar"
-description = "OLS CAD LiDAR: LAS/LAZ point reading, ground filtering in a corridor, terrain building"
+description = "OpenOHL LiDAR: LAS/LAZ point reading, ground filtering in a corridor, terrain building"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

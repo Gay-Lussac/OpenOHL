@@ -600,7 +600,7 @@ fn editing(
 ) -> (Result<Editing, String>, Option<ols_session::Session>) {
     let Some(session) = session else {
         return (
-            Err("a line file: open a project (.ols) to edit (ols project import)".into()),
+            Err("a line file: open a project (.ols) to edit (ohl project import)".into()),
             None,
         );
     };
@@ -614,7 +614,7 @@ fn editing(
         Ok(Some(_)) => (Ok(Editing { session, user }), None),
         Ok(None) => (
             Err(format!(
-                "user {user} has no role in this project (an admin adds users: ols project user)"
+                "user {user} has no role in this project (an admin adds users: ohl project user)"
             )),
             Some(session),
         ),

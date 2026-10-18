@@ -1,6 +1,6 @@
 [package]
 name = "ols-bom"
-description = "OLS CAD bill of materials and cost estimate of a line (.olscost unit costs)"
+description = "OpenOHL bill of materials and cost estimate of a line (.olscost unit costs)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

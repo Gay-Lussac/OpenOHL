@@ -73,14 +73,14 @@ impl Recent {
 pub fn pick_file() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter(
-            "OLS CAD project, line or structure type",
+            "OpenOHL project, line or structure type",
             &[
                 "ols",
                 "json",
                 ols_structures::structures::STRUCTURE_FILE_EXTENSION,
             ],
         )
-        .add_filter("OLS CAD project", &["ols"])
+        .add_filter("OpenOHL project", &["ols"])
         .add_filter("Line file", &["json"])
         .add_filter(
             "Structure type (opened on its own)",
@@ -240,7 +240,7 @@ pub fn file_keys(ctx: &egui::Context, action: &mut Option<FileAction>) {
 pub fn start_page(ui: &mut egui::Ui, recent: &Recent, action: &mut Option<FileAction>) {
     ui.add_space(40.0);
     ui.vertical_centered(|ui| {
-        ui.heading("OLS CAD");
+        ui.heading(crate::APP_NAME);
         ui.label(egui::RichText::new(format!("version {}", env!("CARGO_PKG_VERSION"))).weak());
         ui.add_space(20.0);
         if ui.button("New project…").clicked() {
@@ -386,7 +386,7 @@ impl ImportProjectWindow {
                         }
                     }
                     && let Some(into) = rfd::FileDialog::new()
-                        .add_filter("OLS CAD project", &["ols"])
+                        .add_filter("OpenOHL project", &["ols"])
                         .set_file_name(format!(
                             "{}.ols",
                             file.file_stem()
@@ -460,7 +460,7 @@ impl NewProject {
                 }
                 if ui.button("Choose where to save it and create…").clicked()
                     && let Some(path) = rfd::FileDialog::new()
-                        .add_filter("OLS CAD project", &["ols"])
+                        .add_filter("OpenOHL project", &["ols"])
                         .set_file_name(format!("{}.ols", self.name.trim()))
                         .save_file()
                 {

@@ -242,7 +242,7 @@ pub fn write(d: &Drawing) -> String {
     }
 
     let mut w = Writer { out: String::new() };
-    w.pair(999, "OLS CAD drawing (DXF R12)");
+    w.pair(999, "OpenOHL drawing (DXF R12)");
     if images > 0 {
         w.pair(
             999,

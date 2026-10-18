@@ -713,7 +713,7 @@ impl Windows {
                         ui.label(
                             "ECW files are converted to GeoTIFF first by GDAL's gdal_translate \
                              with the ECW driver, which you install yourself (ECW decoding \
-                             needs a licensed SDK: it is not part of OLS CAD).",
+                             needs a licensed SDK: it is not part of OpenOHL).",
                         );
                         ui.horizontal(|ui| {
                             ui.label("Converter");

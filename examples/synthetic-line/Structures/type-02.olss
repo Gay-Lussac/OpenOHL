@@ -1269,7 +1269,7 @@ id = "m178"
 nodes = ["A2", "L9D"]
 section = "arm"
 
-# The model's own load case (ols structures fe without --loads): wires
+# The model's own load case (ohl structures fe without --loads): wires
 # and wind at both attachments, structure axes (z up), invented values.
 [[load]]
 node = "A1"

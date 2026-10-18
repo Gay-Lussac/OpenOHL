@@ -1,7 +1,7 @@
 # Example weather cases for the synthetic line (invented values, not a
 # design code). Ice either as a radial thickness with a density, or as a
 # load per metre — with a density it also widens the wind diameter.
-# Choose cases per run: ols line ... --weather weather-cases.olswc --tag clearance
+# Choose cases per run: ohl line ... --weather weather-cases.olswc --tag clearance
 format = "ols-weather-cases"
 version = 1
 name = "Synthetic example cases"

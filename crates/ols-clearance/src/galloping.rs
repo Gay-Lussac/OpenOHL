@@ -11,7 +11,7 @@
 //! AIEE Trans. 1939; the single- and two-loop ellipses of RUS Bulletin
 //! 1724E-200; the amplitude formulas collected in CIGRE TB 322, "State of
 //! the art of conductor galloping", 2007) size the ellipse from the span's
-//! sag, its length, the conductor diameter and the number of loops. OLS CAD
+//! sag, its length, the conductor diameter and the number of loops. OpenOHL
 //! ships none of their coefficients: every coefficient comes from a
 //! parameter file (`*.olsg`), and the shipped example's are invented.
 //!

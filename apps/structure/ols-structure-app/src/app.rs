@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The window of OLS Structure: the menus at the top (File, Edit, View,
+//! The window of OHL-Structure: the menus at the top (File, Edit, View,
 //! then Geometry, Body, Design, Load cases, Results, In the line, Help),
 //! the panels under them (docked, movable, closable: [`crate::layout`]),
 //! the last message at the bottom.
@@ -629,7 +629,8 @@ impl StructureApp {
     fn title(&mut self, ctx: &egui::Context) {
         let title = match &self.file {
             Some(f) => format!(
-                "OLS Structure — {}{}",
+                "{} — {}{}",
+                crate::APP_NAME,
                 if f.dirty() { "* " } else { "" },
                 f.path()
                     .and_then(Path::file_name)
@@ -637,7 +638,7 @@ impl StructureApp {
                         .to_string_lossy()
                         .into_owned())
             ),
-            None => "OLS Structure".into(),
+            None => crate::APP_NAME.into(),
         };
         if title != self.title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));

@@ -8,7 +8,7 @@
 //! [`Importer`] (a file → a line), listed in a [`Registry`]. Built-in
 //! formats implement the traits in Rust ([`formats`]); WebAssembly plugins
 //! implement the `io-plugin` WIT world and are wrapped by [`plugin`] — to
-//! the rest of OLS CAD both look the same.
+//! the rest of OpenOHL both look the same.
 //!
 //! An exporter receives an [`ExportModel`]: the line, its coordinate system
 //! and, for each weather case, the solved wires. Plugins receive it as JSON
@@ -99,7 +99,7 @@ pub struct ExportWire {
 }
 
 /// A string (insulator) as solved in a case, with its limits — which
-/// OLS CAD does not check: a plugin compares them with the force and the
+/// OpenOHL does not check: a plugin compares them with the force and the
 /// swing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportString {
@@ -272,7 +272,7 @@ impl ExportModel {
     /// "force_n", "swing_deg", "swing_across_deg", "swing_along_deg",
     /// "max_load_n", "max_swing_deg", "max_swing_across_deg",
     /// "max_swing_along_deg"}]}]}` — a string's `max_*` are null when not
-    /// given (OLS CAD checks none of them). The line's strings carry the
+    /// given (OpenOHL checks none of them). The line's strings carry the
     /// same limits (`max_load`, `max_swing_deg`, …, structure types
     /// placed and insulators' limits taken).
     pub fn to_json(&self) -> String {

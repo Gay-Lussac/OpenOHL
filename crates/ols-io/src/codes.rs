@@ -6,7 +6,7 @@
 //! plugin turns the user's parameter file into weather cases (`.olswc`)
 //! and load cases (`.olslc`), and may give presets of the clearance
 //! windows (a rule file `.olsr` with the weather cases its rules name),
-//! checked here like any such file. OLS CAD ships no code tables: every
+//! checked here like any such file. OpenOHL ships no code tables: every
 //! value of a code is in the parameter file.
 //!
 //! One generation is one plugin call (microseconds of arithmetic); the

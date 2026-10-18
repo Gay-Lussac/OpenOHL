@@ -1,6 +1,6 @@
 [package]
 name = "ols-sections"
-description = "OLS CAD section library (.olssec): standard profiles and materials, cross-section properties, projected widths for wind"
+description = "OpenOHL section library (.olssec): standard profiles and materials, cross-section properties, projected widths for wind"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

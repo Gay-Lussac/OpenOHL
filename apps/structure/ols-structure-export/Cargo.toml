@@ -1,6 +1,6 @@
 [package]
 name = "ols-structure-export"
-description = "OLS CAD structure application: a level 3 structure exported as IFC (IFC4, IFC2x3), SAF (xlsx) and CSV tables"
+description = "OpenOHL structure application: a level 3 structure exported as IFC (IFC4, IFC2x3), SAF (xlsx) and CSV tables"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

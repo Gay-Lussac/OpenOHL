@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Example OLS CAD Python-tier plugin/script.
+"""Example OpenOHL Python-tier plugin/script.
 
 Run with the `ols` Python package installed (see crates/ols-py):
 
@@ -29,6 +29,6 @@ def span_table(spans_m, load_n_per_m):
 
 
 if __name__ == "__main__":
-    print(f"OLS CAD {ols.__version__} — {PLUGIN['description']}")
+    print(f"OpenOHL {ols.__version__} — {PLUGIN['description']}")
     for span, feet, lbf in span_table([300, 350, 410], 16.0):
         print(f"{span:6.0f} m = {feet:8.1f} ft   load {lbf:8.0f} lbf")

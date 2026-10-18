@@ -185,7 +185,7 @@ pub fn write(conn: &Connection, layers: &[Layer], out: &Output) -> Result<(), St
              VALUES (?1, 'features', ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 layer.name,
-                format!("OLS CAD {}", layer.name),
+                format!("OpenOHL {}", layer.name),
                 extent(b[0]),
                 extent(b[1]),
                 extent(b[2]),

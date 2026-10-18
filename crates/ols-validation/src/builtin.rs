@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Calculations shipped with OLS CAD, exposed to the validation runner.
+//! Calculations shipped with OpenOHL, exposed to the validation runner.
 
 use nalgebra::Vector3;
 use ols_core::units::{

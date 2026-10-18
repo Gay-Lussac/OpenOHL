@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OLS CAD design-code plugin (`code-plugin` world): IEC 60826, design
+//! OpenOHL design-code plugin (`code-plugin` world): IEC 60826, design
 //! criteria of overhead transmission lines (reliability-based design).
 //!
 //! Method: the climatic loads have a return period set by the reliability

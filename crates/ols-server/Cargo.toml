@@ -1,6 +1,6 @@
 [package]
 name = "ols-server"
-description = "OLS CAD server mode: a project hosted for several users (QUIC, and a web client over WebSocket), the clients' replicas"
+description = "OpenOHL server mode: a project hosted for several users (QUIC, and a web client over WebSocket), the clients' replicas"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

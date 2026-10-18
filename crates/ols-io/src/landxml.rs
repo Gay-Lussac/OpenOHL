@@ -70,7 +70,7 @@ pub fn document(line: &Line) -> String {
     out.push_str("/>\n");
     let _ = writeln!(
         out,
-        "<Application name=\"OLS CAD\" version=\"{}\"/>",
+        "<Application name=\"OpenOHL\" version=\"{}\"/>",
         env!("CARGO_PKG_VERSION")
     );
     out.push_str("<CgPoints name=\"structures\">\n");

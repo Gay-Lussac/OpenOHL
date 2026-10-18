@@ -45,7 +45,7 @@ impl StructureApp {
             });
             ui.menu_button("Plugins", |ui| self.plugins_menu(ui));
             ui.menu_button("Help", |ui| {
-                if ui.button("About OLS Structure").clicked() {
+                if ui.button("About OHL-Structure").clicked() {
                     self.about = true;
                     ui.close();
                 }
@@ -496,15 +496,15 @@ impl StructureApp {
         self.plugin_windows(ctx);
         if self.about {
             let mut open = true;
-            egui::Window::new("About OLS Structure")
+            egui::Window::new("About OHL-Structure")
                 .collapsible(false)
                 .resizable(false)
                 .open(&mut open)
                 .show(ctx, |ui| {
-                    ui.heading("OLS Structure");
+                    ui.heading("OHL-Structure");
                     ui.label(format!("Version {}", crate::VERSION));
                     ui.label(
-                        "The structure application of OLS CAD: one structure file (.olss), from \
+                        "The structure application of OpenOHL: one structure file (.olss), from \
                          level 1 (stick figure) to level 3 (full design), its loads and its \
                          finite-element results.",
                     );

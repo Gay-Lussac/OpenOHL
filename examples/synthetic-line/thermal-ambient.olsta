@@ -1,6 +1,6 @@
 # Example ambient cases for thermal ratings of the synthetic line
 # (invented values, not a design code). Units go with the values.
-# ols thermal ampacity --cable acsr-drake-26-7 --ambient thermal-ambient.olsta --max-temp 80
+# ohl thermal ampacity --cable acsr-drake-26-7 --ambient thermal-ambient.olsta --max-temp 80
 format = "ols-thermal-ambient"
 version = 1
 name = "Synthetic example ambient cases"

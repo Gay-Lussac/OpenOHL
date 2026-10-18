@@ -1,4 +1,4 @@
-# NESC (ANSI C2) Rule 250 parameter file for the OLS CAD plugin "nesc".
+# NESC (ANSI C2) Rule 250 parameter file for the OpenOHL plugin "nesc".
 # US customary units, as the NESC writes them (converted to SI in the
 # generated files).
 #

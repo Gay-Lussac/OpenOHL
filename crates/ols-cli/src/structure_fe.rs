@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols structures fe` and `ols structures pole`: one structure model or
-//! pole checked with the loads of a structure-loads CSV (`ols line
+//! `ohl structures fe` and `ohl structures pole`: one structure model or
+//! pole checked with the loads of a structure-loads CSV (`ohl line
 //! --loads-csv`) or the model's own loads.
 
 use std::fmt::Write as _;
@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 use ols_structures::LibraryItem;
 use ols_structures_fe::{Loads, Model, NodalLoad, Pole, PoleLoad};
 
-/// Arguments of `ols structures fe`.
+/// Arguments of `ohl structures fe`.
 #[derive(clap::Args)]
 pub struct FeArgs {
     /// Structure model: a structure type holding its members (.olss) or a
     /// model file (.olsfe).
     model: PathBuf,
-    /// Structure loads (CSV of `ols line --loads-csv`): the factored loads
+    /// Structure loads (CSV of `ohl line --loads-csv`): the factored loads
     /// at the attachments, applied at the model's attachment nodes
     /// (default: the model's own [[load]]s).
     #[arg(long, requires = "structure")]
@@ -64,7 +64,7 @@ pub struct FeArgs {
     extension: Option<String>,
 }
 
-/// Arguments of `ols structures pole`.
+/// Arguments of `ohl structures pole`.
 #[derive(clap::Args)]
 pub struct PoleArgs {
     /// Pole (.olsp); none: the structure type's own pole (its `[pole]`
@@ -76,7 +76,7 @@ pub struct PoleArgs {
     /// Section library (.olssec file or folder): a `[pole]`'s section.
     #[arg(long)]
     sections: Option<PathBuf>,
-    /// Structure loads (CSV of `ols line --loads-csv`).
+    /// Structure loads (CSV of `ohl line --loads-csv`).
     #[arg(long)]
     loads: PathBuf,
     /// The structure whose loads to take.
@@ -193,7 +193,7 @@ fn read_loads(path: &Path, structure: &str, cases: &[String]) -> Result<CaseLoad
     Ok(out)
 }
 
-/// `ols structures fe`.
+/// `ohl structures fe`.
 pub fn fe(args: &FeArgs) -> Result<(), String> {
     let sections = match &args.sections {
         Some(p) => ols_sections::SectionLibrary::load(p)?,
@@ -358,7 +358,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// `ols structures pole`.
+/// `ohl structures pole`.
 pub fn pole(args: &PoleArgs) -> Result<(), String> {
     let text = std::fs::read_to_string(&args.structure_type)
         .map_err(|e| format!("{}: {e}", args.structure_type.display()))?;

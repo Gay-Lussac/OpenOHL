@@ -1,6 +1,6 @@
 [package]
 name = "en50341"
-description = "OLS CAD design-code plugin: EN 50341-1 general approach with a national annex (NNA) overlay"
+description = "OpenOHL design-code plugin: EN 50341-1 general approach with a national annex (NNA) overlay"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

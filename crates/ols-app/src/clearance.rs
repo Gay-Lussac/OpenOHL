@@ -185,11 +185,11 @@ pub fn run(input: &Input) -> Result<Report, String> {
                 ),
                 Skipped::NoPoints => format!("{}: no point cloud in this model", rule.name),
                 Skipped::NoOtherLines => format!(
-                    "{}: other lines are checked by `ols line --other-line`",
+                    "{}: other lines are checked by `ohl line --other-line`",
                     rule.name
                 ),
                 Skipped::AcrossCases => format!(
-                    "{}: checked across weather cases only by `ols line --weather`",
+                    "{}: checked across weather cases only by `ohl line --weather`",
                     rule.name
                 ),
             }),

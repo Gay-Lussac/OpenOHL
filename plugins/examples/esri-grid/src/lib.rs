@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Example OLS CAD terrain plugin (`terrain-plugin` world): an ESRI ASCII
+//! Example OpenOHL terrain plugin (`terrain-plugin` world): an ESRI ASCII
 //! grid (`.asc`: `ncols`, `nrows`, `xllcorner`/`xllcenter`,
 //! `yllcorner`/`yllcenter`, `cellsize`, optional `nodata_value`, then the
 //! rows from north to south) as a surface: a point per cell centre, two

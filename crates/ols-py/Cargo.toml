@@ -1,6 +1,6 @@
 [package]
 name = "ols-py"
-description = "Python bindings for OLS CAD"
+description = "Python bindings for OpenOHL"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

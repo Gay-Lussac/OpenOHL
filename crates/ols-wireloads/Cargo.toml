@@ -1,6 +1,6 @@
 [package]
 name = "ols-wireloads"
-description = "OLS CAD additional loads on wires: point loads (N) and distributed loads (N/m)"
+description = "OpenOHL additional loads on wires: point loads (N) and distributed loads (N/m)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

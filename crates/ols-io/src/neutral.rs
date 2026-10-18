@@ -315,7 +315,7 @@ pub fn import_into_project(
     let id = crate::format_of(path, format);
     let importer = registry
         .importer(&id)
-        .ok_or_else(|| format!("no importer for \"{id}\" (see ols formats)"))?;
+        .ok_or_else(|| format!("no importer for \"{id}\" (see ohl formats)"))?;
     let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut s = ols_session::Session::open(project).map_err(|e| e.to_string())?;
     let base = s.has_line().then(|| s.export());
