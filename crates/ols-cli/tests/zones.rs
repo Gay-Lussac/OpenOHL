@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols zones` on the synthetic example line, with an invented point
+//! `ohl zones` on the synthetic example line, with an invented point
 //! cloud: a tree 3 m below the middle of S1's first span.
 
 use std::path::{Path, PathBuf};
@@ -107,7 +107,7 @@ fn setup(tag: &str) -> Setup {
 }
 
 fn ols(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_ols"))
+    Command::new(env!("CARGO_BIN_EXE_ohl"))
         .args(args)
         .output()
         .unwrap()
@@ -279,13 +279,13 @@ fn exit_codes() {
         a.extend(extra.iter().map(|x| (*x).to_owned()));
         a
     };
-    let refused = Command::new(env!("CARGO_BIN_EXE_ols"))
+    let refused = Command::new(env!("CARGO_BIN_EXE_ohl"))
         .args(args(&[]))
         .output()
         .unwrap();
     assert_eq!(refused.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&refused.stderr).contains("--measure"));
-    let radial = Command::new(env!("CARGO_BIN_EXE_ols"))
+    let radial = Command::new(env!("CARGO_BIN_EXE_ohl"))
         .args(args(&["--measure", "radial"]))
         .output()
         .unwrap();

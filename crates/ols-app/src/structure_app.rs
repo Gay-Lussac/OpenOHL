@@ -2,7 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! **Edit** on a structure: the structure application (`ols-structure`)
+//! **Edit** on a structure: the structure application (`ohl-structure`,
+//! OHL-Structure; under its former name `ols-structure` when that is all
+//! there is)
 //! started on the structure's file (in a project, its working copy), and
 //! the file watched: when it is saved there, the line application stores
 //! it into the project and reads the libraries again (as a save of the
@@ -30,7 +32,7 @@
 //!
 //! What goes wrong is shown in a window ([`report_window`]) and logged:
 //! the program not found (where it was looked for, how to build it); of
-//! another build (`ols-structure --version` compared with [`VERSION`]: a
+//! another build (`ohl-structure --version` compared with [`VERSION`]: a
 //! warning, started anyway); stopped with an error (its error output,
 //! read on a thread of its own).
 
@@ -48,11 +50,15 @@ use ols_structure_loads::PlacedValues;
 use crate::model::Model;
 
 /// The structure application's program name.
-pub const PROGRAM: &str = "ols-structure";
+pub const PROGRAM: &str = "ohl-structure";
+
+/// The structure application's former program name (before OpenOHL),
+/// still looked for when [`PROGRAM`] is not found.
+pub const LEGACY_PROGRAM: &str = "ols-structure";
 
 /// This program's version: the workspace version and the build id (the
 /// git commit built from, `build.rs`), as `--version` prints it. The
-/// structure application's (`ols-structure --version`) is compared with
+/// structure application's (`ohl-structure --version`) is compared with
 /// it before it is started.
 pub const VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -63,7 +69,11 @@ pub const VERSION: &str = concat!(
 
 /// The environment variable naming the structure application's program
 /// (looked at before the folders, [`find`]).
-pub const PROGRAM_ENV: &str = "OLS_STRUCTURE_APP";
+pub const PROGRAM_ENV: &str = "OHL_STRUCTURE_APP";
+
+/// The variable's former name, still read when [`PROGRAM_ENV`] is not
+/// set.
+pub const LEGACY_PROGRAM_ENV: &str = "OLS_STRUCTURE_APP";
 
 /// How the structure application is built.
 pub const BUILD: &str = "cargo build --release -p ols-structure-app";
@@ -324,26 +334,35 @@ pub fn find_in(exe_dir: Option<&Path>, path: Option<OsString>, name: &str) -> Op
         .find(|p| p.is_file())
 }
 
-/// The structure application: the program [`PROGRAM_ENV`] names, else
-/// next to this program, else on the `PATH`. Not found: where it was
-/// looked for and how to build it.
+/// The structure application: the program [`PROGRAM_ENV`] (or, by its
+/// former name, [`LEGACY_PROGRAM_ENV`]) names, else [`find_either`] next
+/// to this program or on the `PATH`. Not found: where it was looked for
+/// and how to build it.
 pub fn find() -> Result<PathBuf, String> {
-    if let Some(p) = std::env::var_os(PROGRAM_ENV).filter(|p| !p.is_empty()) {
-        let p = PathBuf::from(p);
-        return if p.is_file() {
-            Ok(p)
-        } else {
-            Err(format!(
-                "{PROGRAM_ENV} names {}, but there is no such file.\n\nBuild the structure \
-                 application (in the OLS CAD folder):\n    {BUILD}\nor unset {PROGRAM_ENV}.",
-                p.display()
-            ))
-        };
+    for var in [PROGRAM_ENV, LEGACY_PROGRAM_ENV] {
+        if let Some(p) = std::env::var_os(var).filter(|p| !p.is_empty()) {
+            let p = PathBuf::from(p);
+            return if p.is_file() {
+                Ok(p)
+            } else {
+                Err(format!(
+                    "{var} names {}, but there is no such file.\n\nBuild the structure \
+                     application (in the OpenOHL folder):\n    {BUILD}\nor unset {var}.",
+                    p.display()
+                ))
+            };
+        }
     }
     let exe = std::env::current_exe().ok();
     let dir = exe.as_deref().and_then(Path::parent);
     let path = std::env::var_os("PATH");
-    find_in(dir, path.clone(), PROGRAM).ok_or_else(|| not_found(&places(dir, path)))
+    find_either(dir, path.clone()).ok_or_else(|| not_found(&places(dir, path)))
+}
+
+/// The structure application under its name ([`PROGRAM`]) in any of
+/// [`places`], else under its former name ([`LEGACY_PROGRAM`]).
+pub fn find_either(exe_dir: Option<&Path>, path: Option<OsString>) -> Option<PathBuf> {
+    find_in(exe_dir, path.clone(), PROGRAM).or_else(|| find_in(exe_dir, path, LEGACY_PROGRAM))
 }
 
 /// Why the structure application was not found: where it was looked for,
@@ -356,7 +375,7 @@ pub fn not_found(places: &[PathBuf]) -> String {
         .collect();
     format!(
         "The structure application ({file}) was not found.\n\nLooked in:\n{}\n\nBuild it (in \
-         the OLS CAD folder):\n    {BUILD}\nIt is then next to ols-cad (target/release). Or set \
+         the OpenOHL folder):\n    {BUILD}\nIt is then next to ohl-design (target/release). Or set \
          {PROGRAM_ENV} to its path.",
         list.join("\n")
     )
@@ -402,6 +421,7 @@ pub fn version_of(program: &Path) -> Result<String, String> {
     let line = out.lines().next().unwrap_or("").trim();
     Ok(line
         .strip_prefix(PROGRAM)
+        .or_else(|| line.strip_prefix(LEGACY_PROGRAM))
         .map_or(line, str::trim)
         .to_owned())
 }
@@ -420,8 +440,8 @@ pub fn version_warning(program: &Path, theirs: &str) -> Option<String> {
         return None;
     }
     Some(format!(
-        "The structure application is from another build: rebuild both (in the OLS CAD \
-         folder):\n    {BUILD_BOTH}\n\nThis program (ols-cad): {VERSION}\nThe structure \
+        "The structure application is from another build: rebuild both (in the OpenOHL \
+         folder):\n    {BUILD_BOTH}\n\nThis program (ohl-design): {VERSION}\nThe structure \
          application ({}): {}\n\nIt was started anyway; what it saves may not read the same \
          here.",
         program.display(),
@@ -693,7 +713,7 @@ impl StructureApps {
             Err(e) => {
                 let text = format!(
                     "{} could not be started: {e}\n\nArguments: {}\n\nBuild it again (in the \
-                     OLS CAD folder):\n    {BUILD}",
+                     OpenOHL folder):\n    {BUILD}",
                     program.display(),
                     shown.join(" ")
                 );
@@ -759,7 +779,7 @@ impl StructureApps {
                 log::info!("structure application version: {e}");
                 Some(format!(
                     "Its version could not be read ({e}): it may be an older build. Rebuild both \
-                     (in the OLS CAD folder):\n    {BUILD_BOTH}\n\nIt was started anyway."
+                     (in the OpenOHL folder):\n    {BUILD_BOTH}\n\nIt was started anyway."
                 ))
             }
         };
@@ -977,7 +997,7 @@ pub fn stopped(id: &str, status: &str, after: Duration, stderr: &str) -> Report 
     }
     if early {
         text.push_str(&format!(
-            "\n\nAn older build may not read the file: rebuild both (in the OLS CAD \
+            "\n\nAn older build may not read the file: rebuild both (in the OpenOHL \
              folder):\n    {BUILD_BOTH}"
         ));
     }
@@ -1213,6 +1233,33 @@ mod tests {
             find_in(Some(&deps), Some(path), PROGRAM),
             Some(bin.join(&name))
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The program under its former name is found when the new name is
+    /// nowhere; the new name wins wherever it is.
+    #[test]
+    fn the_former_name_is_found_after_the_new_one() {
+        let dir = std::env::temp_dir().join(format!("ohl-design-legacy-{}", std::process::id()));
+        let (bin, other) = (dir.join("bin"), dir.join("other"));
+        for d in [&bin, &other] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let suffix = std::env::consts::EXE_SUFFIX;
+        let (new, old) = (
+            format!("{PROGRAM}{suffix}"),
+            format!("{LEGACY_PROGRAM}{suffix}"),
+        );
+        let path = std::env::join_paths([other.clone()]).unwrap();
+        assert_eq!(find_either(Some(&bin), Some(path.clone())), None);
+        std::fs::write(bin.join(&old), "").unwrap();
+        assert_eq!(
+            find_either(Some(&bin), Some(path.clone())),
+            Some(bin.join(&old))
+        );
+        // The new name on the PATH comes before the old one next to it.
+        std::fs::write(other.join(&new), "").unwrap();
+        assert_eq!(find_either(Some(&bin), Some(path)), Some(other.join(&new)));
         std::fs::remove_dir_all(&dir).ok();
     }
 

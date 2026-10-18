@@ -1,6 +1,7 @@
 [package]
 name = "ols-cli"
-description = "OLS CAD (Open Line System Computer Assisted Design) command-line interface"
+description = "OpenOHL command-line interface (ohl)"
+default-run = "ohl"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,9 +10,17 @@ repository.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "ols"
+name = "ohl"
 path = "src/main.rs"
 # The `ols` Python module (ols-py) owns the `ols` docs page.
+doc = false
+
+# The former name, kept for a transition period: says so and runs the
+# program above (`ohl`).
+[[bin]]
+name = "ols"
+path = "src/bin/ols.rs"
+test = false
 doc = false
 
 [dependencies]

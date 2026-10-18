@@ -2,21 +2,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols-structure` — OLS Structure, the structure application of OLS CAD:
-//! one structure file (`.olss`) in its own window, built from level 1
+//! `ohl-structure` — OHL-Structure, the structure application of OpenOHL
+//! (formerly `ols-structure`, still built as an alias that runs this
+//! program): one structure file (`.olss`) in its own window, built from level 1
 //! (stick figure) to level 3 (full design). The menus are at the top, the
 //! panels under them can be moved, closed and shown again (View).
 //!
 //! ```bash
-//! ols-structure examples/synthetic-line/Structures/type-02.olss
+//! ohl-structure examples/synthetic-line/Structures/type-02.olss
 //! ```
 //!
-//! The line application (`ols-cad`) starts it with **Edit** on a structure
+//! The line application (`ohl-design`, OHL-Design) starts it with **Edit** on a structure
 //! and reads the file again when it is saved. On a placed structure it
 //! also hands over that place's loads:
 //!
 //! ```bash
-//! ols-structure Structures/type-02.olss --structure T2 \
+//! ohl-structure Structures/type-02.olss --structure T2 \
 //!     --line-values Structures/type-02.T2.line-values.json --sections Sections
 //! ```
 //!
@@ -26,8 +27,8 @@
 //! structure uses; Plugins › Plugin manager shares the plugins and their
 //! settings with the line application.
 //!
-//! `ols-structure --version` prints the version and the build id (the git
-//! commit it was built from), e.g. `ols-structure 0.0.1 (build
+//! `ohl-structure --version` prints the version and the build id (the git
+//! commit it was built from), e.g. `ohl-structure 0.0.1 (build
 //! 1a2b3c4d5e6f)`: the line application checks it before it starts this
 //! program.
 
@@ -49,6 +50,18 @@ mod tables;
 mod view;
 
 use std::path::PathBuf;
+
+/// The application's name, as the window title shows it.
+pub const APP_NAME: &str = "OHL-Structure";
+
+/// Where its settings and recent files are kept (eframe's storage id,
+/// its data folder): the name from before OpenOHL, kept so that nothing
+/// is lost.
+pub const STORAGE_ID: &str = "OLS Structure"; // storage id: kept
+
+/// The line application's storage id, whose data folder holds the
+/// plugins both applications share (kept from before OpenOHL as well).
+pub const LINE_STORAGE_ID: &str = "OLS CAD"; // storage id: kept
 
 use clap::Parser;
 use eframe::egui;
@@ -79,10 +92,10 @@ pub const VERSION: &str = concat!(
     ")"
 );
 
-/// OLS Structure, the structure application of OLS CAD: a structure file
+/// OHL-Structure, the structure application of OpenOHL: a structure file
 /// (.olss) in 3D and in tables, every edit undoable.
 #[derive(Parser)]
-#[command(name = "ols-structure", version = VERSION)]
+#[command(name = "ohl-structure", version = VERSION)]
 struct Args {
     /// Structure file (.olss); none: open one from the window.
     file: Option<PathBuf>,
@@ -123,12 +136,12 @@ fn main() -> std::process::ExitCode {
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("OLS Structure")
+            .with_title(APP_NAME)
             .with_inner_size([1300.0, 900.0]),
         ..Default::default()
     };
     let result = eframe::run_native(
-        "OLS Structure",
+        STORAGE_ID,
         options,
         Box::new(move |cc| {
             let mut app = app::StructureApp::new(cc.wgpu_render_state.clone());
@@ -165,12 +178,12 @@ mod version_tests {
     /// application compares it with its own).
     #[test]
     fn the_version_names_the_build() {
-        let Err(e) = super::Args::try_parse_from(["ols-structure", "--version"]) else {
+        let Err(e) = super::Args::try_parse_from(["ohl-structure", "--version"]) else {
             panic!("--version parsed as a run");
         };
         assert_eq!(e.kind(), clap::error::ErrorKind::DisplayVersion);
         let text = e.to_string();
-        assert_eq!(text.trim(), format!("ols-structure {}", super::VERSION));
+        assert_eq!(text.trim(), format!("ohl-structure {}", super::VERSION));
         assert!(super::VERSION.starts_with(env!("CARGO_PKG_VERSION")));
         assert!(super::VERSION.contains("(build "));
     }

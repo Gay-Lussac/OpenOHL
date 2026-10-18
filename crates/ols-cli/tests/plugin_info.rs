@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols plugin info` on the in-repo plugins of every world (when built:
+//! `ohl plugin info` on the in-repo plugins of every world (when built:
 //! `cargo build --release --target wasm32-wasip2` in each; with
 //! `OLS_REQUIRE_PLUGIN_TESTS` set an unbuilt plugin fails the test).
 
@@ -52,7 +52,7 @@ fn plugin_info_knows_every_world() {
         let Some(dir) = built(relative) else {
             continue;
         };
-        let out = Command::new(env!("CARGO_BIN_EXE_ols"))
+        let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
             .args(["plugin", "info"])
             .arg(&dir)
             .output()

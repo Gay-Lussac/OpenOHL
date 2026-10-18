@@ -2,10 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols-cad` — the OLS CAD desktop application (Phase 3).
+//! `ohl-design` — OHL-Design, the line application of OpenOHL: sag-tension,
+//! clearances and line layout (formerly `ols-cad`, still built as an
+//! alias that runs this program).
 //!
 //! ```bash
-//! ols-cad examples/synthetic-line/synthetic-line.ols.json \
+//! ohl-design examples/synthetic-line/synthetic-line.ols.json \
 //!     --terrain examples/synthetic-line/synthetic-survey.csv \
 //!     --weather examples/synthetic-line/weather-cases.olswc
 //! ```
@@ -75,15 +77,24 @@ mod wire_style;
 mod wirefit;
 mod working_tree;
 
+/// The application's name, as the window title shows it.
+pub const APP_NAME: &str = "OHL-Design";
+
+/// Where the settings, the recent files and the user's plugins are kept
+/// (eframe's storage id, its data folder): the name from before OpenOHL,
+/// kept so that nothing is lost. The structure application reads the
+/// plugins there too.
+pub const STORAGE_ID: &str = "OLS CAD"; // storage id: kept
+
 #[cfg(test)]
 mod bench;
 #[cfg(test)]
 mod tests;
 
-/// OLS CAD (Open Line System Computer Assisted Design) — view and edit a
-/// line model in 3D, plan and profile.
+/// OHL-Design, the line application of OpenOHL — view and edit a line
+/// model in 3D, plan and profile.
 #[derive(Parser)]
-#[command(name = "ols-cad", version = crate::structure_app::VERSION)]
+#[command(name = "ohl-design", version = crate::structure_app::VERSION)]
 struct Args {
     /// Line file (.ols.json) or project file (.ols); none: the start page
     /// (File › New project, Open).
@@ -197,12 +208,12 @@ fn main() -> std::process::ExitCode {
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("OLS CAD")
+            .with_title(APP_NAME)
             .with_inner_size([1500.0, 950.0]),
         ..Default::default()
     };
     let result = eframe::run_native(
-        "OLS CAD",
+        STORAGE_ID,
         options,
         Box::new(move |cc| {
             let rs = cc.wgpu_render_state.clone();
