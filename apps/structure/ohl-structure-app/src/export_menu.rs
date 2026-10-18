@@ -3,7 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! File › Export: the structure as IFC (IFC4 with the analysis model, IFC4
-//! members, IFC2x3 for Tekla Structures), SAF (RFEM, SCIA…) or CSV tables
+//! members, IFC2x3 for steel-detailing programs), SAF (analysis programs)
+//! or CSV tables
 //! (`ohl-structure-export`). By default with the window's section library
 //! and its load table (the Load table panel: a placed structure's line
 //! values and the values typed); another library or a load table (CSV)

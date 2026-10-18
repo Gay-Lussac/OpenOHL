@@ -159,7 +159,7 @@ enum Command {
         #[command(subcommand)]
         command: PluginCommand,
     },
-    /// Host a project for several users (server mode, alpha): prints the
+    /// Host a project for several users (server mode, pre-alpha): prints the
     /// invitation to give them; runs until stopped (Ctrl+C: every edit is
     /// already in the project file).
     Serve {

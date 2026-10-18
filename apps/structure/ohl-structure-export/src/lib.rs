@@ -6,12 +6,12 @@
 //! `docs/development/structure-exports.md`):
 //!
 //! - [`ifc`]: IFC4 with the members (profile solids) and the structural
-//!   analysis model with its load cases (RFEM imports it as a structural
-//!   analysis view; BIM viewers show the members); IFC2x3 Coordination
-//!   View 2.0 with the members only (Tekla Structures converts it into its
-//!   own parts);
-//! - [`saf`]: SAF, the Structural Analysis Format (xlsx; RFEM, SCIA and
-//!   other analysis programs);
+//!   analysis model with its load cases (analysis programs import it as a
+//!   structural analysis view; BIM viewers show the members); IFC2x3 Coordination
+//!   View 2.0 with the members only (steel-detailing programs convert it
+//!   into their own parts);
+//! - [`saf`]: SAF, the Structural Analysis Format (xlsx; analysis
+//!   programs);
 //! - [`csv`]: neutral CSV tables for anything else.
 //!
 //! Each takes plain data, an [`ExportStructure`], made by
@@ -46,7 +46,7 @@ pub enum Format {
     Ifc,
     /// IFC4: members only (BIM viewers).
     IfcMembers,
-    /// IFC2x3 Coordination View 2.0: members only (Tekla Structures).
+    /// IFC2x3 Coordination View 2.0: members only (steel-detailing programs).
     Ifc2x3,
     /// SAF workbook (xlsx).
     Saf,
@@ -83,10 +83,10 @@ impl Format {
     /// What it is, for menus.
     pub fn description(self) -> &'static str {
         match self {
-            Format::Ifc => "IFC4 — analysis model with load cases, and members (RFEM…)",
+            Format::Ifc => "IFC4 — analysis model with load cases, and members (analysis programs)",
             Format::IfcMembers => "IFC4 — members with their profiles (BIM viewers)",
-            Format::Ifc2x3 => "IFC2x3 — members for Tekla Structures",
-            Format::Saf => "SAF (xlsx) — analysis model with load cases (RFEM, SCIA…)",
+            Format::Ifc2x3 => "IFC2x3 — members for steel-detailing programs",
+            Format::Saf => "SAF (xlsx) — analysis model with load cases (analysis programs)",
             Format::Csv => "CSV tables (nodes, members, sections, supports, loads)",
         }
     }

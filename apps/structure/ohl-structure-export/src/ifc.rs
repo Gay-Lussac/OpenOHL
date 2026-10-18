@@ -29,7 +29,7 @@
 //!
 //! **IFC2x3** (TC1, Coordination View 2.0): the members only, with their
 //! profiles and materials, in a site, building and storey — the form
-//! Tekla Structures converts into its own parts.
+//! steel-detailing programs convert into their own parts.
 //!
 //! GlobalIds come from the structure's id and each object's id, so an
 //! export of the same structure gives the same ids.

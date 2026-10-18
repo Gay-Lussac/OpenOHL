@@ -206,7 +206,7 @@ pub fn from_prj(text: &str) -> Result<String, String> {
         return Ok(spec);
     }
     let name = wkt_name(text).ok_or("the file is neither WKT nor a proj4 string")?;
-    // Esri writes `CH1903+_LV95` for `CH1903+ / LV95`: compare letters,
+    // Some GIS programs write `CH1903+_LV95` for `CH1903+ / LV95`: compare letters,
     // digits and `+` only.
     let wanted = |n: &str| -> String {
         n.chars()
@@ -487,7 +487,7 @@ mod tests {
         // WKT 1 with the code at the end (inner codes are the datum's…).
         let wkt = crs_definitions::from_code(2056).unwrap().wkt;
         assert_eq!(from_prj(wkt).unwrap(), "EPSG:2056");
-        // Esri style: no code, the name with underscores.
+        // Some GIS programs: no code, the name with underscores.
         let esri = r#"PROJCS["CH1903+_LV95",GEOGCS["GCS_CH1903+",DATUM["D_CH1903+",SPHEROID["Bessel_1841",6377397.155,299.1528128]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Hotine_Oblique_Mercator_Azimuth_Center"],UNIT["Meter",1.0]]"#;
         assert_eq!(from_prj(esri).unwrap(), "EPSG:2056");
         // WKT 2.

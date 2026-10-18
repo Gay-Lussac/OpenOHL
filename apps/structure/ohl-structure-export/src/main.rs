@@ -31,7 +31,7 @@ struct Args {
     /// Structure file (.ohls).
     file: PathBuf,
     /// ifc (IFC4: analysis model and members), ifc-members (IFC4, members
-    /// only), ifc2x3 (members for Tekla Structures), saf (xlsx), csv
+    /// only), ifc2x3 (members for steel-detailing programs), saf (xlsx), csv
     /// (tables in a folder).
     #[arg(long)]
     format: String,
