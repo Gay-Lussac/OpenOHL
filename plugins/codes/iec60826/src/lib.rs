@@ -18,10 +18,10 @@
 
 wit_bindgen::generate!({
     world: "code-plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
-use ols_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
+use ohl_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
 use serde::Deserialize;
 
 const NAME: &str = "iec60826";
@@ -99,7 +99,7 @@ struct Factors {
 }
 
 fn cases(text: &str) -> Result<Cases, String> {
-    let p: Params = ols_code_common::parse(text)?;
+    let p: Params = ohl_code_common::parse(text)?;
     let w = &p.wind;
     check("wind.reference_speed", w.reference_speed, 0.0, 100.0)?;
     check("wind.roughness_factor", w.roughness_factor, 0.0, 5.0)?;
@@ -254,7 +254,7 @@ fn cases(text: &str) -> Result<Cases, String> {
     Ok(c)
 }
 
-ols_code_common::code_plugin!(
+ohl_code_common::code_plugin!(
     NAME,
     "IEC 60826: reliability-based wind, ice and combined ice-wind cases with use factors",
     cases

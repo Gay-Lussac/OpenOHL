@@ -17,11 +17,11 @@ use serde_json::Value;
 
 wit_bindgen::generate!({
     world: "project-plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
-use ols::plugin::io_types::Direction;
-use ols::plugin::project_types::LibraryFile;
+use ohl::plugin::io_types::Direction;
+use ohl::plugin::project_types::LibraryFile;
 
 struct Bundle;
 

@@ -695,7 +695,7 @@ impl Plugins {
                     if ui
                         .button("Install from a folder…")
                         .on_hover_text(
-                            "Copy a plugin (a folder with ols-plugin.toml) into your plugins",
+                            "Copy a plugin (a folder with ohl-plugin.toml) into your plugins",
                         )
                         .clicked()
                         && let Some(dir) = rfd::FileDialog::new().pick_folder()

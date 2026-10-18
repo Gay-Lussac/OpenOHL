@@ -1,7 +1,7 @@
 [package]
 name = "en50341"
 description = "OpenOHL design-code plugin: EN 50341-1 general approach with a national annex (NNA) overlay"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MPL-2.0"
 publish = false
@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 [dependencies]
 wit-bindgen = "0.62"
 serde = { version = "1", features = ["derive"] }
-ols-code-common = { path = "../common" }
+ohl-code-common = { path = "../common" }
 
 [profile.release]
 opt-level = "s"

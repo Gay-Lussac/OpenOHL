@@ -1,8 +1,8 @@
 [plugin]
 name = "hello-wasm"
-version = "0.1.0"
+version = "0.2.0"
 description = "Example plugin: total load of a distributed load over a span"
-sdk = "0.2"
+sdk = "0.3"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/hello_wasm.wasm"
 extension-points = []

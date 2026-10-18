@@ -4,14 +4,15 @@
 
 //! Plugin manifests, compatibility checks and the WebAssembly component host.
 //!
-//! Every plugin ships an `ols-plugin.toml` manifest (ADR-0003):
+//! Every plugin ships an `ohl-plugin.toml` manifest (ADR-0003; `ols-plugin.toml`,
+//! its name before 2026-10-18, is read too):
 //!
 //! ```toml
 //! [plugin]
 //! name = "hello-wasm"
 //! version = "0.1.0"
 //! description = "Example plugin"
-//! sdk = "0.2"                 # plugin interface version it targets
+//! sdk = "0.3"                 # plugin interface version it targets
 //! tier = "wasm"               # "wasm" or "python"
 //! entry = "hello_wasm.wasm"   # relative to the manifest
 //! extension-points = []
@@ -21,7 +22,7 @@
 //! filesystem = []
 //! ```
 //!
-//! WebAssembly plugins implement the `ols:plugin` WIT world in `wit/` and run
+//! WebAssembly plugins implement the `ohl:plugin` WIT world in `wit/` and run
 //! sandboxed: no file system, network, environment or standard I/O access.
 //!
 //! Every call into a plugin has exit clauses ([`Limits`]): a time limit (an
@@ -64,7 +65,7 @@ mod terrain_bindings {
     });
 }
 
-pub use terrain_bindings::ols::plugin::terrain_types::Surface;
+pub use terrain_bindings::ohl::plugin::terrain_types::Surface;
 
 mod project_bindings {
     wasmtime::component::bindgen!({
@@ -73,7 +74,7 @@ mod project_bindings {
     });
 }
 
-pub use project_bindings::ols::plugin::project_types::{LibraryFile, Project};
+pub use project_bindings::ohl::plugin::project_types::{LibraryFile, Project};
 
 mod code_bindings {
     wasmtime::component::bindgen!({
@@ -82,7 +83,7 @@ mod code_bindings {
     });
 }
 
-pub use code_bindings::ols::plugin::code_types::{
+pub use code_bindings::ohl::plugin::code_types::{
     ClearanceMeasure, ClearancePreset, CodeInfo, Generated,
 };
 
@@ -93,7 +94,7 @@ mod check_bindings {
     });
 }
 
-pub use check_bindings::exports::ols::plugin::check::{
+pub use check_bindings::exports::ohl::plugin::check::{
     CheckInfo, Choice, ConductorPair, Evaluated, ValueTable,
 };
 
@@ -103,14 +104,34 @@ pub const CHECK: &str = "check";
 /// Extension point of design-code plugins (`code-plugin` world).
 pub const DESIGN_CODE: &str = "design-code";
 
-pub use bindings::ols::plugin::types::PluginInfo;
-pub use io_bindings::ols::plugin::io_types::{Direction, Format};
+pub use bindings::ohl::plugin::types::PluginInfo;
+pub use io_bindings::ohl::plugin::io_types::{Direction, Format};
 
 /// Version (major, minor) of the plugin interface implemented by this host.
-pub const SDK_VERSION: (u64, u64) = (0, 2);
+pub const SDK_VERSION: (u64, u64) = (0, 3);
+
+/// The plugin interface of before 2026-10-18 (`ols:plugin`, SDK 0.2): its
+/// plugins do not load here; rebuilt for [`SDK_VERSION`] (the `ohl:plugin`
+/// interface, nothing else changed) they do.
+pub const LEGACY_SDK: &str = "0.2";
 
 /// File name of plugin manifests.
-pub const MANIFEST_FILE: &str = "ols-plugin.toml";
+pub const MANIFEST_FILE: &str = "ohl-plugin.toml";
+
+/// File name of plugin manifests before 2026-10-18 (still read).
+pub const LEGACY_MANIFEST_FILE: &str = "ols-plugin.toml";
+
+/// The manifest of the plugin in `dir`: [`MANIFEST_FILE`], else
+/// [`LEGACY_MANIFEST_FILE`] when only that one is there.
+pub fn manifest_path(dir: &Path) -> PathBuf {
+    let new = dir.join(MANIFEST_FILE);
+    let old = dir.join(LEGACY_MANIFEST_FILE);
+    if !new.is_file() && old.is_file() {
+        old
+    } else {
+        new
+    }
+}
 
 /// Errors raised while loading or running plugins.
 #[derive(Debug)]
@@ -158,8 +179,14 @@ impl fmt::Display for PluginError {
             Self::Manifest { path, message } => write!(f, "{}: {message}", path.display()),
             Self::Incompatible { plugin, requested } => write!(
                 f,
-                "plugin {plugin} targets plugin interface {requested}, host supports {}.{}",
-                SDK_VERSION.0, SDK_VERSION.1
+                "plugin {plugin} targets plugin interface {requested}, host supports {}.{}{}",
+                SDK_VERSION.0,
+                SDK_VERSION.1,
+                if requested == LEGACY_SDK {
+                    ": rebuild it for the ohl:plugin interface (sdk = \"0.3\" in ohl-plugin.toml)"
+                } else {
+                    ""
+                }
             ),
             Self::PermissionDenied { plugin, permission } => {
                 write!(
@@ -306,7 +333,7 @@ pub const COLUMN_TABLES: [&str; 7] = [
     "routes",
 ];
 
-/// A parsed `ols-plugin.toml`.
+/// A parsed `ohl-plugin.toml`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -330,7 +357,7 @@ impl Manifest {
     /// Parses a manifest from text. `dir` is the directory it belongs to.
     pub fn parse(text: &str, dir: &Path) -> Result<Self, PluginError> {
         let mut manifest: Self = toml::from_str(text).map_err(|e| PluginError::Manifest {
-            path: dir.join(MANIFEST_FILE),
+            path: manifest_path(dir),
             message: e.to_string(),
         })?;
         manifest.dir = dir.to_owned();
@@ -343,7 +370,7 @@ impl Manifest {
             .all(|c| matches!(c, std::path::Component::Normal(_)));
         if !inside || manifest.plugin.entry.as_os_str().is_empty() {
             return Err(PluginError::Manifest {
-                path: dir.join(MANIFEST_FILE),
+                path: manifest_path(dir),
                 message: format!(
                     "entry {}: a path inside the plugin's folder",
                     manifest.plugin.entry.display()
@@ -351,7 +378,7 @@ impl Manifest {
             });
         }
         let bad = |message: String| PluginError::Manifest {
-            path: dir.join(MANIFEST_FILE),
+            path: manifest_path(dir),
             message,
         };
         let mut names = std::collections::BTreeSet::new();
@@ -397,9 +424,10 @@ impl Manifest {
         format!("{}.{}", self.plugin.name, column.name)
     }
 
-    /// Loads `ols-plugin.toml` from a plugin directory.
+    /// Loads `ohl-plugin.toml` (or `ols-plugin.toml` of before 2026-10-18)
+    /// from a plugin directory.
     pub fn load(dir: &Path) -> Result<Self, PluginError> {
-        let path = dir.join(MANIFEST_FILE);
+        let path = manifest_path(dir);
         let text = std::fs::read_to_string(&path).map_err(|e| PluginError::Manifest {
             path: path.clone(),
             message: e.to_string(),
@@ -463,7 +491,7 @@ impl Manifest {
 /// not read.
 #[derive(Debug, Clone)]
 pub struct Found {
-    /// The plugin's directory (holding `ols-plugin.toml`).
+    /// The plugin's directory (holding `ohl-plugin.toml`).
     pub dir: PathBuf,
     /// The manifest, or the error reading it.
     pub manifest: Result<Manifest, String>,
@@ -521,7 +549,7 @@ pub fn discover(root: &Path) -> Vec<Found> {
         dir: dir.to_owned(),
         manifest: Manifest::load(dir).map_err(|e| e.to_string()),
     };
-    if root.join(MANIFEST_FILE).is_file() {
+    if manifest_path(root).is_file() {
         return vec![found(root)];
     }
     let Ok(entries) = std::fs::read_dir(root) else {
@@ -530,7 +558,7 @@ pub fn discover(root: &Path) -> Vec<Found> {
     let mut dirs: Vec<PathBuf> = entries
         .filter_map(Result::ok)
         .map(|e| e.path())
-        .filter(|p| p.join(MANIFEST_FILE).is_file())
+        .filter(|p| manifest_path(p).is_file())
         .collect();
     dirs.sort();
     dirs.iter().map(|d| found(d)).collect()
@@ -581,7 +609,7 @@ pub fn install(from: &Path, root: &Path, replace: bool) -> Result<PathBuf, Plugi
     std::fs::create_dir_all(&to).map_err(io)?;
     match manifest.plugin.tier {
         Tier::Wasm => {
-            std::fs::copy(from.join(MANIFEST_FILE), to.join(MANIFEST_FILE)).map_err(io)?;
+            std::fs::copy(manifest_path(from), to.join(MANIFEST_FILE)).map_err(io)?;
             let source = manifest.entry_path();
             let real = |p: &Path| p.canonicalize().map_err(io);
             if !real(&source)?.starts_with(real(from)?) {
@@ -792,7 +820,7 @@ impl WasmHost {
             && !manifest.plugin.extension_points.iter().any(|e| e == point)
         {
             return Err(PluginError::Manifest {
-                path: dir.join(MANIFEST_FILE),
+                path: manifest_path(dir),
                 message: format!("{kind} lists the extension point \"{point}\""),
             });
         }
@@ -1001,13 +1029,13 @@ impl WasmCheckPlugin {
         &mut self,
         function: &'static str,
         f: impl FnOnce(
-            &check_bindings::exports::ols::plugin::check::Guest,
+            &check_bindings::exports::ohl::plugin::check::Guest,
             &mut Store<HostState>,
         ) -> wasmtime::Result<T>,
     ) -> Result<T, PluginError> {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
         let (name, limits) = (self.manifest.plugin.name.clone(), self.limits);
-        f(self.instance.ols_plugin_check(), &mut self.store)
+        f(self.instance.ohl_plugin_check(), &mut self.store)
             .map_err(|e| classify(e, &name, function, limits))
     }
 
@@ -1317,10 +1345,10 @@ impl WasmTerrainPlugin {
                 description: f.description,
                 extension: f.extension,
                 direction: match f.direction {
-                    terrain_bindings::ols::plugin::io_types::Direction::Exporter => {
+                    terrain_bindings::ohl::plugin::io_types::Direction::Exporter => {
                         Direction::Exporter
                     }
-                    terrain_bindings::ols::plugin::io_types::Direction::Importer => {
+                    terrain_bindings::ohl::plugin::io_types::Direction::Importer => {
                         Direction::Importer
                     }
                 },
@@ -1490,7 +1518,7 @@ mod tests {
 
     #[test]
     fn parses_manifest() {
-        let m = manifest("0.2", "extension-points = [\"checks\"]");
+        let m = manifest("0.3", "extension-points = [\"checks\"]");
         assert_eq!(m.plugin.tier, Tier::Wasm);
         assert_eq!(m.plugin.extension_points, ["checks"]);
         assert_eq!(m.entry_path(), Path::new("/plugins/t/t.wasm"));
@@ -1502,7 +1530,7 @@ mod tests {
     #[test]
     fn table_columns() {
         let m = manifest(
-            "0.2",
+            "0.3",
             "[[column]]\ntable = \"circuits\"\nname = \"level\"\nvalues = [\"low\", \"high\"]\ndefault = \"high\"",
         );
         assert_eq!(m.columns.len(), 1);
@@ -1514,7 +1542,7 @@ mod tests {
             "table = \"circuits\"\nname = \"x\"\nvalues = [\"a\"]\ndefault = \"b\"",
         ] {
             let text = format!(
-                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.2\"\ntier=\"wasm\"\nentry=\"t.wasm\"\n[[column]]\n{bad}"
+                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"wasm\"\nentry=\"t.wasm\"\n[[column]]\n{bad}"
             );
             assert!(
                 Manifest::parse(&text, Path::new("/plugins/t")).is_err(),
@@ -1527,7 +1555,7 @@ mod tests {
     fn the_entry_stays_inside_the_plugin_folder() {
         for entry in ["../x.wasm", "a/../../x.wasm", "/etc/x.wasm", ""] {
             let text = format!(
-                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.2\"\ntier=\"wasm\"\nentry=\"{entry}\""
+                "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"wasm\"\nentry=\"{entry}\""
             );
             assert!(
                 Manifest::parse(&text, Path::new("/plugins/t")).is_err(),
@@ -1535,13 +1563,13 @@ mod tests {
             );
         }
         let text =
-            "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.2\"\ntier=\"wasm\"\nentry=\"bin/t.wasm\"";
+            "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"wasm\"\nentry=\"bin/t.wasm\"";
         assert!(Manifest::parse(text, Path::new("/plugins/t")).is_ok());
     }
 
     #[test]
     fn rejects_unknown_fields() {
-        let text = "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.2\"\ntier=\"wasm\"\nentry=\"t.wasm\"\nunknown=1";
+        let text = "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"wasm\"\nentry=\"t.wasm\"\nunknown=1";
         assert!(matches!(
             Manifest::parse(text, Path::new(".")),
             Err(PluginError::Manifest { .. })
@@ -1550,23 +1578,32 @@ mod tests {
 
     #[test]
     fn compatibility_rules() {
-        assert!(manifest("0.2", "").check_compatible().is_ok());
+        assert!(manifest("0.3", "").check_compatible().is_ok());
         // 0.1: before the design codes' clearance presets.
         assert!(manifest("0.1", "").check_compatible().is_err());
-        assert!(manifest("0.3", "").check_compatible().is_err());
+        // 0.2: the ols:plugin interface of before 2026-10-18, to rebuild.
+        let old = manifest("0.2", "")
+            .check_compatible()
+            .unwrap_err()
+            .to_string();
+        assert!(
+            old.contains("rebuild it for the ohl:plugin interface"),
+            "{old}"
+        );
+        assert!(manifest("0.4", "").check_compatible().is_err());
         assert!(manifest("1.0", "").check_compatible().is_err());
         assert!(manifest("zero", "").check_compatible().is_err());
     }
 
     #[test]
     fn permissions_denied_by_default() {
-        assert!(manifest("0.2", "").check_permissions().is_ok());
-        let net = manifest("0.2", "[permissions]\nnetwork = true");
+        assert!(manifest("0.3", "").check_permissions().is_ok());
+        let net = manifest("0.3", "[permissions]\nnetwork = true");
         assert!(matches!(
             net.check_permissions(),
             Err(PluginError::PermissionDenied { .. })
         ));
-        let fs = manifest("0.2", "[permissions]\nfilesystem = [\"/tmp\"]");
+        let fs = manifest("0.3", "[permissions]\nfilesystem = [\"/tmp\"]");
         assert!(fs.check_permissions().is_err());
     }
 
@@ -1623,6 +1660,22 @@ mod tests {
             f[0].problem()
         );
         assert!(install(&other, &root, false).is_err());
+        // A manifest under its name of before 2026-10-18: found, read,
+        // installed under the current name.
+        let old = root.join("old-src");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(
+            old.join(LEGACY_MANIFEST_FILE),
+            "[plugin]\nname=\"old\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"python\"\nentry=\"x.py\"",
+        )
+        .unwrap();
+        std::fs::write(old.join("x.py"), "").unwrap();
+        let f = discover(&old);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].problem(), None);
+        let to = install(&old, &root, false).unwrap();
+        assert!(to.join(MANIFEST_FILE).is_file() || to.join(LEGACY_MANIFEST_FILE).is_file());
+        assert_eq!(discover(&to)[0].name(), "old");
         std::fs::remove_dir_all(&root).unwrap();
     }
 

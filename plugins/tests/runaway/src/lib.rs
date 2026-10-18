@@ -3,11 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Test plugin whose `span-load` never returns. Used to prove the host's
-//! time limit interrupts endless loops (`ols-plugins` tests).
+//! time limit interrupts endless loops (`ohl-plugins` tests).
 
 wit_bindgen::generate!({
     world: "plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
 struct Runaway;

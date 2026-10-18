@@ -17,13 +17,13 @@
 
 wit_bindgen::generate!({
     world: "code-plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
-use ols_code_common::us::{
+use ohl_code_common::us::{
     self, KG_M3_PER_LB_FT3, MM_PER_INCH, N_PER_M_PER_LBF_PER_FT, PA_PER_PSF,
 };
-use ols_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
+use ohl_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
 use serde::Deserialize;
 
 const NAME: &str = "nesc";
@@ -116,7 +116,7 @@ struct StrengthFactors {
 }
 
 fn cases(text: &str) -> Result<Cases, String> {
-    let p: Params = ols_code_common::parse(text)?;
+    let p: Params = ohl_code_common::parse(text)?;
     let district = p
         .district
         .iter()
@@ -259,7 +259,7 @@ fn cases(text: &str) -> Result<Cases, String> {
     Ok(c)
 }
 
-ols_code_common::code_plugin!(
+ohl_code_common::code_plugin!(
     NAME,
     "NESC (ANSI C2) Rule 250: district, extreme wind and extreme ice cases with load factors",
     cases

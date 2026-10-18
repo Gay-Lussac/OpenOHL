@@ -1,7 +1,7 @@
 [package]
-name = "ols-code-common"
+name = "ohl-code-common"
 description = "Shared by the OpenOHL design-code plugins: parameter files, weather and load case files"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MPL-2.0"
 publish = false
