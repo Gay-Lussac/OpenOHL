@@ -824,6 +824,13 @@ impl StructureApp {
                     "compression",
                     "The push it may take (V legs); none: tension only",
                 ),
+                (
+                    "limits",
+                    "Kept with the insulator, not checked by OLS CAD (for a plugin or a report): \
+                     the tension it is rated for, the swing from straight down it may take (any \
+                     direction), across and along the line. Unticked: not given — its \
+                     assembly's, if it gives one (shown dimmed)",
+                ),
                 ("description", "What it is, in words"),
                 ("", ""),
             ] {
@@ -1004,6 +1011,55 @@ impl StructureApp {
                             StringChange::Compression(push.then_some(c)),
                             b.is_pointer_button_down_on().then(|| "compression".into()),
                         );
+                    }
+                });
+                ui.horizontal(|ui| {
+                    let own = s.limits();
+                    let from = a.map(|a| a.limits()).unwrap_or_default();
+                    let fields = edit::limit_fields(own, from);
+                    for edit::LimitField {
+                        name,
+                        own: v,
+                        inherited,
+                        start: default,
+                        angle,
+                        change: make,
+                    } in fields
+                    {
+                        let mut on = v.is_some();
+                        let mut x = v.or(inherited).unwrap_or(default);
+                        let tick = ui.checkbox(&mut on, name);
+                        let d = if on {
+                            ui.add(if angle {
+                                egui::DragValue::new(&mut x)
+                                    .range(0.0..=180.0)
+                                    .speed(0.5)
+                                    .max_decimals(2)
+                                    .suffix("°")
+                            } else {
+                                egui::DragValue::new(&mut x)
+                                    .range(1.0..=1e9)
+                                    .speed(100.0)
+                                    .max_decimals(0)
+                                    .suffix(" N")
+                            })
+                        } else if let Some(i) = inherited {
+                            ui.weak(if angle {
+                                format!("{i:.2}°")
+                            } else {
+                                format!("{i:.0} N")
+                            })
+                            .on_hover_text("Its assembly's")
+                        } else {
+                            ui.weak("—")
+                        };
+                        if tick.changed() || (on && d.changed()) {
+                            put(
+                                make(on.then_some(x)),
+                                d.is_pointer_button_down_on()
+                                    .then(|| format!("insulator {name} limit")),
+                            );
+                        }
                     }
                 });
                 let mut d = s.description.clone();

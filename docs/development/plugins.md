@@ -106,7 +106,7 @@ extension-points = ["io"]
 ```
 
 - `formats()` lists its formats: id, description, extension and direction (exporter or importer).
-- `export-model(format, model, options)` receives the solved model as JSON and returns the file's bytes. The model is `{"format": "ols-export-model", "version": 1, "crs": …, "line": <line file>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "system", "voltage_kv", "horizontal_tension_n", "max_tension_n", "sag_m", "points": [[x, y, z], …]}]}]}` (coordinates in the line's coordinate system; jumpers have section `jumper:<id>` and no horizontal tension; tensions per wire, N; sag in m).
+- `export-model(format, model, options)` receives the solved model as JSON and returns the file's bytes. The model is `{"format": "ols-export-model", "version": 1, "crs": …, "line": <line file>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "system", "voltage_kv", "horizontal_tension_n", "max_tension_n", "sag_m", "points": [[x, y, z], …]}], "strings": [{"structure", "label", "by", "force_n", "swing_deg", "swing_across_deg", "swing_along_deg", "max_load_n", "max_swing_deg", "max_swing_across_deg", "max_swing_along_deg"}]}]}` (coordinates in the line's coordinate system; jumpers have section `jumper:<id>` and no horizontal tension; tensions per wire, N; sag in m). `strings` lists each structure's string as solved in the case (once; `by`: the section that reported it, `jumper:<id>` for a jumper's helping string) with its **limits** — see [String limits](#string-limits-what-a-plugin-sees).
 - `import-file(format, data, options)` returns a line file (JSON), which the host checks like any line file. When the user gives a line to update, it arrives as option `into` (its JSON).
 - Errors are returned as strings and shown to the user as the format's error.
 
@@ -231,6 +231,15 @@ existing line (930 conductors, 5593 pairs) a plugin's check takes about
 as long as the same computation built into OLS CAD (0.8 s against
 0.65–0.9 s; with nearby pairs, 10 475, 0.9 s against 0.65–0.7 s), plus
 about 0.3 s to load the plugin once.
+
+## String limits: what a plugin sees
+
+A string (insulator) may carry limits that **OLS CAD does not check** — the tension it is rated for and the swings it may take ([String limits](../user-guide/structure-library.md#string-limits-not-checked)). Absent means not given: nothing checks it. Given, nothing in OLS CAD checks it either: a plugin (or a report, or a script) does, where its rules need it. What it gets:
+
+- **Export model** (`io` plugins, `export-model`): the `line` holds every string with its own `max_load` (N), `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (degrees) — structure types placed and the limits of the insulator a string names filled in where it gives none (absent keys: not given). Each case's `strings` gives, per string, the solved axial force `force_n` (whole bundle, tension positive), its swing `swing_deg` (from straight down), `swing_across_deg` and `swing_along_deg` (the angles of its projections on the structure's planes across and along the line, positive to the right and ahead), and its limits beside them as `max_load_n`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (`null`: not given). A plugin compares, e.g. `abs(swing_across_deg) > max_swing_across_deg`. The format stays version 1: keys were only added.
+- **Check plugins** (`check`): the WIT records pass no strings (a check measures conductor pairs), so the interface is unchanged (still `ols:plugin@0.1.0`); a check that needs the limits reads them from the line as above.
+- **Rust** (built-in checks, reports, the server): `ols_line::InsulatorString::limits()` → `StringLimits`, `Line::string_limits(structure, label)`, and next to each solved string `solve::StringState::{force, limits, swing}` and `jumper::JumperStringShape::{force, limits, swing}`; `ols_line::swing(orientation_deg, top, bottom)` for any other position. Library side: `InsulatorAssembly::limits()`, `TypeString::limits()` (`ols_structures::InsulatorLimits`).
+- **Python**: the line's JSON (the console's `ols` module) carries the same `max_*` keys on its strings.
 
 ## Python plugins
 

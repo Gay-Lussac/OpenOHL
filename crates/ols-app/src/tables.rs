@@ -252,6 +252,30 @@ const INSULATORS: &[Column] = &[
         Yes,
         "m, a V's: across from the centre to each leg's top",
     ),
+    (
+        "max load",
+        80.0,
+        Yes,
+        "N, the tension it is rated for (a V: each leg's) — strings with this label take it unless they give their own; not checked by OLS CAD (for a plugin or a report); empty: not given",
+    ),
+    (
+        "max swing",
+        70.0,
+        Yes,
+        "°, the swing from straight down it may take, any direction (taken by its strings; not checked); empty: not given",
+    ),
+    (
+        "max across",
+        75.0,
+        Yes,
+        "°, the swing across the line it may take (taken by its strings; not checked); empty: not given",
+    ),
+    (
+        "max along",
+        70.0,
+        Yes,
+        "°, the swing along the line it may take (taken by its strings; not checked); empty: not given",
+    ),
     ("source", 160.0, Yes, "where its values come from"),
     (
         "used",
@@ -302,6 +326,30 @@ const STRINGS: &[Column] = &[
         80.0,
         Yes,
         "area the wind blows on, half at each end (empty: its insulator's, if any)",
+    ),
+    (
+        "max load N",
+        85.0,
+        Yes,
+        "the tension it is rated for — kept, not checked by OLS CAD (for a plugin or a report); empty: not given. Shown dimmed: its insulator's",
+    ),
+    (
+        "max swing °",
+        80.0,
+        Yes,
+        "the swing from straight down it may take, any direction — kept, not checked; empty: not given. Shown dimmed: its insulator's",
+    ),
+    (
+        "max across °",
+        85.0,
+        Yes,
+        "the swing across the line it may take, either side — kept, not checked; empty: not given. Shown dimmed: its insulator's",
+    ),
+    (
+        "max along °",
+        80.0,
+        Yes,
+        "the swing along the line it may take, either way — kept, not checked; empty: not given. Shown dimmed: its insulator's",
     ),
     (
         "sections",
@@ -1559,9 +1607,29 @@ impl TableKind {
                             .filter_map(|&i| s.wires[i].set)
                             .collect();
                         let dead_end = line.is_dead_end(s, &x.wire);
+                        // Limits its insulator gives (not its own): dimmed.
+                        let own = model
+                            .stored_line()
+                            .and_then(|l| l.structure(&s.id))
+                            .and_then(|o| o.string(&x.label))
+                            .map(|o| o.limits());
+                        let (l, given) = (x.limits(), own.unwrap_or(x.limits()));
+                        let inherited = [
+                            l.max_load.is_some() && given.max_load.is_none(),
+                            l.max_swing_deg.is_some() && given.max_swing_deg.is_none(),
+                            l.max_swing_across_deg.is_some()
+                                && given.max_swing_across_deg.is_none(),
+                            l.max_swing_along_deg.is_some() && given.max_swing_along_deg.is_none(),
+                        ];
+                        let limit = |v: Option<f64>, d: usize| v.map_or(String::new(), |v| f(v, d));
                         Row {
                             // Not flagged: from where it is.
-                            defaulted: (0..12).map(|c| c == 9 && !x.strain).collect(),
+                            defaulted: (0..17)
+                                .map(|c| {
+                                    (c == 9 && !x.strain)
+                                        || (11..15).contains(&c) && inherited[c - 11]
+                                })
+                                .collect(),
                             key: format!("{}\t{}", s.id, x.label),
                             select: match sets.first() {
                                 Some(&set) => Selection::Attachment {
@@ -1589,6 +1657,10 @@ impl TableKind {
                                 } else {
                                     String::new()
                                 },
+                                limit(l.max_load, 0),
+                                limit(l.max_swing_deg, 2),
+                                limit(l.max_swing_across_deg, 2),
+                                limit(l.max_swing_along_deg, 2),
                                 sets.iter()
                                     .map(|set| {
                                         through.get(&(s.id.as_str(), *set)).copied().unwrap_or(0)
@@ -3449,6 +3521,21 @@ fn string_cells(x: &mut ols_line::InsulatorString, c: &Cells, name: &str) -> Res
     if x.wind_area.is_nan() || x.wind_area < 0.0 {
         return Err(format!("{name} wind area: must be ≥ 0"));
     }
+    // Its limits (kept, not checked); a dimmed one (its insulator's)
+    // reads empty: not its own.
+    let limit = |col: &str| {
+        opt_num(
+            &c.get(TableKind::Strings.column(col)),
+            &format!("{name} {col}"),
+        )
+    };
+    x.set_limits(ols_line::StringLimits {
+        max_load: limit("max load N")?,
+        max_swing_deg: limit("max swing °")?,
+        max_swing_across_deg: limit("max across °")?,
+        max_swing_along_deg: limit("max along °")?,
+    });
+    x.limits().check().map_err(|e| format!("{name}: {e}"))?;
     Ok(())
 }
 
@@ -3907,6 +3994,13 @@ fn insulator_rows(model: &Model) -> Vec<Row> {
                 f(a.wind_area.si(), 4),
                 f(a.axial_stiffness.si(), 0),
                 a.half_width.map_or(String::new(), |h| f(h.si(), 3)),
+                a.max_load.map_or(String::new(), |v| f(v.si(), 0)),
+                a.max_swing
+                    .map_or(String::new(), |v| f(v.si().to_degrees(), 2)),
+                a.max_swing_across
+                    .map_or(String::new(), |v| f(v.si().to_degrees(), 2)),
+                a.max_swing_along
+                    .map_or(String::new(), |v| f(v.si().to_degrees(), 2)),
                 a.source.clone().unwrap_or_default(),
                 labelled(model, &a.id).len().to_string(),
             ],
@@ -3920,7 +4014,7 @@ fn insulator_rows(model: &Model) -> Vec<Row> {
 /// whose label is deleted get its values as their own (and a matching or
 /// new label when applied).
 fn insulator_changes(model: &Model, rows: &[Row], page: &TablePage) -> Result<Changes, String> {
-    use ols_core::units::{Area, Force, Length};
+    use ols_core::units::{Angle, Area, Force, Length};
     use ols_structures::{AssemblyKind, InsulatorAssembly};
     let stored = model
         .stored_line()
@@ -3953,7 +4047,15 @@ fn insulator_changes(model: &Model, rows: &[Row], page: &TablePage) -> Result<Ch
         a.wind_area = Area::from_square_meters(num(&c.get(5), &what("wind area"))?);
         a.axial_stiffness = Force::from_newtons(num(&c.get(6), &what("stiffness"))?);
         a.half_width = opt_num(&c.get(7), &what("half width"))?.map(Length::from_meters);
-        a.source = opt(&c.get(8));
+        let col = |name: &str| TableKind::Insulators.column(name);
+        let angle = |name: &str| -> Result<Option<Angle>, String> {
+            Ok(opt_num(&c.get(col(name)), &what(name))?.map(Angle::from_degrees))
+        };
+        a.max_load = opt_num(&c.get(col("max load")), &what("max load"))?.map(Force::from_newtons);
+        a.max_swing = angle("max swing")?;
+        a.max_swing_across = angle("max across")?;
+        a.max_swing_along = angle("max along")?;
+        a.source = opt(&c.get(col("source")));
         a.validate().map_err(|e| format!("{}: {e}", a.id))
     };
     let mut out = Changes::default();
@@ -4033,6 +4135,10 @@ fn insulator_changes(model: &Model, rows: &[Row], page: &TablePage) -> Result<Ch
             axial_stiffness: Force::from_newtons(5e7),
             wind_area: Area::from_square_meters(0.0),
             half_width: None,
+            max_load: None,
+            max_swing: None,
+            max_swing_across: None,
+            max_swing_along: None,
         };
         read(&mut a, &c)?;
         out.library.push((file(&id), Some(a.to_toml())));
@@ -4068,6 +4174,14 @@ fn insulator_changes(model: &Model, rows: &[Row], page: &TablePage) -> Result<Ch
                     x.wind_area = a.wind_area.si();
                 }
                 x.stiffness.get_or_insert(a.axial_stiffness.si());
+                // Its limits too, where the string gives none.
+                let l = a.limits();
+                x.set_limits(x.limits().or(ols_line::StringLimits {
+                    max_load: l.max_load,
+                    max_swing_deg: l.max_swing_deg,
+                    max_swing_across_deg: l.max_swing_across_deg,
+                    max_swing_along_deg: l.max_swing_along_deg,
+                }));
             }
         }
         out.commands.push((

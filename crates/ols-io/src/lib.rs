@@ -98,6 +98,27 @@ pub struct ExportWire {
     pub sag: Option<f64>,
 }
 
+/// A string (insulator) as solved in a case, with its limits — which
+/// OLS CAD does not check: a plugin compares them with the force and the
+/// swing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportString {
+    /// The structure it hangs on.
+    pub structure: String,
+    /// Its label on the structure.
+    pub label: String,
+    /// The section that reported it (`jumper:<id>` for a jumper's
+    /// support string); a string shared by sections (a TAK) is listed once,
+    /// as the first reported it.
+    pub by: String,
+    /// Axial force, N (the whole bundle's; tension positive).
+    pub force: f64,
+    /// Its swing as solved (degrees, in its structure's axes).
+    pub swing: ols_line::Swing,
+    /// Its limits (its own, else its insulator's; absent: not given).
+    pub limits: ols_line::StringLimits,
+}
+
 /// The wires of one weather case.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportCase {
@@ -107,6 +128,9 @@ pub struct ExportCase {
     pub summary: String,
     /// Wires.
     pub wires: Vec<ExportWire>,
+    /// The structures' strings as solved (finite-element sections and
+    /// jumper supports; none from the ruling span).
+    pub strings: Vec<ExportString>,
 }
 
 /// What exporters receive.
@@ -184,10 +208,51 @@ impl ExportModel {
                         sag: Some(j.sag),
                     });
                 }
+                let mut strings: Vec<ExportString> = Vec::new();
+                let mut push = |x: ExportString| {
+                    if !strings
+                        .iter()
+                        .any(|y| y.structure == x.structure && y.label == x.label)
+                    {
+                        strings.push(x);
+                    }
+                };
+                for shape in shapes {
+                    let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
+                        continue;
+                    };
+                    for (point, states) in section.points.iter().zip(&shape.strings) {
+                        for x in states {
+                            push(ExportString {
+                                structure: point.structure.clone(),
+                                label: x.label.clone(),
+                                by: section.id.clone(),
+                                force: x.force,
+                                swing: x.swing,
+                                limits: x.limits,
+                            });
+                        }
+                    }
+                }
+                for j in jumpers {
+                    for support in j.supports.iter().filter(|s| !s.structure.is_empty()) {
+                        for x in &support.strings {
+                            push(ExportString {
+                                structure: support.structure.clone(),
+                                label: x.label.clone(),
+                                by: format!("jumper:{}", j.jumper),
+                                force: x.force,
+                                swing: x.swing,
+                                limits: x.limits,
+                            });
+                        }
+                    }
+                }
                 ExportCase {
                     name: name.clone(),
                     summary: summary.clone(),
                     wires,
+                    strings,
                 }
             })
             .collect();
@@ -203,7 +268,13 @@ impl ExportModel {
     /// file>, "cases": [{"name", "summary", "wires": [{"section", "span",
     /// "circuit", "phase", "color", "system", "voltage_kv",
     /// "horizontal_tension_n", "max_tension_n", "sag_m", "points":
-    /// [[x, y, z], …]}]}]}`.
+    /// [[x, y, z], …]}], "strings": [{"structure", "label", "by",
+    /// "force_n", "swing_deg", "swing_across_deg", "swing_along_deg",
+    /// "max_load_n", "max_swing_deg", "max_swing_across_deg",
+    /// "max_swing_along_deg"}]}]}` — a string's `max_*` are null when not
+    /// given (OLS CAD checks none of them). The line's strings carry the
+    /// same limits (`max_load`, `max_swing_deg`, …, structure types
+    /// placed and insulators' limits taken).
     pub fn to_json(&self) -> String {
         let line = serde_json::to_value(&self.line).expect("the line serialises");
         let cases: Vec<serde_json::Value> = self
@@ -225,6 +296,19 @@ impl ExportModel {
                         "max_tension_n": w.max_tension,
                         "sag_m": w.sag,
                         "points": w.points,
+                    })).collect::<Vec<_>>(),
+                    "strings": c.strings.iter().map(|x| serde_json::json!({
+                        "structure": x.structure,
+                        "label": x.label,
+                        "by": x.by,
+                        "force_n": x.force,
+                        "swing_deg": x.swing.total_deg,
+                        "swing_across_deg": x.swing.across_deg,
+                        "swing_along_deg": x.swing.along_deg,
+                        "max_load_n": x.limits.max_load,
+                        "max_swing_deg": x.limits.max_swing_deg,
+                        "max_swing_across_deg": x.limits.max_swing_across_deg,
+                        "max_swing_along_deg": x.limits.max_swing_along_deg,
                     })).collect::<Vec<_>>(),
                 })
             })

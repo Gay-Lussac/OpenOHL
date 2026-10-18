@@ -141,6 +141,12 @@ pub struct StringState {
     pub slack: bool,
     /// In more compression than it may take.
     pub over: bool,
+    /// Its limits, not checked by OLS CAD (its own, else its insulator's;
+    /// absent: not given): for a plugin or a report to compare with
+    /// `force` and `swing`.
+    pub limits: crate::StringLimits,
+    /// Its swing as solved ([`crate::swing`], in its structure's axes).
+    pub swing: crate::Swing,
 }
 
 /// A point of a structure the section pulls on.
@@ -253,6 +259,10 @@ struct Member {
     stiffness: f64,
     /// Compression it may take, N (the whole bundle's); none: tension only.
     compression: Option<f64>,
+    /// Its limits (reported, not checked).
+    limits: crate::StringLimits,
+    /// Its structure's orientation, degrees (for its swing).
+    orientation_deg: f64,
 }
 
 /// The shape of a holder, for the passes that treat the usual ones as
@@ -405,6 +415,8 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                     wind_area: st.wind_area / bundle,
                     stiffness: st.stiffness.unwrap_or(line.defaults.insulator_stiffness),
                     compression: st.compression,
+                    limits: st.limits(),
+                    orientation_deg: structure.orientation_deg,
                 })
                 .collect();
             let from_structure = |m: &Member| matches!(m.top, At::Fixed(i) if fixed[i].2.is_none());
@@ -2184,6 +2196,8 @@ fn solve_fe(
                         force,
                         slack,
                         over,
+                        limits: m.limits,
+                        swing: crate::swing(m.orientation_deg, p(top), p(bottom)),
                     }
                 })
                 .collect()
@@ -3655,6 +3669,74 @@ mod tests {
         let after = solve(&clipped, 0.0);
         let along = (v(after.clamps[1]) - v(before.clamps[1])).x;
         assert!(along < -0.05, "pulled towards the loaded span: {along} m");
+    }
+
+    /// A string's limits (not checked) come with its solved force and
+    /// swing: a swing beyond its maximum and a load beyond its rating flag
+    /// nothing; the swing follows from its top and wire point.
+    #[test]
+    fn string_limits_are_reported_not_checked() {
+        let lib = library();
+        let windy = WeatherCase {
+            wind_pressure: Stress::from_pascals(500.0),
+            ..WeatherCase::still("wind", Temperature::from_celsius(15.0))
+        };
+        let mut line = crate::tests::example();
+        line.sections[0].clear_point_loads();
+        let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
+        let wire = t2
+            .wires
+            .iter()
+            .find(|w| w.set == Some(1))
+            .unwrap()
+            .label
+            .clone();
+        let label = t2.strings_to(&wire).next().unwrap().label.clone();
+        let limits = crate::StringLimits {
+            max_load: Some(1.0),
+            max_swing_deg: Some(0.5),
+            max_swing_across_deg: None,
+            max_swing_along_deg: Some(0.1),
+        };
+        t2.strings
+            .iter_mut()
+            .find(|x| x.label == label)
+            .unwrap()
+            .set_limits(limits);
+        line.validate().unwrap();
+        let shape = solve_line(&line, &lib, &windy).remove(0).unwrap();
+        let x = shape.strings[1].iter().find(|x| x.label == label).unwrap();
+        assert_eq!(x.limits, limits);
+        assert!(x.force > 1.0 && x.swing.total_deg > 0.5, "{x:?}");
+        assert!(shape.flags.is_empty(), "nothing flagged: {:?}", shape.flags);
+        let o = line.structure("T2").unwrap().orientation_deg;
+        let again = crate::swing(o, x.top, x.bottom);
+        assert_eq!(again, x.swing);
+        // Its parts: tan² total = tan² across + tan² along.
+        let t = |d: f64| d.to_radians().tan().powi(2);
+        assert!(
+            (t(x.swing.total_deg) - t(x.swing.across_deg) - t(x.swing.along_deg)).abs() < 1e-9,
+            "{:?}",
+            x.swing
+        );
+        // Another string: no limits given.
+        assert!(shape.strings[0].iter().all(|x| x.limits.is_empty()));
+    }
+
+    /// The swing of a string: across the line positive to the right,
+    /// along it positive ahead, on a structure turned any way.
+    #[test]
+    fn swing_angles_in_the_structures_axes() {
+        // Local x (right) north: right of the line is +y global.
+        let s = crate::swing(90.0, [0.0, 0.0, 10.0], [0.0, 1.0, 9.0]);
+        assert!((s.total_deg - 45.0).abs() < 1e-9, "{s:?}");
+        assert!((s.across_deg - 45.0).abs() < 1e-9, "{s:?}");
+        assert!(s.along_deg.abs() < 1e-9, "{s:?}");
+        // Ahead (local y) is west then.
+        let s = crate::swing(90.0, [0.0, 0.0, 10.0], [-1.0, 0.0, 9.0]);
+        assert!((s.along_deg - 45.0).abs() < 1e-9 && s.across_deg.abs() < 1e-9);
+        let s = crate::swing(0.0, [0.0, 0.0, 10.0], [-1.0, 0.0, 10.0 - 3f64.sqrt()]);
+        assert!((s.across_deg + 30.0).abs() < 1e-9, "{s:?}");
     }
 
     /// A counterweight at a suspension clamp: the string swings less in

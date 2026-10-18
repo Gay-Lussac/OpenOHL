@@ -184,12 +184,14 @@ use crate::{Library, LibraryItem};
 pub const STRUCTURE_FILE_EXTENSION: &str = "olss";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ols-structure";
-/// Newest format version read. Version 3 adds what the structure
+/// Newest format version read. Version 4 adds a string's optional limits,
+/// not checked by OLS CAD (`max_load`, `max_swing`, `max_swing_across`,
+/// `max_swing_along`: [`crate::InsulatorLimits`]). Version 3 adds what the structure
 /// application writes: a member's `group` and `made_by`, a joint's
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
-/// tables; versions 1 and 2 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 3;
+/// tables; versions 1 to 3 read as before.
+pub const STRUCTURE_FILE_VERSION: u32 = 4;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -451,9 +453,35 @@ pub struct TypeString {
     /// (read as level, direction 0° or 180°).
     #[serde(default)]
     pub side: Option<Side>,
+    /// Version 4: the tension it is rated for (default: its insulator's;
+    /// not checked by OLS CAD, [`crate::InsulatorLimits`]).
+    #[serde(default)]
+    pub max_load: Option<ols_core::units::Force>,
+    /// Version 4: the swing it may take from straight down, any direction
+    /// (default: its insulator's; not checked).
+    #[serde(default)]
+    pub max_swing: Option<ols_core::units::Angle>,
+    /// Version 4: the swing it may take across the line (default: its
+    /// insulator's; not checked).
+    #[serde(default)]
+    pub max_swing_across: Option<ols_core::units::Angle>,
+    /// Version 4: the swing it may take along the line (default: its
+    /// insulator's; not checked).
+    #[serde(default)]
+    pub max_swing_along: Option<ols_core::units::Angle>,
 }
 
 impl TypeString {
+    /// Its own limits (not its insulator's; not checked by OLS CAD).
+    pub fn limits(&self) -> crate::InsulatorLimits {
+        crate::InsulatorLimits::of(
+            self.max_load,
+            self.max_swing,
+            self.max_swing_across,
+            self.max_swing_along,
+        )
+    }
+
     /// Its angle from straight down and direction in plan, degrees (a
     /// `side` of files written before: level, ahead 0° or back 180°).
     pub fn angles(&self) -> (f64, f64) {
@@ -1170,6 +1198,10 @@ pub struct PlacedString {
     pub stiffness: Option<f64>,
     /// A strain string.
     pub strain: bool,
+    /// Its own limits (not checked by OLS CAD); its insulator's are the
+    /// assembly's ([`crate::InsulatorAssembly::limits`]), which a line
+    /// takes where the string gives none (`ols_line::Line::resolve`).
+    pub limits: crate::InsulatorLimits,
 }
 
 /// The points, strings and wire points of a placed structure (version 2
@@ -1240,6 +1272,9 @@ impl StructureType {
                     .is_some_and(|c| c.si().is_nan() || c.si() < 0.0)
             {
                 return bad("weight and compression must be ≥ 0");
+            }
+            if let Err(m) = st.limits().check() {
+                return bad(&m);
             }
         }
         Ok(())
@@ -1499,6 +1534,7 @@ impl StructureType {
                         compression: s.compression.map(|c| c.si()),
                         wind_area: s.wind_area.map_or(0.0, |w| w.si()),
                         strain: s.strain || a.is_some_and(|a| a.kind == AssemblyKind::Strain),
+                        limits: s.limits(),
                     })
                 })
                 .collect::<Result<_, String>>()?,
@@ -1902,8 +1938,43 @@ mod tests {
         for older in [1, 2] {
             assert!(StructureType::parse(Path::new("t.olss"), &text(older)).is_ok());
         }
-        let newer = StructureType::parse(Path::new("t.olss"), &text(4)).unwrap_err();
+        let newer = StructureType::parse(Path::new("t.olss"), &text(STRUCTURE_FILE_VERSION + 1))
+            .unwrap_err();
         assert!(newer.message.contains("newer"), "{}", newer.message);
+    }
+
+    /// A string's limits (version 4, not checked by OLS CAD): read with
+    /// units, absent staying absent; placed with its own only (its
+    /// insulator's are the assembly's); bad values refused.
+    #[test]
+    fn version_4_string_limits() {
+        let text = "format = \"ols-structure\"\nversion = 4\nid = \"T\"\nname = \"t\"\n\
+            kind = \"lattice\"\n\
+            [[point]]\nlabel = \"A\"\npoint = [\"-6 m\", \"0 m\", \"30 m\"]\n\
+            [[point]]\nlabel = \"B\"\npoint = [\"6 m\", \"0 m\", \"30 m\"]\n\
+            [[wire]]\nlabel = \"W1\"\nset = 1\n\
+            [[wire]]\nlabel = \"W2\"\nset = 2\n\
+            [[string]]\nlabel = \"S1\"\ntop = \"A\"\nwire = \"W1\"\ninsulator = \"I5\"\n\
+            max_load = \"120 kN\"\nmax_swing_across = \"40 deg\"\n\
+            [[string]]\nlabel = \"S2\"\ntop = \"B\"\nwire = \"W2\"\nlength = \"3 m\"\n";
+        let t = StructureType::parse(Path::new("t.olss"), text).unwrap();
+        let l = t.strings[0].limits();
+        assert_eq!(l.max_load, Some(120_000.0));
+        assert!((l.max_swing_across_deg.unwrap() - 40.0).abs() < 1e-9);
+        assert_eq!((l.max_swing_deg, l.max_swing_along_deg), (None, None));
+        assert!(t.strings[1].limits().is_empty());
+        let placed = t.place_strings([0.0; 3], 0.0, None, &insulators()).unwrap();
+        assert_eq!(placed.strings[0].limits, l);
+        assert!(placed.strings[1].limits.is_empty());
+        for (from, to) in [("120 kN", "-1 kN"), ("40 deg", "181 deg")] {
+            let worse = text.replace(from, to);
+            assert!(
+                StructureType::parse(Path::new("t.olss"), &worse).is_err(),
+                "{to}"
+            );
+        }
+        let typo = text.replace("max_swing_across", "max_swing_sideways");
+        assert!(StructureType::parse(Path::new("t.olss"), &typo).is_err());
     }
 
     /// Points at a joint or along a member follow it.

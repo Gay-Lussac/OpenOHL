@@ -89,7 +89,10 @@ pub fn as_type(s: &Structure) -> DocumentMut {
     let local = |p: [f64; 3]| to_local(s.position, s.orientation_deg, p);
     let mut doc = DocumentMut::new();
     doc.insert("format", toml_edit::value("ols-structure"));
-    doc.insert("version", toml_edit::value(2));
+    // Version 4 only where a string gives limits (an older program reads
+    // the rest).
+    let limits = s.strings.iter().any(|x| !x.limits().is_empty());
+    doc.insert("version", toml_edit::value(if limits { 4 } else { 2 }));
     doc.insert("id", toml_edit::value(type_id(&s.id)));
     doc.insert("name", toml_edit::value(format!("structure {}", s.id)));
     doc.insert("kind", toml_edit::value("other"));
@@ -138,6 +141,18 @@ pub fn as_type(s: &Structure) -> DocumentMut {
         }
         if x.strain {
             t.insert("strain", toml_edit::value(true));
+        }
+        if let Some(l) = x.max_load {
+            t.insert("max_load", toml_edit::value(format!("{l} N")));
+        }
+        for (k, a) in [
+            ("max_swing", x.max_swing_deg),
+            ("max_swing_across", x.max_swing_across_deg),
+            ("max_swing_along", x.max_swing_along_deg),
+        ] {
+            if let Some(a) = a {
+                t.insert(k, toml_edit::value(format!("{a} deg")));
+            }
         }
         text(&mut t, "description", &x.description);
         strings.push(t);
@@ -261,6 +276,10 @@ impl PlacedEditor {
                 compression: x.compression,
                 strain: x.strain,
                 description: x.description,
+                max_load: x.limits.max_load,
+                max_swing_deg: x.limits.max_swing_deg,
+                max_swing_across_deg: x.limits.max_swing_across_deg,
+                max_swing_along_deg: x.limits.max_swing_along_deg,
                 // From its wire point as placed here.
                 ..Default::default()
             })

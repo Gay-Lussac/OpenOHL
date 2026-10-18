@@ -113,6 +113,16 @@ library format (the structure application's in
 `ObjectTypeFile` for that (a flattened shape would let keys through), a
 size of another shape or a missing size said too.
 
+New optional fields raise the format version (review rule 2.12: an older
+program then says "newer version", not "unknown field"). The string
+limits (`max_load`, the swing limits — optional, **not checked** by OLS
+CAD, for plugins and reports) did so: line file **6** (OLS XML follows
+it), `.olss` **4**, `.olsi` **2**. The `.olss` and `.olsi` writers write
+the newer version only when a limit is given (an older program still
+reads the rest); the line file is always written at the current version.
+The export model JSON stays version 1 (keys only added: `strings` per
+case) and the plugin WIT is unchanged (no record passes strings).
+
 ### Coordinates and angles
 
 | Frame | Axes | Where it is used |
@@ -150,7 +160,7 @@ files](../user-guide/line-file.md).
 | Field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `format` | string | — | `"ols-line"` | — |
-| `version` | u32 | — | file version (now 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–4 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
+| `version` | u32 | — | file version (now 6: a string's optional limits `max_load`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg`, not checked — 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–5 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
 | `name` | string | — | line name | — |
 | `crs` | string | — | coordinate reference system, e.g. an EPSG code (informative) | — |
 | `routes` | `[Route]` | — | routes: paths of the line, made of alignments | — |
@@ -275,6 +285,8 @@ A structure without a type holds its own `points`, `wires`, `strings` and `membe
 | `InsulatorString.wind_area` | f64 | m² | half at each end | — |
 | `InsulatorString.stiffness` | f64? | N (EA) | default `solve::DEFAULT_INSULATOR_STIFFNESS` | — |
 | `InsulatorString.compression` | f64? | N | compression it may take (then two-way, flagged beyond); none: tension only | — |
+| `InsulatorString.max_load` | f64? | N | version 6: the tension it is rated for — **not checked** by OLS CAD (`StringLimits`, `InsulatorString::limits`); none: not given; a resolved line fills it from its insulator's `max_load` where none is given | — |
+| `InsulatorString.max_swing_deg`, `.max_swing_across_deg`, `.max_swing_along_deg` | f64? | ° | version 6: the swings it may take (from straight down any direction; across; along the line), 0–180 — not checked; none: not given; filled from its insulator's on resolve. Reported with the solved string (`solve::StringState::{limits, swing}`, `jumper::JumperStringShape::{limits, swing}`; `ols_line::swing(orientation, top, bottom) -> Swing {total_deg, across_deg, along_deg}`) and `Line::string_limits(structure, label)` | — |
 | `InsulatorString.strain` | bool | — | a strain (dead-end) string, else suspension: its set is a strain point | — |
 | `InsulatorString.description` | string | — | free text | — |
 
@@ -641,7 +653,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 
 | Field (TOML key) | Type | Unit | Meaning |
 |---|---|---|---|
-| `format`, `version` | optional | — | `"ols-structure"`, 1 to 3 (`STRUCTURE_FILE_VERSION`; 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
+| `format`, `version` | optional | — | `"ols-structure"`, 1 to 4 (`STRUCTURE_FILE_VERSION`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ols_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
 | `id`, `name` | string | — | unique id (referred to by `Structure.type`), display name |
 | `kind` | `lattice` / `pole` / `portal` / `other` | — | family |
 | `height` | length? | m | mast top for the default stick drawing |
@@ -649,7 +661,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `source` | string? | — | where the data comes from |
 | `[[point]]` | `TypePoint` | m | `label`, `description`, and `point` **or** `node` (joint id) **or** `member` + `at` (0–1 from its first joint); in the finite-element model (`Model::member_points`, `Model::point_loads`) a point along a member shares its loads to the member's joints, (1 − `at`) and `at` |
 | `[[wire]]` | `TypeWire` | m, N | `label`, `description`, `set?`, `point?` (else it hangs below its strings), `weight?` |
-| `[[string]]` | `TypeString` | m, N, m² | `label`, `description`, `top`, `wire`, `insulator?` **or** `length` + `weight`, `compression?`, `wind_area?`, `strain`, `angle?` (from straight down), `direction?` (in plan, 0 ahead); `side` (`ahead`/`back`) in files written before: level, 0° or 180° |
+| `[[string]]` | `TypeString` | m, N, m² | `label`, `description`, `top`, `wire`, `insulator?` **or** `length` + `weight`, `compression?`, `wind_area?`, `strain`, `angle?` (from straight down), `direction?` (in plan, 0 ahead); version 4: `max_load?` (force), `max_swing?`, `max_swing_across?`, `max_swing_along?` (angles) — limits not checked (`TypeString::limits`, `InsulatorLimits`; placed: `PlacedString::limits`, its own only); `side` (`ahead`/`back`) in files written before: level, 0° or 180° |
 | `[[attachment]]` | `TypeAttachment` | — | version 1: `set`, `phase`, `point`, `insulator` or inline `string`, `side` |
 | `[[extension]]` | `Extension`: `name`, `dz`; version 3: `[[extension.node]]` (`TypeNode`), `[[extension.member]]` (`TypeMember`), `[[extension.leg]]` (`LegExtension`: `leg`, `dz`) | m | height extensions; at level 3 a piece below the feet (joints with z from `foot − dz` to `foot`, ids unique with the body's; members between its joints and the body's) and leg extensions. `StructureType::extended(ext) -> ExtendedBody` applies the rule (`crates/ols-structures/src/extensions.rs`, [user guide](../user-guide/structure-library.md#extension-bodies-and-leg-extensions)): the piece added, body joints it reaches lose their support, a leg's support joint slides `dz` lower along its steepest rising member; a placed structure on such an extension is analysed on `Model::from_structure_type_extended` (`ols_loads` keys its models by type and extension) |
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |
@@ -793,6 +805,8 @@ Source: `crates/ols-structures/src/insulators.rs`.
 | `axial_stiffness` | force | N | EA of a string or leg (default 5·10⁷ N) |
 | `wind_area` | area | m² | projected area |
 | `half_width` | length? | m | `v_string` only: centre to each leg top |
+| `max_load` | force? | N | version 2 (`INSULATOR_FILE_VERSION`): the tension it is rated for (`v_string`: each leg's) — **not checked** by OLS CAD; strings naming it take it where they give none (`InsulatorAssembly::limits`, `InsulatorLimits`) |
+| `max_swing`, `max_swing_across`, `max_swing_along` | angle? | ° | version 2: the swings it may take (from straight down any direction; across; along the line), 0–180°, not checked; taken by its strings where they give none. `to_toml` writes version 1 unless a limit is given |
 
 ### Weather and load cases
 
@@ -1027,7 +1041,7 @@ above**.
 | World (extension point) | Receives | Returns |
 |---|---|---|
 | `plugin` | — | `plugin-info` (name, version, description) |
-| `io-plugin` (`io`) export | the **export model** JSON: `{"format": "ols-export-model", "version": 1, "crs", "line": <line file, structure types placed>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "system", "voltage_kv", "horizontal_tension_n", "max_tension_n", "sag_m", "points": [[x,y,z]…]}]}]}`, plus options | file bytes |
+| `io-plugin` (`io`) export | the **export model** JSON: `{"format": "ols-export-model", "version": 1, "crs", "line": <line file, structure types placed>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "system", "voltage_kv", "horizontal_tension_n", "max_tension_n", "sag_m", "points": [[x,y,z]…]}], "strings": [{"structure", "label", "by", "force_n", "swing_deg", "swing_across_deg", "swing_along_deg", "max_load_n", "max_swing_deg", "max_swing_across_deg", "max_swing_along_deg"}]}]}` (strings: each once, as solved, with its limits — not checked by OLS CAD; `null`: not given), plus options | file bytes |
 | `io-plugin` import | file bytes, options (`into`: a line file to update) | a **line file** JSON, validated by the host like any line file |
 | `terrain-plugin` (`terrain`) | file bytes | surfaces: `name`, `points` (x, y, z flat, m), `triangles` (indices) |
 | `project-plugin` (`project`) | file bytes | `project { line: <line file JSON>, libraries: [{kind, name, text}], notes }`; `kind` as in `library_file` |

@@ -308,6 +308,11 @@ fn rich_line() -> Line {
         label: "jumper string".into(),
         top: top.label,
         wire: "JW".into(),
+        // Limits not checked (line file version 6): given ones survive.
+        max_load: Some(70_000.0),
+        max_swing_deg: Some(60.0),
+        max_swing_across_deg: Some(55.5),
+        max_swing_along_deg: Some(30.0),
         ..Default::default()
     });
     let mut held = line.jumpers[0].clone();
@@ -351,6 +356,14 @@ fn ols_xml_round_trips_every_line() {
         assert_eq!(xml.contains("per_subconductor=\"true\""), each);
         let back = olsxml::from_xml(&xml).unwrap();
         assert_eq!(back, line);
+        // A string's limits: written where given, absent stays absent.
+        let given = line
+            .structures
+            .iter()
+            .flat_map(|s| &s.strings)
+            .any(|x| !x.limits().is_empty());
+        assert_eq!(xml.contains("max_swing_across_deg=\"55.5\""), given);
+        assert_eq!(xml.contains("max_load="), given);
         assert_eq!(back.to_json(), line.to_json());
         // Through the registry (by extension).
         let imported = Registry::with_builtin()
@@ -413,6 +426,14 @@ fn xsd_lists_every_element_written() {
     }
     // Attributes added since: declared too.
     assert!(xsd.contains("name=\"per_subconductor\""));
+    for a in [
+        "max_load",
+        "max_swing_deg",
+        "max_swing_across_deg",
+        "max_swing_along_deg",
+    ] {
+        assert!(xsd.contains(&format!("name=\"{a}\"")), "{a}");
+    }
 }
 
 #[test]

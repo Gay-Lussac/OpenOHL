@@ -1062,6 +1062,7 @@ impl Workspace {
                 ("weight", "Its weight (default: its assembly's)"),
                 ("wind area", "The area the wind blows on (default: its assembly's)"),
                 ("compression", "The push it may take (V legs); none: tension only"),
+                ("limits", "Kept, not checked by OLS CAD (for a plugin or a report): the tension it is rated for, the swing from straight down it may take (any direction), across and along the line. Unticked: not given — its assembly's, if it gives one (shown dimmed)"),
                 ("description", "What it is, in words"),
                 ("", ""),
             ] {
@@ -1175,6 +1176,9 @@ impl Workspace {
                         put(StringChange::Compression(push.then_some(c)));
                     }
                 });
+                for c in limits_cell(ui, s.limits(), a.map(|a| a.limits()).unwrap_or_default()) {
+                    put(c);
+                }
                 let mut d = s.description.clone();
                 if ui.add(egui::TextEdit::singleline(&mut d).desired_width(160.0)).changed() {
                     put(StringChange::Description(d));
@@ -1318,6 +1322,61 @@ impl Workspace {
         }
         changed
     }
+}
+
+/// An insulator's limits in a table cell (kept, not checked by OLS CAD):
+/// each ticked and given, or unticked — not given, its assembly's shown
+/// dimmed. The changes asked for.
+fn limits_cell(
+    ui: &mut egui::Ui,
+    own: ols_structures::InsulatorLimits,
+    from: ols_structures::InsulatorLimits,
+) -> Vec<StringChange> {
+    let fields = edit::limit_fields(own, from);
+    let mut out = Vec::new();
+    ui.horizontal(|ui| {
+        for edit::LimitField {
+            name,
+            own: v,
+            inherited,
+            start: default,
+            angle,
+            change: make,
+        } in fields
+        {
+            let mut on = v.is_some();
+            let mut x = v.or(inherited).unwrap_or(default);
+            let tick = ui.checkbox(&mut on, name);
+            let d = if on {
+                ui.add(if angle {
+                    egui::DragValue::new(&mut x)
+                        .range(0.0..=180.0)
+                        .speed(0.5)
+                        .max_decimals(2)
+                        .suffix("°")
+                } else {
+                    egui::DragValue::new(&mut x)
+                        .range(1.0..=1e9)
+                        .speed(100.0)
+                        .max_decimals(0)
+                        .suffix(" N")
+                })
+            } else if let Some(i) = inherited {
+                ui.weak(if angle {
+                    format!("{i:.2}°")
+                } else {
+                    format!("{i:.0} N")
+                })
+                .on_hover_text("Its assembly's")
+            } else {
+                ui.weak("—")
+            };
+            if tick.changed() || (on && d.changed()) {
+                out.push(make(on.then_some(x)));
+            }
+        }
+    });
+    out
 }
 
 #[cfg(test)]

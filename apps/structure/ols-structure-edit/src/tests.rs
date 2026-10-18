@@ -234,6 +234,64 @@ fn insulator_fields_are_changed() {
     assert!(change(&mut doc, StringChange::Assembly(Some("nope".into()))).is_err());
 }
 
+/// An insulator's limits (kept, not checked): each set and cleared by
+/// its own edit, written with its unit; the file raised to version 4
+/// when one is given; bad values refused (nothing written); saved to
+/// the library with them.
+#[test]
+fn insulator_limits_are_edited() {
+    let mut doc: DocumentMut = format!("format = \"ols-structure\"\nversion = 2\n{PYLON}")
+        .parse()
+        .unwrap();
+    let t = read(&doc);
+    let none = InsulatorLibrary::default();
+    let (s, _) = new_string(&mut doc, &t, "A1", None, 3.0, None).unwrap();
+    let change = |doc: &mut DocumentMut, c: StringChange| {
+        let t = read(doc);
+        let g = geometry(&t, &none);
+        set_string(doc, &t, &g, &none, &s, c)
+    };
+    // Clearing one not given changes nothing (the version stays).
+    change(&mut doc, StringChange::MaxLoad(None)).unwrap();
+    assert!(doc.to_string().contains("version = 2"));
+    change(&mut doc, StringChange::MaxLoad(Some(120_000.0))).unwrap();
+    assert!(doc.to_string().contains("version = 4"));
+    change(&mut doc, StringChange::MaxSwing(Some(60.0))).unwrap();
+    change(&mut doc, StringChange::MaxSwingAcross(Some(55.5))).unwrap();
+    change(&mut doc, StringChange::MaxSwingAlong(Some(30.0))).unwrap();
+    let text = doc.to_string();
+    assert!(text.contains("max_load = \"120000 N\""), "{text}");
+    assert!(text.contains("max_swing_across = \"55.5 deg\""), "{text}");
+    let t = read(&doc);
+    let l = t.strings[0].limits();
+    assert_eq!(l.max_load, Some(120_000.0));
+    assert_eq!(l.max_swing_deg, Some(60.0));
+    assert_eq!(l.max_swing_across_deg, Some(55.5));
+    assert_eq!(l.max_swing_along_deg, Some(30.0));
+    // Saved to the library: its limits go along (an .olsi version 2).
+    let g = geometry(&t, &none);
+    let olsi = assembly_text(&t, &g, &none, &s, "lim").unwrap();
+    assert!(
+        olsi.contains("version = 2") && olsi.contains("max_swing_along = \"30 deg\""),
+        "{olsi}"
+    );
+    for bad in [
+        StringChange::MaxLoad(Some(0.0)),
+        StringChange::MaxSwing(Some(181.0)),
+        StringChange::MaxSwingAlong(Some(-1.0)),
+    ] {
+        assert!(change(&mut doc, bad).is_err());
+    }
+    assert_eq!(read(&doc).strings[0].limits(), l);
+    change(&mut doc, StringChange::MaxLoad(None)).unwrap();
+    change(&mut doc, StringChange::MaxSwingAcross(None)).unwrap();
+    let t = read(&doc);
+    let l = t.strings[0].limits();
+    assert_eq!((l.max_load, l.max_swing_across_deg), (None, None));
+    assert_eq!(l.max_swing_deg, Some(60.0));
+    assert!(!doc.to_string().contains("max_load"));
+}
+
 /// Sets: added (next free), renumbered (a taken number refused), moved
 /// to another wire point, taken off; a counterweight.
 #[test]

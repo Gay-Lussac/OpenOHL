@@ -24,16 +24,27 @@
 //! length = "5.2 m"
 //! weight = "1.4 kN"
 //! ```
+//!
+//! **Limits** (version 2, optional, [`InsulatorLimits`]): the tension the
+//! assembly is rated for (`max_load = "120 kN"`; a V-string: each leg's)
+//! and the swing angles it may take (`max_swing = "60 deg"` from straight
+//! down in any direction, `max_swing_across` / `max_swing_along`
+//! projected across / along the line). OLS CAD checks none of them: absent,
+//! not given; given, a string naming the assembly takes them where it
+//! gives none of its own, for a plugin or a report to compare with the
+//! solved forces and swings.
 
-use ols_core::units::{Area, Force, Length};
+use ols_core::units::{Angle, Area, Force, Length};
 use serde::Deserialize;
 
 /// File extension of insulator assemblies.
 pub const INSULATOR_FILE_EXTENSION: &str = "olsi";
 /// Format identifier.
 pub const INSULATOR_FILE_FORMAT: &str = "ols-insulator";
-/// Newest format version read.
-pub const INSULATOR_FILE_VERSION: u32 = 1;
+/// Newest format version read: 2 adds the optional limits
+/// (`max_load`, `max_swing`, `max_swing_across`, `max_swing_along`,
+/// [`InsulatorLimits`]); version 1 files read as before.
+pub const INSULATOR_FILE_VERSION: u32 = 2;
 
 /// An insulator's axial stiffness EA when it gives none, N (the line's
 /// default too: `ols_line::solve::DEFAULT_INSULATOR_STIFFNESS`).
@@ -89,9 +100,118 @@ pub struct InsulatorAssembly {
     /// V-string: transverse distance from the centre to each leg attachment.
     #[serde(default)]
     pub half_width: Option<Length>,
+    /// The tension it is rated for (a V-string: each leg's); not checked
+    /// by OLS CAD ([`InsulatorLimits`]).
+    #[serde(default)]
+    pub max_load: Option<Force>,
+    /// The swing it may take from straight down, any direction (not
+    /// checked).
+    #[serde(default)]
+    pub max_swing: Option<Angle>,
+    /// The swing it may take across the line, either side (not checked).
+    #[serde(default)]
+    pub max_swing_across: Option<Angle>,
+    /// The swing it may take along the line, either way (not checked).
+    #[serde(default)]
+    pub max_swing_along: Option<Angle>,
+}
+
+/// The optional limits of an insulator assembly or a structure type's
+/// string, in SI units (N, degrees) — the same four a line's string
+/// carries (`ols_line::StringLimits`). **Not checked by OLS CAD**:
+/// absent, not given; given, available to plugins and reports.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct InsulatorLimits {
+    /// The tension it is rated for, N.
+    pub max_load: Option<f64>,
+    /// The swing from straight down, any direction, degrees.
+    pub max_swing_deg: Option<f64>,
+    /// The swing across the line, either side, degrees.
+    pub max_swing_across_deg: Option<f64>,
+    /// The swing along the line, either way, degrees.
+    pub max_swing_along_deg: Option<f64>,
+}
+
+impl InsulatorLimits {
+    /// None given.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// From the fields as read.
+    pub fn of(
+        max_load: Option<Force>,
+        max_swing: Option<Angle>,
+        max_swing_across: Option<Angle>,
+        max_swing_along: Option<Angle>,
+    ) -> Self {
+        // Degrees as written ("60 deg" is 60, not 59.999…): to 1e-9°.
+        let deg = |a: Option<Angle>| a.map(|a| (a.si().to_degrees() * 1e9).round() / 1e9);
+        InsulatorLimits {
+            max_load: max_load.map(|f| f.si()),
+            max_swing_deg: deg(max_swing),
+            max_swing_across_deg: deg(max_swing_across),
+            max_swing_along_deg: deg(max_swing_along),
+        }
+    }
+
+    /// These, where given, else `other`'s.
+    pub fn or(self, other: InsulatorLimits) -> Self {
+        InsulatorLimits {
+            max_load: self.max_load.or(other.max_load),
+            max_swing_deg: self.max_swing_deg.or(other.max_swing_deg),
+            max_swing_across_deg: self.max_swing_across_deg.or(other.max_swing_across_deg),
+            max_swing_along_deg: self.max_swing_along_deg.or(other.max_swing_along_deg),
+        }
+    }
+
+    /// Checks the values given: a load > 0, angles from 0 to 180°.
+    pub fn check(&self) -> Result<(), String> {
+        if self.max_load.is_some_and(|l| !(l.is_finite() && l > 0.0)) {
+            return Err("max_load must be > 0".into());
+        }
+        for (name, a) in [
+            ("max_swing", self.max_swing_deg),
+            ("max_swing_across", self.max_swing_across_deg),
+            ("max_swing_along", self.max_swing_along_deg),
+        ] {
+            if a.is_some_and(|a| !(0.0..=180.0).contains(&a)) {
+                return Err(format!("{name} must be from 0 to 180°"));
+            }
+        }
+        Ok(())
+    }
+
+    /// The `key = "value unit"` lines of the limits given (TOML).
+    pub fn to_toml(&self) -> String {
+        let mut out = String::new();
+        if let Some(l) = self.max_load {
+            out += &format!("max_load = \"{l} N\"\n");
+        }
+        for (key, a) in [
+            ("max_swing", self.max_swing_deg),
+            ("max_swing_across", self.max_swing_across_deg),
+            ("max_swing_along", self.max_swing_along_deg),
+        ] {
+            if let Some(a) = a {
+                out += &format!("{key} = \"{a} deg\"\n");
+            }
+        }
+        out
+    }
 }
 
 impl InsulatorAssembly {
+    /// Its limits (not checked by OLS CAD).
+    pub fn limits(&self) -> InsulatorLimits {
+        InsulatorLimits::of(
+            self.max_load,
+            self.max_swing,
+            self.max_swing_across,
+            self.max_swing_along,
+        )
+    }
+
     /// Checks plausibility.
     pub fn validate(&self) -> Result<(), String> {
         ols_core::files::check_header(
@@ -107,6 +227,7 @@ impl InsulatorAssembly {
         if self.weight.si() < 0.0 || self.axial_stiffness.si() <= 0.0 {
             return Err("weight must be ≥ 0 and axial stiffness > 0".into());
         }
+        self.limits().check()?;
         match (self.kind, self.half_width) {
             (AssemblyKind::VString, None) => Err("a v_string needs half_width".into()),
             (AssemblyKind::VString, Some(hw)) if !(hw.si() > 0.0 && hw < self.length) => {
@@ -120,7 +241,7 @@ impl InsulatorAssembly {
     }
 
     /// The assembly as an `.olsi` file (what [`Library::load_dir`] reads
-    /// back), values in SI units.
+    /// back), values in SI units; version 1 unless it gives limits.
     ///
     /// [`Library::load_dir`]: crate::Library::load_dir
     pub fn to_toml(&self) -> String {
@@ -130,8 +251,14 @@ impl InsulatorAssembly {
             AssemblyKind::VString => "v_string",
             AssemblyKind::Strain => "strain",
         };
+        // Version 1 unless it gives limits (an older program reads it).
+        let version = if self.limits().is_empty() {
+            1
+        } else {
+            INSULATOR_FILE_VERSION
+        };
         let mut out = format!(
-            "format = \"{INSULATOR_FILE_FORMAT}\"\nversion = {INSULATOR_FILE_VERSION}\nid = {}\nname = {}\nkind = \"{kind}\"\n",
+            "format = \"{INSULATOR_FILE_FORMAT}\"\nversion = {version}\nid = {}\nname = {}\nkind = \"{kind}\"\n",
             quote(&self.id),
             quote(&self.name)
         );
@@ -148,6 +275,7 @@ impl InsulatorAssembly {
         if let Some(h) = self.half_width {
             out += &format!("half_width = \"{} m\"\n", h.si());
         }
+        out += &self.limits().to_toml();
         out
     }
 
@@ -200,6 +328,10 @@ mod tests {
             axial_stiffness: Force::from_newtons(4e7),
             wind_area: Area::from_square_meters(0.25),
             half_width: Some(Length::from_meters(1.5)),
+            max_load: None,
+            max_swing: None,
+            max_swing_across: None,
+            max_swing_along: None,
         };
         let b: InsulatorAssembly = toml::from_str(&a.to_toml()).unwrap();
         assert_eq!(b.id, a.id);
@@ -237,6 +369,59 @@ mod tests {
         )
         .unwrap();
         assert!((v.vertical_drop() - 4.0).abs() < 1e-12);
+    }
+
+    /// The limits (not checked by OLS CAD): absent stays absent and the
+    /// file written stays version 1; given they survive the round trip in
+    /// version 2; bad values and unknown keys refused; a newer version
+    /// refused as newer.
+    #[test]
+    fn limits_are_optional_and_round_trip() {
+        let base = "id = \"I1\"\nname = \"I\"\nkind = \"suspension\"\nlength = \"5 m\"\n";
+        let plain = parse(base).unwrap();
+        assert!(plain.limits().is_empty());
+        let text = plain.to_toml();
+        assert!(
+            text.contains("version = 1") && !text.contains("max_"),
+            "{text}"
+        );
+        assert!(parse(&text).unwrap().limits().is_empty());
+        let given = parse(&format!(
+            "{base}max_load = \"120 kN\"\nmax_swing = \"60 deg\"\nmax_swing_across = \"55 deg\"\nmax_swing_along = \"0.5 rad\"\n"
+        ))
+        .unwrap();
+        let l = given.limits();
+        assert_eq!(l.max_load, Some(120_000.0));
+        assert!((l.max_swing_deg.unwrap() - 60.0).abs() < 1e-9);
+        assert!((l.max_swing_across_deg.unwrap() - 55.0).abs() < 1e-9);
+        assert!((l.max_swing_along_deg.unwrap() - 0.5f64.to_degrees()).abs() < 1e-9);
+        let text = given.to_toml();
+        assert!(text.contains("version = 2"), "{text}");
+        let back = parse(&text).unwrap().limits();
+        for (a, b) in [
+            (back.max_load, l.max_load),
+            (back.max_swing_deg, l.max_swing_deg),
+            (back.max_swing_across_deg, l.max_swing_across_deg),
+            (back.max_swing_along_deg, l.max_swing_along_deg),
+        ] {
+            assert!((a.unwrap() - b.unwrap()).abs() < 1e-9, "{a:?} {b:?}");
+        }
+        // Only one given: the others stay absent.
+        let one = parse(&format!("{base}max_swing_along = \"30 deg\"\n")).unwrap();
+        assert_eq!(one.limits().max_load, None);
+        assert_eq!(one.limits().max_swing_deg, None);
+        for bad in [
+            "max_load = \"0 N\"",
+            "max_load = \"-5 kN\"",
+            "max_swing = \"200 deg\"",
+            "max_swing_across = \"-1 deg\"",
+            "max_swing_sideways = \"10 deg\"",
+            "max_load = \"10 m\"",
+        ] {
+            assert!(parse(&format!("{base}{bad}\n")).is_err(), "{bad}");
+        }
+        let e = parse(&format!("format = \"ols-insulator\"\nversion = 3\n{base}")).unwrap_err();
+        assert!(e.to_string().contains("newer"), "{e}");
     }
 
     #[test]

@@ -429,6 +429,12 @@ pub struct JumperStringShape {
     pub top: Point,
     /// Its force on the whole bundle, N (0: slack).
     pub force: f64,
+    /// Its limits, not checked by OLS CAD (a structure's string: its own,
+    /// else its insulator's; a `support` string: none).
+    pub limits: crate::StringLimits,
+    /// Its swing from its top to the clamp ([`crate::swing`]: in its
+    /// structure's axes; a `support` string: x east).
+    pub swing: crate::Swing,
 }
 
 /// Where a jumper end is: the solved clamp of the first section through
@@ -1139,6 +1145,8 @@ fn support_shapes(
                     label: String::new(),
                     top: s.point,
                     force: h.forces[0] * scale,
+                    limits: Default::default(),
+                    swing: crate::swing(0.0, s.point, p(h.point)),
                 }],
             })
             .collect();
@@ -1156,10 +1164,15 @@ fn support_shapes(
                     strings
                         .iter()
                         .zip(&h.forces)
-                        .map(|(x, f)| JumperStringShape {
-                            label: x.label.clone(),
-                            top: string_top(line, shapes, st, x).map_or([0.0; 3], p),
-                            force: f * scale,
+                        .map(|(x, f)| {
+                            let top = string_top(line, shapes, st, x).map_or([0.0; 3], p);
+                            JumperStringShape {
+                                label: x.label.clone(),
+                                top,
+                                force: f * scale,
+                                limits: x.limits(),
+                                swing: crate::swing(st.orientation_deg, top, p(h.point)),
+                            }
                         })
                         .collect()
                 })
@@ -1532,6 +1545,8 @@ pub fn solve_jumper_in(
                         top: s.point,
                         // For the whole bundle.
                         force: solution.truss_forces[0] * f64::from(bundle),
+                        limits: Default::default(),
+                        swing: crate::swing(0.0, s.point, p(pos[3])),
                     }],
                 }],
                 ends,

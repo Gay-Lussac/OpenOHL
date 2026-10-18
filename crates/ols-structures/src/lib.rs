@@ -31,7 +31,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 pub use extensions::{ExtendedBody, Extension, LegExtension};
-pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary};
+pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary, InsulatorLimits};
 pub use pole::{InlinePole, PoleRef, PoleRing, PoleShape, PoleWall};
 pub use structures::{
     AllowedSpans, AttachmentCapacity, Capacity, Detail, Interaction, PlacedAttachment, PlacedPoint,

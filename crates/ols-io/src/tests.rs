@@ -111,6 +111,73 @@ fn model_json_has_every_wire_and_the_line() {
     assert_eq!(back, m.line);
 }
 
+/// The export model gives plugins each string as solved with its limits
+/// (OLS CAD checks none): given ones in the case's strings and in the
+/// line, absent ones null in the strings and absent in the line.
+#[test]
+fn model_json_has_the_strings_and_their_limits() {
+    let mut line =
+        Line::load(&root().join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
+    let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
+    let label = t2.strings[0].label.clone();
+    t2.strings[0].max_load = Some(120_000.0);
+    t2.strings[0].max_swing_across_deg = Some(55.0);
+    line.validate().unwrap();
+    let lib = ols_cables::Library::load(&root().join("libraries/cables")).unwrap();
+    let case = WeatherCase::still("15C", Temperature::from_celsius(15.0));
+    let shapes: Vec<_> = solve_line(&line, &lib, &case)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let jumpers: Vec<_> = solve_jumpers(&line, &lib, &case, &shapes)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let m = ExportModel::new(
+        &line,
+        &[(case.name.clone(), case.summary(), shapes, jumpers)],
+    );
+    let v: serde_json::Value = serde_json::from_str(&m.to_json()).unwrap();
+    let strings = v["cases"][0]["strings"].as_array().unwrap();
+    assert!(!strings.is_empty());
+    // Each string once.
+    let mut keys: Vec<(String, String)> = strings
+        .iter()
+        .map(|x| (x["structure"].to_string(), x["label"].to_string()))
+        .collect();
+    let n = keys.len();
+    keys.sort();
+    keys.dedup();
+    assert_eq!(keys.len(), n);
+    let x = strings
+        .iter()
+        .find(|x| x["structure"] == "T2" && x["label"] == label.as_str())
+        .expect("T2's string");
+    assert_eq!(x["max_load_n"], 120_000.0);
+    assert_eq!(x["max_swing_across_deg"], 55.0);
+    assert!(x["max_swing_deg"].is_null() && x["max_swing_along_deg"].is_null());
+    assert!(x["force_n"].as_f64().unwrap() > 0.0);
+    assert!(x["swing_deg"].as_f64().unwrap() >= 0.0);
+    assert!(x["swing_across_deg"].is_f64() && x["swing_along_deg"].is_f64());
+    assert!(
+        strings
+            .iter()
+            .filter(|y| *y != x)
+            .all(|y| y["max_load_n"].is_null())
+    );
+    // The line: the given limits, nothing for the others.
+    let t2 = v["line"]["structures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == "T2")
+        .unwrap();
+    assert_eq!(t2["strings"][0]["max_load"], 120_000.0);
+    assert_eq!(t2["strings"][0]["max_swing_across_deg"], 55.0);
+    assert!(t2["strings"][0].get("max_swing_deg").is_none());
+    assert_eq!(v["line"].to_string().matches("max_load").count(), 1);
+}
+
 #[test]
 fn kml_is_in_wgs84_and_kmz_holds_it() {
     let m = model();
