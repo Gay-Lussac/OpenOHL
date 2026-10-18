@@ -156,7 +156,7 @@ A jumper end (`from` or `to`) becomes either, as now, **a section end**
   clearances of the jumper itself as for any jumper.
 - **Loads on structures:** the host's tensions change (through the solve);
   nothing else.
-- **Import:** PLS-CADD files that hold taps or point loads on jumpers, if
+- **Import:** other programs' files that hold taps or point loads on jumpers, if
   they do, mapped.
 
 ## 4. App

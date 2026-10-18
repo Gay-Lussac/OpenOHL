@@ -785,7 +785,7 @@ impl Model {
             .map(|d| eval.stiffness[(d, d)].abs())
             .fold(0.0, f64::max);
         // Each cable element is itself solved iteratively, which leaves force
-        // noise proportional to EA: converged spans checked against a PLS-CADD
+        // noise proportional to EA: converged spans checked against another program's
         // export stalled at 6.3e-6 N (≈ 3e-13·EA, 1e-9 of the load) and were
         // reported as failures. 1e-11·EA covers it with a 30x margin (1e-10
         // was too loose: it cost accuracy in the insulator-swing check).
@@ -1041,7 +1041,7 @@ mod tests {
     }
 
     /// 23 heavy point loads from a crude straight-line start (the case that
-    /// failed against a PLS-CADD export): solved, possibly by load stepping.
+    /// failed against another program's export): solved, possibly by load stepping.
     #[test]
     fn many_heavy_point_loads_converge() {
         let (span, l0, n) = (560.0, 561.8, 23);

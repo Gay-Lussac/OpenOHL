@@ -66,7 +66,7 @@ renamed later; they are not renamed now.
     copied). It is a library shared by a whole project, exported and
     imported, stored like the other library kinds of the project file
     (per project line).
-12. **Export** to IFC, Tekla and RFEM; PLS-TOWER later.
+12. **Export** to IFC, Tekla and RFEM; other tower programs later.
 13. **Capacities.** At levels 1 and 2 maximum loads may be given on the
     strings (their insulators and fittings), but not for the structure
     itself: its integrity cannot be checked below level 3. The
@@ -76,7 +76,7 @@ renamed later; they are not renamed now.
     loads from the line (an application feature).
 14. **Symmetry** is an option for joints and members, to ease building.
     The application must be easy to use.
-15. **Structure–line interaction** has four levels, as in PLS-CADD: 1
+15. **Structure–line interaction** has four levels, as is common in line design software: 1
     ruling span; 2 FE of the wires on rigid structures (what OpenOHL
     has); 3 FE of the wires with a linear stiffness matrix at each
     structure's suspension points, derived from the structure (level 3
@@ -141,7 +141,7 @@ Where today's code differs from the decisions:
 | | Level 1 | Level 2 | Level 3 |
 |---|---|---|---|
 | **Data** | points, strings, wire points, extensions, foot (`structures.rs`) | `TypeNode`, `TypeMember` (no section), `Outline` | a member's section from the project's section library (`.olssec`) or the structure's raw `[[section]]` `toml::Table`s, the library first, parsed by `ols_structures_fe::Model::from_structure_type_with` (`crates/ols-structures-fe/src/model.rs`); or a separate `.olsfe` |
-| **Built by** | pylon builder from `.olspt` templates (`pylon_builder.rs`, `templates.rs`: level 1 only, suspension or strain); workspace I and V presets (`type_workspace.rs`); the placed editor's **Make it a type** (`placed_editor.rs`); `ohl structures derive` (version 1 attachments); the PLS importer (local) | workspace: **Add joint**, **Member** between two picked joints, **Point here** on a joint, drag with a grid snap or onto a joint | workspace tables: a section per member, a support per joint; sections and materials typed in the **Fields** tab of the library page (`library.rs`) |
+| **Built by** | pylon builder from `.olspt` templates (`pylon_builder.rs`, `templates.rs`: level 1 only, suspension or strain); workspace I and V presets (`type_workspace.rs`); the placed editor's **Make it a type** (`placed_editor.rs`); `ohl structures derive` (version 1 attachments); a local importer of another program's files | workspace: **Add joint**, **Member** between two picked joints, **Point here** on a joint, drag with a grid snap or onto a joint | workspace tables: a section per member, a support per joint; sections and materials typed in the **Fields** tab of the library page (`library.rs`) |
 | **Shown** | the line's 3D view, plan and profile sheets (`place_stick`, `ols-line/src/library.rs`); the workspace's own 3D view | the same, with the members; the workspace shows "Level N — name" and what level 3 still lacks (`missing_for_design`) | the same; no 3D view of the FE model, no deformed shape, no usage colours |
 | **Checks** | structure loads at the points, Methods 1 and 2, wind bands, the pole check | as level 1 | `fe` check in **Structure loads › Usage** and `ohl line --usage-csv` (`ols-loads/src/analysis.rs`), with the member wind on profiles from the section library |
 | **On its own** | `ohl-design pylon.olss` opens the structure alone (`structure_desk.rs`): edit, no computation | the same | `ohl structures fe structure.olss` with the model's own `[[load]]`s or `--loads loads.csv --structure T2` (`ols-cli/src/structure_fe.rs`); `ohl structures pole`; benchmark `structures.fe` (`benchmarks/structures-fe/frames.toml`) |
@@ -196,7 +196,7 @@ extension without a piece or legs behaves as before.
    per structure — *partly built*: the project's section library
    (`.olssec`, a project library kind) is referred to by id, first; the
    structure's own tables remain as raw TOML.
-10. **No import of a body** other than the local PLS importer, and **no
+10. **No import of a body** other than a local importer of another program's files, and **no
     export** of the model other than the file itself (IFC writes the
     stick polylines only, `ols-io/src/ifc.rs`) — *export built*: a level
     3 structure as IFC4, IFC2x3, SAF and CSV ([Structure
@@ -335,12 +335,12 @@ and what to pick (row, joint, member). Two kinds:
 - **Export** (decision 12): **IFC** (members as solids with their
   profiles), **Tekla** and **RFEM** (model, sections, supports, load
   cases), written from the public documentation of each format.
-  **PLS-TOWER** later.
+  other tower programs later.
   *Built* ([Structure exports](structure-exports.md)): IFC4 with member
   solids and the structural analysis model (RFEM), IFC2x3 members (Tekla
   Structures converts only IFC2x3), SAF xlsx (RFEM and other SAF
   programs), CSV tables.
-- **Import**: PLS-TOWER XML stays a local importer; DXF 3D lines and
+- **Import**: another program's tower XML stays a local importer; DXF 3D lines and
   CSV / XLSX tables of joints and members into level 2; merge an
   `.olsfe` into the structure.
 - **Load cases** and their loads: CSV / XLSX, both ways (§2.3).
@@ -594,7 +594,7 @@ Each phase is a deliverable of its own, checked and committed.
    *Open:* typed sections edited in the structure application, member
    groups.
 6. **Replace structure** in the line application (§1.6).
-7. **Exports**: IFC with member solids, Tekla, RFEM; PLS-TOWER later.
+7. **Exports**: IFC with member solids, Tekla, RFEM; other tower programs later.
    *Built*: `ols-structure-export` (File › Export, tool
    `ols-structure-export`): IFC4 (members with profile solids and the
    structural analysis model with load cases), IFC2x3 Coordination View
@@ -602,7 +602,7 @@ Each phase is a deliverable of its own, checked and committed.
    (xlsx) and CSV tables ([Structure exports](structure-exports.md)).
    The application exports the Load table panel's table (a placed
    structure's line values and typed values). *Open*: imports tried in
-   RFEM 6 and Tekla Structures; PLS-TOWER.
+   RFEM 6 and Tekla Structures; other tower programs.
 8. **Code checks**: the plugin interface for member and joint checks
    (open question 1), then a first code (e.g. SIA 263); capacity
    derived from a level 3 design.

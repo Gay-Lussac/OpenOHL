@@ -134,7 +134,7 @@ the cost of solving them each, plus a little.
 - **Structure loads:** unchanged (through the conductors' tensions).
 - **Galloping:** the ellipses could take the spacers into account
   (the code's own method) — later.
-- **Import:** PLS-CADD files that hold spacers, if they do, mapped.
+- **Import:** other programs' files that hold spacers, if they do, mapped.
 
 ## App
 

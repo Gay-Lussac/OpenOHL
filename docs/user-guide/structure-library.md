@@ -2,7 +2,7 @@
 
 Structure types and insulator assemblies are stored **one per file**, so each can be reused, shared and versioned individually. In the desktop app the structure types are the **Structure library** (Structures menu): every structure the model uses, each imported or exported as a file:
 
-- `*.olss` — structure types (the `ols-structure` format), like PLS-CADD's structure files: a project keeps its pylons in a **`Structures`** folder next to its line or project file (used automatically by `ohl line`); shared types can live in `libraries/structures/`,
+- `*.olss` — structure types (the `ols-structure` format): a project keeps its pylons in a **`Structures`** folder next to its line or project file (used automatically by `ohl line`); shared types can live in `libraries/structures/`,
 - `libraries/insulators/*.olsi` — insulator assemblies (the `ols-insulator` format), for detailed strings; simple pylons define their strings in the pylon file itself (below). OpenOHL ships three **examples** with typical values (a 220 kV I-string, tension string and V-string, ids `example-220-…`) to start from — check them against your assemblies' data sheets. Structure types belong to a project (its `Structures` folder); none are shipped.
 
 Both are TOML with units on every quantity (`"12.5 m"`, `"1.4 kN"`), like [wire libraries](wire-library.md). Unknown fields are errors.

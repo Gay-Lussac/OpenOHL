@@ -281,6 +281,6 @@ Electrical properties of the cables (resistance, ampacity data) belong to the [w
 
 Every span is one exact elastic catenary element (split at point loads), suspension strings and V-string legs are tension-only truss elements, wind acts horizontally and perpendicular to each span, and the free clamps and load points are found by Newton–Raphson in 3D (see [finite-element wire systems](../theory/wirefe.md)). Each span's unstressed length scales with \\( e^{\alpha \Delta t} \\) from the stringing temperature.
 
-## Checked against PLS-CADD
+## Compared with another program
 
-On a real 78-structure, 930-span line exported from PLS-CADD (private data, compared locally and not part of the repository), OpenOHL reproduced PLS-CADD's mid-span heights to a median of 1.1 cm (90 % within 3.4 cm) for unloaded spans and 1.7 cm (90 % within 3.9 cm) for spans with marker balls, and mid-span positions to 1 mm, solving all 554 sections in under 20 ms. The largest differences (up to 21 cm) are nearly vertical, nearly taut down-leads, where PLS-CADD's 1 cm rounding of unstressed lengths moves the sag by that much.
+One comparison, not a validation: on an existing 78-structure, 930-span line exported from another line design program (private data, compared locally and not part of the repository), OpenOHL reproduced that program's mid-span heights to a median of 1.1 cm (90 % within 3.4 cm) for unloaded spans and 1.7 cm (90 % within 3.9 cm) for spans with marker balls, and mid-span positions to 1 mm, solving all 554 sections in under 20 ms. The largest differences (up to 21 cm) are nearly vertical, nearly taut down-leads, where the export's 1 cm rounding of unstressed lengths moves the sag by that much.
