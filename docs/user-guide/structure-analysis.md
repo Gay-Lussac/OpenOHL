@@ -32,6 +32,7 @@ nonlinear = true          # P-Delta (default); false: first order
 self_weight = true        # members' weight × the load case's vertical factor (default)
 drag = 1.0                # member wind: drag factor on the profiles (default 1)
 stabilise = true          # hold joint directions no member stiffens (default; below)
+dead_load_factor = 1.0    # members' self-weight × this: bolts, plates (default 1; below)
 
 [[material]]
 id = "steel"
@@ -68,6 +69,7 @@ k = 1.0                   # effective length factor for buckling
 # lk = "2.4 m"            # or the effective length itself (instead of k × length)
 # capacity_tension = "180 kN"      # the member's capacities, instead of the computed
 # capacity_compression = "95 kN"   #   ones (compression: buckling included)
+# dead_load_factor = 1.3  # its self-weight × this, instead of [analysis]'s
 # frame: reference = [0, 0, 1] (a direction in the local x–y plane), roll = "0 deg"
 # or: orientation = "x+y-"  # an angle's legs (local y, z) towards +x and −y
 # cable: pretension = "15 kN" (tension only)
@@ -98,6 +100,8 @@ alone are read, as before.
 **Members**: trusses take axial force only; frames are 3D beams (six degrees of freedom at their nodes); cables take tension only and may be pretensioned — a cable that would be compressed goes slack. Truss-only nodes have no rotations.
 
 **Joint stabilisation** (`stabilise = true`, the default). Towers drawn as trusses — as PLS-TOWER and most tower programs draw them — have joints that no member stiffens in some direction: a joint whose members all lie in one plane (the joints of a K or diamond bracing in a tower face, a bracing crossing joined at its crossing) is free across that plane; a joint of members on one line is free across the line; a chain of frames on one line, with no other frame and no rotational support at its joints, is free to spin about it. Solved as they are, such models are mechanisms. With stabilisation, when the solve finds a mechanism (or buckling), these directions are found from the geometry and held — exactly when the direction is along x, y or z (that degree of freedom removed, as a support would), else by a spring along it as stiff as the joint's stiffest member — and the model is solved again. A model that solves without it is solved exactly as before, bit for bit: the stabilisation only starts when the first solve fails. The usage notes (and the FE results of the structure application, and `ols structures fe`) then say what was held: `model: stabilised 9 joint direction(s) without stiffness at 9 joint(s): L1 y, R1 y, …; largest force held 0.130 kN at M2 (0.45 % of the reactions)`. A held direction carries only what is loaded along it — the out-of-plane part of the self-weight at a joint of a battered face, say, which the structure then does not carry. When one carries more than 1 % of the loads *and* more than a quarter of its own joint's load (a load across a plane no member holds), the model is refused naming the joints (`mechanism: joint(s) M2 loaded in a direction no member holds …`). What is not one joint's own freedom stays a **mechanism**: a part that can move as a whole (a missing support, a frame of four bars without a diagonal) is reported with the joints that move (`mechanism: node C is free to move in x, with 2 joints: C, D …`). With `stabilise = false` such models fail as mechanisms, as before.
+
+**Dead-load factor** (`dead_load_factor`, default 1): the members' self-weight is multiplied by it — the allowance for what the members do not model, bolts, gusset plates, galvanising (tower programs typically use 1.1–1.4 for a lattice tower, up to about 2.4 on light bracing). A member's own `dead_load_factor` replaces the structure's for it (set per member, or for a whole group in **Design › Groups**). It scales the self-weight loads exactly (the load case's vertical factor still applies on top) and the weight the structure application adds up for its load sum; `ols structures fe` shows the members' weight with and without the factors. 1, or none, changes nothing.
 
 **Usage** per member, against the section's capacity times the load case's strength factor: tension against the allowable tension (else area × yield); compression against the allowable compression (else area × yield), but not above the Euler load π²EI/(kL)² — kL the member's `lk` when it gives one, else its `k` × its length; frames add N, My and Mz ratios. Without a design-code column curve, the Euler check is optimistic for stocky members — write the code's allowable compression in the section for a design check, or the member's own capacities: a member's `capacity_tension` and `capacity_compression` (forces, e.g. from a tower program's design check of that member and its connection) replace the computed ones in its usage — the compression one the buckling check too — and what governs says so (`tension 112.0 kN of 180.0 kN (given)`). Without them the usage is computed as before.
 

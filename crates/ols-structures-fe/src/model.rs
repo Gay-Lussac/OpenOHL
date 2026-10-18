@@ -15,6 +15,7 @@
 //! self_weight = true        # members' weight (default)
 //! drag = 1.0                # member wind: drag factor on the profiles (default 1)
 //! stabilise = true          # hold joint directions without stiffness (default)
+//! dead_load_factor = 1.0    # members' self-weight × this (bolts, plates; default 1)
 //!
 
 //! [[material]]
@@ -62,6 +63,7 @@
 //! # lk = "2.4 m"            # effective length instead of k × length
 //! # capacity_tension = "180 kN"      # instead of the section's capacity
 //! # capacity_compression = "95 kN"   # instead of the section's and Euler's
+//! # dead_load_factor = 1.3  # its self-weight × this, instead of [analysis]'s
 //! pretension = "10 kN"      # cable
 //!
 //! [[load]]                  # the model's own load case (optional)
@@ -108,6 +110,8 @@ struct AnalysisFile {
     drag: f64,
     #[serde(default = "yes")]
     stabilise: bool,
+    #[serde(default = "one")]
+    dead_load_factor: f64,
 }
 
 impl Default for AnalysisFile {
@@ -117,6 +121,7 @@ impl Default for AnalysisFile {
             self_weight: true,
             drag: 1.0,
             stabilise: true,
+            dead_load_factor: 1.0,
         }
     }
 }
@@ -224,6 +229,8 @@ struct MemberFile {
     capacity_tension: Option<Force>,
     #[serde(default)]
     capacity_compression: Option<Force>,
+    #[serde(default)]
+    dead_load_factor: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -470,6 +477,9 @@ pub struct Member {
     /// Compression capacity, N, instead of the section's and the Euler
     /// load (none: the smaller of those).
     pub capacity_compression: Option<f64>,
+    /// Factor on its self-weight (bolts, plates…), instead of the
+    /// analysis's ([`Analysis::dead_load_factor`]).
+    pub dead_load_factor: Option<f64>,
 }
 
 impl Member {
@@ -489,6 +499,7 @@ impl Member {
             lk: None,
             capacity_tension: None,
             capacity_compression: None,
+            dead_load_factor: None,
         }
     }
 }
@@ -602,6 +613,10 @@ pub struct Analysis {
     /// Joint stabilisation ([`crate::stabilise`]) when the model would
     /// otherwise be a mechanism.
     pub stabilise: bool,
+    /// Factor on the members' self-weight for what the members do not
+    /// model (bolts, plates, galvanising: typically 1.1–1.4 on lattice
+    /// towers, more on light bracing); a member's own replaces it.
+    pub dead_load_factor: f64,
 }
 
 impl Default for Analysis {
@@ -611,6 +626,7 @@ impl Default for Analysis {
             self_weight: true,
             drag: 1.0,
             stabilise: true,
+            dead_load_factor: 1.0,
         }
     }
 }
@@ -800,6 +816,7 @@ impl Model {
                 lk: m.lk.map(Length::si),
                 capacity_tension: m.capacity_tension.map(Force::si),
                 capacity_compression: m.capacity_compression.map(Force::si),
+                dead_load_factor: m.dead_load_factor,
             });
         }
         let loads = file
@@ -821,6 +838,7 @@ impl Model {
                 self_weight: file.analysis.self_weight,
                 drag: file.analysis.drag,
                 stabilise: file.analysis.stabilise,
+                dead_load_factor: file.analysis.dead_load_factor,
             },
             nodes,
             sections,
@@ -1022,6 +1040,10 @@ impl Model {
         if self.analysis.drag.is_nan() || self.analysis.drag <= 0.0 {
             return Err("analysis: drag must be above 0".into());
         }
+        let factor = self.analysis.dead_load_factor;
+        if !(factor.is_finite() && factor > 0.0) {
+            return Err("analysis: dead_load_factor must be above 0".into());
+        }
         let mut attachments = std::collections::BTreeSet::new();
         for n in &self.nodes {
             if let Some(a) = &n.attachment
@@ -1067,6 +1089,7 @@ impl Model {
                 ("lk", m.lk),
                 ("capacity_tension", m.capacity_tension),
                 ("capacity_compression", m.capacity_compression),
+                ("dead_load_factor", m.dead_load_factor),
             ] {
                 if let Some(v) = v
                     && !(v.is_finite() && v > 0.0)
@@ -1215,8 +1238,24 @@ impl Model {
         Some((normal, sin, p.wind_width(Angle::from_radians(angle))))
     }
 
-    /// Total weight of the members, N.
+    /// The factor on member `m`'s self-weight: its own, else the
+    /// analysis's.
+    pub fn dead_load_factor(&self, m: &Member) -> f64 {
+        m.dead_load_factor.unwrap_or(self.analysis.dead_load_factor)
+    }
+
+    /// Total weight of the members as the self-weight loads them, N: each
+    /// member's weight × its dead-load factor ([`Self::steel_weight`]
+    /// without the factors).
     pub fn weight(&self) -> f64 {
+        self.members
+            .iter()
+            .map(|m| self.sections[m.section].weight() * self.dead_load_factor(m) * self.length(m))
+            .sum()
+    }
+
+    /// Total weight of the members' sections, N (no dead-load factors).
+    pub fn steel_weight(&self) -> f64 {
         self.members
             .iter()
             .map(|m| self.sections[m.section].weight() * self.length(m))

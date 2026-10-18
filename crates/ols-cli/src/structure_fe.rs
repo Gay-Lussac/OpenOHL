@@ -209,7 +209,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         0.0
     };
     println!(
-        "model {}: {} nodes, {} members, {:.1} kN of members; {}",
+        "model {}: {} nodes, {} members, {:.1} kN of members{}; {}",
         if model.name.is_empty() {
             args.model.display().to_string()
         } else {
@@ -217,7 +217,15 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         },
         model.nodes.len(),
         model.members.len(),
-        model.weight() / 1000.0,
+        model.steel_weight() / 1000.0,
+        if model.weight() == model.steel_weight() {
+            String::new()
+        } else {
+            format!(
+                " ({:.1} kN with the dead-load factors)",
+                model.weight() / 1000.0
+            )
+        },
         if model.analysis.nonlinear {
             "P-Delta"
         } else {

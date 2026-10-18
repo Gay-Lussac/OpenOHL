@@ -371,7 +371,15 @@ fn analysis_settings_are_edited() {
         a.get("stabilise").and_then(toml::Value::as_bool),
         Some(false)
     );
+    set_analysis_field(&mut doc, "dead_load_factor", "1.25").unwrap();
+    let t = read(&doc);
+    let a = t.analysis.as_ref().unwrap();
+    assert_eq!(
+        a.get("dead_load_factor").and_then(toml::Value::as_float),
+        Some(1.25)
+    );
     set_analysis_field(&mut doc, "stabilise", "").unwrap();
+    set_analysis_field(&mut doc, "dead_load_factor", "").unwrap();
     assert!(doc.get("analysis").is_none());
     assert!(read(&doc).analysis.is_none());
     assert!(set_analysis_field(&mut doc, " ", "1").is_err());
