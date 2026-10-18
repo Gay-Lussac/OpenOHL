@@ -681,7 +681,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `[[extension]]` | `Extension`: `name`, `dz`; version 3: `[[extension.node]]` (`TypeNode`), `[[extension.member]]` (`TypeMember`), `[[extension.leg]]` (`LegExtension`: `leg`, `dz`) | m | height extensions; at level 3 a piece below the feet (joints with z from `foot − dz` to `foot`, ids unique with the body's; members between its joints and the body's) and leg extensions. `StructureType::extended(ext) -> ExtendedBody` applies the rule (`crates/ols-structures/src/extensions.rs`, [user guide](../user-guide/structure-library.md#extension-bodies-and-leg-extensions)): the piece added, body joints it reaches lose their support, a leg's support joint slides `dz` lower along its steepest rising member; a placed structure on such an extension is analysed on `Model::from_structure_type_extended` (`ols_loads` keys its models by type and extension) |
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |
 | `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?`, `made_by?` | m | pylon joints (detail 2–3); `made_by`: the `[[generator]]` that wrote it |
-| `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`; version 5, `.olsfe` version 2: `tension`, a truss in tension only — `MemberKind::Tension`, left out while compressed by the solver's active-set iterations, `MemberForces::slack`, `Solution::passes`), `reference?`, `roll?`, `orientation?` (an angle's legs towards two structure directions, `"x+y-"`, instead of `reference` and `roll`), `k?`, `lk?` (effective length instead of k × length), `pretension?`, `capacity_tension?`, `capacity_compression?` (forces replacing the computed capacities in the usage), `dead_load_factor?` (on its self-weight, instead of `[analysis]`'s), `group?`, `made_by?` | m, N | pylon members; `group`: its member group (no table of groups: a section — or `lk`, the capacities, the dead-load factor — per group is written on each member); `made_by` as for joints. `ols_structures_fe` leaves `group` and `made_by` out of the model |
+| `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`; version 5, `.olsfe` version 2: `tension`, a truss in tension only — `MemberKind::Tension`, left out while compressed by the solver's active-set iterations, `MemberForces::slack`, `Solution::passes`; kept active as a truss when the set does not settle, `Solution::kept_active`, approximate), `reference?`, `roll?`, `orientation?` (an angle's legs towards two structure directions, `"x+y-"`, instead of `reference` and `roll`), `k?`, `lk?` (effective length instead of k × length), `pretension?`, `capacity_tension?`, `capacity_compression?` (forces replacing the computed capacities in the usage), `dead_load_factor?` (on its self-weight, instead of `[analysis]`'s), `group?`, `made_by?` | m, N | pylon members; `group`: its member group (no table of groups: a section — or `lk`, the capacities, the dead-load factor — per group is written on each member); `made_by` as for joints. `ols_structures_fe` leaves `group` and `made_by` out of the model |
 | `[[generator]]` | tables (`generators`, kept unread by the core): `id`, `kind` (`panels` / `crossarm` / `peak` / `copy_face`) and its inputs | m | a body generator's record, read by `ols-structure-edit` (`body::Generator`): panels `bottom?`, `feet`, `waist` (a length or [across, along]), `panel` [{`top`, `bracing` (`single`/`x`/`k`/`diamond`/`warren`), `horizontal`}]; crossarm `points`, `shape` (`triangular`/`rectangular`); peak `points` or `height`; copy_face `body` (a panels generator), `face` (`x+`/`x-`/`y+`/`y-`) |
 | `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body menu's Symmetry option |
 | `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1 —, `stabilise` — joint stabilisation, default true —, `dead_load_factor` — on the members' self-weight, default 1) |
@@ -870,10 +870,16 @@ not solved: that structure's loads in that case are **incomplete**;
 (`ols_loads::capacity`, `CaseUsage` → `StructureUsage`) carries the
 same per structure (`StructureUsage::missing`), marks each `Check` from
 such loads `incomplete: true`, and `StructureUsage::status()` gives
-`UsageStatus::{NotChecked, Incomplete, Pass, Over}` — `Incomplete`
-whenever a wire is missing, whatever the usage. The usage CSV
-(`usage_csv`, `ohl line --usage-csv`) ends with an `incomplete` column:
-`incomplete: section S12 not solved (why); …`, empty when complete.
+`UsageStatus::{NotChecked, Incomplete, Approximate, Pass, Over}` —
+`Incomplete` whenever a wire is missing, whatever the usage;
+`Approximate` (after that) when a check has `approximate: true` — the
+FE check of a model whose tension-only members did not settle
+(`ols_structures_fe::Solution::kept_active`: those members kept active
+as trusses; `StructureUsage::is_approximate`, `approximate_text`). The
+usage CSV (`usage_csv`, `ohl line --usage-csv`) ends with an
+`incomplete` column: `incomplete: section S12 not solved (why); …`,
+then `approximate: fe (…)` for an approximate check, empty when
+neither.
 
 ### Structure load cases (`[[load_case]]`, `.olsslc`)
 

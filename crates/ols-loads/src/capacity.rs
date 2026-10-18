@@ -43,6 +43,11 @@
 //! checks are computed from the loads there are (nothing made up) and
 //! marked ([`Check::incomplete`], [`StructureUsage::missing`],
 //! [`UsageStatus::Incomplete`]) — never a plain pass.
+//!
+//! A finite-element check whose tension-only members did not settle
+//! (kept active as trusses, [`ols_structures_fe::Solution::kept_active`])
+//! is **approximate** ([`Check::approximate`], [`UsageStatus::Approximate`]):
+//! its usage is computed and shown, marked so — never a plain pass.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -92,6 +97,10 @@ pub struct Check {
     /// structure did not solve in this case ([`StructureUsage::missing`]),
     /// so the usage may be too low.
     pub incomplete: bool,
+    /// Approximate: the finite-element solve kept tension-only members
+    /// active because their set did not settle
+    /// ([`ols_structures_fe::Solution::kept_active`]); to be treated later.
+    pub approximate: bool,
 }
 
 /// What a structure's checks in one load case come to.
@@ -102,6 +111,10 @@ pub enum UsageStatus {
     /// A wire at the structure did not solve: its loads are incomplete
     /// and the checks cannot pass (whatever their usage).
     Incomplete,
+    /// A check is approximate ([`Check::approximate`]: tension-only
+    /// members kept active because their set did not settle): not a plain
+    /// pass (whatever its usage).
+    Approximate,
     /// Every check within its capacity (100 % or less).
     Pass,
     /// A check over 100 %.
@@ -114,6 +127,7 @@ impl UsageStatus {
         match self {
             Self::NotChecked => "not checked",
             Self::Incomplete => "incomplete",
+            Self::Approximate => "approximate",
             Self::Pass => "pass",
             Self::Over => "over",
         }
@@ -169,12 +183,24 @@ impl StructureUsage {
         !self.missing.is_empty()
     }
 
+    /// Whether a check is approximate ([`Check::approximate`]).
+    pub fn is_approximate(&self) -> bool {
+        [&self.spans, &self.loads, &self.fe, &self.pole]
+            .into_iter()
+            .flatten()
+            .any(|c| c.approximate)
+    }
+
     /// What its checks come to: incomplete whenever a wire is missing
     /// (even with no check, or one over 100 %: the loads are not all
-    /// there), else not checked, over or pass.
+    /// there), else approximate when a check is, else not checked, over
+    /// or pass.
     pub fn status(&self) -> UsageStatus {
         if self.is_incomplete() {
             return UsageStatus::Incomplete;
+        }
+        if self.is_approximate() {
+            return UsageStatus::Approximate;
         }
         match self.governing() {
             None => UsageStatus::NotChecked,
@@ -199,6 +225,16 @@ impl StructureUsage {
         )
     }
 
+    /// The approximate checks in words: `approximate: fe (tension-only
+    /// members kept active, set did not settle)` (empty when none is).
+    pub fn approximate_text(&self) -> String {
+        if self.fe.as_ref().is_some_and(|c| c.approximate) {
+            APPROXIMATE_FE.to_owned()
+        } else {
+            String::new()
+        }
+    }
+
     /// The missing wires, short: `not checked: S12 not solved` (empty when
     /// complete).
     pub fn not_checked_text(&self) -> String {
@@ -215,6 +251,11 @@ impl StructureUsage {
         )
     }
 }
+
+/// [`StructureUsage::approximate_text`] of an approximate finite-element
+/// check.
+pub const APPROXIMATE_FE: &str =
+    "approximate: fe (tension-only members kept active, set did not settle)";
 
 /// The structures in one load case.
 #[derive(Debug, Clone, PartialEq)]
@@ -512,6 +553,7 @@ pub fn usage_with_sections(
                                     c.max_angle().unwrap_or(0.0)
                                 ),
                                 incomplete: false,
+                                approximate: false,
                             },
                             Some(allowed) => {
                                 let mut worst = (
@@ -552,6 +594,7 @@ pub fn usage_with_sections(
                                     usage: worst.0,
                                     governs: worst.1,
                                     incomplete: false,
+                                    approximate: false,
                                 }
                             }
                         }
@@ -623,6 +666,7 @@ pub fn usage_with_sections(
                             usage: worst.0,
                             governs: worst.1,
                             incomplete: false,
+                            approximate: false,
                         }
                     });
                     let factored: Vec<crate::analysis::Factored> = points
@@ -710,7 +754,8 @@ pub fn incomplete_cases<'a>(
 /// (usages in %, empty when not checked; `incomplete`: the wires missing
 /// from the structure's loads in that case, `incomplete: section S12 not
 /// solved (reason); …`, empty when its loads are complete — the usages
-/// are then those of the loads there are).
+/// are then those of the loads there are; an approximate check adds
+/// [`APPROXIMATE_FE`]).
 pub fn usage_csv(cases: &[CaseUsage]) -> String {
     use ols_core::text::csv_field;
     let mut out = String::from(
@@ -744,7 +789,13 @@ pub fn usage_csv(cases: &[CaseUsage]) -> String {
                 g.map_or(String::new(), |g| format!("{:.1}", g.usage * 100.0)),
                 csv_field(g.map_or("", |g| g.governs.as_str())),
                 csv_field(&s.notes.join("; ")),
-                csv_field(&s.incomplete_text()),
+                csv_field(
+                    &[s.incomplete_text(), s.approximate_text()]
+                        .into_iter()
+                        .filter(|t| !t.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ),
             );
         }
     }

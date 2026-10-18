@@ -862,3 +862,52 @@ fn a_case_with_sections_not_solved_is_incomplete_only_there() {
         assert!(ice.is_incomplete(&s.id), "{}", s.id);
     }
 }
+
+/// A finite-element check whose tension-only members did not settle (kept
+/// active, [`ols_structures_fe::Solution::kept_active`]) is approximate:
+/// the structure's status says so whatever its usage (incomplete loads
+/// still come first), and the CSV's `incomplete` column names it.
+#[test]
+fn an_approximate_fe_check_is_never_a_plain_pass() {
+    let check = |method, approximate| capacity::Check {
+        method,
+        usage: 0.4,
+        governs: "member AM tension 1.0 kN of 10.0 kN — kept active (did not settle)".into(),
+        incomplete: false,
+        approximate,
+    };
+    let mut s = capacity::StructureUsage {
+        structure: "T1".into(),
+        structure_type: Some("t".into()),
+        line_angle_deg: 0.0,
+        wind_span: 300.0,
+        weight_span: None,
+        spans: Some(check(capacity::Method::Spans, false)),
+        loads: None,
+        fe: Some(check(capacity::Method::Fe, false)),
+        pole: None,
+        notes: Vec::new(),
+        missing: Vec::new(),
+    };
+    assert_eq!(s.status(), capacity::UsageStatus::Pass);
+    assert!(!s.is_approximate() && s.approximate_text().is_empty());
+    s.fe.as_mut().unwrap().approximate = true;
+    assert!(s.is_approximate());
+    assert_eq!(s.status(), capacity::UsageStatus::Approximate);
+    assert_eq!(s.status().as_str(), "approximate");
+    assert_eq!(s.approximate_text(), capacity::APPROXIMATE_FE);
+    let usage = vec![capacity::CaseUsage {
+        case: "wind".into(),
+        structures: vec![s.clone()],
+    }];
+    let csv = capacity::usage_csv(&usage);
+    let row = csv.lines().nth(1).unwrap();
+    assert!(
+        row.ends_with(&format!(",\"{}\"", capacity::APPROXIMATE_FE)),
+        "{row}"
+    );
+    // Over 100 %: still approximate (the number is not to be trusted
+    // either way), as an incomplete structure is incomplete.
+    s.fe.as_mut().unwrap().usage = 1.5;
+    assert_eq!(s.status(), capacity::UsageStatus::Approximate);
+}

@@ -175,12 +175,18 @@ impl Analyses {
                 if let Some(note) = ols_structures_fe::tension_only_note(model, &solution) {
                     notes.push(format!("model: {note}"));
                 }
+                // Tension-only members kept active (their set did not
+                // settle): the check is approximate.
+                if let Some(note) = ols_structures_fe::kept_active_note(model, &solution) {
+                    notes.push(format!("model: {note}"));
+                }
                 match worst(&usage) {
                     Some(w) => Some(Check {
                         method: Method::Fe,
                         usage: w.usage.unwrap_or(0.0),
                         governs: format!("member {} {}", model.members[w.member].id, w.governs),
                         incomplete: false,
+                        approximate: !solution.kept_active.is_empty(),
                     }),
                     None => {
                         notes.push("model: no member has a capacity".into());
@@ -193,6 +199,7 @@ impl Analyses {
                 usage: f64::INFINITY,
                 governs: format!("model: {e}"),
                 incomplete: false,
+                approximate: false,
             }),
         }
     }
@@ -247,12 +254,14 @@ impl Analyses {
                     usage: c.usage,
                     governs: format!("pole {}: {}", pole.id, c.governs),
                     incomplete: false,
+                    approximate: false,
                 },
                 Err(e) => Check {
                     method: Method::Pole,
                     usage: f64::INFINITY,
                     governs: e,
                     incomplete: false,
+                    approximate: false,
                 },
             },
         )

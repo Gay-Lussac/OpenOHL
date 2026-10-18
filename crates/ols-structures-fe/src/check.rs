@@ -18,7 +18,9 @@
 //!   largest end moments (the allowable moments, else W × yield).
 //! - **Cables**: tension only.
 //! - **Tension-only members**: as trusses while they take force; one left
-//!   out as slack uses 0 ("slack").
+//!   out as slack uses 0 ("slack"). One kept active because the active
+//!   set did not settle ([`Solution::kept_active`]) is checked as a truss
+//!   (compression too) and marked [`KEPT_ACTIVE`]: approximate.
 
 use crate::model::{MemberKind, Model};
 use crate::solve::Solution;
@@ -34,6 +36,11 @@ pub struct MemberUsage {
     /// What governs, in words.
     pub governs: String,
 }
+
+/// The mark on what governs a tension-only member kept active because the
+/// active set did not settle ([`Solution::kept_active`]): its usage is
+/// that of a truss, approximate.
+pub const KEPT_ACTIVE: &str = "kept active (did not settle)";
 
 /// Euler buckling load of a member, N (none without a second moment).
 pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
@@ -160,6 +167,16 @@ pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<Me
                 usage: Some(usage),
                 governs,
             }
+        })
+        .map(|mut u| {
+            if solution.kept_active.contains(&u.member) {
+                u.governs = if u.governs.is_empty() {
+                    KEPT_ACTIVE.to_owned()
+                } else {
+                    format!("{} — {KEPT_ACTIVE}", u.governs)
+                };
+            }
+            u
         })
         .collect()
 }
