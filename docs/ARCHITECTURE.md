@@ -66,9 +66,9 @@ Every core module is a Rust crate under `crates/` (workspace members, with `apps
 | `ols-server` | Server mode (alpha): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, invitations; the web client (HTTPS + WebSocket) |
 | `ols-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming; headless images |
 | `ols-plugins` | Plugin manifests (`ols-plugin.toml`), compatibility checks, the sandboxed WebAssembly component host (WIT worlds for formats, projects, terrain, design codes) |
-| `ols-validation` | Validation framework: cases (`benchmarks/`), runner and reports (`ols validate`) |
-| `ols-app` | Desktop application `ols-cad` (egui, ADR-0009): 3D, plan, profile, properties, tools, tables, library editors, checks, Python console, plugin manager |
-| `ols-cli` | The `ols` command-line tool |
+| `ols-validation` | Validation framework: cases (`benchmarks/`), runner and reports (`ohl validate`) |
+| `ols-app` | OHL-Design, the line application `ohl-design` (egui, ADR-0009): 3D, plan, profile, properties, tools, tables, library editors, checks, Python console, plugin manager |
+| `ols-cli` | The `ohl` command-line tool |
 | `ols-py` | Python bindings (PyO3, `import ols`) for scripts and Python plugins |
 
 The structure application (`apps/structure/`, [its crates](development/structure-app.md))
@@ -81,7 +81,7 @@ other way round, and its tests run on their own.
 | `ols-structure-link` | Where the application meets the core: the line's structure loads as line values, a table case as finite-element loads (later the section library and saving back) |
 | `ols-structure-tests` | Tests of the application with the core (test-only) |
 | `ols-structure-edit` | The edits of a structure file (`toml_edit`, comments kept), undo and redo of whole edits, what each level still lacks (`missing(level)`); no UI. `ols-app`'s structure screen calls the same edits (on the basics: points, strings, wire points, sets) |
-| `ols-structure-app` | OLS Structure, the structure application `ols-structure` (egui): a `.olss` in 3D, the Geometry, Body, Design, Load cases, Results and In the line menus at the top, their panels docked and movable under them |
+| `ols-structure-app` | OHL-Structure, the structure application `ohl-structure` (egui): a `.olss` in 3D, the Geometry, Body, Design, Load cases, Results and In the line menus at the top, their panels docked and movable under them |
 
 ## Session & collaboration
 
@@ -128,5 +128,5 @@ WebAssembly plugins implement a WIT world of `crates/ols-plugins/wit/`: `io-plug
 - **Geospatial**: pure Rust, no native GIS library: `proj4rs` with EPSG definitions, `las`/`laz` for point clouds (COPC read and written), formats written from their public specifications.
 - **Scripting**: Python via PyO3 (`ols-py`), WASM runtime (`wasmtime`) for plugins.
 - **Storage**: SQLite (`rusqlite`) for the project file, `zstd` compression of point and surface blocks.
-- **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ols validate`); pytest for bindings.
+- **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ohl validate`); pytest for bindings.
 - **Docs**: mdBook (this book: user guide, theory manual, design) and `cargo doc` (API).

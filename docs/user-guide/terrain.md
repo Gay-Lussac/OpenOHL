@@ -1,6 +1,6 @@
 # Terrain and ground clearance
 
-OLS CAD builds a ground surface from survey points and checks how far every
+OpenOHL builds a ground surface from survey points and checks how far every
 solved wire is above it.
 
 ```bash
@@ -33,7 +33,7 @@ over.
 `--drawings DIR` writes, for every route, a plan and profile sheet `ROUTE.svg` and the profiles as `ROUTE-profile.csv`:
 
 ```bash
-ols line project.ols --pointcloud project.ols --temperature 80 --rules rules.olsr \
+ohl line project.ols --pointcloud project.ols --temperature 80 --rules rules.olsr \
   --clearance 7 --drawings sheets --side-offset -15 --side-offset 15
 ```
 
@@ -43,7 +43,7 @@ ols line project.ols --pointcloud project.ols --temperature 80 --rules rules.ols
 - **Sheets**: `--page A1` (A0–A4 landscape, or `WIDTHxHEIGHT` in mm) splits each route **at structures** — as many whole spans as fit per sheet, the structure ending a sheet starting the next (match line) — into `ROUTE-sheet-NN.svg`, each with its own height range and a title block (line, route, sheet n/N, station range, structures, scales, format, weather case). A span longer than the sheet or a profile taller than it is drawn anyway and reported as a warning: change the scales or the format.
 - **Logos**: `--logo company.svg:30` (SVG, PNG or JPEG, width in mm; repeatable) in the title block.
 
-The sheet layout (title block, margins) is built in for now; company templates will come as a layout plugin. For DXF, PDF, PNG and XML, station ranges and the profile alone, see [Drawings and profile exports](drawings.md) (`ols drawing`).
+The sheet layout (title block, margins) is built in for now; company templates will come as a layout plugin. For DXF, PDF, PNG and XML, station ranges and the profile alone, see [Drawings and profile exports](drawings.md) (`ohl drawing`).
 
 ## Clearance rules (`.olsr`)
 
@@ -102,7 +102,7 @@ radial = "4.5 m"
 | `exclude_spans_at` | Exclusion zone: spans ending at these structures are not checked, e.g. `["con_*"]` for down-leads into cable terminations (wildcards). |
 | `case_pairs` | Wire rules: `[["glaze ice", "max temperature"]]` — the first wire in the first case, the second wire in the second (e.g. an iced upper wire sagging towards a hot lower one); checked after all cases are solved. |
 
-A rule file may hold a `[wind]` table. The desktop [vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances) and [`ols zones`](#vertical-and-radial-clearances-without-the-window-ols-zones) read it (the windows write it); `ols line` ignores it and checks each weather case as it is:
+A rule file may hold a `[wind]` table. The desktop [vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances) and [`ohl zones`](#vertical-and-radial-clearances-without-the-window-ols-zones) read it (the windows write it); `ohl line` ignores it and checks each weather case as it is:
 
 ```toml
 [wind]
@@ -111,8 +111,8 @@ step = "50 Pa"
 sides = "both"      # both, left or right
 ```
 
-and a `[check]` table — what those windows and `ols zones` solve and
-read; `ols line` ignores it too:
+and a `[check]` table — what those windows and `ohl zones` solve and
+read; `ohl line` ignores it too:
 
 ```toml
 [check]
@@ -154,18 +154,18 @@ envelope over 3 weather cases (glaze ice, max temperature, rime ice + wind) and 
 
 The clearance CSV holds each case's rows and then the envelope rows (`case = envelope`, last column `governing_case`). The plan and profile sheets draw every case's wires — the first solid, the others dashed, dotted… (named in the title block) — the envelope of the wire positions.
 
-Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.olsr`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/clearance-rules.olsr) and the crossing line `crossing-line.ols.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; the desktop clearance windows edit rules per LiDAR class, and design-code plugins may give rule files as clearance presets.
+Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.olsr`](https://github.com/Gay-Lussac/OpenOHL/blob/main/examples/synthetic-line/clearance-rules.olsr) and the crossing line `crossing-line.ols.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; the desktop clearance windows edit rules per LiDAR class, and design-code plugins may give rule files as clearance presets.
 
-## Vertical and radial clearances without the window (`ols zones`)
+## Vertical and radial clearances without the window (`ohl zones`)
 
-`ols zones` runs the check of the desktop
+`ohl zones` runs the check of the desktop
 [vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances)
 without the program: a rule file gives the rules, the zone, the wind and
 what is solved; the project gives the point cloud and the ground.
 
 ```bash
-ols zones project.ols --rules vertical-clearances.olsr
-ols zones examples/synthetic-line/synthetic-line.ols.json --rules rules.olsr \
+ohl zones project.ols --rules vertical-clearances.olsr
+ohl zones examples/synthetic-line/synthetic-line.ols.json --rules rules.olsr \
   --weather examples/synthetic-line/weather-cases.olswc \
   --terrain examples/synthetic-line/synthetic-survey.csv --csv zones.csv
 ```
@@ -206,7 +206,7 @@ are.
 | `--cloud SPEC` | Point cloud: `FILE.ols`, `FILE.ols#name` or `FILE.copc.laz`. Default: the project's own point cloud, if it holds one. `--no-cloud` reads none. |
 | `--terrain FILE`, `--surface NAME` | The ground: survey points, or a surface stored in the project. Default: the project's surface of the checks, else its active surface (as set by an earlier build), else the ground classes of the point cloud along the spans (lowest point per square metre, triangles of up to 50 m) — as the program builds it. |
 | `--lidar-classes FILE` | Class scheme (`.olsc`); default the point cloud's own, else ASPRS. |
-| `--library`, `--structures`, `--insulators` | As for `ols line`: for a project, the libraries it keeps with its current line; else (and for a kind the project holds none of) the shipped wire and insulator libraries, the `Structures` folder next to the file. |
+| `--library`, `--structures`, `--insulators` | As for `ohl line`: for a project, the libraries it keeps with its current line; else (and for a kind the project holds none of) the shipped wire and insulator libraries, the `Structures` folder next to the file. |
 | `--search-distance M`, `--circuits NAME`, `--method fe\|rs` | Override the rule file's `[check]` (`--circuits` repeatable; `""`: the sections without a circuit). |
 | `--csv FILE` | Every finding: `status` (`violation`, then `ok` for each rule's lowest clearance that keeps it), rule, section, span, case, wind pressure and side, target, class, clearance and required distance, count, the wire and target points. |
 | `--time-limit S` | Stop after this many seconds (default 600): solving every wind position and reading the points. |
@@ -278,7 +278,7 @@ cargo run --release -p ols-cli -- line LINE.ols.json --lidar TILES_DIR \
 | `--max-edge M` | Longest triangle side (default 50 m): no ground is invented across larger gaps. |
 | `--thin M` | Optional: keep the lowest ground point per M × M cell. |
 
-`ols lidar info PATH --classes [--scheme FILE]` lists the tiles and counts the points of every class, with the scheme's names and roles.
+`ohl lidar info PATH --classes [--scheme FILE]` lists the tiles and counts the points of every class, with the scheme's names and roles.
 
 ### Class schemes (`.olsc`)
 
@@ -302,7 +302,7 @@ name = "Asphalt road"
 roles = ["ground", "road"]
 ```
 
-The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.olsc`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/libraries/lidar-classes/asprs-las-1.4.olsc) (ground: 2, water 9, road surface 11). Used by OLS CAD: `ground` (the ground surface), `vegetation` (vegetation analysis), `conductor` and `shield_wire` (as-built wire fitting), and any role a clearance rule names; the application also colours points by role. Suggested: `vegetation`, `building`, `water`, `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`, `shield_wire`, `load_object`, `other_line_structure`, `other_line_conductor`, `object`, `noise`, `temporary`, `unclassified`.
+The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.olsc`](https://github.com/Gay-Lussac/OpenOHL/blob/main/libraries/lidar-classes/asprs-las-1.4.olsc) (ground: 2, water 9, road surface 11). Used by OpenOHL: `ground` (the ground surface), `vegetation` (vegetation analysis), `conductor` and `shield_wire` (as-built wire fitting), and any role a clearance rule names; the application also colours points by role. Suggested: `vegetation`, `building`, `water`, `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`, `shield_wire`, `load_object`, `other_line_structure`, `other_line_conductor`, `object`, `noise`, `temporary`, `unclassified`.
 
 On a real 25 km line (private data, checked locally), ground built this way from 99.6 million LiDAR points (11.3 million in the utility's ground classes, 22.6 million triangles, about one minute) gave span clearances matching those on the TIN of a commercial program to a median of 2 mm (94 % of 930 spans within 10 cm).
 
@@ -341,7 +341,7 @@ and not undone.
 - **ECW** files are converted to GeoTIFF first by an external converter you
   install yourself: GDAL's `gdal_translate` **with the ECW driver** (ECW is
   a proprietary format whose decoder needs a licensed SDK; it is not part
-  of OLS CAD, and GDAL's usual builds leave it out). Give it in the window
+  of OpenOHL, and GDAL's usual builds leave it out). Give it in the window
   (**Find** looks in the usual places: PATH, Homebrew, QGIS, OSGeo4W); it
   is remembered on this computer. Each `.ecw` is converted into a temporary
   GeoTIFF (its own georeferencing, else the `.eww` world file next to the
@@ -403,12 +403,12 @@ Reading, building and storing run in the background. With a project joined on a 
 From the command line:
 
 ```bash
-ols surface list project.ols
-ols surface import ground.xml --into project.ols --user ann [--name N] [--format F] [--option max_edge=50] [--plugin DIR] [--replace]
-ols surface export project.ols "ground" ground.xml
-ols surface rename project.ols "ground" "survey 2026" --user ann
-ols surface delete project.ols "ground" --user ann
-ols surface formats [--plugin DIR]
+ohl surface list project.ols
+ohl surface import ground.xml --into project.ols --user ann [--name N] [--format F] [--option max_edge=50] [--plugin DIR] [--replace]
+ohl surface export project.ols "ground" ground.xml
+ohl surface rename project.ols "ground" "survey 2026" --user ann
+ohl surface delete project.ols "ground" --user ann
+ohl surface formats [--plugin DIR]
 ```
 
 Ground profiles follow the TIN exactly: a profile point at every triangle
@@ -428,8 +428,8 @@ Several weather cases are checked together with [envelopes](#envelopes-over-weat
 
 ## Example data
 
-[`examples/synthetic-line/synthetic-survey.csv`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/synthetic-survey.csv)
+[`examples/synthetic-line/synthetic-survey.csv`](https://github.com/Gay-Lussac/OpenOHL/blob/main/examples/synthetic-line/synthetic-survey.csv)
 is invented ground for the synthetic example line, generated by
-[`make_synthetic_survey.py`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/examples/synthetic-line/make_synthetic_survey.py):
+[`make_synthetic_survey.py`](https://github.com/Gay-Lussac/OpenOHL/blob/main/examples/synthetic-line/make_synthetic_survey.py):
 smooth ground through the structure bases, an 8 m hill under span T2–T3 and a
 road embankment surveyed as two breaklines across span T4–T5.

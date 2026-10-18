@@ -31,7 +31,7 @@ tags = ["ULS"]
 | `strength` | no | 1 | Strength factor of the capacity checks; more than 0. |
 | `tags` | no | | Code, limit state… |
 
-Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OLS CAD ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.olslc` only shows the format.
+Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OpenOHL ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.olslc` only shows the format.
 
 In a project, the load case files are kept in the project like the other libraries (Criteria › Load cases library edits them).
 
@@ -52,7 +52,7 @@ A section that does not solve in a load case is listed, with why. Its loads are 
 **From the command line:**
 
 ```bash
-ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-csv loads.csv
+ohl line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-csv loads.csv
 ```
 
 The CSV columns: `case,structure,point,label,sets,x,y,z,transverse,longitudinal,vertical,factored_transverse,factored_longitudinal,factored_vertical` (`point`: the point's label, empty for the wind on the structure; `sets`: the wire ends hanging there, separated by spaces).
@@ -63,7 +63,7 @@ Not yet included: jumper loads.
 
 ## Structure usage (capacity checks)
 
-With the loads, OLS CAD checks how much of its capacity every structure uses, from its type's `[capacity]` (see [Structure libraries](structure-library.md#capacity)). Two methods, each used when the type gives its data:
+With the loads, OpenOHL checks how much of its capacity every structure uses, from its type's `[capacity]` (see [Structure libraries](structure-library.md#capacity)). Two methods, each used when the type gives its data:
 
 - **Method 1, allowable spans.** The structure's **wind span** (half the sum of its adjacent spans, the largest over its conductor positions) and **weight span** (the wires' vertical load at the points they hang on, without the strings, over their vertical load per metre in the load case — for a catenary, the distance between the low points of the adjacent spans, negative under uplift; the largest and the smallest over its conductor positions) against the type's allowable spans at the structure's **line angle** (the largest over the routes through it). The allowable spans are interpolated between the angles given; a structure turning more than the last angle fails ("not allowed"). Usage: the larger of wind span / allowable and weight span / allowable; a weight span below the minimum (uplift) is 100 % plus the shortfall over the allowable weight span. The strength factor does not apply: allowable spans are the type's design spans. A **conductor position** takes both sides of the structure whichever way they hang: one wire point carrying the back and ahead spans (a suspension point; a line end has only one side), or a dead-end's back and ahead strain strings — two wire points of the structure joined by a jumper whose two ends both end a section there, or hanging on the same strings (a TAK). A jumper from a branch's end to a point in another section's middle (a tee-off) joins nothing: the branch is a position of its own. Without the jumper, a dead-end's two strings are checked as two line ends.
 - **Method 2, allowable loads (load trees).** At every point the type's load tree gives, the **factored** loads in the structure's axes against the allowable loads times the load case's **strength factor**: transverse and longitudinal either way, vertical downwards, uplift upwards (an upward load with no uplift given fails). Usage: the largest ratio of the point, or their sum with `interaction = "linear"`; the structure's is its worst point's.
@@ -84,7 +84,7 @@ A structure's usage is the largest of its checks. A structure without a type, or
 **From the command line:** the loads run prints the ten structures using most of their capacity (an incomplete one marked "(incomplete)") and lists the incomplete structures per case; `--usage-csv usage.csv` writes every load case and structure:
 
 ```bash
-ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --usage-csv usage.csv
+ohl line line.ols.json --weather cases.olswc --load-cases loads.olslc --usage-csv usage.csv
 ```
 
 The CSV columns: `case,structure,type,line_angle_deg,wind_span,weight_span_min,weight_span_max,spans_usage,loads_usage,fe_usage,pole_usage,usage,governs,notes,incomplete` (usages in %). `incomplete` is empty when the structure's loads in that case are complete, else it names what is missing: `incomplete: section S12 not solved (why); jumper J3 not solved (why)` — the usages of that row are then those of the loads there are.

@@ -2,8 +2,8 @@
 
 A design code may require a distance between two conductors of a span
 that depends on where along the span one looks — on the local sag, the
-suspension strings, the angle of the line between the conductors. OLS
-CAD **measures** (the conductors, their pairs, stations along them: the
+suspension strings, the angle of the line between the conductors.
+OpenOHL **measures** (the conductors, their pairs, stations along them: the
 geometry); a **check plugin** holds the code's values and its rules and
 says what is required at each station, through the `check` interface
 ([Writing plugins](plugins.md#check-plugins)). A plugin for the Swiss
@@ -91,4 +91,4 @@ On an existing line (930 conductors, 5593 pairs between the same
 structures; 10 468 with nearby pairs within 20 m): about 0.8 s on all
 cores, the closest point searched in boxes of 8 pieces, nearest first;
 the plugin's evaluation costs about as much as the same computation
-built into OLS CAD, plus about 0.3 s to load the plugin once.
+built into OpenOHL, plus about 0.3 s to load the plugin once.

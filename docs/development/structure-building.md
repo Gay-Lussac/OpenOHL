@@ -77,7 +77,7 @@ renamed later; they are not renamed now.
 14. **Symmetry** is an option for joints and members, to ease building.
     The application must be easy to use.
 15. **Structure–line interaction** has four levels, as in PLS-CADD: 1
-    ruling span; 2 FE of the wires on rigid structures (what OLS CAD
+    ruling span; 2 FE of the wires on rigid structures (what OpenOHL
     has); 3 FE of the wires with a linear stiffness matrix at each
     structure's suspension points, derived from the structure (level 3
     structures only); 4 the full solve, structures and line iterated
@@ -141,10 +141,10 @@ Where today's code differs from the decisions:
 | | Level 1 | Level 2 | Level 3 |
 |---|---|---|---|
 | **Data** | points, strings, wire points, extensions, foot (`structures.rs`) | `TypeNode`, `TypeMember` (no section), `Outline` | a member's section from the project's section library (`.olssec`) or the structure's raw `[[section]]` `toml::Table`s, the library first, parsed by `ols_structures_fe::Model::from_structure_type_with` (`crates/ols-structures-fe/src/model.rs`); or a separate `.olsfe` |
-| **Built by** | pylon builder from `.olspt` templates (`pylon_builder.rs`, `templates.rs`: level 1 only, suspension or strain); workspace I and V presets (`type_workspace.rs`); the placed editor's **Make it a type** (`placed_editor.rs`); `ols structures derive` (version 1 attachments); the PLS importer (local) | workspace: **Add joint**, **Member** between two picked joints, **Point here** on a joint, drag with a grid snap or onto a joint | workspace tables: a section per member, a support per joint; sections and materials typed in the **Fields** tab of the library page (`library.rs`) |
+| **Built by** | pylon builder from `.olspt` templates (`pylon_builder.rs`, `templates.rs`: level 1 only, suspension or strain); workspace I and V presets (`type_workspace.rs`); the placed editor's **Make it a type** (`placed_editor.rs`); `ohl structures derive` (version 1 attachments); the PLS importer (local) | workspace: **Add joint**, **Member** between two picked joints, **Point here** on a joint, drag with a grid snap or onto a joint | workspace tables: a section per member, a support per joint; sections and materials typed in the **Fields** tab of the library page (`library.rs`) |
 | **Shown** | the line's 3D view, plan and profile sheets (`place_stick`, `ols-line/src/library.rs`); the workspace's own 3D view | the same, with the members; the workspace shows "Level N — name" and what level 3 still lacks (`missing_for_design`) | the same; no 3D view of the FE model, no deformed shape, no usage colours |
-| **Checks** | structure loads at the points, Methods 1 and 2, wind bands, the pole check | as level 1 | `fe` check in **Structure loads › Usage** and `ols line --usage-csv` (`ols-loads/src/analysis.rs`), with the member wind on profiles from the section library |
-| **On its own** | `ols-cad pylon.olss` opens the structure alone (`structure_desk.rs`): edit, no computation | the same | `ols structures fe structure.olss` with the model's own `[[load]]`s or `--loads loads.csv --structure T2` (`ols-cli/src/structure_fe.rs`); `ols structures pole`; benchmark `structures.fe` (`benchmarks/structures-fe/frames.toml`) |
+| **Checks** | structure loads at the points, Methods 1 and 2, wind bands, the pole check | as level 1 | `fe` check in **Structure loads › Usage** and `ohl line --usage-csv` (`ols-loads/src/analysis.rs`), with the member wind on profiles from the section library |
+| **On its own** | `ohl-design pylon.olss` opens the structure alone (`structure_desk.rs`): edit, no computation | the same | `ohl structures fe structure.olss` with the model's own `[[load]]`s or `--loads loads.csv --structure T2` (`ols-cli/src/structure_fe.rs`); `ohl structures pole`; benchmark `structures.fe` (`benchmarks/structures-fe/frames.toml`) |
 
 ### `[[extension]]` today
 
@@ -247,7 +247,7 @@ report — and, in a line, checked with the line's loads by the same code.
 ## 1. The structure application
 
 A separate program (decision 4): its own binary and window, built on the
-same workspace crates as `ols-cad` (`ols-structures`,
+same workspace crates as `ohl-design` (`ols-structures`,
 `ols-structures-fe`, `ols-loads`, `ols-render`, the session commands).
 It grows from today's structure workspace and structure desk.
 
@@ -424,7 +424,7 @@ Run per structure, per case, with the engine used in the line run:
 | Loads at points along members | level 3 | being fixed (shared to the member's joints) |
 | Surface loads on members (wind, snow) | level 3 (profile areas) | no |
 | Body wind | level 3 (profile areas, decision 10) | yes, in the FE check: member wind on profiles from the section library (`Model::member_wind`); wind bands kept out of the model |
-| Extensions in the model | level 3 extension bodies (decision 17) | yes: `Model::from_structure_type_extended`, per placed structure in the line run (`ols-loads`), `ols structures fe --extension` |
+| Extensions in the model | level 3 extension bodies (decision 17) | yes: `Model::from_structure_type_extended`, per placed structure in the line run (`ols-loads`), `ohl structures fe --extension` |
 | Capacity derived from the design | level 3 | no: the load tree or allowable spans found by scaling a case until the worst member reaches 100 % |
 
 Every run keeps the exit clauses and budgets of
@@ -440,7 +440,7 @@ with its reason.
 - **Report** (HTML / PDF, CSV tables): the file and its hash, level,
   engine version, section library, load cases with their source, the
   governing member per group and per case, reactions, notes.
-- CLI: `ols structures check structure.olss [--loads table.csv]
+- CLI: `ohl structures check structure.olss [--loads table.csv]
   [--report out.html]`; today's `fe` and `pole` remain.
 
 ## 3. Verification
@@ -510,7 +510,7 @@ placed structure in the line: a load file per place, `<stem>.<placed structure>.
 A new library kind, `.olssec` (`ols-sections`, crate `ols-sections`,
 [Section library](../user-guide/section-library.md); built and referred
 to by the FE model, a project library kind `sections`): standard profiles (angles,
-tubes, poles…), user data; OLS CAD ships only synthetic examples. A
+tubes, poles…), user data; OpenOHL ships only synthetic examples. A
 member's `section = "<id>"` resolves in the section library first,
 then in the structure's own `[[section]]` tables (member groups: the
 same, when they come). A structure **refers** to it by
@@ -536,7 +536,7 @@ Each phase is a deliverable of its own, checked and committed.
 2. **Separate structure application**: its own binary on the workspace
    crates; started from **Edit** in the line application or by opening
    a `.olss`; the tabs of §1 with today's editing; `missing(level)` in
-   the header. *Built*: `ols-structure` (`apps/structure/ols-structure-app`)
+   the header. *Built*: `ohl-structure` (`apps/structure/ols-structure-app`)
    and `ols-structure-edit` ([crates](structure-app.md), [user
    guide](../user-guide/structure-app.md)); `missing(level)` lives in
    `ols-structure-edit`, not in `StructureType`; the mechanism found by a
@@ -547,7 +547,7 @@ Each phase is a deliverable of its own, checked and committed.
    points and sets — tables left of the pylon's 3D view; the body and
    design are edited only in the structure application (**Edit in the
    structure application…**). Starting it shows why it fails (not found,
-   another build via `ols-structure --version`, its error output when it
+   another build via `ohl-structure --version`, its error output when it
    stops at once).
 3. **Levels including poles**: pole outline at level 2 and pole design at
    level 3; `detail()` looks at poles; body generators, symmetry, member
@@ -569,7 +569,7 @@ Each phase is a deliverable of its own, checked and committed.
    `.olsp`), `detail()` looking at it, the pole check reading it through
    the same conversion as a `.olsp` (`ols_structures_fe::pole::
    structure_pole`, `Pole::from_inline`: the example pole gives the same
-   numbers), `ols structures pole --type` with the type's own pole;
+   numbers), `ohl structures pole --type` with the type's own pole;
    extension pieces and leg extensions (`ols_structures::extensions`,
    the rule in the user guide) in the FE model of each placed structure;
    `missing(level)` for poles and extensions; the edits (`pole`,
@@ -585,7 +585,7 @@ Each phase is a deliverable of its own, checked and committed.
 4. **Load-case recipes**: `[[load_case]]` (format version 3), evaluation
    in the core from the line values at each placed structure, the load
    table (editable, CSV / XLSX import and export), surface loads; the
-   FE results panel and `ols structures check`; the report.
+   FE results panel and `ohl structures check`; the report.
 5. **Section library**: the library kind in the project file, sections
    referred to by id, typed sections and materials; surface areas from
    the profiles; body wind (decision 10). *Done:* the format and

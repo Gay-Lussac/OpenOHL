@@ -1,6 +1,6 @@
 # Structure analysis (`.olsfe`, `.olsp`)
 
-Besides the allowable spans and load trees of a structure type ([Structure libraries](structure-library.md#capacity)), OLS CAD can check a structure by **analysis**:
+Besides the allowable spans and load trees of a structure type ([Structure libraries](structure-library.md#capacity)), OpenOHL can check a structure by **analysis**:
 
 - a **structure model**: a 3D finite-element model of a lattice tower, frame or guyed mast — member forces and how much of its capacity each member uses. It is the members of a type that is a full design ([detail level 3](structure-library.md#detail-levels): every member with a section, a supported joint), in the type's own `.olss`; or a separate `.olsfe` file the type names;
 - a **pole** (`.olsp`, or the structure's own `[pole]` table): wood, steel or concrete pole — bending moment along the pole against its moment capacity.
@@ -16,7 +16,7 @@ pole = "wood-14m"               # id of a .olsp file in the same folder (or its 
 
 In a project, the `.olsfe` and `.olsp` files of the structure folder are copied into the project file when it opens, and read from there after (see [Library editors](desktop-app.md#library-editors)); a model in a subfolder is not, so keep them next to the `.olss`.
 
-All values in these files are **your data** (drawings, supplier tables, the pole manufacturer or the design code). OLS CAD ships only invented examples: `examples/synthetic-line/Structures/type-02.olss` (a small lattice tower, its members in the type) and `steel-pole-30m.olsp`.
+All values in these files are **your data** (drawings, supplier tables, the pole manufacturer or the design code). OpenOHL ships only invented examples: `examples/synthetic-line/Structures/type-02.olss` (a small lattice tower, its members in the type) and `steel-pole-30m.olsp`.
 
 ## Structure models (.olsfe)
 
@@ -94,7 +94,7 @@ allowables, so the capacity comes from the yield). A library section's
 material missing, or an id in neither place, is refused, naming it. A
 member whose section comes from the library has a **profile**: it takes
 the member wind (below). Without a section library (a line file with no
-`Sections/` folder, `ols structures fe` without `--sections`) the tables
+`Sections/` folder, `ohl structures fe` without `--sections`) the tables
 alone are read, as before.
 
 **Members**: trusses take axial force only; frames are 3D beams (six degrees of freedom at their nodes); cables take tension only and may be pretensioned — a cable that would be compressed goes slack (guys); `tension` members are trusses in tension only, without pretension (below). Truss-only nodes have no rotations. A model file with a `tension` member is version 2 (an older program says it is newer).
@@ -113,9 +113,9 @@ A joint held only by members gone slack — the crossing of an X bracing whose c
 
 The solve stops — the structure counts as not allowed, with the reason — when the set comes back to one solved before (a cycle: the members going taut and slack in turn are named) or after 100 solves. Results: a slack member has force 0 and uses 0 % (`slack`); the notes say `model: tension-only members: 12 of 140 slack (3 solve(s)): D12, D14, …`. A model without tension-only members is solved exactly as before.
 
-**Joint stabilisation** (`stabilise = true`, the default). Towers drawn as trusses — as PLS-TOWER and most tower programs draw them — have joints that no member stiffens in some direction: a joint whose members all lie in one plane (the joints of a K or diamond bracing in a tower face, a bracing crossing joined at its crossing) is free across that plane; a joint of members on one line is free across the line; a chain of frames on one line, with no other frame and no rotational support at its joints, is free to spin about it. Solved as they are, such models are mechanisms. With stabilisation, when the solve finds a mechanism (or buckling), these directions are found from the geometry and held — exactly when the direction is along x, y or z (that degree of freedom removed, as a support would), else by a spring along it as stiff as the joint's stiffest member — and the model is solved again. A model that solves without it is solved exactly as before, bit for bit: the stabilisation only starts when the first solve fails. The usage notes (and the FE results of the structure application, and `ols structures fe`) then say what was held: `model: stabilised 9 joint direction(s) without stiffness at 9 joint(s): L1 y, R1 y, …; largest force held 0.130 kN at M2 (0.45 % of the reactions)`. A held direction carries only what is loaded along it — the out-of-plane part of the self-weight at a joint of a battered face, say, which the structure then does not carry. When one carries more than 1 % of the loads *and* more than a quarter of its own joint's load (a load across a plane no member holds), the model is refused naming the joints (`mechanism: joint(s) M2 loaded in a direction no member holds …`). What is not one joint's own freedom stays a **mechanism**: a part that can move as a whole (a missing support, a frame of four bars without a diagonal) is reported with the joints that move (`mechanism: node C is free to move in x, with 2 joints: C, D …`). With `stabilise = false` such models fail as mechanisms, as before.
+**Joint stabilisation** (`stabilise = true`, the default). Towers drawn as trusses — as PLS-TOWER and most tower programs draw them — have joints that no member stiffens in some direction: a joint whose members all lie in one plane (the joints of a K or diamond bracing in a tower face, a bracing crossing joined at its crossing) is free across that plane; a joint of members on one line is free across the line; a chain of frames on one line, with no other frame and no rotational support at its joints, is free to spin about it. Solved as they are, such models are mechanisms. With stabilisation, when the solve finds a mechanism (or buckling), these directions are found from the geometry and held — exactly when the direction is along x, y or z (that degree of freedom removed, as a support would), else by a spring along it as stiff as the joint's stiffest member — and the model is solved again. A model that solves without it is solved exactly as before, bit for bit: the stabilisation only starts when the first solve fails. The usage notes (and the FE results of the structure application, and `ohl structures fe`) then say what was held: `model: stabilised 9 joint direction(s) without stiffness at 9 joint(s): L1 y, R1 y, …; largest force held 0.130 kN at M2 (0.45 % of the reactions)`. A held direction carries only what is loaded along it — the out-of-plane part of the self-weight at a joint of a battered face, say, which the structure then does not carry. When one carries more than 1 % of the loads *and* more than a quarter of its own joint's load (a load across a plane no member holds), the model is refused naming the joints (`mechanism: joint(s) M2 loaded in a direction no member holds …`). What is not one joint's own freedom stays a **mechanism**: a part that can move as a whole (a missing support, a frame of four bars without a diagonal) is reported with the joints that move (`mechanism: node C is free to move in x, with 2 joints: C, D …`). With `stabilise = false` such models fail as mechanisms, as before.
 
-**Dead-load factor** (`dead_load_factor`, default 1): the members' self-weight is multiplied by it — the allowance for what the members do not model, bolts, gusset plates, galvanising (tower programs typically use 1.1–1.4 for a lattice tower, up to about 2.4 on light bracing). A member's own `dead_load_factor` replaces the structure's for it (set per member, or for a whole group in **Design › Groups**). It scales the self-weight loads exactly (the load case's vertical factor still applies on top) and the weight the structure application adds up for its load sum; `ols structures fe` shows the members' weight with and without the factors. 1, or none, changes nothing.
+**Dead-load factor** (`dead_load_factor`, default 1): the members' self-weight is multiplied by it — the allowance for what the members do not model, bolts, gusset plates, galvanising (tower programs typically use 1.1–1.4 for a lattice tower, up to about 2.4 on light bracing). A member's own `dead_load_factor` replaces the structure's for it (set per member, or for a whole group in **Design › Groups**). It scales the self-weight loads exactly (the load case's vertical factor still applies on top) and the weight the structure application adds up for its load sum; `ohl structures fe` shows the members' weight with and without the factors. 1, or none, changes nothing.
 
 **Usage** per member, against the section's capacity times the load case's strength factor: tension against the allowable tension (else area × yield); compression against the allowable compression (else area × yield), but not above the Euler load π²EI/(kL)² — kL the member's `lk` when it gives one, else its `k` × its length; frames add N, My and Mz ratios. Without a design-code column curve, the Euler check is optimistic for stocky members — write the code's allowable compression in the section for a design check, or the member's own capacities: a member's `capacity_tension` and `capacity_compression` (forces, e.g. from a tower program's design check of that member and its connection) replace the computed ones in its usage — the compression one the buckling check too — and what governs says so (`tension 112.0 kN of 180.0 kN (given)`). Without them the usage is computed as before.
 
@@ -183,29 +183,29 @@ A structure may describe its pole itself ([Poles](structure-library.md#poles)): 
 - a `section` of the section library gives the wall (unless `wall` is typed: a thickness, or solid), and its material the elasticity and density not given in the table;
 - the pole check runs at level 3 only: a `[pole]` with an outline but no material, strength or wall (level 2) is not checked (the type then needs a capacity, as before).
 
-`ols structures pole --type structure.olss` without a `.olsp` checks the type's own pole (its `[pole]` table, or the `.olsp` it names), with `--sections` for a section it names.
+`ohl structures pole --type structure.olss` without a `.olsp` checks the type's own pole (its `[pole]` table, or the `.olsp` it names), with `--sections` for a section it names.
 
 ## Extensions in the model
 
 A placed structure standing on an extension that has a **piece** (its own joints and members below the feet) or **leg extensions** is checked on the model **with that extension** ([Extension bodies](structure-library.md#extension-bodies-and-leg-extensions)): the piece's joints and members added (all their fields: section, kind, support…), the supports of the body's joints the piece reaches dropped, a leg's support joint lowered along its leg member. The loads come in at the same points (the body above is not moved in the model: the extension's `dz` raises the whole, which changes nothing in the statics). Each extension's model is built once per usage run; structures of the same type on another extension, or on none, use theirs. An extension without a piece or legs uses the model as written (as before). A separate `.olsfe` model has no extensions.
 
-`ols structures fe structure.olss --extension "+3"` solves the model standing on extension `+3`.
+`ohl structures fe structure.olss --extension "+3"` solves the model standing on extension `+3`.
 
 ## In the application and the line run
 
-The **Structure loads › Usage** page and `ols line … --usage-csv` show the two checks as **fe** and **pole** next to the spans and loads methods; the structure's usage is the largest. What governs names the member (`member m174 compression 7.9 kN of 23.5 kN (buckling)`) or the pole section (`moment 267.3 kN m of 900.0 kN m × 1 at 0.0 m (P-Delta × 1.022)`). A model that does not solve (mechanism, buckling, exit clause) counts as not allowed, with the reason.
+The **Structure loads › Usage** page and `ohl line … --usage-csv` show the two checks as **fe** and **pole** next to the spans and loads methods; the structure's usage is the largest. What governs names the member (`member m174 compression 7.9 kN of 23.5 kN (buckling)`) or the pole section (`moment 267.3 kN m of 900.0 kN m × 1 at 0.0 m (P-Delta × 1.022)`). A model that does not solve (mechanism, buckling, exit clause) counts as not allowed, with the reason.
 
 ## From the command line
 
-One model with the loads of one structure, from the CSV of `ols line --loads-csv`:
+One model with the loads of one structure, from the CSV of `ohl line --loads-csv`:
 
 ```bash
-ols line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-csv loads.csv
-ols structures fe Structures/type-02.olss --loads loads.csv --structure T2 [--case wind] [--csv members.csv]
-ols structures fe Structures/type-02.olss           # the model's own [[load]]s (an .olsfe works too)
-ols structures fe Structures/type-02.olss --sections Sections --wind 840 --wind-dir 180
-ols structures pole Structures/steel-pole-30m.olsp --type Structures/type-05.olss \
+ohl line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-csv loads.csv
+ohl structures fe Structures/type-02.olss --loads loads.csv --structure T2 [--case wind] [--csv members.csv]
+ohl structures fe Structures/type-02.olss           # the model's own [[load]]s (an .olsfe works too)
+ohl structures fe Structures/type-02.olss --sections Sections --wind 840 --wind-dir 180
+ohl structures pole Structures/steel-pole-30m.olsp --type Structures/type-05.olss \
     --loads loads.csv --structure T6 --wind-pressure 840
 ```
 
-`ols structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--top N` (members printed per case), `--sections` (a `.olssec` file or folder: the section library, looked up first), `--wind` (member wind: factored pressure, Pa, added to every case; needs members with profiles) and `--wind-dir` (where it blows to, degrees from x — right of the line — towards y, ahead; default 0); `ols line` takes `--sections` too (default: the `Sections` folder next to the line or project file); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.
+`ohl structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--top N` (members printed per case), `--sections` (a `.olssec` file or folder: the section library, looked up first), `--wind` (member wind: factored pressure, Pa, added to every case; needs members with profiles) and `--wind-dir` (where it blows to, degrees from x — right of the line — towards y, ahead; default 0); `ohl line` takes `--sections` too (default: the `Sections` folder next to the line or project file); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.

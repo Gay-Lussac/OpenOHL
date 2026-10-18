@@ -3,12 +3,12 @@
 Analyses of a solved line beyond the clearance rules: galloping ellipses,
 blown-out wires against the right of way, LiDAR classification, vegetation
 near the wires and catenaries fitted to the surveyed wires. Each is a
-command of `ols` and (but for classification and the right of way) a window
+command of `ohl` and (but for classification and the right of way) a window
 of the desktop app's **Checks** menu. The methods are in the theory manual:
 [Galloping ellipses and blowout](../theory/galloping.md),
 [LiDAR analyses](../theory/lidar-analysis.md).
 
-The commands share the options of `ols line` for the model: the line or
+The commands share the options of `ohl line` for the model: the line or
 project file, `--library`, `--structures`, `--insulators`; and for weather
 cases `--weather FILE.olswc` with `--case NAME` / `--tag TAG` (repeatable;
 all cases without them).
@@ -29,7 +29,7 @@ properties say why it did not solve and where the drawn shape comes from.
 ## Galloping ellipses (`.olsg`)
 
 ```bash
-ols clearance galloping synthetic-line.ols.json \
+ohl clearance galloping synthetic-line.ols.json \
     --weather weather-cases.olswc --params galloping-example.olsg --csv galloping.csv
 ```
 
@@ -78,7 +78,7 @@ then **Check**.
 ## Blowout and the right of way
 
 ```bash
-ols clearance row synthetic-line.ols.json --weather weather-cases.olswc \
+ohl clearance row synthetic-line.ols.json --weather weather-cases.olswc \
     --case "high wind" --half-width 10 --csv row.csv
 ```
 
@@ -87,7 +87,7 @@ centreline (alignment, or the line through the structures) in each case,
 bundles included, and how far it goes beyond the right of way (`--left`,
 `--right` for different widths each side). Clearances of the blown-out wires
 to buildings, trees and other wires are the radial clearances of a rule file
-run in the windy case (`ols line --rules`, the Clearances tab).
+run in the windy case (`ohl line --rules`, the Clearances tab).
 
 ## Phase to phase and circuit to circuit
 
@@ -110,7 +110,7 @@ case_pairs = [["glaze ice", "everyday"]]
 Some codes require a distance between two conductors of a span that
 depends on where along it one looks — on the local sag, the suspension
 strings, the angle between the conductors, the voltages (e.g. the Swiss
-ordinance's still-air distance, LeV Annex 6, 2.2). OLS CAD **measures**
+ordinance's still-air distance, LeV Annex 6, 2.2). OpenOHL **measures**
 the conductors; the values and the rules are a **check plugin**'s (it
 must be in use: Plugins › Plugin manager). A plugin for the Swiss LeV
 exists separately; it is not part of the public code. What is measured
@@ -176,8 +176,8 @@ project and a designer's rights.
 ## LiDAR classification
 
 ```bash
-ols lidar classify tiles/ --out project.ols#classified --line line.ols.json --corridor 100
-ols lidar classify scan.laz --out scan-classified.laz
+ohl lidar classify tiles/ --out project.ols#classified --line line.ols.json --corridor 100
+ohl lidar classify scan.laz --out scan-classified.laz
 ```
 
 Classifies unclassified points (classes 0 and 1; `--reclassify` for others)
@@ -194,7 +194,7 @@ poles and wires get vegetation classes: check the result.
 ## Vegetation
 
 ```bash
-ols lidar vegetation line.ols.json --pointcloud project.ols#scan \
+ohl lidar vegetation line.ols.json --pointcloud project.ols#scan \
     --weather cases.olswc --case "max temperature" --case "high wind" \
     --clearance 5 --growth 0.5 --years 3 --fall-in --csv vegetation.csv
 ```
@@ -216,7 +216,7 @@ checks.
 ## As-built wires
 
 ```bash
-ols lidar fit-wires line.ols.json --pointcloud project.ols#scan --csv as-built.csv
+ohl lidar fit-wires line.ols.json --pointcloud project.ols#scan --csv as-built.csv
 ```
 
 For each span: a catenary fitted to the points of the wire classes

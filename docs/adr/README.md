@@ -1,5 +1,7 @@
 # Architecture decision records
 
+> The project was renamed from "OLS CAD" to **OpenOHL** (the line application **OHL-Design**, `ohl-design`; the structure application **OHL-Structure**, `ohl-structure`; the command line `ohl`). The records below keep the names of the time they were written.
+
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-license.md) | License (MPL-2.0) | Accepted |

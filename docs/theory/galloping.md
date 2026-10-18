@@ -20,7 +20,7 @@ work; CIGRE Technical Brochure 322 (*State of the art of conductor
 galloping*, 2007) collects amplitude formulas from field data, among them
 expressions in the conductor diameter, the number of loops and the sag.
 They differ in coefficients, in how the ellipse sits on the wire and in how
-it is tilted. **OLS CAD ships none of their coefficients**: every number
+it is tilted. **OpenOHL ships none of their coefficients**: every number
 comes from a parameter file written by the user from the method they design
 to (`*.olsg`, [user guide](../user-guide/analyses.md)); the shipped example's
 numbers are invented.

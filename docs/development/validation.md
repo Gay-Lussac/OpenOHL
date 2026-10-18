@@ -8,7 +8,7 @@ Cases are TOML files under `benchmarks/<module>/`, one or more `[[case]]` per fi
 [[case]]
 id = "units-003"                      # unique across the repository
 title = "Pound-force to newton"
-calculation = "units.convert"         # see `ols validate --list`
+calculation = "units.convert"         # see `ohl validate --list`
 reference = "NIST SP 811 (2008), Appendix B.8 — pound-force"
 notes = "Optional assumptions"
 max_seconds = 1.0                     # optional time limit (default 10 s)
@@ -16,6 +16,6 @@ inputs = { quantity = "force", value = "1 lbf", to = "N" }
 expected.value = { value = 4.448222, rel_tol = 1e-6 }   # abs_tol and/or rel_tol
 ```
 
-Run them with `ols validate`. The CI workflow (started by hand) runs every case and publishes the report. A case fails when an output is outside its tolerance, missing, when the calculation errors, or when it exceeds its time limit.
+Run them with `ohl validate`. The CI workflow (started by hand) runs every case and publishes the report. A case fails when an output is outside its tolerance, missing, when the calculation errors, or when it exceeds its time limit.
 
 Engines expose calculations to the runner by implementing `ols_validation::Calculation`.

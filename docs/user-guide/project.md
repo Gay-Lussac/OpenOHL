@@ -6,16 +6,16 @@ A project file is one SQLite database (ADR-0004) holding the line model, its
 export the project back.
 
 ```bash
-ols project import line.ols.json --into project.ols --user ana   # ana becomes admin
-ols project user project.ols --by ana ben designer
-ols project apply project.ols --user ben '{"op": "move_structure", "id": "T4", "position": [940.0, 52.1, 510.0]}'
-ols project undo project.ols --user ben
-ols project log project.ols
-ols project export project.ols --out line.ols.json
-ols line project.ols --temperature 80          # every command taking a line file takes a project too
+ohl project import line.ols.json --into project.ols --user ana   # ana becomes admin
+ohl project user project.ols --by ana ben designer
+ohl project apply project.ols --user ben '{"op": "move_structure", "id": "T4", "position": [940.0, 52.1, 510.0]}'
+ohl project undo project.ols --user ben
+ohl project log project.ols
+ohl project export project.ols --out line.ols.json
+ohl line project.ols --temperature 80          # every command taking a line file takes a project too
 ```
 
-**`ols line` and `ols zones` read the project's libraries.** Given a
+**`ohl line` and `ohl zones` read the project's libraries.** Given a
 project file, they take the libraries the project keeps with its current
 line, as the desktop application does: the wire library, structure types
 (with their poles and structure models), insulator assemblies and section
@@ -25,7 +25,7 @@ end. A library given on the command line (`--library`, `--structures`,
 looked up as for a line file (the shipped wire and insulator libraries,
 the `Structures` and `Sections` folders next to the file). `--weather`,
 `--load-cases` and `--rules` also take the name of one of the project's
-own files (`--weather cases.olswc`), and `ols zones` falls back on the
+own files (`--weather cases.olswc`), and `ohl zones` falls back on the
 project's first weather case file. The summary says where each library
 came from (`cables: the project's (2 files)`). The commands write nothing
 to the project; opening a project file of an older build upgrades it (as
@@ -58,7 +58,7 @@ none.
 One rule for every deletion: an object that takes others with it is not deleted until confirmed. Without `confirm` nothing changes and the answer lists everything that would go or change:
 
 ```text
-$ ols project delete project.ols --user ana structure T7
+$ ohl project delete project.ols --user ana structure T7
 Deleting structure T7 would also affect:
   attachments and insulators:
     - 1:1 dead-end
@@ -84,9 +84,9 @@ With `--confirm` (`"confirm": true`) everything listed is applied as **one log e
 The alignment of a route is the base of its plan and profile drawings, kept apart from the line design. Usually its points sit under the pylons, **tied** to them: they follow when a pylon moves. Any point can be moved (which detaches it), detached, re-tied, inserted or removed:
 
 ```bash
-ols project apply project.ols --user ana '{"op": "align_under_structures", "route": "main"}'
-ols project apply project.ols --user ana '{"op": "move_alignment_point", "route": "main", "index": 3, "position": [2600410.0, 1200125.0, 0.0]}'
-ols project apply project.ols --user ana '{"op": "tie_alignment_point", "route": "main", "index": 3, "structure": "T4"}'
+ohl project apply project.ols --user ana '{"op": "align_under_structures", "route": "main"}'
+ohl project apply project.ols --user ana '{"op": "move_alignment_point", "route": "main", "index": 3, "position": [2600410.0, 1200125.0, 0.0]}'
+ohl project apply project.ols --user ana '{"op": "tie_alignment_point", "route": "main", "index": 3, "structure": "T4"}'
 ```
 
 Each applied command is logged with the user, the time, its inverse, the
@@ -103,7 +103,7 @@ The result is identical to a full solve (checked by tests after every kind
 of edit). From the command line:
 
 ```bash
-ols project apply project.ols --user ana --solve --temperature 40 \
+ohl project apply project.ols --user ana --solve --temperature 40 \
   '{"op": "move_structure", "id": "T40", "position": [2598496.0, 1120627.6, 649.5]}'
 ```
 
@@ -135,18 +135,18 @@ line's end or another structure worth having — but the import warns about
 it, in case it belongs to another project.
 
 ```bash
-ols pointcloud import TILES_DIR --into project.ols --name lidar-2025 \
+ohl pointcloud import TILES_DIR --into project.ols --name lidar-2025 \
   --classes classes.olsc --crs EPSG:2056
-ols pointcloud info project.ols
-ols pointcloud export project.ols --out survey.laz          # every point
-ols pointcloud export project.ols --out wires.las --classes 14,15 \
+ohl pointcloud info project.ols
+ohl pointcloud export project.ols --out survey.laz          # every point
+ohl pointcloud export project.ols --out wires.las --classes 14,15 \
   --area 2600000,1200000,2601000,1201000                     # classes, a rectangle
-ols pointcloud export project.ols --out survey.copc.laz     # COPC
-ols pointcloud info survey.copc.laz                         # its octree
-ols pointcloud import survey.copc.laz --into other.ols      # COPC in
-ols pointcloud octree old-project.ols                       # levels of detail
-ols line project.ols --pointcloud project.ols --rules rules.olsr
-ols line project.ols --pointcloud survey.copc.laz --rules rules.olsr
+ohl pointcloud export project.ols --out survey.copc.laz     # COPC
+ohl pointcloud info survey.copc.laz                         # its octree
+ohl pointcloud import survey.copc.laz --into other.ols      # COPC in
+ohl pointcloud octree old-project.ols                       # levels of detail
+ohl line project.ols --pointcloud project.ols --rules rules.olsr
+ohl line project.ols --pointcloud survey.copc.laz --rules rules.olsr
 ```
 
 The desktop app does the same from **File › Import › LiDAR points
@@ -193,30 +193,30 @@ from them (the ground surface still from every ground point in the corridor).
 
 Imports build the levels. Projects from before (point-cloud schema 1) are
 read as they are — the levels are then picked from the whole blocks while
-reading, the same points, only slower — and `ols pointcloud octree FILE`
-builds them once (the schema becomes 2; older versions of OLS CAD then refuse
-the file's point clouds). `ols pointcloud info` says whether they are there.
+reading, the same points, only slower — and `ohl pointcloud octree FILE`
+builds them once (the schema becomes 2; older versions of OpenOHL then refuse
+the file's point clouds). `ohl pointcloud info` says whether they are there.
 
 ### COPC
 
 A **COPC** file (Cloud Optimized Point Cloud, [copc.io](https://copc.io)) is a
 LAS 1.4 LAZ file whose points are grouped by the nodes of an octree, each
-node a thinned sample of its cube that its children refine. OLS CAD:
+node a thinned sample of its cube that its children refine. OpenOHL:
 
 - reads it **directly** as a point source — `--pointcloud survey.copc.laz` for
-  `ols line` and the desktop app: a query reads only the nodes of its area
+  `ohl line` and the desktop app: a query reads only the nodes of its area
   (the corridor, a rectangle), down to a depth when it asks for less detail;
   the class scheme is the `.olsc` file next to it (`survey.copc.olsc` or
   `survey.olsc`), else ASPRS;
-- **imports** it like any LAZ file (`ols pointcloud import`);
-- **writes** it (`ols pointcloud export … --out FILE.copc.laz`): point format
+- **imports** it like any LAZ file (`ohl pointcloud import`);
+- **writes** it (`ohl pointcloud export … --out FILE.copc.laz`): point format
   6, nodes split while they hold more than 100 000 points (each keeping one
   point per cell of a 128³ grid over its cube), one hierarchy page. The
   export holds the points in memory (32 bytes each: 10⁸ points need 3.2 GB).
   Files written are read by other COPC readers (checked with copc-rs), and
   files written by other tools (copc-rs, hierarchies in several pages) are
-  read by OLS CAD.
-- `ols pointcloud info FILE.copc.laz` lists the octree: nodes, points and
+  read by OpenOHL.
+- `ohl pointcloud info FILE.copc.laz` lists the octree: nodes, points and
   spacing per level.
 
 Points flagged withheld are left out, as for LAS/LAZ. Point formats 6–8 are
@@ -232,9 +232,9 @@ wide as the object — and the index follows every command. This is what
 partial loading, the viewer and the server stream by.
 
 ```bash
-ols project tiles project.ols --level 2        # objects and points per 1 km tile
-ols project query project.ols --area 2585600,1114880,2585856,1115136
-ols project query project.ols --tile 0/10100/4355
+ohl project tiles project.ols --level 2        # objects and points per 1 km tile
+ohl project query project.ols --area 2585600,1114880,2585856,1115136
+ohl project query project.ols --tile 0/10100/4355
 ```
 
 `tiles` lists, for each tile of the level, how many objects touch it and

@@ -1,14 +1,14 @@
-# OLS Structure
+# OHL-Structure
 
-**OLS Structure** (the program `ols-structure`), the structure
-application of OLS CAD, edits one structure file (`.olss`) in a window of its
+**OHL-Structure** (the program `ohl-structure`), the structure
+application of OpenOHL, edits one structure file (`.olss`) in a window of its
 own, from level 1 (a stick figure: the points where insulators hang) to
 level 3 (a full design: every member with its section, the supports).
 See [Building structures](../development/structure-building.md) for
 what the levels mean and what comes next.
 
 ```bash
-ols-structure examples/synthetic-line/Structures/type-02.olss
+ohl-structure examples/synthetic-line/Structures/type-02.olss
 ```
 
 Options:
@@ -20,15 +20,15 @@ Options:
 | `--sections FILE\|DIR` | the [section library](section-library.md) (a `.olssec` file or a folder of them) the members' areas come from; default: the `Sections` folder beside the file |
 | `--structure ID` | the placed structure whose loads these are: values typed over the load table are kept for it (below) |
 | `--line-values FILE` | the line's values at that placed structure (a line-values file, written by the line application); read again when it changes |
-| `--version` | prints the version and the build id — the git commit it was built from, e.g. `ols-structure 0.0.1 (build 1a2b3c4d5e6f)` — and stops |
+| `--version` | prints the version and the build id — the git commit it was built from, e.g. `ohl-structure 0.0.1 (build 1a2b3c4d5e6f)` — and stops |
 
 ## Starting it
 
-On its own: double-click **Start OLS Structure.command** in the OLS CAD
+On its own: double-click **Start OHL-Structure.command** in the OpenOHL
 folder (macOS; it builds the program and starts it), or
 
 ```bash
-cargo run --release -p ols-structure-app --bin ols-structure
+cargo run --release -p ols-structure-app --bin ohl-structure
 ```
 
 Without a file it opens on its **start page**: **Open a structure…**,
@@ -37,7 +37,7 @@ structure…** and **Plugins…** (the [plugin manager](#plugins)). **New
 structure…** (also in the File menu) asks an id and a name and what to
 start from: **Empty** — one point where an insulator hangs, a level 1
 stick figure to build from — or a **pylon template** (`.olspt`: the
-templates shipped with OLS CAD, or **Another template file…**), built
+templates shipped with OpenOHL, or **Another template file…**), built
 for suspension or strain with the template's default dimensions (the
 line application's pylon builder sets others). **Create…** asks where
 to write the file (`<id>.olss`; an existing file is not replaced) and
@@ -57,16 +57,17 @@ points, strings, wire points and sets); its body — joints, members,
 sections, materials, supports, generators, the pole, extensions — and
 its design are edited here.
 
-Build it next to the line application, from the same code (in the OLS
-CAD folder; **Start OLS CAD.command** does this):
+Build it next to the line application, from the same code (in the
+OpenOHL folder; **Start OHL-Design.command** does this):
 
 ```bash
 cargo build --release -p ols-app -p ols-structure-app
 ```
 
-The line application looks for `ols-structure` in the program the
-`OLS_STRUCTURE_APP` environment variable names, then next to `ols-cad`,
-then on the `PATH`. Before it starts it, it runs `ols-structure
+The line application looks for `ohl-structure` in the program the
+`OHL_STRUCTURE_APP` environment variable names (or, by its former name,
+`OLS_STRUCTURE_APP`), then next to `ohl-design`, then on the `PATH`; not
+found there, under its former name `ols-structure`. Before it starts it, it runs `ohl-structure
 --version`: when the build differs from its own it starts it anyway and
 shows a warning (rebuild both). Not found, or stopped with an error right
 away: a window says why — where it looked and how to build it, or what
@@ -79,7 +80,7 @@ the application wrote to its error output. The line application's log
 `type-02`) starts the application with T2's loads:
 
 ```bash
-ols-structure Structures/type-02.olss --structure T2 \
+ohl-structure Structures/type-02.olss --structure T2 \
     --line-values Structures/type-02.T2.line-values.json --sections Sections
 ```
 
@@ -165,7 +166,7 @@ as, [Libraries ›](#libraries), Export ›, Close), **Edit** (Undo, Redo,
 Pick nothing), **View**, then one menu per part of the work —
 **Geometry**, **Body**, **Design**, **Load cases**, **Results**, **In
 the line** — then **Plugins** ([below](#plugins)) and **Help** (About
-OLS Structure);
+OHL-Structure);
 **⟲ Undo**, **⟳ Redo** and **Save** at their right. Each work menu lists
 its **panels** (*Joints…*, *Generators…*, *Pole…*: opened if closed and
 brought to the front) and its **actions** (Geometry: *Add a point*, *I
@@ -415,7 +416,7 @@ asks first: **Save and close**, **Close without saving** or **Cancel**.
 ## Libraries
 
 A structure reads these libraries — each where the line application and
-`ols line` keep them for a structure's folder:
+`ohl line` keep them for a structure's folder:
 
 | Library | Files | Read from (and imported into) |
 |---|---|---|
@@ -458,10 +459,10 @@ A structure reads these libraries — each where the line application and
 ## Plugins
 
 **Plugins › Plugin manager…** (also on the start page) lists the plugins
-as the line application's does — the plugins installed for you (in OLS
-CAD's data folder, `plugins/`, the same folder as the line
-application's) and those of the folders added — each with its version,
-tier, extension points, **what it does in OLS Structure** (greyed with
+as the line application's does — the plugins installed for you (in the
+line application's data folder, `plugins/` — still the folder named "OLS
+CAD", kept from before the rename so nothing is lost) and those of the folders added — each with its version,
+tier, extension points, **what it does in OHL-Structure** (greyed with
 the reason where nothing applies), its status (or why it cannot be used:
 another interface version, its entry file not built…), **Details** (what
 it describes, loaded in each of its worlds; in a box that scrolls) and,
@@ -475,7 +476,7 @@ manager is opened, or with Reload).
 
 What applies here:
 
-| Extension point | In OLS Structure |
+| Extension point | In OHL-Structure |
 |---|---|
 | `design-code` | **Load cases › Load cases from a design code…** (also in the Plugins menu): choose the plugin and your parameter file, **▶ Generate** (on a thread; the plugin's time and memory limits apply), read its notes, **Take them as recipes**: one recipe per load case of the code taking the line's factored values in that case at every point (as *Take the line's load cases as they are*; one undo step). Ticked, the weather and load case files it generated are written beside the structure (`<plugin>.olswc`, `<plugin>.olslc`) to give to the line. |
 | `check` | listed: member and joint code checks will run here; nothing to run yet |

@@ -1,6 +1,6 @@
 # Optimum structure spotting
 
-**Spotting** places the structures of a route: where they stand, which type and which extension. OLS CAD finds the placement that **costs least** while every span keeps its ground clearance and every structure stays within its allowable spans. The result is a proposal — a new line file — to check and refine; the model you work on is not changed.
+**Spotting** places the structures of a route: where they stand, which type and which extension. OpenOHL finds the placement that **costs least** while every span keeps its ground clearance and every structure stays within its allowable spans. The result is a proposal — a new line file — to check and refine; the model you work on is not changed.
 
 How it works is in the [theory manual](../theory/spotting.md).
 
@@ -19,7 +19,7 @@ Costs: the structures (from the cost file), each span's stringing labour (`labou
 ## From the command line
 
 ```bash
-ols spot examples/synthetic-line/synthetic-line-typed.ols.json --route main \
+ohl spot examples/synthetic-line/synthetic-line-typed.ols.json --route main \
     --terrain examples/synthetic-line/synthetic-survey.csv \
     --types examples/synthetic-line/Structures \
     --cost examples/synthetic-line/unit-costs.olscost \
@@ -29,7 +29,7 @@ ols spot examples/synthetic-line/synthetic-line-typed.ols.json --route main \
 
 | Option | Default | Notes |
 |---|---|---|
-| `--route` | the first route | Route id (`ols line FILE --stations` lists them). |
+| `--route` | the first route | Route id (`ohl line FILE --stations` lists them). |
 | `--terrain` | | Survey points (CSV / XYZ). |
 | `--types` | `Structures/` next to the line | Candidates: the types the cost file prices. |
 | `--insulators`, `--library` | shipped libraries | Insulator assemblies, wire library. |
@@ -56,7 +56,7 @@ It prints one row per structure (station, type, extension, line angle, span ahea
 Structures 157000.00 + spans 6000.00 + wire 9223.47 = 172223.47 EUR
 ```
 
-**The new line** has the route (its centreline as free alignment points), the structures `T1`, `T2`, … (typed, with their extension, on the ground, turned to the route — the bisector at angle points), and one section for every attachment (set, phase) all chosen types have, strung to the design tension at the design temperature. The rest of the original line (its other routes, structures and sections) is not carried over; its name (with "(spotted)") and coordinate system are. Phases and electrical systems are for you to assign. Open it in the application or check it with `ols line spotted.ols.json --terrain … --clearance …`.
+**The new line** has the route (its centreline as free alignment points), the structures `T1`, `T2`, … (typed, with their extension, on the ground, turned to the route — the bisector at angle points), and one section for every attachment (set, phase) all chosen types have, strung to the design tension at the design temperature. The rest of the original line (its other routes, structures and sections) is not carried over; its name (with "(spotted)") and coordinate system are. Phases and electrical systems are for you to assign. Open it in the application or check it with `ohl line spotted.ols.json --terrain … --clearance …`.
 
 ## In the application
 

@@ -3,7 +3,7 @@
 Every file format is an **exporter** (solved line → file) or an **importer** (file → line file). The built-in formats and those of file-format plugins look the same: list them with
 
 ```bash
-ols formats [--plugin DIR]
+ohl formats [--plugin DIR]
 ```
 
 | id                   | direction | contents |
@@ -22,14 +22,14 @@ ols formats [--plugin DIR]
 | `ifc`                | export    | [IFC4](#ifc) structures and wires for BIM programs |
 | `xlsx`               | export    | [tables](#tables-xlsx) as an Excel workbook |
 
-All of them are written directly by OLS CAD from the public specifications (no GDAL or other native library). Exports take time in proportion to the size of the model (milliseconds for the example line with several weather cases).
+All of them are written directly by OpenOHL from the public specifications (no GDAL or other native library). Exports take time in proportion to the size of the model (milliseconds for the example line with several weather cases).
 
 ## Export
 
-Exports are written by `ols line` after solving, so they use the same libraries, pylon files and weather cases (`--weather`, `--case`, `--tag`):
+Exports are written by `ohl line` after solving, so they use the same libraries, pylon files and weather cases (`--weather`, `--case`, `--tag`):
 
 ```bash
-ols line examples/synthetic-line/synthetic-line.ols.json \
+ohl line examples/synthetic-line/synthetic-line.ols.json \
     --export line.kmz --export wires-csv=wires.csv --option crs=EPSG:2056
 ```
 
@@ -72,14 +72,14 @@ Options:
 
 ### Tables (XLSX)
 
-`xlsx` writes a workbook with the sheets *Structures*, *Sections*, *Spans* (every span and jumper of every weather case: tensions and sag), *Stations* (stationing, offsets, line angles of every route) and, when `ols line` computes them (`--load-cases`), *Structure loads* and *Structure usage* — the same tables as `--loads-csv` and `--usage-csv`. `spans-csv` writes the *Spans* sheet as CSV.
+`xlsx` writes a workbook with the sheets *Structures*, *Sections*, *Spans* (every span and jumper of every weather case: tensions and sag), *Stations* (stationing, offsets, line angles of every route) and, when `ohl line` computes them (`--load-cases`), *Structure loads* and *Structure usage* — the same tables as `--loads-csv` and `--usage-csv`. `spans-csv` writes the *Spans* sheet as CSV.
 
 ## Import
 
 ```bash
-ols import positions.csv --into line.ols.json --out line-moved.ols.json
-ols import survey.csv --format structures-csv --out new-line.ols.json
-ols import line.xml --out line.ols.json
+ohl import positions.csv --into line.ols.json --out line-moved.ols.json
+ohl import survey.csv --format structures-csv --out new-line.ols.json
+ohl import line.xml --out line.ols.json
 ```
 
 The format comes from `--format` or the file extension. With `--into`, the file updates that line; without, it makes a new line. The result is checked like any line file before it is written. In the application, File › Import › Into the line… reads a file into the open line as one command (undone at once).
@@ -87,7 +87,7 @@ The format comes from `--format` or the file extension. With `--into`, the file 
 Into a project file — a new one, or one that holds a line — as one logged command:
 
 ```bash
-ols project import-file points.geojson --into new.ols --user ann --option crs=EPSG:2056 --option type=tangent
+ohl project import-file points.geojson --into new.ols --user ann --option crs=EPSG:2056 --option type=tangent
 ```
 
 `ols-xml` reads an [OLS XML](../schema/ols-line.md) line (it replaces the line). It recognises LandXML too: its `CgPoint`s become structures along the first alignment (option `alignment`: by name), as for the [neutral files](#neutral-files-points-and-a-route); a LandXML file with an alignment but no points updates the alignment of a route (option `route`, default the first) of the line it is imported into. Curves and spirals are read by their end points.
@@ -117,32 +117,32 @@ Coordinates are converted from the file's system to the line's ([ols-crs](coordi
 `structures-csv` needs columns `x` and `y`; `structure`, `z`, `orientation_deg`, `type` and `extension` are optional (an empty cell keeps the current value). Other column names are given as `<column>_column` options, the separator with `delimiter` (`,`, `;` or `tab`):
 
 ```bash
-ols import survey.csv --format structures-csv --out new.ols.json \
+ohl import survey.csv --format structures-csv --out new.ols.json \
     --option delimiter=';' --option x_column=Easting --option y_column=Northing --option z_column=H \
     --option structure_column=Nr --option type=tangent
 ```
 
 ## Formats from plugins
 
-A WebAssembly plugin with the extension point `io` adds formats (see [Writing plugins](../development/plugins.md#file-format-plugins)); `--plugin DIR` loads it for `ols formats`, `ols import`, `ols project import-file` and `ols line --export`. A plugin format with the id of a built-in one replaces it. The example plugin `plugins/examples/geojson` exports GeoJSON and imports structures from GeoJSON points:
+A WebAssembly plugin with the extension point `io` adds formats (see [Writing plugins](../development/plugins.md#file-format-plugins)); `--plugin DIR` loads it for `ohl formats`, `ohl import`, `ohl project import-file` and `ohl line --export`. A plugin format with the id of a built-in one replaces it. The example plugin `plugins/examples/geojson` exports GeoJSON and imports structures from GeoJSON points:
 
 ```bash
 (cd plugins/examples/geojson && cargo build --release --target wasm32-wasip2)
-ols line line.ols.json --export line.geojson --plugin plugins/examples/geojson
-ols import points.geojson --plugin plugins/examples/geojson --format geojson-structures --into line.ols.json --out moved.ols.json
+ohl line line.ols.json --export line.geojson --plugin plugins/examples/geojson
+ohl import points.geojson --plugin plugins/examples/geojson --format geojson-structures --into line.ols.json --out moved.ols.json
 ```
 
 A plugin error, a crash, or a plugin exceeding its time or memory limit is reported as the format's error; the line is never half-written.
 
 ## Projects from other programs
 
-A **project plugin** reads another program's project file into a new OLS CAD project: the line (structures and attachments, sections and their stringing, circuits as electrical systems, jumpers, point loads, alignment) and its libraries (wires, weather cases, load cases), with notes on what was read, left out or assumed.
+A **project plugin** reads another program's project file into a new OpenOHL project: the line (structures and attachments, sections and their stringing, circuits as electrical systems, jumpers, point loads, alignment) and its libraries (wires, weather cases, load cases), with notes on what was read, left out or assumed.
 
 - **In the application:** File › **New project from another program…** (also on the start page): the file, the format (default: from the extension), options, then where to save the new `.ols`. It runs in the background; the project opens with a window of the reader's notes.
 - **From the command line:**
 
   ```bash
-  ols project import-from FILE --into new.ols --user ann --plugin DIR [--format F] [--option KEY=VALUE] [--clip-in]
+  ohl project import-from FILE --into new.ols --user ann --plugin DIR [--format F] [--option KEY=VALUE] [--clip-in]
   ```
 
 **Clip in** (`--clip-in`, or the window's tick): sections the reader left in the blocks are clipped in at their stringing condition, so each span keeps its length — as programs that sag a section with a ruling span and then solve it with fixed lengths do.

@@ -1,8 +1,8 @@
 # Getting started
 
-OLS CAD is pre-alpha: the engines and the desktop application work on real lines, but every result must be checked by a qualified engineer. Build it with a Rust toolchain (`cargo`); the examples below run from the top of the source tree.
+OpenOHL is pre-alpha: the engines and the desktop application work on real lines, but every result must be checked by a qualified engineer. Build it with a Rust toolchain (`cargo`); the examples below run from the top of the source tree.
 
-## Desktop application
+## OHL-Design, the line application
 
 ```bash
 cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.json \
@@ -10,30 +10,30 @@ cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.jso
     --weather examples/synthetic-line/weather-cases.olswc
 ```
 
-See [Desktop application](desktop-app.md). On macOS, double-click
-**Start OLS CAD.command** at the top of the source tree: it builds both
+See [OHL-Design](desktop-app.md). On macOS, double-click
+**Start OHL-Design.command** at the top of the source tree: it builds both
 applications and starts the line application on its start page.
 
 ### The structure application
 
-**OLS Structure** (`ols-structure`) edits one structure file on its own —
+**OHL-Structure** (`ohl-structure`) edits one structure file on its own —
 its points and insulators, body, design, loads and finite-element results,
 its libraries and plugins. Without a file it opens on a start page (Open a
 structure…, the recent files, New structure…).
 
 ```bash
-cargo run --release -p ols-structure-app --bin ols-structure
-cargo run --release -p ols-structure-app --bin ols-structure -- examples/synthetic-line/Structures/type-02.olss
+cargo run --release -p ols-structure-app --bin ohl-structure
+cargo run --release -p ols-structure-app --bin ohl-structure -- examples/synthetic-line/Structures/type-02.olss
 ```
 
-On macOS, double-click **Start OLS Structure.command**. See [OLS
-Structure](structure-app.md#starting-it).
+On macOS, double-click **Start OHL-Structure.command**. See
+[OHL-Structure](structure-app.md#starting-it).
 
 | Program | What it does | See |
 |---|---|---|
-| `ols-cad` (**Start OLS CAD.command**) | the line application: projects, lines, terrain, checks | [Desktop application](desktop-app.md) |
-| `ols-structure` (**Start OLS Structure.command**) | the structure application: one structure file, level 1 to 3, its libraries and plugins | [OLS Structure](structure-app.md) |
-| `ols-structure-export` | a level 3 structure as IFC, SAF or CSV, without a window | [OLS Structure](structure-app.md#export) |
+| `ohl-design` (**Start OHL-Design.command**) | OHL-Design, the line application: projects, lines, terrain, checks | [OHL-Design](desktop-app.md) |
+| `ohl-structure` (**Start OHL-Structure.command**) | OHL-Structure, the structure application: one structure file, level 1 to 3, its libraries and plugins | [OHL-Structure](structure-app.md) |
+| `ols-structure-export` | a level 3 structure as IFC, SAF or CSV, without a window | [OHL-Structure](structure-app.md#export) |
 
 ### A new line, step by step
 
@@ -51,7 +51,7 @@ See [Routes and alignments](desktop-app.md#routes-and-alignments).
 
 ## Command-line tool
 
-`ols` runs every calculation without a window. `ols --help` lists the commands, `ols <command> --help` their options.
+`ohl` runs every calculation without a window. `ohl --help` lists the commands, `ohl <command> --help` their options.
 
 ```bash
 cargo run -p ols-cli -- info               # version information
@@ -60,26 +60,26 @@ cargo run -p ols-cli -- validate --list    # calculations available to cases
 cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
 ```
 
-`ols validate` exits with a non-zero code if any case fails or exceeds its time limit, and `--report report.md` writes a Markdown report.
+`ohl validate` exits with a non-zero code if any case fails or exceeds its time limit, and `--report report.md` writes a Markdown report.
 
 | Command | What it does | See |
 |---|---|---|
-| `ols sagtension` | sag-tension of one tension section from a job file | below |
-| `ols line` | solves a line file in 3D: clearances, structure loads, usage, exports; given a project, with the libraries it keeps | [Line files](line-file.md), [Terrain and ground clearance](terrain.md), [Load cases](loads.md), [Project files](project.md) |
-| `ols zones` | vertical and radial clearances to the ground and LiDAR classes in the wind, by a rule file (the desktop clearance windows' check); given a project, with the libraries it keeps | [Terrain and ground clearance](terrain.md#vertical-and-radial-clearances-without-the-window-ols-zones) |
-| `ols plugin info` | loads a plugin of any kind (design code, check, file format, terrain, project, minimal) and prints what it describes: name, version, world, formats or checks | [Plugins](../development/plugins.md) |
-| `ols drawing` | plan and profile sheets and profile exports | [Drawings](drawings.md) |
-| `ols structures` | derive structure types; frame/truss and pole analysis | [Structure libraries](structure-library.md), [Structure analysis](structure-analysis.md) |
-| `ols code` | weather and load cases from a design-code plugin | [Design codes](design-codes.md) |
-| `ols thermal` | ampacity and clearance-limited temperature | [Thermal rating](thermal.md) |
-| `ols bom` | bill of materials and cost estimate | [Bill of materials](bom-and-cost.md) |
-| `ols spot` | optimum structure spotting along a route | [Spotting](spotting.md) |
-| `ols clearance` | galloping ellipses, blowout against the right of way | [Analyses](analyses.md) |
-| `ols lidar` | LAS/LAZ information, classification, vegetation, as-built wires | [Analyses](analyses.md), [Terrain](terrain.md) |
-| `ols project`, `ols pointcloud`, `ols surface` | the project file: commands, undo, versions, point clouds, terrain surfaces | [Project files](project.md), [Versions](versions.md) |
-| `ols formats`, `ols import` | file formats for import and export | [Import and export](import-export.md) |
-| `ols crs` | coordinate systems | [Coordinate systems](coordinates.md) |
-| `ols serve` | hosts a project for several users | [Server mode](server.md) |
+| `ohl sagtension` | sag-tension of one tension section from a job file | below |
+| `ohl line` | solves a line file in 3D: clearances, structure loads, usage, exports; given a project, with the libraries it keeps | [Line files](line-file.md), [Terrain and ground clearance](terrain.md), [Load cases](loads.md), [Project files](project.md) |
+| `ohl zones` | vertical and radial clearances to the ground and LiDAR classes in the wind, by a rule file (the desktop clearance windows' check); given a project, with the libraries it keeps | [Terrain and ground clearance](terrain.md#vertical-and-radial-clearances-without-the-window-ols-zones) |
+| `ohl plugin info` | loads a plugin of any kind (design code, check, file format, terrain, project, minimal) and prints what it describes: name, version, world, formats or checks | [Plugins](../development/plugins.md) |
+| `ohl drawing` | plan and profile sheets and profile exports | [Drawings](drawings.md) |
+| `ohl structures` | derive structure types; frame/truss and pole analysis | [Structure libraries](structure-library.md), [Structure analysis](structure-analysis.md) |
+| `ohl code` | weather and load cases from a design-code plugin | [Design codes](design-codes.md) |
+| `ohl thermal` | ampacity and clearance-limited temperature | [Thermal rating](thermal.md) |
+| `ohl bom` | bill of materials and cost estimate | [Bill of materials](bom-and-cost.md) |
+| `ohl spot` | optimum structure spotting along a route | [Spotting](spotting.md) |
+| `ohl clearance` | galloping ellipses, blowout against the right of way | [Analyses](analyses.md) |
+| `ohl lidar` | LAS/LAZ information, classification, vegetation, as-built wires | [Analyses](analyses.md), [Terrain](terrain.md) |
+| `ohl project`, `ohl pointcloud`, `ohl surface` | the project file: commands, undo, versions, point clouds, terrain surfaces | [Project files](project.md), [Versions](versions.md) |
+| `ohl formats`, `ohl import` | file formats for import and export | [Import and export](import-export.md) |
+| `ohl crs` | coordinate systems | [Coordinate systems](coordinates.md) |
+| `ohl serve` | hosts a project for several users | [Server mode](server.md) |
 
 ## Sag-tension of a tension section
 

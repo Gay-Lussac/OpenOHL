@@ -132,10 +132,10 @@ the light reflected by the ground over its lower half. Clear sky:
 \\( I_B = I_B(0)[1 + 1.4\cdot10^{-4}y(1367/I_B(0) - 1)] \\),
 \\( I_d = (430.5 - 0.3288\\,I_B)\sin H_s \\). The clearness ratio \\( N_s \\)
 is taken 1.0 for a clear and 0.8 for an industrial atmosphere unless a case
-gives one (that mapping is an assumption of OLS CAD). TB 207 is computed with
+gives one (that mapping is an assumption of OpenOHL). TB 207 is computed with
 the same solar model here.
 
-**What OLS CAD leaves out:** the radial temperature difference inside the
+**What OpenOHL leaves out:** the radial temperature difference inside the
 conductor (TB 601 section 4, IEEE 738 clause 4.5), magnetic heating of
 steel cores beyond what the AC resistance carries, corona and evaporative
 cooling, wind turbulence, and IEEE 738's dynamic/probabilistic variants. The
@@ -175,7 +175,7 @@ cancel. The ampacity at the limit then follows per ambient case.
 - `thermal-001` — the IEEE 738 worked example (Drake 26/7 ACSR at 100 °C,
   40 °C air, 0.61 m/s across an east-west line at 30° N, 11:00 on 10 June,
   clear air): the published results are about \\( q_c = 81.93 \\),
-  \\( q_r = 39.1 \\), \\( q_s = 22.44 \\) W/m and 1025 A; OLS CAD gives 82.08,
+  \\( q_r = 39.1 \\), \\( q_s = 22.44 \\) W/m and 1025 A; OpenOHL gives 82.08,
   39.11, 22.46 W/m and 1025.4 A (within 0.2 %), solar altitude 74.89° and
   azimuth 113.95°.
 - `thermal-002…008` — IEEE 738, TB 601 and TB 207 at elevation, low wind at
