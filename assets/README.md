@@ -13,8 +13,8 @@ The applications build these files in (read when they are compiled):
 **replacing a file with another of the same name and format** (an SVG,
 the same size; tool icons drawn in `currentColor`) **updates the
 applications at the next build** — nothing else to change. They are
-drawn with resvg in the program (`crates/ols-app/src/icons.rs`,
-`apps/structure/ols-structure-app/src/icons.rs`); the tests check that
+drawn with resvg in the program (`crates/ohl-app/src/icons.rs`,
+`apps/structure/ohl-structure-app/src/icons.rs`); the tests check that
 every file parses.
 
 | File | Used in |

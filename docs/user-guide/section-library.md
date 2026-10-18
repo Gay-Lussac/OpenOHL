@@ -1,4 +1,4 @@
-# Section library (`.olssec`)
+# Section library (`.ohlsec`)
 
 A **section library** holds standard profiles — angles, channels, I and
 H sections, tubes, round bars, pole shafts — and their materials. A
@@ -9,14 +9,14 @@ OpenOHL computes each profile's properties from its dimensions; values
 you give replace the computed ones.
 
 All profiles are **your data** (supplier tables, drawings). OpenOHL ships
-only an invented example, `libraries/sections/example-sections.olssec`,
+only an invented example, `libraries/sections/example-sections.ohlsec`,
 with one profile of each shape — its dimensions are made up.
 
 The file is TOML with units on every quantity, like the other libraries;
 an unknown key is an error that names it.
 
 ```toml
-format = "ols-sections"          # optional header
+format = "ohl-sections"          # optional header
 version = 1
 name = "Project sections"
 description = "Angles and tubes of the tower family"
@@ -129,14 +129,14 @@ its outline box.
 A project and a user may each keep a section library. They are read in
 order — the project's first, then the user's — and a section or material
 whose id is already there is left out (the earlier one wins). In one file
-an id given twice is an error; a folder of `.olssec` files is read in
+an id given twice is an error; a folder of `.ohlsec` files is read in
 name order, an id in two of them an error. A material a section names
 may be in another file read together; a material missing from all of
 them is reported.
 
 ## How structures refer to it
 
-A member of a structure (in its type's `.olss`, or a separate `.olsfe`
+A member of a structure (in its type's `.ohls`, or a separate `.ohlfe`
 model) names its section by id,
 
 ```toml
@@ -148,7 +148,7 @@ section = "L-61x7"
 
 and the id is looked up **in the project's section library first, then in
 the structure's own `[[section]]` tables** (read by the finite-element
-check, [Structure analysis](structure-analysis.md#structure-models-olsfe)):
+check, [Structure analysis](structure-analysis.md#structure-models-ohlfe)):
 the profile's properties and its material's E, G, density and yield. An
 id in neither is refused, naming it. A structure file alone does not
 check its ids against a library: the structure model does, when it is
@@ -157,7 +157,7 @@ built.
 In a project the section library is stored like the other library kinds
 of the project file, per project line (kind `sections`), so every
 structure of the line uses the same profiles: when the project opens
-without one, the `.olssec` files of the `Sections/` folder next to it
+without one, the `.ohlsec` files of the `Sections/` folder next to it
 (else those next to it) are copied in — never the shipped example — and
 exported with the other libraries (see [Library
 editors](desktop-app.md#library-editors)). For a line file the `Sections/`

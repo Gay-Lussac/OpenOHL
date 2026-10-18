@@ -9,7 +9,7 @@ systems — pure Rust, no native library, the same in WebAssembly plugins.
 ohl crs info EPSG:2056
 ohl crs transform --from EPSG:2056 --to EPSG:4326 2600000 1200000
 # 7.438632421 46.951082772
-ohl crs line line.ols.json --to EPSG:32632 --out line-utm.ols.json
+ohl crs line line.ohl.json --to EPSG:32632 --out line-utm.ohl.json
 ```
 
 - **Geographic** coordinates are longitude, latitude in degrees.
@@ -45,7 +45,7 @@ ohl crs line line.ols.json --to EPSG:32632 --out line-utm.ols.json
   **Swap** turns it around (the results become the points). **Copy** puts
   the results on the clipboard.
 - **Reproject project…** moves the whole project into another (projected)
-  system and writes it as a **new project file** (`<name> <system>.ols`
+  system and writes it as a **new project file** (`<name> <system>.ohl`
   next to it by default; an existing file is never replaced): every
   project line, every terrain surface (the triangles are
   kept), every point cloud (each point moved and binned again, its

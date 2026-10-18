@@ -27,7 +27,7 @@ Nothing in OpenOHL may run forever or freeze the application. Every function tha
 
 - **Iterative solvers** (catenary, change of state, FE, optimisation) always have a maximum iteration count *and* a convergence tolerance. Non-convergence returns an error with diagnostics (iterations done, last residual, inputs) — never an endless loop or a silently wrong result.
 - **Long-running tasks** (clearance runs, LiDAR processing, exports, spotting) have a time budget, can be cancelled by the user at any time, and report progress.
-- These rules are implemented once in `ols_core::budget` (`Budget`, `CancelToken`, `Stop`), and every engine uses them.
+- These rules are implemented once in `ohl_core::budget` (`Budget`, `CancelToken`, `Stop`), and every engine uses them.
 - **Plugins** run with a time limit per call (default 5 s) and a memory cap (default 256 MiB); a runaway plugin is interrupted and reported (`PluginError::Timeout`) without affecting the rest of the application.
 - **Validation cases** have a time limit (`max_seconds`, default 10 s) and their duration is recorded in the report.
 - **CI jobs** have a `timeout-minutes` limit; benchmarks use fixed measurement times.
@@ -120,7 +120,7 @@ The core must support all common string types, and strings must be **linkable** 
 **Model**: an insulator assembly is a small **graph** of nodes (structure attachment points, yoke plates, wire attachment) and elements (insulator links, rigid links, pinned links, cable/jumper segments, tension-only elements). Each element has length, weight, wind area, strength and properties: rigid/pinned/tension-only.
 
 - Simple cases (I-string swing, V-string legs) are solved analytically for speed.
-- The general linked case is solved by the FE wire system (`ols-wirefe`), which treats the assembly as part of the wire model.
+- The general linked case is solved by the FE wire system (`ohl-wirefe`), which treats the assembly as part of the wire model.
 - Assemblies are reusable library items, and plugin-extensible.
 
 ## 7. Version control of projects (git-like)
@@ -140,12 +140,12 @@ Built on the command log and stable object IDs: revisions, history, diff with en
 
 ## 8. Exports and interoperability
 
-Exports and imports are **plugins** (`ols.importers` / `ols.exporters`), so new formats can be added without touching the core. Formats that must eventually be covered:
+Exports and imports are **plugins** (`ohl.importers` / `ohl.exporters`), so new formats can be added without touching the core. Formats that must eventually be covered:
 
 | Area | Formats |
 |---|---|
 | Geospatial / GIS | KML, **KMZ**, Shapefile, GeoJSON, GeoPackage |
-| Engineering exchange | **XML** (LandXML and an open OLS XML schema), IFC, CSV |
+| Engineering exchange | **XML** (LandXML and an open OHL XML schema), IFC, CSV |
 | CAD / drafting | DXF, DWG-compatible output, SVG, PDF |
 | Point clouds | LAS/LAZ/COPC (import and export of classified/as-built points) |
 | Reports & tables | CSV, XLSX, PDF, HTML |
@@ -176,9 +176,9 @@ One rule for every deletion: when an object takes others with it, the deletion i
 - Jumpers and routes take nothing else; the line settings cannot be deleted.
 - Undo, redo and rollback replay exactly what was recorded (no new cascade), and restore objects in their original order.
 
-## 10. Structure library (`.olss`)
+## 10. Structure library (`.ohls`)
 
-Each **structure type** (pylon, pole, portal…) is a file of its own (`*.olss`, "OLS structure", TOML) in a structure library directory (default the project's `Structures/` folder), so it can be reused, shared and version-controlled individually.
+Each **structure type** (pylon, pole, portal…) is a file of its own (`*.ohls`, "OHL structure", TOML) in a structure library directory (default the project's `Structures/` folder), so it can be reused, shared and version-controlled individually.
 
 - **Local axes**: origin at the ground centre, x transverse, y along the line (ahead), z up.
 - **Attachments**: set, phase, label, the insulator attachment point (local), the default insulator assembly (from the insulator library), and for strain sets the side (`ahead` / `back`).
@@ -186,19 +186,19 @@ Each **structure type** (pylon, pole, portal…) is a file of its own (`*.olss`,
 - **Body outline** (optional): simple polylines for drawings and the 3D view (detailed meshes and LOD come with the renderer).
 - **Placement in a line**: a structure instance references a type, a position, a rotation (local x axis direction) and an extension; global attachment points are computed. Per-attachment overrides remain possible.
 - **Deriving types from an existing line**: attachment points of instances are transformed back to local coordinates and identical geometries are grouped into one type — a draft library from any imported line.
-- Strength data: allowable spans and load trees (`[capacity]`, Methods 1 and 2), structure models and poles (`ols-structures-fe`) — see [Structure libraries](user-guide/structure-library.md#capacity) and [Structure analysis](user-guide/structure-analysis.md).
+- Strength data: allowable spans and load trees (`[capacity]`, Methods 1 and 2), structure models and poles (`ohl-structures-fe`) — see [Structure libraries](user-guide/structure-library.md#capacity) and [Structure analysis](user-guide/structure-analysis.md).
 
 ### Simple pylon files
 
-How much string detail is useful depends on the pylon. A pylon file can therefore stand alone: a stick drawing (centre point, mast, crossarms to the suspension points) and, per attachment, the string's length and a label at its top (insulator attachment point) and bottom (wire attachment point). Each pylon is one file; a project keeps them in its `Structures` folder. Detailed assemblies (`.olsi`, linked strings) stay available when a pylon needs them.
+How much string detail is useful depends on the pylon. A pylon file can therefore stand alone: a stick drawing (centre point, mast, crossarms to the suspension points) and, per attachment, the string's length and a label at its top (insulator attachment point) and bottom (wire attachment point). Each pylon is one file; a project keeps them in its `Structures` folder. Detailed assemblies (`.ohli`, linked strings) stay available when a pylon needs them.
 
-## 11. Insulator assembly library (`.olsi`)
+## 11. Insulator assembly library (`.ohli`)
 
-Each **insulator assembly** is a file of its own (`*.olsi`, TOML) in an insulator library directory (default `libraries/insulators/`).
+Each **insulator assembly** is a file of its own (`*.ohli`, TOML) in an insulator library directory (default `libraries/insulators/`).
 
 - **Basic kinds (now)**: `suspension` (I-string: length, weight, axial stiffness, wind area), `v_string` (two legs: half width, leg length, leg weight, stiffness; legs tension-only), `strain` (dead-end: length, weight, stiffness; single or multiple strings).
 - Structure-type attachments name their default assembly; a structure instance can override it per attachment.
-- **Later (DESIGN_GOALS §6)**: general linked assemblies as a graph of nodes and elements — yokes, multiple strings, jumper support strings, counterweights — solved by `ols-wirefe`.
+- **Later (DESIGN_GOALS §6)**: general linked assemblies as a graph of nodes and elements — yokes, multiple strings, jumper support strings, counterweights — solved by `ohl-wirefe`.
 
 ## 12. Display and connections
 
@@ -209,7 +209,7 @@ Each **insulator assembly** is a file of its own (`*.olsi`, TOML) in an insulato
 
 - **Two measures, always**: **vertical** clearance (wire height above a target directly below it) and **radial** clearance (shortest 3D distance between wire and target). Each rule requires one or both.
 - **Targets**: the ground surface (TIN); LiDAR / survey points selected by class or by class role (§ LiDAR class schemes) — vegetation, buildings, roads, water, objects…; wires of **other lines** (crossings, parallel lines); and other wires of the **same line** — within the same span (phase to phase, circuit to circuit) and between spans (e.g. a branch passing under the main line).
-- **Rules are data** (`.olsr` files): a rule names its target and required distances; a later tool (GUI or plugin) edits them per LiDAR class, per crossing, per design code. Design codes (EN 50341, Swiss LeV, NESC…) are plugins that produce rule sets.
+- **Rules are data** (`.ohlr` files): a rule names its target and required distances; a later tool (GUI or plugin) edits them per LiDAR class, per crossing, per design code. Design codes (EN 50341, Swiss LeV, NESC…) are plugins that produce rule sets.
 - **Per weather case**, and as **envelopes** over several cases (hot, iced, blown-out wires), including different cases for the two wires of a wire-to-wire check (e.g. upper wire iced, lower wire cold).
 - **Exclusion zones**: parts of a wire near supports, terminations and cable transitions (where wires converge and come down to the ground by design) can be excluded from a rule, e.g. within a distance of the attachment points.
 - Results per span and rule: smallest vertical and radial clearance with their locations, number of violating points or places; marked in the viewer and exported (CSV, drawings).

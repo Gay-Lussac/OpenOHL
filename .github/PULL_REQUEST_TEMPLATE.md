@@ -13,5 +13,5 @@ For engineering calculations:
 - [ ] Reference cited (standard clause, paper, textbook page)
 - [ ] Validation case(s) added in `benchmarks/` with tolerance and source
 - [ ] Theory note added or updated in `docs/theory/`
-- [ ] Iterative or long-running code has exit clauses (`ols_core::budget`): iteration limit, time limit, cancellation, and an error that explains why it stopped
+- [ ] Iterative or long-running code has exit clauses (`ohl_core::budget`): iteration limit, time limit, cancellation, and an error that explains why it stopped
 - [ ] Expected duration documented; benchmark added if performance-sensitive

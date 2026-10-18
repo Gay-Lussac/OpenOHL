@@ -1,18 +1,18 @@
-# Structure and insulator libraries (`.olss`, `.olsi`)
+# Structure and insulator libraries (`.ohls`, `.ohli`)
 
 Structure types and insulator assemblies are stored **one per file**, so each can be reused, shared and versioned individually. In the desktop app the structure types are the **Structure library** (Structures menu): every structure the model uses, each imported or exported as a file:
 
-- `*.olss` — structure types (the `ols-structure` format): a project keeps its pylons in a **`Structures`** folder next to its line or project file (used automatically by `ohl line`); shared types can live in `libraries/structures/`,
-- `libraries/insulators/*.olsi` — insulator assemblies (the `ols-insulator` format), for detailed strings; simple pylons define their strings in the pylon file itself (below). OpenOHL ships three **examples** with typical values (a 220 kV I-string, tension string and V-string, ids `example-220-…`) to start from — check them against your assemblies' data sheets. Structure types belong to a project (its `Structures` folder); none are shipped.
+- `*.ohls` — structure types (the `ohl-structure` format): a project keeps its pylons in a **`Structures`** folder next to its line or project file (used automatically by `ohl line`); shared types can live in `libraries/structures/`,
+- `libraries/insulators/*.ohli` — insulator assemblies (the `ohl-insulator` format), for detailed strings; simple pylons define their strings in the pylon file itself (below). OpenOHL ships three **examples** with typical values (a 220 kV I-string, tension string and V-string, ids `example-220-…`) to start from — check them against your assemblies' data sheets. Structure types belong to a project (its `Structures` folder); none are shipped.
 
 Both are TOML with units on every quantity (`"12.5 m"`, `"1.4 kN"`), like [wire libraries](wire-library.md). Unknown fields are errors.
 
-## Structure types (`.olss`)
+## Structure types (`.ohls`)
 
 **Local axes**: origin at the centre of the structure, **x to the right** of the line looking ahead, **y ahead** along the line, **z up**. z = 0 is the ground, unless the type gives the level of its feet: a pylon drawn from a reference level under its lowest crossarm says `foot = "-32 m"`, and is placed with its feet on the ground (raised by the structure's `height_adjust` for foundations, see [Using types in a line](#using-types-in-a-line)).
 
 ```toml
-format = "ols-structure"          # optional header
+format = "ohl-structure"          # optional header
 version = 2
 id = "DL380-tangent"              # letters, digits, - _ .
 name = "380 kV double circuit, tangent"
@@ -73,8 +73,8 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `node`, `member` | no | The pylon's joints and members (levels 2 and 3, below); a member may have a `group`, and both a `made_by` (the generator that wrote it). |
 | `generator`, `symmetry` | no | Version 3: the body generators with their inputs, and the mirror symmetry kept while editing ([Body generators](#body-generators-groups-and-symmetry)). |
 | `section`, `material`, `analysis`, `load` | no | A full design's sections, materials, analysis options and own loads — see [Structure analysis](structure-analysis.md). |
-| `model` | no | A separate structure model (`.olsfe`, path relative to this file) for the finite-element check, instead of the members here. |
-| `pole` | no | The pole: `pole = "id"` (a `.olsp` file in the same folder, by its id or its file name) or, version 3, a `[pole]` table in the file with its outline and design ([Poles](#poles)) — checked by the pole check, see [Structure analysis](structure-analysis.md). |
+| `model` | no | A separate structure model (`.ohlfe`, path relative to this file) for the finite-element check, instead of the members here. |
+| `pole` | no | The pole: `pole = "id"` (a `.ohlp` file in the same folder, by its id or its file name) or, version 3, a `[pole]` table in the file with its outline and design ([Poles](#poles)) — checked by the pole check, see [Structure analysis](structure-analysis.md). |
 
 ### Points, strings and wire points
 
@@ -92,9 +92,9 @@ A structure file describes its structure at one of three levels. The level is **
 |---|---|---|
 | **1 — stick figure** | Only the points, strings and wire points: a mast from the centre to the top and crossarms to the points are drawn — or `[[body]]` polylines that all lie in one plane (a face of the pylon). | Placing the wires, drawings, the 3D view. |
 | **2 — sticks of the pylon** | Joints (`[[node]]`) and members (`[[member]]`) without sections, or `[[body]]` polylines that make a 3D object (their points, all together, not in one plane — more than 1 mm off it). | Drawings and the 3D view with the pylon's members; distances to the structure (planned). |
-| **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint — or a separate `model = "….olsfe"`. An extension with a body: its members with sections and a supported joint too. | Structure analysis (finite elements) and fabrication. |
+| **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint — or a separate `model = "….ohlfe"`. An extension with a body: its members with sections and a supported joint too. | Structure analysis (finite elements) and fabrication. |
 
-A **pole** has the same three levels ([Poles](#poles)): without an outline it adds nothing (level 1); its outline — diameters at two heights at least — makes level 2; with what the pole check needs (material, strength, its wall thickness, `solid`, or a section) level 3. A pole named by a `.olsp` file is level 3. The structure's level is the higher of its members' and its pole's.
+A **pole** has the same three levels ([Poles](#poles)): without an outline it adds nothing (level 1); its outline — diameters at two heights at least — makes level 2; with what the pole check needs (material, strength, its wall thickness, `solid`, or a section) level 3. A pole named by a `.ohlp` file is level 3. The structure's level is the higher of its members' and its pole's.
 
 ```toml
 [[node]]                             # a joint, local axes
@@ -116,7 +116,7 @@ label = "A1"
 node = "T1"                          # at a joint (or member = "arm1", at = 0.5)
 ```
 
-The joints and members take the same fields as in a [structure model](structure-analysis.md#structure-models-olsfe); a point on a joint carries its loads in the finite-element check. A member's `kind` is `truss` (default), `frame`, `cable` or — version 5 — `tension`: a truss in tension only, left out of the analysis while it would be compressed (a tower program's "T-only" bracing; [Tension-only members](structure-analysis.md#tension-only-members)). The structure application raises the file to version 5 when a member is made `tension`; an older program then says the file is newer instead of failing on the kind.
+The joints and members take the same fields as in a [structure model](structure-analysis.md#structure-models-ohlfe); a point on a joint carries its loads in the finite-element check. A member's `kind` is `truss` (default), `frame`, `cable` or — version 5 — `tension`: a truss in tension only, left out of the analysis while it would be compressed (a tower program's "T-only" bracing; [Tension-only members](structure-analysis.md#tension-only-members)). The structure application raises the file to version 5 when a member is made `tension`; an older program then says the file is newer instead of failing on the kind.
 
 Checks that depend on the structure's shape — distances from the wires to the structure body, structure analysis, insulator swing to the structure — behave differently at each level; each such check says in its documentation what it does for levels 1, 2 and 3. The structure's level is shown in its properties.
 
@@ -176,7 +176,7 @@ made_by = "body"                     # written by generator body: a rebuild repl
 
 ### Poles
 
-A pole structure names its pole — `pole = "steel-pole-30m"` (the `.olsp` file with that id next to the structure; or `pole = "steel-pole-30m.olsp"`, by file name), level 3 — or, version 3, describes it in the structure file:
+A pole structure names its pole — `pole = "steel-pole-30m"` (the `.ohlp` file with that id next to the structure; or `pole = "steel-pole-30m.ohlp"`, by file name), level 3 — or, version 3, describes it in the structure file:
 
 ```toml
 version = 3
@@ -186,7 +186,7 @@ shape = "polygon"                    # or "round" (default)
 sides = 12                           # a polygon's number of sides (3 or more)
 embedment = "3 m"                    # depth in the ground (optional): length = height + this
 
-# Level 3: the fields of a .olsp file, same names and meaning
+# Level 3: the fields of a .ohlp file, same names and meaning
 material = "steel"                   # wood | steel | concrete | other
 wall = "8 mm"                        # or "solid", or section = "P-12x500" (below); none: not given
 elasticity = "210 GPa"               # P-Delta
@@ -209,11 +209,11 @@ moment = "900 kN m"
 ```
 
 - **Outline**: heights rise from row to row (by more than 1 mm); a row gives its `diameter` or its `circumference` (a polygon's perimeter: across flats = perimeter / (n · tan(π/n))). Between the heights the diameter is linear; below the lowest and above the top it is held. The pole's height above ground is the top's z less the feet's.
-- **Level 3** needs the `material`, a strength (`fibre_stress`, `moment_capacity` or `[[pole.capacity]]`) and its wall: its wall thickness, `wall = "solid"` (a solid pole, no hollow), or a `section`, whatever the material. `wall` takes a length or the word `"solid"`; any other word is refused, naming `wall`. A pole named by a `.olsp` file counts as level 3 as given; brought into the structure file, its missing wall is listed (a `.olsp` without a wall brings none: you decide between a thickness, solid and a section).
+- **Level 3** needs the `material`, a strength (`fibre_stress`, `moment_capacity` or `[[pole.capacity]]`) and its wall: its wall thickness, `wall = "solid"` (a solid pole, no hollow), or a `section`, whatever the material. `wall` takes a length or the word `"solid"`; any other word is refused, naming `wall`. A pole named by a `.ohlp` file counts as level 3 as given; brought into the structure file, its missing wall is listed (a `.ohlp` without a wall brings none: you decide between a thickness, solid and a section).
 - **`section`**: a hollow section of the project's section library ([Section library](section-library.md)) — `polygonal_hollow` with the pole's sides, or `circular_hollow` for a round pole. Its wall `t` is the pole's wall (unless `wall` is given: a thickness, or solid), and its material's elasticity and density are taken when not given here. The section's own diameter is not used: the outline gives the diameters.
 - **A polygon's section** at each height: a regular polygon of the outline's width across flats, hollow by the wall; its second moment is the same about every axis through the centre (A·(12 r² + a²)/48 for inradius r and side a, as the section library computes it), its elastic modulus taken at a corner (the smaller).
 
-The structure application edits the pole (**Body › Pole**, **Design › Pole**) and brings a named `.olsp` into the file in one step: its diameters at the ground line and the top become a two-height outline from the feet, its other fields are copied, and the pole check gives the same numbers.
+The structure application edits the pole (**Body › Pole**, **Design › Pole**) and brings a named `.ohlp` into the file in one step: its diameters at the ground line and the top become a two-height outline from the feet, its other fields are copied, and the pole check gives the same numbers.
 
 ### Extension bodies and leg extensions
 
@@ -303,7 +303,7 @@ Each band: bottom and top above the ground, projected area, drag coefficient (fr
 How much string detail is worth modelling depends on the pylon. A **simple pylon file** gives each string's length and weight in the pylon itself — no insulator library needed:
 
 ```toml
-format = "ols-structure"
+format = "ohl-structure"
 version = 2
 id = "D380-tangent"
 name = "380 kV double circuit, tangent: 3 crossarms each side + earth wire"
@@ -352,7 +352,7 @@ direction = "0 deg"
 
 A string hangs down by default; its `angle` and `direction` point it anywhere — a strain string level along the line, at 0° or 180° — and it is solved as a free member that lines up with its conductor, like a library strain assembly. A wire point no string reaches is clamped where it is. The stick drawing appears in the 3D viewer and in the plan and profile sheets.
 
-## Pylon templates (`.olspt`)
+## Pylon templates (`.ohlpt`)
 
 A **pylon template** is the face of a pylon — across the line and up, in
 its own axes, no outside sizes — given by a few named dimensions. From it
@@ -378,7 +378,7 @@ The library grows with files: the templates shipped with OpenOHL in
 instead of the shipped one).
 
 ```toml
-format = "ols-pylon-template"
+format = "ohl-pylon-template"
 version = 1
 id = "delta-1c"
 name = "Delta, one circuit, one earth wire"
@@ -448,10 +448,10 @@ Shipped: `delta-1c`, `flat-1c` (two earth wires), `danube-2c`,
 `barrel-2c`, `multi-5c`, `pole-1c` — synthetic dimensions, to be changed
 in the builder.
 
-## Insulator assemblies (`.olsi`)
+## Insulator assemblies (`.ohli`)
 
 ```toml
-format = "ols-insulator"
+format = "ohl-insulator"
 version = 1
 id = "I-380-double"
 name = "380 kV double I-string"
@@ -485,9 +485,9 @@ A string may carry **limits that OpenOHL does not check**: kept with the string,
 | `max_swing_across` | angle | the swing across the line it may take (in the structure's x–z plane), either side |
 | `max_swing_along` | angle | the swing along the line it may take (in the structure's y–z plane), either way |
 
-Angles from 0 to 180°, a load above 0; other values and unknown keys are refused. They go on an **insulator assembly** (`.olsi`, version 2) as defaults and on a **string** (`[[string]]` of a structure type, version 4; a line's own string, line file version 6): a string naming an assembly takes each limit the assembly gives where the string gives none of its own — the string's own value wins. The compression a string may take is not one of them: that is `compression`, which the solve uses (a string with it acts both ways and is flagged beyond it).
+Angles from 0 to 180°, a load above 0; other values and unknown keys are refused. They go on an **insulator assembly** (`.ohli`, version 2) as defaults and on a **string** (`[[string]]` of a structure type, version 4; a line's own string, line file version 6): a string naming an assembly takes each limit the assembly gives where the string gives none of its own — the string's own value wins. The compression a string may take is not one of them: that is `compression`, which the solve uses (a string with it acts both ways and is flagged beyond it).
 
-The swings they compare with are those of the string as solved, from its top to its wire point: from straight down, and the angles of its projections on the planes across and along the line, positive to the right and ahead (`ols_line::swing`). OpenOHL writes a file's newer version only when it holds limits (an `.olsi` without any stays version 1), so an older program still reads the rest.
+The swings they compare with are those of the string as solved, from its top to its wire point: from straight down, and the angles of its projections on the planes across and along the line, positive to the right and ahead (`ohl_line::swing`). OpenOHL writes a file's newer version only when it holds limits (an `.ohli` without any stays version 1), so an older program still reads the rest.
 
 ### Library labels: every string in the library
 
@@ -511,9 +511,9 @@ A structure in a [line file](line-file.md) references a type instead of listing 
 ## Deriving libraries from an existing line
 
 ```bash
-cargo run -p ols-cli -- structures derive my-line.ols.json --out project/ --inline-strings
+cargo run -p ohl-cli -- structures derive my-line.ohl.json --out project/ --inline-strings
 ```
 
-writes simple pylon files, one per type, into `project/Structures/` (version 1 attachments with their strings, labels `A<set>-<phase>` and `W<set>-<phase>` to rename; a set hanging on several strings is derived as one string from their middle) and `project/my-line-typed.ols.json`. Without `--inline-strings`, `--out derived/` writes `derived/structures/*.olss`, `derived/insulators/*.olsi` and `derived/my-line-typed.ols.json` (the line referencing the types). Each structure's rotation is taken from its route (bisector of its back and ahead spans), attachment layouts that match within 1 cm become one type, and insulators are classified from the geometry (section ends are always strain assemblies; other clamps hanging below their attachment, swung less than 45°, are suspension strings) and grouped by kind, length and weight. The self-check reports how closely the derived libraries reproduce the attachment points and insulator lengths.
+writes simple pylon files, one per type, into `project/Structures/` (version 1 attachments with their strings, labels `A<set>-<phase>` and `W<set>-<phase>` to rename; a set hanging on several strings is derived as one string from their middle) and `project/my-line-typed.ohl.json`. Without `--inline-strings`, `--out derived/` writes `derived/structures/*.ohls`, `derived/insulators/*.ohli` and `derived/my-line-typed.ohl.json` (the line referencing the types). Each structure's rotation is taken from its route (bisector of its back and ahead spans), attachment layouts that match within 1 cm become one type, and insulators are classified from the geometry (section ends are always strain assemblies; other clamps hanging below their attachment, swung less than 45°, are suspension strings) and grouped by kind, length and weight. The self-check reports how closely the derived libraries reproduce the attachment points and insulator lengths.
 
 On a real 78-structure line (local check, data not in the repository) every tower turned out to be individual — each has its own layout — while about 1 500 attachments reduced to 33 insulator assemblies; the self-check reproduced all attachment points and lengths within 1 cm. Weights, stiffness and wind areas cannot be derived from geometry: fill them in.

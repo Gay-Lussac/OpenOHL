@@ -1,18 +1,18 @@
-# Project files and point clouds (`.ols`)
+# Project files and point clouds (`.ohl`)
 
 A project file is one SQLite database (ADR-0004) holding the line model, its
 **operation log**, its users, and its **point clouds** (ADR-0007). Line files
-(`.ols.json`) stay the open exchange format: import them into a project,
+(`.ohl.json`) stay the open exchange format: import them into a project,
 export the project back.
 
 ```bash
-ohl project import line.ols.json --into project.ols --user ana   # ana becomes admin
-ohl project user project.ols --by ana ben designer
-ohl project apply project.ols --user ben '{"op": "move_structure", "id": "T4", "position": [940.0, 52.1, 510.0]}'
-ohl project undo project.ols --user ben
-ohl project log project.ols
-ohl project export project.ols --out line.ols.json
-ohl line project.ols --temperature 80          # every command taking a line file takes a project too
+ohl project import line.ohl.json --into project.ohl --user ana   # ana becomes admin
+ohl project user project.ohl --by ana ben designer
+ohl project apply project.ohl --user ben '{"op": "move_structure", "id": "T4", "position": [940.0, 52.1, 510.0]}'
+ohl project undo project.ohl --user ben
+ohl project log project.ohl
+ohl project export project.ohl --out line.ohl.json
+ohl line project.ohl --temperature 80          # every command taking a line file takes a project too
 ```
 
 **`ohl line` and `ohl zones` read the project's libraries.** Given a
@@ -25,7 +25,7 @@ end. A library given on the command line (`--library`, `--structures`,
 looked up as for a line file (the shipped wire and insulator libraries,
 the `Structures` and `Sections` folders next to the file). `--weather`,
 `--load-cases` and `--rules` also take the name of one of the project's
-own files (`--weather cases.olswc`), and `ohl zones` falls back on the
+own files (`--weather cases.ohlwc`), and `ohl zones` falls back on the
 project's first weather case file. The summary says where each library
 came from (`cables: the project's (2 files)`). The commands write nothing
 to the project; opening a project file of an older build upgrades it (as
@@ -58,7 +58,7 @@ none.
 One rule for every deletion: an object that takes others with it is not deleted until confirmed. Without `confirm` nothing changes and the answer lists everything that would go or change:
 
 ```text
-$ ohl project delete project.ols --user ana structure T7
+$ ohl project delete project.ohl --user ana structure T7
 Deleting structure T7 would also affect:
   attachments and insulators:
     - 1:1 dead-end
@@ -84,9 +84,9 @@ With `--confirm` (`"confirm": true`) everything listed is applied as **one log e
 The alignment of a route is the base of its plan and profile drawings, kept apart from the line design. Usually its points sit under the pylons, **tied** to them: they follow when a pylon moves. Any point can be moved (which detaches it), detached, re-tied, inserted or removed:
 
 ```bash
-ohl project apply project.ols --user ana '{"op": "align_under_structures", "route": "main"}'
-ohl project apply project.ols --user ana '{"op": "move_alignment_point", "route": "main", "index": 3, "position": [2600410.0, 1200125.0, 0.0]}'
-ohl project apply project.ols --user ana '{"op": "tie_alignment_point", "route": "main", "index": 3, "structure": "T4"}'
+ohl project apply project.ohl --user ana '{"op": "align_under_structures", "route": "main"}'
+ohl project apply project.ohl --user ana '{"op": "move_alignment_point", "route": "main", "index": 3, "position": [2600410.0, 1200125.0, 0.0]}'
+ohl project apply project.ohl --user ana '{"op": "tie_alignment_point", "route": "main", "index": 3, "structure": "T4"}'
 ```
 
 Each applied command is logged with the user, the time, its inverse, the
@@ -103,7 +103,7 @@ The result is identical to a full solve (checked by tests after every kind
 of edit). From the command line:
 
 ```bash
-ohl project apply project.ols --user ana --solve --temperature 40 \
+ohl project apply project.ohl --user ana --solve --temperature 40 \
   '{"op": "move_structure", "id": "T40", "position": [2598496.0, 1120627.6, 649.5]}'
 ```
 
@@ -135,18 +135,18 @@ line's end or another structure worth having — but the import warns about
 it, in case it belongs to another project.
 
 ```bash
-ohl pointcloud import TILES_DIR --into project.ols --name lidar-2025 \
-  --classes classes.olsc --crs EPSG:2056
-ohl pointcloud info project.ols
-ohl pointcloud export project.ols --out survey.laz          # every point
-ohl pointcloud export project.ols --out wires.las --classes 14,15 \
+ohl pointcloud import TILES_DIR --into project.ohl --name lidar-2025 \
+  --classes classes.ohlc --crs EPSG:2056
+ohl pointcloud info project.ohl
+ohl pointcloud export project.ohl --out survey.laz          # every point
+ohl pointcloud export project.ohl --out wires.las --classes 14,15 \
   --area 2600000,1200000,2601000,1201000                     # classes, a rectangle
-ohl pointcloud export project.ols --out survey.copc.laz     # COPC
+ohl pointcloud export project.ohl --out survey.copc.laz     # COPC
 ohl pointcloud info survey.copc.laz                         # its octree
-ohl pointcloud import survey.copc.laz --into other.ols      # COPC in
-ohl pointcloud octree old-project.ols                       # levels of detail
-ohl line project.ols --pointcloud project.ols --rules rules.olsr
-ohl line project.ols --pointcloud survey.copc.laz --rules rules.olsr
+ohl pointcloud import survey.copc.laz --into other.ohl      # COPC in
+ohl pointcloud octree old-project.ohl                       # levels of detail
+ohl line project.ohl --pointcloud project.ohl --rules rules.ohlr
+ohl line project.ohl --pointcloud survey.copc.laz --rules rules.ohlr
 ```
 
 The desktop app does the same from **File › Import › LiDAR points
@@ -158,7 +158,7 @@ line).
 **Export** writes LAS 1.4, point format 6 (classes 0–255: schemes with codes
 above 31 survive), LAZ when the file ends in `.laz`, with the survey's
 coordinate scale, intensities and return numbers as imported, and the class
-scheme next to it (`.olsc`) — to share a survey or compare it with other
+scheme next to it (`.ohlc`) — to share a survey or compare it with other
 data. Exported and imported again, a survey gives the same points, classes
 and intensities. On the real line, the 1.09 million points within 150 m of a
 structure are written in 0.3 s (6.9 MB of LAZ).
@@ -206,8 +206,8 @@ node a thinned sample of its cube that its children refine. OpenOHL:
 - reads it **directly** as a point source — `--pointcloud survey.copc.laz` for
   `ohl line` and the desktop app: a query reads only the nodes of its area
   (the corridor, a rectangle), down to a depth when it asks for less detail;
-  the class scheme is the `.olsc` file next to it (`survey.copc.olsc` or
-  `survey.olsc`), else ASPRS;
+  the class scheme is the `.ohlc` file next to it (`survey.copc.ohlc` or
+  `survey.ohlc`), else ASPRS;
 - **imports** it like any LAZ file (`ohl pointcloud import`);
 - **writes** it (`ohl pointcloud export … --out FILE.copc.laz`): point format
   6, nodes split while they hold more than 100 000 points (each keeping one
@@ -232,9 +232,9 @@ wide as the object — and the index follows every command. This is what
 partial loading, the viewer and the server stream by.
 
 ```bash
-ohl project tiles project.ols --level 2        # objects and points per 1 km tile
-ohl project query project.ols --area 2585600,1114880,2585856,1115136
-ohl project query project.ols --tile 0/10100/4355
+ohl project tiles project.ohl --level 2        # objects and points per 1 km tile
+ohl project query project.ohl --area 2585600,1114880,2585856,1115136
+ohl project query project.ohl --tile 0/10100/4355
 ```
 
 `tiles` lists, for each tile of the level, how many objects touch it and

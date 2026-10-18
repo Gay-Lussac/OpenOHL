@@ -8,12 +8,12 @@ their tests run separately from the core's.
 
 | Crate | What | Depends on |
 |---|---|---|
-| `ols-structure-loads` | Load-case recipes (`[[load_case]]` in a `.olss`, `.olsslc` on their own), `LineValues` and `LoadTable` (plain, serde-able data), `evaluate`, CSV of the table and the recipes | `ols-core`, `ols-structures` only: no line, no `ols-loads` |
-| `ols-structure-link` | **The boundary**: the one crate where the application meets the core. `line_values` (a placed structure's loads from `ols_loads::structure_loads` → `LineValues`), `fe_loads` (a table case → `ols_structures_fe::Loads`; a point on a member shared to its ends), `analyse_cases` (table cases solved on the structure's model → `CaseResult`, plain data: displacements, member forces and usage, reactions, Σ loads and Σ reactions), `export_structure` (a level 3 structure with its section library and load table as plain `ExportStructure` for the exports). `placed_values` (a placed structure's line values with the other places of its type, written for the application, below), `SectionAreas` (member areas from the section library for surface loads) | core crates + `ols-structure-loads` |
-| `ols-structure-edit` | The edits of a structure file, each a function on its text (`toml_edit`: comments and order kept); `StructureFile` with undo and redo of whole edits (a drag is one); `Geometry` (standing on an extension: `geometry_with`; the pole's wireframe), picking; `missing(level)` (what the next level lacks — also the pole's outline and design, extension members without sections — and advice: points on no joint, joints on one member, members crossing without a joint, an extension without members at level 3); the pole's edits (`pole`: outline rows, shape, fields, a `.olsp` brought in) and the extensions' (`extension_edits`: joints, members, the piece in one go, legs); the edits of the load-case recipes (`load_cases.rs`: by place, `merge_load_cases` for imports); the body tools: generators (`generators`, pure), apply and rebuild (`rebuild`), the `[[generator]]` and `[[symmetry]]` tables (`body`), mirrored edits (`symmetry`), member groups (`groups`). No UI | `ols-core`, `ols-structures` (the file format only). `ols-app`'s structure screen depends on it, so there is one implementation of the edits |
-| `ols-structure-export` | The exports of a level 3 structure ([Structure exports](structure-exports.md)): IFC4 (members with profile solids and the structural analysis model with load cases), IFC2x3 (members, for Tekla Structures), SAF (xlsx, its own small writer on `zip`), CSV tables; the tool `ols-structure-export` (not `ohl structures export`: `ols-cli` is a core crate) | `ols-structure-link` (`export_structure`, the plain `ExportStructure`), `ols-structure-loads`, `ols-sections`, `ols-structures` (parsing the file only) |
-| `ols-structure-app` | The binary `ohl-structure`, **OHL-Structure** (eframe): the menus at the top and the panels under them (below), the 3D view in local axes, the Level panel with what the next level lacks, Save / Save as, undo / redo. The line application's **Edit…** starts it on the structure's file and reads the file again when it is saved. Modules: `app.rs` (the window, the state, the frame), `menus.rs` (the menu bar and the actions it shares with the panels' tools, the windows), `layout.rs` (the panels and menus: `Panel`, `Area`, the default arrangement, `open_panel`), `tables.rs` (the panels of tables of Geometry, Body, Design and their actions), `in_line_tab.rs` (Line values), `body_tab.rs` and `generators_ui.rs` (the Joints and Members panels' tools, Generators, Groups), `load_cases_tab.rs` (Load recipes, Load table, the line's forces as rows, the status block, Store in the structure file), `results_tab.rs` (FE results), `export_menu.rs` (File › Export), `pole_panel.rs` (Pole, Pole design), `extensions_panel.rs` (Extensions), `libraries.rs` (File › Libraries and the Libraries panel: `LibKind`, `Folders`, `references`, `scan`, `import`, `export`, `sections_subset`), `start.rs` (the start page, recent files, New structure), `plugins_ui.rs` (Plugins › Plugin manager, Load cases from a design code) | `ols-structure-edit`, `ols-structure-loads`, `ols-structure-link` (analysis only through it; also `pole_file_id`, `model_file_name` to check `.olsp` / `.olsfe` files), `ols-structure-export`, `ols-structures`, `ols-sections`, `ols-plugins` (core: manifests, discovery, the host, the shared settings), `ols-render` (drawing only) |
-| `ols-structure-tests` | Test-only (`publish = false`, empty library, tests in `tests/`): the synthetic example line solved by the core, through the link, against hand values and the line run's own structure check; the application's formats refusing typos; a body built by the generators solved by the FE model (`body_fe.rs`) | everything above, as dev-dependencies |
+| `ohl-structure-loads` | Load-case recipes (`[[load_case]]` in a `.ohls`, `.ohlslc` on their own), `LineValues` and `LoadTable` (plain, serde-able data), `evaluate`, CSV of the table and the recipes | `ohl-core`, `ohl-structures` only: no line, no `ohl-loads` |
+| `ohl-structure-link` | **The boundary**: the one crate where the application meets the core. `line_values` (a placed structure's loads from `ohl_loads::structure_loads` → `LineValues`), `fe_loads` (a table case → `ohl_structures_fe::Loads`; a point on a member shared to its ends), `analyse_cases` (table cases solved on the structure's model → `CaseResult`, plain data: displacements, member forces and usage, reactions, Σ loads and Σ reactions), `export_structure` (a level 3 structure with its section library and load table as plain `ExportStructure` for the exports). `placed_values` (a placed structure's line values with the other places of its type, written for the application, below), `SectionAreas` (member areas from the section library for surface loads) | core crates + `ohl-structure-loads` |
+| `ohl-structure-edit` | The edits of a structure file, each a function on its text (`toml_edit`: comments and order kept); `StructureFile` with undo and redo of whole edits (a drag is one); `Geometry` (standing on an extension: `geometry_with`; the pole's wireframe), picking; `missing(level)` (what the next level lacks — also the pole's outline and design, extension members without sections — and advice: points on no joint, joints on one member, members crossing without a joint, an extension without members at level 3); the pole's edits (`pole`: outline rows, shape, fields, a `.ohlp` brought in) and the extensions' (`extension_edits`: joints, members, the piece in one go, legs); the edits of the load-case recipes (`load_cases.rs`: by place, `merge_load_cases` for imports); the body tools: generators (`generators`, pure), apply and rebuild (`rebuild`), the `[[generator]]` and `[[symmetry]]` tables (`body`), mirrored edits (`symmetry`), member groups (`groups`). No UI | `ohl-core`, `ohl-structures` (the file format only). `ohl-app`'s structure screen depends on it, so there is one implementation of the edits |
+| `ohl-structure-export` | The exports of a level 3 structure ([Structure exports](structure-exports.md)): IFC4 (members with profile solids and the structural analysis model with load cases), IFC2x3 (members, for Tekla Structures), SAF (xlsx, its own small writer on `zip`), CSV tables; the tool `ohl-structure-export` (not `ohl structures export`: `ohl-cli` is a core crate) | `ohl-structure-link` (`export_structure`, the plain `ExportStructure`), `ohl-structure-loads`, `ohl-sections`, `ohl-structures` (parsing the file only) |
+| `ohl-structure-app` | The binary `ohl-structure`, **OHL-Structure** (eframe): the menus at the top and the panels under them (below), the 3D view in local axes, the Level panel with what the next level lacks, Save / Save as, undo / redo. The line application's **Edit…** starts it on the structure's file and reads the file again when it is saved. Modules: `app.rs` (the window, the state, the frame), `menus.rs` (the menu bar and the actions it shares with the panels' tools, the windows), `layout.rs` (the panels and menus: `Panel`, `Area`, the default arrangement, `open_panel`), `tables.rs` (the panels of tables of Geometry, Body, Design and their actions), `in_line_tab.rs` (Line values), `body_tab.rs` and `generators_ui.rs` (the Joints and Members panels' tools, Generators, Groups), `load_cases_tab.rs` (Load recipes, Load table, the line's forces as rows, the status block, Store in the structure file), `results_tab.rs` (FE results), `export_menu.rs` (File › Export), `pole_panel.rs` (Pole, Pole design), `extensions_panel.rs` (Extensions), `libraries.rs` (File › Libraries and the Libraries panel: `LibKind`, `Folders`, `references`, `scan`, `import`, `export`, `sections_subset`), `start.rs` (the start page, recent files, New structure), `plugins_ui.rs` (Plugins › Plugin manager, Load cases from a design code) | `ohl-structure-edit`, `ohl-structure-loads`, `ohl-structure-link` (analysis only through it; also `pole_file_id`, `model_file_name` to check `.ohlp` / `.ohlfe` files), `ohl-structure-export`, `ohl-structures`, `ohl-sections`, `ohl-plugins` (core: manifests, discovery, the host, the shared settings), `ohl-render` (drawing only) |
+| `ohl-structure-tests` | Test-only (`publish = false`, empty library, tests in `tests/`): the synthetic example line solved by the core, through the link, against hand values and the line run's own structure check; the application's formats refusing typos; a body built by the generators solved by the FE model (`body_fe.rs`) | everything above, as dev-dependencies |
 
 Rules:
 
@@ -21,17 +21,17 @@ Rules:
   dev-dependencies). The core keeps the application's tables unread where
   it must hold them: `StructureType::load_cases` is the raw
   `[[load_case]]` tables (and `generators`, `symmetry` the raw
-  `[[generator]]`, `[[symmetry]]` tables, read by `ols-structure-edit`), as `[[section]]` / `[[material]]` are for
-  `ols-structures-fe`. For that reason the typo test of the application's
-  formats is in `ols-structure-tests`, not in
-  `crates/ols-cli/tests/format_typos.rs`.
+  `[[generator]]`, `[[symmetry]]` tables, read by `ohl-structure-edit`), as `[[section]]` / `[[material]]` are for
+  `ohl-structures-fe`. For that reason the typo test of the application's
+  formats is in `ohl-structure-tests`, not in
+  `crates/ohl-cli/tests/format_typos.rs`.
 - Application crates other than the link take and give plain data; only
   the link reads core results.
-- Plugins reach the application only through `ols-plugins` (a core
-  crate, an allowed dependency of `ols-structure-app` only): design codes
+- Plugins reach the application only through `ohl-plugins` (a core
+  crate, an allowed dependency of `ohl-structure-app` only): design codes
   stay `code-plugin`s giving the line's weather and load cases — the
   application takes their load-case names as recipes taking the line's
-  values (`ols_structure_edit::take_line_load_cases`). No plugin world is
+  values (`ohl_structure_edit::take_line_load_cases`). No plugin world is
   made for the application yet; check plugins are listed only.
 
 ## On its own: start page, libraries, plugins
@@ -41,10 +41,10 @@ Rules:
   `ols-structure-recent`, ten, canonical paths, added by
   `StructureApp::open`). **New structure** writes `start::minimal` (one
   point, level 1) or a pylon template built with
-  `PylonTemplate::build(defaults(role))` from `ols-structures` (no
-  dependency on `ols-app`'s pylon builder); `start::create` refuses an
+  `PylonTemplate::build(defaults(role))` from `ohl-structures` (no
+  dependency on `ohl-app`'s pylon builder); `start::create` refuses an
   existing file and checks the result opens. The launcher
-  `Start OHL-Structure.command` builds `ols-structure-app` and runs `ohl-structure`.
+  `Start OHL-Structure.command` builds `ohl-structure-app` and runs `ohl-structure`.
 - **Libraries** (`libraries.rs`): `Folders::new(file, --sections,
   --insulators)` gives where each `LibKind` is read and imported into
   (sections: the folder given or `Sections/`; insulators: the folder
@@ -72,7 +72,7 @@ Rules:
 - **Plugins** (`plugins_ui.rs`): `PluginsState` lists `user_dir`
   (`eframe::storage_dir("OLS CAD")/plugins`, the line application's;
   `LINE_STORAGE_ID`, the storage id kept from before OpenOHL) and
-  the folders of `ols_plugins::PluginSettings` (`settings.toml` there),
+  the folders of `ohl_plugins::PluginSettings` (`settings.toml` there),
   read when the manager opens and written at each change; `applies`
   says per extension point what it does here. Details come from
   `WasmHost::describe_any` on a thread; a design code runs
@@ -84,7 +84,7 @@ Rules:
 ```text
 line app: Properties › Edit…  (Action::EditInStructureApp { id, structure })
   ├─ writes <stem>.<id>.line-values.json   ("being computed" first, then
-  │     ols_structure_link::placed_values on a thread; again when the
+  │     ohl_structure_link::placed_values on a thread; again when the
   │     line changes and stays unchanged for 1 s; one run at a time)
   └─ starts  ohl-structure <file> --structure <id> --line-values <json> --sections <dir>
 structure app: reads the JSON when its mtime changes (twice a second):
@@ -93,8 +93,8 @@ structure app: reads the JSON when its mtime changes (twice a second):
   typed values → <stem>.<id>.loads.csv → the line app stores them (kind `loads`)
 ```
 
-- The JSON is `ols_structure_loads::PlacedValues` (format
-  `ols-structure-line-values`, version 3): the structure, the line, its
+- The JSON is `ohl_structure_loads::PlacedValues` (format
+  `ohl-structure-line-values`, version 3): the structure, the line, its
   type, the line's cases and their sources (version 2), the values
   (`LineValues`), the other places of the same type with theirs, a note
   (no values yet, no load case file, sections a case did not solve) and
@@ -161,7 +161,7 @@ boxes of fixed height (`app::error_label`); every window has its ×.
   recipe is called "NAME (line)". The recipes evaluated follow. The
   results and the exports take them like any case.
 - **Store in the structure file** (`StructureApp::store_line_cases`,
-  `ols_structure_edit::store_given_cases`): the line's cases ticked
+  `ohl_structure_edit::store_given_cases`): the line's cases ticked
   written as `[[load_case]]` of given values (a `value` and `direction`
   per point and non-zero component, `line_case`, a description starting
   "Stored from the line" with the line, the place and the date), one
@@ -173,7 +173,7 @@ boxes of fixed height (`app::error_label`); every window has its ×.
   alone), waiting, being computed, no load case file (with what to do),
   a case without values, what the line gave; plus the cases stored from
   the line.
-- **Recipes** are edited in the file (`ols-structure-edit::load_cases`):
+- **Recipes** are edited in the file (`ohl-structure-edit::load_cases`):
   each change one undo step; the panel reads them back with
   `StructureLoadCases::from_structure` and shows why they do not read.
 - **The load table** is evaluated again whenever the file text or the
@@ -191,7 +191,7 @@ boxes of fixed height (`app::error_label`); every window has its ×.
   same table.
 - **Results** need level 3 (`Detail::Design`, which includes `model =`).
   The run goes to a thread of its own through
-  `ols_structure_link::analyse_cases`; the window polls it and stays
+  `ohl_structure_link::analyse_cases`; the window polls it and stays
   responsive. Exit clauses ([Performance](performance.md)): each case at
   most 200 iterations and 30 s, a **Cancel** button (a `CancelToken`);
   a case that does not solve is listed with the solver's reason
@@ -210,25 +210,25 @@ Before a commit that touches the application's crates (expected about
 
 ```sh
 cargo fmt --all --check
-cargo clippy -p ols-structure-loads -p ols-structure-link -p ols-structure-export -p ols-structure-tests --all-targets -- -D warnings
-cargo test -p ols-structure-loads -p ols-structure-link -p ols-structure-export -p ols-structure-tests
+cargo clippy -p ohl-structure-loads -p ohl-structure-link -p ohl-structure-export -p ohl-structure-tests --all-targets -- -D warnings
+cargo test -p ohl-structure-loads -p ohl-structure-link -p ohl-structure-export -p ohl-structure-tests
 ```
 
 The editor and the window on their own (seconds for the edits, under a
 minute for the window's egui_kittest tests with a warm build):
 
 ```sh
-cargo clippy -p ols-structure-edit -p ols-structure-app --all-targets -- -D warnings
-cargo test -p ols-structure-edit -p ols-structure-app
+cargo clippy -p ohl-structure-edit -p ohl-structure-app --all-targets -- -D warnings
+cargo test -p ohl-structure-edit -p ohl-structure-app
 ```
 
 The plugin manager's test lists the in-repo plugins and runs the
-`en50341` design code when it is built; with `OLS_REQUIRE_PLUGIN_TESTS`
+`en50341` design code when it is built; with `OHL_REQUIRE_PLUGIN_TESTS`
 set, an unbuilt plugin fails it (build each `plugins/*/*/` with a
 `Cargo.toml`: `cargo build --release --target wasm32-wasip2`).
 
-`ols-app` depends on `ols-structure-edit` (its structure screen), so a
-change there also runs `cargo test -p ols-app`.
+`ohl-app` depends on `ohl-structure-edit` (its structure screen), so a
+change there also runs `cargo test -p ohl-app`.
 
 The workspace-wide checks (and CI, which runs `--workspace`) include
 these crates too; a change to a core crate the application uses also
@@ -238,5 +238,5 @@ runs the core's tests.
 
 Structure load-case recipes and the load table: [Structure load
 cases](../user-guide/structure-load-cases.md); map: [Data
-model](data-model.md#structure-load-cases-load_case-olsslc). CSV works
+model](data-model.md#structure-load-cases-load_case-ohlslc). CSV works
 today; XLSX import and export come later.

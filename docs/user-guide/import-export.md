@@ -12,7 +12,7 @@ ohl formats [--plugin DIR]
 | `wires-csv`          | export    | `case,section,span,circuit,phase,index,x,y,z` for every weather case (jumpers: section `jumper:<id>`) |
 | `spans-csv`          | export    | one row per span and weather case: structures, horizontal span, horizontal and largest tension, sag |
 | `kml`, `kmz`         | export    | structures (points) and wires (one folder per weather case) in WGS84 for Google Earth and GIS |
-| `ols-xml`            | both      | the whole line model as [OLS XML](../schema/ols-line.md); import also reads [LandXML](#landxml) |
+| `ohl-xml`            | both      | the whole line model as [OHL XML](../schema/ohl-line.md); import also reads [LandXML](#landxml) |
 | `landxml`            | export    | routes as LandXML 1.2 alignments (with a profile of the alignment points), structures as `CgPoints` |
 | `geojson`            | export    | [GIS layers](#gis-layers): structures, routes, wires per weather case with tensions and sag (WGS84) |
 | `structures-geojson` | import    | structures from GeoJSON points along a LineString |
@@ -29,15 +29,15 @@ All of them are written directly by OpenOHL from the public specifications (no G
 Exports are written by `ohl line` after solving, so they use the same libraries, pylon files and weather cases (`--weather`, `--case`, `--tag`):
 
 ```bash
-ohl line examples/synthetic-line/synthetic-line.ols.json \
+ohl line examples/synthetic-line/synthetic-line.ohl.json \
     --export line.kmz --export wires-csv=wires.csv --option crs=EPSG:2056
 ```
 
-`--export FILE` picks the format from the extension (the first exporter for it: `.csv` → `structures-csv`, `.xml` → `ols-xml`, `.zip` → `shapefile`); `--export FORMAT=FILE` names it, e.g. `landxml=line.xml`. `--option KEY=VALUE` passes options to the formats (repeatable). In the application, File › Export › The line… lists the same formats.
+`--export FILE` picks the format from the extension (the first exporter for it: `.csv` → `structures-csv`, `.xml` → `ohl-xml`, `.zip` → `shapefile`); `--export FORMAT=FILE` names it, e.g. `landxml=line.xml`. `--option KEY=VALUE` passes options to the formats (repeatable). In the application, File › Export › The line… lists the same formats.
 
 KML/KMZ options:
 
-- `crs` — the line's coordinate system, when the line file has none (or an informative one such as `local (invented)`). Coordinates go to WGS84 through [ols-crs](coordinates.md); heights are kept (`altitudeMode` absolute: the line's heights above sea level).
+- `crs` — the line's coordinate system, when the line file has none (or an informative one such as `local (invented)`). Coordinates go to WGS84 through [ohl-crs](coordinates.md); heights are kept (`altitudeMode` absolute: the line's heights above sea level).
 - `cases` — `first` (default) or `all` weather cases.
 
 Wire colours come from the sections ([colours](line-file.md#colours)).
@@ -68,7 +68,7 @@ Options:
 
 ### IFC
 
-`ifc` writes an IFC4 file (STEP, `ReferenceView`): a project with metre, radian, newton and volt units and a site placed at the first structure. Each structure is an `IfcBuildingElementProxy` placed and turned like the structure, drawn as 3D lines (its stick drawing; else a mast with arms to the insulator points) and its insulator strings, with property set `OLS_Structure` (id, type, extension, orientation, routes). Each span or jumper is an `IfcCableSegment` (`CONDUCTORSEGMENT`) drawn as a 3D polyline, with property set `OLS_Wire` (case, section, span, cable, circuit, phase, system, nominal voltage, horizontal and largest tension, sag). Option `cases`: `first` (default) or `all`. Coordinates are the line's; no map conversion is written.
+`ifc` writes an IFC4 file (STEP, `ReferenceView`): a project with metre, radian, newton and volt units and a site placed at the first structure. Each structure is an `IfcBuildingElementProxy` placed and turned like the structure, drawn as 3D lines (its stick drawing; else a mast with arms to the insulator points) and its insulator strings, with property set `OHL_Structure` (id, type, extension, orientation, routes). Each span or jumper is an `IfcCableSegment` (`CONDUCTORSEGMENT`) drawn as a 3D polyline, with property set `OHL_Wire` (case, section, span, cable, circuit, phase, system, nominal voltage, horizontal and largest tension, sag). Option `cases`: `first` (default) or `all`. Coordinates are the line's; no map conversion is written.
 
 ### Tables (XLSX)
 
@@ -77,9 +77,9 @@ Options:
 ## Import
 
 ```bash
-ohl import positions.csv --into line.ols.json --out line-moved.ols.json
-ohl import survey.csv --format structures-csv --out new-line.ols.json
-ohl import line.xml --out line.ols.json
+ohl import positions.csv --into line.ohl.json --out line-moved.ohl.json
+ohl import survey.csv --format structures-csv --out new-line.ohl.json
+ohl import line.xml --out line.ohl.json
 ```
 
 The format comes from `--format` or the file extension. With `--into`, the file updates that line; without, it makes a new line. The result is checked like any line file before it is written. In the application, File › Import › Into the line… reads a file into the open line as one command (undone at once).
@@ -87,10 +87,10 @@ The format comes from `--format` or the file extension. With `--into`, the file 
 Into a project file — a new one, or one that holds a line — as one logged command:
 
 ```bash
-ohl project import-file points.geojson --into new.ols --user ann --option crs=EPSG:2056 --option type=tangent
+ohl project import-file points.geojson --into new.ohl --user ann --option crs=EPSG:2056 --option type=tangent
 ```
 
-`ols-xml` reads an [OLS XML](../schema/ols-line.md) line (it replaces the line). It recognises LandXML too: its `CgPoint`s become structures along the first alignment (option `alignment`: by name), as for the [neutral files](#neutral-files-points-and-a-route); a LandXML file with an alignment but no points updates the alignment of a route (option `route`, default the first) of the line it is imported into. Curves and spirals are read by their end points.
+`ohl-xml` reads an [OHL XML](../schema/ohl-line.md) line (it replaces the line). It recognises LandXML too: its `CgPoint`s become structures along the first alignment (option `alignment`: by name), as for the [neutral files](#neutral-files-points-and-a-route); a LandXML file with an alignment but no points updates the alignment of a route (option `route`, default the first) of the line it is imported into. Curves and spirals are read by their end points.
 
 ### Neutral files: points and a route
 
@@ -112,12 +112,12 @@ ohl project import-file points.geojson --into new.ols --user ann --option crs=EP
 | `name`       | name of a new line |
 | `id`         | GeoJSON property or shapefile column holding the ids (default `id`, `name` or `structure`) |
 
-Coordinates are converted from the file's system to the line's ([ols-crs](coordinates.md)). GeoJSON is longitude, latitude (WGS84) unless it names a system in a `crs` member; a zipped shapefile with a WGS84 `.prj` is too; CSV and other shapefiles are taken in the line's coordinates (or `source_crs`). Points in longitude and latitude need the line's system: `--option crs=EPSG:<code>` for a new line.
+Coordinates are converted from the file's system to the line's ([ohl-crs](coordinates.md)). GeoJSON is longitude, latitude (WGS84) unless it names a system in a `crs` member; a zipped shapefile with a WGS84 `.prj` is too; CSV and other shapefiles are taken in the line's coordinates (or `source_crs`). Points in longitude and latitude need the line's system: `--option crs=EPSG:<code>` for a new line.
 
 `structures-csv` needs columns `x` and `y`; `structure`, `z`, `orientation_deg`, `type` and `extension` are optional (an empty cell keeps the current value). Other column names are given as `<column>_column` options, the separator with `delimiter` (`,`, `;` or `tab`):
 
 ```bash
-ohl import survey.csv --format structures-csv --out new.ols.json \
+ohl import survey.csv --format structures-csv --out new.ohl.json \
     --option delimiter=';' --option x_column=Easting --option y_column=Northing --option z_column=H \
     --option structure_column=Nr --option type=tangent
 ```
@@ -128,8 +128,8 @@ A WebAssembly plugin with the extension point `io` adds formats (see [Writing pl
 
 ```bash
 (cd plugins/examples/geojson && cargo build --release --target wasm32-wasip2)
-ohl line line.ols.json --export line.geojson --plugin plugins/examples/geojson
-ohl import points.geojson --plugin plugins/examples/geojson --format geojson-structures --into line.ols.json --out moved.ols.json
+ohl line line.ohl.json --export line.geojson --plugin plugins/examples/geojson
+ohl import points.geojson --plugin plugins/examples/geojson --format geojson-structures --into line.ohl.json --out moved.ohl.json
 ```
 
 A plugin error, a crash, or a plugin exceeding its time or memory limit is reported as the format's error; the line is never half-written.
@@ -138,11 +138,11 @@ A plugin error, a crash, or a plugin exceeding its time or memory limit is repor
 
 A **project plugin** reads another program's project file into a new OpenOHL project: the line (structures and attachments, sections and their stringing, circuits as electrical systems, jumpers, point loads, alignment) and its libraries (wires, weather cases, load cases), with notes on what was read, left out or assumed.
 
-- **In the application:** File › **New project from another program…** (also on the start page): the file, the format (default: from the extension), options, then where to save the new `.ols`. It runs in the background; the project opens with a window of the reader's notes.
+- **In the application:** File › **New project from another program…** (also on the start page): the file, the format (default: from the extension), options, then where to save the new `.ohl`. It runs in the background; the project opens with a window of the reader's notes.
 - **From the command line:**
 
   ```bash
-  ohl project import-from FILE --into new.ols --user ann --plugin DIR [--format F] [--option KEY=VALUE] [--clip-in]
+  ohl project import-from FILE --into new.ohl --user ann --plugin DIR [--format F] [--option KEY=VALUE] [--clip-in]
   ```
 
 **Clip in** (`--clip-in`, or the window's tick): sections the reader left in the blocks are clipped in at their stringing condition, so each span keeps its length — as programs that sag a section with a ruling span and then solve it with fixed lengths do.

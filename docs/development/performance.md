@@ -17,10 +17,10 @@ Example: `units/total_load_typed_10k` vs `units/total_load_raw_10k` check that t
 The desktop window is drawn headless (egui_kittest with wgpu, as the GPU tests) with the 3D view at four distances (the whole line, 3 km, 600 m and 80 m from the middle structure) and the plan view at four zooms (the whole line, 3 km, 400 m and 60 m wide). For each view it settles (every chunk built, every point cloud node read), checks that an idle frame asks for no other one, then draws 20 frames while turning or panning a little (as a drag does) and reports the median and slowest frame, the time to tessellate the frame's shapes, the shapes, what the 3D view drew, the time of a click (picking) and the time of each phase (`crate::perf` spans: frame hooks, menus, each tab, 3D layers rebuilt, chunk plan and build, point stream, render, labels; plan wires and labels; …):
 
 ```bash
-OLS_REQUIRE_GPU_TESTS=1 cargo test --release -p ols-app frame_benchmark -- --ignored --nocapture
+OHL_REQUIRE_GPU_TESTS=1 cargo test --release -p ohl-app frame_benchmark -- --ignored --nocapture
 # a project of your own (work on a copy: it is opened for editing), with
 # your view preferences (a ViewPrefs JSON) and frames per view:
-OLS_BENCH_FILE=copy.ols OLS_BENCH_PREFS=prefs.json OLS_BENCH_FRAMES=40 cargo test --release …
+OHL_BENCH_FILE=copy.ohl OHL_BENCH_PREFS=prefs.json OHL_BENCH_FRAMES=40 cargo test --release …
 ```
 
 Phases are timed only while the benchmark turns timing on (`perf::enable`); otherwise a span costs one atomic load. The tests `idle_frames_neither_repaint_nor_rebuild` (no repaint asked, no chunk built and no 3D image drawn while nothing changes; a camera move draws one image), `frames_stay_within_a_lenient_budget` (every view of the synthetic example under 250 ms, debug builds included) and `structure_names_show_from_afar` keep it so.
@@ -71,7 +71,7 @@ Nothing may run forever (see the design goals). In code:
 
 ```rust
 use std::time::Duration;
-use ols_core::budget::{Budget, CancelToken};
+use ohl_core::budget::{Budget, CancelToken};
 
 let budget = Budget::new()
     .max_iterations(100)                     // exit clause 1: iterations
@@ -83,7 +83,7 @@ loop {
     // … one iteration …
     # break;
 }
-# Ok::<(), ols_core::budget::Stop>(())
+# Ok::<(), ohl_core::budget::Stop>(())
 ```
 
 Guidelines:

@@ -2,7 +2,7 @@
 
 One WebAssembly plugin per design code (`code-plugin` world, extension
 point `design-code`). Each reads **your parameter file** (TOML) and
-generates weather cases (`.olswc`) and load cases (`.olslc`) with notes
+generates weather cases (`.ohlwc`) and load cases (`.ohllc`) with notes
 (and may give presets of the clearance windows; these plugins give none).
 
 | Plugin | Code | Units of the parameter file |
@@ -40,7 +40,7 @@ Use it:
 ohl code list
 ohl code template --plugin plugins/codes/en50341 --out my-line.toml
 ohl code generate --plugin plugins/codes/en50341 --params my-line.toml \
-    --weather my-line.olswc --load-cases my-line.olslc
+    --weather my-line.ohlwc --load-cases my-line.ohllc
 ```
 
 or in the desktop application: Criteria › Design code… (the plugin

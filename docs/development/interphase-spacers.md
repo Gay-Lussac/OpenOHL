@@ -3,14 +3,14 @@
 Status: **decided; built, in active development** (not approved yet). Built: the data (span points, point
 loads by fraction or distance, spread loads, spacers, the project's
 default values with their file), checked (a spacer's sections by finite
-elements only), saved, logged, in OLS XML; spread loads and span points
+elements only), saved, logged, in OHL XML; spread loads and span points
 in the solve; places by station; **the spacers in the solve**
 (`solve::solve_spacer_group`, below); **the app**: the Add on span tool
 (span points, point loads, spread loads where the span is clicked; by
 fraction, distance, station or regular spacing), spacers with Add string
 between two span points, both selectable, drawn, in Properties and in the
 tables (Span points and loads, Spacers), deleted with what goes with
-them; Criteria › Default values with its `.olsdef` file; the
+them; Criteria › Default values with its `.ohldef` file; the
 distance between conductors moved to a check plugin, with a rule for
 conductors joined by spacers ([the core's
 part](phase-distance-check.md)). To come: the sweep of
@@ -72,7 +72,7 @@ or a phase and an earth wire — at a place along each, often several in
 one span. Unlike today's strings it hangs from no structure: both its
 ends move with the wires.
 
-## Data (line file, project, OLS XML)
+## Data (line file, project, OHL XML)
 
 A new object of the line, `spacers`:
 
@@ -80,7 +80,7 @@ A new object of the line, `spacers`:
 - its two ends: each a **section, a span and a place along it** (m of
   unstressed length from the span's start, or a fraction) — the same
   place idea as a point load (`loads`) or a jumper's helping clamp;
-- the insulator: a library label (`.olsi`: length, weight, wind area,
+- the insulator: a library label (`.ohli`: length, weight, wind area,
   axial stiffness) or its own values; whether it takes compression and
   up to what force (as `compression` on strings); a clamp mass on each
   conductor;
@@ -90,7 +90,7 @@ A new object of the line, `spacers`:
 
 Session: a new object kind (logged, undoable, kept with the branch);
 deleting a section lists and deletes its spacers (deletion impact);
-renaming follows. OLS XML element and XSD; data model page.
+renaming follows. OHL XML element and XSD; data model page.
 
 ## Solver
 
@@ -103,7 +103,7 @@ spacer joins two sections in the middle of a span, stiffly:
    length, so the clamp stays at the same place on the wire.
 2. **One model for the sections joined by spacers.** The spacer is a
    bar between a node of each section's cable (both ways when it takes
-   compression, tension-only otherwise; `ols_wirefe` already has both
+   compression, tension-only otherwise; `ohl_wirefe` already has both
    kinds of truss). Joined sections are solved **in one model** rather
    than by passes: a stiff bar between two wires would make the passes
    converge slowly. `coupled_groups` is extended to sections joined by

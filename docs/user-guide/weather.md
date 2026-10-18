@@ -1,10 +1,10 @@
-# Weather cases (`.olswc`)
+# Weather cases (`.ohlwc`)
 
 A weather case is a cable temperature, ice and wind. Cases are kept in a
 file and each run chooses the ones it needs.
 
 ```toml
-format = "ols-weather-cases"
+format = "ohl-weather-cases"
 version = 1
 name = "Project X"
 
@@ -57,8 +57,8 @@ The vertical load is w + ice weight, the wind load q·D, and the wire hangs in t
 ## Choosing cases
 
 ```bash
-ohl line project.ols --weather cases.olswc --tag clearance --pointcloud project.ols --rules rules.olsr
-ohl line project.ols --weather cases.olswc --case "glaze*" --case "max temperature"
+ohl line project.ohl --weather cases.ohlwc --tag clearance --pointcloud project.ohl --rules rules.ohlr
+ohl line project.ohl --weather cases.ohlwc --case "glaze*" --case "max temperature"
 ```
 
 `--case` takes names with `*` and `?` wildcards, `--tag` tags; both can be repeated and combined (a case is run if it matches any). Without them every case of the file runs. A name or tag that matches nothing is an error, so a typo cannot silently skip a case.

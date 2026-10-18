@@ -8,7 +8,7 @@ A structure type says how much of the structure its file describes
 2. **sticks of the pylon** — joints and members without sections, or
    `[[body]]` polylines that make a 3D object (their vertices, all together,
    not in one plane within 1 mm: `StructureType::body_is_3d`);
-3. **full design** — every member with its section and a supported joint (or a separate `.olsfe` model).
+3. **full design** — every member with its section and a supported joint (or a separate `.ohlfe` model).
 
 The level follows from the file's content (`StructureType::detail()`), so it
 rises as a pylon is filled in.
@@ -16,7 +16,7 @@ rises as a pylon is filled in.
 **Rule for every new check or test whose result depends on the structure's
 shape** (distances to the structure body, insulator swing against the
 structure, structure analysis, clearances inside the window of a tower,
-anything reading `body`, the joints and members, or the `.olsfe` model):
+anything reading `body`, the joints and members, or the `.ohlfe` model):
 
 - before implementing it, decide with the project owner what it does at each
   level — e.g. not available, an approximation (from the stick figure), or
@@ -25,7 +25,7 @@ anything reading `body`, the joints and members, or the `.olsfe` model):
   level;
 - a check never silently treats a stick figure as an outline or a full design.
 
-In code the level is `ols_structures::Detail` (`StructureType::detail()`).
+In code the level is `ohl_structures::Detail` (`StructureType::detail()`).
 
 Agreed so far: clearances to the structure body — none at level 1 (LiDAR
 points are a separate topic), computed at levels 2 and 3, the tests to be

@@ -1,9 +1,9 @@
-# Line files (`.ols.json`)
+# Line files (`.ohl.json`)
 
-A **line file** describes a line in 3D: structures with the strings hanging on them and their wire points, and the wire sections strung through them. It is JSON (the open exchange format of ADR-0004). Example: [`examples/synthetic-line/synthetic-line.ols.json`](https://github.com/Gay-Lussac/OpenOHL/blob/main/examples/synthetic-line/synthetic-line.ols.json).
+A **line file** describes a line in 3D: structures with the strings hanging on them and their wire points, and the wire sections strung through them. It is JSON (the open exchange format of ADR-0004). Example: [`examples/synthetic-line/synthetic-line.ohl.json`](https://github.com/Gay-Lussac/OpenOHL/blob/main/examples/synthetic-line/synthetic-line.ohl.json).
 
 ```bash
-cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
+cargo run -p ohl-cli -- line examples/synthetic-line/synthetic-line.ohl.json \
     --temperature 15 --wind-pressure 600 --ice-thickness 0 \
     --html line.html --spans-csv spans.csv --csv wires.csv
 ```
@@ -20,7 +20,7 @@ cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json \
 
 | Field | Required | Meaning |
 |---|---|---|
-| `format` | no (`"ols-line"`) | File identifier. |
+| `format` | no (`"ohl-line"`) | File identifier. |
 | `version` | no (`1`) | Format version; newer versions are rejected. |
 | `name` | yes | Line name. |
 | `crs` | no | Coordinate system, e.g. `"EPSG:2056"` (see [coordinate systems](coordinates.md)); used by `ohl crs line` and exports. |
@@ -117,7 +117,7 @@ How the wire is held at each point of a section follows from these. The usual ca
 
 **Files of version 4** gave a jumper's tap as `from_tap` / `to_tap` beside a placeholder `from` / `to`, its supports as `support` (a string from a point) and `supports` (clamps on a structure's strings, `at` a fraction), a section's circuit name as `circuit`, and a place could carry a fraction beside a distance or a station (the station, else the distance, was used). They are read as a tap end, support points (`S1`; `C1`, `C2`… — labels its points do not use) and a place of one kind. Files are written as the current version (6).
 
-`cargo run -p ols-cli -- line FILE --stations` prints the stationing, offsets and line angles along every alignment (with its route), and for each structure the other routes it is also on.
+`cargo run -p ohl-cli -- line FILE --stations` prints the stationing, offsets and line angles along every alignment (with its route), and for each structure the other routes it is also on.
 
 ## Sections
 

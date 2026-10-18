@@ -2,7 +2,7 @@
 
 Status: **built, pre-alpha, in active development** (first written 2026-10-17; no export has been imported into RFEM, Tekla or SCIA yet), phase 7 of [Building structures](structure-building.md)
 (decision 12: export to IFC, Tekla and RFEM; other tower programs later). Crate
-`apps/structure/ols-structure-export` ([crates](structure-app.md)); user
+`apps/structure/ohl-structure-export` ([crates](structure-app.md)); user
 guide: [The structure application › Export](../user-guide/structure-app.md#export).
 
 A **level 3** structure (joints, members with sections, supports) is
@@ -37,8 +37,8 @@ updated August 2022, which lists Dlubal with SAF **1.0.5**) [S1].
 | **SAF** 2.2.0 (xlsx) | RFEM 6, SCIA and other SAF programs | materials, cross-sections, nodes, members, supports, load group, load cases, point and line loads |
 | **CSV** tables | anything else | `materials.csv`, `sections.csv`, `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`, `loads.csv` |
 
-All are written from plain data (`ols_structure_link::ExportStructure`,
-made by `ols_structure_link::export_structure` from the structure file,
+All are written from plain data (`ohl_structure_link::ExportStructure`,
+made by `ohl_structure_link::export_structure` from the structure file,
 the section library and a `LoadTable`): SI units, the structure's axes
 (x right, y ahead, z up), no map coordinates. GlobalIds (IFC) and `Id`s
 (SAF) are hashes of the structure's id and each object's id, so an
@@ -54,10 +54,10 @@ line's default) the same structure gives the same bytes in every format.
 |---|---|
 | `[[node]]` `point`, `support` (`fixed`, `pinned`, a list of x, y, z, rx, ry, rz), `spring` | joint, held directions, springs (N/m, N·m/rad) |
 | `[[member]]` `nodes`, `section`, `kind` (truss, frame, cable), `reference`, `roll`, `k`, `pretension` | member with its **local axes** worked out exactly as the FE model does (`member_axes`: y in the plane of x and the reference — global z, or global x for a vertical member — then the roll about x); k and pretension carried along |
-| section of the library (`.olssec`) | profile `Shape` and dimensions, A, Iy, Iz, It, Wpl, the centroid relative to the outline box |
+| section of the library (`.ohlsec`) | profile `Shape` and dimensions, A, Iy, Iz, It, Wpl, the centroid relative to the outline box |
 | `[[section]]` table | A, Iy, Iz, It only (no shape) |
 | material (library or `[[material]]`) | E, G, density, yield |
-| load table rows (`ols_structure_loads::LoadTable`) | per case: a point's load at the joint carrying it, or **at its place along the member** (a `[[point]]` with `member`, `at`); a joint's load; a member's surface load as a **uniform load** (total ÷ length); right, ahead, down → x, y, −z |
+| load table rows (`ohl_structure_loads::LoadTable`) | per case: a point's load at the joint carrying it, or **at its place along the member** (a `[[point]]` with `member`, `at`); a joint's load; a member's surface load as a **uniform load** (total ÷ length); right, ahead, down → x, y, −z |
 | recipe `self_weight` | the case's self-weight factor (case `model`: `[analysis] self_weight`) |
 
 In the structure application the load table is the Load table panel's:
@@ -67,7 +67,7 @@ over the table. The command-line tool (and the application for a
 structure opened on its own) takes the file's recipes evaluated without
 line values — rows needing a line value are left out and counted in a
 note; surface loads on the members' areas from the section library
-(`ols_structure_link::SectionAreas`) — and its `[[load]]` tables as case
+(`ohl_structure_link::SectionAreas`) — and its `[[load]]` tables as case
 `model`; a load table written by the application (CSV) can be given
 instead.
 
@@ -76,7 +76,7 @@ instead.
 | Export data | IFC4 |
 |---|---|
 | structure | `IfcProject` (units: m, rad, N, Pa, kg, m², m³ and the derived units of the values written), `IfcSite` at the origin |
-| member (physical) | `IfcMember` (`.MEMBER.`), `ObjectType` = kind; placement at the first joint with Z along the member and X along its local y; representations `Axis` (`Curve3D` line) and `Body` (`SweptSolid`: `IfcExtrudedAreaSolid` of the profile over the length); property set `OLS_Member` (Section, Kind, EffectiveLengthFactor, Pretension, From, To) |
+| member (physical) | `IfcMember` (`.MEMBER.`), `ObjectType` = kind; placement at the first joint with Z along the member and X along its local y; representations `Axis` (`Curve3D` line) and `Body` (`SweptSolid`: `IfcExtrudedAreaSolid` of the profile over the length); property set `OHL_Member` (Section, Kind, EffectiveLengthFactor, Pretension, From, To) |
 | profile: equal / unequal angle | `IfcLShapeProfileDef` (Depth h, Width b, Thickness t, FilletRadius r) |
 | channel | `IfcUShapeProfileDef` (Depth h, FlangeWidth b, WebThickness tw, FlangeThickness tf, FilletRadius r) |
 | I section | `IfcIShapeProfileDef` (OverallWidth b, OverallDepth h, tw, tf, r) |
@@ -86,7 +86,7 @@ instead.
 | polygonal hollow (pole) | `IfcArbitraryProfileDefWithVoids` (outer and inner `IfcPolyline`, a side at the bottom) |
 | `general`, `[[section]]` table | `IfcProfileDef` by name only (IFC4 allows it); no solid, the axis only |
 | profile position | the parameterised profile's `Position` moves the outline box so that the **centroid** lies on the member's axis (IFC4 places a parameterised profile at the centre of its box); profile x = member local y, profile y = local z |
-| section and material | `IfcMaterialProfile` / `IfcMaterialProfileSet` / `IfcMaterialProfileSetUsage` (cardinal point 10, the centroid), associated with the physical and the analysis member; `IfcProfileProperties` `Pset_ProfileMechanical` (CrossSectionArea, TorsionalConstantX) and `OLS_Section` (SecondMomentLocalY, SecondMomentLocalZ: about the member's local y and z) |
+| section and material | `IfcMaterialProfile` / `IfcMaterialProfileSet` / `IfcMaterialProfileSetUsage` (cardinal point 10, the centroid), associated with the physical and the analysis member; `IfcProfileProperties` `Pset_ProfileMechanical` (CrossSectionArea, TorsionalConstantX) and `OHL_Section` (SecondMomentLocalY, SecondMomentLocalZ: about the member's local y and z) |
 | material | `IfcMaterial` (category from E and density, below) with `IfcMaterialProperties` `Pset_MaterialMechanical` (YoungModulus, ShearModulus, PoissonRatio), `Pset_MaterialCommon` (MassDensity), `Pset_MaterialSteel` (YieldStress) |
 | analysis model | `IfcStructuralAnalysisModel` (`.LOADING_3D.`, a shared placement at the origin), items assigned by `IfcRelAssignsToGroup`, serving the site (`IfcRelServicesBuildings`) |
 | joint | `IfcStructuralPointConnection` with an `IfcVertexPoint` topology; a support as `IfcBoundaryNodeCondition`: held `IFCBOOLEAN(.T.)`, free `.F.`, a spring as `IfcLinearStiffnessMeasure` / `IfcRotationalStiffnessMeasure` |
@@ -125,7 +125,7 @@ section's id.
 | `StructuralCurveAction` | one row per non-zero component of a uniform load, kN/m | On beam, Uniform, Global, Length, Relative, Full, 0 → 1 |
 
 The workbook is written by the crate itself (a zip of SpreadsheetML
-parts with the workspace's `zip` crate, as `ols-io`'s XLSX export; no
+parts with the workspace's `zip` crate, as `ohl-io`'s XLSX export; no
 new dependency), inline strings, a fixed zip time.
 
 ### CSV
@@ -157,7 +157,7 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 - **Self-weight** in SAF: only as text in the case's description (SAF
   has no factor per case); in IFC4 as `SelfWeightCoefficients`.
 - **Effective length factor k** and **pretension**: IFC4 property set
-  `OLS_Member` and CSV only; SAF has no column for them.
+  `OHL_Member` and CSV only; SAF has no column for them.
 - **Member wind areas**, wind bands, the structure's points, strings,
   wire points, insulators, capacities: not part of an analysis model.
 - **Shapes**: SAF has no parametric polygonal tube; it goes as a general
@@ -180,7 +180,7 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
   without gaps, every reference resolving, balanced quotes), the number
   of attributes of **every** entity against the IFC4 ADD2 TC1 and IFC2x3
   TC1 EXPRESS schemas, unique GlobalIds, the expected counts for
-  `examples/synthetic-line/Structures/type-02.olss`, the profile mapping
+  `examples/synthetic-line/Structures/type-02.ohls`, the profile mapping
   per shape, the SAF sheets and columns read back, and that two exports
   are identical. An import into RFEM 6 and Tekla Structures is still to
   be tried by someone with licences.
@@ -195,8 +195,8 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
   columns not in rows as usual" [S4]; they are written as name–value
   pairs, column A and B.
 - Exports for other tower programs: later (decision 12).
-- A structure whose model is a separate `.olsfe` (`model = "…"`) is not
-  exported yet (the export builds the model from the `.olss` itself).
+- A structure whose model is a separate `.ohlfe` (`model = "…"`) is not
+  exported yet (the export builds the model from the `.ohls` itself).
 
 ## Sources
 

@@ -1,6 +1,6 @@
 # Jumpers
 
-Implemented in `crates/ols-line` (`jumper.rs`, `rod.rs`). A jumper is a short slack cable joining two attachment points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire. The line file fields are described in [Line files](../user-guide/line-file.md#jumpers).
+Implemented in `crates/ohl-line` (`jumper.rs`, `rod.rs`). A jumper is a short slack cable joining two attachment points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire. The line file fields are described in [Line files](../user-guide/line-file.md#jumpers).
 
 **Its load on the clamps** (Criteria › Calculation options, the line's `solver.jumper_loads`). The sections at a jumper's ends carry it at their clamps — clamps hanging from strings; a wire clamped to the structure leaves it to the structure — in one of two ways:
 
@@ -38,7 +38,7 @@ The bimetallic model is used: it costs nothing and keeps jumpers consistent with
 
 ## Hinged jumper: one catenary element
 
-If neither end is clamped (both ends are taps on through wires), or `bending_stiffness` is 0, the jumper is one **exact elastic catenary element** between its ends. This is the element of [Finite-element wire systems](wirefe.md): it is exact for any sag and needs no meshing. With a support string, the jumper is two elements and a tension-only truss, and the Newton solver of `ols-wirefe` finds the point where the string holds it.
+If neither end is clamped (both ends are taps on through wires), or `bending_stiffness` is 0, the jumper is one **exact elastic catenary element** between its ends. This is the element of [Finite-element wire systems](wirefe.md): it is exact for any sag and needs no meshing. With a support string, the jumper is two elements and a tension-only truss, and the Newton solver of `ohl-wirefe` finds the point where the string holds it.
 
 ## Clamped jumper: an elastic rod
 

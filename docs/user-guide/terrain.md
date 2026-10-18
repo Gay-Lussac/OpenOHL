@@ -4,7 +4,7 @@ OpenOHL builds a ground surface from survey points and checks how far every
 solved wire is above it.
 
 ```bash
-cargo run -p ols-cli -- line examples/synthetic-line/synthetic-line.ols.json --temperature 80 \
+cargo run -p ohl-cli -- line examples/synthetic-line/synthetic-line.ohl.json --temperature 80 \
   --terrain examples/synthetic-line/synthetic-survey.csv --clearance 7 --html line.html
 ```
 
@@ -19,8 +19,8 @@ terrain: 2960 points, 5694 triangles — loaded and 10 spans checked in 7.7ms
 |---|---|
 | `--terrain FILE` | Survey points (below). Enables the clearance check; the viewer draws the ground. |
 | `--clearance M` | Required vertical ground clearance, m: spans below it are listed and marked in the viewer. |
-| `--rules FILE` | Clearance rules (`.olsr`, below): vertical and radial clearances to the ground, LiDAR classes, other lines and other wires of this line. `--clearance M` adds a vertical ground rule. |
-| `--other-line FILE` | Another line (`.ols.json`) for wire-to-wire clearances; repeatable. Solved in the same weather case with the same libraries. |
+| `--rules FILE` | Clearance rules (`.ohlr`, below): vertical and radial clearances to the ground, LiDAR classes, other lines and other wires of this line. `--clearance M` adds a vertical ground rule. |
+| `--other-line FILE` | Another line (`.ohl.json`) for wire-to-wire clearances; repeatable. Solved in the same weather case with the same libraries. |
 | `--clearance-csv FILE` | Every clearance found: `rule,measure,section,span,other_section,other_span,clearance_m,required_m,violations,wire_x,…,target_x,…,class`. |
 
 Run it once per weather case that governs clearance (e.g. maximum operating
@@ -33,7 +33,7 @@ over.
 `--drawings DIR` writes, for every route, a plan and profile sheet `ROUTE.svg` and the profiles as `ROUTE-profile.csv`:
 
 ```bash
-ohl line project.ols --pointcloud project.ols --temperature 80 --rules rules.olsr \
+ohl line project.ohl --pointcloud project.ohl --temperature 80 --rules rules.ohlr \
   --clearance 7 --drawings sheets --side-offset -15 --side-offset 15
 ```
 
@@ -45,7 +45,7 @@ ohl line project.ols --pointcloud project.ols --temperature 80 --rules rules.ols
 
 The sheet layout (title block, margins) is built in for now; company templates will come as a layout plugin. For DXF, PDF, PNG and XML, station ranges and the profile alone, see [Drawings and profile exports](drawings.md) (`ohl drawing`).
 
-## Clearance rules (`.olsr`)
+## Clearance rules (`.ohlr`)
 
 Every rule names a **target** and the required **vertical** and/or **radial** clearance:
 
@@ -54,7 +54,7 @@ Every rule names a **target** and the required **vertical** and/or **radial** cl
 - **Bundles** (sections with `bundle_spacing`): to the nearest subconductor — the lowest one for vertical clearances below the wire, the highest above it, each subconductor for radial clearances.
 
 ```toml
-format = "ols-clearance-rules"
+format = "ohl-clearance-rules"
 version = 1
 name = "Example rules"
 
@@ -154,7 +154,7 @@ envelope over 3 weather cases (glaze ice, max temperature, rime ice + wind) and 
 
 The clearance CSV holds each case's rows and then the envelope rows (`case = envelope`, last column `governing_case`). The plan and profile sheets draw every case's wires — the first solid, the others dashed, dotted… (named in the title block) — the envelope of the wire positions.
 
-Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.olsr`](https://github.com/Gay-Lussac/OpenOHL/blob/main/examples/synthetic-line/clearance-rules.olsr) and the crossing line `crossing-line.ols.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; the desktop clearance windows edit rules per LiDAR class, and design-code plugins may give rule files as clearance presets.
+Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.ohlr`](https://github.com/Gay-Lussac/OpenOHL/blob/main/examples/synthetic-line/clearance-rules.ohlr) and the crossing line `crossing-line.ohl.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; the desktop clearance windows edit rules per LiDAR class, and design-code plugins may give rule files as clearance presets.
 
 ## Vertical and radial clearances without the window (`ohl zones`)
 
@@ -164,19 +164,19 @@ without the program: a rule file gives the rules, the zone, the wind and
 what is solved; the project gives the point cloud and the ground.
 
 ```bash
-ohl zones project.ols --rules vertical-clearances.olsr
-ohl zones examples/synthetic-line/synthetic-line.ols.json --rules rules.olsr \
-  --weather examples/synthetic-line/weather-cases.olswc \
+ohl zones project.ohl --rules vertical-clearances.ohlr
+ohl zones examples/synthetic-line/synthetic-line.ohl.json --rules rules.ohlr \
+  --weather examples/synthetic-line/weather-cases.ohlwc \
   --terrain examples/synthetic-line/synthetic-survey.csv --csv zones.csv
 ```
 
 ```text
-vertical clearances: Demo (rules.olsr) — 1 rule row(s); zone ±0 m in slices of 0 m, wind stepped by 100 Pa from the left and the right, method fe
+vertical clearances: Demo (rules.ohlr) — 1 rule row(s); zone ±0 m in slices of 0 m, wind stepped by 100 Pa from the left and the right, method fe
 libraries:
   cables: libraries/cables (shipped)
   structures: examples/synthetic-line/Structures (next to the file)
   insulators: libraries/insulators (shipped)
-weather: examples/synthetic-line/weather-cases.olswc — 5 case(s), 2 wind position(s)
+weather: examples/synthetic-line/weather-cases.ohlwc — 5 case(s), 2 wind position(s)
 ground: survey file examples/synthetic-line/synthetic-survey.csv
 points: not needed
 solved 3 section(s) in 2 wind position(s) in 283.8ms; checked in 10.0ms; 0 LiDAR points read
@@ -199,13 +199,13 @@ are.
 
 | Option | Meaning |
 |---|---|
-| `--rules FILE` | The rule file (`.olsr`); for a project, also the name of one of its own rule files. |
+| `--rules FILE` | The rule file (`.ohlr`); for a project, also the name of one of its own rule files. |
 | `--measure vertical\|radial` | The measure, for a rule file with both. |
-| `--weather FILE` | Weather cases (`.olswc`; for a project, also the name of one of its own). Default: the file of the same name as the rule file, next to it or in a `weather` folder beside it (a design code's preset), else the project's weather case file used last, else the project's first weather case file. |
+| `--weather FILE` | Weather cases (`.ohlwc`; for a project, also the name of one of its own). Default: the file of the same name as the rule file, next to it or in a `weather` folder beside it (a design code's preset), else the project's weather case file used last, else the project's first weather case file. |
 | `--case NAME` | Only these weather cases (wildcards; repeatable). Default: every case the rules name. |
-| `--cloud SPEC` | Point cloud: `FILE.ols`, `FILE.ols#name` or `FILE.copc.laz`. Default: the project's own point cloud, if it holds one. `--no-cloud` reads none. |
+| `--cloud SPEC` | Point cloud: `FILE.ohl`, `FILE.ohl#name` or `FILE.copc.laz`. Default: the project's own point cloud, if it holds one. `--no-cloud` reads none. |
 | `--terrain FILE`, `--surface NAME` | The ground: survey points, or a surface stored in the project. Default: the project's surface of the checks, else its active surface (as set by an earlier build), else the ground classes of the point cloud along the spans (lowest point per square metre, triangles of up to 50 m) — as the program builds it. |
-| `--lidar-classes FILE` | Class scheme (`.olsc`); default the point cloud's own, else ASPRS. |
+| `--lidar-classes FILE` | Class scheme (`.ohlc`); default the point cloud's own, else ASPRS. |
 | `--library`, `--structures`, `--insulators` | As for `ohl line`: for a project, the libraries it keeps with its current line; else (and for a kind the project holds none of) the shipped wire and insulator libraries, the `Structures` folder next to the file. |
 | `--search-distance M`, `--circuits NAME`, `--method fe\|rs` | Override the rule file's `[check]` (`--circuits` repeatable; `""`: the sections without a circuit). |
 | `--csv FILE` | Every finding: `status` (`violation`, then `ok` for each rule's lowest clearance that keeps it), rule, section, span, case, wind pressure and side, target, class, clearance and required distance, count, the wire and target points. |
@@ -265,8 +265,8 @@ the header `p,n,e,z,d`.
 ## Ground from LiDAR
 
 ```bash
-cargo run --release -p ols-cli -- line LINE.ols.json --lidar TILES_DIR \
-  --lidar-classes SCHEME.olsc --clearance 8
+cargo run --release -p ohl-cli -- line LINE.ohl.json --lidar TILES_DIR \
+  --lidar-classes SCHEME.ohlc --clearance 8
 ```
 
 | Option | Meaning |
@@ -280,12 +280,12 @@ cargo run --release -p ols-cli -- line LINE.ols.json --lidar TILES_DIR \
 
 `ohl lidar info PATH --classes [--scheme FILE]` lists the tiles and counts the points of every class, with the scheme's names and roles.
 
-### Class schemes (`.olsc`)
+### Class schemes (`.ohlc`)
 
 What a class number means depends on who classified the data — the ASPRS LAS standard, or a utility's or surveyor's own specification. A class scheme names every class and gives it **roles**; tools select classes by role, so any classification works. A class can have several roles, and roles are free words:
 
 ```toml
-format = "ols-lidar-classes"
+format = "ohl-lidar-classes"
 version = 1
 id = "my-survey"
 name = "Survey company X, project Y"
@@ -302,7 +302,7 @@ name = "Asphalt road"
 roles = ["ground", "road"]
 ```
 
-The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.olsc`](https://github.com/Gay-Lussac/OpenOHL/blob/main/libraries/lidar-classes/asprs-las-1.4.olsc) (ground: 2, water 9, road surface 11). Used by OpenOHL: `ground` (the ground surface), `vegetation` (vegetation analysis), `conductor` and `shield_wire` (as-built wire fitting), and any role a clearance rule names; the application also colours points by role. Suggested: `vegetation`, `building`, `water`, `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`, `shield_wire`, `load_object`, `other_line_structure`, `other_line_conductor`, `object`, `noise`, `temporary`, `unclassified`.
+The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.ohlc`](https://github.com/Gay-Lussac/OpenOHL/blob/main/libraries/lidar-classes/asprs-las-1.4.ohlc) (ground: 2, water 9, road surface 11). Used by OpenOHL: `ground` (the ground surface), `vegetation` (vegetation analysis), `conductor` and `shield_wire` (as-built wire fitting), and any role a clearance rule names; the application also colours points by role. Suggested: `vegetation`, `building`, `water`, `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`, `shield_wire`, `load_object`, `other_line_structure`, `other_line_conductor`, `object`, `noise`, `temporary`, `unclassified`.
 
 On a real 25 km line (private data, checked locally), ground built this way from 99.6 million LiDAR points (11.3 million in the utility's ground classes, 22.6 million triangles, about one minute) gave span clearances matching those on the TIN of a commercial program to a median of 2 mm (94 % of 930 spans within 10 cm).
 
@@ -403,11 +403,11 @@ Reading, building and storing run in the background. With a project joined on a 
 From the command line:
 
 ```bash
-ohl surface list project.ols
-ohl surface import ground.xml --into project.ols --user ann [--name N] [--format F] [--option max_edge=50] [--plugin DIR] [--replace]
-ohl surface export project.ols "ground" ground.xml
-ohl surface rename project.ols "ground" "survey 2026" --user ann
-ohl surface delete project.ols "ground" --user ann
+ohl surface list project.ohl
+ohl surface import ground.xml --into project.ohl --user ann [--name N] [--format F] [--option max_edge=50] [--plugin DIR] [--replace]
+ohl surface export project.ohl "ground" ground.xml
+ohl surface rename project.ohl "ground" "survey 2026" --user ann
+ohl surface delete project.ohl "ground" --user ann
 ohl surface formats [--plugin DIR]
 ```
 

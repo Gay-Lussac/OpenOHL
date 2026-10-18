@@ -1,10 +1,10 @@
 # Structure analysis: frames, trusses, guys and poles
 
-Implemented in `crates/ols-structures-fe`: a linear-elastic 3D finite-element model of a structure (lattice tower, frame, guyed mast, pole) under static loads, first order or with geometric non-linearity (P-Delta), and the member and pole checks built on it. It is a *base*: the formulation is standard matrix structural analysis; design-code specifics (column curves, connection checks, wind on the structure) are left to the data or to later work.
+Implemented in `crates/ohl-structures-fe`: a linear-elastic 3D finite-element model of a structure (lattice tower, frame, guyed mast, pole) under static loads, first order or with geometric non-linearity (P-Delta), and the member and pole checks built on it. It is a *base*: the formulation is standard matrix structural analysis; design-code specifics (column curves, connection checks, wind on the structure) are left to the data or to later work.
 
 ## Model and axes
 
-Nodes are given in the **structure's axes**: x to the right of the line looking ahead, y ahead, z up, origin at the ground centre (the axes of the structure types, `.olss`). Each node has six degrees of freedom \\( (u_x, u_y, u_z, \theta_x, \theta_y, \theta_z) \\); rotations exist only at nodes with a frame member, fixed degrees of freedom are removed, springs add to the diagonal.
+Nodes are given in the **structure's axes**: x to the right of the line looking ahead, y ahead, z up, origin at the ground centre (the axes of the structure types, `.ohls`). Each node has six degrees of freedom \\( (u_x, u_y, u_z, \theta_x, \theta_y, \theta_z) \\); rotations exist only at nodes with a frame member, fixed degrees of freedom are removed, springs add to the diagonal.
 
 Each member has **local axes**: \\( x \\) from node *i* to node *j*; a reference direction \\( \mathbf r \\) in the local x–y plane (default: global z, or global x for a vertical member) gives \\( \mathbf z = \mathbf x \times \mathbf r / |\cdot| \\), \\( \mathbf y = \mathbf z \times \mathbf x \\); a roll angle turns y and z about x. \\( I_z \\) is the bending in the local x–y plane, \\( I_y \\) in the x–z plane. An angle's legs given as two structure directions \\( \mathbf a, \mathbf b \\) (`orientation = "x+y-"`) set \\( \mathbf r = \mathbf a \\) when \\( \hat{\mathbf x}\cdot(\mathbf a_\perp \times \mathbf b_\perp) > 0 \\) (\\( \mathbf a_\perp \\): the part normal to the member), so that the section's y leg points to \\( \mathbf a \\) and its z leg to the side of \\( \mathbf b \\); otherwise the pair is the mirror image of a right-handed section: \\( \mathbf r = \mathbf b \\) for a section with equal legs, refused for unequal ones. The element matrices are transformed with \\( \mathbf T = \operatorname{diag}(\mathbf R, \mathbf R, \mathbf R, \mathbf R) \\), \\( \mathbf K = \mathbf T^T \mathbf k \mathbf T \\).
 
@@ -28,7 +28,7 @@ This captures both P-Δ (sway of the member chords) and P-δ (bowing within a fr
 
 **Newton iterations**: the out-of-balance forces \\( \mathbf r = \mathbf F - \mathbf K_T(N)\\,\mathbf u \\) are solved with the tangent \\( \mathbf K_T = \mathbf K_e + \mathbf K_g(N) \\) (the change of \\( N \\) with \\( \mathbf u \\) is not in the tangent), \\( \mathbf u \mathrel{+}= \mathbf K_T^{-1}\mathbf r \\), the axial forces and slack cables updated, until \\( |\mathbf r| \le 10^{-9}|\mathbf F| \\) and the slack set is stable. Where the axial forces are statically determinate (a cantilever column) the second iteration is final; otherwise the iterations converge linearly with the ratio of the loads to the buckling load. A negative pivot in the factorisation means the tangent stiffness is no longer positive definite: the loads are above an **elastic buckling** load, reported as such.
 
-**Exit clauses** (`ols_core::budget`): 200 iterations and 30 s by default; when one stops the solve, the error says which and how large the out-of-balance forces still were.
+**Exit clauses** (`ohl_core::budget`): 200 iterations and 30 s by default; when one stops the solve, the error says which and how large the out-of-balance forces still were.
 
 ## Solver
 
@@ -40,7 +40,7 @@ A **mechanism** is reported with the part that moves: after the zero pivot, the 
 
 ## Joint stabilisation
 
-Towers modelled as trusses have joints with no stiffness of their own in some direction; the stiffness matrix is then singular. Following the practice of tower programs, which stabilise such joints, the solver holds those directions — only when a solve without them fails (a zero pivot, or a negative one: buckling), so that a model that solves as it is is solved by exactly the same operations and its results are unchanged bit for bit. The directions come from the geometry (`ols_structures_fe::stabilise`):
+Towers modelled as trusses have joints with no stiffness of their own in some direction; the stiffness matrix is then singular. Following the practice of tower programs, which stabilise such joints, the solver holds those directions — only when a solve without them fails (a zero pivot, or a negative one: buckling), so that a model that solves as it is is solved by exactly the same operations and its results are unchanged bit for bit. The directions come from the geometry (`ohl_structures_fe::stabilise`):
 
 - **Translations** of a joint without a frame member: the eigenvectors of \\( \mathbf S = \sum \mathbf e\mathbf e^T \\) over the unit directions \\( \mathbf e \\) of its truss and cable members and of its supported or sprung axes, with an eigenvalue below \\( 10^{-6} \\) of the largest (\\( \mathbf e^T\mathbf n \\) is the sine of a member's angle to the free plane, so this is about 0.06°): the normal of a plane of coplanar members, the plane normal to collinear ones. The joint's elastic stiffness along such an \\( \mathbf n \\) is \\( \sum \frac{EA}{L} (\mathbf e\cdot\mathbf n)^2 \approx 0 \\).
 - **Rotations** about the common axis \\( \mathbf a \\) of a chain of collinear frame members, when no joint of the chain has a frame in another direction or a rotational support or spring with a component about \\( \mathbf a \\): a rigid rotation of the chain about its axis strains nothing (no twist between the ends, no bending, no translation). One joint of the chain (its first in node order) is held. Joints with truss members only have no rotational degrees of freedom at all.
@@ -91,7 +91,7 @@ A member whose section comes from the section library has a profile; the wind on
 
 ## Pole check
 
-A pole (`.olsp`) is a shaft with a linear taper between the ground-line diameter \\( D_0 \\) and the top diameter \\( D_1 \\) over the height above ground \\( H = \ell - e \\) (length less embedment). At heights \\( h \\) from the ground line to the top (41 sections):
+A pole (`.ohlp`) is a shaft with a linear taper between the ground-line diameter \\( D_0 \\) and the top diameter \\( D_1 \\) over the height above ground \\( H = \ell - e \\) (length less embedment). At heights \\( h \\) from the ground line to the top (41 sections):
 
 \\[ \mathbf M(h) = \sum_{z_i > h} (\mathbf r_i - h\hat{\mathbf z}) \times \mathbf F_i + \int_h^H p\\,c_d\\,D(z)\\,(z-h)\\,\mathrm dz\\;\hat{\mathbf z} \times \hat{\mathbf w} \\]
 
@@ -101,7 +101,7 @@ with the factored attachment loads \\( \mathbf F_i \\) at the type's attachment 
 
 **Capacity** at height \\( h \\): the table of the pole (linear between heights), else for wood \\( f_b\\,\pi D(h)^3/32 \\) with the user's fibre stress \\( f_b \\), else the ground-line moment capacity. Usage: \\( \max_h M(h)/(\phi\\,M_c(h)) \\) — for a tapered wood pole the critical section can lie above the ground line.
 
-Not included: foundation (embedment) check, shear, deflection limits, guyed poles (use an `.olsfe` model with cables), the wind on crossarms and equipment.
+Not included: foundation (embedment) check, shear, deflection limits, guyed poles (use an `.ohlfe` model with cables), the wind on crossarms and equipment.
 
 ## Validation
 

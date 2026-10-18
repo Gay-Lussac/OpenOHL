@@ -1,7 +1,7 @@
 # Data model review (2026-10-17)
 
-A review of the data the program keeps — the line model (`ols-line`),
-the project file (`ols-session`), OLS XML and the library formats — after
+A review of the data the program keeps — the line model (`ohl-line`),
+the project file (`ohl-session`), OHL XML and the library formats — after
 the points-and-objects work. It says what holds up, what is broken, and
 what is worth changing, most urgent first. §1 to §4 were carried out
 (marked ✓; how, in [Carried out](#carried-out)). The [data model
@@ -9,8 +9,8 @@ map](data-model.md) describes the model as it is.
 
 ## What holds up
 
-- **One line model, many stores.** The line file, OLS XML and the
-  project rows carry the same `ols_line::Line`; OLS XML destructures every
+- **One line model, many stores.** The line file, OHL XML and the
+  project rows carry the same `ohl_line::Line`; OHL XML destructures every
   struct, so a new field cannot be forgotten silently, and it round-trips
   everything (spacers, taps, span and jumper points, objects, spreads,
   defaults, solver options, plugin values).
@@ -26,7 +26,7 @@ map](data-model.md) describes the model as it is.
 
 ## 1. Broken today (small fixes, no change to the model) — fixed
 
-All seven fixed on 2026-10-17 (tests in `ols-line` and `ols-session`).
+All seven fixed on 2026-10-17 (tests in `ohl-line` and `ohl-session`).
 Opening a project now drops stale circuit starts; a project or line file
 with a span point's distance beyond its span, repeated spread labels or
 impossible stringing values is refused on opening (none were found in the
@@ -57,7 +57,7 @@ These change the line file (a new version, older files still read).
 | 2.5 ✓ | **Spacer ends** need not hold a clamp object (decided: they do); taps must | two rules for the same kind of point | require the clamp at spacer ends (the app already puts one), or say clearly it is optional |
 | 2.6 ✓ | **Point labels cannot be renamed** (spacers, spreads, taps use them) | a user cannot tidy labels | a `rename_point` command that follows spacers, spreads and taps |
 | 2.7 ✓ | **Legacy types still public**: `SpanLoad` (with its own `forces`, a copy of `LineObject::forces`), `SpreadLoad` (also the solver's working form), `Line.alignment`, `Route.legacy_*` | two load formulas to keep equal; legacy fields reach `validate` | keep them in the `*File` reading types only; the solver reads `SpreadObject` |
-| 2.8 ✓ | **Defaults as positional arrays** (`DEFAULT_THERMAL`, `DEFAULT_CLEARANCE` indexed by number in `ols-thermal`, `ols-clearance`); a few literals (insulator EA 5·10⁷ in `ols-structures`, the clamp length 0.1 used by serde while the app uses the project default) | a reordered array changes results silently | named constants or small structs; one place per default |
+| 2.8 ✓ | **Defaults as positional arrays** (`DEFAULT_THERMAL`, `DEFAULT_CLEARANCE` indexed by number in `ohl-thermal`, `ohl-clearance`); a few literals (insulator EA 5·10⁷ in `ohl-structures`, the clamp length 0.1 used by serde while the app uses the project default) | a reordered array changes results silently | named constants or small structs; one place per default |
 | 2.9 ✓ | **`Display.phase_colors` keyed by phase label** only | `L1` of two systems always the same colour | keep (by system colours exist), or key by system + label |
 | 2.10 ✓ | **`Section.circuit`** (free text) beside the derived circuits | two meanings of "circuit" | rename to `circuit_name` / a description, or drop |
 | 2.11 ✓ | **`Calculation`** lists condition × method by hand (kebab-case, the only one) | each new condition or method is many edits | `{condition, method}`; read the old names |
@@ -80,12 +80,12 @@ These change the line file (a new version, older files still read).
 
 | # | What | Proposal |
 |---|---|---|
-| 4.1 ✓ | **Units**: the convention says library values carry their unit (`"0.6 m"`), but `.olsload` takes plain numbers only, `.olsg` `tilt` and `centre_above_rest`, `.olscost` prices and some kV keys too; `.olspd` (plugin) has its own parser taking one unit | make `.olsload` fields unit-aware (plain numbers still read as SI): the most visible gap, a new format |
-| 4.2 ✓ | **Headers**: 13 formats use `check_header`, six their own copy (cables, pylon templates, the line file, `.olspd`, check reports, colour files) with different rules (`format` optional or required, older versions accepted or refused, bundle exactly 1) | one policy: header optional, any version up to the current read, newer refused |
-| 4.3 ✓ | **Typos**: unknown keys refused in cables, rules, galloping, classes, `.olsload`, load cases, models; silently ignored in weather, thermal ambient, structures, insulators, poles, pylon templates | refuse everywhere (warn first for a release) |
-| 4.4 ✓ | **Names**: format ids singular and plural (`ols-wire` holds `[[cable]]`, `ols-weather-cases`), constants named three ways, extensions as literals in ~30 places (no constant for `.olslc`, `.olspd`) | constants in each crate, used everywhere; ids kept (they are in files) |
+| 4.1 ✓ | **Units**: the convention says library values carry their unit (`"0.6 m"`), but `.ohlload` takes plain numbers only, `.ohlg` `tilt` and `centre_above_rest`, `.ohlcost` prices and some kV keys too; `.ohlpd` (plugin) has its own parser taking one unit | make `.ohlload` fields unit-aware (plain numbers still read as SI): the most visible gap, a new format |
+| 4.2 ✓ | **Headers**: 13 formats use `check_header`, six their own copy (cables, pylon templates, the line file, `.ohlpd`, check reports, colour files) with different rules (`format` optional or required, older versions accepted or refused, bundle exactly 1) | one policy: header optional, any version up to the current read, newer refused |
+| 4.3 ✓ | **Typos**: unknown keys refused in cables, rules, galloping, classes, `.ohlload`, load cases, models; silently ignored in weather, thermal ambient, structures, insulators, poles, pylon templates | refuse everywhere (warn first for a release) |
+| 4.4 ✓ | **Names**: format ids singular and plural (`ohl-wire` holds `[[cable]]`, `ohl-weather-cases`), constants named three ways, extensions as literals in ~30 places (no constant for `.ohllc`, `.ohlpd`) | constants in each crate, used everywhere; ids kept (they are in files) |
 | 4.5 ✓ | **Shipped libraries**: the app looks for `libraries/structures`, `libraries/insulators`, `libraries/clearance-rules`, which do not exist; an empty `libraries/phase-distance` is left over | ship small synthetic examples or drop the lookups |
-| 4.6 ✓ | **Examples and schemas lag**: the synthetic line files are version 2; the XSD namespace says 1 while its `version` is the line file's (4); `.olsfe` has no example; JSON Schema only for `.olsw` | rewrite the examples at the current version; say in the XSD that `version` follows the line file |
+| 4.6 ✓ | **Examples and schemas lag**: the synthetic line files are version 2; the XSD namespace says 1 while its `version` is the line file's (4); `.ohlfe` has no example; JSON Schema only for `.ohlw` | rewrite the examples at the current version; say in the XSD that `version` follows the line file |
 
 ## Carried out
 
@@ -110,7 +110,7 @@ On 2026-10-17, each step its own commit, the line file now version 5:
   a clamp of no weight when read.
 - **2.6** `rename_point` (session) / `Line::relabel_point`; the Span
   points table relabels with it.
-- **2.7** `SpanLoad` / `SpreadLoad` moved to `ols_line::legacy` (read
+- **2.7** `SpanLoad` / `SpreadLoad` moved to `ohl_line::legacy` (read
   only); the working form is `objects::SpreadStretch`. `Line.alignment`
   and `Route.legacy_*` stay where they are: turning them into routes needs
   the whole line (`Line::upgrade_routes`), not one route's file form.
@@ -123,13 +123,13 @@ On 2026-10-17, each step its own commit, the line file now version 5:
 
 Then §4:
 
-- **4.1** `ols_core::units::si` reads plain `f64` fields from a number
-  (SI) or text with a unit; `.olsload` takes units (its templates are
+- **4.1** `ohl_core::units::si` reads plain `f64` fields from a number
+  (SI) or text with a unit; `.ohlload` takes units (its templates are
   written so), a galloping `tilt` angle text. Prices and `_kv` keys
   keep their unit in the file's currency or the key's name.
 - **4.2** every header through `check_header` (both optional, newer
   refused), the six copies gone.
-- **4.3** a mistyped key refused everywhere — `.olsload` and objects on
+- **4.3** a mistyped key refused everywhere — `.ohlload` and objects on
   points were the ones letting typos through (a flattened shape); a test
   checks every library format.
 - **4.4** `*_FILE_FORMAT` / `*_FILE_VERSION` / `*_FILE_EXTENSION` in
@@ -138,9 +138,9 @@ Then §4:
   structure-type and clearance-rule folders no longer looked for (they
   belong to a project and to a design code).
 - **4.6** the example lines written at version 5 (their version 2 form
-  kept as test data, read to the same line); an `.olsfe` example; the
+  kept as test data, read to the same line); an `.ohlfe` example; the
   XSD says its `version` is the line file's. A JSON Schema stays for
-  `.olsw` only.
+  `.ohlw` only.
 
 Found on the way and fixed: turning a jumper along its circuit now turns
 all its points' places (only its supports were turned, and a tap end

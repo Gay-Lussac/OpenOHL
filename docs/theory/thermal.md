@@ -1,6 +1,6 @@
 # Thermal rating
 
-Implemented in `crates/ols-thermal`, from the published equations of
+Implemented in `crates/ohl-thermal`, from the published equations of
 IEEE Std 738-2012 and CIGRE Technical Brochures 601 (2014) and 207 (2002).
 Clause and equation numbers below refer to those documents; the text of the
 standards is not reproduced.
@@ -143,12 +143,12 @@ temperature of the conductor is the same along each section.
 
 ## Maximum operating temperature from clearance
 
-`ols_thermal::limit` finds, per section, the highest conductor temperature
+`ohl_thermal::limit` finds, per section, the highest conductor temperature
 at which its wires still meet every ground and point (LiDAR) rule of a
-clearance rule file. The section is solved alone (`ols_line::solve`) in a
+clearance rule file. The section is solved alone (`ohl_line::solve`) in a
 base weather case (still air by default, or a case of the user's) with only
 its temperature changed, and checked by the rules that apply to that case
-(`ols_clearance::check_case`):
+(`ohl_clearance::check_case`):
 
 1. at the lowest temperature of the range (fails: *below the range*);
 2. upwards in steps (10 °C) until a check fails (none fails: *above the

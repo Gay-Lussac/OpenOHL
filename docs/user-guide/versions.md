@@ -1,6 +1,6 @@
 # Versions, branches and reviews
 
-A project file (`.ols`) keeps its own version history, like source code in
+A project file (`.ohl`) keeps its own version history, like source code in
 git (DESIGN_GOALS §7, [ADR-0010](../adr/0010-version-control.md)):
 
 - a **revision** records the line and its library files as they
@@ -40,21 +40,21 @@ users and the operation log.
 ## On the command line
 
 ```bash
-ohl project status project.ols                          # branch, uncommitted changes
-ohl project commit project.ols --user ana -m "as imported"
-ohl project branch project.ols "route B" --user ben     # a new line: a copy of the current one
-ohl project checkout project.ols "route B" --user ben
-ohl project apply project.ols --user ben '{"op": "move_structure", "id": "T6", "position": [1500, 400, 505]}'
-ohl project diff project.ols                            # HEAD → working state, field by field
-ohl project diff project.ols --impact                   # … and the sections solved on both sides
-ohl project commit project.ols --user ben -m "T6 east of the road"
-ohl project history project.ols                         # revisions with branches and tags (--limit, default 50)
-ohl project checkout project.ols main --user ana
-ohl project merge project.ols "route B" --user ana --preview
-ohl project merge project.ols "route B" --user ana
-ohl project tag project.ols "IFC rev A" --user ana --note "issued for construction"
-ohl project revert project.ols 3f2a9c1e --user ana      # a new revision undoing 3f2a9c1e
-ohl project branch project.ols                          # list branches and tags
+ohl project status project.ohl                          # branch, uncommitted changes
+ohl project commit project.ohl --user ana -m "as imported"
+ohl project branch project.ohl "route B" --user ben     # a new line: a copy of the current one
+ohl project checkout project.ohl "route B" --user ben
+ohl project apply project.ohl --user ben '{"op": "move_structure", "id": "T6", "position": [1500, 400, 505]}'
+ohl project diff project.ohl                            # HEAD → working state, field by field
+ohl project diff project.ohl --impact                   # … and the sections solved on both sides
+ohl project commit project.ohl --user ben -m "T6 east of the road"
+ohl project history project.ohl                         # revisions with branches and tags (--limit, default 50)
+ohl project checkout project.ohl main --user ana
+ohl project merge project.ohl "route B" --user ana --preview
+ohl project merge project.ohl "route B" --user ana
+ohl project tag project.ohl "IFC rev A" --user ana --note "issued for construction"
+ohl project revert project.ohl 3f2a9c1e --user ana      # a new revision undoing 3f2a9c1e
+ohl project branch project.ohl                          # list branches and tags
 ```
 
 Revisions are named by a branch, a tag, `HEAD`, or the start of their id
@@ -99,16 +99,16 @@ Conflicts are listed with their key, the common value and both sides; the
 merge is refused until each one is settled:
 
 ```text
-$ ohl project merge project.ols "route B" --user ana
+$ ohl project merge project.ohl "route B" --user ana
 route B (fbf339818a): three-way merge, common ancestor d249e078b6
   conflict structure:T6/position: base [640.0,280.0,504.0], ours [1490.0,400.0,505.0], theirs [1500.0,400.0,505.0]
 error: refused: 1 conflict(s) to settle (choose ours or theirs for each): structure:T6/position
-$ ohl project merge project.ols "route B" --user ana --choose structure:T6=theirs
+$ ohl project merge project.ohl "route B" --user ana --choose structure:T6=theirs
 ```
 
 `--choose KEY=ours|theirs` settles one conflict; an object's key
 (`structure:T6`) settles all its fields; library files have keys
-`library:cables/acsr.olsw`. The merged line must be valid like after any
+`library:cables/acsr.ohlw`. The merged line must be valid like after any
 command (a section cannot run through a structure the other side deleted);
 otherwise the merge is refused with the reason. A branch with nothing new
 of its own is simply moved forward (fast-forward). The merge is one logged
@@ -119,7 +119,7 @@ the working state; changes made to the same fields since are conflicts.
 
 ## Branches and tags
 
-`ohl project branch project.ols NAME --user U [--at REV]` makes a branch;
+`ohl project branch project.ohl NAME --user U [--at REV]` makes a branch;
 `--protect` (admins) protects it and `--unprotect` lifts that: a **protected** branch is changed only by
 admins or by merging an approved review. `--delete` lists what goes with the
 branch (open reviews closed; revisions only on it stay in the file, reachable
@@ -129,13 +129,13 @@ and deleted by admins (`--delete --confirm`).
 ## Reviews
 
 ```bash
-ohl project branch project.ols main --user ana --protect       # admins only
-ohl project review project.ols --user ben --submit "route B" --into main --reviewer rita --note "T6 moved for the road"
-ohl project review project.ols                                  # list
-ohl project review project.ols --user rita --reject 1 --note "too close to the road"
-ohl project review project.ols --user ben --submit "route B" --reviewer rita   # changed, submitted again
-ohl project review project.ols --user rita --approve 2 --note "fine"
-ohl project review project.ols --user rita --merge 2      # into main, whatever line rita works on
+ohl project branch project.ohl main --user ana --protect       # admins only
+ohl project review project.ohl --user ben --submit "route B" --into main --reviewer rita --note "T6 moved for the road"
+ohl project review project.ohl                                  # list
+ohl project review project.ohl --user rita --reject 1 --note "too close to the road"
+ohl project review project.ohl --user ben --submit "route B" --reviewer rita   # changed, submitted again
+ohl project review project.ohl --user rita --approve 2 --note "fine"
+ohl project review project.ohl --user rita --merge 2      # into main, whatever line rita works on
 ```
 
 Reviewers named in the review (not its author) and admins approve or
@@ -148,10 +148,10 @@ again.
 Admins limit what a user — or every user of a role — may edit:
 
 ```bash
-ohl project grant project.ols --by ana --subject ben --kind structure --kind section --area "500,-100;900,-100;900,300;500,300"
-ohl project grant project.ols --by ana --subject role:designer --object T12 --object T13
-ohl project grant project.ols                                   # list
-ohl project grant project.ols --by ana --revoke 2
+ohl project grant project.ohl --by ana --subject ben --kind structure --kind section --area "500,-100;900,-100;900,300;500,300"
+ohl project grant project.ohl --by ana --subject role:designer --object T12 --object T13
+ohl project grant project.ohl                                   # list
+ohl project grant project.ohl --by ana --revoke 2
 ```
 
 A grant names kinds (`structure`, `section`, `jumper`, `route`, `meta` for
@@ -171,9 +171,9 @@ joining a server receives) shares the revision ids of the original. Work offline
 branch in the copy, commit, and carry the branch back:
 
 ```bash
-ohl project bundle copy.ols --export field --out field.json            # in the copy
-ohl project bundle project.ols --import field.json --user ben          # in the project
-ohl project merge project.ols field --user ana
+ohl project bundle copy.ohl --export field --out field.json            # in the copy
+ohl project bundle project.ohl --import field.json --user ben          # in the project
+ohl project merge project.ohl field --user ana
 ```
 
 The bundle holds the branch's revisions and their contents (`--as NAME` imports it under another branch name); ids and hashes

@@ -8,7 +8,7 @@ How it works is in the [theory manual](../theory/spotting.md).
 
 - **A route** of the line: its alignment (or the polyline through its structures). Stations are measured along it; its inner points that turn are **angle points**, where a structure must stand.
 - **The ground**: a terrain surface (survey points). The profile under the route's centreline is used; holes in the surface are bridged in a straight line (and reported).
-- **Structure types** (`.olss`) and a **cost file** (`.olscost`, see [Bill of materials](bom-and-cost.md)): every type and extension with a price in the cost file is a candidate, at its supply + foundation + erection price. A candidate's wire height is its lowest wire point (the clamp of a suspension string, the attachment of a strain string). A type whose attachments are all strain points is a **dead-end**: only dead-ends stand at the start and the end of the route.
+- **Structure types** (`.ohls`) and a **cost file** (`.ohlcost`, see [Bill of materials](bom-and-cost.md)): every type and extension with a price in the cost file is a candidate, at its supply + foundation + erection price. A candidate's wire height is its lowest wire point (the clamp of a suspension string, the attachment of a strain string). A type whose attachments are all strain points is a **dead-end**: only dead-ends stand at the start and the end of the route.
 - **Allowable spans** (`[[capacity.spans]]` of the types, Method 1): a type may stand at a line angle only up to its last given angle; its wind span and weight span must stay within the values interpolated at its angle. A type without allowable spans has no span limits, and only a dead-end of that kind may turn.
 - **The wire**: a cable and its **horizontal tension in the design (maximum sag) condition**, with the cable's own weight per metre. Each span is a catenary of that tension between the wire heights of its two structures.
 - **The clearance**: the smallest vertical distance from that wire to the ground.
@@ -19,12 +19,12 @@ Costs: the structures (from the cost file), each span's stringing labour (`labou
 ## From the command line
 
 ```bash
-ohl spot examples/synthetic-line/synthetic-line-typed.ols.json --route main \
+ohl spot examples/synthetic-line/synthetic-line-typed.ohl.json --route main \
     --terrain examples/synthetic-line/synthetic-survey.csv \
     --types examples/synthetic-line/Structures \
-    --cost examples/synthetic-line/unit-costs.olscost \
+    --cost examples/synthetic-line/unit-costs.ohlcost \
     --cable acsr-drake-26-7 --tension 20 --clearance 7 --step 10 --max-span 450 \
-    --out spotted.ols.json
+    --out spotted.ohl.json
 ```
 
 | Option | Default | Notes |
@@ -56,11 +56,11 @@ It prints one row per structure (station, type, extension, line angle, span ahea
 Structures 157000.00 + spans 6000.00 + wire 9223.47 = 172223.47 EUR
 ```
 
-**The new line** has the route (its centreline as free alignment points), the structures `T1`, `T2`, … (typed, with their extension, on the ground, turned to the route — the bisector at angle points), and one section for every attachment (set, phase) all chosen types have, strung to the design tension at the design temperature. The rest of the original line (its other routes, structures and sections) is not carried over; its name (with "(spotted)") and coordinate system are. Phases and electrical systems are for you to assign. Open it in the application or check it with `ohl line spotted.ols.json --terrain … --clearance …`.
+**The new line** has the route (its centreline as free alignment points), the structures `T1`, `T2`, … (typed, with their extension, on the ground, turned to the route — the bisector at angle points), and one section for every attachment (set, phase) all chosen types have, strung to the design tension at the design temperature. The rest of the original line (its other routes, structures and sections) is not carried over; its name (with "(spotted)") and coordinate system are. Phases and electrical systems are for you to assign. Open it in the application or check it with `ohl line spotted.ohl.json --terrain … --clearance …`.
 
 ## In the application
 
-Structures › **Spot structures…** asks for the route, cable, design tension and temperature, clearance, step, longest span and cost file (the project's first `.olscost` by default; next to a line file). It uses the model's ground surface and structure types. **Spot** runs in the background (**Cancel** stops it); the proposal is listed with its costs, and **Save as line file…** writes it as a new line.
+Structures › **Spot structures…** asks for the route, cable, design tension and temperature, clearance, step, longest span and cost file (the project's first `.ohlcost` by default; next to a line file). It uses the model's ground surface and structure types. **Spot** runs in the background (**Cancel** stops it); the proposal is listed with its costs, and **Save as line file…** writes it as a new line.
 
 ## Limits of this first version
 
