@@ -193,7 +193,9 @@ impl Panel {
             Panel::MemberSections => "Each member's section, kind and buckling factor",
             Panel::Groups => "A section and kind for every member of a group",
             Panel::SectionsMaterials => "The [[section]] and [[material]] tables of the file",
-            Panel::PoleDesign => "What the pole check needs: material, wall or section, strength",
+            Panel::PoleDesign => {
+                "What the pole check needs: material, wall (or solid) or section, strength"
+            }
             Panel::LoadRecipes => "The structure's load cases: each a list of loads",
             Panel::LoadTable => {
                 "The recipes evaluated: per case, the loads at each point or member"

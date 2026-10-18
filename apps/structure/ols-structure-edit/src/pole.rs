@@ -8,7 +8,8 @@
 //! on the file's text (one undo step through
 //! [`crate::StructureFile::edit`]); comments and the rest stay.
 
-use ols_structures::{PoleRef, PoleShape, StructureType};
+use ols_structures::pole::SOLID;
+use ols_structures::{PoleRef, PoleShape, PoleWall, StructureType};
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 use crate::body::ensure_version;
@@ -175,7 +176,7 @@ pub fn set_shape(doc: &mut DocumentMut, shape: PoleShape, sides: u32) {
 /// they are typed: a text with its unit, else a number.
 pub const POLE_FIELDS: [(&str, &str); 9] = [
     ("material", "wood, steel, concrete or other"),
-    ("wall", "e.g. 8 mm (none: solid, or from the section)"),
+    ("wall", "e.g. 8 mm, or solid (none: from the section)"),
     ("section", "a hollow section of the section library"),
     ("fibre_stress", "wood: e.g. 55 MPa"),
     ("moment_capacity", "at the ground line, e.g. 900 kN m"),
@@ -202,8 +203,38 @@ pub fn set_field(doc: &mut DocumentMut, field: &str, typed: &str) -> Result<(), 
             .parse()
             .map_err(|_| format!("drag: a number, not \"{typed}\""))?;
         t.insert(field, toml_edit::value(v));
+    } else if field == "wall" {
+        // A length or "solid"; a word else refused here, not in the file.
+        let typed = typed.trim_matches('"');
+        match PoleWall::from_value(&toml::Value::String(typed.to_owned()))? {
+            PoleWall::Solid => t.insert(field, toml_edit::value(SOLID)),
+            PoleWall::Thickness(_) => t.insert(field, toml_edit::value(typed)),
+        };
     } else {
         t.insert(field, toml_edit::value(typed.trim_matches('"')));
+    }
+    Ok(())
+}
+
+/// Whether the pole's table says it is solid (`wall = "solid"`).
+pub fn is_solid(doc: &DocumentMut) -> bool {
+    doc.get("pole")
+        .and_then(|p| p.get("wall"))
+        .and_then(Item::as_str)
+        .is_some_and(|s| s.trim().eq_ignore_ascii_case(SOLID))
+}
+
+/// The pole solid (`wall = "solid"`: no hollow, level 3's wall) or not
+/// (a `"solid"` removed: the wall is not given again; a typed thickness
+/// stays).
+pub fn set_solid(doc: &mut DocumentMut, solid: bool) -> Result<(), String> {
+    if solid {
+        let t = table(doc).ok_or("the pole is a .olsp file: bring it into this file first")?;
+        t.insert("wall", toml_edit::value(SOLID));
+    } else if is_solid(doc)
+        && let Some(t) = doc.get_mut("pole").and_then(Item::as_table_mut)
+    {
+        t.remove("wall");
     }
     Ok(())
 }

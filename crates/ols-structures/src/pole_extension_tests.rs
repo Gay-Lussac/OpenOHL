@@ -42,7 +42,7 @@ fn pole_levels() {
         [
             "pole: no material",
             "pole: no strength (fibre stress, moment capacity or a capacity table)",
-            "pole: no wall thickness (its wall, or a section)"
+            "pole: no wall thickness (its wall thickness, \"solid\", or a section)"
         ]
     );
     // Its wall too, whatever the material.
@@ -58,7 +58,7 @@ fn pole_levels() {
             .and_then(PoleRef::inline)
             .unwrap()
             .missing_for_design(),
-        ["pole: no wall thickness (its wall, or a section)"]
+        ["pole: no wall thickness (its wall thickness, \"solid\", or a section)"]
     );
     let full = parse(&with(
         "material = \"steel\"\nmoment_capacity = \"300 kN m\"\nwall = \"6 mm\"\n",
@@ -73,6 +73,12 @@ fn pole_levels() {
     ))
     .unwrap();
     assert_eq!(wood.detail(), Detail::Design);
+    // A solid pole counts: `wall = "solid"` is its wall.
+    let solid = parse(&with(
+        "material = \"wood\"\nfibre_stress = \"50 MPa\"\nwall = \"solid\"\n",
+    ))
+    .unwrap();
+    assert_eq!(solid.detail(), Detail::Design);
     // A section from the library stands for the wall.
     let section = parse(&with(
         "material = \"steel\"\nmoment_capacity = \"300 kN m\"\nsection = \"P-12\"\n",
@@ -114,12 +120,42 @@ fn pole_tables_are_checked() {
         ),
         ("[pole]\nmaterial = \"glass\"\n", "glass"),
         ("[pole]\nwall = \"-1 mm\"\n", "above 0"),
+        ("[pole]\nwall = \"sold\"\n", "wall: \"sold\""),
+        ("[pole]\nwall = true\n", "wall: true"),
         ("[pole]\nwal = \"6 mm\"\n", "wal"),
         ("pole = 3\n", "[pole] table"),
     ] {
         let e = parse(bad).unwrap_err();
         assert!(e.contains(why), "{bad}: {e}");
     }
+}
+
+/// `wall`: a length (text or an SI number) or `"solid"`; absent is not
+/// given.
+#[test]
+fn pole_wall_reads_a_length_or_solid() {
+    use crate::PoleWall;
+    use ols_core::units::Length;
+    let wall = |fields: &str| {
+        parse(&with(fields))
+            .unwrap()
+            .pole
+            .as_ref()
+            .and_then(PoleRef::inline)
+            .unwrap()
+            .wall
+    };
+    assert_eq!(
+        wall("wall = \"8 mm\"\n"),
+        Some(PoleWall::Thickness(Length::from_si(0.008)))
+    );
+    assert_eq!(
+        wall("wall = 0.008\n"),
+        Some(PoleWall::Thickness(Length::from_si(0.008)))
+    );
+    assert_eq!(wall("wall = \"solid\"\n"), Some(PoleWall::Solid));
+    assert_eq!(wall(""), None);
+    assert_eq!(PoleWall::Solid.thickness(), None);
 }
 
 /// A tower of four legs (feet at z = 0, supported), with an extension

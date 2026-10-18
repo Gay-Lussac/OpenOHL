@@ -79,8 +79,8 @@ const CROSSING: f64 = 1e-3;
 /// without a joint.
 ///
 /// A pole (`[pole]`) has its own items: level 2 its outline, level 3 its
-/// material, strength and (steel) wall. At level 3 an extension without
-/// members is advice (the model leaves it out), an extension's member
+/// material, strength and wall (a thickness, solid or a section). At level
+/// 3 an extension without members is advice (the model leaves it out), an extension's member
 /// without a section or an extension body without a support a lack.
 pub fn missing(t: &StructureType, level: u8) -> Vec<Missing> {
     let mut out = Vec::new();

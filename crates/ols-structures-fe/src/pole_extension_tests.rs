@@ -86,6 +86,75 @@ fn inline_pole_checks_as_its_olsp() {
     assert!(e.contains("no material"), "{e}");
 }
 
+/// `wall = "solid"` is the solid pole a `.olsp` without a wall always was:
+/// the same pole and the same check to the last digit, in a `.olsp` file
+/// and in `[pole]`; solid wins over a section's wall (its material still
+/// gives the elasticity and density).
+#[test]
+fn a_solid_wall_checks_as_no_wall() {
+    let olsp = |wall: &str| {
+        Pole::parse(&format!(
+            "format = \"ols-pole\"\nversion = 1\nid = \"w\"\nmaterial = \"wood\"\n\
+             length = \"14 m\"\nembedment = \"2 m\"\ntop_diameter = \"190 mm\"\n\
+             ground_diameter = \"290 mm\"\nfibre_stress = \"55 MPa\"\n\
+             elasticity = \"11 GPa\"\ndensity = \"650 kg/m3\"\n{wall}"
+        ))
+    };
+    let none = olsp("").unwrap();
+    let solid = olsp("wall = \"solid\"\n").unwrap();
+    assert_eq!(none.wall, None);
+    assert_eq!(solid, none);
+    let e = olsp("wall = \"hollow\"\n").unwrap_err();
+    assert!(e.contains("wall: \"hollow\""), "{e}");
+    let structure = |extra: &str| {
+        format!(
+            "id = \"w\"\nname = \"w\"\nkind = \"pole\"\nversion = 3\n\
+             [[point]]\nlabel = \"A1\"\npoint = [\"0 m\", \"0 m\", \"11.5 m\"]\n\
+             [pole]\nembedment = \"2 m\"\nmaterial = \"wood\"\nwall = \"solid\"\n\
+             fibre_stress = \"55 MPa\"\nelasticity = \"11 GPa\"\ndensity = \"650 kg/m3\"\n{extra}\
+             [[pole.outline]]\nz = \"0 m\"\ndiameter = \"290 mm\"\n\
+             [[pole.outline]]\nz = \"12 m\"\ndiameter = \"190 mm\"\n"
+        )
+    };
+    let t = StructureType::parse(Path::new("w.olss"), &structure("")).unwrap();
+    let inline = structure_pole(&t, Path::new("."), &SectionLibrary::default())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        Pole {
+            name: none.name.clone(),
+            ..inline.clone()
+        },
+        none
+    );
+    let loads = [PoleLoad {
+        point: t.point_local("A1", None).unwrap(),
+        force: [3e3, 1e3, -5e3],
+    }];
+    for (wind, p_delta) in [([0.0, 0.0], false), ([-700.0, 0.0], true)] {
+        let a = check_pole(&none, &loads, wind, 0.9, p_delta, &default_budget()).unwrap();
+        let b = check_pole(&solid, &loads, wind, 0.9, p_delta, &default_budget()).unwrap();
+        let c = check_pole(&inline, &loads, wind, 0.9, p_delta, &default_budget()).unwrap();
+        for r in [&b, &c] {
+            assert_eq!(a.usage, r.usage);
+            assert_eq!(a.moment, r.moment);
+            assert_eq!(a.amplification, r.amplification);
+        }
+    }
+    // Solid with a section: solid, the section's material for the rest.
+    let lib = SectionLibrary::parse(
+        "[[material]]\nid = \"m\"\nelasticity = \"12 GPa\"\ndensity = \"700 kg/m3\"\n\
+         [[section]]\nid = \"C\"\nshape = \"circular_hollow\"\nmaterial = \"m\"\n\
+         d = \"290 mm\"\nt = \"20 mm\"\n",
+    )
+    .unwrap();
+    let text = structure("section = \"C\"\n")
+        .replace("elasticity = \"11 GPa\"\ndensity = \"650 kg/m3\"\n", "");
+    let t = StructureType::parse(Path::new("w.olss"), &text).unwrap();
+    let p = structure_pole(&t, Path::new("."), &lib).unwrap().unwrap();
+    assert_eq!((p.wall, p.elasticity, p.density), (None, Some(12e9), 700.0));
+}
+
 /// Three heights: the diameter by height; a polygonal pole's section
 /// as the section library computes a polygonal hollow section; its wall
 /// from a section of the library.

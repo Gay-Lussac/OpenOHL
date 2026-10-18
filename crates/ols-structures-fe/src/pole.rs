@@ -21,7 +21,7 @@
 //! embedment = "2 m"
 //! top_diameter = "190 mm"        # or top_circumference
 //! ground_diameter = "290 mm"     # or ground_circumference (ground line)
-//! wall = "6 mm"                  # optional: hollow section (stiffness)
+//! wall = "6 mm"                  # or "solid"; optional (none: solid)
 //! fibre_stress = "55 MPa"        # wood: moment capacity from the taper
 //! moment_capacity = "180 kN m"   # or: at the ground line
 //! elasticity = "11 GPa"          # optional: P-Delta amplification
@@ -52,7 +52,7 @@ use std::path::Path;
 use ols_core::budget::Budget;
 use ols_core::units::{Density, Length, Stress};
 use ols_sections::SectionLibrary;
-use ols_structures::{InlinePole, PoleRef, StructureType};
+use ols_structures::{InlinePole, PoleRef, PoleWall, StructureType};
 use serde::Deserialize;
 
 use crate::model::{Analysis, Member, MemberKind, Model, NodalLoad, Node, Section};
@@ -112,7 +112,7 @@ struct PoleFile {
     #[serde(default)]
     ground_circumference: Option<Length>,
     #[serde(default)]
-    wall: Option<Length>,
+    wall: Option<PoleWall>,
     #[serde(default)]
     fibre_stress: Option<Stress>,
     #[serde(default)]
@@ -198,7 +198,7 @@ impl Pole {
             source: f.source,
             length: f.length.si(),
             embedment: f.embedment.si(),
-            wall: f.wall.map(|w| w.si()),
+            wall: f.wall.and_then(PoleWall::thickness).map(|w| w.si()),
             fibre_stress: f.fibre_stress.map(|s| s.si()),
             moment_capacity: f.moment_capacity.map(|m| m.0),
             capacity: f
@@ -220,8 +220,9 @@ impl Pole {
     /// outline's heights above the feet (`foot`, local z) give the
     /// diameters by height above the ground line; the level 3 fields read
     /// as in a `.olsp` file. A `section` of `library` (a polygonal or
-    /// circular hollow section) gives the wall, and its material the
-    /// elasticity and density not given. Checked as a `.olsp` pole.
+    /// circular hollow section) gives the wall (unless `wall` is typed: a
+    /// thickness, or solid), and its material the elasticity and density
+    /// not given. Checked as a `.olsp` pole.
     pub fn from_inline(
         id: &str,
         name: &str,
@@ -252,7 +253,7 @@ impl Pole {
             .try_into()
             .map_err(|e: toml::de::Error| bad(e.message().to_owned()))?;
         let (mut wall, mut elasticity, mut density) = (
-            p.wall.map(|w| w.si()),
+            p.wall.and_then(PoleWall::thickness).map(|w| w.si()),
             p.elasticity.map(|e| e.si()),
             p.density.map(|d| d.si()),
         );
@@ -271,7 +272,10 @@ impl Pole {
                     )));
                 }
             };
-            wall = wall.or(Some(t));
+            // A typed wall (a thickness or solid) wins over the section.
+            if p.wall.is_none() {
+                wall = Some(t);
+            }
             if let Some(m) = library.material_of(s) {
                 elasticity = elasticity.or(Some(m.elasticity));
                 density = density.or(Some(m.density));
