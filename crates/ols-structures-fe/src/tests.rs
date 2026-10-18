@@ -365,7 +365,9 @@ fn self_weight() {
     ));
 }
 
-/// A node held by nothing in one direction is reported by name.
+/// A node held by nothing in one direction is reported by name (without
+/// stabilisation); stabilised, a bar pulled along its axis solves with its
+/// free end held across it, and pulled across it is refused.
 #[test]
 fn mechanisms_are_named() {
     let mut m = Model {
@@ -377,15 +379,33 @@ fn mechanisms_are_named() {
         Node::free("b", [1.0, 0.0, 0.0]),
     ];
     m.members = vec![Member::new("bar", MemberKind::Truss, 0, 1, 0)];
+    let along = nodal(vec![load(1, [1.0, 0.0, 0.0])]);
     let e = solve(
         &m,
-        &nodal(vec![load(1, [1.0, 0.0, 0.0])]),
-        &first_order(),
+        &along,
+        &Options {
+            stabilise: false,
+            ..first_order()
+        },
         &default_budget(),
     )
     .unwrap_err();
     assert!(
         matches!(&e, FeError::Mechanism { node, .. } if node == "b"),
+        "{e}"
+    );
+    assert_eq!(
+        e.to_string(),
+        "mechanism: node b is free to move in y (add a member, support or spring)"
+    );
+    let s = solve(&m, &along, &first_order(), &default_budget()).unwrap();
+    assert!(close(s.members[0].axial, 1.0, 1e-12));
+    let held: Vec<String> = s.stabilised.iter().map(|h| h.at.dof_name()).collect();
+    assert_eq!(held, ["y", "z"]);
+    let across = nodal(vec![load(1, [0.0, 0.0, -1.0])]);
+    let e = solve(&m, &across, &first_order(), &default_budget()).unwrap_err();
+    assert!(
+        matches!(&e, FeError::Held { node, dof, .. } if node == "b" && dof == "z"),
         "{e}"
     );
 }

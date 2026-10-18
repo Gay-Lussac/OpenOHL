@@ -669,7 +669,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`), `reference?`, `roll?`, `k?`, `pretension?`, `group?`, `made_by?` | — | pylon members; `group`: its member group (no table of groups: a section per group is written on each member); `made_by` as for joints. `ols_structures_fe` leaves `group` and `made_by` out of the model |
 | `[[generator]]` | tables (`generators`, kept unread by the core): `id`, `kind` (`panels` / `crossarm` / `peak` / `copy_face`) and its inputs | m | a body generator's record, read by `ols-structure-edit` (`body::Generator`): panels `bottom?`, `feet`, `waist` (a length or [across, along]), `panel` [{`top`, `bracing` (`single`/`x`/`k`/`diamond`/`warren`), `horizontal`}]; crossarm `points`, `shape` (`triangular`/`rectangular`); peak `points` or `height`; copy_face `body` (a panels generator), `face` (`x+`/`x-`/`y+`/`y-`) |
 | `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body menu's Symmetry option |
-| `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1) |
+| `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ols_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1 —, `stabilise` — joint stabilisation, default true) |
 | `[[load_case]]` | tables (`load_cases`, kept unread by the core) | N, Pa | the structure's load-case recipes, read by the structure application (`ols-structure-loads`; below) |
 | `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
 | `wind` | `band[]`: `from`, `to`, `area`, `drag` | m, m² | wind on the structure itself |
@@ -791,6 +791,19 @@ project line ([Project file tables](#project-file-tables-cratesols-session));
 the app reads it with `Model::section_library` and gives it to the line's
 structure checks (`ols_loads::capacity::usage_with_sections`). Member
 groups (one section for many members) come later and resolve the same way.
+
+Solving (`ols_structures_fe::solve`, `analyse`): with `[analysis]
+stabilise` (default true; `Options::stabilise`), a solve that fails as a
+mechanism or unstable is repeated with the joint directions no member
+stiffens held (`ols_structures_fe::stabilise::Stabilisation`: node,
+translation or rotation, unit direction, a structure axis removed exactly
+or a spring's stiffness); `Solution::stabilised` lists them with the force
+each took (`Stabilised`), `stabilisation_note` puts them in words for the
+usage notes, the structure application's results and `ols structures fe`.
+A stabilisation carrying load (above `HELD_SHARE` of the loads and
+`HELD_JOINT_SHARE` of its joint's) fails as `FeError::Held`; a remaining
+mechanism is `FeError::Mechanism` with the joints that move (`joints`,
+`moving`). Nothing is stored: it is worked out per solve.
 
 ### Insulator assembly (`.olsi`)
 

@@ -301,6 +301,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             reaction[1] / 1000.0,
             reaction[2] / 1000.0
         );
+        if let Some(note) = ols_structures_fe::stabilisation_note(&model, &s) {
+            println!("  {note}");
+        }
         let mut sorted: Vec<&ols_structures_fe::MemberUsage> =
             usage.iter().filter(|u| u.usage.is_some()).collect();
         sorted.sort_by(|a, b| b.usage.unwrap_or(0.0).total_cmp(&a.usage.unwrap_or(0.0)));

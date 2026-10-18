@@ -168,18 +168,23 @@ impl Analyses {
             case.strength,
             &ols_structures_fe::default_budget(),
         ) {
-            Ok((_, usage)) => match worst(&usage) {
-                Some(w) => Some(Check {
-                    method: Method::Fe,
-                    usage: w.usage.unwrap_or(0.0),
-                    governs: format!("member {} {}", model.members[w.member].id, w.governs),
-                    incomplete: false,
-                }),
-                None => {
-                    notes.push("model: no member has a capacity".into());
-                    None
+            Ok((solution, usage)) => {
+                if let Some(note) = ols_structures_fe::stabilisation_note(model, &solution) {
+                    notes.push(format!("model: {note}"));
                 }
-            },
+                match worst(&usage) {
+                    Some(w) => Some(Check {
+                        method: Method::Fe,
+                        usage: w.usage.unwrap_or(0.0),
+                        governs: format!("member {} {}", model.members[w.member].id, w.governs),
+                        incomplete: false,
+                    }),
+                    None => {
+                        notes.push("model: no member has a capacity".into());
+                        None
+                    }
+                }
+            }
             Err(e) => Some(Check {
                 method: Method::Fe,
                 usage: f64::INFINITY,

@@ -89,6 +89,12 @@ impl Skyline {
     /// beyond a buckling load). A pivot below `1e-12` times its diagonal
     /// entry is a mechanism.
     pub fn factorize(&mut self) -> Result<usize, Pivot> {
+        self.factor(None)
+    }
+
+    /// [`Skyline::factorize`]; with `stand_in`, a zero pivot is replaced
+    /// by it and the factorisation goes on.
+    fn factor(&mut self, stand_in: Option<f64>) -> Result<usize, Pivot> {
         let n = self.len();
         let mut negative = 0;
         for j in 0..n {
@@ -116,7 +122,10 @@ impl Skyline {
             }
             if d.is_nan() || d.abs() <= 1e-12 * diag.abs().max(f64::MIN_POSITIVE) || !d.is_finite()
             {
-                return Err(Pivot::Zero(j));
+                match stand_in {
+                    Some(s) => d = s,
+                    None => return Err(Pivot::Zero(j)),
+                }
             }
             if d < 0.0 {
                 negative += 1;
@@ -125,6 +134,33 @@ impl Skyline {
             self.values[k] = d;
         }
         Ok(negative)
+    }
+
+    /// The motion of the mechanisms of a singular matrix (not factorised):
+    /// a vector K hardly resists, from two steps of inverse iteration on
+    /// the matrix with its zero pivots replaced by 10⁻¹² of its largest
+    /// diagonal entry — the zero-energy motions (every one of them, the
+    /// whole part that moves) grow by about the ratio of the stiffness to
+    /// that, the others do not. Replaces the matrix by its factors.
+    pub fn mechanism(&mut self) -> Vec<f64> {
+        let n = self.len();
+        let largest = (0..n)
+            .map(|j| self.values[self.at(j, j)].abs())
+            .fold(0.0, f64::max)
+            .max(f64::MIN_POSITIVE);
+        let _ = self.factor(Some(1e-12 * largest));
+        // A start no motion is orthogonal to (deterministic).
+        let mut x: Vec<f64> = (0..n)
+            .map(|i| 1.0 + ((i * 7919) % 13) as f64 / 13.0)
+            .collect();
+        for _ in 0..2 {
+            self.solve(&mut x);
+            let size = x.iter().fold(0.0f64, |a, v| a.max(v.abs()));
+            if size.is_finite() && size > 0.0 {
+                x.iter_mut().for_each(|v| *v /= size);
+            }
+        }
+        x
     }
 
     /// Solves with a factorised matrix, `b` replaced by the solution.
@@ -234,6 +270,13 @@ mod tests {
         s.add(0, 1, 1.0);
         s.add(1, 1, 1.0);
         assert_eq!(s.factorize(), Err(Pivot::Zero(1)));
+        // Its motion: both equations together, along (−1, 1).
+        let mut s = Skyline::new(vec![0, 0]);
+        s.add(0, 0, 1.0);
+        s.add(0, 1, 1.0);
+        s.add(1, 1, 1.0);
+        let v = s.mechanism();
+        assert!((v[0] + v[1]).abs() < 1e-9 * v[1].abs(), "{v:?}");
     }
 
     #[test]

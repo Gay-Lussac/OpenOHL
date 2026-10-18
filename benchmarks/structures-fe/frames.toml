@@ -323,3 +323,54 @@ expected.wind_moment_nm = { value = 8166.666666666668, rel_tol = 1e-4 }
 expected.ground_moment_nm = { value = 53166.66666666667, rel_tol = 1e-4 }
 expected.ground_capacity_nm = { value = 132535.94007331936, rel_tol = 1e-9 }
 expected.ground_usage = { value = 0.40114905162520204, rel_tol = 1e-4 }
+
+[[case]]
+id = "structfe-007"
+title = "Triangle truss with nothing holding it across its plane: stabilised, the forces of structfe-002"
+calculation = "structures.fe"
+reference = "Method of joints (statics); the joints' free direction across the plane held by the joint stabilisation (theory: Joint stabilisation)"
+notes = "structfe-002 without the y supports at B and C: every joint has its members in the x–z plane, so nothing stiffens it along y — a mechanism without stabilisation; the y of B and C is held exactly"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "B"
+point = ["4 m", "0 m", "0 m"]
+support = ["z"]
+[[node]]
+id = "C"
+point = ["2 m", "0 m", "2 m"]
+[[member]]
+id = "AB"
+nodes = ["A", "B"]
+section = "s"
+[[member]]
+id = "AC"
+nodes = ["A", "C"]
+section = "s"
+[[member]]
+id = "BC"
+nodes = ["B", "C"]
+section = "s"
+[[load]]
+node = "C"
+force = ["0 N", "0 N", "-10 kN"]
+'''
+expected.n_AB = { value = 5000.0, rel_tol = 1e-9 }
+expected.n_AC = { value = -7071.067811865475, rel_tol = 1e-9 }
+expected.n_BC = { value = -7071.067811865475, rel_tol = 1e-9 }
+expected.r_A_z = { value = 5000.0, rel_tol = 1e-9 }
+expected.r_B_z = { value = 5000.0, rel_tol = 1e-9 }
+expected.r_B_y = { value = 0.0, abs_tol = 1e-9 }

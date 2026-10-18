@@ -358,6 +358,25 @@ fn a_design_is_completed_in_tables() {
     assert!(doc.get("material").is_none());
 }
 
+/// The analysis settings: a field written into `[analysis]` (made when
+/// missing), read back by the structure, removed with the table when it is
+/// the last.
+#[test]
+fn analysis_settings_are_edited() {
+    let mut doc: DocumentMut = PYLON.parse().unwrap();
+    set_analysis_field(&mut doc, "stabilise", "false").unwrap();
+    let t = read(&doc);
+    let a = t.analysis.as_ref().unwrap();
+    assert_eq!(
+        a.get("stabilise").and_then(toml::Value::as_bool),
+        Some(false)
+    );
+    set_analysis_field(&mut doc, "stabilise", "").unwrap();
+    assert!(doc.get("analysis").is_none());
+    assert!(read(&doc).analysis.is_none());
+    assert!(set_analysis_field(&mut doc, " ", "1").is_err());
+}
+
 /// The file's own fields and the height extensions.
 #[test]
 fn name_height_foot_and_extensions_are_edited() {
