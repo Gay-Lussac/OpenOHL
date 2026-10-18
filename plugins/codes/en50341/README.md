@@ -32,7 +32,7 @@ the standard are included**: they come from your parameter file.
 | `partial_factors.material` | γ_M; strength factor 1/γ_M |
 | `nna.country`, `nna.notes` | shown in the notes |
 | `nna.<table>` | any table above given again: its keys replace the general ones |
-| `[[nna.extra_weather]]`, `[[nna.extra_load_case]]` | national cases, as in `.olswc` / `.olslc` but numbers in SI (°C, Pa, mm, N/m, kg/m³) |
+| `[[nna.extra_weather]]`, `[[nna.extra_load_case]]` | national cases, as in `.ohlwc` / `.ohllc` but numbers in SI (°C, Pa, mm, N/m, kg/m³) |
 
 ## What is generated
 

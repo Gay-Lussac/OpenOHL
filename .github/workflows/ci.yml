@@ -51,7 +51,7 @@ jobs:
       matrix:
         os: ${{ fromJSON(inputs.full && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     env:
-      OLS_REQUIRE_PLUGIN_TESTS: "1"
+      OHL_REQUIRE_PLUGIN_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -77,8 +77,8 @@ jobs:
           (cd plugins/examples/esri-grid && cargo build --release --target wasm32-wasip2)
           (cd plugins/examples/project-bundle && cargo build --release --target wasm32-wasip2)
           (cd plugins/tests/runaway && cargo build --release --target wasm32-wasip2)
-          for d in plugins/codes/*/; do [ -f "$d/ols-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done
-      - run: cargo test --workspace --exclude ols-py --locked
+          for d in plugins/codes/*/; do [ -f "$d/ohl-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done
+      - run: cargo test --workspace --exclude ohl-py --locked
 
   msrv:
     name: Minimum Rust version (1.96)
@@ -107,7 +107,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo run --locked -p ols-cli -- validate --report validation-report.md
+          cargo run --locked -p ohl-cli -- validate --report validation-report.md
       - name: Publish report
         if: always()
         shell: bash
@@ -134,8 +134,8 @@ jobs:
       - run: pip install maturin pytest jsonschema
       - name: Wire libraries match the JSON Schema
         run: python .github/scripts/check_wire_schema.py
-      - run: pip install ./crates/ols-py
-      - run: pytest -q crates/ols-py/tests
+      - run: pip install ./crates/ohl-py
+      - run: pytest -q crates/ohl-py/tests
       - run: python plugins/examples/hello-python/hello.py
 
   docs:
@@ -153,7 +153,7 @@ jobs:
         with:
           tool: mdbook
       - run: cargo doc --workspace --no-deps --locked
-      - run: cargo run --locked -p ols-cli -- validate --report docs/validation/report.md
+      - run: cargo run --locked -p ohl-cli -- validate --report docs/validation/report.md
       - run: mdbook build
       - run: cp -r target/doc target/book/api
       - uses: actions/upload-artifact@v4

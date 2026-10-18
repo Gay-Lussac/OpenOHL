@@ -1,29 +1,29 @@
-# Structure analysis (`.olsfe`, `.olsp`)
+# Structure analysis (`.ohlfe`, `.ohlp`)
 
 Besides the allowable spans and load trees of a structure type ([Structure libraries](structure-library.md#capacity)), OpenOHL can check a structure by **analysis**:
 
-- a **structure model**: a 3D finite-element model of a lattice tower, frame or guyed mast — member forces and how much of its capacity each member uses. It is the members of a type that is a full design ([detail level 3](structure-library.md#detail-levels): every member with a section, a supported joint), in the type's own `.olss`; or a separate `.olsfe` file the type names;
-- a **pole** (`.olsp`, or the structure's own `[pole]` table): wood, steel or concrete pole — bending moment along the pole against its moment capacity.
+- a **structure model**: a 3D finite-element model of a lattice tower, frame or guyed mast — member forces and how much of its capacity each member uses. It is the members of a type that is a full design ([detail level 3](structure-library.md#detail-levels): every member with a section, a supported joint), in the type's own `.ohls`; or a separate `.ohlfe` file the type names;
+- a **pole** (`.ohlp`, or the structure's own `[pole]` table): wood, steel or concrete pole — bending moment along the pole against its moment capacity.
 
 Every structure of that type is then checked in every load case with the factored attachment loads ([Load cases](loads.md)). The theory is in [Structure analysis](../theory/structures-fe.md).
 
 ```toml
-# In the structure type (.olss), before the [[point]] tables:
-model = "DL380-tangent.olsfe"   # optional: a separate model, relative to the .olss file
-pole = "wood-14m"               # id of a .olsp file in the same folder (or its file name),
+# In the structure type (.ohls), before the [[point]] tables:
+model = "DL380-tangent.ohlfe"   # optional: a separate model, relative to the .ohls file
+pole = "wood-14m"               # id of a .ohlp file in the same folder (or its file name),
                                 # or a [pole] table in the file (Structure libraries › Poles)
 ```
 
-In a project, the `.olsfe` and `.olsp` files of the structure folder are copied into the project file when it opens, and read from there after (see [Library editors](desktop-app.md#library-editors)); a model in a subfolder is not, so keep them next to the `.olss`.
+In a project, the `.ohlfe` and `.ohlp` files of the structure folder are copied into the project file when it opens, and read from there after (see [Library editors](desktop-app.md#library-editors)); a model in a subfolder is not, so keep them next to the `.ohls`.
 
-All values in these files are **your data** (drawings, supplier tables, the pole manufacturer or the design code). OpenOHL ships only invented examples: `examples/synthetic-line/Structures/type-02.olss` (a small lattice tower, its members in the type) and `steel-pole-30m.olsp`.
+All values in these files are **your data** (drawings, supplier tables, the pole manufacturer or the design code). OpenOHL ships only invented examples: `examples/synthetic-line/Structures/type-02.ohls` (a small lattice tower, its members in the type) and `steel-pole-30m.ohlp`.
 
-## Structure models (.olsfe)
+## Structure models (.ohlfe)
 
-The tables below go into the structure type itself (a full design), or into a separate `.olsfe` file with this header:
+The tables below go into the structure type itself (a full design), or into a separate `.ohlfe` file with this header:
 
 ```toml
-format = "ols-structure-model"
+format = "ohl-structure-model"
 version = 1
 name = "Example tower"
 
@@ -85,7 +85,7 @@ Units: lengths, areas (`mm2`, `cm2`, `m2`), stresses, forces as elsewhere; secon
 
 **Sections from the section library**: a member's `section = "<id>"` is
 looked up first in the project's [section library](section-library.md)
-(`.olssec`), then in the file's own `[[section]]` tables; a library
+(`.ohlsec`), then in the file's own `[[section]]` tables; a library
 section of the same id as a table replaces it. Its properties are the
 profile's (area, iy, iz, the torsion constant — iy + iz for a `general`
 section without one —, the minor principal second moment for buckling,
@@ -164,10 +164,10 @@ the member wind was used: `model: member wind from the section profiles,
 Without profiles (sections from the tables only) there is no member wind
 and nothing changes.
 
-## Poles (.olsp)
+## Poles (.ohlp)
 
 ```toml
-format = "ols-pole"
+format = "ohl-pole"
 version = 1
 id = "wood-14m"
 name = "Wood pole 14 m"
@@ -189,21 +189,21 @@ The check takes the factored loads at the **type's points** (horizontal loads ×
 
 ### Poles in the structure file (`[pole]`)
 
-A structure may describe its pole itself ([Poles](structure-library.md#poles)): its outline by height (round or polygonal) and the same level 3 fields as a `.olsp`. The pole check reads it through the **same conversion** as a `.olsp` file and checks it alike:
+A structure may describe its pole itself ([Poles](structure-library.md#poles)): its outline by height (round or polygonal) and the same level 3 fields as a `.ohlp`. The pole check reads it through the **same conversion** as a `.ohlp` file and checks it alike:
 
-- the heights of the outline above the feet are the heights above the ground line; the diameter between them is linear (a `.olsp`: linear from the ground line to the top). An outline of two heights starting at the feet is exactly a `.olsp` taper: the example pole written in the structure file gives the `.olsp`'s numbers to the last digit (a test);
+- the heights of the outline above the feet are the heights above the ground line; the diameter between them is linear (a `.ohlp`: linear from the ground line to the top). An outline of two heights starting at the feet is exactly a `.ohlp` taper: the example pole written in the structure file gives the `.ohlp`'s numbers to the last digit (a test);
 - a polygonal pole: its section at each height is the regular polygon of that width across flats (hollow by the wall), its elastic modulus taken at a corner; its width across flats takes the wind;
-- `wall` is a thickness or the word `"solid"` (no hollow; any other word is refused, naming `wall`); solid checks exactly as a `.olsp` without a wall (a test);
+- `wall` is a thickness or the word `"solid"` (no hollow; any other word is refused, naming `wall`); solid checks exactly as a `.ohlp` without a wall (a test);
 - a `section` of the section library gives the wall (unless `wall` is typed: a thickness, or solid), and its material the elasticity and density not given in the table;
 - the pole check runs at level 3 only: a `[pole]` with an outline but no material, strength or wall (level 2) is not checked (the type then needs a capacity, as before).
 
-`ohl structures pole --type structure.olss` without a `.olsp` checks the type's own pole (its `[pole]` table, or the `.olsp` it names), with `--sections` for a section it names.
+`ohl structures pole --type structure.ohls` without a `.ohlp` checks the type's own pole (its `[pole]` table, or the `.ohlp` it names), with `--sections` for a section it names.
 
 ## Extensions in the model
 
-A placed structure standing on an extension that has a **piece** (its own joints and members below the feet) or **leg extensions** is checked on the model **with that extension** ([Extension bodies](structure-library.md#extension-bodies-and-leg-extensions)): the piece's joints and members added (all their fields: section, kind, support…), the supports of the body's joints the piece reaches dropped, a leg's support joint lowered along its leg member. The loads come in at the same points (the body above is not moved in the model: the extension's `dz` raises the whole, which changes nothing in the statics). Each extension's model is built once per usage run; structures of the same type on another extension, or on none, use theirs. An extension without a piece or legs uses the model as written (as before). A separate `.olsfe` model has no extensions.
+A placed structure standing on an extension that has a **piece** (its own joints and members below the feet) or **leg extensions** is checked on the model **with that extension** ([Extension bodies](structure-library.md#extension-bodies-and-leg-extensions)): the piece's joints and members added (all their fields: section, kind, support…), the supports of the body's joints the piece reaches dropped, a leg's support joint lowered along its leg member. The loads come in at the same points (the body above is not moved in the model: the extension's `dz` raises the whole, which changes nothing in the statics). Each extension's model is built once per usage run; structures of the same type on another extension, or on none, use theirs. An extension without a piece or legs uses the model as written (as before). A separate `.ohlfe` model has no extensions.
 
-`ohl structures fe structure.olss --extension "+3"` solves the model standing on extension `+3`.
+`ohl structures fe structure.ohls --extension "+3"` solves the model standing on extension `+3`.
 
 ## In the application and the line run
 
@@ -214,12 +214,12 @@ The **Structure loads › Usage** page and `ohl line … --usage-csv` show the t
 One model with the loads of one structure, from the CSV of `ohl line --loads-csv`:
 
 ```bash
-ohl line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-csv loads.csv
-ohl structures fe Structures/type-02.olss --loads loads.csv --structure T2 [--case wind] [--csv members.csv]
-ohl structures fe Structures/type-02.olss           # the model's own [[load]]s (an .olsfe works too)
-ohl structures fe Structures/type-02.olss --sections Sections --wind 840 --wind-dir 180
-ohl structures pole Structures/steel-pole-30m.olsp --type Structures/type-05.olss \
+ohl line line.ohl.json --weather cases.ohlwc --load-cases loads.ohllc --loads-csv loads.csv
+ohl structures fe Structures/type-02.ohls --loads loads.csv --structure T2 [--case wind] [--csv members.csv]
+ohl structures fe Structures/type-02.ohls           # the model's own [[load]]s (an .ohlfe works too)
+ohl structures fe Structures/type-02.ohls --sections Sections --wind 840 --wind-dir 180
+ohl structures pole Structures/steel-pole-30m.ohlp --type Structures/type-05.ohls \
     --loads loads.csv --structure T6 --wind-pressure 840
 ```
 
-`ohl structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--top N` (members printed per case), `--sections` (a `.olssec` file or folder: the section library, looked up first), `--wind` (member wind: factored pressure, Pa, added to every case; needs members with profiles) and `--wind-dir` (where it blows to, degrees from x — right of the line — towards y, ahead; default 0); `ohl line` takes `--sections` too (default: the `Sections` folder next to the line or project file); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.
+`ohl structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--top N` (members printed per case), `--sections` (a `.ohlsec` file or folder: the section library, looked up first), `--wind` (member wind: factored pressure, Pa, added to every case; needs members with profiles) and `--wind-dir` (where it blows to, degrees from x — right of the line — towards y, ahead; default 0); `ohl line` takes `--sections` too (default: the `Sections` folder next to the line or project file); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.

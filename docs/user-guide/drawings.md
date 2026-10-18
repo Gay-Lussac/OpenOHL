@@ -13,9 +13,9 @@ options: weather cases, terrain, LiDAR, rules…) and then writes the drawings
 asked for:
 
 ```bash
-ohl drawing examples/synthetic-line/synthetic-line.ols.json \
+ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
   --terrain examples/synthetic-line/synthetic-survey.csv \
-  --weather examples/synthetic-line/weather-cases.olswc --clearance 7 \
+  --weather examples/synthetic-line/weather-cases.ohlwc --clearance 7 \
   --route main --format pdf,dxf,csv --page A3 \
   --hscale 1:2000 --vscale 1:500 --from 0+100 --to 1+000 --out drawings
 ```
@@ -70,9 +70,9 @@ For route `R` (`R-profile…` with `--profile-only`):
   resolution (reported).
 - **DXF** (AutoCAD R12, ASCII): a format most CAD programs read; not tried
   in a given program yet (no DWG file is written). Entities are LINE,
-  POLYLINE, TEXT and CIRCLE on layers `OLS_GROUND`, `OLS_WIRES`,
-  `OLS_STRUCTURES`, `OLS_CLEARANCE`, `OLS_GRID`, `OLS_TITLE`… Colours are
-  the nearest AutoCAD colour index; dashes are line types `OLS_DASH1`…
+  POLYLINE, TEXT and CIRCLE on layers `OHL_GROUND`, `OHL_WIRES`,
+  `OHL_STRUCTURES`, `OHL_CLEARANCE`, `OHL_GRID`, `OHL_TITLE`… Colours are
+  the nearest AutoCAD colour index; dashes are line types `OHL_DASH1`…
   R12 has no line weights, true colours or images, so pens become colours
   only and logos are left out. Three kinds of file:
   - the **sheets** in mm, as printed (what lies outside the panels is cut
@@ -97,13 +97,13 @@ range (lines cut at its ends):
 | `attachment` | the structure's name | its attachment points |
 | `wire` | section and span (and weather case) | wire points |
 
-## OLS profile XML
+## OHL profile XML
 
 A simple, open format for the same numbers (version 1):
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<olsProfile version="1" route="main" name="Main route" length="1260.000"
+<ohlProfile version="1" route="main" name="Main route" length="1260.000"
             from="100.000" to="1000.000" units="m">
   <scales horizontal="2000" vertical="500"/>
   <ground offset="0">
@@ -118,7 +118,7 @@ A simple, open format for the same numbers (version 1):
   <wire label="S1 span 0 (C1 L1)" color="#e6194b"><p s="…" o="…" z="…"/>…</wire>
   <wire label="S1 span 0 (C1 L1) — max temperature" color="#e6194b" dash="3 1.5">…</wire>
   <marker label="…" s="…" o="…" z="…"/>
-</olsProfile>
+</ohlProfile>
 ```
 
 - `s` station along the route's centreline, `o` offset from it (right

@@ -2,7 +2,7 @@
 
 **OpenOHL** is an open-source, modular platform for the design and analysis of overhead power lines: terrain and LiDAR, conductor sag-tension and finite-element wire systems, loads and structure checks, clearances, thermal rating, spotting, drawings and more — from two desktop applications, a command-line tool or Python, alone or several people on one project.
 
-**Names.** OpenOHL (OHL: overhead lines) is the project; **OHL-Design** is the line application (sag-tension, clearances, line layout; the program `ohl-design`), **OHL-Structure** the structure application (pylons and their loading; `ohl-structure`) and `ohl` the command line. The project was formerly called "OLS CAD"; the old program names `ols-cad`, `ols-structure` and `ols` still run the new ones for a transition period. The file extensions keep their historical `ols` prefix (`.ols`, `.olss`, `.olsw`…), and so do the format ids inside the files and the names of the Rust crates (`ols-*`).
+**Names.** OpenOHL (OHL: overhead lines) is the project; **OHL-Design** is the line application (sag-tension, clearances, line layout; the program `ohl-design`), **OHL-Structure** the structure application (pylons and their loading; `ohl-structure`) and `ohl` the command line. The project was formerly called "OLS CAD"; the old program names `ols-cad`, `ols-structure` and `ols` still run the new ones for a transition period. The file extensions, the format ids inside the files and the Rust crates are named ohl too (`.ohl`, `.ohls`, `.ohlw`…, `ohl-structure`…, `ohl-*`).
 
 This book contains:
 

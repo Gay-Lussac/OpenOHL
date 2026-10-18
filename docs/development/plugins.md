@@ -2,14 +2,14 @@
 
 OpenOHL has three plugin tiers (ADR-0003): **WebAssembly** components (stable interface, sandboxed, any language), **Python** (scripts, reports, import/export) and native Rust inside this repository.
 
-Every plugin has an `ols-plugin.toml` manifest:
+Every plugin has an `ohl-plugin.toml` manifest:
 
 ```toml
 [plugin]
 name = "hello-wasm"
 version = "0.1.0"
 description = "Example plugin"
-sdk = "0.2"                 # plugin interface version targeted
+sdk = "0.3"                 # plugin interface version targeted
 tier = "wasm"               # "wasm" or "python"
 entry = "target/wasm32-wasip2/release/hello_wasm.wasm"
 extension-points = []
@@ -37,7 +37,7 @@ default = "high"           # shown, dimmed, where not set
 
 The values are kept on the objects, in their `fields` under
 `plugin.name` (e.g. `code.insulation_level`; a circuit's on all its
-sections), saved with the project and in OLS XML (`<field key value>`).
+sections), saved with the project and in OHL XML (`<field key value>`).
 The plugin, or the check that belongs to it, reads them there. Without
 the plugin, a project keeps the values and the tables still show them
 in a column marked "(unused)", typed like text. A check plugin can
@@ -54,7 +54,7 @@ before the rename to OpenOHL, so settings, recent files and plugins stay
 where they were) and
 those of the folders added. The folders and the plugins turned off are
 one settings file, `settings.toml` in that plugin folder
-(`ols_plugins::PluginSettings`: `folders`, `disabled`; written through
+(`ohl_plugins::PluginSettings`: `folders`, `disabled`; written through
 a temporary file renamed into place), read and written by both: a plugin
 added or turned off in one is so in the other.
 
@@ -68,12 +68,12 @@ plugins are the line application's. See
 
 ## WebAssembly plugins
 
-The interface is defined in WIT: `crates/ols-plugins/wit/plugin.wit`. A Rust example lives in `plugins/examples/hello-wasm`:
+The interface is defined in WIT: `crates/ohl-plugins/wit/plugin.wit`. A Rust example lives in `plugins/examples/hello-wasm`:
 
 ```bash
 rustup target add wasm32-wasip2
 cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2
-cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
+cargo run -p ohl-cli -- plugin info plugins/examples/hello-wasm
 ```
 
 `ohl plugin info DIR` works for a plugin of any world: it loads the
@@ -87,12 +87,12 @@ its checks, or the length of a design code's parameter template.
 
 ```text
 name         geojson
-version      0.1.0
+version      0.2.0
 description  GeoJSON export (structures, wires) and import (structures)
 world        io-plugin
 extensions   io
 tier         wasm
-sdk          0.2
+sdk          0.3
 entry        plugins/examples/geojson/target/wasm32-wasip2/release/geojson.wasm
   format geojson: Structures and wires as GeoJSON features (line CRS) (.geojson, exporter)
   format geojson-structures: Structures from GeoJSON Point features (.geojson, importer)
@@ -109,7 +109,7 @@ extension-points = ["io"]
 ```
 
 - `formats()` lists its formats: id, description, extension and direction (exporter or importer).
-- `export-model(format, model, options)` receives the solved model as JSON and returns the file's bytes. The model is `{"format": "ols-export-model", "version": 1, "crs": …, "line": <line file>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "system", "voltage_kv", "horizontal_tension_n", "max_tension_n", "sag_m", "points": [[x, y, z], …]}], "strings": [{"structure", "label", "by", "force_n", "swing_deg", "swing_across_deg", "swing_along_deg", "max_load_n", "max_swing_deg", "max_swing_across_deg", "max_swing_along_deg"}]}]}` (coordinates in the line's coordinate system; jumpers have section `jumper:<id>` and no horizontal tension; tensions per wire, N; sag in m). `strings` lists each structure's string as solved in the case (once; `by`: the section that reported it, `jumper:<id>` for a jumper's helping string) with its **limits** — see [String limits](#string-limits-what-a-plugin-sees).
+- `export-model(format, model, options)` receives the solved model as JSON and returns the file's bytes. The model is `{"format": "ohl-export-model", "version": 1, "crs": …, "line": <line file>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "system", "voltage_kv", "horizontal_tension_n", "max_tension_n", "sag_m", "points": [[x, y, z], …]}], "strings": [{"structure", "label", "by", "force_n", "swing_deg", "swing_across_deg", "swing_along_deg", "max_load_n", "max_swing_deg", "max_swing_across_deg", "max_swing_along_deg"}]}]}` (coordinates in the line's coordinate system; jumpers have section `jumper:<id>` and no horizontal tension; tensions per wire, N; sag in m). `strings` lists each structure's string as solved in the case (once; `by`: the section that reported it, `jumper:<id>` for a jumper's helping string) with its **limits** — see [String limits](#string-limits-what-a-plugin-sees).
 - `import-file(format, data, options)` returns a line file (JSON), which the host checks like any line file. When the user gives a line to update, it arrives as option `into` (its JSON).
 - Errors are returned as strings and shown to the user as the format's error.
 
@@ -148,7 +148,7 @@ A plugin that reads another program's project files implements the `project-plug
 ## Design-code plugins
 
 A plugin for a design code implements the `code-plugin` world
-(`crates/ols-plugins/wit/code.wit`) and lists the extension point
+(`crates/ohl-plugins/wit/code.wit`) and lists the extension point
 `design-code`:
 
 ```toml
@@ -159,28 +159,32 @@ extension-points = ["design-code"]
   **parameters template**: a TOML parameter file with its schema in
   comments and placeholder values.
 - `generate(parameters)` reads the user's parameter file (TOML text) and
-  returns **generated**: `weather-cases` (an `.olswc` file's text),
-  `load-cases` (an `.olslc` file's text, each case naming one of those
+  returns **generated**: `weather-cases` (an `.ohlwc` file's text),
+  `load-cases` (an `.ohllc` file's text, each case naming one of those
   weather cases), `notes` (what was computed, assumed or left out) and
   `clearance-presets` (may be empty). A wrong file is an error string,
   shown to the user.
 - A **clearance preset** (`clearance-preset`) fills in a clearance window
   in one click: its `name` (unique among the plugin's), its `measure`
   (`vertical` or `radial`: the window), its `rules` — a clearance rule
-  file's text (`.olsr`, format `ols-clearance-rules`: the rules with
+  file's text (`.ohlr`, format `ohl-clearance-rules`: the rules with
   their classes, voltages, distances and, vertical, `vertical_band` (the
   zone's half width of each rule); `[wind]` steps and sides; `[check]`
   circuits, calculation `method` and `search_distance`) — and its
-  `weather-cases`, an `.olswc` file's text with the cases its rules name.
+  `weather-cases`, an `.ohlwc` file's text with the cases its rules name.
 
-The host (`ols_io::codes`, `WasmHost::load_code`) checks the files as
+The host (`ohl_io::codes`, `WasmHost::load_code`) checks the files as
 OpenOHL reads them before anything is written — each preset's rule file
-read (an error names it, `<plugin>-<name>.olsr`), a rule of its
+read (an error names it, `<plugin>-<name>.ohlr`), a rule of its
 measure, every weather case its rules name among its own, the names
 unique; `ohl code generate` and Criteria › Design code write them (the
-presets as `<plugin>-<name>.olsr` and `.olswc`, in the project among
+presets as `<plugin>-<name>.ohlr` and `.ohlwc`, in the project among
 its rule and weather case files). Plugin interface version 0.2 (`sdk =
-"0.2"`) brought the presets: a plugin built for 0.1 must be rebuilt. A plugin ships **no values of the
+"0.2"`) brought the presets: a plugin built for 0.1 must be rebuilt. Version 0.3
+(2026-10-18) renamed the interface `ols:plugin` → `ohl:plugin` and the
+manifest `ols-plugin.toml` → `ohl-plugin.toml` (still read): a plugin
+built for 0.2 must be rebuilt (its sources need the new package name
+only). A plugin ships **no values of the
 standard**: it implements the code's method, every number comes from the
 parameter file, and the template's numbers are invented placeholders,
 marked as such.
@@ -196,7 +200,7 @@ separately; it is not part of the public code. See
 ## Check plugins
 
 A plugin that runs a check implements the `check` interface
-(`crates/ols-plugins/wit/code.wit`: the `check-plugin` world, or
+(`crates/ohl-plugins/wit/code.wit`: the `check-plugin` world, or
 `code-check-plugin` for a design-code plugin that also runs checks) and
 lists the extension point `check`. **OpenOHL measures, the plugin holds
 the values and the rules**: the measuring stays in OpenOHL (it is
@@ -224,8 +228,8 @@ geometry, and fast), the code's numbers and its formulas stay out of it.
   each station — the distance first, then the check's own (kept with the
   worst station) — and the rule applied.
 
-The host (`ols_io::checks`, `WasmHost::load_check`) measures
-(`ols_clearance::phase_distance`), calls the plugin once per pair, one
+The host (`ohl_io::checks`, `WasmHost::load_check`) measures
+(`ohl_clearance::phase_distance`), calls the plugin once per pair, one
 instance per core (`WasmHost::another_check`, compiled once), and keeps
 each pair's worst station and the length below — see [Distance between
 conductors: the core's part](phase-distance-check.md). A Swiss LeV
@@ -240,12 +244,12 @@ about 0.3 s to load the plugin once.
 A string (insulator) may carry limits that **OpenOHL does not check** — the tension it is rated for and the swings it may take ([String limits](../user-guide/structure-library.md#string-limits-not-checked)). Absent means not given: nothing checks it. Given, nothing in OpenOHL checks it either: a plugin (or a report, or a script) does, where its rules need it. What it gets:
 
 - **Export model** (`io` plugins, `export-model`): the `line` holds every string with its own `max_load` (N), `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (degrees) — structure types placed and the limits of the insulator a string names filled in where it gives none (absent keys: not given). Each case's `strings` gives, per string, the solved axial force `force_n` (whole bundle, tension positive), its swing `swing_deg` (from straight down), `swing_across_deg` and `swing_along_deg` (the angles of its projections on the structure's planes across and along the line, positive to the right and ahead), and its limits beside them as `max_load_n`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (`null`: not given). A plugin compares, e.g. `abs(swing_across_deg) > max_swing_across_deg`. The format stays version 1: keys were only added.
-- **Check plugins** (`check`): the WIT records pass no strings (a check measures conductor pairs), so the interface is unchanged (still `ols:plugin@0.1.0`); a check that needs the limits reads them from the line as above.
-- **Rust** (built-in checks, reports, the server): `ols_line::InsulatorString::limits()` → `StringLimits`, `Line::string_limits(structure, label)`, and next to each solved string `solve::StringState::{force, limits, swing}` and `jumper::JumperStringShape::{force, limits, swing}`; `ols_line::swing(orientation_deg, top, bottom)` for any other position. Library side: `InsulatorAssembly::limits()`, `TypeString::limits()` (`ols_structures::InsulatorLimits`).
-- **Python**: the line's JSON (the console's `ols` module) carries the same `max_*` keys on its strings.
+- **Check plugins** (`check`): the WIT records pass no strings (a check measures conductor pairs), so the interface is unchanged (still `ohl:plugin@0.1.0`); a check that needs the limits reads them from the line as above.
+- **Rust** (built-in checks, reports, the server): `ohl_line::InsulatorString::limits()` → `StringLimits`, `Line::string_limits(structure, label)`, and next to each solved string `solve::StringState::{force, limits, swing}` and `jumper::JumperStringShape::{force, limits, swing}`; `ohl_line::swing(orientation_deg, top, bottom)` for any other position. Library side: `InsulatorAssembly::limits()`, `TypeString::limits()` (`ohl_structures::InsulatorLimits`).
+- **Python**: the line's JSON (the console's `ohl` module) carries the same `max_*` keys on its strings.
 
 ## Python plugins
 
-Python plugins are scripts (`tier = "python"`, `entry` the script). Outside the application they use the `ols` package built from `crates/ols-py`; inside it, the Python console runs them (Plugins › Python console › Plugin scripts) with the `ols` module of the application, which also reads and edits the open project ([Python console](../user-guide/desktop-app.md#python-console)). See `plugins/examples/hello-python`.
+Python plugins are scripts (`tier = "python"`, `entry` the script). Outside the application they use the `ohl` package built from `crates/ohl-py`; inside it, the Python console runs them (Plugins › Python console › Plugin scripts) with the `ohl` module of the application, which also reads and edits the open project ([Python console](../user-guide/desktop-app.md#python-console)). See `plugins/examples/hello-python`.
 
 The desktop application embeds Python through its `python` feature (on by default): building it needs a shared Python 3.10+ (`PYO3_PYTHON` chooses which; a static one, such as Anaconda's, cannot be embedded). Without the feature (`--no-default-features`), the console says so.

@@ -27,7 +27,7 @@ Every calculation PR must include:
    ```bash
    cargo build --workspace
    cargo test --workspace
-   cargo run -p ols-cli -- info
+   cargo run -p ohl-cli -- info
    ```
 
 3. Before pushing, run the same checks as CI (the CI workflow is started by hand, so these local checks are what keeps `main` green):
@@ -47,9 +47,9 @@ Every calculation PR must include:
    (cd plugins/tests/runaway && cargo build --release --target wasm32-wasip2)
    (cd plugins/examples/esri-grid && cargo build --release --target wasm32-wasip2)
    (cd plugins/examples/project-bundle && cargo build --release --target wasm32-wasip2)
-   for d in plugins/codes/*/; do [ -f "$d/ols-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done
+   for d in plugins/codes/*/; do [ -f "$d/ohl-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done
    # Python bindings
-   pip install maturin pytest && pip install ./crates/ols-py && pytest crates/ols-py/tests
+   pip install maturin pytest && pip install ./crates/ohl-py && pytest crates/ohl-py/tests
    # Documentation book
    cargo install mdbook && mdbook build   # output in target/book
    ```

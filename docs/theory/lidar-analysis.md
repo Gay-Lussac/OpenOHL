@@ -1,7 +1,7 @@
 # LiDAR analyses
 
-Classification (`crates/ols-lidar`, `classify`), vegetation and as-built wires
-(`crates/ols-clearance`, `vegetation` and `wirefit`). All three are a base to
+Classification (`crates/ohl-lidar`, `classify`), vegetation and as-built wires
+(`crates/ohl-clearance`, `vegetation` and `wirefit`). All three are a base to
 build on: the methods are simple, published and documented with their limits.
 
 ## Classification

@@ -1,4 +1,4 @@
-# Thermal rating (`.olsta`)
+# Thermal rating (`.ohlta`)
 
 OpenOHL computes the current a conductor can carry (its **ampacity**) for a
 maximum conductor temperature, the conductor temperature for a current, the
@@ -30,13 +30,13 @@ solar_absorptivity = 0.8
 The shipped example `acsr-drake-26-7` has such data (the IEEE 738 example's
 values; typical, not a manufacturer's).
 
-## Ambient cases (.olsta)
+## Ambient cases (.ohlta)
 
 The weather around the conductor, one `[[case]]` each, with units in the
-values (`examples/synthetic-line/thermal-ambient.olsta`):
+values (`examples/synthetic-line/thermal-ambient.ohlta`):
 
 ```toml
-format = "ols-thermal-ambient"
+format = "ohl-thermal-ambient"
 version = 1
 name = "Summer"
 
@@ -84,7 +84,7 @@ Ampacity at a maximum temperature, per ambient case:
 
 ```bash
 ohl thermal ampacity --cable acsr-drake-26-7 \
-    --ambient examples/synthetic-line/thermal-ambient.olsta --max-temp 80
+    --ambient examples/synthetic-line/thermal-ambient.ohlta --max-temp 80
 ```
 
 ```
@@ -97,7 +97,7 @@ Drake 795 kcmil 26/7 ACSR — IEEE 738-2012, 3 ambient cases
 - `--current 900` instead of `--max-temp`: the steady-state temperature;
 - `--current 1000 --from-current 500`: the temperature after switching from
   500 A (steady) to 1000 A, every `--print-every` s (300) for `--duration` s
-  (3600), in `--time-step` s steps (10, or the default values'); `--defaults FILE.olsdef` (Criteria › Default values exported): the emissivity, absorptivity, roughness, albedo and time step where the cable or the case gives none; `--heat-capacity` J/(m·K) instead
+  (3600), in `--time-step` s steps (10, or the default values'); `--defaults FILE.ohldef` (Criteria › Default values exported): the emissivity, absorptivity, roughness, albedo and time step where the cable or the case gives none; `--heat-capacity` J/(m·K) instead
   of the estimate;
 - `--method cigre601` or `cigre207` (default `ieee738`); `--case NAME`
   (wildcards, repeatable) for some cases; `--csv FILE` for the results (the
@@ -107,9 +107,9 @@ Drake 795 kcmil 26/7 ACSR — IEEE 738-2012, 3 ambient cases
 
 ```bash
 cd examples/synthetic-line
-ohl thermal clearance-limit synthetic-line.ols.json --terrain synthetic-survey.csv \
-    --clearance 5 --weather weather-cases.olswc --case "max temperature" \
-    --ambient thermal-ambient.olsta --method cigre601 --csv limits.csv
+ohl thermal clearance-limit synthetic-line.ohl.json --terrain synthetic-survey.csv \
+    --clearance 5 --weather weather-cases.ohlwc --case "max temperature" \
+    --ambient thermal-ambient.ohlta --method cigre601 --csv limits.csv
 ```
 
 ```
@@ -146,7 +146,7 @@ up to about a second per section and limit.
 
 **Checks › Thermal rating…** opens a window:
 
-- **Ambient cases** — the project's `.olsta` file (next to a line file) is
+- **Ambient cases** — the project's `.ohlta` file (next to a line file) is
   taken at once;
   *Choose…* for another; each case in a few words below.
 - **Method** and **maximum temperature** — the table shows at once the

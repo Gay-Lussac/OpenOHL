@@ -1,6 +1,6 @@
-# Bill of materials and cost estimate (`.olscost`)
+# Bill of materials and cost estimate (`.ohlcost`)
 
-The **bill of materials** lists what a line is built from: structures by type and extension, insulator assemblies, wire lengths by cable, and hardware counted by rule. A **cost file** (`.olscost`) prices it; items without a price are listed so nothing is silently left out.
+The **bill of materials** lists what a line is built from: structures by type and extension, insulator assemblies, wire lengths by cable, and hardware counted by rule. A **cost file** (`.ohlcost`) prices it; items without a price are listed so nothing is silently left out.
 
 ## What is counted
 
@@ -16,10 +16,10 @@ The **bill of materials** lists what a line is built from: structures by type an
 
 No sag or waste allowance is added to the wire lengths: add one to the price per metre if you use it.
 
-## Cost files (`.olscost`)
+## Cost files (`.ohlcost`)
 
 ```toml
-format = "ols-cost"
+format = "ohl-cost"
 version = 1
 name = "Example unit costs (invented)"
 currency = "EUR"           # a label; nothing is converted
@@ -65,17 +65,17 @@ price = 25000.0
 | `[hardware]` | `spacer_interval`, `spacer_price`, `dampers_per_span`, `damper_price` | The rules count only when given. |
 | `[[fixed]]` | `item`, `price` | Added once. |
 
-Prices are numbers ≥ 0; the same type, insulator or cable may be priced once. The cost data is yours: OpenOHL ships only `examples/synthetic-line/unit-costs.olscost`, whose prices are invented.
+Prices are numbers ≥ 0; the same type, insulator or cable may be priced once. The cost data is yours: OpenOHL ships only `examples/synthetic-line/unit-costs.ohlcost`, whose prices are invented.
 
 ## In the application
 
-File › **Bill of materials › Cables…** opens a window with the table, the total and the items without a price. The project's first `.olscost` file (copied in from next to the project when it opens), or the first next to a line file, is used; **Choose…** picks another, **No prices** shows quantities only. It is computed in the background from the line as it is (the model is not changed); **Compute again** after edits. **Export CSV…** writes the table.
+File › **Bill of materials › Cables…** opens a window with the table, the total and the items without a price. The project's first `.ohlcost` file (copied in from next to the project when it opens), or the first next to a line file, is used; **Choose…** picks another, **No prices** shows quantities only. It is computed in the background from the line as it is (the model is not changed); **Compute again** after edits. **Export CSV…** writes the table.
 
 ## From the command line
 
 ```bash
-ohl bom examples/synthetic-line/synthetic-line-typed.ols.json \
-    --cost examples/synthetic-line/unit-costs.olscost --csv bom.csv --json bom.json
+ohl bom examples/synthetic-line/synthetic-line-typed.ohl.json \
+    --cost examples/synthetic-line/unit-costs.ohlcost --csv bom.csv --json bom.json
 ```
 
 `--library`, `--structures` and `--insulators` choose the libraries as for `ohl line`. Without `--cost` the quantities are listed without prices.

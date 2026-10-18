@@ -1,14 +1,14 @@
 # OHL-Structure
 
 **OHL-Structure** (the program `ohl-structure`), the structure
-application of OpenOHL, edits one structure file (`.olss`) in a window of its
+application of OpenOHL, edits one structure file (`.ohls`) in a window of its
 own, from level 1 (a stick figure: the points where insulators hang) to
 level 3 (a full design: every member with its section, the supports).
 See [Building structures](../development/structure-building.md) for
 what the levels mean and what comes next.
 
 ```bash
-ohl-structure examples/synthetic-line/Structures/type-02.olss
+ohl-structure examples/synthetic-line/Structures/type-02.ohls
 ```
 
 Options:
@@ -17,7 +17,7 @@ Options:
 |---|---|
 | `--insulators DIR` | the insulator assemblies strings may take; default: the file's folder and an `Insulators` folder there |
 | `--ahead DEG` | which plan angle means ahead along the line, for the compass |
-| `--sections FILE\|DIR` | the [section library](section-library.md) (a `.olssec` file or a folder of them) the members' areas come from; default: the `Sections` folder beside the file |
+| `--sections FILE\|DIR` | the [section library](section-library.md) (a `.ohlsec` file or a folder of them) the members' areas come from; default: the `Sections` folder beside the file |
 | `--structure ID` | the placed structure whose loads these are: values typed over the load table are kept for it (below) |
 | `--line-values FILE` | the line's values at that placed structure (a line-values file, written by the line application); read again when it changes |
 | `--version` | prints the version and the build id — the git commit it was built from, e.g. `ohl-structure 0.0.1 (build 1a2b3c4d5e6f)` — and stops |
@@ -28,7 +28,7 @@ On its own: double-click **Start OHL-Structure.command** in the OpenOHL
 folder (macOS; it builds the program and starts it), or
 
 ```bash
-cargo run --release -p ols-structure-app --bin ohl-structure
+cargo run --release -p ohl-structure-app --bin ohl-structure
 ```
 
 Without a file it opens on its **start page** (the OpenOHL mark above
@@ -37,11 +37,11 @@ the files opened recently (a click opens one; kept between runs), **New
 structure…** and **Plugins…** (the [plugin manager](#plugins)). **New
 structure…** (also in the File menu) asks an id and a name and what to
 start from: **Empty** — one point where an insulator hangs, a level 1
-stick figure to build from — or a **pylon template** (`.olspt`: the
+stick figure to build from — or a **pylon template** (`.ohlpt`: the
 templates shipped with OpenOHL, or **Another template file…**), built
 for suspension or strain with the template's default dimensions (the
 line application's pylon builder sets others). **Create…** asks where
-to write the file (`<id>.olss`; an existing file is not replaced) and
+to write the file (`<id>.ohls`; an existing file is not replaced) and
 opens it.
 
 From the line application, **Open in OHL-Structure…** on a structure (in its properties)
@@ -62,7 +62,7 @@ Build it next to the line application, from the same code (in the
 OpenOHL folder; **Start OHL-Design.command** does this):
 
 ```bash
-cargo build --release -p ols-app -p ols-structure-app
+cargo build --release -p ohl-app -p ohl-structure-app
 ```
 
 The line application looks for `ohl-structure` in the program the
@@ -81,7 +81,7 @@ the application wrote to its error output. The line application's log
 `type-02`) starts the application with T2's loads:
 
 ```bash
-ohl-structure Structures/type-02.olss --structure T2 \
+ohl-structure Structures/type-02.ohls --structure T2 \
     --line-values Structures/type-02.T2.line-values.json --sections Sections
 ```
 
@@ -151,7 +151,7 @@ ohl-structure Structures/type-02.olss --structure T2 \
   the governing (largest) factored value per point and direction and its
   case — for comparison only: each place keeps its own loads.
 - **Typed values** are kept for T2, not for the type: **Save** writes
-  them as `<name>.T2.loads.csv` (for `type-02.olss`:
+  them as `<name>.T2.loads.csv` (for `type-02.ohls`:
   `type-02.T2.loads.csv`). In a project, the line application keeps that
   file in the project with T2 (project library kind `loads`, per project
   line), so it is there the next time T2 is opened. Opened alone, the
@@ -249,8 +249,8 @@ their menu or from View.
 |---|---|---|
 | **Geometry** (level 1) | Attachment points, Insulators (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Set points, Structure (name, height, feet, height extensions) | **+ Point**, **I** and **V** presets for the points picked, **Delete…** (lists what goes with it first) |
 | **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, section, made by; a group filter), Generators, Extensions (each one's piece and legs) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
-| **Design** (level 3) | Pole (pole structures: material, section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-olsfe) —, each member's section, kind (truss, frame, cable or tension — a truss in tension only, slack when compressed, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
-| **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.olsslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
+| **Design** (level 3) | Pole (pole structures: material, section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's section, kind (truss, frame, cable or tension — a truss in tension only, slack when compressed, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
+| **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | Per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage | **▶ Run** (one case or every case), **Cancel**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line**: **Line values** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
 
@@ -311,10 +311,10 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   diameter (dragged or typed; the circumference shown), 🗑 per row,
   **+ Height** (a height half-way up the top step; the first time, the
   feet and the top). The view draws it as a wireframe: a ring at each
-  height and lines along the pole. A pole named by a `.olsp` file is
+  height and lines along the pole. A pole named by a `.ohlp` file is
   shown as such; **Bring it into this file** writes its outline and
   fields into the structure file (one undo step; the pole check gives
-  the same numbers). A `.olsp` without a wall brings none: level 3
+  the same numbers). A `.ohlp` without a wall brings none: level 3
   lists it until you type a thickness, tick solid or pick a section. Diameters at two heights make level 2.
 - **Design › Pole design…**: the material (wood, steel, concrete, other), a
   **section** of the section library next to the file (a polygonal
@@ -353,9 +353,9 @@ field is written when it is left (Enter, Tab or a click elsewhere), each
 change one undo step. When the recipes do not read, the reason is shown
 in red and the table below keeps the cases that read.
 
-**Import recipes…** takes the cases of a `.olsslc` or CSV file: a case
+**Import recipes…** takes the cases of a `.ohlslc` or CSV file: a case
 with the name of one in the structure replaces it, the others are added
-(one undo step). **Export recipes…** writes them as `.olsslc` or CSV.
+(one undo step). **Export recipes…** writes them as `.ohlslc` or CSV.
 
 The **Load table** panel shows first the line's forces (started for a
 placed structure, [above](#started-for-a-placed-structure)), then the
@@ -373,7 +373,7 @@ load tree): what it has beyond the evaluation becomes typed values.
 **Typed values** stay when the recipes change and the table is
 evaluated again; ⟲ takes one back. They are not part of the structure
 file: **Save** writes them beside it as `<name>.loads.csv` (for
-`type-02.olss`: `type-02.loads.csv`, the table's CSV with the typed rows
+`type-02.ohls`: `type-02.loads.csv`, the table's CSV with the typed rows
 only), and opening the file reads them again; started for a placed
 structure, as `<name>.<structure>.loads.csv`. Unsaved typed values count
 as unsaved changes.
@@ -395,7 +395,7 @@ their point (a member's at its middle), **m per kN** long.
 ## Results
 
 At level 3 (every member with a section and a support, or a `model =
-"….olsfe"`) **▶ Run** solves the cases of the load table with the
+"….ohlfe"`) **▶ Run** solves the cases of the load table with the
 finite-element model: the case chosen, or every case. Rows without a
 value are left out (and said); the case's strength factor and
 self-weight factor come from its recipe (1 for `model` and typed cases).
@@ -434,12 +434,12 @@ A structure reads these libraries — each where the line application and
 
 | Library | Files | Read from (and imported into) |
 |---|---|---|
-| Section libraries | `.olssec` | `--sections` (a folder), else `Sections/` beside the structure file |
-| Insulator assemblies | `.olsi` | `--insulators`, else the structure's folder and its `Insulators/` (imported into `Insulators/`) |
-| Poles | `.olsp` | beside the structure file |
-| Structure models | `.olsfe` | beside the structure file |
-| Load-case recipes | `.olsslc` | beside the structure file |
-| Pylon templates | `.olspt` | `PylonTemplates/` beside the structure file |
+| Section libraries | `.ohlsec` | `--sections` (a folder), else `Sections/` beside the structure file |
+| Insulator assemblies | `.ohli` | `--insulators`, else the structure's folder and its `Insulators/` (imported into `Insulators/`) |
+| Poles | `.ohlp` | beside the structure file |
+| Structure models | `.ohlfe` | beside the structure file |
+| Load-case recipes | `.ohlslc` | beside the structure file |
+| Pylon templates | `.ohlpt` | `PylonTemplates/` beside the structure file |
 
 **File › Libraries ›**:
 
@@ -492,7 +492,7 @@ What applies here:
 
 | Extension point | In OHL-Structure |
 |---|---|
-| `design-code` | **Load cases › Load cases from a design code…** (also in the Plugins menu): choose the plugin and your parameter file, **▶ Generate** (on a thread; the plugin's time and memory limits apply), read its notes, **Take them as recipes**: one recipe per load case of the code taking the line's factored values in that case at every point (as *Take the line's load cases as they are*; one undo step). Ticked, the weather and load case files it generated are written beside the structure (`<plugin>.olswc`, `<plugin>.olslc`) to give to the line. |
+| `design-code` | **Load cases › Load cases from a design code…** (also in the Plugins menu): choose the plugin and your parameter file, **▶ Generate** (on a thread; the plugin's time and memory limits apply), read its notes, **Take them as recipes**: one recipe per load case of the code taking the line's factored values in that case at every point (as *Take the line's load cases as they are*; one undo step). Ticked, the weather and load case files it generated are written beside the structure (`<plugin>.ohlwc`, `<plugin>.ohllc`) to give to the line. |
 | `check` | listed: member and joint code checks will run here; nothing to run yet |
 | `io` | file formats of the line: they take the line's export model, not a structure — listed greyed under File › Export |
 | `terrain`, `project`, Python scripts | the line application's |
@@ -541,8 +541,8 @@ holds and leaves out: [Structure exports](../development/structure-exports.md).
 The same from the command line:
 
 ```bash
-ols-structure-export examples/synthetic-line/Structures/type-02.olss --format saf -o type-02.xlsx
-ols-structure-export tower.olss --format ifc --sections libraries/sections --loads loads.csv -o tower.ifc
+ohl-structure-export examples/synthetic-line/Structures/type-02.ohls --format saf -o type-02.xlsx
+ohl-structure-export tower.ohls --format ifc --sections libraries/sections --loads loads.csv -o tower.ifc
 ```
 
 `--format` is `ifc`, `ifc-members`, `ifc2x3`, `saf` or `csv` (`-o` a

@@ -1,6 +1,6 @@
 # Project lines and phases (the Versions menu)
 
-A project (`.ols`) can hold several designs of the line side by side:
+A project (`.ohl`) can hold several designs of the line side by side:
 **project lines**. The first is the **main line**. Others are made from it,
 typically one per **phase** of the project (*phase 1*, *phase 2*…) or per
 alternative (*route B*). They are often shown next to the main line, for
@@ -203,13 +203,13 @@ whole objects.
 ## On the command line
 
 ```bash
-ohl project branch project.ols "phase 1" --user ben          # a new line from the one the file opens on
-ohl project checkout project.ols "phase 1" --user ben        # the commands act on it from now on
-ohl project apply project.ols --user ben '{"op": "move_structure", "id": "T6", "position": [1500, 400, 505]}'
-ohl project checkout project.ols main --user ana             # back to the main line
-ohl project branch project.ols                               # list the lines (branches) and tags
-ohl project branch project.ols "phase 1" --delete --confirm --user ben
-ohl project history project.ols                              # the revisions with their lines and tags
+ohl project branch project.ohl "phase 1" --user ben          # a new line from the one the file opens on
+ohl project checkout project.ohl "phase 1" --user ben        # the commands act on it from now on
+ohl project apply project.ohl --user ben '{"op": "move_structure", "id": "T6", "position": [1500, 400, 505]}'
+ohl project checkout project.ohl main --user ana             # back to the main line
+ohl project branch project.ohl                               # list the lines (branches) and tags
+ohl project branch project.ohl "phase 1" --delete --confirm --user ben
+ohl project history project.ohl                              # the revisions with their lines and tags
 ```
 
 `checkout` also sets the line the file opens on; nothing else changes.

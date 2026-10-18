@@ -10,7 +10,7 @@ of the desktop app's **Checks** menu. The methods are in the theory manual:
 
 The commands share the options of `ohl line` for the model: the line or
 project file, `--library`, `--structures`, `--insulators`; and for weather
-cases `--weather FILE.olswc` with `--case NAME` / `--tag TAG` (repeatable;
+cases `--weather FILE.ohlwc` with `--case NAME` / `--tag TAG` (repeatable;
 all cases without them).
 
 **Sections that do not solve.** A section or jumper that does not solve in
@@ -26,11 +26,11 @@ chords between its wire points — as a **dashed red** line; hovering it in
 the plan says why, and a click on any of its copies selects the span, whose
 properties say why it did not solve and where the drawn shape comes from.
 
-## Galloping ellipses (`.olsg`)
+## Galloping ellipses (`.ohlg`)
 
 ```bash
-ohl clearance galloping synthetic-line.ols.json \
-    --weather weather-cases.olswc --params galloping-example.olsg --csv galloping.csv
+ohl clearance galloping synthetic-line.ohl.json \
+    --weather weather-cases.ohlwc --params galloping-example.ohlg --csv galloping.csv
 ```
 
 Every pair of wires between the same two structures, by every method of the
@@ -40,7 +40,7 @@ sizes; worst first. The parameter file holds **all** coefficients — copy
 them from the method you design to; the example's are invented:
 
 ```toml
-format = "ols-galloping"
+format = "ohl-galloping"
 version = 1
 name = "My galloping method"
 required = "0.3 m"                  # or { by_voltage = [[0, "0.2 m"], [245, "0.5 m"]] }
@@ -72,13 +72,13 @@ CSV columns: case, method, both spans, distance, required, overlap, where
 (fraction of the span), both ellipses' axes, the first wire's position.
 
 In the desktop app: **Checks › Galloping ellipses…** — choose the parameter
-file (the project's `.olsg`, or one next to a line file, is chosen first) and the weather case,
+file (the project's `.ohlg`, or one next to a line file, is chosen first) and the weather case,
 then **Check**.
 
 ## Blowout and the right of way
 
 ```bash
-ohl clearance row synthetic-line.ols.json --weather weather-cases.olswc \
+ohl clearance row synthetic-line.ohl.json --weather weather-cases.ohlwc \
     --case "high wind" --half-width 10 --csv row.csv
 ```
 
@@ -163,7 +163,7 @@ checked, approved — chosen in the list), the **line** (unchanged, or
 what changed since: e.g. "1 structure changed"), the result and a
 **note** (double-click to write it; double-click the name to rename).
 Filter by text, check and status. **Open** shows the report in its
-check's window; **Export…** writes it to a file (`.olscr`), **Import…**
+check's window; **Export…** writes it to a file (`.ohlcr`), **Import…**
 reads one onto this line (a report of the same name is replaced after
 you confirm); **Delete…** asks first.
 
@@ -176,7 +176,7 @@ project and a designer's rights.
 ## LiDAR classification
 
 ```bash
-ohl lidar classify tiles/ --out project.ols#classified --line line.ols.json --corridor 100
+ohl lidar classify tiles/ --out project.ohl#classified --line line.ohl.json --corridor 100
 ohl lidar classify scan.laz --out scan-classified.laz
 ```
 
@@ -185,7 +185,7 @@ into ground (2), low, medium and high vegetation (3, 4, 5) by height above
 the ground, and noise (7, 18). Options: `--cell` (1 m), `--max-window`
 (20 m: objects up to this size are removed from the ground), `--slope`
 (0.3), `--ground-tolerance` (0.3 m), `--max-points` (200 million). The input
-is LAS/LAZ (a file or a folder) or a cloud of a project (`FILE.ols#name`);
+is LAS/LAZ (a file or a folder) or a cloud of a project (`FILE.ohl#name`);
 the output a `.las`/`.laz` file or a new cloud of a project (`--replace` to
 replace one of that name). Points are held in memory: classify a corridor
 (`--line`) on large surveys. About 3 million points a second. Buildings,
@@ -194,8 +194,8 @@ poles and wires get vegetation classes: check the result.
 ## Vegetation
 
 ```bash
-ohl lidar vegetation line.ols.json --pointcloud project.ols#scan \
-    --weather cases.olswc --case "max temperature" --case "high wind" \
+ohl lidar vegetation line.ohl.json --pointcloud project.ohl#scan \
+    --weather cases.ohlwc --case "max temperature" --case "high wind" \
     --clearance 5 --growth 0.5 --years 3 --fall-in --csv vegetation.csv
 ```
 
@@ -216,7 +216,7 @@ checks.
 ## As-built wires
 
 ```bash
-ohl lidar fit-wires line.ols.json --pointcloud project.ols#scan --csv as-built.csv
+ohl lidar fit-wires line.ohl.json --pointcloud project.ohl#scan --csv as-built.csv
 ```
 
 For each span: a catenary fitted to the points of the wire classes

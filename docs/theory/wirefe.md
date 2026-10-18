@@ -1,6 +1,6 @@
 # Finite-element wire systems
 
-Implemented in `crates/ols-wirefe` — a "semi finite element" approach in the spirit of SAPS: each cable span is **one exact elastic catenary element** (no meshing, exact for any sag), insulator strings are truss elements, and the free nodes (clamps, load points, yoke plates) are found by Newton–Raphson in 3D.
+Implemented in `crates/ohl-wirefe` — a "semi finite element" approach in the spirit of SAPS: each cable span is **one exact elastic catenary element** (no meshing, exact for any sag), insulator strings are truss elements, and the free nodes (clamps, load points, yoke plates) are found by Newton–Raphson in 3D.
 
 ## Elastic catenary element
 
@@ -26,14 +26,14 @@ Unknowns: positions of the free nodes. Each iteration assembles the stiffness of
 - **Line search** on the largest unbalanced nodal force; a step lowering the unbalanced force of all nodes together (root of the sum of squares) by 10 % is also taken — a chain of strings swinging as a whole lowers it while one joint's force may still grow.
 - **Step limit for chained strings**: where strings hang from strings, a joint moves at most a third of its shortest string per step (a longer step can fold a chain the wrong way). Models without them step as before.
 - **Tolerance**: \\( 10^{-9} \\) of the loads, but not below the floating-point floor \\( 64\\,\varepsilon\\, k_{max} |x| \\) of stiff members.
-- **Exit clauses**: 100 iterations (the time limit, 120 s, only guards against a solve that never ends); the error names the node with the largest unbalanced force. `OLS_FE_TRACE=1` prints the iteration history.
+- **Exit clauses**: 100 iterations (the time limit, 120 s, only guards against a solve that never ends); the error names the node with the largest unbalanced force. `OHL_FE_TRACE=1` prints the iteration history.
 - **Fallbacks** when Newton stops: (1) the cables under their vertical load alone, then the point loads and the sideways (wind) part of the cables' load ramped up together, each step from the last solution; (2) for models with strings hanging from strings only, **dynamic relaxation** — each free node a mass moving under its unbalanced force (masses from the stiffness's row sums, never decreasing, so every step is stable), the motion stopped at each peak of kinetic energy — to near equilibrium (10⁻³ of the loads), then Newton from there. Exit clauses of the relaxation: 50 000 steps or 5 s. A long chain in high wind (four strings on one side, five on the other, ending in a V) takes about 2 s this way.
 
 ## Sections: sagging and clamping
 
 A section (dead-end to dead-end, suspension I-strings or V-strings) is built as in the field: every span is sagged at the stringing tension with the strings **plumb** (at their stretched length under the clamp load), which fixes each span's unstressed length. Any other state — temperature (\\( L_0 e^{\alpha\Delta t} \\); the ruling-span method uses the additive form, see [Thermal strain: two forms in use](sagtension.md#thermal-strain-two-forms-in-use)), ice, wind on cable and insulators, point loads at predefined sites, broken spans — is then solved with insulator swing, unequal span tensions and 3D blowout.
 
-In a line model (`ols-line`) this is a section **clipped in**. A section still **in the blocks** (the default while designing) rolls instead: in each weather case its total unstressed length, from the sagging condition (a tension, or a sag in the ruling span or in one span), is shared out between the spans so that all have the same horizontal tension — the length of each span for a tension \\( H \\) under the case's load is found exactly, and \\( H \\) is the root of \\( \sum_i L_{0,i}(H) = L_0 \\) (bracketed secant). The clamps settle where the strings put them (swung across the line at angles, plumb along it, where equal tensions cancel); the sharing is repeated until they stop moving (≤ 1 µm, 20 passes at most). Point loads are left out of the sharing.
+In a line model (`ohl-line`) this is a section **clipped in**. A section still **in the blocks** (the default while designing) rolls instead: in each weather case its total unstressed length, from the sagging condition (a tension, or a sag in the ruling span or in one span), is shared out between the spans so that all have the same horizontal tension — the length of each span for a tension \\( H \\) under the case's load is found exactly, and \\( H \\) is the root of \\( \sum_i L_{0,i}(H) = L_0 \\) (bracketed secant). The clamps settle where the strings put them (swung across the line at angles, plumb along it, where equal tensions cancel); the sharing is repeated until they stop moving (≤ 1 µm, 20 passes at most). Point loads are left out of the sharing.
 
 What this shows that the equal-tension (ruling span) model cannot: in the example job, support 3 is a **valley structure** (a 25 m descent into it, a 40 m rise out of it). Its weight span is only ~55 m, so in high wind its string swings ~89° — a real design issue (V-string, hold-down weights or a taller structure).
 
@@ -69,7 +69,7 @@ The stringing reference of each section holds the other sections' clamps where g
 
 ## Non-linear stress-strain in the elements
 
-A cable with stress-strain curves (the non-linear model of the [wire library](../user-guide/wire-library.md#cable-models)) keeps elastic catenary elements with its \\( EA \\), but the unstressed length of each span is corrected until the span follows the curves (`ols-line`, `solve_fe`):
+A cable with stress-strain curves (the non-linear model of the [wire library](../user-guide/wire-library.md#cable-models)) keeps elastic catenary elements with its \\( EA \\), but the unstressed length of each span is corrected until the span follows the curves (`ohl-line`, `solve_fe`):
 
 1. The section is first solved in the **stringing state** (still air at the stringing temperature). Each span's mean tension there, through the initial curve, fixes the span's length at zero strain.
 2. In the weather case, the section is solved; each span's mean tension \\( \bar T_s \\) (weighted by the elements' unstressed lengths) gives the curves' strain \\( \varepsilon(\bar T_s, t, \text{state}) \\) in the case's **material state** — initial, after creep or after load — so the permanent set comes with the state.

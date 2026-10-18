@@ -1,7 +1,7 @@
 # Design codes
 
 A **design-code plugin** turns your **parameter file** into weather cases
-([`.olswc`](weather.md)) and load cases ([`.olslc`](loads.md)) for a line:
+([`.ohlwc`](weather.md)) and load cases ([`.ohllc`](loads.md)) for a line:
 the cases the code asks for, the wind pressures and ice loads computed
 the way the code computes them, the partial and combination factors put
 on the vertical, transverse and longitudinal loads, and the strength
@@ -36,7 +36,7 @@ Build them once (they are WebAssembly components):
 
 ```bash
 rustup target add wasm32-wasip2
-for d in plugins/codes/*/; do [ -f "$d/ols-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done
+for d in plugins/codes/*/; do [ -f "$d/ohl-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done
 ```
 
 ### EN 50341 and national annexes
@@ -63,13 +63,13 @@ separately; it is not part of the public code.
 
 A design-code plugin may also return **clearance presets**: for the
 **Vertical clearances** or the **Radial clearances** window, a rule file
-(`.olsr`: the rules — LiDAR classes, voltages, distances, the vertical
+(`.ohlr`: the rules — LiDAR classes, voltages, distances, the vertical
 zone's half width per rule —, the wind steps and sides, the circuits,
 the calculation method and the distance beyond which LiDAR points are
-ignored) and the weather cases its rules name (`.olswc`). OpenOHL checks
+ignored) and the weather cases its rules name (`.ohlwc`). OpenOHL checks
 them like any such file (each rule's weather cases among the preset's),
-and writes each as `<plugin>-<name>.olsr` among the project's rule files
-and `<plugin>-<name>.olswc` among its weather case files (next to a line
+and writes each as `<plugin>-<name>.ohlr` among the project's rule files
+and `<plugin>-<name>.ohlwc` among its weather case files (next to a line
 file; `ohl code generate`: next to the weather case file). In a window,
 **Load preset…** takes one in a click: its rules replace the window's,
 its weather cases missing from the model are added to it; you can change
@@ -84,8 +84,8 @@ ohl code list                               # plugins/codes, or --dir DIR
 ohl code template --plugin plugins/codes/en50341 --out my-line.toml
 # … fill in my-line.toml from the standard …
 ohl code generate --plugin plugins/codes/en50341 --params my-line.toml \
-    --weather my-line.olswc --load-cases my-line.olslc
-ohl line line.ols.json --weather my-line.olswc --load-cases my-line.olslc --loads-csv loads.csv
+    --weather my-line.ohlwc --load-cases my-line.ohllc
+ohl line line.ohl.json --weather my-line.ohlwc --load-cases my-line.ohllc --loads-csv loads.csv
 ```
 
 `generate` checks both files as OpenOHL reads them (and that each load

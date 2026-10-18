@@ -8,8 +8,8 @@ geometry); a **check plugin** holds the code's values and its rules and
 says what is required at each station, through the `check` interface
 ([Writing plugins](plugins.md#check-plugins)). A plugin for the Swiss
 LeV runs such a check; it is kept apart from the public code. The
-measuring is `ols_clearance::phase_distance`, the host's side
-`ols_io::checks`, the window `crates/ols-app/src/phase_distance.rs`.
+measuring is `ohl_clearance::phase_distance`, the host's side
+`ohl_io::checks`, the window `crates/ohl-app/src/phase_distance.rs`.
 
 ## What is measured
 

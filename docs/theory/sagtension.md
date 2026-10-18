@@ -1,6 +1,6 @@
 # Sag-tension
 
-Implemented in `crates/ols-sagtension`. Every formula below is checked by validation cases in `benchmarks/sagtension/` against independent Python references (different formulas or numerical methods, see each `reference_*.py`).
+Implemented in `crates/ohl-sagtension`. Every formula below is checked by validation cases in `benchmarks/sagtension/` against independent Python references (different formulas or numerical methods, see each `reference_*.py`).
 
 ## Catenary of one span
 
@@ -67,13 +67,13 @@ Radial ice of thickness \\( t \\) and density \\( \rho_i \\) on diameter \\( d \
 
 ## Point and distributed loads
 
-Between loads the cable is a catenary with the common \\( H \\); with \\( y' = \sinh\psi \\), \\( \psi \\) grows linearly in each segment, and a point load \\( P \\) makes the slope jump: \\( \sinh\psi^+ = \sinh\psi^- + P/H \\). The start angle is found by bisection so the cable reaches the far support; the change of state iterates on \\( H \\) around it. Vertical loads only: transverse and longitudinal components are rejected rather than ignored. The 3D finite-element model (`ols-wirefe`) takes loads in any direction at its nodes; point loads in a line file are weights, and bodies with a size (marker balls) also take wind and ice (see [Point loads: marker balls and other bodies](wirefe.md#point-loads-marker-balls-and-other-bodies)).
+Between loads the cable is a catenary with the common \\( H \\); with \\( y' = \sinh\psi \\), \\( \psi \\) grows linearly in each segment, and a point load \\( P \\) makes the slope jump: \\( \sinh\psi^+ = \sinh\psi^- + P/H \\). The start angle is found by bisection so the cable reaches the far support; the change of state iterates on \\( H \\) around it. Vertical loads only: transverse and longitudinal components are rejected rather than ignored. The 3D finite-element model (`ohl-wirefe`) takes loads in any direction at its nodes; point loads in a line file are weights, and bodies with a size (marker balls) also take wind and ice (see [Point loads: marker balls and other bodies](wirefe.md#point-loads-marker-balls-and-other-bodies)).
 
 *Validation:* `loaded-001…002` against an RK4 integration of the cable ODE.
 
 ## Non-linear stress-strain and creep
 
-Implemented in `ols_cables::mechanics` and `ols_sagtension::nonlinear`, following the published polynomial method (Aluminum Association practice; the approach of IEEE and CIGRE sag-tension methods). Each component (outer / core) may carry:
+Implemented in `ohl_cables::mechanics` and `ohl_sagtension::nonlinear`, following the published polynomial method (Aluminum Association practice; the approach of IEEE and CIGRE sag-tension methods). Each component (outer / core) may carry:
 
 - an **initial** curve: stress as a polynomial of strain (typically 4th order, % strain, psi or MPa, on the component or total area — converted to SI load on loading);
 - a **creep** curve (typically 10-year);

@@ -19,7 +19,7 @@ A calculation is merged only with a cited reference, unit tests, at least one va
 
 ## Releases
 
-Semantic versioning. Before 1.0 any minor release may break compatibility; the plugin interface (`ols:plugin` WIT package) and the project file schema are versioned independently.
+Semantic versioning. Before 1.0 any minor release may break compatibility; the plugin interface (`ohl:plugin` WIT package) and the project file schema are versioned independently.
 
 ## Evolution
 

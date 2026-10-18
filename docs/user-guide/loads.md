@@ -1,11 +1,11 @@
-# Load cases and structure loads (`.olslc`)
+# Load cases and structure loads (`.ohllc`)
 
 A **load case** combines a weather case, the wires' condition and load factors. The **structure loads** are the forces the wires and strings put on the structures at every point where strings hang, in each load case: the starting point of the structure checks.
 
-## Load case files (`.olslc`)
+## Load case files (`.ohllc`)
 
 ```toml
-format = "ols-load-cases"
+format = "ohl-load-cases"
 version = 1
 name = "Synthetic example load cases"
 
@@ -31,7 +31,7 @@ tags = ["ULS"]
 | `strength` | no | 1 | Strength factor of the capacity checks; more than 0. |
 | `tags` | no | | Code, limit state… |
 
-Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OpenOHL ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.olslc` only shows the format.
+Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OpenOHL ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.ohllc` only shows the format.
 
 In a project, the load case files are kept in the project like the other libraries (Criteria › Load cases library edits them).
 
@@ -52,7 +52,7 @@ A section that does not solve in a load case is listed, with why. Its loads are 
 **From the command line:**
 
 ```bash
-ohl line line.ols.json --weather cases.olswc --load-cases loads.olslc --loads-csv loads.csv
+ohl line line.ohl.json --weather cases.ohlwc --load-cases loads.ohllc --loads-csv loads.csv
 ```
 
 The CSV columns: `case,structure,point,label,sets,x,y,z,transverse,longitudinal,vertical,factored_transverse,factored_longitudinal,factored_vertical` (`point`: the point's label, empty for the wind on the structure; `sets`: the wire ends hanging there, separated by spaces).
@@ -70,7 +70,7 @@ With the loads, OpenOHL checks how much of its capacity every structure uses, fr
 
 Two more checks come from an analysis, when the type names a structure model or a pole (see [Structure analysis](structure-analysis.md)):
 
-- **fe** — the type's finite-element model (its members when it is a full design, or `model = "….olsfe"`) solved with the factored loads at its points (and the member wind on profiles from the section library); usage: the member using most of its capacity.
+- **fe** — the type's finite-element model (its members when it is a full design, or `model = "….ohlfe"`) solved with the factored loads at its points (and the member wind on profiles from the section library); usage: the member using most of its capacity.
 - **pole** — the type's pole (`pole = "id"`): bending moment along the pole from the factored loads and the wind on the pole, P-Delta amplified, against its moment capacity.
 
 A structure's usage is the largest of its checks. A structure without a type, or whose type gives nothing to check against, is listed as not checked.
@@ -84,7 +84,7 @@ A structure's usage is the largest of its checks. A structure without a type, or
 **From the command line:** the loads run prints the ten structures using most of their capacity (an incomplete one marked "(incomplete)") and lists the incomplete structures per case; `--usage-csv usage.csv` writes every load case and structure:
 
 ```bash
-ohl line line.ols.json --weather cases.olswc --load-cases loads.olslc --usage-csv usage.csv
+ohl line line.ohl.json --weather cases.ohlwc --load-cases loads.ohllc --usage-csv usage.csv
 ```
 
 The CSV columns: `case,structure,type,line_angle_deg,wind_span,weight_span_min,weight_span_max,spans_usage,loads_usage,fe_usage,pole_usage,usage,governs,notes,incomplete` (usages in %). `incomplete` is empty when the structure's loads in that case are complete, else it names what is missing: `incomplete: section S12 not solved (why); jumper J3 not solved (why)` — the usages of that row are then those of the loads there are.

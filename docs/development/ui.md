@@ -1,6 +1,6 @@
 # Desktop app conventions
 
-Rules every page, menu and window of the desktop app (`crates/ols-app`)
+Rules every page, menu and window of the desktop app (`crates/ohl-app`)
 follows. A change that breaks one needs a reason written next to it.
 
 ## Menus

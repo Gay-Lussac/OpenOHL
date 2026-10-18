@@ -5,9 +5,9 @@ OpenOHL is pre-alpha: the engines and both applications are in active developmen
 ## OHL-Design, the line application
 
 ```bash
-cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.json \
+cargo run --release -p ohl-app -- examples/synthetic-line/synthetic-line.ohl.json \
     --terrain examples/synthetic-line/synthetic-survey.csv \
-    --weather examples/synthetic-line/weather-cases.olswc
+    --weather examples/synthetic-line/weather-cases.ohlwc
 ```
 
 See [OHL-Design](desktop-app.md). On macOS, double-click
@@ -22,8 +22,8 @@ its libraries and plugins. Without a file it opens on a start page (Open a
 structure…, the recent files, New structure…).
 
 ```bash
-cargo run --release -p ols-structure-app --bin ohl-structure
-cargo run --release -p ols-structure-app --bin ohl-structure -- examples/synthetic-line/Structures/type-02.olss
+cargo run --release -p ohl-structure-app --bin ohl-structure
+cargo run --release -p ohl-structure-app --bin ohl-structure -- examples/synthetic-line/Structures/type-02.ohls
 ```
 
 On macOS, double-click **Start OHL-Structure.command**. See
@@ -33,7 +33,7 @@ On macOS, double-click **Start OHL-Structure.command**. See
 |---|---|---|
 | `ohl-design` (**Start OHL-Design.command**) | OHL-Design, the line application: projects, lines, terrain, checks | [OHL-Design](desktop-app.md) |
 | `ohl-structure` (**Start OHL-Structure.command**) | OHL-Structure, the structure application: one structure file, level 1 to 3, its libraries and plugins | [OHL-Structure](structure-app.md) |
-| `ols-structure-export` | a level 3 structure as IFC, SAF or CSV, without a window | [OHL-Structure](structure-app.md#export) |
+| `ohl-structure-export` | a level 3 structure as IFC, SAF or CSV, without a window | [OHL-Structure](structure-app.md#export) |
 
 ### A new line, step by step
 
@@ -54,10 +54,10 @@ See [Routes and alignments](desktop-app.md#routes-and-alignments).
 `ohl` runs every calculation without a window. `ohl --help` lists the commands, `ohl <command> --help` their options.
 
 ```bash
-cargo run -p ols-cli -- info               # version information
-cargo run -p ols-cli -- validate           # run all validation cases in benchmarks/
-cargo run -p ols-cli -- validate --list    # calculations available to cases
-cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
+cargo run -p ohl-cli -- info               # version information
+cargo run -p ohl-cli -- validate           # run all validation cases in benchmarks/
+cargo run -p ohl-cli -- validate --list    # calculations available to cases
+cargo run -p ohl-cli -- plugin info plugins/examples/hello-wasm
 ```
 
 `ohl validate` exits with a non-zero code if any case fails or exceeds its time limit, and `--report report.md` writes a Markdown report.
@@ -84,17 +84,17 @@ cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
 ## Sag-tension of a tension section
 
 ```bash
-cargo run -p ols-cli -- sagtension examples/sagtension/drake-section.toml
-cargo run -p ols-cli -- sagtension examples/sagtension/drake-section.toml --units us --csv chart.csv
+cargo run -p ohl-cli -- sagtension examples/sagtension/drake-section.toml
+cargo run -p ohl-cli -- sagtension examples/sagtension/drake-section.toml --units us --csv chart.csv
 ```
 
-The job file names the cable (from the `.olsw` wire libraries in `libraries/cables/` — see [Wire library files](wire-library.md)), the spans (horizontal length and rise), the weather cases (temperature, radial ice, wind pressure), and either a fixed stringing tension or tension criteria. The report gives the ruling span, the governing stringing tension with the utilisation of every criterion, the tension and sag in each weather case, and a stringing chart; `--csv` exports the chart in SI units.
+The job file names the cable (from the `.ohlw` wire libraries in `libraries/cables/` — see [Wire library files](wire-library.md)), the spans (horizontal length and rise), the weather cases (temperature, radial ice, wind pressure), and either a fixed stringing tension or tension criteria. The report gives the ruling span, the governing stringing tension with the utilisation of every criterion, the tension and sag in each weather case, and a stringing chart; `--csv` exports the chart in SI units.
 
 ## Python
 
 ```bash
-pip install ./crates/ols-py
-python -c "import ols; print(ols.convert('length', '1000 ft', 'm'))"   # 304.8
+pip install ./crates/ohl-py
+python -c "import ohl; print(ohl.convert('length', '1000 ft', 'm'))"   # 304.8
 ```
 
 Quantities given as text must always carry a unit (`"1000 ft"`, `"16 N/m"`, `"-20 °C"`); a bare number is rejected rather than guessed.

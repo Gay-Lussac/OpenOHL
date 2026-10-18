@@ -2,8 +2,8 @@
 
 Status: **built, in active development** (not approved yet). Phase 1 built: points on spans and jumpers with
 one object each (bodies by shape, clamps), spread objects between two
-points, the library (`.olsload`) with its templates, older files' point
-and spread loads read into points and objects (same forces), OLS XML and
+points, the library (`.ohlload`) with its templates, older files' point
+and spread loads read into points and objects (same forces), OHL XML and
 the XSD; the solve takes the span points' objects and the spreads.
 Phase 2 built: objects on jumper points load the jumper (the rod model,
 loads held nowhere), their points reported solved, the clamps carrying
@@ -75,7 +75,7 @@ An **object** is put on a point — **one object per point**. It refers to a **t
 or gives its own values; per object only what the type allows to
 override.
 
-### The library of point and spread loads (`.olsload`, new)
+### The library of point and spread loads (`.ohlload`, new)
 
 A library like the wire and insulator libraries (shipped examples, the
 project's copy, a table, import/export). Each entry has an id, a name, a
@@ -110,7 +110,7 @@ shape and its sizes, given areas, drag, ice surface.
 Read without change for the user: a `SpanLoad` becomes a point (labelled
 from its label, else `L1`, `L2`…) and a body object with its own values
 (a sphere); a `SpreadLoad` two points and a spread object. Written in the
-new form (line file version +1). OLS XML, the XSD, the data model page
+new form (line file version +1). OHL XML, the XSD, the data model page
 follow.
 
 ## 3. Jumpers from a point (taps)
@@ -197,4 +197,4 @@ A jumper end (`from` or `to`) becomes either, as now, **a section end**
 4. A tap clamp is a hinge without strength (forces only) — details and
    costs being discussed.
 5. Jumper points also by distance along the line.
-6. One library file for point and spread types (`.olsload`).
+6. One library file for point and spread types (`.ohlload`).

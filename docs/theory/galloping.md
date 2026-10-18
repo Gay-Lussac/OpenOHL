@@ -1,6 +1,6 @@
 # Galloping ellipses and blowout
 
-Implemented in `crates/ols-clearance` (`galloping`, `blowout`, and the
+Implemented in `crates/ohl-clearance` (`galloping`, `blowout`, and the
 `same_line` rules of `rules`/`checks`).
 
 ## Galloping ellipses
@@ -22,7 +22,7 @@ expressions in the conductor diameter, the number of loops and the sag.
 They differ in coefficients, in how the ellipse sits on the wire and in how
 it is tilted. **OpenOHL ships none of their coefficients**: every number
 comes from a parameter file written by the user from the method they design
-to (`*.olsg`, [user guide](../user-guide/analyses.md)); the shipped example's
+to (`*.ohlg`, [user guide](../user-guide/analyses.md)); the shipped example's
 numbers are invented.
 
 ### The ellipse

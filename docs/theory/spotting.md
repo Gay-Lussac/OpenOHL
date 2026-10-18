@@ -37,10 +37,10 @@ With \\( N \\) stations, \\( K \\) candidates and \\( R \\) stations within the 
 - span checks: \\( N K^2 R \\), each walking the profile points of the span;
 - transitions: \\( O(N K^2 R^2) \\).
 
-A 5 km route at 20 m steps with four candidates takes about 0.15 s in a debug build; a 10 km route at 10 m steps with 6 candidates and spans up to 500 m is of the order of \\( 10^8 \\) transitions — seconds in a release build. Every state counts as one iteration of the run's budget (`ols_core::budget`, by default 500 million states or 5 minutes, or cancelled by the user); a stopped run reports why and gives no placement.
+A 5 km route at 20 m steps with four candidates takes about 0.15 s in a debug build; a 10 km route at 10 m steps with 6 candidates and spans up to 500 m is of the order of \\( 10^8 \\) transitions — seconds in a release build. Every state counts as one iteration of the run's budget (`ohl_core::budget`, by default 500 million states or 5 minutes, or cancelled by the user); a stopped run reports why and gives no placement.
 
 ## Validation
 
-- Exhaustive search: on six rough profiles (seven inner stations, three candidates with wind, weight and uplift limits), every placement is evaluated and the least cost compared with the dynamic programme's (`ols-spotting` tests).
+- Exhaustive search: on six rough profiles (seven inner stations, three candidates with wind, weight and uplift limits), every placement is evaluated and the least cost compared with the dynamic programme's (`ohl-spotting` tests).
 - Level ground (`benchmarks/spotting/flat.toml`, reference by hand in `reference_spotting.py`): the longest span keeping the clearance is \\( L_{max} = 2C \operatorname{acosh}(1 + (h - c)/C) \\), the optimum is the fewest spans of the longest grid length.
 - A hill under a span: the optimum takes a taller extension (or, without one, an extra structure).

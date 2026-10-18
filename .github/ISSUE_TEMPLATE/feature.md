@@ -4,7 +4,7 @@ about: Propose a new calculation, module or tool
 labels: type:feature
 ---
 
-**Module:** (e.g. ols-sagtension)
+**Module:** (e.g. ohl-sagtension)
 
 **What and why**
 

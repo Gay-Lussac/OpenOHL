@@ -18,4 +18,4 @@ expected.value = { value = 4.448222, rel_tol = 1e-6 }   # abs_tol and/or rel_tol
 
 Run them with `ohl validate`. The CI workflow (started by hand) runs every case and publishes the report. A case fails when an output is outside its tolerance, missing, when the calculation errors, or when it exceeds its time limit.
 
-Engines expose calculations to the runner by implementing `ols_validation::Calculation`.
+Engines expose calculations to the runner by implementing `ohl_validation::Calculation`.
