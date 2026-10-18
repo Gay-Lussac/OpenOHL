@@ -373,7 +373,9 @@ pub fn window(
                         "Per section, the highest conductor temperature at which the ground and \
                          point rules of the rule file are met (to 0.5 °C)",
                     )
-                    .on_disabled_hover_text("Choose a rule file: Checks › Clearances › Rule file")
+                    .on_disabled_hover_text(
+                        "Choose a rule file: Checks › Wire clearances › Rule file",
+                    )
                     .clicked()
                     && let Some(r) = usable
                 {

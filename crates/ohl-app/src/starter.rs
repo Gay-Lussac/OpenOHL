@@ -7,9 +7,9 @@
 //! invented or typical, clearly marked — cables, structure types, pylon
 //! templates, insulators, weather cases, load cases, clearance rules and a
 //! survey of invented ground — but no route, alignment, structure or wire:
-//! the tutorial (Help › Start from scratch) builds those. The files are
-//! `examples/starter/` of the source tree (its README lists them), the
-//! same the tutorial uses.
+//! you add those (a tutorial, Help › Start from scratch, is planned). The
+//! files are `examples/starter/` of the source tree (its README lists
+//! them).
 
 use std::path::{Path, PathBuf};
 

@@ -69,6 +69,17 @@ impl Page {
         }
     }
 
+    /// Why it is greyed out (no page found on this computer).
+    pub fn missing(self) -> &'static str {
+        match self {
+            Page::UserGuide => {
+                "The manual is not on this computer: build it with `mdbook build` in the \
+                 OpenOHL folder (target/book), or read docs/ there"
+            }
+            Page::Tutorial => "The tutorial is planned, not written yet",
+        }
+    }
+
     /// Its pages in the book, the first found is opened (without
     /// extension: `.html` in the built book, `.md` in the sources).
     fn candidates(self) -> &'static [&'static str] {
@@ -138,10 +149,7 @@ pub fn manual_entries(ui: &mut egui::Ui, status: &mut Option<(String, bool)>) {
                 egui::Button::new(format!("{}…", page.name())),
             )
             .on_hover_text(page.tip())
-            .on_disabled_hover_text(
-                "The manual is not on this computer: build it with `mdbook build` in the \
-                 OpenOHL folder (target/book), or read docs/ there",
-            );
+            .on_disabled_hover_text(page.missing());
         if r.clicked()
             && let Some(f) = file
         {

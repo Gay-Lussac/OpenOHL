@@ -103,11 +103,14 @@ impl SpotWindow {
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
         let fail = |m: &str| Some(Err(m.to_owned()));
         let Some(ground) = model.ground.clone() else {
-            self.result = fail("no ground: Terrain › open survey data or a surface first");
+            self.result = fail(
+                "no ground: import survey data or a surface first (Terrain › Terrain surfaces (TIN)…)",
+            );
             return;
         };
         let Some((types, insulators)) = model.types.clone() else {
-            self.result = fail("no structure types: the line uses none (Structures › Libraries)");
+            self.result =
+                fail("no structure types: the line uses none (Structures › Structure library)");
             return;
         };
         let Some(cost_path) = self.cost_path.clone() else {

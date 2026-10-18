@@ -4079,7 +4079,7 @@ fn insulator_changes(model: &Model, rows: &[Row], page: &TablePage) -> Result<Ch
                 .count();
             if users.len() > own {
                 return Err(format!(
-                    "{id} is used by structure types (their strings): change them first (Structures › libraries)"
+                    "{id} is used by structure types (their strings): change them first (Structures › Structure library)"
                 ));
             }
             if !users.is_empty() {
@@ -5052,8 +5052,8 @@ impl TablePage {
                                     TableKind::WeatherCases => "Show this weather case",
                                     TableKind::Structures => {
                                         "Select it and bring the views to it (right-click: \
-                                         Replace structure…, Edit in the structure \
-                                         application…)"
+                                         Replace structure…, Open this type in \
+                                         OHL-Structure…)"
                                     }
                                     _ => "Select it and bring the views to it",
                                 });
