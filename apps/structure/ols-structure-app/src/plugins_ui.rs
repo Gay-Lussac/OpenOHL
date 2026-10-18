@@ -67,8 +67,8 @@ pub fn applies(point: &str) -> Result<&'static str, &'static str> {
             "file formats of the line: they take the line's export model, not a structure \
              (listed under File › Export)",
         ),
-        "terrain" => Err("terrain surfaces: the line application"),
-        "project" => Err("projects from other programs: the line application"),
+        "terrain" => Err("terrain surfaces: OHL-Design"),
+        "project" => Err("projects from other programs: OHL-Design"),
         _ => Err("an extension point this application does not know"),
     }
 }
@@ -80,7 +80,7 @@ pub fn applies_to(found: &Found) -> (String, bool) {
     };
     if m.plugin.tier == Tier::Python {
         return (
-            "a Python script: run in the line application (Plugins › Python console)".into(),
+            "a Python script: run in OHL-Design (Plugins › Python console)".into(),
             false,
         );
     }
@@ -823,7 +823,7 @@ impl StructureApp {
                          parameter file (each value from your standard: the plugins' example \
                          files hold invented placeholders). Its load cases become recipes \
                          taking the line's factored values in those cases (from a placed \
-                         structure: Edit… in the line application).",
+                         structure: Open in OHL-Structure… in OHL-Design).",
                     )
                     .small()
                     .weak(),

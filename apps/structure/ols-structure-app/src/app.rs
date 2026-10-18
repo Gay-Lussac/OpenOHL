@@ -305,7 +305,7 @@ impl StructureApp {
         }
         if modified.is_none() {
             self.loads.values_error = Some(format!(
-                "{}: not there (yet): the line application writes it",
+                "{}: not there (yet): OHL-Design writes it",
                 path.display()
             ));
             return;

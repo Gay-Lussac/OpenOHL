@@ -60,7 +60,7 @@ impl StructureApp {
         self.line_status_ui(ui);
         let Some(title) = self.loads.placed_title() else {
             ui.label(
-                "Opened on its own: no line. From the line application, Edit… on a placed \
+                "Opened on its own: no line. From OHL-Design, Open in OHL-Structure… on a placed \
                  structure (its Properties) opens the structure with that place's loads: the \
                  line's values per point and load case are listed here, the recipes evaluated \
                  with them, and values typed over the table are kept with that placed \
@@ -78,7 +78,7 @@ impl StructureApp {
             if let Some(p) = &self.line_values {
                 ui.label(egui::RichText::new(p.display().to_string()).weak().small())
                     .on_hover_text(
-                        "Written by the line application; read again when the line is solved \
+                        "Written by OHL-Design; read again when the line is solved \
                          again",
                     );
             }

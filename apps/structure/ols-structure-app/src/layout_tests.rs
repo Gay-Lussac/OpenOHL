@@ -160,3 +160,28 @@ fn the_arrangement_is_kept_between_runs() {
     fresh.restore(Some(&Memory::default()));
     assert!(fresh.is_open(Panel::Groups));
 }
+
+/// No tab group of the default arrangement holds more tabs than its width
+/// shows: every tab title is in sight (no tab bar scrolled).
+#[test]
+fn every_default_tab_title_shows() {
+    let path = copy_of("type-02.olss", "layout-tabs");
+    let mut h = harness(&path);
+    h.run_steps(2);
+    let app = h.state();
+    for (_, leaf) in app.dock.iter_leaves() {
+        // About 7 px a character and 30 px of tab around it.
+        let needed: f32 = leaf
+            .tabs()
+            .iter()
+            .map(|p| p.title().chars().count() as f32 * 7.0 + 30.0)
+            .sum();
+        assert!(
+            needed <= leaf.rect().width(),
+            "{:?}: {needed} px for {} px",
+            leaf.tabs(),
+            leaf.rect().width()
+        );
+    }
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}
