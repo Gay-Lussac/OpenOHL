@@ -442,3 +442,93 @@ expected.n_AD = { value = 0.0, abs_tol = 1e-6 }
 expected.r_A_x = { value = -10000.0, rel_tol = 1e-9 }
 expected.r_B_x = { value = 0.0, abs_tol = 1e-6 }
 expected.passes = { value = 2.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "structfe-009"
+title = "Beam on a spring support: the spring's force is the reaction by statics, P·a/L"
+calculation = "structures.fe"
+reference = "Statics of a simply supported beam (a spring support leaves it determinate); the spring's travel is its force over k"
+notes = "L = 4 m, P = 10 kN down at a = 1 m from A; A pinned (and held about the beam's axis), B on a vertical spring k = 1 MN/m (held across the beam in y): R_A = 3P/4, R_B = P/4 = −k·u_B; first order"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = ["x", "y", "z", "rx"]
+[[node]]
+id = "C"
+point = ["1 m", "0 m", "0 m"]
+[[node]]
+id = "B"
+point = ["4 m", "0 m", "0 m"]
+support = ["y"]
+spring = [0, 0, 1e6, 0, 0, 0]
+[[member]]
+id = "AC"
+nodes = ["A", "C"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "CB"
+nodes = ["C", "B"]
+section = "s"
+kind = "frame"
+[[load]]
+node = "C"
+force = ["0 N", "0 N", "-10 kN"]
+'''
+expected.r_B_z = { value = 2500.0, rel_tol = 1e-9 }
+expected.r_A_z = { value = 7500.0, rel_tol = 1e-9 }
+expected.u_B_z = { value = -0.0025, rel_tol = 1e-9 }
+
+[[case]]
+id = "structfe-010"
+title = "Cantilever on a rotational spring: the spring takes the base moment PL, the tip moves PL³/3EI + PL²/kr"
+calculation = "structures.fe"
+reference = "Statics (base moment) and Euler–Bernoulli beam theory plus the rigid rotation PL/kr of the spring"
+notes = "L = 4 m, I = 2e-6 m4, P = 1 kN down at the tip; base fixed but about y, there a spring kr = 100 kN·m/rad; first order"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "base"
+point = ["0 m", "0 m", "0 m"]
+support = ["x", "y", "z", "rx", "rz"]
+spring = [0, 0, 0, 0, 1e5, 0]
+[[node]]
+id = "tip"
+point = ["4 m", "0 m", "0 m"]
+[[member]]
+id = "beam"
+nodes = ["base", "tip"]
+section = "s"
+kind = "frame"
+[[load]]
+node = "tip"
+force = ["0 N", "0 N", "-1 kN"]
+'''
+expected.r_base_ry = { value = -4000.0, rel_tol = 1e-9 }
+expected.r_base_z = { value = 1000.0, rel_tol = 1e-9 }
+expected.u_base_ry = { value = 0.04, rel_tol = 1e-9 }
+expected.u_tip_z = { value = -0.2107936507936508, rel_tol = 1e-9 }

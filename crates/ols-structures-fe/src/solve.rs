@@ -237,7 +237,10 @@ pub struct MemberForces {
     pub slack: bool,
 }
 
-/// A support reaction.
+/// A support reaction: what holds a joint with a support or a spring.
+/// Per direction, a fixed one gives the support's force, a sprung one
+/// the spring's force −k·u (one both fixed and sprung: the support's,
+/// the spring carrying nothing).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Reaction {
     /// Node.
@@ -255,7 +258,8 @@ pub struct Solution {
     pub displacements: Vec<[f64; 6]>,
     /// Forces per member.
     pub members: Vec<MemberForces>,
-    /// Reactions at the nodes with supports or springs.
+    /// Reactions at the nodes with supports or springs (the springs'
+    /// forces included): they balance the loads.
     pub reactions: Vec<Reaction>,
     /// Iterations.
     pub iterations: u64,
@@ -1099,10 +1103,17 @@ fn solve_with(
         .iter()
         .enumerate()
         .filter(|(_, node)| node.is_support())
-        .map(|(n, node)| {
+        .map(|(n, _)| {
+            // What holds the joint: the forces of its members less its
+            // loads. A fixed direction takes them as the support's
+            // reaction; a sprung one is in balance with its spring,
+            // internal + k·u = load, so the same expression is the
+            // spring's force −k·u (to the solve's residual). A direction
+            // both fixed and sprung does not move: the support takes it
+            // all, the spring nothing.
             let mut r = [0.0; 6];
             for d in 0..6 {
-                r[d] = internal[n][d] + node.spring[d] * displacements[n][d] - f_ext[n][d];
+                r[d] = internal[n][d] - f_ext[n][d];
             }
             if !held.is_empty() {
                 // The supports' share only, without the stabilisation's.

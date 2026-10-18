@@ -819,6 +819,12 @@ A stabilisation carrying load (above `HELD_SHARE` of the loads and
 `HELD_JOINT_SHARE` of its joint's) fails as `FeError::Held`; a remaining
 mechanism is `FeError::Mechanism` with the joints that move (`joints`,
 `moving`). Nothing is stored: it is worked out per solve.
+`Solution::reactions` (`Reaction`, force and moment on the structure) has
+one entry per joint with a support or a spring (`Node::is_support`): a
+fixed direction gives the support's force, a sprung one the spring's
+force −k·u (a direction both fixed and sprung: the support's, the spring
+carrying nothing), less a stabilisation's share at that joint; Σ reactions
+balance the loads with the self-weight.
 
 A model member (`ols_structures_fe::Member`) carries the file's `lk`,
 `capacity_tension`, `capacity_compression` (SI, `None` when not given:

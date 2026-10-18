@@ -105,6 +105,21 @@ fn an_unsettled_structure_solves_flagged_approximate() {
     )
     .unwrap();
     let r = results[0].1.as_ref().unwrap_or_else(|e| panic!("{e}"));
+    // In balance: the spring's force at M (−k·u) is among the reactions.
+    assert!(
+        r.imbalance() < 1e-6 * 10e3,
+        "{:?} {:?}",
+        r.load_sum,
+        r.reaction_sum
+    );
+    let at_m = r.reactions.iter().find(|x| x.joint == "M").unwrap();
+    let u = r.joints.iter().find(|j| j.id == "M").unwrap().displacement;
+    for k in 0..3 {
+        assert!(
+            (at_m.force[k] + 1000.0 * u[k]).abs() < 1e-6 * 10e3,
+            "{at_m:?} {u:?}"
+        );
+    }
     assert!(
         r.notes.iter().any(|n| n
             == "tension-only members kept active because the set did not settle: AM, MC — \

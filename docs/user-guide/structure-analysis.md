@@ -99,6 +99,8 @@ alone are read, as before.
 
 **Members**: trusses take axial force only; frames are 3D beams (six degrees of freedom at their nodes); cables take tension only and may be pretensioned — a cable that would be compressed goes slack (guys); `tension` members are trusses in tension only, without pretension (below). Truss-only nodes have no rotations. A model file with a `tension` member is version 2 (an older program says it is newer).
 
+**Supports and springs**: `support` fixes directions of a joint, `spring` holds them elastically (a foundation's stiffness: N/m for x, y, z, N·m/rad for rx, ry, rz). The **reactions** are reported at every joint with either: a fixed direction gives the support's force, a sprung one the spring's force (−k × its travel), translations and rotations alike, first order and with P-Delta — so Σ reactions balance Σ loads, self-weight included, whether the structure stands on supports, springs or both (the out-of-balance of OHL-Structure's FE results, the sum `ohl structures fe` prints). A direction given both a support and a spring does not move: the support takes everything, the spring nothing.
+
 ### Tension-only members
 
 Tower programs model light bracing that buckles at once under compression as **tension-only** ("T-only" in PLS-TOWER): it carries tension and is taken out of the model when it would be compressed. `kind = "tension"` does the same, the way PLS-TOWER does it:
