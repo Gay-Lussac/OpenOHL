@@ -65,7 +65,7 @@ price = 25000.0
 | `[hardware]` | `spacer_interval`, `spacer_price`, `dampers_per_span`, `damper_price` | The rules count only when given. |
 | `[[fixed]]` | `item`, `price` | Added once. |
 
-Prices are numbers ≥ 0; the same type, insulator or cable may be priced once. The cost data is yours: OLS CAD ships only `examples/synthetic-line/unit-costs.olscost`, whose prices are invented.
+Prices are numbers ≥ 0; the same type, insulator or cable may be priced once. The cost data is yours: OpenOHL ships only `examples/synthetic-line/unit-costs.olscost`, whose prices are invented.
 
 ## In the application
 
@@ -74,10 +74,10 @@ File › **Bill of materials › Cables…** opens a window with the table, the 
 ## From the command line
 
 ```bash
-ols bom examples/synthetic-line/synthetic-line-typed.ols.json \
+ohl bom examples/synthetic-line/synthetic-line-typed.ols.json \
     --cost examples/synthetic-line/unit-costs.olscost --csv bom.csv --json bom.json
 ```
 
-`--library`, `--structures` and `--insulators` choose the libraries as for `ols line`. Without `--cost` the quantities are listed without prices.
+`--library`, `--structures` and `--insulators` choose the libraries as for `ohl line`. Without `--cost` the quantities are listed without prices.
 
 The CSV columns: `category,item,quantity,unit,unit_price,amount,currency`, one row per line of the table and a `total` row when priced. Categories: `structures`, `foundations`, `erection`, `insulators`, `wire`, `stringing`, `hardware`, `fixed`. The JSON holds the whole bill (also the cut length of every span of every section) and the estimate.

@@ -1,6 +1,6 @@
 # Drawings and profile exports
 
-OLS CAD draws every route of a line as **plan and profile**: the profile
+OpenOHL draws every route of a line as **plan and profile**: the profile
 (ground, side ground, required-clearance line, structures, wires by phase,
 violation markers) and above it the plan, straightened along the route so
 that it lines up with the profile. The same drawings are written as SVG,
@@ -8,12 +8,12 @@ DXF, PDF and PNG; the profile's numbers as CSV and XML.
 
 ## From the command line
 
-`ols drawing` solves the line exactly like `ols line` (it takes all of its
+`ohl drawing` solves the line exactly like `ohl line` (it takes all of its
 options: weather cases, terrain, LiDAR, rules…) and then writes the drawings
 asked for:
 
 ```bash
-ols drawing examples/synthetic-line/synthetic-line.ols.json \
+ohl drawing examples/synthetic-line/synthetic-line.ols.json \
   --terrain examples/synthetic-line/synthetic-survey.csv \
   --weather examples/synthetic-line/weather-cases.olswc --clearance 7 \
   --route main --format pdf,dxf,csv --page A3 \
@@ -29,14 +29,14 @@ ols drawing examples/synthetic-line/synthetic-line.ols.json \
 | `--plan-scale` | the plan across the line (default the horizontal scale) |
 | `--page` | sheets `A0`–`A4` (landscape) or `WIDTHxHEIGHT` in mm; without it one continuous drawing |
 | `--profile-only` | the profile alone, without the plan |
-| `--side-offset`, `--plan-width`, `--clearance`, `--logo` | as for `ols line --drawings` |
+| `--side-offset`, `--plan-width`, `--clearance`, `--logo` | as for `ohl line --drawings` |
 | `--dpi` | resolution of PNG images (default 150) |
 | `--out DIR` | output folder (created) |
 
 The first weather case is drawn solid, the others dashed (each its own
 dash pattern, named in the title block).
 
-`ols line --drawings DIR` still writes what it always did: an SVG (or SVG
+`ohl line --drawings DIR` still writes what it always did: an SVG (or SVG
 sheets with `--page`) and the profile CSV of every route.
 
 ## Sheets

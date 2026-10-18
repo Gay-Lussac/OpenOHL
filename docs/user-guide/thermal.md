@@ -1,6 +1,6 @@
 # Thermal rating (`.olsta`)
 
-OLS CAD computes the current a conductor can carry (its **ampacity**) for a
+OpenOHL computes the current a conductor can carry (its **ampacity**) for a
 maximum conductor temperature, the conductor temperature for a current, the
 temperature after a step of current, and — for a whole line — the highest
 conductor temperature its clearances allow, by **IEEE Std 738-2012**,
@@ -83,7 +83,7 @@ are errors (a typo never goes unnoticed).
 Ampacity at a maximum temperature, per ambient case:
 
 ```bash
-ols thermal ampacity --cable acsr-drake-26-7 \
+ohl thermal ampacity --cable acsr-drake-26-7 \
     --ambient examples/synthetic-line/thermal-ambient.olsta --max-temp 80
 ```
 
@@ -107,7 +107,7 @@ Drake 795 kcmil 26/7 ACSR — IEEE 738-2012, 3 ambient cases
 
 ```bash
 cd examples/synthetic-line
-ols thermal clearance-limit synthetic-line.ols.json --terrain synthetic-survey.csv \
+ohl thermal clearance-limit synthetic-line.ols.json --terrain synthetic-survey.csv \
     --clearance 5 --weather weather-cases.olswc --case "max temperature" \
     --ambient thermal-ambient.olsta --method cigre601 --csv limits.csv
 ```
@@ -125,7 +125,7 @@ Each section is solved at other temperatures in the base weather case
 (`--weather` and `--case`; still air without them) and checked by the
 **ground and point rules** of `--rules` (and `--clearance` as a vertical
 ground rule) that apply to that case, against `--terrain`, `--lidar` or
-`--pointcloud` — the same options as `ols line`. The result per section:
+`--pointcloud` — the same options as `ohl line`. The result per section:
 
 - the limiting temperature (to `--tolerance`, 0.5 °C) with the governing
   span, rule and clearance just above it;

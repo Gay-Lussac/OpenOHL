@@ -1,6 +1,6 @@
 # Writing plugins
 
-OLS CAD has three plugin tiers (ADR-0003): **WebAssembly** components (stable interface, sandboxed, any language), **Python** (scripts, reports, import/export) and native Rust inside this repository.
+OpenOHL has three plugin tiers (ADR-0003): **WebAssembly** components (stable interface, sandboxed, any language), **Python** (scripts, reports, import/export) and native Rust inside this repository.
 
 Every plugin has an `ols-plugin.toml` manifest:
 
@@ -46,22 +46,25 @@ level read by the distance between conductors).
 
 ## Where plugins are found, and the shared settings
 
-Both desktop applications — the line application `ols-cad` and OLS
-Structure `ols-structure` — list the plugins installed for the user (OLS
-CAD's data folder, `plugins/`: `eframe::storage_dir("OLS CAD")`) and
+Both desktop applications — the line application `ohl-design` (OHL-Design)
+and OHL-Structure `ohl-structure` — list the plugins installed for the
+user (the line application's data folder, `plugins/`:
+`eframe::storage_dir("OLS CAD")`; the storage id keeps its name from
+before the rename to OpenOHL, so settings, recent files and plugins stay
+where they were) and
 those of the folders added. The folders and the plugins turned off are
 one settings file, `settings.toml` in that plugin folder
 (`ols_plugins::PluginSettings`: `folders`, `disabled`; written through
 a temporary file renamed into place), read and written by both: a plugin
 added or turned off in one is so in the other.
 
-What applies in OLS Structure: `design-code` (Load cases › Load cases
+What applies in OHL-Structure: `design-code` (Load cases › Load cases
 from a design code…: its load cases become recipes taking the line's
 values); `check` is listed (member and joint code checks will be a
 structure world later); `io` plugins take the line's export model, not a
 structure (listed as not applicable); `terrain`, `project` and Python
-plugins are the line application's. See [OLS
-Structure](../user-guide/structure-app.md#plugins).
+plugins are the line application's. See
+[OHL-Structure](../user-guide/structure-app.md#plugins).
 
 ## WebAssembly plugins
 
@@ -73,7 +76,7 @@ cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2
 cargo run -p ols-cli -- plugin info plugins/examples/hello-wasm
 ```
 
-`ols plugin info DIR` works for a plugin of any world: it loads the
+`ohl plugin info DIR` works for a plugin of any world: it loads the
 plugin in the world of each extension point its manifest lists
 (`design-code`: `code-plugin`, `io`, `terrain`, `project`, `check`; none
 of these: the minimal `plugin` world) and prints its `describe` (a check
@@ -110,7 +113,7 @@ extension-points = ["io"]
 - `import-file(format, data, options)` returns a line file (JSON), which the host checks like any line file. When the user gives a line to update, it arrives as option `into` (its JSON).
 - Errors are returned as strings and shown to the user as the format's error.
 
-`plugins/examples/geojson` is a complete example (GeoJSON export of structures and wires; structures imported from GeoJSON points). Its formats appear next to the built-in ones in `ols formats --plugin plugins/examples/geojson`; see [Import and export](../user-guide/import-export.md).
+`plugins/examples/geojson` is a complete example (GeoJSON export of structures and wires; structures imported from GeoJSON points). Its formats appear next to the built-in ones in `ohl formats --plugin plugins/examples/geojson`; see [Import and export](../user-guide/import-export.md).
 
 ## Terrain plugins
 
@@ -129,7 +132,7 @@ memory-mib = 1024
 - `formats()` lists the formats it reads (direction `importer`).
 - `import-surfaces(format, data, options)` returns surfaces: a name, the points as `x0, y0, z0, x1, …` (metres, x east, y north, z up) and the triangles as three point indices each. The host checks them like any mesh and keeps them in the project.
 
-`plugins/examples/esri-grid` reads ESRI ASCII grids (`.asc`): a point per cell centre, two triangles per square of cells with data. Its format appears in `ols surface formats --plugin plugins/examples/esri-grid` and in Terrain › Terrain surfaces once the plugin is installed or its folder added (Plugins › Plugin manager).
+`plugins/examples/esri-grid` reads ESRI ASCII grids (`.asc`): a point per cell centre, two triangles per square of cells with data. Its format appears in `ohl surface formats --plugin plugins/examples/esri-grid` and in Terrain › Terrain surfaces once the plugin is installed or its folder added (Plugins › Plugin manager).
 
 A plugin also suits formats that should not be in the open-source code — e.g. one read from a private specification — kept and installed only where it may be used.
 
@@ -138,7 +141,7 @@ A plugin also suits formats that should not be in the open-source code — e.g. 
 A plugin that reads another program's project files implements the `project-plugin` world and lists the extension point `project` (with `[limits]` for large files, as above):
 
 - `formats()` lists the formats it reads.
-- `import-project(format, data, options)` returns a **project**: the line as a line file (JSON), its **library files** (`kind` — `cables`, `weather`, `loadcases`, `structures`, `insulators`, `rules`, `galloping`, `ambient`, `costs`, `poles`, `femodels`, `sections` — `name` and TOML `text`, as OLS CAD writes them) and **notes**: what was read, what was left out, what was assumed. The host checks the line and creates a new project file with it and its libraries (File › New project from another program, `ols project import-from`), and shows the notes.
+- `import-project(format, data, options)` returns a **project**: the line as a line file (JSON), its **library files** (`kind` — `cables`, `weather`, `loadcases`, `structures`, `insulators`, `rules`, `galloping`, `ambient`, `costs`, `poles`, `femodels`, `sections` — `name` and TOML `text`, as OpenOHL writes them) and **notes**: what was read, what was left out, what was assumed. The host checks the line and creates a new project file with it and its libraries (File › New project from another program, `ohl project import-from`), and shows the notes.
 
 `plugins/examples/project-bundle` reads a JSON bundle `{"line": …, "libraries": [{"kind", "name", "text"}]}` — the shape such a reader returns. Readers of formats that should stay out of the open-source code are installed only where they may be used.
 
@@ -171,10 +174,10 @@ extension-points = ["design-code"]
   `weather-cases`, an `.olswc` file's text with the cases its rules name.
 
 The host (`ols_io::codes`, `WasmHost::load_code`) checks the files as
-OLS CAD reads them before anything is written — each preset's rule file
+OpenOHL reads them before anything is written — each preset's rule file
 read (an error names it, `<plugin>-<name>.olsr`), a rule of its
 measure, every weather case its rules name among its own, the names
-unique; `ols code generate` and Criteria › Design code write them (the
+unique; `ohl code generate` and Criteria › Design code write them (the
 presets as `<plugin>-<name>.olsr` and `.olswc`, in the project among
 its rule and weather case files). Plugin interface version 0.2 (`sdk =
 "0.2"`) brought the presets: a plugin built for 0.1 must be rebuilt. A plugin ships **no values of the
@@ -195,15 +198,15 @@ separately; it is not part of the public code. See
 A plugin that runs a check implements the `check` interface
 (`crates/ols-plugins/wit/code.wit`: the `check-plugin` world, or
 `code-check-plugin` for a design-code plugin that also runs checks) and
-lists the extension point `check`. **OLS CAD measures, the plugin holds
-the values and the rules**: the measuring stays in OLS CAD (it is
+lists the extension point `check`. **OpenOHL measures, the plugin holds
+the values and the rules**: the measuring stays in OpenOHL (it is
 geometry, and fast), the code's numbers and its formulas stay out of it.
 
-- `checks()` lists the checks it runs: the **id** of what OLS CAD
+- `checks()` lists the checks it runs: the **id** of what OpenOHL
   measures for it (today `phase-distance`, the distance between
   conductors in the span), its title and **its Checks submenu** (the app
   builds the Checks menu from the plugins in use: a check's entry is
-  there only while its plugin is; a check OLS CAD does not measure for is
+  there only while its plugin is; a check OpenOHL does not measure for is
   listed, greyed), an
   **explanation** of the computation (shown in its window), its
   **values** file as shipped (TOML) with its extension, the **choices**
@@ -228,13 +231,13 @@ each pair's worst station and the length below — see [Distance between
 conductors: the core's part](phase-distance-check.md). A Swiss LeV
 plugin (kept apart from the public code) runs such a check. On an
 existing line (930 conductors, 5593 pairs) a plugin's check takes about
-as long as the same computation built into OLS CAD (0.8 s against
+as long as the same computation built into OpenOHL (0.8 s against
 0.65–0.9 s; with nearby pairs, 10 475, 0.9 s against 0.65–0.7 s), plus
 about 0.3 s to load the plugin once.
 
 ## String limits: what a plugin sees
 
-A string (insulator) may carry limits that **OLS CAD does not check** — the tension it is rated for and the swings it may take ([String limits](../user-guide/structure-library.md#string-limits-not-checked)). Absent means not given: nothing checks it. Given, nothing in OLS CAD checks it either: a plugin (or a report, or a script) does, where its rules need it. What it gets:
+A string (insulator) may carry limits that **OpenOHL does not check** — the tension it is rated for and the swings it may take ([String limits](../user-guide/structure-library.md#string-limits-not-checked)). Absent means not given: nothing checks it. Given, nothing in OpenOHL checks it either: a plugin (or a report, or a script) does, where its rules need it. What it gets:
 
 - **Export model** (`io` plugins, `export-model`): the `line` holds every string with its own `max_load` (N), `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (degrees) — structure types placed and the limits of the insulator a string names filled in where it gives none (absent keys: not given). Each case's `strings` gives, per string, the solved axial force `force_n` (whole bundle, tension positive), its swing `swing_deg` (from straight down), `swing_across_deg` and `swing_along_deg` (the angles of its projections on the structure's planes across and along the line, positive to the right and ahead), and its limits beside them as `max_load_n`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (`null`: not given). A plugin compares, e.g. `abs(swing_across_deg) > max_swing_across_deg`. The format stays version 1: keys were only added.
 - **Check plugins** (`check`): the WIT records pass no strings (a check measures conductor pairs), so the interface is unchanged (still `ols:plugin@0.1.0`); a check that needs the limits reads them from the line as above.

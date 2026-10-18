@@ -9,7 +9,7 @@ factor. The plugin also returns **notes**: what it computed, assumed or
 left out, and may give **clearance presets** for the Vertical and Radial
 clearances windows ([below](#clearance-presets)).
 
-**OLS CAD ships no code tables.** Standards are copyrighted, and their
+**OpenOHL ships no code tables.** Standards are copyrighted, and their
 values change with editions and national annexes. Each plugin implements
 a code's *method*; every number — basic wind speeds, ice thicknesses,
 temperatures, γ and ψ factors, safety factors, district or zone values —
@@ -66,11 +66,11 @@ A design-code plugin may also return **clearance presets**: for the
 (`.olsr`: the rules — LiDAR classes, voltages, distances, the vertical
 zone's half width per rule —, the wind steps and sides, the circuits,
 the calculation method and the distance beyond which LiDAR points are
-ignored) and the weather cases its rules name (`.olswc`). OLS CAD checks
+ignored) and the weather cases its rules name (`.olswc`). OpenOHL checks
 them like any such file (each rule's weather cases among the preset's),
 and writes each as `<plugin>-<name>.olsr` among the project's rule files
 and `<plugin>-<name>.olswc` among its weather case files (next to a line
-file; `ols code generate`: next to the weather case file). In a window,
+file; `ohl code generate`: next to the weather case file). In a window,
 **Load preset…** takes one in a click: its rules replace the window's,
 its weather cases missing from the model are added to it; you can change
 everything afterwards (see [Vertical and radial
@@ -80,15 +80,15 @@ in `plugins/codes` give none.
 ## From the command line
 
 ```bash
-ols code list                               # plugins/codes, or --dir DIR
-ols code template --plugin plugins/codes/en50341 --out my-line.toml
+ohl code list                               # plugins/codes, or --dir DIR
+ohl code template --plugin plugins/codes/en50341 --out my-line.toml
 # … fill in my-line.toml from the standard …
-ols code generate --plugin plugins/codes/en50341 --params my-line.toml \
+ohl code generate --plugin plugins/codes/en50341 --params my-line.toml \
     --weather my-line.olswc --load-cases my-line.olslc
-ols line line.ols.json --weather my-line.olswc --load-cases my-line.olslc --loads-csv loads.csv
+ohl line line.ols.json --weather my-line.olswc --load-cases my-line.olslc --loads-csv loads.csv
 ```
 
-`generate` checks both files as OLS CAD reads them (and that each load
+`generate` checks both files as OpenOHL reads them (and that each load
 case names one of the weather cases) before writing them, writes the
 clearance presets next to the weather case file, and prints the notes.
 

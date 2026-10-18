@@ -50,7 +50,7 @@ line's default) the same structure gives the same bytes in every format.
 
 ### Common (`ExportStructure`)
 
-| OLS CAD | Export data |
+| OpenOHL | Export data |
 |---|---|
 | `[[node]]` `point`, `support` (`fixed`, `pinned`, a list of x, y, z, rx, ry, rz), `spring` | joint, held directions, springs (N/m, N·m/rad) |
 | `[[member]]` `nodes`, `section`, `kind` (truss, frame, cable), `reference`, `roll`, `k`, `pretension` | member with its **local axes** worked out exactly as the FE model does (`member_axes`: y in the plane of x and the reference — global z, or global x for a vertical member — then the roll about x); k and pretension carried along |
@@ -112,7 +112,7 @@ section's id.
 
 | Sheet | Rows | Notes |
 |---|---|---|
-| `Project`, `Model` | property name in column A, value in B | `SAF Version` 2.2.0, `Global coordinate system` Z vertical, `LCS of cross-section` ZYX, `System of units` Metric, `National code` EC-Standard-EN (required by SAF; OLS CAD does not tie the export to a code) |
+| `Project`, `Model` | property name in column A, value in B | `SAF Version` 2.2.0, `Global coordinate system` Z vertical, `LCS of cross-section` ZYX, `System of units` Metric, `National code` EC-Standard-EN (required by SAF; OpenOHL does not tie the export to a code) |
 | `StructuralMaterial` | one per material | `Type` from E and density (below), `Quality` = the material's name, E and G in MPa, unit mass kg/m³, Poisson's ratio E/2G − 1 |
 | `StructuralCrossSection` | one per section | **Parametric**: angle → `Angle` (H; B; t; R; R1 = h; b; t; r; 0), channel → `Channel` (H; B; t; s; R = h; b; tf; tw; r), I → `I rolled` (H; B; t; s; R = h; b; tf; tw; r), rectangular hollow → `Tube` (H; B; s; R; r1 = h; b; t; 0; 0), circular hollow → `Pipe` (D; t), round bar → `Circle` (D), parameters in mm. **General** (polygonal hollow, `general`, `[[section]]` tables): `Profile` names a `CompositeShapeDef` row. A, Iy, Iz, It, Wply, Wplz given for every section |
 | `CompositeShapeDef` | sections without a parametric shape | polygonal hollow: the outline (counter-clockwise, with the material) and the opening (clockwise); `general`: its outline box; a `[[section]]` table: **a square of the same area** (no shape is known; its A, Iy, Iz, It are in the cross-section row) |
@@ -153,7 +153,7 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 - **Load combinations**, partial factors and the strength factor of a
   case: the cases are written as they are (already factored as their
   recipes say); SAF's action type is Permanent / Standard for every case
-  and IFC's `.NOTDEFINED.`, because OLS CAD does not classify them.
+  and IFC's `.NOTDEFINED.`, because OpenOHL does not classify them.
 - **Self-weight** in SAF: only as text in the case's description (SAF
   has no factor per case); in IFC4 as `SelfWeightCoefficients`.
 - **Effective length factor k** and **pretension**: IFC4 property set

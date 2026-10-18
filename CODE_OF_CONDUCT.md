@@ -1,6 +1,6 @@
 # Code of Conduct
 
-OLS CAD adopts the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) as its code of conduct.
+OpenOHL adopts the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) as its code of conduct.
 
 In short: be respectful and constructive, welcome people of every background and level of experience, critique ideas and calculations rather than people, and assume good faith. Harassment, insults and personal attacks are not tolerated.
 

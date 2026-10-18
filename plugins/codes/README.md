@@ -14,7 +14,7 @@ generates weather cases (`.olswc`) and load cases (`.olslc`) with notes
 | `asce-mop74` | ASCE MOP 74 structural loading | SI |
 | `go95` | CPUC General Order 95, Rules 43 and 44 | US customary |
 
-**OLS CAD ships no code tables.** The plugins implement each code's
+**OpenOHL ships no code tables.** The plugins implement each code's
 method; every wind speed, ice thickness, temperature, partial factor and
 combination factor comes from the parameter file. The
 `example-parameters.toml` of each plugin (also its template) holds
@@ -37,9 +37,9 @@ cd plugins/codes/en50341 && cargo build --release --target wasm32-wasip2
 Use it:
 
 ```bash
-ols code list
-ols code template --plugin plugins/codes/en50341 --out my-line.toml
-ols code generate --plugin plugins/codes/en50341 --params my-line.toml \
+ohl code list
+ohl code template --plugin plugins/codes/en50341 --out my-line.toml
+ohl code generate --plugin plugins/codes/en50341 --params my-line.toml \
     --weather my-line.olswc --load-cases my-line.olslc
 ```
 

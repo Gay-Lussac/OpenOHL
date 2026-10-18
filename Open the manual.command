@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Double-click (macOS) to open the OLS CAD manual (the mdBook in docs/) in
+# Double-click (macOS) to open the OpenOHL manual (the mdBook in docs/) in
 # the browser. It follows the .md files as they change; close this window
 # (or press Ctrl+C) to stop it. The first time, mdBook is installed (about
 # a minute).

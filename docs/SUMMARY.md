@@ -5,7 +5,7 @@
 # User guide
 
 - [Getting started](user-guide/getting-started.md)
-- [Desktop application](user-guide/desktop-app.md)
+- [OHL-Design, the line application (ohl-design)](user-guide/desktop-app.md)
 - [Wire library files (.olsw)](user-guide/wire-library.md)
 - [Line files (.ols.json)](user-guide/line-file.md)
 - [Weather cases (.olswc)](user-guide/weather.md)
@@ -13,7 +13,7 @@
 - [Design codes](user-guide/design-codes.md)
 - [Structure and insulator libraries (.olss, .olsi)](user-guide/structure-library.md)
 - [Structure analysis (.olsfe, .olsp)](user-guide/structure-analysis.md)
-- [OLS Structure, the structure application (ols-structure)](user-guide/structure-app.md)
+- [OHL-Structure, the structure application (ohl-structure)](user-guide/structure-app.md)
 - [Section library (.olssec)](user-guide/section-library.md)
 - [Structure load cases (.olsslc)](user-guide/structure-load-cases.md)
 - [Terrain and ground clearance](user-guide/terrain.md)

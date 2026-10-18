@@ -188,7 +188,7 @@ points = "all"
 ```
 
 The same `[[load_case]]` tables as in the structure file; `format` and
-`version` as in every OLS CAD file. The recipes are also written and
+`version` as in every OpenOHL file. The recipes are also written and
 read as CSV: one row per load (`case`, `description`, `line_case`,
 `strength`, `self_weight`, `load`, `what`, `value` in N, `pressure` in
 Pa, `load_line_case`, `factor`, `one_sided`, `side`, `direction`,

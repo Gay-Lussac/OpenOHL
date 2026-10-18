@@ -1,15 +1,15 @@
 # Coordinate systems
 
 Lines, surveys and point clouds are in a projected coordinate system in
-metres (the line file's `crs`, e.g. `"EPSG:2056"`). OLS CAD knows the EPSG
+metres (the line file's `crs`, e.g. `"EPSG:2056"`). OpenOHL knows the EPSG
 registry and proj4 strings, and transforms points and whole lines between
 systems — pure Rust, no native library, the same in WebAssembly plugins.
 
 ```bash
-ols crs info EPSG:2056
-ols crs transform --from EPSG:2056 --to EPSG:4326 2600000 1200000
+ohl crs info EPSG:2056
+ohl crs transform --from EPSG:2056 --to EPSG:4326 2600000 1200000
 # 7.438632421 46.951082772
-ols crs line line.ols.json --to EPSG:32632 --out line-utm.ols.json
+ohl crs line line.ols.json --to EPSG:32632 --out line-utm.ols.json
 ```
 
 - **Geographic** coordinates are longitude, latitude in degrees.
@@ -17,7 +17,7 @@ ols crs line line.ols.json --to EPSG:32632 --out line-utm.ols.json
   usually orthometric (above a geoid) and no geoid model is applied.
   `--ellipsoidal` treats them as ellipsoidal heights through the datum
   shift (`--points 3` to give X Y Z).
-- **A whole line** (`ols crs line`): structure positions, attachment, leg
+- **A whole line** (`ohl crs line`): structure positions, attachment, leg
   and stick points, alignments and jumper supports move together; structure
   orientations follow the rotation between the two grids. Lines stay in
   projected systems. **Grid distances change** with each projection's scale

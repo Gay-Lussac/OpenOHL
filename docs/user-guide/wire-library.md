@@ -1,9 +1,9 @@
 # Wire library files (`.olsw`)
 
-A **wire library** describes conductors, shield wires and other cables. Each file can hold any number of cables. OLS CAD loads every `*.olsw` file of a library directory (default `libraries/cables/`), or a single file given in a job.
+A **wire library** describes conductors, shield wires and other cables. Each file can hold any number of cables. OpenOHL loads every `*.olsw` file of a library directory (default `libraries/cables/`), or a single file given in a job.
 
-- **Fill-in template:** [`libraries/cables/TEMPLATE.olsw.example`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/libraries/cables/TEMPLATE.olsw.example) — every field, commented.
-- **Machine-readable schema:** [`docs/schema/ols-wire-1.schema.json`](https://github.com/Gay-Lussac/OLS-CAD/blob/main/docs/schema/ols-wire-1.schema.json) (JSON Schema 2020-12) — for tools that create or check files.
+- **Fill-in template:** [`libraries/cables/TEMPLATE.olsw.example`](https://github.com/Gay-Lussac/OpenOHL/blob/main/libraries/cables/TEMPLATE.olsw.example) — every field, commented.
+- **Machine-readable schema:** [`docs/schema/ols-wire-1.schema.json`](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/schema/ols-wire-1.schema.json) (JSON Schema 2020-12) — for tools that create or check files.
 - **Working example:** `libraries/cables/acsr-examples.olsw`.
 
 ## File format at a glance
@@ -111,7 +111,7 @@ Any number of coefficients (at least two) is accepted; published curves are usua
 
 ## Validation when loading
 
-OLS CAD refuses a library with any of these problems, naming the cable and the field:
+OpenOHL refuses a library with any of these problems, naming the cable and the field:
 
 - unknown fields, missing required fields, unknown units, duplicate `id`s, `id` with characters other than letters, digits, `-`, `_`;
 - non-positive `diameter`, `mass_per_length`, `rated_tensile_strength`, `area`;
@@ -141,7 +141,7 @@ outer = { area = "270 mm²", modulus = "60 GPa", thermal_expansion = 23.0e-6 }
 
 1. Parse with any TOML 1.0 library; validate the parsed object against `docs/schema/ols-wire-1.schema.json`.
 2. Write quantities as `"<number> <unit>"` with the units listed above, or as SI numbers.
-3. Run the semantic checks listed above, or let OLS CAD do it: `ols sagtension` and the library loader report the first problem with its file, cable id and field.
+3. Run the semantic checks listed above, or let OpenOHL do it: `ohl sagtension` and the library loader report the first problem with its file, cable id and field.
 4. Keep comments and field order stable when rewriting files, so manual edits survive (TOML libraries that preserve formatting, such as `toml_edit` in Rust or `tomlkit` in Python, help).
 
 ## Electrical data: `[cable.electrical]`

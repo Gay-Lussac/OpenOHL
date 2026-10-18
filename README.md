@@ -1,14 +1,16 @@
-# OLS CAD
+# OpenOHL
 
-**Open Line System Computer Assisted Design**: an open-source, modular desktop application and engine for designing and analysing overhead power lines.
+An open-source, modular set of desktop applications and engines for designing and analysing overhead power lines (OHL = overhead lines).
 
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-brightgreen.svg)](LICENSE)
 [![Rust edition 2024](https://img.shields.io/badge/rust-edition%202024-orange.svg)](Cargo.toml)
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-lightgrey.svg)](ROADMAP.md)
 
-![The OLS CAD desktop application with the synthetic example line](docs/images/ols-cad-window.png)
+![OHL-Design, the line application, with the synthetic example line](docs/images/ols-cad-window.png)
 
-OLS CAD covers terrain and LiDAR, conductor sag-tension, finite-element wire systems, loads and structure checks, clearances, thermal rating, spotting and drawings. Use it from a desktop app, the `ols` command-line tool or Python, alone or with several people on one project. Every calculation is open, documented in a theory manual and checked against validation cases.
+**Names:** OpenOHL is the project; **OHL-Design** is the line application (sag-tension, clearances, line layout), **OHL-Structure** the structure application (pylons and their loading) and `ohl` the command line. The project was formerly called "OLS CAD": the old program names `ols-cad`, `ols-structure` and `ols` still work for a while (they say so and run the new ones), and the launchers are now `Start OHL-Design.command` and `Start OHL-Structure.command`. File extensions keep their historical `ols` prefix (`.ols`, `.olss`, `.olsw`…).
+
+OpenOHL covers terrain and LiDAR, conductor sag-tension, finite-element wire systems, loads and structure checks, clearances, thermal rating, spotting and drawings. Use it from the desktop applications OHL-Design and OHL-Structure, the `ohl` command-line tool or Python, alone or with several people on one project. Every calculation is open, documented in a theory manual and checked against validation cases.
 
 > **Pre-alpha.** Phases 0 to 3 of the [roadmap](ROADMAP.md) are done, and Phases 4 and 5 are in place as a base. A qualified engineer must check every engineering result.
 
@@ -23,13 +25,14 @@ OLS CAD covers terrain and LiDAR, conductor sag-tension, finite-element wire sys
 - **More engineering**: thermal rating (IEEE 738, CIGRE TB 601 / 207, clearance-limited temperature), optimum structure spotting, bill of materials and cost estimate.
 - **Drawings and exchange**: plan and profile sheets (SVG, DXF, PDF, PNG); OLS XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC, KML/KMZ, CSV, XLSX; file-format and project plugins.
 - **Projects and collaboration**: a SQLite project file with an operation log and per-user undo, git-like versions (branches, merges, reviews, edit grants), a server mode for several users and a browser client.
-- **Desktop application** (`ols-cad`): 3D, plan and profile views, editing tools, tables, library and pylon editors, a Python console and a plugin manager.
+- **OHL-Design** (`ohl-design`), the line application: 3D, plan and profile views, editing tools, tables, library and pylon editors, a Python console and a plugin manager.
+- **OHL-Structure** (`ohl-structure`), the structure application: one structure file from stick figure to full design, its load cases and analysis.
 
 ## Quick start
 
 You need a Rust toolchain from [rustup](https://rustup.rs) (stable, at least 1.96). Run these commands from the top of the repository.
 
-Start the desktop app with the synthetic example line, its survey and its weather cases:
+Start OHL-Design with the synthetic example line, its survey and its weather cases:
 
 ```bash
 cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.json \
@@ -37,9 +40,9 @@ cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.jso
     --weather examples/synthetic-line/weather-cases.olswc
 ```
 
-With no file, `cargo run --release -p ols-app` opens the start page (File › New project, Open). On macOS you can also double-click `Start OLS CAD.command`. The binary is called `ols-cad`. `ols-cad --help` lists its options.
+With no file, `cargo run --release -p ols-app` opens the start page (File › New project, Open). On macOS you can also double-click `Start OHL-Design.command`. The binary is called `ohl-design`. `ohl-design --help` lists its options.
 
-The `ols` command-line tool runs every calculation without a window:
+The `ohl` command-line tool runs every calculation without a window:
 
 ```bash
 cargo run -p ols-cli -- info                                           # version information
@@ -65,8 +68,8 @@ Key pages:
 
 | Page | For |
 |---|---|
-| [Getting started](docs/user-guide/getting-started.md) | building, the desktop app, the `ols` CLI, Python |
-| [Desktop application](docs/user-guide/desktop-app.md) | views, menus, editing tools, tables |
+| [Getting started](docs/user-guide/getting-started.md) | building, the desktop applications, the `ohl` CLI, Python |
+| [OHL-Design, the line application](docs/user-guide/desktop-app.md) | views, menus, editing tools, tables |
 | [Line files](docs/user-guide/line-file.md) and [project files](docs/user-guide/project.md) | the file formats |
 | [Theory: sag-tension](docs/theory/sagtension.md) and [conventions and units](docs/theory/conventions.md) | the engineering behind the results |
 | [Data model map](docs/development/data-model.md) | plugin builders: the model, its files and what a plugin sees |
@@ -107,8 +110,8 @@ One Rust crate per module, in [`crates/`](crates/):
 | `ols-render` | wgpu renderer with levels of detail |
 | `ols-plugins` | Plugin manifests, discovery and the WebAssembly host (WIT interfaces) |
 | `ols-validation` | Validation framework: reference cases, runner, reports |
-| `ols-app` | Desktop application `ols-cad` (egui) |
-| `ols-cli` | Command-line tool `ols` |
+| `ols-app` | OHL-Design, the line application `ohl-design` (egui) |
+| `ols-cli` | Command-line tool `ohl` |
 | `ols-py` | Python bindings (`import ols`) |
 
 Other folders: [`plugins/`](plugins/) (design codes, examples, tests), [`libraries/`](libraries/) (shipped cable libraries and LiDAR class schemes), [`benchmarks/`](benchmarks/) (validation cases with reference results), [`examples/`](examples/) (synthetic lines and job files), [`docs/`](docs/) (the book).
@@ -137,4 +140,4 @@ See also [GOVERNANCE.md](GOVERNANCE.md) and the [Code of Conduct](CODE_OF_CONDUC
 
 [Mozilla Public License 2.0](LICENSE) ([ADR-0001](docs/adr/0001-license.md)). Plugins distributed as separate files may use any licence.
 
-OLS CAD is an independent project. It is not affiliated with, endorsed by, or derived from any commercial software. All product names are trademarks of their respective owners. A qualified engineer must always verify engineering results.
+OpenOHL is an independent project. It is not affiliated with, endorsed by, or derived from any commercial software. All product names are trademarks of their respective owners. A qualified engineer must always verify engineering results.

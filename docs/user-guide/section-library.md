@@ -5,10 +5,10 @@ H sections, tubes, round bars, pole shafts — and their materials. A
 structure at [level 3](structure-library.md#detail-levels) refers to its
 sections there by id, so a whole project shares one set of profiles
 (see [How structures refer to it](#how-structures-refer-to-it)).
-OLS CAD computes each profile's properties from its dimensions; values
+OpenOHL computes each profile's properties from its dimensions; values
 you give replace the computed ones.
 
-All profiles are **your data** (supplier tables, drawings). OLS CAD ships
+All profiles are **your data** (supplier tables, drawings). OpenOHL ships
 only an invented example, `libraries/sections/example-sections.olssec`,
 with one profile of each shape — its dimensions are made up.
 
@@ -44,7 +44,7 @@ r = "8 mm"                       # root radius (default 0)
 ```
 
 Partial factors are kept by name for the code checks (plugins) that will
-use them; OLS CAD itself does not read them.
+use them; OpenOHL itself does not read them.
 
 ## Shapes
 
@@ -161,8 +161,8 @@ without one, the `.olssec` files of the `Sections/` folder next to it
 (else those next to it) are copied in — never the shipped example — and
 exported with the other libraries (see [Library
 editors](desktop-app.md#library-editors)). For a line file the `Sections/`
-folder (else the files next to it) is read directly. `ols line` and `ols
-structures fe` take `--sections <file|folder>`; `ols line` reads the
+folder (else the files next to it) is read directly. `ohl line` and `ohl
+structures fe` take `--sections <file|folder>`; `ohl line` reads the
 `Sections/` folder next to the line by default.
 
 Member groups (one section for many members) come with the structure

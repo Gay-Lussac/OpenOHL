@@ -203,13 +203,13 @@ whole objects.
 ## On the command line
 
 ```bash
-ols project branch project.ols "phase 1" --user ben          # a new line from the one the file opens on
-ols project checkout project.ols "phase 1" --user ben        # the commands act on it from now on
-ols project apply project.ols --user ben '{"op": "move_structure", "id": "T6", "position": [1500, 400, 505]}'
-ols project checkout project.ols main --user ana             # back to the main line
-ols project branch project.ols                               # list the lines (branches) and tags
-ols project branch project.ols "phase 1" --delete --confirm --user ben
-ols project history project.ols                              # the revisions with their lines and tags
+ohl project branch project.ols "phase 1" --user ben          # a new line from the one the file opens on
+ohl project checkout project.ols "phase 1" --user ben        # the commands act on it from now on
+ohl project apply project.ols --user ben '{"op": "move_structure", "id": "T6", "position": [1500, 400, 505]}'
+ohl project checkout project.ols main --user ana             # back to the main line
+ohl project branch project.ols                               # list the lines (branches) and tags
+ohl project branch project.ols "phase 1" --delete --confirm --user ben
+ohl project history project.ols                              # the revisions with their lines and tags
 ```
 
 `checkout` also sets the line the file opens on; nothing else changes.

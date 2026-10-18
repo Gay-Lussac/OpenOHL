@@ -1,6 +1,6 @@
 # Data model map
 
-A map of the data OLS CAD keeps: the line model, the libraries it refers
+A map of the data OpenOHL keeps: the line model, the libraries it refers
 to, the files they live in, how objects point at each other, and what a
 plugin sees. It is written for plugin builders and contributors; the user
 guide pages linked below give the full field lists of each file.
@@ -100,10 +100,10 @@ the box belongs to one line; the libraries are shared and referred to by
 
 ### File headers
 
-Every OLS CAD file may start with `format` (its id, e.g. `ols-wire`) and
+Every OpenOHL file may start with `format` (its id, e.g. `ols-wire`) and
 `version`; both optional. A file of another format is refused; any
 version up to the program's is read (older ones converted), a newer one
-refused ("written by a newer OLS CAD") — one check for all,
+refused ("written by a newer OpenOHL") — one check for all,
 `ols_core::files::check_header` (the line file and OLS XML, check
 reports and colour palettes too; plugins' own files, as `.olspd`, the
 same way). A key a format does not know is refused, naming it (a typo is
@@ -115,8 +115,8 @@ size of another shape or a missing size said too.
 
 New optional fields raise the format version (review rule 2.12: an older
 program then says "newer version", not "unknown field"). The string
-limits (`max_load`, the swing limits — optional, **not checked** by OLS
-CAD, for plugins and reports) did so: line file **6** (OLS XML follows
+limits (`max_load`, the swing limits — optional, **not checked** by
+OpenOHL, for plugins and reports) did so: line file **6** (OLS XML follows
 it), `.olss` **4**, `.olsi` **2**. The `.olss` and `.olsi` writers write
 the newer version only when a limit is given (an older program still
 reads the rest); the line file is always written at the current version.
@@ -299,7 +299,7 @@ A structure without a type holds its own `points`, `wires`, `strings` and `membe
 | `InsulatorString.wind_area` | f64 | m² | half at each end | — |
 | `InsulatorString.stiffness` | f64? | N (EA) | default `solve::DEFAULT_INSULATOR_STIFFNESS` | — |
 | `InsulatorString.compression` | f64? | N | compression it may take (then two-way, flagged beyond); none: tension only | — |
-| `InsulatorString.max_load` | f64? | N | version 6: the tension it is rated for — **not checked** by OLS CAD (`StringLimits`, `InsulatorString::limits`); none: not given; a resolved line fills it from its insulator's `max_load` where none is given | — |
+| `InsulatorString.max_load` | f64? | N | version 6: the tension it is rated for — **not checked** by OpenOHL (`StringLimits`, `InsulatorString::limits`); none: not given; a resolved line fills it from its insulator's `max_load` where none is given | — |
 | `InsulatorString.max_swing_deg`, `.max_swing_across_deg`, `.max_swing_along_deg` | f64? | ° | version 6: the swings it may take (from straight down any direction; across; along the line), 0–180 — not checked; none: not given; filled from its insulator's on resolve. Reported with the solved string (`solve::StringState::{limits, swing}`, `jumper::JumperStringShape::{limits, swing}`; `ols_line::swing(orientation, top, bottom) -> Swing {total_deg, across_deg, along_deg}`) and `Line::string_limits(structure, label)` | — |
 | `InsulatorString.strain` | bool | — | a strain (dead-end) string, else suspension: its set is a strain point | — |
 | `InsulatorString.description` | string | — | free text | — |
@@ -612,7 +612,7 @@ cases, unit costs and galloping parameters as library files (below).
 `ols-phase-distance`, version 1: a check plugin's values for the
 distance between conductors in the span, read and written by the
 plugin (its layout is the plugin's; a Swiss LeV plugin, kept apart from
-the public code, defines one). OLS CAD only measures
+the public code, defines one). OpenOHL only measures
 (`ols_clearance::phase_distance`) and keeps a project's edited copy as
 a library file of kind `phase-distance`. The check pairs conductors
 between the same two structures (and, when asked, nearby conductors
@@ -640,14 +640,14 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   (kV of the wires checked; 0: earthed wires) and `wires` (`sections`,
   `jumpers` or `both`).
 - `[wind]` (optional): `steps`, `step` (Pa), `sides` — how the desktop
-  clearance windows and `ols zones` step the wind up to each case's
-  pressure; `ols line` ignores it.
+  clearance windows and `ohl zones` step the wind up to each case's
+  pressure; `ohl line` ignores it.
 - `[check]` (optional, `CheckScope`): `circuits` (circuit names; empty:
   every circuit), `method` (`fe` / `rs`: every section solved by it;
   absent: each section's own), `search_distance` (m: LiDAR points
   farther from the wires are ignored) — what the desktop clearance
-  windows and `ols zones` solve and read (both through
-  `ols_clearance::zone::run_zone_check`); `ols line` ignores it.
+  windows and `ohl zones` solve and read (both through
+  `ols_clearance::zone::run_zone_check`); `ohl line` ignores it.
 - The desktop Vertical and Radial clearance windows keep their rules next
   to the model, in `<model>.vertical-clearances.olsr` and
   `<model>.radial-clearances.olsr` (one `[[rule]]` per row and target
@@ -814,7 +814,7 @@ stiffens held (`ols_structures_fe::stabilise::Stabilisation`: node,
 translation or rotation, unit direction, a structure axis removed exactly
 or a spring's stiffness); `Solution::stabilised` lists them with the force
 each took (`Stabilised`), `stabilisation_note` puts them in words for the
-usage notes, the structure application's results and `ols structures fe`.
+usage notes, the structure application's results and `ohl structures fe`.
 A stabilisation carrying load (above `HELD_SHARE` of the loads and
 `HELD_JOINT_SHARE` of its joint's) fails as `FeError::Held`; a remaining
 mechanism is `FeError::Mechanism` with the joints that move (`joints`,
@@ -845,7 +845,7 @@ Source: `crates/ols-structures/src/insulators.rs`.
 | `axial_stiffness` | force | N | EA of a string or leg (default 5·10⁷ N) |
 | `wind_area` | area | m² | projected area |
 | `half_width` | length? | m | `v_string` only: centre to each leg top |
-| `max_load` | force? | N | version 2 (`INSULATOR_FILE_VERSION`): the tension it is rated for (`v_string`: each leg's) — **not checked** by OLS CAD; strings naming it take it where they give none (`InsulatorAssembly::limits`, `InsulatorLimits`) |
+| `max_load` | force? | N | version 2 (`INSULATOR_FILE_VERSION`): the tension it is rated for (`v_string`: each leg's) — **not checked** by OpenOHL; strings naming it take it where they give none (`InsulatorAssembly::limits`, `InsulatorLimits`) |
 | `max_swing`, `max_swing_across`, `max_swing_along` | angle? | ° | version 2: the swings it may take (from straight down any direction; across; along the line), 0–180°, not checked; taken by its strings where they give none. `to_toml` writes version 1 unless a limit is given |
 
 ### Weather and load cases
@@ -872,7 +872,7 @@ same per structure (`StructureUsage::missing`), marks each `Check` from
 such loads `incomplete: true`, and `StructureUsage::status()` gives
 `UsageStatus::{NotChecked, Incomplete, Pass, Over}` — `Incomplete`
 whenever a wire is missing, whatever the usage. The usage CSV
-(`usage_csv`, `ols line --usage-csv`) ends with an `incomplete` column:
+(`usage_csv`, `ohl line --usage-csv`) ends with an `incomplete` column:
 `incomplete: section S12 not solved (why); …`, empty when complete.
 
 ### Structure load cases (`[[load_case]]`, `.olsslc`)
@@ -977,7 +977,7 @@ Structures), SAF 2.2.0 xlsx, CSV tables. Mapping and what is lost:
 | OLS XML | XML, namespace `urn:ols-cad:ols-line:1`, schema `docs/schema/ols-line.xsd` | the same content as the line file, lossless round trip (`crates/ols-io/src/olsxml.rs`): objects are elements, plain values attributes named like the JSON keys, points `x`/`y`/`z` attributes | [OLS XML schema](../schema/ols-line.md) |
 | Project file `*.ols` | SQLite (ADR-0004) | project lines, operation log, users, libraries, point clouds, surfaces, versions | [Project files](../user-guide/project.md) |
 | Libraries | TOML directories | see above | — |
-| Plugin settings `settings.toml` (in the user's plugin folder, OLS CAD's data folder `plugins/`) | TOML, `ols_plugins::PluginSettings` (unknown fields refused) | `folders` (plugin folders used in place), `disabled` (plugin names turned off); read and written by `ols-cad` and `ols-structure` alike | [Writing plugins](plugins.md#where-plugins-are-found-and-the-shared-settings) |
+| Plugin settings `settings.toml` (in the user's plugin folder, the line application's data folder `plugins/` — storage id "OLS CAD", kept from before OpenOHL) | TOML, `ols_plugins::PluginSettings` (unknown fields refused) | `folders` (plugin folders used in place), `disabled` (plugin names turned off); read and written by `ohl-design` and `ohl-structure` alike | [Writing plugins](plugins.md#where-plugins-are-found-and-the-shared-settings) |
 
 ### Project file tables (`crates/ols-session`)
 
@@ -1066,7 +1066,7 @@ The structure application reads a structure's libraries beside its file
 `.olsslc`, `PylonTemplates/`) or from the folders the line application
 passes (the working copy); files it imports there (File › Libraries) are
 stored into the project by the line application (`Change::Libraries`).
-See [OLS Structure](../user-guide/structure-app.md#libraries).
+See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
 ## What a plugin sees
 
@@ -1081,7 +1081,7 @@ above**.
 | World (extension point) | Receives | Returns |
 |---|---|---|
 | `plugin` | — | `plugin-info` (name, version, description) |
-| `io-plugin` (`io`) export | the **export model** JSON: `{"format": "ols-export-model", "version": 1, "crs", "line": <line file, structure types placed>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "system", "voltage_kv", "horizontal_tension_n", "max_tension_n", "sag_m", "points": [[x,y,z]…]}], "strings": [{"structure", "label", "by", "force_n", "swing_deg", "swing_across_deg", "swing_along_deg", "max_load_n", "max_swing_deg", "max_swing_across_deg", "max_swing_along_deg"}]}]}` (strings: each once, as solved, with its limits — not checked by OLS CAD; `null`: not given), plus options | file bytes |
+| `io-plugin` (`io`) export | the **export model** JSON: `{"format": "ols-export-model", "version": 1, "crs", "line": <line file, structure types placed>, "cases": [{"name", "summary", "wires": [{"section", "span", "circuit", "phase", "color", "system", "voltage_kv", "horizontal_tension_n", "max_tension_n", "sag_m", "points": [[x,y,z]…]}], "strings": [{"structure", "label", "by", "force_n", "swing_deg", "swing_across_deg", "swing_along_deg", "max_load_n", "max_swing_deg", "max_swing_across_deg", "max_swing_along_deg"}]}]}` (strings: each once, as solved, with its limits — not checked by OpenOHL; `null`: not given), plus options | file bytes |
 | `io-plugin` import | file bytes, options (`into`: a line file to update) | a **line file** JSON, validated by the host like any line file |
 | `terrain-plugin` (`terrain`) | file bytes | surfaces: `name`, `points` (x, y, z flat, m), `triangles` (indices) |
 | `project-plugin` (`project`) | file bytes | `project { line: <line file JSON>, libraries: [{kind, name, text}], notes }`; `kind` as in `library_file` |

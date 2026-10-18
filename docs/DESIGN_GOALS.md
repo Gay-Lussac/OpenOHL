@@ -1,6 +1,6 @@
 # Design goals and core requirements
 
-OLS CAD aims to be **faster and more user-friendly** than existing overhead line design tools. This document records the requirements that every module must respect. Changes go through an ADR.
+OpenOHL aims to be **faster and more user-friendly** than existing overhead line design tools. This document records the requirements that every module must respect. Changes go through an ADR.
 
 ## 1. Performance first
 
@@ -23,7 +23,7 @@ OLS CAD aims to be **faster and more user-friendly** than existing overhead line
 
 ### Time budgets and exit clauses
 
-Nothing in OLS CAD may run forever or freeze the application. Every function that can take time must have an **estimated duration** and **exit clauses**, and when it stops early it must **say why**:
+Nothing in OpenOHL may run forever or freeze the application. Every function that can take time must have an **estimated duration** and **exit clauses**, and when it stops early it must **say why**:
 
 - **Iterative solvers** (catenary, change of state, FE, optimisation) always have a maximum iteration count *and* a convergence tolerance. Non-convergence returns an error with diagnostics (iterations done, last residual, inputs) — never an endless loop or a silently wrong result.
 - **Long-running tasks** (clearance runs, LiDAR processing, exports, spotting) have a time budget, can be cancelled by the user at any time, and report progress.

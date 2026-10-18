@@ -1,10 +1,10 @@
-# Contributing to OLS CAD
+# Contributing to OpenOHL
 
 Thanks for your interest! The project is pre-alpha — the most valuable contributions right now are validation cases with known reference results, reviews of the theory manual (`docs/theory/`), the [roadmap](ROADMAP.md) and the [architecture](docs/ARCHITECTURE.md), and reports from trying it on real lines.
 
 ## Clean-room policy (important)
 
-OLS CAD is an independent implementation. To protect the project:
+OpenOHL is an independent implementation. To protect the project:
 
 - **Do not** decompile, disassemble or reverse-engineer any commercial software, or copy its code, file layouts, documentation text or UI assets.
 - **Do not** contribute material covered by an NDA or a license agreement you are bound by.

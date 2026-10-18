@@ -2,8 +2,8 @@
 
 Structure types and insulator assemblies are stored **one per file**, so each can be reused, shared and versioned individually. In the desktop app the structure types are the **Structure library** (Structures menu): every structure the model uses, each imported or exported as a file:
 
-- `*.olss` — structure types ("OLS structure"), like PLS-CADD's structure files: a project keeps its pylons in a **`Structures`** folder next to its line or project file (used automatically by `ols line`); shared types can live in `libraries/structures/`,
-- `libraries/insulators/*.olsi` — insulator assemblies ("OLS insulator"), for detailed strings; simple pylons define their strings in the pylon file itself (below). OLS CAD ships three **examples** with typical values (a 220 kV I-string, tension string and V-string, ids `example-220-…`) to start from — check them against your assemblies' data sheets. Structure types belong to a project (its `Structures` folder); none are shipped.
+- `*.olss` — structure types ("OLS structure"), like PLS-CADD's structure files: a project keeps its pylons in a **`Structures`** folder next to its line or project file (used automatically by `ohl line`); shared types can live in `libraries/structures/`,
+- `libraries/insulators/*.olsi` — insulator assemblies ("OLS insulator"), for detailed strings; simple pylons define their strings in the pylon file itself (below). OpenOHL ships three **examples** with typical values (a 220 kV I-string, tension string and V-string, ids `example-220-…`) to start from — check them against your assemblies' data sheets. Structure types belong to a project (its `Structures` folder); none are shipped.
 
 Both are TOML with units on every quantity (`"12.5 m"`, `"1.4 kN"`), like [wire libraries](wire-library.md). Unknown fields are errors.
 
@@ -122,7 +122,7 @@ Checks that depend on the structure's shape — distances from the wires to the 
 
 ### Body generators, groups and symmetry
 
-Version 3 of the format (versions 1 and 2 are read as before; an older OLS CAD refuses a version 3 file as "newer") keeps what the [structure application](structure-app.md#the-body-tab) needs to build the body again:
+Version 3 of the format (versions 1 and 2 are read as before; an older OpenOHL refuses a version 3 file as "newer") keeps what the [structure application](structure-app.md#the-body-tab) needs to build the body again:
 
 ```toml
 version = 3
@@ -252,7 +252,7 @@ The structure application's **Body › Extensions** adds a piece by hand or buil
 
 ### Capacity
 
-The structure checks ([Structure usage](loads.md#structure-usage-capacity-checks)) read what a type can carry from its `[capacity]` — the values from its design (drawings, calculations, the manufacturer); OLS CAD ships none. Both methods are optional:
+The structure checks ([Structure usage](loads.md#structure-usage-capacity-checks)) read what a type can carry from its `[capacity]` — the values from its design (drawings, calculations, the manufacturer); OpenOHL ships none. Both methods are optional:
 
 ```toml
 # Method 1: allowable spans by line angle (interpolated linearly; a
@@ -372,7 +372,7 @@ listed in the window to look at; if the file would not read any more
 (a string to a wire point no longer there), nothing is written and the
 window says why.
 
-The library grows with files: the templates shipped with OLS CAD in
+The library grows with files: the templates shipped with OpenOHL in
 `libraries/pylon-templates`, and a project's own in its
 `Pylon templates` folder next to the line (one of the same id is used
 instead of the shipped one).
@@ -461,7 +461,7 @@ weight = "1.4 kN"            # total weight (default 0)
 axial_stiffness = "50e6 N"   # per string / leg (default 5e7 N)
 wind_area = "0.6 m²"         # projected area for wind (default 0)
 # half_width = "3 m"         # v_string only: centre to each leg attachment
-# version 2: limits, not checked by OLS CAD (see String limits)
+# version 2: limits, not checked by OpenOHL (see String limits)
 # max_load = "120 kN"        # the tension it is rated for (v_string: each leg's)
 # max_swing = "60 deg"       # from straight down, any direction
 # max_swing_across = "55 deg"
@@ -476,7 +476,7 @@ wind_area = "0.6 m²"         # projected area for wind (default 0)
 
 ### String limits (not checked)
 
-A string may carry **limits that OLS CAD does not check**: kept with the string, shown and edited, but nothing is coloured or flagged by them — a plugin or a report that needs them compares them with the solved forces and swings. Each is optional; absent means *not given* (not zero, not unlimited):
+A string may carry **limits that OpenOHL does not check**: kept with the string, shown and edited, but nothing is coloured or flagged by them — a plugin or a report that needs them compares them with the solved forces and swings. Each is optional; absent means *not given* (not zero, not unlimited):
 
 | Key | Unit | Meaning |
 |---|---|---|
@@ -487,7 +487,7 @@ A string may carry **limits that OLS CAD does not check**: kept with the string,
 
 Angles from 0 to 180°, a load above 0; other values and unknown keys are refused. They go on an **insulator assembly** (`.olsi`, version 2) as defaults and on a **string** (`[[string]]` of a structure type, version 4; a line's own string, line file version 6): a string naming an assembly takes each limit the assembly gives where the string gives none of its own — the string's own value wins. The compression a string may take is not one of them: that is `compression`, which the solve uses (a string with it acts both ways and is flagged beyond it).
 
-The swings they compare with are those of the string as solved, from its top to its wire point: from straight down, and the angles of its projections on the planes across and along the line, positive to the right and ahead (`ols_line::swing`). OLS CAD writes a file's newer version only when it holds limits (an `.olsi` without any stays version 1), so an older program still reads the rest.
+The swings they compare with are those of the string as solved, from its top to its wire point: from straight down, and the angles of its projections on the planes across and along the line, positive to the right and ahead (`ols_line::swing`). OpenOHL writes a file's newer version only when it holds limits (an `.olsi` without any stays version 1), so an older program still reads the rest.
 
 ### Library labels: every string in the library
 
@@ -504,7 +504,7 @@ A structure in a [line file](line-file.md) references a type instead of listing 
   "orientation_deg": -31.5, "extension": "+3" }
 ```
 
-`orientation_deg` is the direction of the type's local x axis (right of the line), degrees counter-clockwise from east. `position` is the centre on the ground: the type stands there with its feet on the ground, or `height_adjust` metres above it (e.g. `0.3` for foundations standing out of the ground; negative: sunk). When solving, OLS CAD places the type (`--structures`, `--insulators` library directories), keeps the structure's own points, strings and wire points as **overrides** (the same label; a wire point with a set replaces the type's with that set and what moves with it), leaves out those in `omit` / `omit_sets`, and aims every strain string at its neighbouring point along the section.
+`orientation_deg` is the direction of the type's local x axis (right of the line), degrees counter-clockwise from east. `position` is the centre on the ground: the type stands there with its feet on the ground, or `height_adjust` metres above it (e.g. `0.3` for foundations standing out of the ground; negative: sunk). When solving, OpenOHL places the type (`--structures`, `--insulators` library directories), keeps the structure's own points, strings and wire points as **overrides** (the same label; a wire point with a set replaces the type's with that set and what moves with it), leaves out those in `omit` / `omit_sets`, and aims every strain string at its neighbouring point along the section.
 
 **Strings given as geometry vs library assemblies**: a string with a library `insulator` is modelled as a free member (it needs its weight); a strain string given only as geometry (e.g. imported from another program) gets the weight that keeps its clamp where the data puts it — imported clamp positions already are the source's equilibrium.
 

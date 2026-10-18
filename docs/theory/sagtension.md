@@ -30,7 +30,7 @@ The length mismatch decreases strictly with \\( H \\): unique solution, found by
 
 ### Thermal strain: two forms in use
 
-OLS CAD combines thermal and elastic strain in two ways, depending on the calculation. Both are standard, they agree to first order, and the difference is small — but it is there, and it is stated here so results can be traced.
+OpenOHL combines thermal and elastic strain in two ways, depending on the calculation. Both are standard, they agree to first order, and the difference is small — but it is there, and it is stated here so results can be traced.
 
 | Form | Formula | Used by |
 |---|---|---|
@@ -45,7 +45,7 @@ OLS CAD combines thermal and elastic strain in two ways, depending on the calcul
 
 ## Tension sections
 
-Suspension insulators equalise the horizontal tension along a section. OLS CAD solves the section exactly: one \\( H \\) for all spans, total unstressed length conserved:
+Suspension insulators equalise the horizontal tension along a section. OpenOHL solves the section exactly: one \\( H \\) for all spans, total unstressed length conserved:
 
 \\[ \sum_i \frac{L_i(H)}{1 + \bar T_i(H)/EA} = L_0\\, e^{\alpha (t - t_0)} \\]
 
@@ -87,7 +87,7 @@ A section keeps one unstressed length (zero strain, curves' reference temperatur
 
 **Final condition.** The cable is strung on its initial curve. The permanent set *after load* is computed from the heaviest load case on the initial curve, the permanent set *after creep* from the creep case on the creep curve; the final state is the one leaving the cable longer, elastic along the final modulus (and back onto the initial curve if loaded beyond). "Longer" is compared at a working tension (the creep case's), and the permanent stretch passed to the FE model is measured at the stringing tension — not at zero tension, where outer strands that take no compression are slack and only the core's set would count (about half the stretch of the synthetic test cable). At the governing heaviest case, final and initial tensions are therefore equal — a consistency check used in the validation.
 
-Curves are cable **data**: OLS CAD ships no manufacturer curves. The repository's non-linear validation cases use a **synthetic** cable (invented curves) against an independent re-implementation; comparison with published examples (CIGRE TB 324 etc.) is planned.
+Curves are cable **data**: OpenOHL ships no manufacturer curves. The repository's non-linear validation cases use a **synthetic** cable (invented curves) against an independent re-implementation; comparison with published examples (CIGRE TB 324 etc.) is planned.
 
 *Validation:* `nonlinear-001…002`.
 
@@ -95,4 +95,4 @@ The finite-element model follows the same curves: each span's unstressed length 
 
 ## Not yet included
 
-Tension criteria (`ols sagtension`) still use the linear-elastic cable; time-based creep models; published-case validation of the non-linear method. Results must be verified by a qualified engineer.
+Tension criteria (`ohl sagtension`) still use the linear-elastic cable; time-based creep models; published-case validation of the non-linear method. Results must be verified by a qualified engineer.

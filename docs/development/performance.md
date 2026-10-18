@@ -47,7 +47,7 @@ Picking (a click) stays exact: it uses the full model, not what the levels draw 
 
 ### What is drawn at which distance
 
-Display only: calculations, checks and picking always use the full model; nothing here changes a computed number (`ols validate benchmarks` and the CLI's wire, span, load and usage outputs are identical before and after these changes). The distances of each layer's levels are the Level of detail table's (per user; defaults in `lod::LodRow::default_for`), what each level keeps is fixed (`scene::structures`, `scene::wires`, constants `lod::DASH_SCALE` and `lod::BODY_DOT_PX`):
+Display only: calculations, checks and picking always use the full model; nothing here changes a computed number (`ohl validate benchmarks` and the CLI's wire, span, load and usage outputs are identical before and after these changes). The distances of each layer's levels are the Level of detail table's (per user; defaults in `lod::LodRow::default_for`), what each level keeps is fixed (`scene::structures`, `scene::wires`, constants `lod::DASH_SCALE` and `lod::BODY_DOT_PX`):
 
 | Layer | Level 0 (default to) | Level 1 (to) | Level 2 (to the render distance) |
 |---|---|---|---|
