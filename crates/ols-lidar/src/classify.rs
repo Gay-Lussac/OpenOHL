@@ -314,7 +314,7 @@ pub fn write_las(
     builder.point_format.is_compressed = path
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("laz"));
-    builder.generating_software = format!("OLS CAD {}", env!("CARGO_PKG_VERSION"));
+    builder.generating_software = format!("OpenOHL {}", env!("CARGO_PKG_VERSION"));
     let offsets = [low(|p| p.x), low(|p| p.y), low(|p| p.z)];
     for (t, o) in [
         &mut builder.transforms.x,

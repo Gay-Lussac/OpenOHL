@@ -315,7 +315,7 @@ pub fn read_obj(text: &str, name: &str) -> Result<Mesh, TerrainError> {
 /// Writes a surface as OBJ (millimetres).
 pub fn write_obj(name: &str, t: &Terrain) -> String {
     use std::fmt::Write as _;
-    let mut out = format!("# OLS CAD surface {name}\no {name}\n");
+    let mut out = format!("# OpenOHL surface {name}\no {name}\n");
     for p in t.points() {
         let _ = writeln!(out, "v {:.3} {:.3} {:.3}", p[0], p[1], p[2]);
     }

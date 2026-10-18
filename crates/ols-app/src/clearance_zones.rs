@@ -11,14 +11,14 @@
 //! method and the distance beyond which LiDAR points are ignored. The
 //! rules are kept with the project, in a rule file of its clearance rules
 //! (`<model>.vertical-clearances.olsr`, `<model>.radial-clearances.olsr`;
-//! next to a line file), which `ols line --rules` reads too.
+//! next to a line file), which `ohl line --rules` reads too.
 //! **Load preset…** takes the rules of a design code's preset (kept in the
 //! project's rule files when the code generated, with a weather case file
 //! of the same name: the cases its rules name, added to the model's
 //! weather cases where missing).
 //! The check runs on its own thread: the wind positions are solved, the
 //! LiDAR points read again from the point cloud around the wires.
-//! `ols zones` runs the same check without the window
+//! `ohl zones` runs the same check without the window
 //! ([`ols_clearance::zone::run_zone_check`]).
 
 use std::path::{Path, PathBuf};
@@ -719,7 +719,7 @@ impl ZoneWindow {
             }
             if ui
                 .button("Export…")
-                .on_hover_text("The rules as a rule file (.olsr), for ols line --rules too")
+                .on_hover_text("The rules as a rule file (.olsr), for ohl line --rules too")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
                     .add_filter(

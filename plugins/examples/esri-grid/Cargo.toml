@@ -1,6 +1,6 @@
 [package]
 name = "esri-grid"
-description = "Example OLS CAD terrain plugin: ESRI ASCII grid (.asc) elevation models as surfaces"
+description = "Example OpenOHL terrain plugin: ESRI ASCII grid (.asc) elevation models as surfaces"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

@@ -1,6 +1,6 @@
 [package]
 name = "ols-thermal"
-description = "OLS CAD thermal rating of conductors: IEEE 738, CIGRE TB 601 / TB 207, clearance-limited temperature"
+description = "OpenOHL thermal rating of conductors: IEEE 738, CIGRE TB 601 / TB 207, clearance-limited temperature"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

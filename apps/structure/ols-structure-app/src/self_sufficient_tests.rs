@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OLS Structure on its own (egui_kittest): the start page, a new
+//! OHL-Structure on its own (egui_kittest): the start page, a new
 //! structure, File › Libraries and the Libraries panel, the plugin manager
 //! with the settings shared with the line application, a design code's
 //! load cases.

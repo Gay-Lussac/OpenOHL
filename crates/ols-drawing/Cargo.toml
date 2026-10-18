@@ -1,6 +1,6 @@
 [package]
 name = "ols-drawing"
-description = "OLS CAD plan and profile drawings per route (SVG, DXF, PDF, PNG, CSV, XML)"
+description = "OpenOHL plan and profile drawings per route (SVG, DXF, PDF, PNG, CSV, XML)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

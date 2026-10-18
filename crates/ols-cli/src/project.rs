@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols project …`: the project file (`.ols`) through the session.
+//! `ohl project …`: the project file (`.ols`) through the session.
 
 use std::path::{Path, PathBuf};
 
@@ -49,7 +49,7 @@ pub enum ProjectCommand {
         #[arg(long)]
         clip_in: bool,
     },
-    /// Read a file of any line format (see ols formats: structure points
+    /// Read a file of any line format (see ohl formats: structure points
     /// from CSV, GeoJSON or shapefiles, LandXML, OLS XML…) into a project
     /// file: a new project gets the line, one holding a line gets it
     /// updated (structures moved or added, the route) — one logged command.
@@ -167,7 +167,7 @@ pub enum ProjectCommand {
         /// Area XMIN,YMIN,XMAX,YMAX (m, project coordinates).
         #[arg(long, allow_hyphen_values = true, conflicts_with = "tile")]
         area: Option<String>,
-        /// Or a tile LEVEL/X/Y (as listed by `ols project tiles`).
+        /// Or a tile LEVEL/X/Y (as listed by `ohl project tiles`).
         #[arg(long, allow_hyphen_values = true)]
         tile: Option<String>,
     },
@@ -516,7 +516,7 @@ pub struct GivenLibraries<'a> {
     pub sections: Option<&'a Path>,
 }
 
-/// The libraries of `ols line` and `ols zones`: for a project file, those
+/// The libraries of `ohl line` and `ohl zones`: for a project file, those
 /// it keeps with its current line (as the desktop application reads
 /// them), written to a working folder that is removed when this is
 /// dropped; a library given on the command line wins, and a kind the
@@ -744,7 +744,7 @@ pub fn load_line(path: &Path) -> Result<ols_line::Line, String> {
     }
 }
 
-/// The structure type folder of `ols line` and `ols zones`: given, else
+/// The structure type folder of `ohl line` and `ohl zones`: given, else
 /// the `Structures` folder next to the line or project file.
 pub fn structures_dir(file: &Path, given: Option<&Path>) -> PathBuf {
     match given {
@@ -784,7 +784,7 @@ fn kind_name(k: Kind) -> &'static str {
     k.as_str()
 }
 
-/// `ols project tiles`.
+/// `ohl project tiles`.
 fn tiles(path: &Path, level: i8) -> Result<(), String> {
     use ols_core::grid::{Bounds, Grid, Tile};
     use std::collections::BTreeMap;
@@ -888,7 +888,7 @@ fn tiles(path: &Path, level: i8) -> Result<(), String> {
     Ok(())
 }
 
-/// `ols project query`.
+/// `ohl project query`.
 fn query(path: &Path, area: Option<&str>, tile: Option<&str>) -> Result<(), String> {
     use ols_core::grid::{Bounds, Tile};
     let s = open(path)?;

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols thermal`: thermal ratings of a conductor (ampacity, temperature,
+//! `ohl thermal`: thermal ratings of a conductor (ampacity, temperature,
 //! transient) and the clearance-limited temperature of a line.
 
 use std::fmt::Write as _;
@@ -27,7 +27,7 @@ pub enum ThermalCommand {
     ClearanceLimit(Box<LimitArgs>),
 }
 
-/// Arguments of `ols thermal ampacity`.
+/// Arguments of `ohl thermal ampacity`.
 #[derive(Args)]
 pub struct AmpacityArgs {
     /// Wire library: .olsw file or directory (default: the shipped
@@ -81,7 +81,7 @@ pub struct AmpacityArgs {
     csv: Option<PathBuf>,
 }
 
-/// Arguments of `ols thermal clearance-limit`.
+/// Arguments of `ohl thermal clearance-limit`.
 #[derive(Args)]
 pub struct LimitArgs {
     /// Line file (.ols.json) or project file (.ols).

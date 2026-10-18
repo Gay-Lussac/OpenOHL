@@ -1,6 +1,6 @@
 [package]
 name = "ols-code-common"
-description = "Shared by the OLS CAD design-code plugins: parameter files, weather and load case files"
+description = "Shared by the OpenOHL design-code plugins: parameter files, weather and load case files"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

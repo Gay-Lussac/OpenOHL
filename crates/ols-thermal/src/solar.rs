@@ -48,7 +48,7 @@ impl Atmosphere {
     }
 
     /// CIGRE clearness ratio \\( N_s \\) assumed for this atmosphere: 1.0
-    /// clear, 0.8 industrial (an assumption of OLS CAD; give
+    /// clear, 0.8 industrial (an assumption of OpenOHL; give
     /// `clearness_ratio` to choose).
     pub fn clearness_ratio(self) -> f64 {
         match self {

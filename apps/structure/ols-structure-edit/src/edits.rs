@@ -572,7 +572,7 @@ pub enum StringChange {
     /// What it is, in words.
     Description(String),
     /// The tension it is rated for, N (none: not given; its insulator's
-    /// then). Kept, not checked by OLS CAD.
+    /// then). Kept, not checked by OpenOHL.
     MaxLoad(Option<f64>),
     /// The swing from straight down it may take, any direction, degrees
     /// (none: not given). Kept, not checked.
@@ -587,7 +587,7 @@ pub enum StringChange {
 pub const LIMITS_VERSION: i64 = 4;
 
 /// One of an insulator's limits as an edit field (kept, not checked by
-/// OLS CAD): what the tables of both applications show.
+/// OpenOHL): what the tables of both applications show.
 #[derive(Debug, Clone, Copy)]
 pub struct LimitField {
     /// Its short name (`load`, `swing`, `across`, `along`).

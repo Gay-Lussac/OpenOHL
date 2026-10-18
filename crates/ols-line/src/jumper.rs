@@ -429,7 +429,7 @@ pub struct JumperStringShape {
     pub top: Point,
     /// Its force on the whole bundle, N (0: slack).
     pub force: f64,
-    /// Its limits, not checked by OLS CAD (a structure's string: its own,
+    /// Its limits, not checked by OpenOHL (a structure's string: its own,
     /// else its insulator's; a `support` string: none).
     pub limits: crate::StringLimits,
     /// Its swing from its top to the clamp ([`crate::swing`]: in its

@@ -1,6 +1,6 @@
 [package]
 name = "nesc"
-description = "OLS CAD design-code plugin: NESC (ANSI C2) Rule 250 loadings"
+description = "OpenOHL design-code plugin: NESC (ANSI C2) Rule 250 loadings"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

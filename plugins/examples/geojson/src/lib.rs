@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Example OLS CAD file-format plugin (`io-plugin` world).
+//! Example OpenOHL file-format plugin (`io-plugin` world).
 //!
 //! - Export `geojson`: a FeatureCollection with a Point per structure and a
 //!   LineString per wire of every weather case, in the line's coordinate

@@ -25,7 +25,7 @@
 //! color = "#96805f"   # display colour (optional; else from the roles)
 //! ```
 //!
-//! Roles used by OLS CAD so far: `ground` (terrain surface). Suggested for
+//! Roles used by OpenOHL so far: `ground` (terrain surface). Suggested for
 //! clearance rules and future tools: `vegetation`, `building`, `water`,
 //! `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`,
 //! `shield_wire`, `load_object`, `other_line_structure`,

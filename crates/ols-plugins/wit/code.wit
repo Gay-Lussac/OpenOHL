@@ -1,10 +1,10 @@
-// OLS CAD design-code plugin interface (ADR-0003), part of package
+// OpenOHL design-code plugin interface (ADR-0003), part of package
 // ols:plugin (declared in plugin.wit).
 //
 // A design-code plugin turns the user's parameter file (TOML, every value
 // taken from the standard and its national annex by the user) into weather
 // cases and load cases, and may give presets of the clearance windows.
-// OLS CAD ships no code tables.
+// OpenOHL ships no code tables.
 
 /// Types of design-code plugins.
 interface code-types {
@@ -73,7 +73,7 @@ world code-plugin {
     export generate: func(parameters: string) -> result<generated, string>;
 }
 
-/// A check run by a plugin (extension point `check`): OLS CAD measures
+/// A check run by a plugin (extension point `check`): OpenOHL measures
 /// the line (the conductors, their pairs, stations along them: the
 /// geometry), the plugin holds the values and the rules and says what is
 /// required at each station. The first such check: the distance between
@@ -108,7 +108,7 @@ interface check {
 
     /// A check the plugin runs.
     record check-info {
-        /// Its id: what OLS CAD measures for it (`phase-distance`).
+        /// Its id: what OpenOHL measures for it (`phase-distance`).
         id: string,
         /// Title in the Checks menu.
         title: string,
@@ -128,7 +128,7 @@ interface check {
         circuit-columns: list<string>,
     }
 
-    /// A pair of conductors as OLS CAD measured it (`phase-distance`):
+    /// A pair of conductors as OpenOHL measured it (`phase-distance`):
     /// what the rules need besides the stations.
     record conductor-pair {
         /// In one electrical system (or towards an earth wire).

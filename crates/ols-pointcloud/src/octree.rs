@@ -665,7 +665,7 @@ impl LodReader for StoreLod {
             if self.stored_levels {
                 ""
             } else {
-                " (levels of detail not stored: run `ols pointcloud octree`)"
+                " (levels of detail not stored: run `ohl pointcloud octree`)"
             }
         )
     }

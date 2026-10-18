@@ -1,6 +1,6 @@
 [package]
 name = "ols-cables"
-description = "OLS CAD cable and conductor library and mechanical models"
+description = "OpenOHL cable and conductor library and mechanical models"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

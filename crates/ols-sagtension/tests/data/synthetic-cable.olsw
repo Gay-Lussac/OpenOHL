@@ -1,4 +1,4 @@
-# OLS CAD wire library (.olsw)
+# OpenOHL wire library (.olsw)
 format = "ols-wire"
 version = 1
 

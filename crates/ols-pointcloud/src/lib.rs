@@ -37,7 +37,7 @@
 //! Version 2 added `pointcloud_lod` (the levels of detail; `z1` the
 //! block's highest point). Version 1 files are read as they are — their
 //! levels are then picked from the whole blocks while reading — and get
-//! the table filled by [`Store::build_lod`] (`ols pointcloud octree`).
+//! the table filled by [`Store::build_lod`] (`ohl pointcloud octree`).
 
 pub mod codec;
 pub mod copc;
@@ -703,7 +703,7 @@ impl Store {
         builder.point_format.is_compressed = path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("laz"));
-        builder.generating_software = format!("OLS CAD {}", env!("CARGO_PKG_VERSION"));
+        builder.generating_software = format!("OpenOHL {}", env!("CARGO_PKG_VERSION"));
         for (k, t) in [
             &mut builder.transforms.x,
             &mut builder.transforms.y,

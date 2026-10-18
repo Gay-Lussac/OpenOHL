@@ -1,6 +1,6 @@
 [package]
 name = "ols-pointcloud"
-description = "OLS CAD point clouds in the project file: chunked, per-class, compressed blocks; point sources"
+description = "OpenOHL point clouds in the project file: chunked, per-class, compressed blocks; point sources"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

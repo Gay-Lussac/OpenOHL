@@ -550,15 +550,15 @@ impl LibraryKind {
     pub fn template(self, id: &str) -> String {
         match self {
             LibraryKind::Cables => format!(
-                "# OLS CAD wire library (.olsw)\nformat = \"ols-wire\"\nversion = 1\n\n{}",
+                "# OpenOHL wire library (.olsw)\nformat = \"ols-wire\"\nversion = 1\n\n{}",
                 self.item_template(id)
             ),
             LibraryKind::WeatherCases => format!(
-                "# OLS CAD weather cases (.olswc)\nformat = \"ols-weather-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
+                "# OpenOHL weather cases (.olswc)\nformat = \"ols-weather-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
                 self.item_template("everyday")
             ),
             LibraryKind::LoadCases => format!(
-                "# OLS CAD load cases (.olslc)\nformat = \"ols-load-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
+                "# OpenOHL load cases (.olslc)\nformat = \"ols-load-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
                 self.item_template("everyday")
             ),
             LibraryKind::Insulators => format!(

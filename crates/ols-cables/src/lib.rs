@@ -620,7 +620,7 @@ impl fmt::Display for CableError {
 
 impl std::error::Error for CableError {}
 
-/// File extension of OLS CAD wire libraries (`*.olsw`, "OLS wire").
+/// File extension of OpenOHL wire libraries (`*.olsw`, "OLS wire").
 ///
 /// The content is TOML. A dedicated extension (rather than reusing another
 /// program's, e.g. PLS-CADD's `.wir`) avoids confusing different formats.

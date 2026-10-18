@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols formats`, `ols import` and `ols line --export`.
+//! `ohl formats`, `ohl import` and `ohl line --export`.
 
 use std::path::{Path, PathBuf};
 
@@ -72,7 +72,7 @@ pub fn export(
             ),
         };
         let exporter = registry.exporter(&id).ok_or_else(|| {
-            format!("--export {spec}: no exporter for \"{id}\" (see ols formats)")
+            format!("--export {spec}: no exporter for \"{id}\" (see ohl formats)")
         })?;
         let started = std::time::Instant::now();
         let bytes = exporter
@@ -90,7 +90,7 @@ pub fn export(
     Ok(())
 }
 
-/// `ols import`.
+/// `ohl import`.
 pub fn import(
     file: &Path,
     format: Option<&str>,
@@ -102,7 +102,7 @@ pub fn import(
     let mut r = registry(plugins)?;
     let id = ols_io::format_of(file, format);
     let importer = r.importer(&id).ok_or_else(|| {
-        format!("no importer for \"{id}\" (see ols formats; choose with --format)")
+        format!("no importer for \"{id}\" (see ohl formats; choose with --format)")
     })?;
     let data = std::fs::read(file).map_err(|e| format!("{}: {e}", file.display()))?;
     let base = into

@@ -34,7 +34,7 @@
 //!   the tension it is rated for, `max_load`, and the swing angles it may
 //!   take, `max_swing_deg` from straight down in any direction,
 //!   `max_swing_across_deg` / `max_swing_along_deg` projected across /
-//!   along the line): absent, not given; given, OLS CAD keeps and shows
+//!   along the line): absent, not given; given, OpenOHL keeps and shows
 //!   them but checks nothing — a plugin or a report compares them with the
 //!   solved forces and angles ([`crate::solve::StringState::limits`],
 //!   [`swing`]). A string naming an insulator of the library takes the
@@ -133,7 +133,7 @@ pub struct InsulatorString {
     /// given one from its position.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub strain: bool,
-    /// The tension it is rated for, N (not checked by OLS CAD;
+    /// The tension it is rated for, N (not checked by OpenOHL;
     /// [`StringLimits`]). None: not given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_load: Option<f64>,
@@ -171,7 +171,7 @@ impl InsulatorString {
     }
 }
 
-/// The limits a string may carry that **OLS CAD does not check** (the
+/// The limits a string may carry that **OpenOHL does not check** (the
 /// owner's rule: optional, not checked when empty, available to a plugin
 /// or a report that checks them when given). Each absent: not given.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]

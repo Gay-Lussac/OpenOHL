@@ -1,6 +1,6 @@
 [package]
 name = "project-bundle"
-description = "Example OLS CAD project plugin: a JSON bundle of a line and its library files"
+description = "Example OpenOHL project plugin: a JSON bundle of a line and its library files"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

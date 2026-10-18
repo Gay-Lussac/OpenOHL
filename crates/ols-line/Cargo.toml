@@ -1,6 +1,6 @@
 [package]
 name = "ols-line"
-description = "OLS CAD line model: structures, attachments, wire sections; 3D solving"
+description = "OpenOHL line model: structures, attachments, wire sections; 3D solving"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

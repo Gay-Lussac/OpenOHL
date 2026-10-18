@@ -7,7 +7,7 @@
 //! A *validation case* is a set of inputs for one calculation, the reference
 //! results expected from it, a tolerance, and the source of the reference
 //! (standard, paper, textbook or hand calculation). Cases live as TOML files
-//! under `benchmarks/` and are run in CI by `ols validate`.
+//! under `benchmarks/` and are run in CI by `ohl validate`.
 //!
 //! ```toml
 //! [[case]]
@@ -70,7 +70,7 @@ impl Registry {
         Self::default()
     }
 
-    /// Registry with every calculation shipped with OLS CAD.
+    /// Registry with every calculation shipped with OpenOHL.
     pub fn with_builtin() -> Self {
         let mut registry = Self::new();
         builtin::register(&mut registry);
@@ -325,7 +325,7 @@ pub const DEFAULT_CASE_TIME_LIMIT: Duration = Duration::from_secs(10);
 /// The calculation runs on a worker thread. If it exceeds the limit the case
 /// is reported as [`Outcome::TimedOut`] and the runner moves on; the worker
 /// thread cannot be killed and is left behind, so a process with timed-out
-/// cases should exit once the report is written (as `ols validate` does).
+/// cases should exit once the report is written (as `ohl validate` does).
 pub fn run_case(registry: &Registry, loaded: LoadedCase) -> CaseResult {
     let case = &loaded.case;
     let limit = case

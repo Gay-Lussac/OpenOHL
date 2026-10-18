@@ -154,13 +154,13 @@ impl Step {
     pub fn file(&self, description: &str, name: &str, timestamp: &str, schema: &str) -> String {
         let mut out = format!(
             "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(({}),'2;1');\n\
-             FILE_NAME({},{},(''),(''),{},'OLS CAD','');\n\
+             FILE_NAME({},{},(''),(''),{},'OpenOHL','');\n\
              FILE_SCHEMA(('{schema}'));\nENDSEC;\nDATA;\n",
             string(description),
             string(name),
             string(timestamp),
             string(&format!(
-                "OLS CAD ols-structure-export {}",
+                "OpenOHL ols-structure-export {}",
                 env!("CARGO_PKG_VERSION")
             )),
         );

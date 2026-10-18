@@ -1,5 +1,5 @@
 # Pylon template: the face of the pylon (across and up, m), from which
-# OLS CAD builds a structure type of level 1 for suspension or strain.
+# OpenOHL builds a structure type of level 1 for suspension or strain.
 # Slots: a phase's set on a suspension type; strain types add 20 (back)
 # and 40 (ahead). Synthetic dimensions: change them in the builder.
 format = "ols-pylon-template"

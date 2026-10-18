@@ -1,6 +1,6 @@
 [package]
 name = "ols-render"
-description = "OLS CAD renderer: wgpu lines, points and surfaces with an orbit camera (ADR-0006)"
+description = "OpenOHL renderer: wgpu lines, points and surfaces with an orbit camera (ADR-0006)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

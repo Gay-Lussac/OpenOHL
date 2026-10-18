@@ -1,6 +1,6 @@
 [package]
 name = "ols-validation"
-description = "OLS CAD validation framework: reference cases, runner and reports"
+description = "OpenOHL validation framework: reference cases, runner and reports"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

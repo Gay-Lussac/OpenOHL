@@ -256,7 +256,7 @@ const INSULATORS: &[Column] = &[
         "max load",
         80.0,
         Yes,
-        "N, the tension it is rated for (a V: each leg's) — strings with this label take it unless they give their own; not checked by OLS CAD (for a plugin or a report); empty: not given",
+        "N, the tension it is rated for (a V: each leg's) — strings with this label take it unless they give their own; not checked by OpenOHL (for a plugin or a report); empty: not given",
     ),
     (
         "max swing",
@@ -331,7 +331,7 @@ const STRINGS: &[Column] = &[
         "max load N",
         85.0,
         Yes,
-        "the tension it is rated for — kept, not checked by OLS CAD (for a plugin or a report); empty: not given. Shown dimmed: its insulator's",
+        "the tension it is rated for — kept, not checked by OpenOHL (for a plugin or a report); empty: not given. Shown dimmed: its insulator's",
     ),
     (
         "max swing °",

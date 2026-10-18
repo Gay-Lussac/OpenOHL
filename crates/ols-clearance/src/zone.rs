@@ -19,7 +19,7 @@
 //! cases, the distance to keep and the targets: LiDAR classes, the ground
 //! surface. A window's rules are kept as a rule file (`.olsr`,
 //! [`to_rule_set`], [`from_rule_set`]): one `[[rule]]` per row and target,
-//! read by `ols line --rules` too.
+//! read by `ohl line --rules` too.
 //!
 //! **Wind.** A case with wind is solved from each side chosen
 //! ([`WindSteps::sides`]). With the wind stepped, it is also solved at
@@ -28,7 +28,7 @@
 //! rises, and each span's clearance is the lowest over all of them
 //! ([`wind_states`], [`solve_states`], [`check_zones`]).
 //!
-//! The whole check, as the windows and `ols zones` run it: [`run_zone_check`].
+//! The whole check, as the windows and `ohl zones` run it: [`run_zone_check`].
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -256,7 +256,7 @@ pub fn from_rule_set(
             }
             Target::SameLine { .. } | Target::OtherLines => {
                 out.notes.push(note(
-                    "left out: a rule between wires (Clearances tab, ols line)",
+                    "left out: a rule between wires (Clearances tab, ohl line)",
                 ));
                 continue;
             }

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols zones`: the check of the desktop application's **Vertical
+//! `ohl zones`: the check of the desktop application's **Vertical
 //! clearances…** and **Radial clearances…** windows without the window
 //! ([`ols_clearance::zone::run_zone_check`]): the zone, the rules, the
 //! wind and what is solved come from a rule file (`.olsr`, its `[check]`
@@ -33,7 +33,7 @@ const CHECK_SURFACE_SETTING: &str = "app.check_surface";
 /// The project setting of earlier builds with the active surface (JSON).
 const SURFACES_SETTING: &str = "app.surfaces";
 
-/// Arguments of `ols zones`.
+/// Arguments of `ohl zones`.
 #[derive(clap::Args, Clone)]
 pub struct ZonesArgs {
     /// Line file (.ols.json) or project file (.ols).
@@ -112,7 +112,7 @@ pub struct ZonesArgs {
     pub time_limit: f64,
 }
 
-/// `ols zones`: 0 with no violation, 1 with violations, 2 on an error.
+/// `ohl zones`: 0 with no violation, 1 with violations, 2 on an error.
 pub fn command(args: &ZonesArgs) -> ExitCode {
     match run(args) {
         Ok(r) if r.violations() == 0 => ExitCode::SUCCESS,

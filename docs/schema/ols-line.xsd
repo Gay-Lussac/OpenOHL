@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  OLS XML: the line model of OLS CAD (the content of a line file, .ols.json)
+  OLS XML: the line model of OpenOHL (the content of a line file, .ols.json)
   as XML. See ols-line.md in this folder. The namespace keeps its 1 (the
   schema's own identity); a document's `version` attribute is the line file
   version (now 6; older documents are read and converted).
@@ -333,7 +333,7 @@
                     meet at one: where their lengths meet, below their
                     tops). Without a length (files written before): the
                     distance to its wire point as given. Version 6: optional
-                    limits OLS CAD does not check (absent: not given; for
+                    limits OpenOHL does not check (absent: not given; for
                     plugins and reports) — max_load, the tension it is rated
                     for, N; max_swing_deg, the swing from straight down in
                     any direction; max_swing_across_deg / max_swing_along_deg,

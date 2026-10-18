@@ -1,4 +1,4 @@
-# OLS CAD structure model (.olsfe): the finite-element model of the
+# OpenOHL structure model (.olsfe): the finite-element model of the
 # synthetic type-02 pylon on its own, as a type names it with
 # `model = "type-02-model.olsfe"` (type-02.olss holds the same tables
 # itself, a full design). Invented values, NOT a real design.
@@ -1193,7 +1193,7 @@ id = "m178"
 nodes = ["A2", "L9D"]
 section = "arm"
 
-# The model's own load case (ols structures fe without --loads): wires
+# The model's own load case (ohl structures fe without --loads): wires
 # and wind at both attachments, structure axes (z up), invented values.
 [[load]]
 node = "A1"

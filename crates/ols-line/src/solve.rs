@@ -141,7 +141,7 @@ pub struct StringState {
     pub slack: bool,
     /// In more compression than it may take.
     pub over: bool,
-    /// Its limits, not checked by OLS CAD (its own, else its insulator's;
+    /// Its limits, not checked by OpenOHL (its own, else its insulator's;
     /// absent: not given): for a plugin or a report to compare with
     /// `force` and `swing`.
     pub limits: crate::StringLimits,

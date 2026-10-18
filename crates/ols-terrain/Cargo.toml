@@ -1,6 +1,6 @@
 [package]
 name = "ols-terrain"
-description = "OLS CAD terrain: survey point import, TIN, ground heights and profiles"
+description = "OpenOHL terrain: survey point import, TIN, ground heights and profiles"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

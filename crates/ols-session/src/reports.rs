@@ -328,7 +328,7 @@ mod tests {
             title: "A check".into(),
             time: s.now().unwrap(),
             user: "ben".into(),
-            app: "OLS CAD test".into(),
+            app: "OpenOHL test".into(),
             plugin: None,
             status: ReportStatus::Draft,
             note: String::new(),

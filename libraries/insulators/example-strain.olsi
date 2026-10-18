@@ -1,4 +1,4 @@
-# OLS CAD insulator assembly (.olsi): an EXAMPLE to start from.
+# OpenOHL insulator assembly (.olsi): an EXAMPLE to start from.
 # Typical values for a 220 kV single tension string, not manufacturer
 # data: check every value against the data sheet of the assembly you use.
 format = "ols-insulator"
@@ -6,7 +6,7 @@ version = 1
 id = "example-220-strain"
 name = "Example 220 kV tension string (typical values)"
 kind = "strain"
-source = "OLS CAD example, typical values"
+source = "OpenOHL example, typical values"
 length = "3.2 m"
 weight = "900 N"
 axial_stiffness = "5e7 N"

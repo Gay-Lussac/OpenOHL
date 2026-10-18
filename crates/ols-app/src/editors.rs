@@ -2911,11 +2911,11 @@ pub(crate) fn optional_value(
     changed
 }
 
-/// A string's limits (kept, shown, not checked by OLS CAD): the tension
+/// A string's limits (kept, shown, not checked by OpenOHL): the tension
 /// it is rated for and the swings it may take, each optional. Whether one
 /// changed.
 pub(crate) fn limits_ui(ui: &mut egui::Ui, l: &mut ols_line::StringLimits) -> bool {
-    const NOTE: &str = "Not checked by OLS CAD: kept with the string for a plugin or a report \
+    const NOTE: &str = "Not checked by OpenOHL: kept with the string for a plugin or a report \
                         that checks it. Unticked: not given (its insulator's, if the library \
                         entry gives one)";
     let mut changed = false;

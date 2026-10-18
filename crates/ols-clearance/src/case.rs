@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The checks of one weather case, as `ols line` and the application run
+//! The checks of one weather case, as `ohl line` and the application run
 //! them: every rule that applies to the case, its parts of the wires
 //! (exclusion zones) against the ground, points of its classes, the
 //! line's other wires or other lines' wires. Reporting is left to the

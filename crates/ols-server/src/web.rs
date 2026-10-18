@@ -610,7 +610,7 @@ impl Drop for Scenes {
 }
 
 /// Why a web client's edit is refused.
-pub const VIEW_ONLY: &str = "the web client only views the project (a viewer): edit in OLS CAD";
+pub const VIEW_ONLY: &str = "the web client only views the project (a viewer): edit in OHL-Design";
 
 /// Points of a span sent to web clients at most (its ends kept): a sag
 /// curve drawn smooth, a light message for long lines.

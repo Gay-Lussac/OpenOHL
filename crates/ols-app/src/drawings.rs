@@ -5,7 +5,7 @@
 //! File › Export drawings: plan and profile sheets and profile exports of
 //! the routes (SVG, DXF, PDF, PNG, CSV, XML) at chosen scales and station
 //! range, written in the background (a progress bar; the views stay
-//! usable). The same files as `ols drawing`.
+//! usable). The same files as `ohl drawing`.
 
 use std::path::PathBuf;
 use std::sync::Arc;

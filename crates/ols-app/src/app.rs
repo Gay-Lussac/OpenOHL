@@ -451,7 +451,7 @@ enum State {
     Structure(Box<crate::structure_desk::StructureDesk>),
 }
 
-/// The OLS CAD application.
+/// The OHL-Design application (the line application of OpenOHL).
 pub struct App {
     sources: Sources,
     /// Navigation scheme to start with.
@@ -600,7 +600,10 @@ impl App {
                 .file
                 .file_name()
                 .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("OLS CAD — {name}")));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+                "{} — {name}",
+                crate::APP_NAME
+            )));
             self.sources = sources;
             return;
         }
@@ -620,7 +623,10 @@ impl App {
             .file
             .file_name()
             .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("{name} — OLS CAD")));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+            "{} — {name}",
+            crate::APP_NAME
+        )));
         self.sources = sources;
         self.state = State::Loading {
             rx,
@@ -735,7 +741,7 @@ impl App {
                         ctx,
                     ),
                     None => {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Title("OLS CAD".into()));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::APP_NAME.into()));
                     }
                 }
             }
@@ -753,7 +759,7 @@ impl App {
             }
             FileAction::Close => {
                 self.close();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Title("OLS CAD".into()));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::APP_NAME.into()));
             }
             FileAction::Quit => {
                 self.close();
@@ -4911,7 +4917,7 @@ fn defaults_window(ctx: &egui::Context, r: &mut Ready) {
                 });
             if ui
                 .add_enabled(!draft.is_default(), egui::Button::new("Program's values"))
-                .on_hover_text("Back to the values OLS CAD starts with")
+                .on_hover_text("Back to the values OHL-Design starts with")
                 .clicked()
             {
                 draft = ols_line::Defaults::default();
@@ -7165,11 +7171,13 @@ fn menus(
         }
     });
     ui.menu_button("Help", |ui| {
-        ui.label(format!("OLS CAD {}", env!("CARGO_PKG_VERSION")));
+        ui.label(format!("{} {}", crate::APP_NAME, env!("CARGO_PKG_VERSION")));
         ui.label(
-            egui::RichText::new("Open Line System Computer Assisted Design")
-                .small()
-                .weak(),
+            egui::RichText::new(
+                "The line application of OpenOHL: sag-tension, clearances, line layout",
+            )
+            .small()
+            .weak(),
         );
         ui.menu_button("Controls", |ui| {
             for page in ControlsPage::ALL {
@@ -7808,7 +7816,7 @@ impl eframe::App for App {
 
 /// The checks of the plugins as menus: each in its submenu (`menu`, outer
 /// first), as its plugin gives it; the id of the one clicked. A check this
-/// OLS CAD does not measure for is shown, not usable.
+/// OpenOHL does not measure for is shown, not usable.
 fn plugin_checks_menu(
     ui: &mut egui::Ui,
     checks: &[(Vec<String>, ols_io::checks::PluginCheck)],
@@ -7847,7 +7855,7 @@ fn plugin_checks_menu(
             .add_enabled(known, egui::Button::new(format!("{}…", c.info.title)))
             .on_hover_text(format!("{help} ({})", c.plugin))
             .on_disabled_hover_text(format!(
-                "{}: this version of OLS CAD does not measure for \"{}\"",
+                "{}: this version of OpenOHL does not measure for \"{}\"",
                 c.plugin, c.info.id
             ));
         if b.clicked() {

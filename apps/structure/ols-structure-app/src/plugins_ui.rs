@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Plugins in OLS Structure (Plugins › Plugin manager), with `ols-plugins`
+//! Plugins in OHL-Structure (Plugins › Plugin manager), with `ols-plugins`
 //! as in the line application: the plugins installed for the user and
 //! those of the folders added, each with its version, tier and extension
 //! points, what it does here (or why not, greyed), a tick to turn it off,
@@ -54,7 +54,7 @@ impl Listed {
     }
 }
 
-/// What extension point `point` does in OLS Structure: `Ok` what it gives,
+/// What extension point `point` does in OHL-Structure: `Ok` what it gives,
 /// `Err` why it does not apply (shown greyed).
 pub fn applies(point: &str) -> Result<&'static str, &'static str> {
     match point {
@@ -196,9 +196,10 @@ pub struct PluginsState {
 
 impl PluginsState {
     /// The user's plugin directory, shared with the line application:
-    /// `plugins` in OLS CAD's data directory.
+    /// `plugins` in the line application's data directory (its storage
+    /// id from before OpenOHL, [`crate::LINE_STORAGE_ID`]).
     pub fn default_user_dir() -> Option<PathBuf> {
-        eframe::storage_dir("OLS CAD").map(|d| d.join("plugins"))
+        eframe::storage_dir(crate::LINE_STORAGE_ID).map(|d| d.join("plugins"))
     }
 
     /// The plugins of `user_dir` and of the folders of the shared settings.
@@ -453,7 +454,7 @@ impl StructureApp {
         if ui
             .button("Plugin manager…")
             .on_hover_text(
-                "The plugins (shared with OLS CAD): folders, on and off, what each does here",
+                "The plugins (shared with OHL-Design): folders, on and off, what each does here",
             )
             .clicked()
         {
@@ -558,7 +559,7 @@ impl StructureApp {
                     egui::RichText::new(format!(
                         "Plugins (WebAssembly, sandboxed) add design codes, checks and file \
                          formats. Interface version {}.{}. Installed plugins are kept in {}; \
-                         the folders and what is turned off are shared with OLS CAD ({}).",
+                         the folders and what is turned off are shared with OHL-Design ({}).",
                         ols_plugins::SDK_VERSION.0,
                         ols_plugins::SDK_VERSION.1,
                         p.user_dir
@@ -593,7 +594,7 @@ impl StructureApp {
                         .button("Add a plugin folder…")
                         .on_hover_text(
                             "Use the plugins of a folder where they are (e.g. the code plugins \
-                             of the OLS CAD folder, plugins/codes)",
+                             of the OpenOHL folder, plugins/codes)",
                         )
                         .clicked()
                         && let Some(dir) = rfd::FileDialog::new().pick_folder()
@@ -638,7 +639,7 @@ impl StructureApp {
                                     "version",
                                     "tier",
                                     "extension points",
-                                    "in OLS Structure",
+                                    "in OHL-Structure",
                                     "status",
                                     "",
                                 ] {

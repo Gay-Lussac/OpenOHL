@@ -3,13 +3,13 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! The user's plugin settings, shared by the applications (the line
-//! application `ols-cad` and OLS Structure): the plugin folders added and
+//! application `ohl-design` and OHL-Structure): the plugin folders added and
 //! the plugins turned off, in [`SETTINGS_FILE`] in the user's plugin
 //! directory (beside the plugins installed there). A plugin added or turned
 //! off in one application is so in the other.
 //!
 //! ```toml
-//! # OLS CAD plugin settings (written by the applications)
+//! # OpenOHL plugin settings (written by the applications)
 //! folders = ["/Users/me/plugins-in-progress"]
 //! disabled = ["geojson"]
 //! ```
@@ -62,7 +62,7 @@ impl PluginSettings {
             std::fs::create_dir_all(dir).map_err(at)?;
         }
         let body = toml::to_string(self).map_err(|e| e.to_string())?;
-        let text = format!("# OLS CAD plugin settings (written by the applications)\n{body}");
+        let text = format!("# OpenOHL plugin settings (written by the applications)\n{body}");
         let tmp = path.with_extension(format!("toml.{}.tmp", std::process::id()));
         std::fs::write(&tmp, text).map_err(at)?;
         std::fs::rename(&tmp, path).map_err(|e| {

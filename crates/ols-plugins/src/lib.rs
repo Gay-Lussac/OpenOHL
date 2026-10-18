@@ -1115,7 +1115,7 @@ impl WasmHost {
     /// Loads the plugin in `dir` in the world of each extension point its
     /// manifest lists (`design-code`, `io`, `terrain`, `project`, `check`;
     /// none of these: the minimal `plugin` world) and says what it
-    /// describes: `ols plugin info`.
+    /// describes: `ohl plugin info`.
     pub fn describe_any(&self, dir: &Path) -> Result<Description, PluginError> {
         let manifest = Manifest::load(dir)?;
         let has = |p: &str| manifest.plugin.extension_points.iter().any(|e| e == p);

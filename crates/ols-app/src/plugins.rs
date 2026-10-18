@@ -345,7 +345,7 @@ pub struct FormatWindow {
 }
 
 /// The plugin manager's state (remembered: the folders added, the plugins
-/// turned off — in the settings file shared with OLS Structure,
+/// turned off — in the settings file shared with OHL-Structure,
 /// [`ols_plugins::PluginSettings`], in the user's plugin directory).
 #[derive(Default)]
 pub struct Plugins {
@@ -395,11 +395,11 @@ impl Plugins {
     /// The user's plugin directory: `plugins` in the application's data
     /// directory.
     pub fn default_user_dir() -> Option<PathBuf> {
-        eframe::storage_dir("OLS CAD").map(|d| d.join("plugins"))
+        eframe::storage_dir(crate::STORAGE_ID).map(|d| d.join("plugins"))
     }
 
     /// As remembered, listing `user_dir` and the folders added: the
-    /// settings shared with OLS Structure (`settings.toml` in `user_dir`);
+    /// settings shared with OHL-Structure (`settings.toml` in `user_dir`);
     /// before that file exists, what this application kept itself (its
     /// storage, as earlier versions did).
     pub fn load(storage: Option<&dyn eframe::Storage>, user_dir: Option<PathBuf>) -> Self {
@@ -438,7 +438,7 @@ impl Plugins {
         p
     }
 
-    /// Writes the shared settings file now (OLS Structure reads it), when
+    /// Writes the shared settings file now (OHL-Structure reads it), when
     /// there is one.
     pub fn persist(&self) -> Result<(), String> {
         let Some(path) = &self.settings_path else {
@@ -451,7 +451,7 @@ impl Plugins {
         .save(path)
     }
 
-    /// Reads the shared settings file again (changed in OLS Structure).
+    /// Reads the shared settings file again (changed in OHL-Structure).
     pub fn reload_settings(&mut self) {
         let Some(path) = &self.settings_path else {
             return;
@@ -728,7 +728,7 @@ impl Plugins {
                         .button("Reload")
                         .on_hover_text(
                             "Look for plugins again (and read the plugin settings, shared with \
-                             OLS Structure, again)",
+                             OHL-Structure, again)",
                         )
                         .clicked()
                     {
@@ -1103,7 +1103,7 @@ mod tests {
     use super::*;
 
     /// The plugin folders and the plugins turned off come from the
-    /// settings file shared with OLS Structure (`settings.toml` in the
+    /// settings file shared with OHL-Structure (`settings.toml` in the
     /// user's plugin directory); a change is written back to it at once;
     /// without a user directory nothing is written.
     #[test]
@@ -1121,7 +1121,7 @@ mod tests {
         assert_eq!(p.settings_path.as_deref(), Some(path.as_path()));
         assert_eq!(p.folders, vec![PathBuf::from("/elsewhere/plugins")]);
         assert!(p.disabled.contains("geojson"));
-        // Turned on again here: the file says so (OLS Structure reads it).
+        // Turned on again here: the file says so (OHL-Structure reads it).
         p.disabled.clear();
         p.changed_settings();
         let read = ols_plugins::PluginSettings::load(&path).unwrap().unwrap();

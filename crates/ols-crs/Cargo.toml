@@ -1,6 +1,6 @@
 [package]
 name = "ols-crs"
-description = "OLS CAD coordinate reference systems: EPSG codes, projections, transformations"
+description = "OpenOHL coordinate reference systems: EPSG codes, projections, transformations"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

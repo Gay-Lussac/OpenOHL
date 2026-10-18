@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OLS CAD design-code plugin (`code-plugin` world): NESC (ANSI C2),
+//! OpenOHL design-code plugin (`code-plugin` world): NESC (ANSI C2),
 //! Section 25 loadings for grades B and C.
 //!
 //! Method: Rule 250B combined ice and wind of the line's loading district

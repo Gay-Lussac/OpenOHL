@@ -11,7 +11,7 @@
 //! wire points with their sets. The body (joints, members, sections,
 //! materials, supports, generators, pole, extensions, load cases) is
 //! drawn for context and edited in the structure application
-//! (`ols-structure`): **Edit in the structure application…**. Points and
+//! (`ohl-structure`): **Edit in the structure application…**. Points and
 //! wire points are picked and dragged in the view (snapped to a grid or
 //! to a joint); strings come from presets. Every change is made in the
 //! file as edited (the library page saves it, and every structure of the
@@ -1062,7 +1062,7 @@ impl Workspace {
                 ("weight", "Its weight (default: its assembly's)"),
                 ("wind area", "The area the wind blows on (default: its assembly's)"),
                 ("compression", "The push it may take (V legs); none: tension only"),
-                ("limits", "Kept, not checked by OLS CAD (for a plugin or a report): the tension it is rated for, the swing from straight down it may take (any direction), across and along the line. Unticked: not given — its assembly's, if it gives one (shown dimmed)"),
+                ("limits", "Kept, not checked by OpenOHL (for a plugin or a report): the tension it is rated for, the swing from straight down it may take (any direction), across and along the line. Unticked: not given — its assembly's, if it gives one (shown dimmed)"),
                 ("description", "What it is, in words"),
                 ("", ""),
             ] {
@@ -1324,7 +1324,7 @@ impl Workspace {
     }
 }
 
-/// An insulator's limits in a table cell (kept, not checked by OLS CAD):
+/// An insulator's limits in a table cell (kept, not checked by OpenOHL):
 /// each ticked and given, or unticked — not given, its assembly's shown
 /// dimmed. The changes asked for.
 fn limits_cell(

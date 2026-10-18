@@ -1,6 +1,6 @@
 [package]
 name = "ols-wirefe"
-description = "OLS CAD finite-element wire systems: exact catenary elements, insulator strings, 3D, Newton solver"
+description = "OpenOHL finite-element wire systems: exact catenary elements, insulator strings, 3D, Newton solver"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

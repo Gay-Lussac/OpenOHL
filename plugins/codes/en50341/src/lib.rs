@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OLS CAD design-code plugin (`code-plugin` world): EN 50341-1, general
+//! OpenOHL design-code plugin (`code-plugin` world): EN 50341-1, general
 //! approach (Section 4, actions on lines), with a national normative
 //! annex (NNA) overlay in the same parameter file.
 //!

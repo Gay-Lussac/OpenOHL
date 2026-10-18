@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols project commit|history|status|branch|checkout|tag|diff|merge|revert|
+//! `ohl project commit|history|status|branch|checkout|tag|diff|merge|revert|
 //! review|grant|bundle`: version control and collaboration of a project
 //! file (`ols_session::versions`, `ols_session::collab`).
 
@@ -31,7 +31,7 @@ pub enum VersionCommand {
         message: String,
     },
     /// The revisions, newest first, with their branches and tags (the
-    /// operation log is `ols project log`).
+    /// operation log is `ohl project log`).
     History {
         /// Project file.
         project: PathBuf,
@@ -393,7 +393,7 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
             let head = s.head_revision().map_err(err)?;
             let revs = s.revisions().map_err(err)?;
             if revs.is_empty() {
-                println!("no revision yet: ols project commit");
+                println!("no revision yet: ohl project commit");
             }
             for r in revs.iter().take(limit) {
                 let mut labels: Vec<String> = refs
@@ -495,7 +495,7 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
                 } else {
                     let r = s.create_branch(user, &name, at.as_deref()).map_err(err)?;
                     println!(
-                        "project line {name} made at {} (ols project checkout to work on it)",
+                        "project line {name} made at {} (ohl project checkout to work on it)",
                         r.as_deref().map_or("its source's working state", short)
                     );
                 }
@@ -797,7 +797,7 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
                         .import_bundle(need(&user, "bundle")?, &b, as_branch.as_deref())
                         .map_err(err)?;
                     println!(
-                        "branch {} at {}: {n} new revision(s); merge it with ols project merge",
+                        "branch {} at {}: {n} new revision(s); merge it with ohl project merge",
                         as_branch.as_deref().unwrap_or(&b.branch),
                         short(&b.head)
                     );

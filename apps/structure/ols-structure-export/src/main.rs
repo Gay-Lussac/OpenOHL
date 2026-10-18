@@ -12,9 +12,9 @@
 //!     --loads tower-loads.csv -o tower.ifc
 //! ```
 //!
-//! A tool of its own (not `ols structures export`): `ols` is a core
-//! crate and core crates never depend on the structure application's
-//! crates.
+//! A tool of its own (not `ohl structures export`): the command line
+//! (`ols-cli`) is a core crate and core crates never depend on the
+//! structure application's crates.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

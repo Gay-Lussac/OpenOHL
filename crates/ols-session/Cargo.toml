@@ -1,6 +1,6 @@
 [package]
 name = "ols-session"
-description = "OLS CAD session: project file (.ols), validated commands, operation log, per-user undo, admin rollback, version control, permissions and reviews, import/export"
+description = "OpenOHL session: project file (.ols), validated commands, operation log, per-user undo, admin rollback, version control, permissions and reviews, import/export"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

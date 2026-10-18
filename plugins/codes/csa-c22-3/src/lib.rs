@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OLS CAD design-code plugin (`code-plugin` world): CSA C22.3 No. 1,
+//! OpenOHL design-code plugin (`code-plugin` world): CSA C22.3 No. 1,
 //! overhead systems (deterministic loading).
 //!
 //! Method: the line's loading zone gives the combined ice, wind and

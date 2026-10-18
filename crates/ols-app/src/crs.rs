@@ -537,7 +537,7 @@ impl Windows {
                         );
                         if ui.button("Choose…").clicked()
                             && let Some(p) = rfd::FileDialog::new()
-                                .add_filter("OLS CAD project", &["ols"])
+                                .add_filter("OpenOHL project", &["ols"])
                                 .set_file_name(
                                     Path::new(&rp.path)
                                         .file_name()
@@ -608,7 +608,7 @@ fn check(model: &Model, to: &str, path: &Path) -> Result<(Crs, Crs, PathBuf), St
         .map_err(|_| "only an admin of the project can reproject it".to_owned())?;
     let file = &model.sources.file;
     if file.extension().is_none_or(|x| x != "ols") {
-        return Err("a project (.ols) is reprojected; a line file with ols crs line".into());
+        return Err("a project (.ols) is reprojected; a line file with ohl crs line".into());
     }
     let from = Crs::parse(&model.line.crs)
         .map_err(|e| format!("the project's coordinate system: {e} — define it first"))?;

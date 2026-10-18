@@ -1,6 +1,6 @@
 [package]
 name = "ols-weather"
-description = "OLS CAD weather cases and loads on wires (code-agnostic)"
+description = "OpenOHL weather cases and loads on wires (code-agnostic)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

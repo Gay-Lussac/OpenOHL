@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! A whole zone check, as the **Vertical clearances** and **Radial
-//! clearances** windows and `ols zones` run it ([`run_zone_check`]): the
+//! clearances** windows and `ohl zones` run it ([`run_zone_check`]): the
 //! sections of the rules' voltages (in the circuits chosen, by the method
 //! chosen) solved in every wind position, then checked against the ground
 //! and the points read around the wires.

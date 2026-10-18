@@ -4,7 +4,7 @@
 
 //! Exit clauses for iterative and long-running work.
 //!
-//! Every iterative solver and long-running task in OLS CAD must stop on its
+//! Every iterative solver and long-running task in OpenOHL must stop on its
 //! own: when it converges, when it reaches its iteration limit, when its time
 //! limit expires, or when the user cancels. It must never loop forever, and
 //! when it stops early it must say *why* (DESIGN_GOALS §1).

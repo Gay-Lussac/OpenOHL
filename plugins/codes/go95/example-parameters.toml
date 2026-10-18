@@ -1,5 +1,5 @@
 # California Public Utilities Commission General Order 95 parameter file
-# for the OLS CAD plugin "go95". US customary units, as GO 95 writes them
+# for the OpenOHL plugin "go95". US customary units, as GO 95 writes them
 # (converted to SI in the generated files).
 #
 # !!! EVERY NUMBER IN THIS FILE IS AN INVENTED PLACEHOLDER. !!!

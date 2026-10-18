@@ -1,6 +1,6 @@
 [package]
 name = "asce-mop74"
-description = "OLS CAD design-code plugin: ASCE MOP 74 reliability-based structural loading"
+description = "OpenOHL design-code plugin: ASCE MOP 74 reliability-based structural loading"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

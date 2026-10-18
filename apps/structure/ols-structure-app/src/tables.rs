@@ -921,7 +921,7 @@ impl StructureApp {
                 ),
                 (
                     "limits",
-                    "Kept with the insulator, not checked by OLS CAD (for a plugin or a report): \
+                    "Kept with the insulator, not checked by OpenOHL (for a plugin or a report): \
                      the tension it is rated for, the swing from straight down it may take (any \
                      direction), across and along the line. Unticked: not given — its \
                      assembly's, if it gives one (shown dimmed)",

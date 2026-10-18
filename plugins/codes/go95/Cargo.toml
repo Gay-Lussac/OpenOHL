@@ -1,6 +1,6 @@
 [package]
 name = "go95"
-description = "OLS CAD design-code plugin: California GO 95 Rule 43 loading districts and Rule 44 safety factors"
+description = "OpenOHL design-code plugin: California GO 95 Rule 43 loading districts and Rule 44 safety factors"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

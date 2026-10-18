@@ -1,5 +1,5 @@
 # ───────────────────────────────────────────────────────────────────────────
-# OLS CAD wire library — fill-in template
+# OpenOHL wire library — fill-in template
 #
 # Copy to <name>.olsw (e.g. my-conductors.olsw), fill in, delete what you do
 # not need. Full reference: docs/user-guide/wire-library.md

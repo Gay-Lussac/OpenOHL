@@ -344,7 +344,7 @@ pub struct ReadStats {
     pub points_kept: usize,
 }
 
-/// One point with the attributes kept by OLS CAD.
+/// One point with the attributes kept by OpenOHL.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LidarPoint {
     /// Easting, m.
@@ -423,7 +423,7 @@ pub fn far_tile_warnings(tiles: &[PathBuf], line: &ols_line::Line) -> Vec<String
     }
 }
 
-/// Like [`for_each_point`], with every attribute kept by OLS CAD.
+/// Like [`for_each_point`], with every attribute kept by OpenOHL.
 pub fn for_each_record(
     tiles: &[PathBuf],
     corridor: Option<&Corridor>,

@@ -1,6 +1,6 @@
 [package]
 name = "ols-spotting"
-description = "OLS CAD optimum structure spotting: least-cost structure positions along a route profile (dynamic programming)"
+description = "OpenOHL optimum structure spotting: least-cost structure positions along a route profile (dynamic programming)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

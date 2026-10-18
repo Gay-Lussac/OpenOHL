@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols bom` (bill of materials and cost estimate) and `ols spot`
+//! `ohl bom` (bill of materials and cost estimate) and `ohl spot`
 //! (optimum structure spotting along a route).
 
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use ols_core::files::shipped_library;
 
-/// Arguments of `ols bom`.
+/// Arguments of `ohl bom`.
 #[derive(clap::Args)]
 pub struct BomArgs {
     /// Line file (.ols.json) or project file (.ols).
@@ -38,12 +38,12 @@ pub struct BomArgs {
     json: Option<PathBuf>,
 }
 
-/// Arguments of `ols spot`.
+/// Arguments of `ohl spot`.
 #[derive(clap::Args)]
 pub struct SpotArgs {
     /// Line file (.ols.json) or project file (.ols) with the route.
     file: PathBuf,
-    /// Route id (see ols line --stations); default: the first route.
+    /// Route id (see ohl line --stations); default: the first route.
     #[arg(long)]
     route: Option<String>,
     /// Survey points (CSV / XYZ) for the ground surface.
@@ -133,7 +133,7 @@ fn cables(library: Option<&PathBuf>) -> Result<ols_cables::Library, String> {
     ols_cables::Library::load(&path).map_err(|e| e.to_string())
 }
 
-/// `ols bom`.
+/// `ohl bom`.
 pub fn bom(args: &BomArgs) -> Result<(), String> {
     let mut line = crate::project::load_line(&args.file)?;
     if line.structures.iter().any(|s| s.structure_type.is_some()) {
@@ -177,7 +177,7 @@ fn range(text: &str) -> Result<[f64; 2], String> {
     if b > a { Ok([a, b]) } else { Err(bad()) }
 }
 
-/// `ols spot`.
+/// `ohl spot`.
 pub fn spot(args: &SpotArgs) -> Result<(), String> {
     let line = crate::project::load_line(&args.file)?;
     let route = match &args.route {

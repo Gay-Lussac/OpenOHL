@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols clearance galloping|row` and `ols lidar classify|vegetation|
+//! `ohl clearance galloping|row` and `ohl lidar classify|vegetation|
 //! fit-wires`: analyses of a solved line against its galloping ellipses,
 //! its right of way and LiDAR points ([`ols_clearance::galloping`],
 //! [`ols_clearance::blowout`], [`ols_clearance::vegetation`],
@@ -69,7 +69,7 @@ pub struct PointArgs {
     pub lidar_classes: Option<PathBuf>,
 }
 
-/// `ols clearance …`.
+/// `ohl clearance …`.
 #[derive(Subcommand)]
 pub enum ClearanceCommand {
     /// Galloping ellipses of the wires of each span (parameters: .olsg
@@ -108,7 +108,7 @@ pub enum ClearanceCommand {
     },
 }
 
-/// `ols lidar classify`.
+/// `ohl lidar classify`.
 #[derive(Args)]
 pub struct ClassifyArgs {
     /// Points: LAS/LAZ file or directory, or `FILE.ols#cloud`.
@@ -146,7 +146,7 @@ pub struct ClassifyArgs {
     pub max_points: usize,
 }
 
-/// `ols lidar vegetation`.
+/// `ohl lidar vegetation`.
 #[derive(Args)]
 pub struct VegetationArgs {
     #[command(flatten)]
@@ -184,7 +184,7 @@ pub struct VegetationArgs {
     pub csv: Option<PathBuf>,
 }
 
-/// `ols lidar fit-wires`.
+/// `ohl lidar fit-wires`.
 #[derive(Args)]
 pub struct FitArgs {
     #[command(flatten)]
@@ -288,7 +288,7 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Runs `ols clearance …`.
+/// Runs `ohl clearance …`.
 pub fn clearance(command: ClearanceCommand) -> Result<(), String> {
     match command {
         ClearanceCommand::Galloping {
@@ -502,7 +502,7 @@ fn reading_budget() -> Budget {
     Budget::new().time_limit(Duration::from_secs(1800))
 }
 
-/// Runs `ols lidar classify`.
+/// Runs `ohl lidar classify`.
 pub fn classify(a: ClassifyArgs) -> Result<(), String> {
     use ols_lidar::LidarPoint;
     let started = Instant::now();
@@ -637,7 +637,7 @@ pub fn classify(a: ClassifyArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// Runs `ols lidar vegetation`.
+/// Runs `ohl lidar vegetation`.
 pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
     let (mut line, library) = load(&a.model)?;
     let chosen = cases(&a.cases, &mut line)?;
@@ -747,7 +747,7 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// Runs `ols lidar fit-wires`.
+/// Runs `ohl lidar fit-wires`.
 pub fn fit_wires(a: FitArgs) -> Result<(), String> {
     let (mut line, library) = load(&a.model)?;
     if let Some(w) = &a.weather {

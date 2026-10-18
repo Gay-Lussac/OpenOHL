@@ -310,7 +310,7 @@ pub fn sheets(s: &ExportStructure) -> Vec<Sheet> {
     for (k, v) in [
         ("Description", s.name.clone()),
         ("Discipline", "Load-bearing structure".into()),
-        ("Source application", "OLS CAD".into()),
+        ("Source application", "OpenOHL".into()),
         ("SAF Version", SAF_VERSION.into()),
         ("Global coordinate system", "Z vertical".into()),
         ("LCS of cross-section", "ZYX".into()),

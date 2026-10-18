@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The OLS CAD renderer (ADR-0006): lines, points and surfaces drawn with
+//! The OpenOHL renderer (ADR-0006): lines, points and surfaces drawn with
 //! wgpu into an offscreen texture, which the application shows in its
 //! views (or saves, [`render_rgba`]).
 //!

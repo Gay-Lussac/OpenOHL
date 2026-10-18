@@ -269,7 +269,7 @@ pub fn write(pages: &[&Drawing], title: &str) -> Vec<u8> {
             .into_bytes(),
         );
     }
-    let mut info = b"<< /Producer (OLS CAD) /Title ".to_vec();
+    let mut info = b"<< /Producer (OpenOHL) /Title ".to_vec();
     info.extend(literal(title));
     info.extend(b" >>");
     objects.push(info);

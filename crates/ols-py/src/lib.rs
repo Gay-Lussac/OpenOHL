@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Python bindings for OLS CAD (`import ols`).
+//! Python bindings for OpenOHL (`import ols`).
 //!
 //! The Python tier is for scripts, reports, importers/exporters and
 //! automation (ADR-0003). Calculations run in Rust; Python only drives them.
@@ -28,7 +28,7 @@ fn quantity_kinds() -> Vec<&'static str> {
     ols_core::units::QUANTITY_KINDS.to_vec()
 }
 
-/// OLS CAD — Open Line System Computer Assisted Design.
+/// OpenOHL — open-source overhead line design.
 #[pymodule]
 fn ols(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

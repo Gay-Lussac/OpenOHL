@@ -6,9 +6,9 @@
 //! the distance required by a formula of the local sag and string length
 //! (e.g. the Swiss LeV, Annex 6, 2.2.1: \\( z = k \sqrt{f + l_k} + C
 //! \\)); its values and its rules are a check plugin's (see
-//! `docs/development/phase-distance-check.md`), not OLS CAD's.
+//! `docs/development/phase-distance-check.md`), not OpenOHL's.
 //!
-//! OLS CAD measures: it pairs the conductors hanging between the same
+//! OpenOHL measures: it pairs the conductors hanging between the same
 //! two structures (and, asked, those coming near elsewhere); along each,
 //! every `spacing` of its length, it takes the closest point on the
 //! other and there the distance, the system angle β (of the line joining
