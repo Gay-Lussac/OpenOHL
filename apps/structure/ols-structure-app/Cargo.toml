@@ -22,6 +22,9 @@ ols-structure-loads.workspace = true
 ols-structure-link.workspace = true
 ols-structure-export.workspace = true
 ols-render.workspace = true
+# Plugins (Plugins › Plugin manager, design codes): a core crate, the
+# settings shared with the line application.
+ols-plugins.workspace = true
 eframe.workspace = true
 # The movable panels (as the line application), their arrangement kept
 # between runs.

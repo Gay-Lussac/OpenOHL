@@ -10,7 +10,30 @@ cargo run --release -p ols-app -- examples/synthetic-line/synthetic-line.ols.jso
     --weather examples/synthetic-line/weather-cases.olswc
 ```
 
-See [Desktop application](desktop-app.md).
+See [Desktop application](desktop-app.md). On macOS, double-click
+**Start OLS CAD.command** at the top of the source tree: it builds both
+applications and starts the line application on its start page.
+
+### The structure application
+
+**OLS Structure** (`ols-structure`) edits one structure file on its own —
+its points and insulators, body, design, loads and finite-element results,
+its libraries and plugins. Without a file it opens on a start page (Open a
+structure…, the recent files, New structure…).
+
+```bash
+cargo run --release -p ols-structure-app --bin ols-structure
+cargo run --release -p ols-structure-app --bin ols-structure -- examples/synthetic-line/Structures/type-02.olss
+```
+
+On macOS, double-click **Start OLS Structure.command**. See [OLS
+Structure](structure-app.md#starting-it).
+
+| Program | What it does | See |
+|---|---|---|
+| `ols-cad` (**Start OLS CAD.command**) | the line application: projects, lines, terrain, checks | [Desktop application](desktop-app.md) |
+| `ols-structure` (**Start OLS Structure.command**) | the structure application: one structure file, level 1 to 3, its libraries and plugins | [OLS Structure](structure-app.md) |
+| `ols-structure-export` | a level 3 structure as IFC, SAF or CSV, without a window | [OLS Structure](structure-app.md#export) |
 
 ### A new line, step by step
 

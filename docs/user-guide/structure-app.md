@@ -24,6 +24,25 @@ Options:
 
 ## Starting it
 
+On its own: double-click **Start OLS Structure.command** in the OLS CAD
+folder (macOS; it builds the program and starts it), or
+
+```bash
+cargo run --release -p ols-structure-app --bin ols-structure
+```
+
+Without a file it opens on its **start page**: **Open a structure…**,
+the files opened recently (a click opens one; kept between runs), **New
+structure…** and **Plugins…** (the [plugin manager](#plugins)). **New
+structure…** (also in the File menu) asks an id and a name and what to
+start from: **Empty** — one point where an insulator hangs, a level 1
+stick figure to build from — or a **pylon template** (`.olspt`: the
+templates shipped with OLS CAD, or **Another template file…**), built
+for suspension or strain with the template's default dimensions (the
+line application's pylon builder sets others). **Create…** asks where
+to write the file (`<id>.olss`; an existing file is not replaced) and
+opens it.
+
 From the line application, **Edit…** on a structure (in its properties)
 and **Edit in the structure application…** (on the [structure
 screen](desktop-app.md#the-structure-screen), the Structure types page
@@ -141,10 +160,12 @@ the type follows in the line.
 
 ## The window
 
-At the top, the **menus**: **File** (Open, Save, Save as, Export ›,
-Close), **Edit** (Undo, Redo, Pick nothing), **View**, then one menu per
-part of the work — **Geometry**, **Body**, **Design**, **Load cases**,
-**Results**, **In the line** — and **Help** (About OLS Structure);
+At the top, the **menus**: **File** (New structure…, Open, Save, Save
+as, [Libraries ›](#libraries), Export ›, Close), **Edit** (Undo, Redo,
+Pick nothing), **View**, then one menu per part of the work —
+**Geometry**, **Body**, **Design**, **Load cases**, **Results**, **In
+the line** — then **Plugins** ([below](#plugins)) and **Help** (About
+OLS Structure);
 **⟲ Undo**, **⟳ Redo** and **Save** at their right. Each work menu lists
 its **panels** (*Joints…*, *Generators…*, *Pole…*: opened if closed and
 brought to the front) and its **actions** (Geometry: *Add a point*, *I
@@ -152,7 +173,8 @@ insulator below the point*, *V insulators to one wire point*, *Delete
 what is picked…*; Body: *Add a joint*, *Member between the two joints*,
 *Point on the joint*, *Symmetry* ›, *Make symmetric*, *Delete what is
 picked…*; Load cases: *Store the line's cases in the file…*, *Take the
-line's load cases as they are*, *Add a load case*, *Import / Export load
+line's load cases as they are*, *Add a load case*, *Load cases from a
+design code…* ([Plugins](#plugins)), *Import / Export load
 recipes…*, *Import a load table…*, *Export the load table…*; Results:
 *Run the cases*, *Cancel the run*; In the line: *Read the line's values
 again*); an action brings its panel to the front.
@@ -171,7 +193,7 @@ at the bottom of the window.
 
 | Menu | Panels |
 |---|---|
-| — | **Level**, **3D view** |
+| — | **Level**, **3D view**, **Libraries** (closed by default; View or File › Libraries) |
 | **Geometry** (level 1) | **Points & insulators** (Attachment points, Insulators), **Wire points & sets** (Wire points, Set points), **Structure fields** |
 | **Body** (level 2) | **Joints**, **Members**, **Generators**, **Pole**, **Extensions** |
 | **Design** (level 3) | **Supports**, **Member sections**, **Groups**, **Sections & materials**, **Pole design** |
@@ -390,6 +412,76 @@ one, which is then the file edited. A file that does not read (the error
 is shown in red) is not saved. Closing the window with unsaved changes
 asks first: **Save and close**, **Close without saving** or **Cancel**.
 
+## Libraries
+
+A structure reads these libraries — each where the line application and
+`ols line` keep them for a structure's folder:
+
+| Library | Files | Read from (and imported into) |
+|---|---|---|
+| Section libraries | `.olssec` | `--sections` (a folder), else `Sections/` beside the structure file |
+| Insulator assemblies | `.olsi` | `--insulators`, else the structure's folder and its `Insulators/` (imported into `Insulators/`) |
+| Poles | `.olsp` | beside the structure file |
+| Structure models | `.olsfe` | beside the structure file |
+| Load-case recipes | `.olsslc` | beside the structure file |
+| Pylon templates | `.olspt` | `PylonTemplates/` beside the structure file |
+
+**File › Libraries ›**:
+
+- **Import *library* ›** *A file…* or *The files of a folder…*: every
+  file is read and checked first, then copied into the folder of the
+  table (a file of the same name is replaced). A file that does not read
+  — a typo, a wrong unit — or a section or assembly whose id another file
+  of that folder has already stops the import with nothing copied; the
+  reasons are shown in a window (they scroll in a box of fixed height).
+  The libraries are read again at once (the load panels' member areas,
+  the strings' assemblies, the pole's sections). Started from a project
+  (**Edit…** in the line application), the folders are the project's
+  working copy: the line application notices the new files within half
+  a second, stores them into the project and reads its libraries again.
+- **Export what it uses…**: into a folder chosen, in the line
+  application's layout — `structures/` (the structure file as edited,
+  its pole and model), `sections/` (each section library with only the
+  sections the structure names and the materials they use, comments
+  kept), `insulators/` (its assemblies), `pylon-templates/` (the template
+  it was built from). **Export every library…** writes every file read.
+- **Libraries panel…**: the **Libraries** panel (also in View) lists per
+  kind the files read and where from, each with its ids (a section
+  library's sections, with how many the structure uses), why a file does
+  not read, and at the top what the structure **names that no library
+  has**: section ids (members, extension members, the pole) not defined
+  in the file's own `[[section]]` tables nor in a library, insulator
+  assemblies, the pole file, the structure model. A recipes file has
+  **Take its cases** (into the structure file, one undo step). **⟳
+  Reload** reads the folders again.
+
+## Plugins
+
+**Plugins › Plugin manager…** (also on the start page) lists the plugins
+as the line application's does — the plugins installed for you (in OLS
+CAD's data folder, `plugins/`, the same folder as the line
+application's) and those of the folders added — each with its version,
+tier, extension points, **what it does in OLS Structure** (greyed with
+the reason where nothing applies), its status (or why it cannot be used:
+another interface version, its entry file not built…), **Details** (what
+it describes, loaded in each of its worlds; in a box that scrolls) and,
+for an installed one, **Remove**. **Install from a folder…**, **Add a
+plugin folder…**, **Reload**. The tick turns a plugin on or off.
+
+The folders added and the plugins turned off are **shared with the line
+application** (`settings.toml` in the plugin folder): a plugin added or
+turned off in one is so in the other (the other reads it when its plugin
+manager is opened, or with Reload).
+
+What applies here:
+
+| Extension point | In OLS Structure |
+|---|---|
+| `design-code` | **Load cases › Load cases from a design code…** (also in the Plugins menu): choose the plugin and your parameter file, **▶ Generate** (on a thread; the plugin's time and memory limits apply), read its notes, **Take them as recipes**: one recipe per load case of the code taking the line's factored values in that case at every point (as *Take the line's load cases as they are*; one undo step). Ticked, the weather and load case files it generated are written beside the structure (`<plugin>.olswc`, `<plugin>.olslc`) to give to the line. |
+| `check` | listed: member and joint code checks will run here; nothing to run yet |
+| `io` | file formats of the line: they take the line's export model, not a structure — listed greyed under File › Export |
+| `terrain`, `project`, Python scripts | the line application's |
+
 ## Export
 
 **File › Export** writes the structure as it is in the window (unsaved
@@ -403,6 +495,9 @@ members with sections, a supported joint.
 | **IFC2x3 — members for Tekla Structures** | `.ifc` | Tekla Structures: insert as a reference model, then *IFC object conversion* makes native parts (Tekla converts IFC2x3 only) |
 | **SAF (xlsx) — analysis model with load cases** | `.xlsx` | RFEM 6, SCIA and other programs reading the Structural Analysis Format |
 | **CSV tables** | a folder | anything else: `materials`, `sections`, `nodes`, `supports`, `members`, `load_cases`, `loads` |
+
+File-format plugins turned on are listed under the entries, greyed: they
+write the line's export model, not a structure.
 
 Members carry their sections as real profiles (angles, channels, I
 sections, tubes, round bars, polygonal tubes) when the section comes from

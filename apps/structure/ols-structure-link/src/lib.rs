@@ -312,6 +312,19 @@ pub fn section_library(path: &Path) -> Result<SectionLibrary, String> {
     SectionLibrary::load(path)
 }
 
+/// A pole file's (`.olsp`) id, read and checked as the pole check reads
+/// it; or why it does not read (the application's Libraries panel).
+pub fn pole_file_id(text: &str) -> Result<String, String> {
+    ols_structures_fe::Pole::parse(text).map(|p| p.id)
+}
+
+/// A structure model file's (`.olsfe`) name, read with the section library
+/// `sections` as the finite-element check reads it; or why it does not
+/// read (the application's Libraries panel).
+pub fn model_file_name(text: &str, sections: &SectionLibrary) -> Result<String, String> {
+    Model::parse_with(text, sections).map(|m| m.name)
+}
+
 /// The members' areas from the section library: the structure's
 /// finite-element model built with it, a member's area for a pressure in
 /// a direction its silhouette seen along it

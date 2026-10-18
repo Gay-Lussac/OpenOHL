@@ -3835,6 +3835,7 @@ dependencies = [
  "env_logger",
  "log",
  "ols-core",
+ "ols-plugins",
  "ols-render",
  "ols-sections",
  "ols-structure-edit",

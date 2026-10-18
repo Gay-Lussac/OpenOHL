@@ -345,11 +345,15 @@ pub struct FormatWindow {
 }
 
 /// The plugin manager's state (remembered: the folders added, the plugins
-/// turned off).
+/// turned off — in the settings file shared with OLS Structure,
+/// [`ols_plugins::PluginSettings`], in the user's plugin directory).
 #[derive(Default)]
 pub struct Plugins {
     /// The user's plugin directory (installs go there); none: none listed.
     pub user_dir: Option<PathBuf>,
+    /// The shared settings file (none without a user plugin directory:
+    /// nothing is written).
+    pub settings_path: Option<PathBuf>,
     /// Folders added, their plugins used in place.
     pub folders: Vec<PathBuf>,
     /// Plugins turned off, by name.
@@ -394,24 +398,91 @@ impl Plugins {
         eframe::storage_dir("OLS CAD").map(|d| d.join("plugins"))
     }
 
-    /// As remembered, listing `user_dir` and the folders added.
+    /// As remembered, listing `user_dir` and the folders added: the
+    /// settings shared with OLS Structure (`settings.toml` in `user_dir`);
+    /// before that file exists, what this application kept itself (its
+    /// storage, as earlier versions did).
     pub fn load(storage: Option<&dyn eframe::Storage>, user_dir: Option<PathBuf>) -> Self {
-        let saved: Saved = storage
-            .and_then(|s| s.get_string("plugins"))
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
+        let settings_path = user_dir.as_deref().map(ols_plugins::PluginSettings::path);
+        let mut status = None;
+        let shared = match settings_path
+            .as_deref()
+            .map(ols_plugins::PluginSettings::load)
+        {
+            Some(Ok(s)) => s,
+            Some(Err(e)) => {
+                status = Some((format!("plugin settings not read: {e}"), true));
+                None
+            }
+            None => None,
+        };
+        let saved: Saved = match shared {
+            Some(s) => Saved {
+                folders: s.folders,
+                disabled: s.disabled,
+            },
+            None => storage
+                .and_then(|s| s.get_string("plugins"))
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_default(),
+        };
         let mut p = Self {
             user_dir,
+            settings_path,
             folders: saved.folders,
             disabled: saved.disabled,
+            status,
             ..Self::default()
         };
         p.refresh();
         p
     }
 
-    /// Remembers the folders added and the plugins turned off.
+    /// Writes the shared settings file now (OLS Structure reads it), when
+    /// there is one.
+    pub fn persist(&self) -> Result<(), String> {
+        let Some(path) = &self.settings_path else {
+            return Ok(());
+        };
+        ols_plugins::PluginSettings {
+            folders: self.folders.clone(),
+            disabled: self.disabled.clone(),
+        }
+        .save(path)
+    }
+
+    /// Reads the shared settings file again (changed in OLS Structure).
+    pub fn reload_settings(&mut self) {
+        let Some(path) = &self.settings_path else {
+            return;
+        };
+        match ols_plugins::PluginSettings::load(path) {
+            Ok(Some(s)) => {
+                self.folders = s.folders;
+                self.disabled = s.disabled;
+            }
+            Ok(None) => {}
+            Err(e) => self.status = Some((format!("plugin settings not read: {e}"), true)),
+        }
+    }
+
+    /// After a change of the folders or of what is turned off: written to
+    /// the shared settings at once (an error goes to the status).
+    fn changed_settings(&mut self) {
+        if let Err(e) = self.persist() {
+            self.status = Some((format!("plugin settings not written: {e}"), true));
+        }
+    }
+
+    /// Remembers the folders added and the plugins turned off (in the
+    /// shared settings file; without one, in this application's storage).
     pub fn save(&self, storage: &mut dyn eframe::Storage) {
+        if self.settings_path.is_some() {
+            if let Err(e) = self.persist() {
+                log::warn!("plugin settings: {e}");
+            }
+            return;
+        }
         let saved = Saved {
             folders: self.folders.clone(),
             disabled: self.disabled.clone(),
@@ -650,13 +721,18 @@ impl Plugins {
                         if !self.folders.contains(&dir) {
                             self.folders.push(dir);
                         }
+                        self.changed_settings();
                         self.refresh();
                     }
                     if ui
                         .button("Reload")
-                        .on_hover_text("Look for plugins again")
+                        .on_hover_text(
+                            "Look for plugins again (and read the plugin settings, shared with \
+                             OLS Structure, again)",
+                        )
                         .clicked()
                     {
+                        self.reload_settings();
                         self.refresh();
                     }
                 });
@@ -762,10 +838,12 @@ impl Plugins {
             if !self.disabled.remove(&name) {
                 self.disabled.insert(name);
             }
+            self.changed_settings();
             self.stale = true;
         }
         if let Some(k) = drop_folder {
             self.folders.remove(k);
+            self.changed_settings();
             self.refresh();
         }
         if let Some(dir) = remove {
@@ -1017,5 +1095,49 @@ impl Plugins {
         };
         w.error = None;
         w.busy = worker.jobs.send(job).is_ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The plugin folders and the plugins turned off come from the
+    /// settings file shared with OLS Structure (`settings.toml` in the
+    /// user's plugin directory); a change is written back to it at once;
+    /// without a user directory nothing is written.
+    #[test]
+    fn plugin_settings_are_shared() {
+        let user = std::env::temp_dir().join(format!("ols-app-shared-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&user);
+        let path = ols_plugins::PluginSettings::path(&user);
+        ols_plugins::PluginSettings {
+            folders: vec![PathBuf::from("/elsewhere/plugins")],
+            disabled: ["geojson".to_owned()].into(),
+        }
+        .save(&path)
+        .unwrap();
+        let mut p = Plugins::load(None, Some(user.clone()));
+        assert_eq!(p.settings_path.as_deref(), Some(path.as_path()));
+        assert_eq!(p.folders, vec![PathBuf::from("/elsewhere/plugins")]);
+        assert!(p.disabled.contains("geojson"));
+        // Turned on again here: the file says so (OLS Structure reads it).
+        p.disabled.clear();
+        p.changed_settings();
+        let read = ols_plugins::PluginSettings::load(&path).unwrap().unwrap();
+        assert!(read.disabled.is_empty());
+        // Changed elsewhere: Reload reads it.
+        ols_plugins::PluginSettings {
+            folders: Vec::new(),
+            disabled: ["en50341".to_owned()].into(),
+        }
+        .save(&path)
+        .unwrap();
+        p.reload_settings();
+        assert!(p.folders.is_empty() && p.disabled.contains("en50341"));
+        // No user directory: nothing shared.
+        let none = Plugins::load(None, None);
+        assert!(none.settings_path.is_none() && none.persist().is_ok());
+        std::fs::remove_dir_all(&user).unwrap();
     }
 }

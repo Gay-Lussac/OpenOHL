@@ -923,6 +923,7 @@ Structures), SAF 2.2.0 xlsx, CSV tables. Mapping and what is lost:
 | OLS XML | XML, namespace `urn:ols-cad:ols-line:1`, schema `docs/schema/ols-line.xsd` | the same content as the line file, lossless round trip (`crates/ols-io/src/olsxml.rs`): objects are elements, plain values attributes named like the JSON keys, points `x`/`y`/`z` attributes | [OLS XML schema](../schema/ols-line.md) |
 | Project file `*.ols` | SQLite (ADR-0004) | project lines, operation log, users, libraries, point clouds, surfaces, versions | [Project files](../user-guide/project.md) |
 | Libraries | TOML directories | see above | — |
+| Plugin settings `settings.toml` (in the user's plugin folder, OLS CAD's data folder `plugins/`) | TOML, `ols_plugins::PluginSettings` (unknown fields refused) | `folders` (plugin folders used in place), `disabled` (plugin names turned off); read and written by `ols-cad` and `ols-structure` alike | [Writing plugins](plugins.md#where-plugins-are-found-and-the-shared-settings) |
 
 ### Project file tables (`crates/ols-session`)
 
@@ -1005,6 +1006,13 @@ model reads working copies written to a temporary folder — written again
 when another project line is chosen with other library files, or a
 library change is undone or redone. Per-user view settings (`ViewPrefs`) stay
 on the computer, never in the project.
+
+The structure application reads a structure's libraries beside its file
+(`Sections/`, `Insulators/`, poles `.olsp`, models `.olsfe`, recipes
+`.olsslc`, `PylonTemplates/`) or from the folders the line application
+passes (the working copy); files it imports there (File › Libraries) are
+stored into the project by the line application (`Change::Libraries`).
+See [OLS Structure](../user-guide/structure-app.md#libraries).
 
 ## What a plugin sees
 

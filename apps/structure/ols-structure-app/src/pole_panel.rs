@@ -67,7 +67,7 @@ fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
 
 /// The `.olsp` file a `pole = "…"` names, next to the structure file: by
 /// file name, else the one with that id.
-fn pole_file(dir: &Path, name: &str) -> Option<PathBuf> {
+pub(crate) fn pole_file(dir: &Path, name: &str) -> Option<PathBuf> {
     if name.ends_with(".olsp") {
         return Some(dir.join(name));
     }

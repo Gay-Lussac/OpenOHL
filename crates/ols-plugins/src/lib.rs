@@ -36,6 +36,9 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use serde::Deserialize;
+
+pub mod settings;
+pub use settings::{PluginSettings, SETTINGS_FILE};
 use wasmtime::component::{Component, Linker, ResourceTable};
 use wasmtime::{Config, Engine, Store, StoreLimits, StoreLimitsBuilder, Trap};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
