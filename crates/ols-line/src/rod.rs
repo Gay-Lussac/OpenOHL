@@ -37,6 +37,25 @@ use ols_core::budget::Budget;
 
 type V = Vector3<f64>;
 
+/// Why the fallback of [`Rod::solve`] did not find the shape.
+enum Fallback {
+    /// The rod is too short to reach where its strings hold it (in words).
+    Short(String),
+    /// It did not converge.
+    Failed(String),
+}
+
+/// A Newton solve that no step improves any more, or that runs out of
+/// steps, is taken as converged within this many times the tolerance
+/// (10⁻⁶ of the loads' moments: micrometres): next to a string just taut,
+/// carrying next to nothing, it creeps at 100–150× (the first existing
+/// line).
+const STALL_TOLERANCE: f64 = 1e3;
+
+/// How close the shapes with the strings as springs are solved, in times
+/// the tolerance: they only start the rigid solve.
+const SPRING_TOLERANCE: f64 = 1e4;
+
 /// A rigid string: fixed top, length; tension only, or both ways
 /// (`push`: it may take compression, e.g. a V leg designed to push).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -76,6 +95,9 @@ pub(crate) struct Rod {
     pub end: Option<V>,
     /// Points held by strings.
     pub holds: Vec<RodHold>,
+    /// The strings as springs of this stiffness, N/m, instead of rigid
+    /// (0: rigid; the start [`Rod::solve`] falls back on).
+    pub springs: f64,
 }
 
 /// A solved held point.
@@ -124,6 +146,7 @@ impl Rod {
             start: None,
             end: None,
             holds: Vec::new(),
+            springs: 0.0,
         }
     }
 
@@ -152,6 +175,23 @@ impl Rod {
 
     fn string(&self, (h, s): (usize, usize)) -> RodString {
         self.holds[h].strings[s]
+    }
+
+    /// A string as a spring ([`Rod::springs`]): the multiplier its force
+    /// stands for (as a taut string's, force −2μℓ), from its stretch: for
+    /// \( g = |r|^2 - ℓ^2 \) the energy \( k g^2 / 8ℓ^2 \) (\( ≈ k δ^2 / 2 \)),
+    /// μ = −k g / 4ℓ²; none while a tension-only one is slack.
+    fn spring_mu(&self, c: (usize, usize), nodes: &[V], d: &[V]) -> f64 {
+        let s = self.string(c);
+        if self.springs <= 0.0 {
+            return 0.0;
+        }
+        let g = self.arm(c, nodes, d).norm_squared() - s.length * s.length;
+        if s.push || g > 0.0 {
+            -self.springs * g / (4.0 * s.length * s.length)
+        } else {
+            0.0
+        }
     }
 
     /// Bending coefficient at the inner node after piece i: EI over the
@@ -220,6 +260,14 @@ impl Rod {
         for h in &self.holds {
             e -= h.load.dot(&self.held(h, &nodes, d));
         }
+        for c in self.strings() {
+            let m = self.spring_mu(c, &nodes, d);
+            let l = self.string(c).length;
+            // k g² / 8ℓ² = 2 μ² ℓ² / k.
+            if m != 0.0 {
+                e += 2.0 * m * m * l * l / self.springs;
+            }
+        }
         e
     }
 
@@ -272,6 +320,18 @@ impl Rod {
             }
         }
         for (&c, m) in active.iter().zip(mu) {
+            let h = &self.holds[c.0];
+            let r = self.arm(c, &nodes, d);
+            for (i, gi) in g.iter_mut().enumerate().take(h.piece + 1) {
+                *gi -= r * (2.0 * m * self.coef(h, i));
+            }
+        }
+        // Springs: as taut strings with the multiplier their stretch gives.
+        for c in self.strings() {
+            let m = self.spring_mu(c, &nodes, d);
+            if m == 0.0 {
+                continue;
+            }
             let h = &self.holds[c.0];
             let r = self.arm(c, &nodes, d);
             for (i, gi) in g.iter_mut().enumerate().take(h.piece + 1) {
@@ -353,6 +413,34 @@ impl Rod {
                         for b in 0..2 {
                             j[(2 * i + a, 2 * kk + b)] -=
                                 2.0 * m * ci * ck * e(i, a).dot(&e(kk, b));
+                        }
+                    }
+                }
+            }
+        }
+        // Springs: as a taut string with its multiplier, and that
+        // multiplier's change with the stretch, (k/ℓ²) cᵢcₖ (r·eᵢ)(r·eₖ).
+        for c in self.strings() {
+            let m = self.spring_mu(c, &nodes, d);
+            if m == 0.0 {
+                continue;
+            }
+            let h = &self.holds[c.0];
+            let r = self.arm(c, &nodes, d);
+            let l = self.string(c).length;
+            for i in 0..=h.piece {
+                let ci = self.coef(h, i);
+                for a in 0..2 {
+                    for kk in 0..=h.piece {
+                        let ck = self.coef(h, kk);
+                        for b in 0..2 {
+                            j[(2 * i + a, 2 * kk + b)] +=
+                                -2.0 * m * ci * ck * e(i, a).dot(&e(kk, b))
+                                    + self.springs / (l * l)
+                                        * ci
+                                        * ck
+                                        * e(i, a).dot(&r)
+                                        * e(kk, b).dot(&r);
                         }
                     }
                 }
@@ -448,6 +536,30 @@ impl Rod {
     /// way, 8 rounds of strings going taut or slack; an error names the
     /// residual.
     pub(crate) fn solve(&self, start: &[V], budget: &Budget) -> Result<RodShape, String> {
+        self.in_local(|local| local.solve_steps(start, budget, false, 1.0))
+    }
+
+    /// The fallback where [`Rod::solve`] fails ([`Rod::through_springs`]):
+    /// its error says in words when the rod is too short to reach where
+    /// its strings hold it, and by about how much.
+    pub(crate) fn solve_through_springs(
+        &self,
+        start: &[V],
+        budget: &Budget,
+    ) -> Result<RodShape, String> {
+        self.in_local(|local| {
+            local.through_springs(start, budget).map_err(|e| match e {
+                Fallback::Short(why) | Fallback::Failed(why) => why,
+            })
+        })
+    }
+
+    /// `solve` run on the rod in coordinates from A, the shape it gives
+    /// moved back.
+    fn in_local(
+        &self,
+        solve: impl FnOnce(&Rod) -> Result<RodShape, String>,
+    ) -> Result<RodShape, String> {
         let local = Rod {
             a: V::zeros(),
             b: self.b - self.a,
@@ -468,7 +580,7 @@ impl Rod {
                 .collect(),
             ..self.clone()
         };
-        let mut shape = local.solve_local(start, budget)?;
+        let mut shape = solve(&local)?;
         for p in &mut shape.points {
             *p += self.a;
         }
@@ -478,7 +590,111 @@ impl Rod {
         Ok(shape)
     }
 
-    fn solve_local(&self, start: &[V], budget: &Budget) -> Result<RodShape, String> {
+    /// The fallback of [`Rod::solve`] when pulling the strings to their
+    /// lengths meets a taut stretch on the way (the rod locked on a branch
+    /// where they cannot all reach: a held point pulled up beside a V that
+    /// may push, swung the other way, on the first existing line): the
+    /// strings as springs, from soft to stiff (stiffness 10⁻² to 10³ times
+    /// the loads per metre, each solve starting from the last), let the rod
+    /// find where they all hold it; then rigid from there, the strings
+    /// stretched taut at once (they are within millimetres of their
+    /// lengths). Failing that, stiffer still (10⁶: a millionth of a metre
+    /// per the loads' newton): strings still stretched by more than a
+    /// millimetre say that the rod cannot reach where they hold it — it is
+    /// too short for them by about that ([`Fallback::Short`]).
+    ///
+    /// Expected cost: 7–8 Newton solves more (~1 ms each). Exit clauses: the
+    /// budget's for each.
+    fn through_springs(&self, start: &[V], budget: &Budget) -> Result<RodShape, Fallback> {
+        let failed = Fallback::Failed;
+        let force_scale = (self.q.norm() * self.length()
+            + self.holds.iter().map(|h| h.load.norm()).sum::<f64>())
+        .max(1.0);
+        let springs = |d: &[V], k: f64| -> Result<Vec<V>, Fallback> {
+            let soft = Rod {
+                springs: k * force_scale,
+                ..self.clone()
+            };
+            Ok(soft
+                .newton_within(d, &[], budget, SPRING_TOLERANCE, f64::INFINITY)
+                .map_err(failed)?
+                .0)
+        };
+        let mut d = self
+            .newton_within(start, &[], budget, SPRING_TOLERANCE, f64::INFINITY)
+            .map_err(failed)?
+            .0;
+        for k in [1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3] {
+            d = springs(&d, k)?;
+        }
+        let e = match self.solve_steps(&d, budget, true, STALL_TOLERANCE) {
+            Ok(shape) => return Ok(shape),
+            Err(e) => e,
+        };
+        // With nearly rigid springs, how far each held point is from where
+        // its strings would hold it (the least move putting the strings off
+        // their lengths back on them, to first order): what the rod is
+        // short by.
+        for k in [1e4, 1e5, 1e6] {
+            d = springs(&d, k)?;
+        }
+        let nodes = self.nodes(&d);
+        let mut worst: Option<(f64, usize)> = None;
+        for (h, hold) in self.holds.iter().enumerate() {
+            let mut rows = Vec::new();
+            let mut gaps = Vec::new();
+            for (k, s) in hold.strings.iter().enumerate() {
+                let arm = self.arm((h, k), &nodes, &d);
+                let gap = arm.norm() - s.length;
+                if s.push || gap > 0.0 {
+                    rows.push(arm.normalize());
+                    gaps.push(gap);
+                }
+            }
+            if rows.is_empty() {
+                continue;
+            }
+            let u = DMatrix::from_fn(rows.len(), 3, |i, j| rows[i][j]);
+            let Ok(pinv) = u.clone().pseudo_inverse(1e-9) else {
+                continue;
+            };
+            let short = (pinv * DVector::from_vec(gaps)).norm();
+            if worst.is_none_or(|(w, _)| short > w) {
+                worst = Some((short, h));
+            }
+        }
+        match worst {
+            Some((short, h)) if short > 1e-3 => {
+                let hold = &self.holds[h];
+                let along = self.pieces[..hold.piece].iter().sum::<f64>()
+                    + self.pieces[hold.piece] * hold.offset;
+                Err(Fallback::Short(format!(
+                    "too short to reach where its strings hold it: they hold the point \
+                     {along:.2} m along it about {:.0} mm beyond its reach{}",
+                    short * 1e3,
+                    if hold.strings.iter().any(|s| s.push) {
+                        " (strings that may push)"
+                    } else {
+                        ""
+                    }
+                )))
+            }
+            _ => Err(failed(e)),
+        }
+    }
+
+    /// The strings pulled to their lengths in steps ([`Rod::solve`]), from
+    /// the shape without them; `warm`: from `start` as it is (the strings
+    /// beyond their lengths there taut at once). Each Newton solve ends
+    /// within the tolerance, or within `accept` times it where no step
+    /// improves it or the budget's steps run out.
+    fn solve_steps(
+        &self,
+        start: &[V],
+        budget: &Budget,
+        warm: bool,
+        accept: f64,
+    ) -> Result<RodShape, String> {
         let n = self.n();
         if start.len() != n || n < 2 {
             return Err(format!(
@@ -504,7 +720,15 @@ impl Rod {
             }
         }
         let all = self.strings();
-        let (mut d, mut lambda, mut mu) = self.newton(start, &[], budget)?;
+        let (mut d, mut lambda, mut mu) = if warm {
+            (
+                start.iter().map(|x| x.normalize()).collect(),
+                V::zeros(),
+                Vec::new(),
+            )
+        } else {
+            self.newton_within(start, &[], budget, 1.0, accept)?
+        };
         let mut active: Vec<(usize, usize)> = Vec::new();
         let force_scale =
             self.q.norm() * total + self.holds.iter().map(|h| h.load.norm()).sum::<f64>();
@@ -543,7 +767,7 @@ impl Rod {
             next.extend(newly.iter().map(|(c, _)| *c));
             next.sort_unstable();
             if newly.is_empty() {
-                let (dd, l, m) = self.newton(&d, &next, budget)?;
+                let (dd, l, m) = self.newton_within(&d, &next, budget, 1.0, accept)?;
                 (d, lambda, mu) = (dd, l, m);
             } else {
                 let (mut done, mut step) = (0.0_f64, 0.25_f64);
@@ -555,7 +779,7 @@ impl Rod {
                         let s = &mut rod.holds[c.0].strings[c.1];
                         s.length = far + (s.length - far) * target;
                     }
-                    match rod.newton(&d, &next, budget) {
+                    match rod.newton_within(&d, &next, budget, 1.0, accept) {
                         Ok(r) => {
                             (d, lambda, m) = r;
                             done = target;
@@ -601,12 +825,16 @@ impl Rod {
     }
 
     /// Newton from `start`, the strings in `active` taut, the others left
-    /// out.
-    fn newton(
+    /// out, to `within` times the tolerance; where no step
+    /// improves it any more or the budget's steps run out, taken as it is
+    /// within `accept` times (infinite: a rough start, wherever it stops).
+    fn newton_within(
         &self,
         start: &[V],
         active: &[(usize, usize)],
         budget: &Budget,
+        within: f64,
+        accept: f64,
     ) -> Result<(Vec<V>, V, Vec<f64>), String> {
         let n = self.n();
         let mut d: Vec<V> = start.iter().map(|x| x.normalize()).collect();
@@ -647,20 +875,31 @@ impl Rod {
         let mut r = self.residual(&d, lambda, &mu, active);
         let mut merit = scaled(&r);
         let mut damping = 1e-6;
-        while merit > 1.0 || merit.is_nan() {
-            run.step().map_err(|stop| {
-                format!("rod did not converge: {stop}; residual {merit:.2e}× the tolerance")
-            })?;
+        let rough = accept.is_infinite();
+        'newton: while merit > within || merit.is_nan() {
+            if let Err(stop) = run.step() {
+                if merit <= accept && merit.is_finite() {
+                    break;
+                }
+                return Err(format!(
+                    "rod did not converge: {stop}; residual {merit:.2e}× the tolerance"
+                ));
+            }
             let mut jac = self.jacobian(&d, lambda, &mu, active);
             let diag = (0..2 * n).map(|k| jac[(k, k)].abs()).fold(0.0, f64::max);
             for k in 0..2 * n {
                 jac[(k, k)] += damping * diag.max(1e-12);
             }
-            let step = jac
+            let Some(step) = jac
                 .lu()
                 .solve(&(-&r))
                 .filter(|s| s.iter().all(|v| v.is_finite()))
-                .ok_or("rod: singular system")?;
+            else {
+                if rough && merit.is_finite() {
+                    break;
+                }
+                return Err("rod: singular system".into());
+            };
             // At most 0.3 rad of rotation per piece in one step.
             let largest = (0..n)
                 .map(|i| step[2 * i].hypot(step[2 * i + 1]))
@@ -724,6 +963,10 @@ impl Rod {
                     // shorter, steeper step) next time.
                     damping *= 100.0;
                     if damping > 1e8 {
+                        // Stalled near the tolerance.
+                        if merit <= accept && merit.is_finite() {
+                            break 'newton;
+                        }
                         return Err(format!(
                             "rod: no step lowers the residual ({merit:.2e}× the tolerance)"
                         ));
@@ -827,6 +1070,7 @@ mod tests {
             pieces: vec![0.7, 0.5, 0.6, 0.1, 0.8, 0.9],
             q: V::new(0.0, 4.0, -15.0),
             ei: 30.0,
+            springs: 0.0,
             start: Some(V::new(1.0, 0.1, 0.2).normalize()),
             end: Some(V::new(1.0, -0.1, -0.2).normalize()),
             holds: vec![
@@ -858,6 +1102,88 @@ mod tests {
         let h = 1e-6;
         let size = r0.len();
         assert_eq!(size, 2 * n + 3 + 3);
+        for col in 0..size {
+            let (mut dd, mut l, mut m) = (d.clone(), lambda, mu.clone());
+            if col < 2 * n {
+                let i = col / 2;
+                let (e1, e2) = basis(d[i]);
+                let v = if col % 2 == 0 { e1 } else { e2 } * h;
+                dd[i] = (d[i] * v.norm().cos() + v.normalize() * v.norm().sin()).normalize();
+            } else if col < 2 * n + 3 {
+                l[col - 2 * n] += h;
+            } else {
+                m[col - 2 * n - 3] += h;
+            }
+            let r1 = rod.residual(&dd, l, &m, &active);
+            for row in 0..size {
+                let fd = (r1[row] - r0[row]) / h;
+                // Rows of the rotations: the basis turns with dᵢ, which
+                // only matters away from equilibrium (a twist term).
+                let tol = 1e-3 * (1.0 + fd.abs())
+                    + if row < 2 * n && col < 2 * n && row / 2 == col / 2 {
+                        1e3
+                    } else {
+                        0.0
+                    };
+                assert!(
+                    (j[(row, col)] - fd).abs() < tol,
+                    "J[{row},{col}] = {} vs {fd}",
+                    j[(row, col)]
+                );
+            }
+        }
+    }
+
+    /// The strings as springs: the Jacobian of the residual with them.
+    #[test]
+    fn spring_jacobian_matches_finite_differences() {
+        let rod = Rod {
+            a: V::new(0.0, 0.0, 0.0),
+            b: V::new(3.0, 0.5, -0.2),
+            pieces: vec![0.7, 0.5, 0.6, 0.1, 0.8, 0.9],
+            q: V::new(0.0, 4.0, -15.0),
+            ei: 30.0,
+            springs: 800.0,
+            start: Some(V::new(1.0, 0.1, 0.2).normalize()),
+            end: Some(V::new(1.0, -0.1, -0.2).normalize()),
+            holds: vec![
+                RodHold {
+                    piece: 2,
+                    offset: 0.0,
+                    load: V::new(0.0, 0.0, -20.0),
+                    strings: vec![string(V::new(1.5, 0.0, 1.0), 1.5)],
+                },
+                RodHold {
+                    piece: 3,
+                    offset: 0.5,
+                    load: V::new(0.0, 0.0, -35.0),
+                    strings: vec![
+                        string(V::new(2.0, -1.0, 1.0), 1.8),
+                        string(V::new(2.0, 1.0, 1.2), 1.6),
+                    ],
+                },
+            ],
+        };
+        let n = rod.n();
+        let d: Vec<V> = (0..n)
+            .map(|i| V::new(1.0, 0.1 * i as f64, -0.3 + 0.1 * i as f64).normalize())
+            .collect();
+        // The strings as springs: no multipliers of their own; one
+        // stretched, one slack, one that may push (pushed).
+        let active = Vec::new();
+        let (lambda, mu) = (V::new(30.0, -5.0, 10.0), Vec::new());
+        let nodes = rod.nodes(&d);
+        let engaged = rod
+            .strings()
+            .into_iter()
+            .filter(|c| rod.spring_mu(*c, &nodes, &d) != 0.0)
+            .count();
+        assert!(engaged >= 1, "no spring engaged");
+        let j = rod.jacobian(&d, lambda, &mu, &active);
+        let r0 = rod.residual(&d, lambda, &mu, &active);
+        let h = 1e-6;
+        let size = r0.len();
+        assert_eq!(size, 2 * n + 3);
         for col in 0..size {
             let (mut dd, mut l, mut m) = (d.clone(), lambda, mu.clone());
             if col < 2 * n {
@@ -1040,6 +1366,7 @@ mod tests {
             pieces,
             q: V::new(0.0, 3.0, -15.0),
             ei: 0.0,
+            springs: 0.0,
             start: None,
             end: None,
             holds: [(9, 0.94), (29, 2.96)]
@@ -1065,6 +1392,183 @@ mod tests {
             assert!((through - h.direction).norm() < 1e-12);
             // The wind swings it sideways.
             assert!(h.point.y > 0.01, "{:?}", h.point);
+        }
+    }
+
+    /// An invented 17.1 m jumper in the wind, held by two I strings and,
+    /// near its far end, by a V that may push whose tops are one above the
+    /// other (it swings like a gate about them). The jumper hangs blown
+    /// away from the strings; pulled up to their lengths in steps from
+    /// there, it locks where the stretch to the V is straight (the V swung
+    /// the wrong way), yet a shape holding every string exists.
+    fn gate_jumper() -> Rod {
+        let mut pieces = vec![6.5 / 16.0; 16];
+        pieces.push(0.1);
+        pieces.extend(vec![3.3 / 8.0; 8]);
+        pieces.push(0.1);
+        pieces.extend(vec![3.4 / 8.0; 8]);
+        pieces.push(0.1);
+        pieces.extend(vec![3.6 / 8.0; 8]);
+        let push = |top: V, length: f64| RodString {
+            top,
+            length,
+            push: true,
+        };
+        Rod {
+            a: V::zeros(),
+            b: V::new(14.0, 6.0, -1.5),
+            pieces,
+            q: V::new(8.0, -20.0, -22.0),
+            ei: 1000.0,
+            springs: 0.0,
+            start: Some(V::new(0.9, 0.3, -0.3).normalize()),
+            end: Some(V::new(0.6, 0.8, 0.0).normalize()),
+            holds: vec![
+                RodHold {
+                    piece: 16,
+                    offset: 0.5,
+                    load: V::new(20.0, -30.0, -130.0),
+                    strings: vec![string(V::new(4.0, 3.5, 0.6), 3.3)],
+                },
+                RodHold {
+                    piece: 25,
+                    offset: 0.5,
+                    load: V::new(20.0, -30.0, -130.0),
+                    strings: vec![string(V::new(7.0, 5.5, 0.6), 3.3)],
+                },
+                RodHold {
+                    piece: 34,
+                    offset: 0.5,
+                    load: V::new(0.0, 0.0, -250.0),
+                    strings: vec![
+                        push(V::new(9.4, 3.0, 0.6), 5.0),
+                        push(V::new(9.5, 3.5, -2.1), 3.5),
+                    ],
+                },
+            ],
+        }
+    }
+
+    /// The start `Stiff::solve` takes: the rod hanging straight-ish down
+    /// the chord (here: a parabola below it, sagging with the load).
+    fn sagging_start(rod: &Rod) -> Vec<V> {
+        let total = rod.length();
+        let mut run = 0.0;
+        let mut nodes = vec![rod.a];
+        let sag = rod.q.normalize() * 2.5;
+        for l in &rod.pieces {
+            run += l;
+            let t = run / total;
+            nodes.push(rod.a + (rod.b - rod.a) * t + sag * (4.0 * t * (1.0 - t)));
+        }
+        nodes.windows(2).map(|w| w[1] - w[0]).collect()
+    }
+
+    #[test]
+    fn a_rod_locked_on_its_way_to_its_strings_is_found_through_springs() {
+        let rod = gate_jumper();
+        let start = sagging_start(&rod);
+        // The strings pulled to their lengths in steps alone: locked.
+        let locked = rod.solve(&start, &budget());
+        assert!(locked.is_err(), "the steps alone solve it now: {locked:?}");
+        let s = rod.solve_through_springs(&start, &budget()).unwrap();
+        // Every string holds: the I strings at most their lengths (taut
+        // ones pull), the V's legs at theirs.
+        for (h, held) in rod.holds.iter().zip(&s.holds) {
+            for (string, force) in h.strings.iter().zip(&held.forces) {
+                let far = (held.point - string.top).norm();
+                if string.push || *force > 0.0 {
+                    assert!(
+                        (far - string.length).abs() < 1e-6,
+                        "{far} vs {}",
+                        string.length
+                    );
+                } else {
+                    assert!(far < string.length + 1e-9, "{far} vs {}", string.length);
+                }
+            }
+        }
+        // The V swung towards the I strings, against the wind (+y): the
+        // stretches between the held points not straight.
+        let v = s.holds[2].point;
+        assert!(v.y > 5.0, "{v:?}");
+        let along = |h: usize| {
+            let x = &rod.holds[h];
+            rod.pieces[..x.piece].iter().sum::<f64>() + rod.pieces[x.piece] * x.offset
+        };
+        let chord = (s.holds[2].point - s.holds[1].point).norm();
+        assert!(chord < along(2) - along(1) - 0.01, "{chord}");
+        // An equilibrium: the far end balances the loads (the rod's own,
+        // the held points', the strings') with what holds A.
+        let mut total = rod.q * rod.length();
+        for h in &rod.holds {
+            total += h.load;
+        }
+        for (h, held) in rod.holds.iter().zip(&s.holds) {
+            for (string, force) in h.strings.iter().zip(&held.forces) {
+                total += (string.top - held.point).normalize() * *force;
+            }
+        }
+        let [at_a, at_b] = s.end_forces;
+        assert!(
+            (at_a + at_b - total).norm() < 1e-6 * total.norm(),
+            "{at_a} {at_b} {total}"
+        );
+    }
+
+    /// A 5 m rod between ends 4 m apart, its middle (2.5 m along it)
+    /// pinned by three 1 m struts (strings that may push) at a point 1 cm,
+    /// then 10 cm, farther than 2.5 m from A: no shape holds it (each strut
+    /// alone could reach). Said so in words, with by about how much and
+    /// where, instead of a residual.
+    #[test]
+    fn a_rod_too_short_for_its_strings_says_by_how_much() {
+        for cut in [0.01, 0.1] {
+            let dir = V::new(1.0, 0.0, -0.2).normalize();
+            let pin = dir * (2.5 + cut);
+            let strut = |x: V| RodString {
+                top: pin + x.normalize(),
+                length: 1.0,
+                push: true,
+            };
+            let rod = Rod {
+                holds: vec![RodHold {
+                    piece: 24,
+                    offset: 0.5,
+                    load: V::new(0.0, 0.0, -20.0),
+                    strings: vec![
+                        strut(V::new(0.3, 0.0, 0.95)),
+                        strut(V::new(0.3, 0.8, 0.52)),
+                        strut(V::new(0.3, -0.8, 0.52)),
+                    ],
+                }],
+                ..Rod::uniform(
+                    V::zeros(),
+                    V::new(4.0, 0.0, 0.0),
+                    5.0,
+                    49,
+                    V::new(0.0, 3.0, -15.0),
+                    20.0,
+                )
+            };
+            let start = sagging_start(&rod);
+            assert!(rod.solve(&start, &budget()).is_err());
+            let e = rod.solve_through_springs(&start, &budget()).unwrap_err();
+            assert!(
+                e.starts_with("too short to reach where its strings hold it"),
+                "{e}"
+            );
+            assert!(e.contains("the point 2.50 m along it about"), "{e}");
+            let mm: f64 = e
+                .split("about ")
+                .nth(1)
+                .and_then(|x| x.split(" mm").next())
+                .and_then(|x| x.parse().ok())
+                .unwrap_or_else(|| panic!("{e}"));
+            assert!(
+                mm > 0.8 * cut * 1e3 && mm < 1.2 * cut * 1e3,
+                "{mm} mm for {cut} m: {e}"
+            );
         }
     }
 }

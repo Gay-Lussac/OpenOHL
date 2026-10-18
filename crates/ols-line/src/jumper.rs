@@ -790,7 +790,10 @@ impl Stiff {
 
     /// Solves the rod of `length` under `load` between `a` and `b` (held
     /// as `held` says), starting from the hinged catenary; if that does
-    /// not converge, the bending stiffness is brought in in steps.
+    /// not converge, the bending stiffness is brought in in steps; if that
+    /// does not either, through its strings as springs
+    /// ([`Rod::solve_through_springs`]: a rod locked on its way to its
+    /// strings, or too short for them, said so).
     #[allow(clippy::too_many_arguments)]
     fn solve(
         &self,
@@ -881,6 +884,7 @@ impl Stiff {
             pieces: pieces.clone(),
             q: load,
             ei,
+            springs: 0.0,
             start: self.start,
             end: self.end,
             holds: holds.clone(),
@@ -888,21 +892,42 @@ impl Stiff {
         let budget = Budget::new()
             .max_iterations(150)
             .time_limit(std::time::Duration::from_secs(60));
-        match rod(self.ei).solve(&start, &budget) {
-            Ok(shape) => Ok(shape),
-            Err(first) => {
-                for f in [0.0, 0.05, 0.2, 0.5, 1.0] {
-                    let shape = rod(self.ei * f)
-                        .solve(&start, &budget)
-                        .map_err(|e| format!("{first}; with EI in steps: {e}"))?;
-                    start = shape.directions.clone();
-                    if f == 1.0 {
-                        return Ok(shape);
-                    }
-                }
-                unreachable!("the last step returns")
+        let first = match rod(self.ei).solve(&start, &budget) {
+            Ok(shape) => return Ok(shape),
+            Err(e) => e,
+        };
+        let catenary = start.clone();
+        let stepped = (|| -> Result<RodShape, String> {
+            let mut shape = None;
+            for f in [0.0, 0.05, 0.2, 0.5, 1.0] {
+                let s = rod(self.ei * f).solve(&start, &budget)?;
+                start = s.directions.clone();
+                shape = Some(s);
             }
-        }
+            Ok(shape.expect("five steps"))
+        })();
+        let second = match stepped {
+            Ok(shape) => return Ok(shape),
+            Err(e) => e,
+        };
+        // The strings as springs from soft to stiff (a rod locked on its way
+        // to its strings), more steps each: the shape, or why there is none
+        // in words.
+        let budget = Budget::new()
+            .max_iterations(400)
+            .time_limit(std::time::Duration::from_secs(60));
+        rod(self.ei)
+            .solve_through_springs(&catenary, &budget)
+            .map_err(|e| {
+                if e.starts_with("too short") {
+                    e
+                } else {
+                    format!(
+                        "its shape was not found (the strings pulled to their lengths: \
+                         {first}; with EI in steps: {second}; through springs: {e})"
+                    )
+                }
+            })
     }
 }
 
@@ -2814,6 +2839,81 @@ mod tests {
         }
         line.validate().unwrap();
         (line, free)
+    }
+
+    /// A V that may push (a rigid frame) holding the jumper's middle 1 cm,
+    /// then 10 cm, farther from both its ends than half the jumper: no
+    /// shape exists. Said so in words — too short, how far beyond its
+    /// reach the clamp is held and where — instead of a residual.
+    #[test]
+    fn a_jumper_too_short_for_its_v_says_by_how_much() {
+        for cut in [0.01, 0.1] {
+            let (mut line, free) = with_clamps(&[("H", 0.5, true)]);
+            let lib = library();
+            let case = still(15.0);
+            let shapes: Vec<_> = solve_line(&line, &lib, &case)
+                .into_iter()
+                .map(Result::unwrap)
+                .collect();
+            let jumper = &line.jumpers[0];
+            let a = end_position(&line, &shapes, jumper.from.point().unwrap()).unwrap();
+            let b = end_position(&line, &shapes, jumper.to.point().unwrap()).unwrap();
+            let half = 0.5 * free.unstressed_length;
+            // Above the chord's middle, `cut` beyond half the jumper from
+            // both ends: the V's clamp, its legs 0.4 m either side across
+            // and 1 m up, compression allowed.
+            let chord = b - a;
+            let across = Vector3::new(-chord.y, chord.x, 0.0).normalize();
+            let up = chord.cross(&across).normalize();
+            let up = if up.z < 0.0 { -up } else { up };
+            let rise = ((half + cut).powi(2) - (0.5 * chord.norm()).powi(2)).sqrt();
+            let clamp = 0.5 * (a + b) + up * rise;
+            let st = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+            st.wires
+                .iter_mut()
+                .find(|w| w.label == "H")
+                .unwrap()
+                .position = p(clamp);
+            for (n, side) in [1.0, -1.0].into_iter().enumerate() {
+                let top = clamp + across * (0.4 * side) + Vector3::new(0.0, 0.0, 1.0);
+                let label = format!("H-top{n}");
+                st.points
+                    .iter_mut()
+                    .find(|x| x.label == label)
+                    .unwrap()
+                    .position = p(top);
+                st.strings
+                    .iter_mut()
+                    .find(|s| s.label == format!("H-string{n}"))
+                    .unwrap()
+                    .compression = Some(1e5);
+            }
+            let e = solve_jumpers(&line, &lib, &case, &shapes)
+                .remove(0)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                e.contains("too short to reach where its strings hold it"),
+                "{e}"
+            );
+            let mm: f64 = e
+                .split("about ")
+                .nth(1)
+                .and_then(|x| x.split(" mm").next())
+                .and_then(|x| x.parse().ok())
+                .unwrap_or_else(|| panic!("{e}"));
+            // About how far the clamp is held above the highest the
+            // jumper's middle reaches (measured where the strings, nearly
+            // rigid springs, let the rod hold it: a little aside, where
+            // the V gives more easily).
+            let reach = (half.powi(2) - (0.5 * chord.norm()).powi(2)).sqrt();
+            let beyond = (rise - reach) * 1e3;
+            assert!(
+                mm > 0.8 * beyond && mm < 1.5 * beyond,
+                "{mm} mm, not {beyond}: {e}"
+            );
+            assert!(!e.contains("residual"), "{e}");
+        }
     }
 
     /// A helping string hanging below the conductor's suspension clamp
